@@ -122,11 +122,11 @@ pub fn cycle_heading(text: &str, mut start: usize, mut length: usize) -> EditRes
     let hashes = heading_hash_count(line);
     let content_start = if hashes > 0 { hashes + 1 } else { 0 };
     let content = &line[content_start..];
-    let new_line = match hashes {
-        0 => format!("# {line}"),
-        1 => format!("## {content}"),
-        2 => format!("### {content}"),
-        _ => content.to_string(),
+    let (new_line, prefix_delta) = match hashes {
+        0 => (format!("# {line}"), 2isize),
+        1 => (format!("## {content}"), 1),
+        2 => (format!("### {content}"), 1),
+        _ => (content.to_string(), -4),
     };
 
     let mut new_text =
@@ -135,22 +135,25 @@ pub fn cycle_heading(text: &str, mut start: usize, mut length: usize) -> EditRes
     new_text.push_str(&new_line);
     new_text.push_str(&text[line_end..]);
 
+    let new_start = (start as isize + prefix_delta).max(line_start as isize) as usize;
     EditResult {
         new_text,
-        new_selection_start: line_start,
-        new_selection_length: new_line.len(),
+        new_selection_start: new_start,
+        new_selection_length: length,
     }
 }
 
 pub fn insert_image(text: &str, mut start: usize, mut length: usize) -> EditResult {
     clamp_range(text, &mut start, &mut length);
+    const PATH_PLACEHOLDER: &str = "pfad";
+    const ALT_PLACEHOLDER: &str = "alt";
     if length == 0 {
         insert_snippet(
             text,
             start,
-            "![alt text](image.png)",
+            &format!("![{ALT_PLACEHOLDER}]({PATH_PLACEHOLDER})"),
             start + 2,
-            "alt text".len(),
+            ALT_PLACEHOLDER.len(),
         )
     } else {
         let end = start + length;
@@ -159,7 +162,7 @@ pub fn insert_image(text: &str, mut start: usize, mut length: usize) -> EditResu
             text,
             start,
             end,
-            &format!("![{selection}](image.png)"),
+            &format!("![{selection}]({PATH_PLACEHOLDER})"),
             start + 2,
             length,
         )
@@ -168,29 +171,32 @@ pub fn insert_image(text: &str, mut start: usize, mut length: usize) -> EditResu
 
 pub fn insert_table(text: &str, mut start: usize, mut length: usize) -> EditResult {
     clamp_range(text, &mut start, &mut length);
-    let snippet = "\n\n| Header 1 | Header 2 |\n| --- | --- |\n| Cell 1 | Cell 2 |\n";
+    const FIRST_CELL: &str = "Spalte 1";
+    let snippet = format!("| {FIRST_CELL} | Spalte 2 | Spalte 3 |\n|---|---|---|\n|   |   |   |");
     let prefix = insertion_newline_prefix(text, start);
     let suffix = table_insertion_newline_suffix(text, start + length);
-    let insertion = format!("{prefix}{}{suffix}", snippet.trim_start_matches('\n'));
+    let insertion = format!("{prefix}{snippet}{suffix}");
     replace_selection(
         text,
         start,
         start + length,
         &insertion,
         start + prefix.len() + 2,
-        "Header 1".len(),
+        FIRST_CELL.len(),
     )
 }
 
 pub fn insert_link(text: &str, mut start: usize, mut length: usize) -> EditResult {
     clamp_range(text, &mut start, &mut length);
+    const URL_PLACEHOLDER: &str = "url";
+    const TEXT_PLACEHOLDER: &str = "text";
     if length == 0 {
         insert_snippet(
             text,
             start,
-            "[link text](url)",
+            &format!("[{TEXT_PLACEHOLDER}]({URL_PLACEHOLDER})"),
             start + 1,
-            "link text".len(),
+            TEXT_PLACEHOLDER.len(),
         )
     } else {
         let end = start + length;
@@ -199,7 +205,7 @@ pub fn insert_link(text: &str, mut start: usize, mut length: usize) -> EditResul
             text,
             start,
             end,
-            &format!("[{selection}](url)"),
+            &format!("[{selection}]({URL_PLACEHOLDER})"),
             start + 1,
             length,
         )
@@ -208,23 +214,24 @@ pub fn insert_link(text: &str, mut start: usize, mut length: usize) -> EditResul
 
 pub fn insert_code_block(text: &str, mut start: usize, mut length: usize) -> EditResult {
     clamp_range(text, &mut start, &mut length);
-    let selected = &text[start..start + length];
-    let body = if selected.is_empty() {
-        "code"
-    } else {
-        selected
-    };
     let prefix = insertion_newline_prefix(text, start);
     let suffix = insertion_newline_suffix(text, start + length);
-    let insertion = format!("{prefix}```\n{body}\n```{suffix}");
-    replace_selection(
-        text,
-        start,
-        start + length,
-        &insertion,
-        start + prefix.len() + 4,
-        body.len(),
-    )
+    if length == 0 {
+        let insertion = format!("{prefix}```\n\n```{suffix}");
+        let cursor = start + prefix.len() + 4; // after ```\n
+        replace_selection(text, start, start, &insertion, cursor, 0)
+    } else {
+        let content = &text[start..start + length];
+        let insertion = format!("{prefix}```\n{content}\n```{suffix}");
+        replace_selection(
+            text,
+            start,
+            start + length,
+            &insertion,
+            start + prefix.len() + 4,
+            content.len(),
+        )
+    }
 }
 
 fn line_start_of(text: &str, offset: usize) -> usize {
@@ -496,24 +503,24 @@ mod tests {
         let result = cycle_heading("A\nB\nC", 2, 0);
 
         assert_eq!("A\n# B\nC", result.new_text);
-        assert_eq!(2, result.new_selection_start);
-        assert_eq!(3, result.new_selection_length);
+        assert_eq!(4, result.new_selection_start); // cursor moved by # + space
+        assert_eq!(0, result.new_selection_length);
     }
 
     #[test]
     fn insert_image_without_selection_selects_alt_text() {
         let result = insert_image("", 0, 0);
 
-        assert_eq!("![alt text](image.png)", result.new_text);
+        assert_eq!("![alt](pfad)", result.new_text);
         assert_eq!(2, result.new_selection_start);
-        assert_eq!(8, result.new_selection_length);
+        assert_eq!(3, result.new_selection_length);
     }
 
     #[test]
     fn insert_image_with_selection_uses_selection_as_alt_text() {
         let result = insert_image("cat", 0, 3);
 
-        assert_eq!("![cat](image.png)", result.new_text);
+        assert_eq!("![cat](pfad)", result.new_text);
         assert_eq!(2, result.new_selection_start);
         assert_eq!(3, result.new_selection_length);
     }
@@ -523,7 +530,7 @@ mod tests {
         let result = insert_table("before", 6, 0);
 
         assert_eq!(
-            "before\n\n| Header 1 | Header 2 |\n| --- | --- |\n| Cell 1 | Cell 2 |\n",
+            "before\n\n| Spalte 1 | Spalte 2 | Spalte 3 |\n|---|---|---|\n|   |   |   |",
             result.new_text
         );
         assert_eq!(10, result.new_selection_start);
@@ -533,20 +540,18 @@ mod tests {
     #[test]
     fn insert_table_replaces_selection() {
         let result = insert_table("before\nselected\nafter", 7, 8);
-
-        assert_eq!(
-            "before\n\n| Header 1 | Header 2 |\n| --- | --- |\n| Cell 1 | Cell 2 |\n\nafter",
-            result.new_text
-        );
+        let expected =
+            "before\n\n| Spalte 1 | Spalte 2 | Spalte 3 |\n|---|---|---|\n|   |   |   |\nafter";
+        assert_eq!(expected, result.new_text);
     }
 
     #[test]
     fn insert_link_without_selection_selects_text_placeholder() {
         let result = insert_link("", 0, 0);
 
-        assert_eq!("[link text](url)", result.new_text);
+        assert_eq!("[text](url)", result.new_text);
         assert_eq!(1, result.new_selection_start);
-        assert_eq!(9, result.new_selection_length);
+        assert_eq!(4, result.new_selection_length);
     }
 
     #[test]
@@ -559,12 +564,12 @@ mod tests {
     }
 
     #[test]
-    fn insert_code_block_without_selection_selects_code_placeholder() {
+    fn insert_code_block_without_selection_cursor_in_empty_line() {
         let result = insert_code_block("", 0, 0);
 
-        assert_eq!("```\ncode\n```", result.new_text);
+        assert_eq!("```\n\n```", result.new_text);
         assert_eq!(4, result.new_selection_start);
-        assert_eq!(4, result.new_selection_length);
+        assert_eq!(0, result.new_selection_length);
     }
 
     #[test]
