@@ -1,1 +1,1 @@
-{}
+{"default":{"identifier":"default","description":"Default capabilities für die Folio-Shell.","local":true,"windows":["main"],"permissions":["core:default","core:event:default","core:window:default","core:webview:default","core:app:default","core:path:default","core:resources:default","core:image:default","core:menu:default","core:tray:default","dialog:default","dialog:allow-open","dialog:allow-save","shell:default","shell:allow-open"]}}

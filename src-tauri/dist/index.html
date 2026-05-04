@@ -120,8 +120,11 @@
     margin-left: 2px;
     border-radius: 3px;
     cursor: pointer;
-    font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets";
     font-size: 13px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
   }
   .vault-header .vault-cmd:hover {
     background: var(--rail-hover-bg);
@@ -602,8 +605,16 @@
 <aside class="vault-region" id="vault-region">
   <header class="vault-header">
     <span class="title">Arbeitsbereich</span>
-    <button class="vault-cmd" data-cmd="addFile" title="Datei öffnen…">&#xE7C3;</button>
-    <button class="vault-cmd" data-cmd="addFolder" title="Ordner hinzufügen…">&#xED25;</button>
+    <button class="vault-cmd" data-cmd="addFile" title="Datei öffnen…" aria-label="Datei öffnen">
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3 2h6l4 4v8H3z"/><path d="M9 2v4h4"/>
+      </svg>
+    </button>
+    <button class="vault-cmd" data-cmd="addFolder" title="Ordner hinzufügen…" aria-label="Ordner hinzufügen">
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M2 4h4l1.5 1.5H14V13H2z"/><path d="M8 8v3M6.5 9.5h3"/>
+      </svg>
+    </button>
   </header>
   <ul id="vault-tree" class="tree"></ul>
 </aside>
@@ -857,6 +868,61 @@
             if (!data || typeof data !== 'object') return;
             if (data.pinned && typeof window.setVaultPinned === 'function') window.setVaultPinned(data.pinned);
             if (data.recent && typeof window.setVaultRecent === 'function') window.setVaultRecent(data.recent);
+        });
+        window.__TAURI__.event.listen("app:set_mode", function (event) {
+            var data = event && event.payload;
+            var mode = (data && data.mode) || 'view';
+            document.body.classList.toggle('edit-mode', mode === 'edit');
+            document.body.classList.toggle('split-mode', mode === 'split');
+            if (mode === 'edit' && typeof window.focusEditor === 'function') {
+                window.focusEditor();
+            }
+        });
+        window.__TAURI__.event.listen("app:set_theme", function (event) {
+            var data = event && event.payload;
+            var mode = (data && data.mode) || 'light';
+            var html = document.documentElement;
+            if (mode === 'toggle') {
+                mode = html.classList.contains('theme-dark') ? 'light' : 'dark';
+            }
+            html.classList.toggle('theme-dark', mode === 'dark');
+            html.classList.toggle('theme-light', mode === 'light');
+            if (typeof window.setEditorTheme === 'function') {
+                window.setEditorTheme(mode);
+            }
+        });
+        window.__TAURI__.event.listen("panel:rail_changed", function (event) {
+            var data = event && event.payload;
+            if (!data || typeof window.setRailVisibility !== 'function') return;
+            if (typeof data.leftRailVisible === 'boolean') {
+                window.setRailVisibility('left', data.leftRailVisible);
+            }
+            if (typeof data.rightRailVisible === 'boolean') {
+                window.setRailVisibility('right', data.rightRailVisible);
+            }
+        });
+        window.__TAURI__.event.listen("editor:open_find", function () {
+            var bar = document.getElementById('find-bar');
+            if (bar) bar.classList.add('open');
+            var input = document.getElementById('find-input');
+            if (input) { input.focus(); input.select(); }
+        });
+        window.__TAURI__.event.listen("editor:set_find_term", function (event) {
+            var data = event && event.payload;
+            var term = (data && data.term) || '';
+            var input = document.getElementById('find-input');
+            if (input) {
+                input.value = term;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        });
+        window.__TAURI__.event.listen("navigation:toc_click", function (event) {
+            var data = event && event.payload;
+            var anchor = data && (data.anchor || data.slug);
+            if (anchor && typeof window.scrollViewToAnchor === 'function') {
+                window.scrollViewToAnchor(anchor);
+            }
+            if (typeof window.setTocActive === 'function') window.setTocActive(anchor || '');
         });
     }
 
