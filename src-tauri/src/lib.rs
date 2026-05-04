@@ -18,16 +18,62 @@ pub mod vault;
 pub mod workspace;
 
 use state::AppState;
-use tauri::{Listener, Manager};
+use tauri::{LogicalPosition, LogicalSize, Listener, Manager, WindowEvent};
 
 pub fn builder() -> tauri::Builder<tauri::Wry> {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(AppState::new())
+        .on_window_event(|window, event| {
+            if window.label() != "main" {
+                return;
+            }
+            let app = window.app_handle();
+            match event {
+                WindowEvent::Resized(_) => {
+                    if let Ok(size) = window.inner_size() {
+                        if let Ok(scale) = window.scale_factor() {
+                            let logical = size.to_logical::<f64>(scale);
+                            if let Some(state) = app.try_state::<AppState>() {
+                                if let Ok(mut panel) = state.panel_state.lock() {
+                                    let _ = panel.set_window_size(logical.width, logical.height);
+                                }
+                            }
+                        }
+                    }
+                }
+                WindowEvent::Moved(_) => {
+                    if let Ok(pos) = window.outer_position() {
+                        if let Ok(scale) = window.scale_factor() {
+                            let logical = pos.to_logical::<f64>(scale);
+                            if let Some(state) = app.try_state::<AppState>() {
+                                if let Ok(mut panel) = state.panel_state.lock() {
+                                    let _ = panel.set_window_position(logical.x, logical.y);
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        })
         .setup(|app| {
             let state = app.state::<AppState>();
             state.install_document_events(app.handle().clone())?;
+            if let Some(window) = app.get_webview_window("main") {
+                let panel = state
+                    .panel_state
+                    .lock()
+                    .map_err(|_| "panel state lock poisoned".to_string())?
+                    .data();
+                if let (Some(w), Some(h)) = (panel.window_width, panel.window_height) {
+                    let _ = window.set_size(LogicalSize::new(w, h));
+                }
+                if let (Some(x), Some(y)) = (panel.window_x, panel.window_y) {
+                    let _ = window.set_position(LogicalPosition::new(x, y));
+                }
+            }
             let automation = automation::AutomationServer::new(app.handle().clone(), state.inner());
             let automation_handle = automation.start();
             app.manage(automation_handle);

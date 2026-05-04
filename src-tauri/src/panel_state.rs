@@ -91,6 +91,21 @@ impl PanelState {
         self.save()
     }
 
+    pub fn set_window_position(&mut self, x: f64, y: f64) -> io::Result<()> {
+        self.data.window_x = Some(x);
+        self.data.window_y = Some(y);
+        self.save()
+    }
+
+    pub fn set_window_size(&mut self, width: f64, height: f64) -> io::Result<()> {
+        if width <= 0.0 || height <= 0.0 {
+            return Ok(());
+        }
+        self.data.window_width = Some(width);
+        self.data.window_height = Some(height);
+        self.save()
+    }
+
     pub fn save(&self) -> io::Result<()> {
         persist::save_json_atomic(&self.path, &self.data)
     }
