@@ -1,0 +1,8 @@
+/target
+Cargo.lock
+node_modules
+dist
+tools/goldfile-gen/**/bin
+tools/goldfile-gen/**/obj
+*.tmp
+.DS_Store
