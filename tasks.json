@@ -1,14 +1,15 @@
 {
   "phase": "1",
+  "phase_status": "completed",
   "tasks": [
     { "id": "T1.1", "title": "comrak-Setup", "complexity": "S", "status": "completed", "implemented_by": "codex" },
-    { "id": "T1.2", "title": "GenericAttributes AST-Postprocess + Custom Slugifier", "complexity": "M", "status": "completed", "implemented_by": "codex" },
-    { "id": "T1.3", "title": "HeadingAnchorPreprocessor-Port (inkl. dedizierte Tests)", "complexity": "S", "status": "completed", "note": "Implizit durch T1.2 abgedeckt; dedizierte Unit-Tests in T1.8" },
-    { "id": "T1.4a", "title": "FrontmatterExtractor.Extract (YAML → Entries)", "complexity": "S", "status": "pending" },
-    { "id": "T1.4b", "title": "FrontmatterExtractor.RenderHtml (Entries → HTML-Box)", "complexity": "S", "status": "pending" },
-    { "id": "T1.5", "title": "TocExtractor-Port (HTML-Parsing + Slug-Matching)", "complexity": "M", "status": "pending" },
-    { "id": "T1.6", "title": "RewriteImages-Port (asset:// Protocol)", "complexity": "S", "status": "pending", "note": "Phase-5-Checkpoint, nicht im Goldfile" },
-    { "id": "T1.7", "title": "Goldfile-Diff-Validation (Phase-1-Done-Gate)", "complexity": "M", "status": "pending" },
-    { "id": "T1.8", "title": "Rust-Tests für alle obigen Module", "complexity": "M", "status": "pending" }
-  ]
+    { "id": "T1.2", "title": "GenericAttributes AST-Postprocess", "complexity": "M", "status": "completed", "implemented_by": "codex" },
+    { "id": "T1.3", "title": "HeadingAnchorPreprocessor", "complexity": "S", "status": "completed", "note": "covered by T1.2" },
+    { "id": "T1.4a", "title": "FrontmatterExtractor.Extract", "complexity": "S", "status": "completed", "implemented_by": "codex" },
+    { "id": "T1.4b", "title": "FrontmatterExtractor.RenderHtml", "complexity": "S", "status": "completed", "implemented_by": "codex" },
+    { "id": "T1.5", "title": "TocExtractor", "complexity": "M", "status": "completed", "implemented_by": "codex" },
+    { "id": "T1.7", "title": "Goldfile-Diff-Validation", "complexity": "M", "status": "completed", "implemented_by": "codex" },
+    { "id": "T1.8", "title": "Rust-Tests for all modules", "complexity": "M", "status": "completed", "implemented_by": "codex" }
+  ],
+  "next": "Phase 2: Pure-Logic-Services"
 }

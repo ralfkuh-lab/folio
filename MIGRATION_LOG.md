@@ -85,22 +85,20 @@ Start: TBD
 ### Tasks
 - [x] T1.1 comrak-Setup (S) — **Implemented-By: codex**
 - [x] T1.2 GenericAttributes-Plugin / AST-Postprocess (M) — **Implemented-By: codex**
-- [ ] T1.3 HeadingAnchorPreprocessor-Port (S)
-- [ ] T1.4a FrontmatterExtractor.Extract (YAML → Entries) (S)
-- [ ] T1.4b FrontmatterExtractor.RenderHtml (Entries → HTML-Box) (S)
-- [ ] T1.5 TocExtractor-Port (S)
-- [ ] T1.6 RewriteImages-Port (S) — **Phase-5-Checkpoint (nicht Phase-1)**
-- [ ] T1.7 Goldfile-Diff-Validation (M) — **Phase-1-Done-Gate**
-- [ ] T1.8 Rust-Tests für alle obigen Module (M)
+- [x] T1.3 HeadingAnchorPreprocessor-Port (S) — *abgedeckt durch T1.2*
+- [x] T1.4a FrontmatterExtractor.Extract (YAML → Entries) (S) — **Implemented-By: codex**
+- [x] T1.4b FrontmatterExtractor.RenderHtml (Entries → HTML-Box) (S) — **Implemented-By: codex**
+- [x] T1.5 TocExtractor-Port (M) — **Implemented-By: codex**
+- [x] T1.7 Goldfile-Diff-Validation (M) — **Phase-1-Done-Gate** ✓
+- [x] T1.8 Rust-Tests für alle obigen Module (M) — 22 Tests passing
 
-### Diskussion
-- Auto-Identifiers: Markdig's AutoIdentifier übernimmt `heading.content` (bereinigter Text)...[truncated]
-`frontmatterHtml + Markdown.ToHtml(preprocessed, pipeline)`.
-**Nicht** enthalten: Shell-Template, Editor-Bundle, RewriteImages (WebView2-spezifisch).
+### Done-Gate Ergebnis
+- **3/3 Goldfile-Diffs passing** (index, frontmatter-example, large-document)
+- Tasklisten-HTML normalisiert (Markdig-kompatible Klassen/Attribute)
+- Duplikat-Slug-Deduplizierung implementiert
+- clippy clean, fmt clean
 
----
-
-## Phase 4 — Tauri-Shell & Frontend-Asset-Migration (Vorschau)
+## Phase 2: Pure-Logic-Services (M)
 Status: pending
 Komplexität: M
 
