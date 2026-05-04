@@ -7,7 +7,7 @@ use comrak::{
 };
 use regex::Regex;
 use std::{
-    collections::VecDeque,
+    collections::{HashMap, VecDeque},
     io::{self, Write},
     sync::{Mutex, OnceLock},
 };
@@ -29,8 +29,14 @@ pub fn render_body(markdown: &str) -> String {
     format_html_with_plugins(root, &options, &mut body_html, &plugins)
         .expect("rendering markdown to HTML should not fail");
 
+    let body_html =
+        normalize_tasklist_html(&String::from_utf8(body_html).expect("comrak emits UTF-8 HTML"));
+
     let mut html = frontmatter::render_html(&frontmatter.entries);
-    html.push_str(&String::from_utf8(body_html).expect("comrak emits UTF-8 HTML"));
+    html.push_str(&body_html);
+    if !body_html.is_empty() {
+        html.push('\n');
+    }
     html
 }
 
@@ -106,6 +112,53 @@ fn explicit_id_regex() -> &'static Regex {
     })
 }
 
+fn normalize_tasklist_html(html: &str) -> String {
+    let html = tasklist_ul_regex()
+        .replace_all(html, |captures: &regex::Captures<'_>| {
+            let body = captures.name("body").expect("body capture").as_str();
+            if body.contains(r#"<li><input type="checkbox""#) {
+                format!(r#"<ul class="contains-task-list">{body}</ul>"#)
+            } else {
+                captures
+                    .get(0)
+                    .expect("full tasklist ul match")
+                    .as_str()
+                    .to_string()
+            }
+        })
+        .into_owned();
+
+    tasklist_item_regex()
+        .replace_all(&html, |captures: &regex::Captures<'_>| {
+            let attrs = captures.name("attrs").expect("attrs capture").as_str();
+            let checked = if attrs.contains(r#"checked="""#)
+                || attrs.contains(r#"checked="checked""#)
+                || attrs.contains(" checked")
+            {
+                r#" checked="checked""#
+            } else {
+                ""
+            };
+
+            format!(
+                r#"<li class="task-list-item"><input disabled="disabled" type="checkbox"{checked} />"#
+            )
+        })
+        .into_owned()
+}
+
+fn tasklist_ul_regex() -> &'static Regex {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    REGEX.get_or_init(|| Regex::new(r"(?s)<ul>(?P<body>.*?)</ul>").expect("tasklist ul regex"))
+}
+
+fn tasklist_item_regex() -> &'static Regex {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    REGEX.get_or_init(|| {
+        Regex::new(r#"<li><input type="checkbox"(?P<attrs>[^>]*) />"#).expect("tasklist item regex")
+    })
+}
+
 pub fn slugify_heading(text: &str) -> String {
     let mut slug = String::new();
     let mut last_was_dash = false;
@@ -129,13 +182,30 @@ pub fn slugify_heading(text: &str) -> String {
 
 struct FolioHeadingAdapter {
     explicit_ids: Mutex<VecDeque<Option<String>>>,
+    used_slugs: Mutex<HashMap<String, usize>>,
 }
 
 impl FolioHeadingAdapter {
     fn new(explicit_ids: VecDeque<Option<String>>) -> Self {
         Self {
             explicit_ids: Mutex::new(explicit_ids),
+            used_slugs: Mutex::new(HashMap::new()),
         }
+    }
+
+    fn unique_slug(&self, slug: String) -> String {
+        let mut used_slugs = self
+            .used_slugs
+            .lock()
+            .expect("heading slug map must not be poisoned");
+        let count = used_slugs.entry(slug.clone()).or_default();
+        let unique = if *count == 0 {
+            slug
+        } else {
+            format!("{slug}-{count}")
+        };
+        *count += 1;
+        unique
     }
 }
 
@@ -146,13 +216,14 @@ impl HeadingAdapter for FolioHeadingAdapter {
         heading: &HeadingMeta,
         sourcepos: Option<Sourcepos>,
     ) -> io::Result<()> {
-        let id = self
-            .explicit_ids
-            .lock()
-            .expect("heading ID queue must not be poisoned")
-            .pop_front()
-            .flatten()
-            .unwrap_or_else(|| slugify_heading(&heading.content));
+        let id = self.unique_slug(
+            self.explicit_ids
+                .lock()
+                .expect("heading ID queue must not be poisoned")
+                .pop_front()
+                .flatten()
+                .unwrap_or_else(|| slugify_heading(&heading.content)),
+        );
 
         write!(output, "<h{}", heading.level)?;
         if let Some(sourcepos) = sourcepos {
