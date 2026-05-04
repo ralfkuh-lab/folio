@@ -1,3 +1,4 @@
+pub mod automation;
 pub mod commands;
 pub mod document_store;
 pub mod editor_commands;
@@ -26,6 +27,9 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
         .setup(|app| {
             let state = app.state::<AppState>();
             state.install_document_events(app.handle().clone())?;
+            let automation = automation::AutomationServer::new(app.handle().clone(), state.inner());
+            let automation_handle = automation.start();
+            app.manage(automation_handle);
             let handle = app.handle().clone();
             app.listen("shell:event", {
                 let handle = handle.clone();

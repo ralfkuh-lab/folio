@@ -73,6 +73,15 @@ impl PanelState {
         self.save()
     }
 
+    pub fn set_rail_visible(&mut self, side: &str, visible: bool) -> io::Result<()> {
+        match side {
+            "left" => self.data.left_rail_visible = visible,
+            "right" => self.data.right_rail_visible = visible,
+            _ => {}
+        }
+        self.save()
+    }
+
     pub fn set_section_expanded(&mut self, section: &str, expanded: bool) -> io::Result<()> {
         match section {
             "pinned" => self.data.pinned_expanded = expanded,

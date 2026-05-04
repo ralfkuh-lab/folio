@@ -51,7 +51,12 @@ pub async fn apply_editor_command(
 }
 
 #[tauri::command]
-pub async fn editor_ready(handle: AppHandle) -> Result<(), String> {
+pub async fn editor_ready(handle: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    state
+        .automation
+        .lock()
+        .map_err(|_| "automation state lock poisoned".to_string())?
+        .editor_ready = true;
     handle
         .emit("editor:ready", serde_json::json!({}))
         .map_err(|error| error.to_string())
@@ -62,7 +67,16 @@ pub async fn editor_selection(
     start: usize,
     length: usize,
     handle: AppHandle,
+    state: State<'_, AppState>,
 ) -> Result<(), String> {
+    {
+        let mut automation = state
+            .automation
+            .lock()
+            .map_err(|_| "automation state lock poisoned".to_string())?;
+        automation.selection_start = start;
+        automation.selection_length = length;
+    }
     handle
         .emit(
             "editor:selection",

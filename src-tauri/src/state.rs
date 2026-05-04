@@ -10,6 +10,27 @@ use crate::{
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AutomationUiState {
+    pub view_mode: String,
+    pub theme: String,
+    pub editor_ready: bool,
+    pub selection_start: usize,
+    pub selection_length: usize,
+}
+
+impl Default for AutomationUiState {
+    fn default() -> Self {
+        Self {
+            view_mode: "view".into(),
+            theme: "light".into(),
+            editor_ready: false,
+            selection_start: 0,
+            selection_length: 0,
+        }
+    }
+}
+
 pub struct AppState {
     pub document_store: Mutex<DocumentStore>,
     pub workspace: Mutex<Workspace>,
@@ -17,6 +38,7 @@ pub struct AppState {
     pub vault: Mutex<Vault>,
     pub navigation: Mutex<NavigationController>,
     pub link_interceptor: LinkInterceptor,
+    pub automation: Mutex<AutomationUiState>,
 }
 
 impl Default for AppState {
@@ -34,6 +56,7 @@ impl AppState {
             vault: Mutex::new(Vault::new()),
             navigation: Mutex::new(NavigationController::new()),
             link_interceptor: LinkInterceptor::new(),
+            automation: Mutex::new(AutomationUiState::default()),
         }
     }
 

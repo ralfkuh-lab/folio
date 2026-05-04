@@ -76,7 +76,15 @@ pub fn route_editor_event(
     match event_type {
         "editorReady" => handle
             .emit("editor:ready", serde_json::json!({}))
-            .map_err(|error| error.to_string()),
+            .map_err(|error| error.to_string())
+            .and_then(|_| {
+                state
+                    .automation
+                    .lock()
+                    .map_err(|_| "automation state lock poisoned".to_string())?
+                    .editor_ready = true;
+                Ok(())
+            }),
         "editorTextChanged" => {
             state
                 .document_store
@@ -85,15 +93,24 @@ pub fn route_editor_event(
                 .update_text(string_field(payload, "text")?);
             Ok(())
         }
-        "editorSelection" => handle
-            .emit(
-                "editor:selection",
-                serde_json::json!({
-                    "start": usize_field(payload, "start")?,
-                    "length": usize_field(payload, "length")?,
-                }),
-            )
-            .map_err(|error| error.to_string()),
+        "editorSelection" => {
+            let start = usize_field(payload, "start")?;
+            let length = usize_field(payload, "length")?;
+            {
+                let mut automation = state
+                    .automation
+                    .lock()
+                    .map_err(|_| "automation state lock poisoned".to_string())?;
+                automation.selection_start = start;
+                automation.selection_length = length;
+            }
+            handle
+                .emit(
+                    "editor:selection",
+                    serde_json::json!({ "start": start, "length": length }),
+                )
+                .map_err(|error| error.to_string())
+        }
         "editorSaveRequested" => {
             state
                 .document_store
