@@ -60,7 +60,7 @@
   body {
     display: grid;
     grid-template-columns: var(--vault-w, 240px) 4px 1fr 4px var(--toc-w, 260px);
-    grid-template-rows: 1fr;
+    grid-template-rows: auto 1fr auto;
     height: 100vh;
     overflow: hidden;
   }
@@ -73,12 +73,152 @@
   body.vault-hidden.toc-hidden {
     grid-template-columns: 0 0 1fr 0 0;
   }
+  .toolbar {
+    grid-row: 1;
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    padding: 4px 6px;
+    background: var(--rail-header-bg);
+    border-bottom: 1px solid var(--border);
+    min-height: 36px;
+  }
+  .toolbar .group { display: inline-flex; gap: 1px; align-items: center; }
+  .toolbar .spacer { flex: 1 1 auto; }
+  .toolbar .sep {
+    width: 1px;
+    height: 18px;
+    background: var(--border);
+    margin: 0 6px;
+  }
+  .toolbar button {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--fg);
+    padding: 4px 7px;
+    border-radius: 3px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font: inherit;
+    line-height: 1;
+    min-width: 28px;
+    min-height: 26px;
+  }
+  .toolbar button:hover:not(:disabled) { background: var(--rail-hover-bg); }
+  .toolbar button.active { background: var(--rail-selected-bg); color: var(--rail-selected-fg); }
+  .toolbar button:disabled { opacity: 0.4; cursor: default; }
+  .toolbar button svg { display: block; }
+  body:not(.edit-mode) .toolbar .edit-only { display: none; }
+  .statusbar {
+    grid-row: 3;
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 8px;
+    background: var(--rail-header-bg);
+    border-top: 1px solid var(--border);
+    color: var(--fg-muted);
+    font-size: 11.5px;
+    min-height: 22px;
+  }
+  .statusbar .status-path {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .statusbar .status-path.dirty::after { content: ' •'; color: var(--accent); font-weight: bold; }
+  .statusbar .status-cell { flex: 0 0 auto; }
+  .statusbar button {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--fg);
+    padding: 1px 5px;
+    border-radius: 3px;
+    cursor: pointer;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+  }
+  .statusbar button:hover { background: var(--rail-hover-bg); }
+  /* DnD-Overlay */
+  #dnd-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(9, 105, 218, 0.12);
+    border: 3px dashed var(--accent);
+    z-index: 9999;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 18px;
+    pointer-events: none;
+  }
+  body.dnd-active #dnd-overlay { display: flex; }
+  /* Vault-Sektionen mit Pinned/Recent */
+  .vault-region .vault-section { padding: 4px 0; }
+  .vault-region .vault-section + .vault-section { border-top: 1px solid var(--border); margin-top: 4px; }
+  .vault-region .vault-section-title {
+    padding: 4px 10px 2px;
+    color: var(--rail-accent);
+    font-weight: 600;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .vault-region .vault-item {
+    display: flex;
+    align-items: center;
+    padding: 3px 10px;
+    margin: 1px 4px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .vault-region .vault-item:hover { background: var(--rail-hover-bg); }
+  .vault-region .vault-item.active {
+    background: var(--rail-selected-bg);
+    color: var(--rail-selected-fg);
+    font-weight: 600;
+  }
+  .vault-region .vault-item .vault-icon { width: 18px; flex: 0 0 auto; text-align: center; margin-right: 4px; }
+  .vault-region .vault-item .vault-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Kontextmenü */
+  #context-menu {
+    position: fixed;
+    z-index: 10000;
+    min-width: 200px;
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    padding: 4px 0;
+    font-size: 12px;
+    display: none;
+  }
+  #context-menu.open { display: block; }
+  #context-menu .ctx-item {
+    padding: 5px 14px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  #context-menu .ctx-item:hover { background: var(--rail-hover-bg); }
+  #context-menu .ctx-item.disabled { opacity: 0.4; cursor: default; }
+  #context-menu .ctx-item.disabled:hover { background: transparent; }
+  #context-menu .ctx-sep { height: 1px; background: var(--border); margin: 4px 0; }
   body.edit-mode .view-region { display: none; }
   body:not(.edit-mode) .editor-region { display: none; }
   /* Wrapper um view-region + editor-region: gemeinsamer Bezugsrahmen fuer
      position:absolute der find-bar (oben rechts im mittleren Pane), und
      flex-Container, in dem die jeweils sichtbare Region die volle Hoehe fuellt. */
   .content-region {
+    grid-row: 2;
     grid-column: 3;
     position: relative;
     min-width: 0;
@@ -87,6 +227,7 @@
     overflow: hidden;
   }
   .vault-region {
+    grid-row: 2;
     grid-column: 1;
     overflow: auto;
     background: var(--rail-bg);
@@ -130,6 +271,7 @@
     background: var(--rail-hover-bg);
   }
   .splitter-left {
+    grid-row: 2;
     grid-column: 2;
     cursor: col-resize;
     background: transparent;
@@ -162,6 +304,7 @@
     border-left: 1px solid var(--border);
   }
   .splitter-right {
+    grid-row: 2;
     grid-column: 4;
     cursor: col-resize;
     background: transparent;
@@ -172,6 +315,7 @@
   .splitter-right:hover { background: rgba(128, 128, 128, 0.18); }
   body.toc-hidden .splitter-right { display: none; }
   .toc-region {
+    grid-row: 2;
     grid-column: 5;
     overflow: auto;
     background: var(--rail-bg);
@@ -602,6 +746,47 @@
 </style>
 </head>
 <body class="">
+<header class="toolbar" id="toolbar" role="toolbar">
+  <div class="group">
+    <button id="tb-back" title="Zurück (Alt+←)" aria-label="Zurück"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="10 3 5 8 10 13"/></svg></button>
+    <button id="tb-forward" title="Vorwärts (Alt+→)" aria-label="Vorwärts"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 3 11 8 6 13"/></svg></button>
+  </div>
+  <div class="sep"></div>
+  <div class="group">
+    <button id="tb-mode-view" class="active" title="View (Ctrl+1)" aria-label="Anzeigen"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5S1 8 1 8z"/><circle cx="8" cy="8" r="2"/></svg></button>
+    <button id="tb-mode-edit" title="Edit (Ctrl+2)" aria-label="Bearbeiten"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2l3 3-8.5 8.5L2 14l.5-3.5z"/></svg></button>
+  </div>
+  <div class="sep edit-only"></div>
+  <div class="group edit-only">
+    <button id="tb-bold" title="Fett (Ctrl+B)"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M3 2h4.5a3 3 0 012.2 5 3 3 0 01-1.7 5H3V2zm2 2v3h2.4a1.5 1.5 0 100-3H5zm0 5v3h2.7a1.5 1.5 0 100-3H5z"/></svg></button>
+    <button id="tb-italic" title="Kursiv (Ctrl+I)"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="6" y1="2" x2="11" y2="2"/><line x1="3" y1="12" x2="8" y2="12"/><line x1="9" y1="2" x2="5" y2="12"/></svg></button>
+    <button id="tb-strike" title="Durchgestrichen"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="2" y1="7" x2="12" y2="7"/><path d="M4 4c0-1 1-2 3-2s3 1 3 2"/><path d="M4 10c0 1 1 2 3 2s3-1 3-2"/></svg></button>
+  </div>
+  <div class="sep edit-only"></div>
+  <div class="group edit-only">
+    <button id="tb-heading" title="Überschrift (zyklisch H1/H2/H3)" style="font-weight:bold;font-family:Georgia,serif;">H</button>
+    <button id="tb-bullet" title="Aufzählung"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="2.5" cy="3.5" r="1" fill="currentColor"/><circle cx="2.5" cy="7" r="1" fill="currentColor"/><circle cx="2.5" cy="10.5" r="1" fill="currentColor"/><line x1="5.5" y1="3.5" x2="12" y2="3.5"/><line x1="5.5" y1="7" x2="12" y2="7"/><line x1="5.5" y1="10.5" x2="12" y2="10.5"/></svg></button>
+    <button id="tb-numbered" title="Nummerierte Liste" style="font-weight:bold;font-family:Georgia,serif;font-size:12px;">1.</button>
+  </div>
+  <div class="sep edit-only"></div>
+  <div class="group edit-only">
+    <button id="tb-link" title="Link (Ctrl+K)"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M6 8a3 3 0 014-1l2 2a3 3 0 01-4 4l-1-1"/><path d="M8 6a3 3 0 00-4 1l-2 2a3 3 0 004 4l1-1"/></svg></button>
+    <button id="tb-image" title="Bild einfügen"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="2.5" width="11" height="9" rx="1"/><circle cx="5" cy="6" r="1"/><polyline points="2 11 6 7 9 10 12 7"/></svg></button>
+    <button id="tb-table" title="Tabelle einfügen"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><rect x="1.5" y="2.5" width="11" height="9" rx="1"/><line x1="1.5" y1="6" x2="12.5" y2="6"/><line x1="5" y1="2.5" x2="5" y2="11.5"/><line x1="9" y1="2.5" x2="9" y2="11.5"/></svg></button>
+    <button id="tb-code" title="Inline-Code" style="font-family:Consolas,monospace;font-weight:bold;">&lt;/&gt;</button>
+    <button id="tb-codeblock" title="Codeblock" style="font-family:Consolas,monospace;font-weight:bold;font-size:11px;">```</button>
+  </div>
+  <div class="sep edit-only"></div>
+  <div class="group edit-only">
+    <button id="tb-cheatsheet" title="Markdown Cheat-Sheet (F1)" aria-label="Hilfe"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="6.5"/><path d="M6 6c0-1.1 1-2 2-2s2 .9 2 2c0 1-2 1.5-2 3"/><circle cx="8" cy="11.5" r="0.6" fill="currentColor"/></svg></button>
+  </div>
+  <div class="spacer"></div>
+  <div class="group">
+    <button id="tb-find" title="Suchen (Ctrl+F)" aria-label="Suchen"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="6" cy="6" r="4"/><line x1="9" y1="9" x2="12" y2="12"/></svg></button>
+    <button id="tb-rail-left" class="active" title="Linke Leiste umschalten" aria-label="Linke Leiste"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="12" height="10" rx="1"/><line x1="6" y1="3" x2="6" y2="13"/><rect x="2" y="3" width="4" height="10" fill="currentColor" opacity="0.25"/></svg></button>
+    <button id="tb-rail-right" class="active" title="Rechte Leiste umschalten" aria-label="Rechte Leiste"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="12" height="10" rx="1"/><line x1="10" y1="3" x2="10" y2="13"/><rect x="10" y="3" width="4" height="10" fill="currentColor" opacity="0.25"/></svg></button>
+  </div>
+</header>
 <aside class="vault-region" id="vault-region">
   <header class="vault-header">
     <span class="title">Arbeitsbereich</span>
@@ -654,6 +839,16 @@
 <header class="toc-header">Inhaltsverzeichnis</header>
 <ul class="toc"></ul>
 </aside>
+<footer class="statusbar" id="statusbar">
+  <span class="status-path" id="status-path">Bereit</span>
+  <span class="status-cell" id="status-wordcount" hidden></span>
+  <span class="status-cell" id="status-mode">View</span>
+  <button class="status-cell" id="status-theme-toggle" title="Theme umschalten" aria-label="Theme">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 8.5A4.5 4.5 0 016.5 3a4.5 4.5 0 105 5.5z"/></svg>
+  </button>
+</footer>
+<div id="dnd-overlay">Datei hier ablegen, um zu öffnen</div>
+<nav id="context-menu" role="menu"></nav>
 <div id="cheatsheet-overlay" hidden>
   <header class="overlay__drag">Markdown Cheat-Sheet</header>
   <div class="overlay__body" id="cheatsheet-body"></div>
@@ -1655,6 +1850,335 @@
             clampInsideViewport();
         });
     })();
+})();
+</script>
+<script>
+/* Toolbar / Statusbar / Vault-Workspace / Drag&Drop / Kontextmenü */
+(function () {
+    if (!window.__TAURI__) return;
+    var invoke = window.__TAURI__.core && window.__TAURI__.core.invoke;
+    var emit = window.__TAURI__.event && window.__TAURI__.event.emit;
+    var listen = window.__TAURI__.event && window.__TAURI__.event.listen;
+    if (!invoke || !emit || !listen) return;
+
+    function $(id) { return document.getElementById(id); }
+    function bind(id, fn) { var el = $(id); if (el) el.addEventListener('click', fn); }
+    function http(method, path, body) {
+        return fetch('http://127.0.0.1:9876' + path, {
+            method: method,
+            headers: body ? { 'Content-Type': 'application/json' } : { 'Content-Length': '0' },
+            body: body ? JSON.stringify(body) : undefined,
+        });
+    }
+
+    /* ----- Toolbar: Mode / Rails / Find / Navigation ----- */
+    function setActiveMode(mode) {
+        $('tb-mode-view').classList.toggle('active', mode === 'view');
+        $('tb-mode-edit').classList.toggle('active', mode === 'edit');
+        var sm = $('status-mode'); if (sm) sm.textContent = mode === 'edit' ? 'Edit' : 'View';
+    }
+    bind('tb-mode-view', function () { http('POST', '/mode', { mode: 'view' }); setActiveMode('view'); });
+    bind('tb-mode-edit', function () { http('POST', '/mode', { mode: 'edit' }); setActiveMode('edit'); });
+    bind('tb-rail-left', function () {
+        var btn = $('tb-rail-left'); var on = !btn.classList.contains('active');
+        btn.classList.toggle('active', on);
+        http('POST', '/rail', { side: 'left', visible: on });
+    });
+    bind('tb-rail-right', function () {
+        var btn = $('tb-rail-right'); var on = !btn.classList.contains('active');
+        btn.classList.toggle('active', on);
+        http('POST', '/rail', { side: 'right', visible: on });
+    });
+    bind('tb-find', function () { http('POST', '/find'); });
+    bind('tb-back', function () { invoke('go_back').catch(function () {}); });
+    bind('tb-forward', function () { invoke('go_forward').catch(function () {}); });
+
+    /* ----- Edit-Toolbar: aktuellen Editor-Text+Selection holen, Command
+            ans Backend schicken, Ergebnis via applyEditorReplace zurückspielen ----- */
+    function applyCmd(name) {
+        if (!window.FolioEditor || typeof window.FolioEditor.getText !== 'function') return;
+        var text = window.FolioEditor.getText();
+        var sel = window.FolioEditor.getSelection() || { start: 0, length: 0 };
+        invoke('apply_editor_command', {
+            command: name,
+            text: text,
+            start: sel.start || 0,
+            length: sel.length || 0,
+        }).then(function (res) {
+            if (!res) return;
+            window.FolioEditor.applyReplace({
+                fullText: res.new_text,
+                selectionStart: res.new_selection_start,
+                selectionLength: res.new_selection_length,
+            });
+        }).catch(function (err) { console.warn('apply_editor_command failed:', err); });
+    }
+    bind('tb-bold',      function () { applyCmd('bold'); });
+    bind('tb-italic',    function () { applyCmd('italic'); });
+    bind('tb-heading',   function () { applyCmd('heading'); });
+    bind('tb-bullet',    function () { applyCmd('bullet'); });
+    bind('tb-numbered',  function () { applyCmd('numbered'); });
+    bind('tb-link',      function () { applyCmd('link'); });
+    bind('tb-image',     function () { applyCmd('image'); });
+    bind('tb-table',     function () { applyCmd('table'); });
+    bind('tb-code',      function () { applyCmd('code'); });
+    bind('tb-codeblock', function () { applyCmd('codeblock'); });
+    /* Strike: Backend kennt das (noch) nicht — direkt im Frontend wrappen. */
+    bind('tb-strike', function () {
+        if (!window.FolioEditor) return;
+        var text = window.FolioEditor.getText();
+        var sel = window.FolioEditor.getSelection() || { start: 0, length: 0 };
+        var s = sel.start, l = sel.length;
+        var inside = text.slice(s, s + l);
+        var newInside = inside ? '~~' + inside + '~~' : '~~~~';
+        var newText = text.slice(0, s) + newInside + text.slice(s + l);
+        window.FolioEditor.applyReplace({
+            fullText: newText,
+            selectionStart: inside ? s : s + 2,
+            selectionLength: inside ? newInside.length : 0,
+        });
+    });
+    var cheatSheetRows = [
+        ['Überschrift',     '# H1   ## H2   ### H3'],
+        ['Fett / Kursiv',   '**fett**   *kursiv*'],
+        ['Durchgestrichen', '~~text~~'],
+        ['Inline-Code',     '`code`'],
+        ['Codeblock',       '```sprache\n…\n```'],
+        ['Link',            '[Text](https://…)'],
+        ['Bild',            '![alt](pfad.png)'],
+        ['Aufzählung',      '- Item   * Item'],
+        ['Nummeriert',      '1. Item'],
+        ['Zitat',           '> Text'],
+        ['Trennlinie',      '---'],
+        ['Tabelle',         '| col | col |\n|---|---|'],
+        ['Aufgabe',         '- [ ] offen   - [x] erledigt'],
+    ];
+    bind('tb-cheatsheet', function () {
+        var ov = $('cheatsheet-overlay');
+        if (!ov) return;
+        if (ov.hidden) {
+            if (typeof window.showCheatSheet === 'function') {
+                window.showCheatSheet(JSON.stringify(cheatSheetRows.map(function(r){return{label:r[0],code:r[1]};})), 16, 80);
+            } else {
+                ov.hidden = false;
+            }
+        } else {
+            if (typeof window.hideCheatSheet === 'function') window.hideCheatSheet();
+            else ov.hidden = true;
+        }
+    });
+
+    /* ----- Statusbar ----- */
+    function setStatusPath(path, dirty) {
+        var el = $('status-path');
+        if (!el) return;
+        el.textContent = path || 'Bereit';
+        el.classList.toggle('dirty', !!dirty);
+    }
+    function updateWordCount(text) {
+        var el = $('status-wordcount');
+        if (!el) return;
+        if (!text) { el.hidden = true; el.textContent = ''; return; }
+        var chars = text.length;
+        var words = (text.match(/\S+/g) || []).length;
+        var lines = text.split(/\r\n|\r|\n/).length;
+        el.hidden = false;
+        el.textContent = words + ' Wörter · ' + chars + ' Zeichen · ' + lines + ' Zeilen';
+    }
+    bind('status-theme-toggle', function () { http('POST', '/theme', { mode: 'toggle' }); });
+
+    /* ----- Tastatur-Shortcuts ----- */
+    document.addEventListener('keydown', function (e) {
+        var ctrl = e.ctrlKey || e.metaKey;
+        if (ctrl && e.key === '1') { e.preventDefault(); $('tb-mode-view').click(); }
+        else if (ctrl && e.key === '2') { e.preventDefault(); $('tb-mode-edit').click(); }
+        else if (ctrl && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); http('POST', '/find'); }
+        else if (e.key === 'F1') { e.preventDefault(); $('tb-cheatsheet').click(); }
+        else if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); invoke('go_back').catch(function(){}); }
+        else if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); invoke('go_forward').catch(function(){}); }
+        else if (ctrl && (e.key === 's' || e.key === 'S')) { e.preventDefault(); http('POST', '/save'); }
+    });
+
+    /* ----- Theme beim Boot laden + an html anwenden ----- */
+    invoke('theme_get').then(function (mode) {
+        var html = document.documentElement;
+        html.classList.toggle('theme-dark', mode === 'dark');
+        html.classList.toggle('theme-light', mode === 'light');
+        if (typeof window.setEditorTheme === 'function') window.setEditorTheme(mode);
+    }).catch(function(){});
+
+    /* ----- Vault: Workspace laden + rendern + Klicks ----- */
+    var vaultTree = $('vault-tree');
+    function renderVault(html) {
+        if (!vaultTree) return;
+        if (!html || html.length === 0) {
+            vaultTree.innerHTML = '<li class="empty">Keine Einträge. Datei öffnen oder per Drag&amp;Drop ablegen.</li>';
+            return;
+        }
+        vaultTree.innerHTML = html;
+    }
+    function refreshVault() {
+        invoke('vault_build_tree').then(renderVault).catch(function (err) {
+            console.warn('vault_build_tree failed:', err);
+        });
+    }
+    refreshVault();
+
+    if (vaultTree) {
+        vaultTree.addEventListener('click', function (e) {
+            var item = e.target.closest('.vault-item');
+            if (!item) return;
+            var path = item.getAttribute('data-path');
+            var isDir = item.getAttribute('data-directory') === 'true';
+            if (!path) return;
+            if (isDir) {
+                invoke('vault_expand_dir', { path: path }).catch(function () {});
+            } else {
+                http('POST', '/open', { path: path }).then(function () {
+                    invoke('workspace_add_recent', { path: path }).catch(function(){});
+                });
+            }
+        });
+        vaultTree.addEventListener('contextmenu', function (e) {
+            var item = e.target.closest('.vault-item');
+            if (!item) return;
+            e.preventDefault();
+            var path = item.getAttribute('data-path');
+            var isDir = item.getAttribute('data-directory') === 'true';
+            openContextMenu(e.clientX, e.clientY, path, isDir);
+        });
+    }
+
+    /* ----- Vault-Header-Buttons (Datei/Ordner öffnen) ----- */
+    var vaultHeader = document.querySelector('.vault-header');
+    if (vaultHeader) {
+        vaultHeader.addEventListener('click', function (e) {
+            var btn = e.target.closest('.vault-cmd');
+            if (!btn) return;
+            var cmd = btn.getAttribute('data-cmd');
+            if (cmd === 'addFile') {
+                invoke('pick_file').then(function (path) {
+                    if (path) {
+                        http('POST', '/open', { path: path }).then(function () {
+                            invoke('workspace_add_recent', { path: path }).catch(function(){});
+                        });
+                    }
+                }).catch(function(){});
+            } else if (cmd === 'addFolder') {
+                invoke('pick_folder').then(function (path) {
+                    if (path) invoke('workspace_pin', { path: path, isDirectory: true }).catch(function(){});
+                }).catch(function(){});
+            }
+        });
+    }
+
+    /* ----- Kontextmenü ----- */
+    var ctxMenu = $('context-menu');
+    var ctxTarget = null;
+    function openContextMenu(x, y, path, isDir) {
+        if (!ctxMenu) return;
+        ctxTarget = { path: path, isDirectory: isDir };
+        ctxMenu.innerHTML =
+            '<div class="ctx-item" data-act="open">Öffnen</div>' +
+            '<div class="ctx-sep"></div>' +
+            '<div class="ctx-item" data-act="pin">Anpinnen</div>' +
+            '<div class="ctx-item" data-act="unpin">Vom Pin lösen</div>' +
+            '<div class="ctx-item" data-act="remove-recent">Aus Zuletzt entfernen</div>' +
+            '<div class="ctx-sep"></div>' +
+            '<div class="ctx-item" data-act="show">Im Dateimanager zeigen</div>' +
+            '<div class="ctx-item" data-act="copy">Pfad kopieren</div>';
+        ctxMenu.style.left = x + 'px';
+        ctxMenu.style.top = y + 'px';
+        ctxMenu.classList.add('open');
+    }
+    function closeContextMenu() {
+        if (ctxMenu) ctxMenu.classList.remove('open');
+        ctxTarget = null;
+    }
+    if (ctxMenu) {
+        ctxMenu.addEventListener('click', function (e) {
+            var item = e.target.closest('.ctx-item');
+            if (!item || item.classList.contains('disabled') || !ctxTarget) return;
+            var act = item.getAttribute('data-act');
+            var path = ctxTarget.path;
+            var isDir = ctxTarget.isDirectory;
+            closeContextMenu();
+            if (act === 'open' && !isDir) {
+                http('POST', '/open', { path: path });
+            } else if (act === 'pin') {
+                invoke('workspace_pin', { path: path, isDirectory: isDir }).catch(function(){});
+            } else if (act === 'unpin') {
+                invoke('workspace_unpin', { path: path }).catch(function(){});
+            } else if (act === 'remove-recent') {
+                invoke('workspace_remove_recent', { path: path }).catch(function(){});
+            } else if (act === 'show') {
+                invoke('show_in_file_manager', { path: path }).catch(function(){});
+            } else if (act === 'copy') {
+                if (navigator.clipboard) navigator.clipboard.writeText(path).catch(function(){});
+            }
+        });
+        document.addEventListener('click', function (e) {
+            if (!ctxMenu.contains(e.target)) closeContextMenu();
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') closeContextMenu();
+        });
+    }
+
+    /* ----- Drag & Drop ----- */
+    listen('tauri://drag-enter', function () {
+        document.body.classList.add('dnd-active');
+    });
+    listen('tauri://drag-over', function () {
+        document.body.classList.add('dnd-active');
+    });
+    listen('tauri://drag-leave', function () {
+        document.body.classList.remove('dnd-active');
+    });
+    listen('tauri://drag-drop', function (event) {
+        document.body.classList.remove('dnd-active');
+        var paths = (event && event.payload && event.payload.paths) || [];
+        if (paths.length === 0) return;
+        var first = paths[0];
+        http('POST', '/open', { path: first }).then(function () {
+            invoke('workspace_add_recent', { path: first }).catch(function(){});
+        });
+    });
+
+    /* ----- Backend-Events ----- */
+    listen('document:loaded', function (event) {
+        var data = event && event.payload || {};
+        setStatusPath(data.path || 'Bereit', false);
+        updateWordCount(data.text || '');
+        invoke('workspace_add_recent', { path: data.path }).catch(function(){});
+    });
+    listen('document:dirty_changed', function (event) {
+        var dirty = event && event.payload && (event.payload.is_dirty || event.payload.isDirty);
+        var el = $('status-path');
+        if (el) el.classList.toggle('dirty', !!dirty);
+    });
+    listen('document:saved', function () {
+        var el = $('status-path');
+        if (el) el.classList.remove('dirty');
+    });
+    listen('vault:refresh', function () {
+        refreshVault();
+    });
+    listen('app:set_mode', function (event) {
+        var mode = (event && event.payload && event.payload.mode) || 'view';
+        setActiveMode(mode);
+    });
+    listen('automation:click', function (event) {
+        var name = event && event.payload && event.payload.name;
+        if (!name) return;
+        var el = document.getElementById(name) || document.querySelector('[data-name="' + name + '"]');
+        if (el && typeof el.click === 'function') el.click();
+    });
+
+    /* ----- Editor-Text-Tracking für Wordcount im Edit-Modus ----- */
+    window.addEventListener('folio-editor-text-updated', function (e) {
+        updateWordCount(e.detail || '');
+    });
 })();
 </script>
 </body>

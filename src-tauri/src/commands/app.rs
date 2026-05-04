@@ -1,5 +1,8 @@
-use tauri::AppHandle;
+use crate::state::AppState;
+use std::path::Path;
+use tauri::{AppHandle, State};
 use tauri_plugin_dialog::{DialogExt, FilePath};
+use tauri_plugin_shell::ShellExt;
 
 #[tauri::command]
 pub async fn open_folder(handle: AppHandle) -> Result<Option<String>, String> {
@@ -22,6 +25,31 @@ pub async fn pick_file(handle: AppHandle) -> Result<Option<String>, String> {
         .file()
         .blocking_pick_file()
         .map(file_path_to_string))
+}
+
+#[tauri::command]
+pub async fn show_in_file_manager(path: String, handle: AppHandle) -> Result<(), String> {
+    let p = Path::new(&path);
+    let target = if p.is_file() {
+        p.parent().unwrap_or(p).to_path_buf()
+    } else {
+        p.to_path_buf()
+    };
+    #[allow(deprecated)]
+    handle
+        .shell()
+        .open(target.to_string_lossy().to_string(), None)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn theme_get(state: State<'_, AppState>) -> Result<String, String> {
+    Ok(state
+        .theme
+        .lock()
+        .map_err(|_| "theme lock poisoned".to_string())?
+        .mode()
+        .to_string())
 }
 
 fn file_path_to_string(path: FilePath) -> String {

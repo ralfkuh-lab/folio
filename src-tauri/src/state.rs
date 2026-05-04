@@ -4,6 +4,7 @@ use crate::{
     navigation::NavigationController,
     panel_state::PanelState,
     renderer, toc,
+    theme::ThemeService,
     vault::Vault,
     workspace::Workspace,
 };
@@ -35,6 +36,7 @@ pub struct AppState {
     pub document_store: Mutex<DocumentStore>,
     pub workspace: Mutex<Workspace>,
     pub panel_state: Mutex<PanelState>,
+    pub theme: Mutex<ThemeService>,
     pub vault: Mutex<Vault>,
     pub navigation: Mutex<NavigationController>,
     pub link_interceptor: LinkInterceptor,
@@ -49,14 +51,20 @@ impl Default for AppState {
 
 impl AppState {
     pub fn new() -> Self {
+        let theme = ThemeService::load();
+        let initial_theme = theme.mode().to_string();
         Self {
             document_store: Mutex::new(DocumentStore::new()),
             workspace: Mutex::new(Workspace::load()),
             panel_state: Mutex::new(PanelState::load()),
+            theme: Mutex::new(theme),
             vault: Mutex::new(Vault::new()),
             navigation: Mutex::new(NavigationController::new()),
             link_interceptor: LinkInterceptor::new(),
-            automation: Mutex::new(AutomationUiState::default()),
+            automation: Mutex::new(AutomationUiState {
+                theme: initial_theme,
+                ..AutomationUiState::default()
+            }),
         }
     }
 

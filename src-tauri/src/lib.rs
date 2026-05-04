@@ -12,6 +12,7 @@ mod persist;
 pub mod renderer;
 pub mod state;
 pub mod text_statistics;
+pub mod theme;
 pub mod toc;
 pub mod vault;
 pub mod workspace;
@@ -68,6 +69,8 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::app::open_folder,
             commands::app::pick_folder,
             commands::app::pick_file,
+            commands::app::theme_get,
+            commands::app::show_in_file_manager,
             commands::file::read_file,
             commands::file::write_file,
             commands::file::file_list,
@@ -95,6 +98,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::workspace_cmd::workspace_pin,
             commands::workspace_cmd::workspace_unpin,
             commands::workspace_cmd::workspace_add_recent,
+            commands::workspace_cmd::workspace_remove_recent,
             commands::workspace_cmd::workspace_get
         ])
 }

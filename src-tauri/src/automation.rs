@@ -417,19 +417,34 @@ async fn post_theme(
     if !matches!(mode.as_str(), "light" | "dark" | "toggle") {
         return Err(ApiError::bad_request(format!("unknown theme '{mode}'")));
     }
-    if mode != "toggle" {
-        context
-            .app_handle
-            .state::<AppState>()
+    let resolved = {
+        let state = context.app_handle.state::<AppState>();
+        let mut theme = state
+            .theme
+            .lock()
+            .map_err(|_| ApiError::internal("theme lock poisoned"))?;
+        let resolved = if mode == "toggle" {
+            theme
+                .toggle()
+                .map_err(|error| ApiError::internal(error.to_string()))?
+                .to_string()
+        } else {
+            theme
+                .set_mode(&mode)
+                .map_err(|error| ApiError::internal(error.to_string()))?;
+            theme.mode().to_string()
+        };
+        state
             .automation
             .lock()
             .map_err(|_| ApiError::internal("automation state lock poisoned"))?
-            .theme = mode.clone();
-    }
+            .theme = resolved.clone();
+        resolved
+    };
     emit(
         &context,
         "app:set_theme",
-        serde_json::json!({ "mode": mode }),
+        serde_json::json!({ "mode": resolved }),
     )?;
     ok()
 }

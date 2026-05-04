@@ -48,6 +48,21 @@ pub async fn workspace_add_recent(
 }
 
 #[tauri::command]
+pub async fn workspace_remove_recent(
+    path: String,
+    state: State<'_, AppState>,
+    handle: AppHandle,
+) -> Result<(), String> {
+    state
+        .workspace
+        .lock()
+        .map_err(|_| "workspace lock poisoned".to_string())?
+        .remove_recent(&path)
+        .map_err(|error| error.to_string())?;
+    emit_vault_refresh(&state, &handle)
+}
+
+#[tauri::command]
 pub async fn workspace_get(state: State<'_, AppState>) -> Result<WorkspaceData, String> {
     Ok(state
         .workspace
