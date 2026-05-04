@@ -2,6 +2,12 @@
 Cargo.lock
 node_modules
 dist
+!src-tauri/dist/
+!src-tauri/dist/index.html
+!src-tauri/dist/editor.ts
+!src-tauri/dist/editor.bundle.js
+!src-tauri/dist/package.json
+!src-tauri/dist/package-lock.json
 tools/goldfile-gen/**/bin
 tools/goldfile-gen/**/obj
 *.tmp

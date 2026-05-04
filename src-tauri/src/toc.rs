@@ -55,6 +55,25 @@ pub fn extract(markdown: &str) -> Vec<TocEntry> {
     assign_numbers(raw)
 }
 
+pub fn render_html(entries: &[TocEntry]) -> String {
+    entries
+        .iter()
+        .map(|entry| {
+            let number = entry
+                .number
+                .as_ref()
+                .map(|number| format!(r#"<span class="num">{}</span>"#, escape_html(number)))
+                .unwrap_or_default();
+            format!(
+                r#"<li class="entry h{level}" data-level="{level}" data-slug="{slug}">{number}<span class="text">{text}</span></li>"#,
+                level = entry.level,
+                slug = escape_attr(&entry.slug),
+                text = escape_html(&entry.text),
+            )
+        })
+        .collect()
+}
+
 fn assign_numbers(entries: Vec<TocEntry>) -> Vec<TocEntry> {
     if entries.is_empty() {
         return entries;
@@ -137,6 +156,17 @@ fn existing_number_regex() -> &'static Regex {
     REGEX.get_or_init(|| {
         Regex::new(r"^\d+(\.\d+)*\.?\s").expect("existing heading number regex must compile")
     })
+}
+
+fn escape_html(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+fn escape_attr(value: &str) -> String {
+    escape_html(value).replace('"', "&quot;")
 }
 
 fn unique_slug(slug: String, used_slugs: &mut HashMap<String, usize>) -> String {

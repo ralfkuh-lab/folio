@@ -3,6 +3,7 @@ use crate::{
     link_interceptor::LinkInterceptor,
     navigation::NavigationController,
     panel_state::PanelState,
+    renderer, toc,
     vault::Vault,
     workspace::Workspace,
 };
@@ -41,7 +42,15 @@ impl AppState {
             loaded: Some(Arc::new({
                 let app = app.clone();
                 move |payload| {
-                    let _ = app.emit("document:loaded", payload);
+                    let _ = app.emit(
+                        "document:loaded",
+                        serde_json::json!({
+                            "path": payload.path,
+                            "text": payload.text,
+                            "content": renderer::render_body(&payload.text),
+                            "tocHtml": toc::render_html(&toc::extract(&payload.text)),
+                        }),
+                    );
                 }
             })),
             dirty_changed: Some(Arc::new({
