@@ -6,3 +6,4 @@ tools/goldfile-gen/**/bin
 tools/goldfile-gen/**/obj
 *.tmp
 .DS_Store
+src-tauri/target/

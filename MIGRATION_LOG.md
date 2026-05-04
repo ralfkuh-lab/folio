@@ -83,18 +83,18 @@ Komplexität: L
 Start: TBD
 
 ### Tasks
-- [ ] T1.1 comrak-Setup (S)
-- [ ] T1.2 GenericAttributes-Plugin / AST-Postprocess (M)
+- [x] T1.1 comrak-Setup (S) — **Implemented-By: codex**
+- [x] T1.2 GenericAttributes-Plugin / AST-Postprocess (M) — **Implemented-By: codex**
 - [ ] T1.3 HeadingAnchorPreprocessor-Port (S)
 - [ ] T1.4a FrontmatterExtractor.Extract (YAML → Entries) (S)
 - [ ] T1.4b FrontmatterExtractor.RenderHtml (Entries → HTML-Box) (S)
-- [ ] T1.5 TocExtractor-Port (M)
-- [ ] T1.6 MarkdownRenderer.RewriteImages-Port (S) — **nicht im Goldfile, separat getestet**
-- [ ] T1.7 Goldfile-Diff (S)
+- [ ] T1.5 TocExtractor-Port (S)
+- [ ] T1.6 RewriteImages-Port (S) — **Phase-5-Checkpoint (nicht Phase-1)**
+- [ ] T1.7 Goldfile-Diff-Validation (M) — **Phase-1-Done-Gate**
 - [ ] T1.8 Rust-Tests für alle obigen Module (M)
 
-### Goldfile-Scope (Phase-1-Checkpoint)
-Der Diff vergleicht **nur** die Markdown→HTML-Pipeline-Ausgabe:
+### Diskussion
+- Auto-Identifiers: Markdig's AutoIdentifier übernimmt `heading.content` (bereinigter Text)...[truncated]
 `frontmatterHtml + Markdown.ToHtml(preprocessed, pipeline)`.
 **Nicht** enthalten: Shell-Template, Editor-Bundle, RewriteImages (WebView2-spezifisch).
 

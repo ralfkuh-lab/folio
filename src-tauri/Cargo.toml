@@ -1,0 +1,45 @@
+[package]
+name = "folio-rs"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+
+[dependencies]
+# Phase 1: Markdown-Pipeline
+comrak = { version = "0.35", default-features = false, features = ["shortcodes"] }
+regex = "1.11"
+
+# Phase 2-3: Serde + Persistenz
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tempfile = "3.14"
+dirs = "6.0"
+
+# Phase 5: File-Watching + Automation-API
+notify = "7.0"
+axum = "0.8"
+tokio = { version = "1.42", features = ["rt-multi-thread", "macros"] }
+
+# Phase 5: Screenshot
+xcap = "0.4"
+
+# Phase 4: Tauri
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dev-dependencies]
+# für Goldfile-Diffs
+pretty_assertions = "1.4"
+
+[lib]
+name = "folio_rs"
+path = "src/lib.rs"
+
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "folio-rs"
+path = "src/main.rs"
