@@ -112,6 +112,12 @@ fn explicit_id_regex() -> &'static Regex {
     })
 }
 
+/// Markdig-compatible tasklist HTML normalisation.
+///
+/// comrak emits bare `<ul><li><input type="checkbox" …>` for tasklists;
+/// Markdig wraps them in `<ul class="contains-task-list">` with
+/// `<li class="task-list-item">` and reorders attributes.
+/// This post-process string-rewrites the HTML to match the reference output.
 fn normalize_tasklist_html(html: &str) -> String {
     let html = tasklist_ul_regex()
         .replace_all(html, |captures: &regex::Captures<'_>| {
@@ -180,6 +186,10 @@ pub fn slugify_heading(text: &str) -> String {
     slug
 }
 
+/// comrak's `HeadingAdapter` trait requires `&self` on both `enter` and `exit`.
+/// Because the adapter must mutate state (consuming explicit IDs and tracking
+/// used slugs) we wrap both fields in `Mutex`. This is safe because comrak
+/// calls the adapter sequentially during single-threaded HTML formatting.
 struct FolioHeadingAdapter {
     explicit_ids: Mutex<VecDeque<Option<String>>>,
     used_slugs: Mutex<HashMap<String, usize>>,
@@ -289,5 +299,33 @@ mod tests {
     fn test_inline_anchor() {
         let html = render_body(r#"## Title <a id="my-id"></a>"#);
         assert!(html.contains(r#"<h2 id="my-id">Title</h2>"#));
+    }
+
+    #[test]
+    fn test_tasklist_normalization_checked() {
+        let html = normalize_tasklist_html(
+            "<ul><li><input type=\"checkbox\" checked=\"\" disabled=\"\" /> Done</li></ul>",
+        );
+        assert!(html.contains(r#"<ul class="contains-task-list">"#));
+        assert!(html.contains(r#"<li class="task-list-item">"#));
+        assert!(html.contains(r#"<input disabled="disabled" type="checkbox" checked="checked" />"#));
+    }
+
+    #[test]
+    fn test_tasklist_normalization_unchecked() {
+        let html = normalize_tasklist_html(
+            "<ul><li><input type=\"checkbox\" disabled=\"\" /> Todo</li></ul>",
+        );
+        assert!(html.contains(r#"<ul class="contains-task-list">"#));
+        assert!(html.contains(r#"<li class="task-list-item">"#));
+        assert!(html.contains(r#"<input disabled="disabled" type="checkbox" />"#));
+        assert!(!html.contains(r#"checked="checked""#));
+    }
+
+    #[test]
+    fn test_tasklist_normalization_preserves_regular_ul() {
+        let html = normalize_tasklist_html("<ul><li>Plain item</li></ul>");
+        assert!(!html.contains("contains-task-list"));
+        assert_eq!("<ul><li>Plain item</li></ul>", html);
     }
 }

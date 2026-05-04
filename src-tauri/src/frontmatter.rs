@@ -12,6 +12,12 @@ pub struct ExtractResult {
     pub body: String,
 }
 
+/// Simple YAML-subset parser for Folio frontmatter.
+///
+/// Supports only flat key:value pairs, quoted strings, and inline arrays.
+/// Does NOT support nested objects, multiline strings (| >), or YAML anchors.
+/// For Folio's use case this is sufficient; if complex frontmatter is needed,
+/// migrate to `serde_yaml`.
 pub fn extract(markdown: &str) -> ExtractResult {
     if markdown.is_empty() {
         return empty_result(markdown);

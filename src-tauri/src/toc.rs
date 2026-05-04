@@ -4,10 +4,7 @@ use comrak::{
     parse_document, Arena,
 };
 use regex::Regex;
-use std::{
-    collections::{HashMap, HashSet},
-    sync::OnceLock,
-};
+use std::{collections::HashMap, sync::OnceLock};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TocEntry {
@@ -155,28 +152,20 @@ fn unique_slug(slug: String, used_slugs: &mut HashMap<String, usize>) -> String 
 
 fn extract_text<'a>(node: &'a AstNode<'a>) -> String {
     let mut text = String::new();
-    let mut visited = HashSet::new();
-
     for child in node.children() {
-        append_text(child, &mut text, &mut visited);
+        append_text(child, &mut text);
     }
-
     text
 }
 
-fn append_text<'a>(node: &'a AstNode<'a>, text: &mut String, visited: &mut HashSet<usize>) {
-    let ptr = node as *const AstNode<'a> as usize;
-    if !visited.insert(ptr) {
-        return;
-    }
-
+fn append_text<'a>(node: &'a AstNode<'a>, text: &mut String) {
     match &node.data.borrow().value {
         NodeValue::Text(value) => text.push_str(value),
         NodeValue::Code(code) => text.push_str(&code.literal),
         NodeValue::LineBreak | NodeValue::SoftBreak => text.push(' '),
         _ => {
             for child in node.children() {
-                append_text(child, text, visited);
+                append_text(child, text);
             }
         }
     }
