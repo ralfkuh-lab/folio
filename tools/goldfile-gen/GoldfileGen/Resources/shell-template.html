@@ -1,0 +1,1547 @@
+<!DOCTYPE html>
+<html lang="de" class="{{THEME_CLASS}}">
+<head>
+<meta charset="UTF-8">
+<base href="{{BASE_HREF}}">
+<title>{{TITLE}}</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --fg: #1f2328;
+    --fg-muted: #59636e;
+    --bg: #ffffff;
+    --border: #d1d9e0;
+    --accent: #0969da;
+    --code-bg: #f6f8fa;
+    --quote-border: #d1d9e0;
+    /* Rail-Tokens — eigene Hue-Skala fuer die rechte TOC-Region. */
+    --rail-bg: #e8e8e8;
+    --rail-fg: #1f2328;
+    --rail-fg-muted: #6a7380;
+    --rail-header-bg: #dcdcdc;
+    --rail-accent: #0969da;
+    --rail-hover-bg: #d6e3f3;
+    --rail-selected-bg: #d6e3f3;
+    --rail-selected-fg: #1c3a5e;
+    --toc-w: {{TOC_WIDTH}}px;
+    --vault-w: {{VAULT_WIDTH}}px;
+  }
+  html.theme-dark {
+    --fg: #e6edf3;
+    --fg-muted: #9198a1;
+    --bg: #1e1e1e;
+    --border: #30363d;
+    --accent: #4493f8;
+    --code-bg: #262626;
+    --quote-border: #30363d;
+    --rail-bg: #121212;
+    --rail-fg: #d4d4d4;
+    --rail-fg-muted: #8a8a8a;
+    --rail-header-bg: #1a1a1a;
+    --rail-accent: #4493f8;
+    --rail-hover-bg: #22304a;
+    --rail-selected-bg: #22304a;
+    --rail-selected-fg: #e6edf3;
+  }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.55;
+  }
+  /* Shell-Layout: 5 Spalten = Vault | Splitter-Left | View/Editor | Splitter-Right | TOC.
+     Body-Klassen vault-hidden / toc-hidden kollabieren die jeweilige Rail
+     samt Splitter. edit-mode tauscht View-Region und Editor-Region in der
+     mittleren Spalte (display:none/flex), Splitter und Rails bleiben
+     unveraendert nutzbar. */
+  body {
+    display: grid;
+    grid-template-columns: var(--vault-w, 240px) 4px 1fr 4px var(--toc-w, 260px);
+    grid-template-rows: 1fr;
+    height: 100vh;
+    overflow: hidden;
+  }
+  body.vault-hidden {
+    grid-template-columns: 0 0 1fr 4px var(--toc-w, 260px);
+  }
+  body.toc-hidden {
+    grid-template-columns: var(--vault-w, 240px) 4px 1fr 0 0;
+  }
+  body.vault-hidden.toc-hidden {
+    grid-template-columns: 0 0 1fr 0 0;
+  }
+  body.edit-mode .view-region { display: none; }
+  body:not(.edit-mode) .editor-region { display: none; }
+  /* Wrapper um view-region + editor-region: gemeinsamer Bezugsrahmen fuer
+     position:absolute der find-bar (oben rechts im mittleren Pane), und
+     flex-Container, in dem die jeweils sichtbare Region die volle Hoehe fuellt. */
+  .content-region {
+    grid-column: 3;
+    position: relative;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .vault-region {
+    grid-column: 1;
+    overflow: auto;
+    background: var(--rail-bg);
+    color: var(--rail-fg);
+    font-family: "Segoe UI", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+    font-size: 12px;
+    line-height: 1.45;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  body.vault-hidden .vault-region { display: none; }
+  .vault-header {
+    display: flex;
+    align-items: center;
+    padding: 8px 6px 6px 10px;
+    background: var(--rail-header-bg);
+    border-bottom: 1px solid var(--border);
+  }
+  .vault-header .title {
+    flex: 1 1 auto;
+    color: var(--rail-accent);
+    font-weight: 600;
+    font-size: 12px;
+  }
+  .vault-header .vault-cmd {
+    flex: 0 0 auto;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--rail-fg);
+    padding: 2px 6px;
+    margin-left: 2px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets";
+    font-size: 13px;
+  }
+  .vault-header .vault-cmd:hover {
+    background: var(--rail-hover-bg);
+  }
+  .splitter-left {
+    grid-column: 2;
+    cursor: col-resize;
+    background: transparent;
+    border-right: 1px solid var(--border);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .splitter-left:hover { background: rgba(128, 128, 128, 0.18); }
+  body.vault-hidden .splitter-left { display: none; }
+  .view-region {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: row;
+    overflow: hidden;
+    min-width: 0;
+    min-height: 0;
+  }
+  .view-content {
+    flex: 1 1 auto;
+    overflow: auto;
+    min-width: 0;
+  }
+  /* Marker-Lane fuer View-Modus — analog zum Editor (#editor-marker-lane).
+     Marker werden vom ViewFinder als position:absolute mit top:X% (relativ
+     zur Doc-scrollHeight) eingefuegt; .folio-marker bringt das Styling. */
+  #view-marker-lane {
+    flex: 0 0 6px;
+    position: relative;
+    background: rgba(128, 128, 128, 0.08);
+    border-left: 1px solid var(--border);
+  }
+  .splitter-right {
+    grid-column: 4;
+    cursor: col-resize;
+    background: transparent;
+    border-left: 1px solid var(--border);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .splitter-right:hover { background: rgba(128, 128, 128, 0.18); }
+  body.toc-hidden .splitter-right { display: none; }
+  .toc-region {
+    grid-column: 5;
+    overflow: auto;
+    background: var(--rail-bg);
+    color: var(--rail-fg);
+    font-family: "Segoe UI", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+    font-size: 12px;
+    line-height: 1.45;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  body.toc-hidden .toc-region { display: none; }
+  /* Vault-Tree (innerhalb .vault-region) */
+  .vault-region ul.tree { list-style: none; margin: 0; padding: 4px 0 24px 0; }
+  .vault-region ul { list-style: none; margin: 0; padding: 0; }
+  .vault-region .section > .row {
+    display: flex;
+    align-items: center;
+    padding: 4px 10px 4px 4px;
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--rail-accent);
+  }
+  .vault-region .section > .row:hover { background: var(--rail-hover-bg); }
+  .vault-region .node > .row {
+    display: flex;
+    align-items: center;
+    padding: 2px 6px 2px 0;
+    margin: 1px 6px 1px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .vault-region .node > .row:hover { background: var(--rail-hover-bg); }
+  .vault-region .node.active > .row {
+    background: var(--rail-selected-bg);
+    color: var(--rail-selected-fg);
+    font-weight: 600;
+    box-shadow: inset 2px 0 0 var(--rail-accent);
+  }
+  .vault-region .caret {
+    display: inline-block;
+    width: 14px;
+    flex: 0 0 auto;
+    color: var(--rail-fg-muted);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    text-align: center;
+    transform: rotate(-90deg);
+    transition: transform 0.12s;
+    user-select: none;
+  }
+  .vault-region .caret.open { transform: rotate(0deg); }
+  .vault-region .caret.hidden { visibility: hidden; }
+  .vault-region .icon {
+    display: inline-block;
+    width: 18px;
+    flex: 0 0 auto;
+    text-align: center;
+    margin-right: 4px;
+    font-size: 13px;
+    line-height: 1;
+  }
+  .vault-region .label {
+    flex: 1 1 auto;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    position: relative;
+    top: 2px;
+  }
+  /* Papierblatt-Emoji hat im Light-Mode kaum Kontrast — dezente Drop-Shadow. */
+  html:not(.theme-dark) .vault-region .node.file > .row > .icon {
+    filter: drop-shadow(0 0 0.4px rgba(0,0,0,0.7));
+  }
+  .vault-region ul.children { padding-left: 14px; }
+  .vault-region ul.children.collapsed { display: none; }
+  .vault-region li.empty {
+    color: var(--rail-fg-muted);
+    font-style: italic;
+    padding: 2px 10px 4px 36px;
+    cursor: default;
+  }
+  .toc-header {
+    padding: 8px 10px 6px;
+    background: var(--rail-header-bg);
+    border-bottom: 1px solid var(--border);
+    color: var(--rail-accent);
+    font-weight: 600;
+    font-size: 12px;
+  }
+  .toc-empty {
+    padding: 8px 10px;
+    color: var(--rail-fg-muted);
+    font-size: 11px;
+  }
+  ul.toc {
+    list-style: none;
+    margin: 0;
+    padding: 6px 0 24px 0;
+  }
+  li.entry {
+    display: flex;
+    align-items: baseline;
+    margin: 1px 6px;
+    padding: 3px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  li.entry:hover { background: var(--rail-hover-bg); }
+  li.entry.active {
+    background: var(--rail-selected-bg);
+    color: var(--rail-selected-fg);
+  }
+  li.entry .num {
+    flex: 0 0 auto;
+    color: var(--rail-accent);
+    margin-right: 6px;
+  }
+  li.entry.active .num { color: var(--rail-selected-fg); }
+  li.entry .text {
+    flex: 1 1 auto;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  li.entry.h1 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 4px 6px 10px 6px;
+    padding: 4px 10px 6px 10px;
+    line-height: 1.25;
+  }
+  li.entry[data-level="2"] { padding-left: 10px; }
+  li.entry[data-level="3"] { padding-left: 24px; }
+  li.entry[data-level="4"] { padding-left: 38px; }
+  li.entry[data-level="5"] { padding-left: 52px; }
+  li.entry[data-level="6"] { padding-left: 66px; }
+  /* Markdown-Body: 900px-Constraint relativ zur View-Region (nicht zum
+     gesamten Viewport — sonst springt der Inhalt seitlich, wenn die TOC
+     ein-/ausgeblendet wird). */
+  main.markdown-body {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 32px 40px 64px;
+    box-sizing: border-box;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    margin-top: 24px;
+    margin-bottom: 16px;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+  h1 { font-size: 2em; border-bottom: 1px solid var(--border); padding-bottom: .3em; }
+  h2 { font-size: 1.5em; border-bottom: 1px solid var(--border); padding-bottom: .3em; }
+  h3 { font-size: 1.25em; }
+  h4 { font-size: 1em; }
+  h5 { font-size: .875em; }
+  h6 { font-size: .85em; color: var(--fg-muted); }
+  p { margin: 0 0 16px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  ul:not(.toc), ol { padding-left: 2em; margin: 0 0 16px; }
+  li + li { margin-top: .25em; }
+  blockquote {
+    border-left: .25em solid var(--quote-border);
+    color: var(--fg-muted);
+    padding: 0 1em;
+    margin: 0 0 16px;
+  }
+  code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: .875em;
+    padding: .2em .4em;
+    background: var(--code-bg);
+    border-radius: 6px;
+  }
+  pre {
+    background: var(--code-bg);
+    padding: 16px;
+    overflow: auto;
+    border-radius: 6px;
+    line-height: 1.45;
+  }
+  pre code {
+    padding: 0;
+    background: transparent;
+    border-radius: 0;
+    font-size: .875em;
+  }
+  table {
+    border-collapse: collapse;
+    margin: 0 0 16px;
+    display: block;
+    width: max-content;
+    max-width: 100%;
+    overflow: auto;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 6px 13px;
+  }
+  th { background: var(--code-bg); font-weight: 600; }
+  tr:nth-child(2n) td { background: rgba(175, 184, 193, 0.08); }
+  hr {
+    border: 0;
+    border-top: 1px solid var(--border);
+    margin: 24px 0;
+  }
+  img { max-width: 100%; height: auto; }
+  kbd {
+    font-family: ui-monospace, monospace;
+    font-size: .75em;
+    padding: 3px 5px;
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    background: var(--code-bg);
+  }
+  /* Task lists */
+  input[type="checkbox"] { margin-right: .5em; }
+  /* Frontmatter-Box */
+  aside.frontmatter {
+    margin: 0 0 24px;
+    padding: 10px 14px;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: .875em;
+    color: var(--fg-muted);
+  }
+  aside.frontmatter dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    column-gap: 16px;
+    row-gap: 4px;
+    margin: 0;
+  }
+  aside.frontmatter dt {
+    font-weight: 600;
+    color: var(--fg);
+  }
+  aside.frontmatter dd {
+    margin: 0;
+    word-break: break-word;
+  }
+  /* Anchor scroll offset when the title bar is visible */
+  :target { scroll-margin-top: 20px; }
+  /* ----- Editor-Region (CodeMirror 6 mount + Marker-Lane) ----- */
+  .editor-region {
+    flex: 1 1 auto;
+    position: relative;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+    min-height: 0;
+    background: var(--bg);
+  }
+  body.edit-mode .editor-region { display: flex; }
+  .editor-content {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: row;
+    min-height: 0;
+  }
+  #editor-mount {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 100%;
+  }
+  /* CodeMirror reset overrides */
+  #editor-mount .cm-editor { height: 100%; outline: none; }
+  #editor-mount .cm-scroller { overflow: auto; }
+  #editor-mount .cm-line { padding: 0 8px; }
+  /* Marker-Lane: 6px-Streifen rechts neben dem Scroller */
+  #editor-marker-lane {
+    flex: 0 0 6px;
+    position: relative;
+    background: rgba(128, 128, 128, 0.08);
+    border-left: 1px solid var(--border);
+  }
+  .folio-marker {
+    position: absolute;
+    left: 1px;
+    right: 1px;
+    height: 3px;
+    border-radius: 1px;
+    background: #FFD700;
+    pointer-events: none;
+  }
+  .folio-marker.active { background: #FF8C00; }
+  /* Inline-Treffer im Editor (CodeMirror nutzt <mark class="folio-find-match">). */
+  .folio-find-match {
+    background: #FFD700;
+    color: #000;
+    border-radius: 2px;
+  }
+  .folio-find-match.active {
+    background: #FF8C00;
+    color: #000;
+    border-radius: 2px;
+  }
+  /* View-Modus nutzt die CSS Custom Highlight API: keine DOM-Mutation,
+     daher kein Reflow durch Mark-Wrapping und O(1)-Clear bei neuer Suche. */
+  ::highlight(folio-find) {
+    background-color: #FFD700;
+    color: #000;
+  }
+  ::highlight(folio-find-active) {
+    background-color: #FF8C00;
+    color: #000;
+  }
+  /* Find-Bar oben rechts im Editor */
+  .find-bar {
+    position: absolute;
+    top: 6px;
+    right: 12px;
+    z-index: 30;
+    display: none;
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+    padding: 6px 8px;
+    font-size: 12.5px;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .find-bar.open { display: block; }
+  .find-bar__row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .find-bar input.find-input {
+    width: 220px;
+    padding: 4px 6px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--fg);
+    border-radius: 3px;
+    font: inherit;
+  }
+  .find-bar .find-counter {
+    min-width: 38px;
+    text-align: center;
+    color: var(--fg-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .find-bar button.find-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--fg);
+    padding: 3px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+    font: inherit;
+  }
+  .find-bar button.find-btn:hover { background: var(--rail-hover-bg); }
+  .find-bar button.find-btn.active { background: var(--rail-selected-bg); color: var(--rail-selected-fg); }
+  .find-bar__opts {
+    margin-top: 4px;
+    display: none;
+    gap: 12px;
+    font-size: 11.5px;
+    color: var(--fg-muted);
+  }
+  .find-bar__opts.open { display: flex; }
+  .find-bar__opts label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+  }
+  /* ----- Cheat-Sheet-Overlay: position:fixed loest aus dem CSS-Grid, sodass
+     das Overlay frei ueber View- und TOC-Region schwebt. Drag nur am Header,
+     Body ist scrollbar bei kleinem Fenster. ----- */
+  #cheatsheet-overlay {
+    position: fixed;
+    z-index: 100;
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.22);
+    font-size: 13px;
+    user-select: none;
+    -webkit-user-select: none;
+    min-width: 320px;
+    max-width: 460px;
+  }
+  #cheatsheet-overlay[hidden] { display: none; }
+  #cheatsheet-overlay .overlay__drag {
+    cursor: move;
+    padding: 10px 16px;
+    font-weight: 700;
+    font-size: 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  #cheatsheet-overlay .overlay__body {
+    padding: 12px 16px 14px;
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    column-gap: 16px;
+    row-gap: 4px;
+    max-height: 70vh;
+    overflow: auto;
+  }
+  #cheatsheet-overlay .overlay__body .label { color: var(--fg); }
+  #cheatsheet-overlay .overlay__body .code {
+    font-family: ui-monospace, Consolas, "Cascadia Mono", "Courier New", monospace;
+    font-size: 12.5px;
+    color: var(--accent);
+    white-space: pre-wrap;
+  }
+  /* Folio-Scrollbar: 12px Track, transparenter Border laesst den Thumb bei
+     8px effektiver Breite landen (matched WPF-Thumb mit Margin=2 auf 12px). */
+  ::-webkit-scrollbar { width: 12px; height: 12px; }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(128,128,128,0.35);
+    border-radius: 6px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(128,128,128,0.6); background-clip: padding-box; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-corner { background: transparent; }
+</style>
+</head>
+<body class="{{BODY_CLASS}}">
+<aside class="vault-region" id="vault-region">
+  <header class="vault-header">
+    <span class="title">Arbeitsbereich</span>
+    <button class="vault-cmd" data-cmd="addFile" title="Datei öffnen…">&#xE7C3;</button>
+    <button class="vault-cmd" data-cmd="addFolder" title="Ordner hinzufügen…">&#xED25;</button>
+  </header>
+  <ul id="vault-tree" class="tree">{{VAULT_TREE}}</ul>
+</aside>
+<div class="splitter-left" id="splitter-left"></div>
+<div class="content-region" id="content-region">
+  <div class="find-bar" id="find-bar" role="search">
+    <div class="find-bar__row">
+      <input type="text" id="find-input" class="find-input" placeholder="Suchen…" autocomplete="off" spellcheck="false" />
+      <span class="find-counter" id="find-counter"></span>
+      <button type="button" class="find-btn" id="find-prev" title="Zurück (Shift+Enter)">&#x25B2;</button>
+      <button type="button" class="find-btn" id="find-next" title="Weiter (Enter)">&#x25BC;</button>
+      <button type="button" class="find-btn" id="find-opts" title="Optionen">&#x2699;</button>
+      <button type="button" class="find-btn" id="find-close" title="Schließen (Esc)">&#x2715;</button>
+    </div>
+    <div class="find-bar__opts" id="find-opts-panel">
+      <label><input type="checkbox" id="find-case" /> Aa Groß-/Kleinschreibung</label>
+      <label><input type="checkbox" id="find-word" /> Ganzes Wort</label>
+    </div>
+  </div>
+  <div class="view-region" id="view-region">
+    <div class="view-content" id="view-content">
+      <main class="markdown-body">
+{{CONTENT}}
+      </main>
+    </div>
+    <div id="view-marker-lane"></div>
+  </div>
+  <div class="editor-region" id="editor-region">
+    <div class="editor-content">
+      <div id="editor-mount"></div>
+      <div id="editor-marker-lane"></div>
+    </div>
+  </div>
+</div>
+<div class="splitter-right" id="splitter-right"></div>
+<aside class="toc-region" id="toc-region">
+<header class="toc-header">Inhaltsverzeichnis</header>
+<ul class="toc">{{TOC_ENTRIES}}</ul>
+</aside>
+<div id="cheatsheet-overlay" hidden>
+  <header class="overlay__drag">Markdown Cheat-Sheet</header>
+  <div class="overlay__body" id="cheatsheet-body"></div>
+</div>
+<script>
+{{EDITOR_BUNDLE}}
+</script>
+<script>
+(function () {
+    var post = function (msg) {
+        if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage) {
+            window.chrome.webview.postMessage(msg);
+        }
+    };
+
+    // ----- Link-Klicks (im Content) -----
+    var contentEl = document.getElementById('view-region');
+    contentEl.addEventListener('click', function (e) {
+        var el = e.target;
+        while (el && el.tagName !== 'A') el = el.parentElement;
+        if (!el) return;
+        var href = el.getAttribute('href');
+        if (href === null) return;
+        e.preventDefault();
+        post({ type: 'linkClick', href: href });
+    }, true);
+
+    // ----- Sichtbare Überschrift + Scroll-Position -----
+    (function () {
+        var currentHeading = null;
+        var lastScrollY = -1;
+        function collectHeadings() {
+            return Array.prototype.slice.call(
+                contentEl.querySelectorAll('h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]')
+            );
+        }
+        function sendHeading(id) {
+            if (id === currentHeading) return;
+            currentHeading = id;
+            post({ type: 'visibleHeading', id: id || '' });
+        }
+        function sendScroll(y) {
+            if (y === lastScrollY) return;
+            lastScrollY = y;
+            post({ type: 'scrollPosition', y: y });
+        }
+        function update() {
+            var hs = collectHeadings();
+            if (hs.length === 0) { sendHeading(null); }
+            else {
+                var threshold = 120;
+                var active = hs[0];
+                var contentTop = contentEl.getBoundingClientRect().top;
+                for (var i = 0; i < hs.length; i++) {
+                    var top = hs[i].getBoundingClientRect().top - contentTop;
+                    if (top <= threshold) active = hs[i];
+                    else break;
+                }
+                sendHeading(active.id);
+            }
+            sendScroll(Math.round(contentEl.scrollTop));
+        }
+        var rafQueued = false;
+        function schedule() {
+            if (rafQueued) return;
+            rafQueued = true;
+            requestAnimationFrame(function () { rafQueued = false; update(); });
+        }
+        contentEl.addEventListener('scroll', schedule, { passive: true });
+        window.addEventListener('resize', schedule);
+        window.addEventListener('load', update);
+    })();
+
+    // ----- TOC-Click (im rechten Rail) -----
+    var tocEl = document.getElementById('toc-region');
+    tocEl.addEventListener('click', function (e) {
+        var el = e.target;
+        while (el && !(el.classList && el.classList.contains('entry'))) el = el.parentElement;
+        if (!el) return;
+        var slug = el.getAttribute('data-slug');
+        if (slug) post({ type: 'tocClick', slug: slug });
+    });
+
+    // ----- TOC-API (vom Host gerufen) -----
+    window.setTocActive = function (slug) {
+        var prev = tocEl.querySelectorAll('li.entry.active');
+        for (var i = 0; i < prev.length; i++) prev[i].classList.remove('active');
+        if (!slug) return;
+        var target = tocEl.querySelector('li.entry[data-slug="' + slug + '"]');
+        if (target) {
+            target.classList.add('active');
+            target.scrollIntoView({ block: 'nearest' });
+        }
+    };
+    window.setTocList = function (html) {
+        var ul = tocEl.querySelector('ul.toc');
+        if (ul) ul.innerHTML = html;
+    };
+
+    // ----- Anker-Scroll innerhalb der View-Region -----
+    // location.hash auf einem persistierten Shell-Dokument scrollt sonst die
+    // Shell selbst (die nicht scrollt) — wir uebersetzen explizit auf
+    // contentEl.scrollIntoView, damit Anker funktionieren.
+    window.scrollViewToAnchor = function (slug) {
+        if (!slug) return;
+        var target = contentEl.querySelector('#' + CSS.escape(slug));
+        if (target) target.scrollIntoView({ block: 'start' });
+    };
+    window.scrollViewTo = function (y) {
+        contentEl.scrollTo(0, y || 0);
+    };
+
+    // ----- Rail-Visibility / Width (vom Host gerufen) -----
+    window.setRailVisibility = function (side, visible) {
+        if (side === 'right') {
+            document.body.classList.toggle('toc-hidden', !visible);
+        } else if (side === 'left') {
+            document.body.classList.toggle('vault-hidden', !visible);
+        }
+    };
+    window.setTocWidth = function (w) {
+        if (typeof w !== 'number' || isNaN(w) || w <= 0) return;
+        document.documentElement.style.setProperty('--toc-w', w + 'px');
+    };
+    window.setVaultWidth = function (w) {
+        if (typeof w !== 'number' || isNaN(w) || w <= 0) return;
+        document.documentElement.style.setProperty('--vault-w', w + 'px');
+    };
+
+    // ----- Edit-Modus: tauscht View-Region gegen Editor-Region in derselben
+    //       Grid-Spalte. CodeMirror lebt im DOM, kein zweites HWnd, kein
+    //       Airspace-Konflikt mit dem Cheat-Sheet-Overlay.
+    window.setEditMode = function (on) {
+        document.body.classList.toggle('edit-mode', !!on);
+    };
+
+    // ----- Inbound-Channel: chrome.webview.message-Events fuer C#→JS-
+    //       Payloads, die zu gross fuer ExecuteScriptAsync waeren (Editor-
+    //       Volltext, applyReplace mit komplettem Doc). C# postet via
+    //       CoreWebView2.PostWebMessageAsJson, JS routet hier auf die
+    //       bestehenden window-Funktionen.
+    if (window.chrome && window.chrome.webview && typeof window.chrome.webview.addEventListener === 'function') {
+        window.chrome.webview.addEventListener('message', function (e) {
+            var data = e && e.data;
+            if (!data || typeof data !== 'object') return;
+            switch (data.type) {
+                case 'loadEditorText':
+                    if (typeof window.loadEditorText === 'function') {
+                        window.loadEditorText(data.text || '');
+                    }
+                    break;
+                case 'applyEditorReplace':
+                    if (typeof window.applyEditorReplace === 'function') {
+                        window.applyEditorReplace(
+                            data.fullText || '',
+                            data.selectionStart || 0,
+                            data.selectionLength || 0
+                        );
+                    }
+                    break;
+                default:
+                    /* ignored */
+                    break;
+            }
+        });
+    }
+
+    // ----- Editor-API (CodeMirror via FolioEditor-Bundle) -----
+    var editorMounted = false;
+    function ensureEditorMounted(initial) {
+        if (editorMounted) return true;
+        if (!window.FolioEditor || typeof window.FolioEditor.mount !== 'function') {
+            console.error('[folio] FolioEditor bundle not available');
+            return false;
+        }
+        window.FolioEditor.mount('editor-mount', initial || '');
+        editorMounted = true;
+        return true;
+    }
+    window.loadEditorText = function (text) {
+        if (!ensureEditorMounted(text || '')) return;
+        // Wenn wir gerade gemountet haben, ist der Text schon drin —
+        // sonst explizit setzen.
+        if (window.FolioEditor.getText() !== (text || '')) {
+            window.FolioEditor.setText(text || '');
+        }
+    };
+    window.focusEditor = function () {
+        if (window.FolioEditor && editorMounted) window.FolioEditor.focus();
+    };
+    window.setEditorTheme = function (mode) {
+        if (window.FolioEditor) window.FolioEditor.setTheme(mode);
+    };
+    window.requestEditorSelection = function () {
+        if (!window.FolioEditor) return null;
+        return window.FolioEditor.getSelection();
+    };
+    window.applyEditorReplace = function (fullText, selectionStart, selectionLength) {
+        if (!window.FolioEditor) return;
+        window.FolioEditor.applyReplace({
+            fullText: fullText || '',
+            selectionStart: selectionStart || 0,
+            selectionLength: selectionLength || 0,
+        });
+    };
+
+    // ----- ViewFinder: DOM-Sucher fuer den View-Modus -----
+    // API spiegelt window.FolioEditor (openFind/closeFind/setFindTerm/setFindOptions/findNext/findPrev),
+    // damit der gemeinsame Find-Bar-IIFE drueber denselben Adapter nutzen kann. Sucht ausschliesslich
+    // in #view-region main.markdown-body; Vault, TOC und Editor bleiben aussen vor.
+    (function () {
+        // Co-operative chunking: pro Tick max so viele Treffer/Wraps verarbeiten,
+        // dann mit setTimeout(0) zurueck an den Browser. Haelt Tasten- und
+        // Scroll-Events responsive auch waehrend ein Suchlauf laeuft.
+        var CHUNK_SIZE = 500;
+
+        // CSS Custom Highlight API: keine DOM-Wraps, kein Reflow pro Treffer,
+        // Clear ist O(1). matchHL haelt alle Treffer, activeHL nur den
+        // gerade aktiven (overlay-Farbe).
+        var hasHighlightAPI = (typeof CSS !== 'undefined') && CSS.highlights
+            && (typeof Highlight !== 'undefined');
+        var matchHL = null;
+        var activeHL = null;
+        function ensureHighlights() {
+            if (!hasHighlightAPI) return;
+            if (!matchHL) { matchHL = new Highlight(); CSS.highlights.set('folio-find', matchHL); }
+            if (!activeHL) { activeHL = new Highlight(); CSS.highlights.set('folio-find-active', activeHL); }
+        }
+
+        var rangesArr = [];   // alle Match-Ranges (auch die Lane-Marker leiten daraus ab)
+        var activeIdx = -1;
+        var currentTerm = '';
+        var opts = { caseSensitive: false, wholeWord: false };
+        // Bei jeder neuen research() inkrementiert. Async-Chunks brechen ab,
+        // sobald myToken !== searchToken — die alte Suche wird so verworfen,
+        // statt die neue zu blockieren.
+        var searchToken = 0;
+
+        function getRoot() { return document.querySelector('#view-region main.markdown-body'); }
+        function getContent() { return document.getElementById('view-content'); }
+        function getLane() { return document.getElementById('view-marker-lane'); }
+
+        function clearLane() {
+            var lane = getLane();
+            if (!lane) return;
+            while (lane.firstChild) lane.removeChild(lane.firstChild);
+        }
+
+        function updateMarkers() {
+            var lane = getLane();
+            var content = getContent();
+            if (!lane) return;
+            clearLane();
+            if (!content || rangesArr.length === 0) return;
+            var totalH = content.scrollHeight;
+            if (totalH <= 0) return;
+            // Read-Phase: alle Range-Top-Positionen lesen, ohne DOM-Mutation
+            // dazwischen. Trennt Reads von Writes (1 Layout-Reflow statt N).
+            var contentTop = content.getBoundingClientRect().top;
+            var scrollTop = content.scrollTop;
+            // Bucketing: maximal 1 Marker pro Pixelreihe der Lane. Dieselbe
+            // Doc-Position 10x malen ist visuell identisch und unnoetig.
+            // laneH = sichtbare Lane-Hoehe ~ Anzahl Pixel-Buckets.
+            var laneH = Math.max(1, lane.clientHeight);
+            var seen = new Uint8Array(laneH);
+            var activePixel = -1;
+            var pixels = [];
+            for (var i = 0; i < rangesArr.length; i++) {
+                var rect = rangesArr[i].getBoundingClientRect();
+                var pos = scrollTop + (rect.top - contentTop);
+                var px = Math.max(0, Math.min(laneH - 1, Math.round((pos / totalH) * laneH)));
+                if (i === activeIdx) activePixel = px;
+                if (!seen[px]) { seen[px] = 1; pixels.push(px); }
+            }
+            var frag = document.createDocumentFragment();
+            for (var j = 0; j < pixels.length; j++) {
+                var p = pixels[j];
+                var dot = document.createElement('div');
+                dot.className = 'folio-marker' + (p === activePixel ? ' active' : '');
+                dot.style.top = ((p / laneH) * 100) + '%';
+                frag.appendChild(dot);
+            }
+            lane.appendChild(frag);
+        }
+
+        function clearMarks() {
+            // Highlight-API: O(1)-Clear. Kein DOM-Walk, kein normalize, kein Reflow.
+            if (matchHL) matchHL.clear();
+            if (activeHL) activeHL.clear();
+            rangesArr = [];
+            activeIdx = -1;
+            clearLane();
+        }
+
+        function escapeRegExp(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+        function buildRegex(term) {
+            if (!term) return null;
+            var pattern = escapeRegExp(term);
+            if (opts.wholeWord) pattern = '\\b' + pattern + '\\b';
+            var flags = opts.caseSensitive ? 'g' : 'gi';
+            try { return new RegExp(pattern, flags); } catch (e) { return null; }
+        }
+
+        function buildWalker(root) {
+            return document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+                acceptNode: function (node) {
+                    var p = node.parentNode;
+                    while (p && p !== root) {
+                        var tn = p.nodeName ? p.nodeName.toLowerCase() : '';
+                        if (tn === 'script' || tn === 'style') return NodeFilter.FILTER_REJECT;
+                        p = p.parentNode;
+                    }
+                    return NodeFilter.FILTER_ACCEPT;
+                }
+            });
+        }
+
+        // Sammelt Match-Ranges in Chunks und schiebt sie progressive in das
+        // CSS Highlight (matchHL) — die Treffer werden also bereits sichtbar
+        // gefaerbt, waehrend der Lauf noch weiterlaeuft. Counter aktualisiert
+        // ueber dispatchProgress; Cancel ueber Token-Mismatch.
+        function collectRangesAsync(root, regex, myToken, done) {
+            var walker = buildWalker(root);
+            function step() {
+                if (myToken !== searchToken) return;
+                var batchStart = rangesArr.length;
+                var node;
+                while ((node = walker.nextNode())) {
+                    var text = node.nodeValue || '';
+                    if (!text) continue;
+                    regex.lastIndex = 0;
+                    var m;
+                    while ((m = regex.exec(text))) {
+                        if (m[0].length === 0) { regex.lastIndex++; continue; }
+                        var r = document.createRange();
+                        r.setStart(node, m.index);
+                        r.setEnd(node, m.index + m[0].length);
+                        rangesArr.push(r);
+                        if (matchHL) matchHL.add(r);
+                        if (rangesArr.length - batchStart >= CHUNK_SIZE) {
+                            dispatchProgress(rangesArr.length);
+                            setTimeout(step, 0);
+                            return;
+                        }
+                    }
+                }
+                done();
+            }
+            step();
+        }
+
+        function dispatchState() {
+            var detail = { term: currentTerm, total: rangesArr.length, active: activeIdx };
+            try {
+                window.dispatchEvent(new CustomEvent('folio-find-state', { detail: detail }));
+            } catch (e) {}
+            // C# hoert auf den editorFindState-Channel und persistiert den Term
+            // ueber Datei-Wechsel; analog zur CodeMirror-Pipeline in editor.ts.
+            try {
+                if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage) {
+                    window.chrome.webview.postMessage({ type: 'editorFindState', term: detail.term, total: detail.total, active: detail.active });
+                }
+            } catch (e) {}
+        }
+
+        // Zwischenstand waehrend collect/wrap: nur DOM-Event (fuer den Counter),
+        // keine Bridge-Nachricht — sonst spammt jedes Chunk den C#-Channel.
+        function dispatchProgress(partialTotal) {
+            try {
+                window.dispatchEvent(new CustomEvent('folio-find-state', {
+                    detail: { term: currentTerm, total: partialTotal, active: -1, scanning: true }
+                }));
+            } catch (e) {}
+        }
+
+        function setActive(idx) {
+            if (rangesArr.length === 0) {
+                activeIdx = -1;
+                if (activeHL) activeHL.clear();
+                updateMarkers();
+                dispatchState();
+                return;
+            }
+            if (idx < 0) idx = (idx % rangesArr.length + rangesArr.length) % rangesArr.length;
+            if (idx >= rangesArr.length) idx = idx % rangesArr.length;
+            activeIdx = idx;
+            if (activeHL) {
+                activeHL.clear();
+                activeHL.add(rangesArr[activeIdx]);
+            }
+            // Highlights haben kein scrollIntoView — wir scrollen das Element
+            // an, in dessen Text der Treffer beginnt.
+            var r = rangesArr[activeIdx];
+            var anchor = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
+            if (anchor) {
+                try { anchor.scrollIntoView({ block: 'center', inline: 'nearest' }); }
+                catch (e) { try { anchor.scrollIntoView(true); } catch (_) {} }
+            }
+            updateMarkers();
+            dispatchState();
+        }
+
+        function research() {
+            clearMarks();
+            var myToken = ++searchToken;
+            if (!currentTerm) { dispatchState(); return; }
+            var root = getRoot(); if (!root) { dispatchState(); return; }
+            var regex = buildRegex(currentTerm); if (!regex) { dispatchState(); return; }
+            ensureHighlights();
+            collectRangesAsync(root, regex, myToken, function () {
+                if (myToken !== searchToken) return;
+                if (rangesArr.length > 0) setActive(0);
+                else { updateMarkers(); dispatchState(); }
+            });
+        }
+
+        window.ViewFinder = {
+            openFind: function (initial) {
+                if (typeof initial === 'string' && initial.length > 0) currentTerm = initial;
+                research();
+            },
+            closeFind: function () {
+                // Token-Bump cancelt eventuell noch laufende async Chunks aus
+                // einer vorherigen Suche, bevor clearMarks die Treffer abraeumt.
+                searchToken++;
+                clearMarks();
+                currentTerm = '';
+                dispatchState();
+            },
+            setFindTerm: function (term) { currentTerm = term || ''; research(); },
+            setFindOptions: function (newOpts) {
+                newOpts = newOpts || {};
+                opts.caseSensitive = !!newOpts.caseSensitive;
+                opts.wholeWord = !!newOpts.wholeWord;
+                research();
+            },
+            findNext: function () { if (rangesArr.length > 0) setActive((activeIdx + 1) % rangesArr.length); },
+            findPrev: function () { if (rangesArr.length > 0) setActive((activeIdx - 1 + rangesArr.length) % rangesArr.length); },
+        };
+    })();
+
+    // ----- Find-Bar (HTML in der Shell, FolioEditor / ViewFinder liefern Logik) -----
+    (function () {
+        var bar = document.getElementById('find-bar');
+        var input = document.getElementById('find-input');
+        var counter = document.getElementById('find-counter');
+        var prevBtn = document.getElementById('find-prev');
+        var nextBtn = document.getElementById('find-next');
+        var optsBtn = document.getElementById('find-opts');
+        var closeBtn = document.getElementById('find-close');
+        var optsPanel = document.getElementById('find-opts-panel');
+        var caseChk = document.getElementById('find-case');
+        var wordChk = document.getElementById('find-word');
+
+        function isEditMode() { return document.body.classList.contains('edit-mode'); }
+        // Liefert die aktive Backend-Implementierung: CodeMirror (Edit) oder DOM-Sucher (View).
+        function getFinder() { return isEditMode() ? window.FolioEditor : window.ViewFinder; }
+        function isOpen() { return bar.classList.contains('open'); }
+        function open(initial) {
+            if (isEditMode() && !ensureEditorMounted('')) return;
+            bar.classList.add('open');
+            if (typeof initial === 'string' && initial.length > 0) {
+                input.value = initial;
+            }
+            var f = getFinder();
+            if (f) {
+                f.setFindOptions({
+                    caseSensitive: caseChk.checked,
+                    wholeWord: wordChk.checked,
+                });
+                f.openFind(input.value);
+            }
+            input.focus();
+            input.select();
+        }
+        function close() {
+            bar.classList.remove('open');
+            optsPanel.classList.remove('open');
+            optsBtn.classList.remove('active');
+            // Beide Finder closen — robust gegen Mode-Switch-Race: SetEditMode laeuft im
+            // Edit→View-Wechsel vor CloseEditorFind, sonst wuerde getFinder() den falschen
+            // Finder treffen und die Edit-Highlights blieben haengen.
+            if (window.FolioEditor) window.FolioEditor.closeFind();
+            if (window.ViewFinder) window.ViewFinder.closeFind();
+            if (isEditMode() && window.focusEditor) window.focusEditor();
+        }
+        window.openEditorFind = function (initialTerm) { open(initialTerm); };
+        window.closeEditorFind = function () { close(); };
+        window.setEditorFindTerm = function (term) {
+            input.value = term || '';
+            if (!isOpen()) open(term || '');
+            else { var f = getFinder(); if (f) f.setFindTerm(term || ''); }
+        };
+
+        // Debounce: setFindTerm laeuft erst nach kurzer Tipp-Pause. Sonst startet
+        // pro Zeichen eine Suche, die in grossen Dokumenten zwar dank Chunking
+        // nicht mehr blockiert, aber unnoetig DOM-Mutation produziert.
+        var inputDebounce = null;
+        var INPUT_DEBOUNCE_MS = 150;
+        input.addEventListener('input', function () {
+            if (inputDebounce) clearTimeout(inputDebounce);
+            inputDebounce = setTimeout(function () {
+                inputDebounce = null;
+                var f = getFinder(); if (f) f.setFindTerm(input.value);
+            }, INPUT_DEBOUNCE_MS);
+        });
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                var f = getFinder(); if (!f) return;
+                if (e.shiftKey) f.findPrev(); else f.findNext();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                close();
+            }
+        });
+        prevBtn.addEventListener('click', function () { var f = getFinder(); if (f) f.findPrev(); });
+        nextBtn.addEventListener('click', function () { var f = getFinder(); if (f) f.findNext(); });
+        closeBtn.addEventListener('click', close);
+        optsBtn.addEventListener('click', function () {
+            var on = !optsPanel.classList.contains('open');
+            optsPanel.classList.toggle('open', on);
+            optsBtn.classList.toggle('active', on);
+        });
+        function syncOptions() {
+            var f = getFinder();
+            if (f) {
+                f.setFindOptions({
+                    caseSensitive: caseChk.checked,
+                    wholeWord: wordChk.checked,
+                });
+            }
+        }
+        caseChk.addEventListener('change', syncOptions);
+        wordChk.addEventListener('change', syncOptions);
+
+        // Modus-agnostische Next/Prev-Helfer fuer F3 / Shift+F3 aus der WPF-Seite.
+        // C# uebergibt den letzten nicht-leeren Suchbegriff (lastTerm) — wenn die
+        // Bar geschlossen ist, oeffnet F3 sie mit diesem Begriff (Datei-Wechsel:
+        // weitersuchen ohne neu tippen). Bei offener leerer Bar wird der lastTerm
+        // ebenfalls als Startwert eingespielt.
+        window.findNext = function (lastTerm) {
+            var seed = (typeof lastTerm === 'string') ? lastTerm : '';
+            if (!bar.classList.contains('open')) { open(seed); return; }
+            if (!input.value) {
+                if (seed) { input.value = seed; var f0 = getFinder(); if (f0) f0.openFind(seed); }
+                else { input.focus(); input.select(); return; }
+            }
+            var f = getFinder(); if (f) f.findNext();
+        };
+        window.findPrev = function (lastTerm) {
+            var seed = (typeof lastTerm === 'string') ? lastTerm : '';
+            if (!bar.classList.contains('open')) { open(seed); return; }
+            if (!input.value) {
+                if (seed) { input.value = seed; var f0 = getFinder(); if (f0) f0.openFind(seed); }
+                else { input.focus(); input.select(); return; }
+            }
+            var f = getFinder(); if (f) f.findPrev();
+        };
+
+        // Wird nach Mode-Switch von C# getriggert. Wenn die Find-Bar offen war,
+        // bleibt sie offen: alten Mode-Finder closen, neuen mit aktuellem Term
+        // (+ Optionen) starten. setTimeout(0), damit pending PostMessage-Events
+        // (z.B. loadEditorText beim Wechsel zu Edit) vor dem Re-Mount drankommen.
+        window.afterModeSwitch = function () {
+            setTimeout(function () {
+                if (bar.classList.contains('open')) {
+                    if (window.FolioEditor) window.FolioEditor.closeFind();
+                    if (window.ViewFinder) window.ViewFinder.closeFind();
+                    var f = getFinder();
+                    if (f) {
+                        f.setFindOptions({
+                            caseSensitive: caseChk.checked,
+                            wholeWord: wordChk.checked,
+                        });
+                        f.openFind(input.value);
+                    }
+                    input.focus();
+                    input.select();
+                } else if (isEditMode() && window.focusEditor) {
+                    window.focusEditor();
+                }
+            }, 0);
+        };
+
+        window.addEventListener('folio-find-state', function (e) {
+            var s = e.detail || {};
+            if (!s.term && !input.value) { counter.textContent = ''; return; }
+            if (typeof s.total !== 'number' || s.total === 0) {
+                counter.textContent = (input.value || s.term) ? '0/0' : '';
+            } else if (s.scanning || s.active < 0) {
+                // Suchlauf laeuft noch — Total waechst, Active steht erst am Ende fest.
+                counter.textContent = '…/' + s.total;
+            } else {
+                counter.textContent = (s.active + 1) + '/' + s.total;
+            }
+        });
+    })();
+
+    // ----- Splitter-Drag (rechte Rail) -----
+    (function () {
+        var splitter = document.getElementById('splitter-right');
+        var dragState = null;
+        function currentTocWidth() {
+            var v = getComputedStyle(document.documentElement).getPropertyValue('--toc-w').trim();
+            var n = parseFloat(v);
+            return isNaN(n) ? 260 : n;
+        }
+        splitter.addEventListener('pointerdown', function (e) {
+            try { splitter.setPointerCapture(e.pointerId); } catch (_) {}
+            dragState = { startX: e.clientX, startW: currentTocWidth() };
+            e.preventDefault();
+        });
+        splitter.addEventListener('pointermove', function (e) {
+            if (!dragState) return;
+            var dx = e.clientX - dragState.startX;
+            // Splitter sitzt links von der TOC; nach rechts ziehen verkleinert TOC.
+            var maxW = Math.max(150, window.innerWidth - 320 - 8);
+            var newW = Math.max(150, Math.min(maxW, dragState.startW - dx));
+            document.documentElement.style.setProperty('--toc-w', newW + 'px');
+        });
+        function endDrag(e) {
+            if (!dragState) return;
+            try { splitter.releasePointerCapture(e.pointerId); } catch (_) {}
+            dragState = null;
+            post({ type: 'railResize', side: 'right', width: currentTocWidth() });
+        }
+        splitter.addEventListener('pointerup', endDrag);
+        splitter.addEventListener('pointercancel', endDrag);
+    })();
+
+    // ----- Splitter-Drag (linke Rail / Vault) -----
+    (function () {
+        var splitter = document.getElementById('splitter-left');
+        var dragState = null;
+        function currentVaultWidth() {
+            var v = getComputedStyle(document.documentElement).getPropertyValue('--vault-w').trim();
+            var n = parseFloat(v);
+            return isNaN(n) ? 240 : n;
+        }
+        splitter.addEventListener('pointerdown', function (e) {
+            try { splitter.setPointerCapture(e.pointerId); } catch (_) {}
+            dragState = { startX: e.clientX, startW: currentVaultWidth() };
+            e.preventDefault();
+        });
+        splitter.addEventListener('pointermove', function (e) {
+            if (!dragState) return;
+            var dx = e.clientX - dragState.startX;
+            // Splitter sitzt rechts vom Vault; nach rechts ziehen vergroessert Vault.
+            var maxW = Math.max(150, window.innerWidth - 320 - 8);
+            var newW = Math.max(150, Math.min(maxW, dragState.startW + dx));
+            document.documentElement.style.setProperty('--vault-w', newW + 'px');
+        });
+        function endDrag(e) {
+            if (!dragState) return;
+            try { splitter.releasePointerCapture(e.pointerId); } catch (_) {}
+            dragState = null;
+            post({ type: 'railResize', side: 'left', width: currentVaultWidth() });
+        }
+        splitter.addEventListener('pointerup', endDrag);
+        splitter.addEventListener('pointercancel', endDrag);
+    })();
+
+    // ----- Vault-Region (Tree, Klick, ContextMenu) -----
+    (function () {
+        var ROOT = document.getElementById('vault-tree');
+        var REGION = document.getElementById('vault-region');
+
+        function findNodeByPath(path) {
+            if (!path) return null;
+            var nodes = ROOT.querySelectorAll('.node');
+            for (var i = 0; i < nodes.length; i++) {
+                if (nodes[i].getAttribute('data-path') === path) return nodes[i];
+            }
+            return null;
+        }
+        function findAncestor(el, cls) {
+            while (el && el !== ROOT && el.nodeType === 1) {
+                if (el.classList && el.classList.contains(cls)) return el;
+                el = el.parentElement;
+            }
+            return null;
+        }
+
+        window.setVaultPinned = function (html) {
+            var section = ROOT.querySelector('li.section[data-section="pinned"]');
+            if (!section) return;
+            var ul = section.querySelector(':scope > ul.children');
+            if (ul) ul.innerHTML = html || '';
+        };
+        window.setVaultRecent = function (html) {
+            var section = ROOT.querySelector('li.section[data-section="recent"]');
+            if (!section) return;
+            var ul = section.querySelector(':scope > ul.children');
+            if (ul) ul.innerHTML = html || '';
+        };
+        window.insertVaultChildren = function (path, html) {
+            var li = findNodeByPath(path);
+            if (!li) return;
+            var ul = li.querySelector(':scope > ul.children');
+            if (!ul) return;
+            ul.innerHTML = html || '';
+            ul.classList.remove('collapsed');
+            li.setAttribute('data-loaded', '1');
+            var caret = li.querySelector(':scope > .row > .caret');
+            if (caret) caret.classList.add('open');
+            var iconEl = li.querySelector(':scope > .row > .icon');
+            if (iconEl) iconEl.textContent = '📂';
+        };
+        window.setVaultActive = function (path) {
+            var prev = ROOT.querySelectorAll('.node.active');
+            for (var i = 0; i < prev.length; i++) prev[i].classList.remove('active');
+            if (!path) return;
+            var el = findNodeByPath(path);
+            if (el) el.classList.add('active');
+        };
+
+        function toggleSection(section) {
+            var key = section.getAttribute('data-section');
+            var caret = section.querySelector(':scope > .row > .caret');
+            var ul = section.querySelector(':scope > ul.children');
+            var nowExpanded = !(caret && caret.classList.contains('open'));
+            if (caret) caret.classList.toggle('open', nowExpanded);
+            if (ul) ul.classList.toggle('collapsed', !nowExpanded);
+            post({ type: 'toggle-section', section: key, expanded: nowExpanded });
+        }
+        function toggleDir(node) {
+            var caret = node.querySelector(':scope > .row > .caret');
+            var ul = node.querySelector(':scope > ul.children');
+            var iconEl = node.querySelector(':scope > .row > .icon');
+            var path = node.getAttribute('data-path');
+            var loaded = node.getAttribute('data-loaded') === '1';
+            var open = caret && caret.classList.contains('open');
+            if (open) {
+                if (caret) caret.classList.remove('open');
+                if (ul) ul.classList.add('collapsed');
+                if (iconEl) iconEl.textContent = '📁';
+                post({ type: 'collapse-dir', path: path });
+            } else {
+                if (caret) caret.classList.add('open');
+                if (ul) ul.classList.remove('collapsed');
+                if (iconEl) iconEl.textContent = '📂';
+                if (!loaded) post({ type: 'expand-dir', path: path });
+            }
+        }
+
+        // Klicks innerhalb der Vault-Region (Tree-Reihen + Header-Buttons)
+        REGION.addEventListener('click', function (e) {
+            if (e.button !== 0) return;
+            // Header-Buttons (addFile/addFolder)
+            var cmdBtn = e.target;
+            while (cmdBtn && cmdBtn !== REGION && !(cmdBtn.classList && cmdBtn.classList.contains('vault-cmd'))) {
+                cmdBtn = cmdBtn.parentElement;
+            }
+            if (cmdBtn && cmdBtn !== REGION && cmdBtn.classList.contains('vault-cmd')) {
+                var cmd = cmdBtn.getAttribute('data-cmd');
+                if (cmd === 'addFile') post({ type: 'addFile' });
+                else if (cmd === 'addFolder') post({ type: 'addFolder' });
+                return;
+            }
+            // Tree-Rows
+            var row = e.target;
+            while (row && row !== ROOT && !(row.classList && row.classList.contains('row'))) {
+                row = row.parentElement;
+            }
+            if (!row || row === ROOT) return;
+            var node = findAncestor(row.parentElement, 'node');
+            if (node) {
+                var kind = node.getAttribute('data-kind');
+                if (kind === 'dir') { toggleDir(node); return; }
+                if (kind === 'file') {
+                    var p = node.getAttribute('data-path');
+                    if (p) post({ type: 'open', path: p });
+                    return;
+                }
+            }
+            var section = findAncestor(row.parentElement, 'section');
+            if (section) toggleSection(section);
+        });
+
+        // Rechtsklick → Context-Menu-Anfrage an C# (Position relativ zum Viewport,
+        // C# rechnet ggf. auf DIPs um und oeffnet die WPF-ContextMenu).
+        REGION.addEventListener('contextmenu', function (e) {
+            e.preventDefault();
+            var node = findAncestor(e.target, 'node');
+            if (!node) {
+                post({ type: 'context', path: null, x: e.clientX, y: e.clientY });
+                return;
+            }
+            post({
+                type: 'context',
+                path: node.getAttribute('data-path'),
+                kind: node.getAttribute('data-kind'),
+                isPinned: node.getAttribute('data-pinned') === '1',
+                isInRecent: node.getAttribute('data-recent') === '1',
+                x: e.clientX,
+                y: e.clientY
+            });
+        });
+    })();
+
+    // ----- Cheat-Sheet-Overlay (Drag, Show/Hide) -----
+    (function () {
+        var overlay = document.getElementById('cheatsheet-overlay');
+        var dragHeader = overlay.querySelector('.overlay__drag');
+        var body = document.getElementById('cheatsheet-body');
+        var dragState = null;
+        var rightOffset = 16;
+        var topOffset = 80;
+
+        function applyPosition() {
+            overlay.style.right = rightOffset + 'px';
+            overlay.style.top = topOffset + 'px';
+            overlay.style.left = 'auto';
+            overlay.style.bottom = 'auto';
+        }
+
+        function clampInsideViewport() {
+            var rect = overlay.getBoundingClientRect();
+            var winW = window.innerWidth;
+            var winH = window.innerHeight;
+            // Right-Anchor: rightOffset = winW - rect.right; korrigiere wenn out-of-bounds.
+            if (rect.right > winW - 1) rightOffset = 0;
+            if (rect.left < 0) rightOffset = Math.max(0, winW - rect.width);
+            if (rect.bottom > winH) topOffset = Math.max(0, winH - rect.height);
+            if (rect.top < 0) topOffset = 0;
+            applyPosition();
+        }
+
+        window.showCheatSheet = function (rowsJson, rOff, tOff) {
+            if (typeof rOff === 'number' && rOff >= 0) rightOffset = rOff;
+            if (typeof tOff === 'number' && tOff >= 0) topOffset = tOff;
+            body.innerHTML = '';
+            try {
+                var rows = (typeof rowsJson === 'string') ? JSON.parse(rowsJson) : rowsJson;
+                if (Array.isArray(rows)) {
+                    rows.forEach(function (r) {
+                        var l = document.createElement('div'); l.className = 'label'; l.textContent = r.label || '';
+                        var c = document.createElement('div'); c.className = 'code'; c.textContent = r.code || '';
+                        body.appendChild(l); body.appendChild(c);
+                    });
+                }
+            } catch (_) { /* defensive */ }
+            overlay.hidden = false;
+            applyPosition();
+            // Nach dem Render: Layout messen und ggf. clampen.
+            requestAnimationFrame(clampInsideViewport);
+        };
+
+        window.hideCheatSheet = function () {
+            if (overlay.hidden) return;
+            overlay.hidden = true;
+            post({ type: 'cheatsheetClosed', rightOffset: rightOffset, topOffset: topOffset });
+        };
+
+        // Drag am Header
+        dragHeader.addEventListener('pointerdown', function (e) {
+            try { dragHeader.setPointerCapture(e.pointerId); } catch (_) {}
+            dragState = { x: e.clientX, y: e.clientY, r: rightOffset, t: topOffset };
+            e.preventDefault();
+        });
+        dragHeader.addEventListener('pointermove', function (e) {
+            if (!dragState) return;
+            var dx = e.clientX - dragState.x;
+            var dy = e.clientY - dragState.y;
+            var rect = overlay.getBoundingClientRect();
+            var winW = window.innerWidth;
+            var winH = window.innerHeight;
+            var maxR = Math.max(0, winW - rect.width);
+            var maxT = Math.max(0, winH - rect.height);
+            rightOffset = Math.min(maxR, Math.max(0, dragState.r - dx));
+            topOffset = Math.min(maxT, Math.max(0, dragState.t + dy));
+            applyPosition();
+        });
+        function endDrag(e) {
+            if (!dragState) return;
+            try { dragHeader.releasePointerCapture(e.pointerId); } catch (_) {}
+            dragState = null;
+        }
+        dragHeader.addEventListener('pointerup', endDrag);
+        dragHeader.addEventListener('pointercancel', endDrag);
+
+        // Esc schliesst.
+        document.addEventListener('keydown', function (e) {
+            if (overlay.hidden) return;
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                window.hideCheatSheet();
+            }
+        });
+
+        // Window-Resize: in den Viewport zurueckholen.
+        window.addEventListener('resize', function () {
+            if (overlay.hidden) return;
+            clampInsideViewport();
+        });
+    })();
+})();
+</script>
+</body>
+</html>

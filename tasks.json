@@ -1,0 +1,69 @@
+{
+  "phase": "0",
+  "tasks": [
+    {
+      "id": "T0.1",
+      "title": "Source-Repo clonen",
+      "complexity": "S",
+      "status": "completed",
+      "implementer": "hermes",
+      "started_at": "2026-05-04T14:00Z",
+      "completed_at": "2026-05-04T14:05Z"
+    },
+    {
+      "id": "T0.2",
+      "title": "Target-Repo anlegen",
+      "complexity": "S",
+      "status": "completed",
+      "implementer": "hermes",
+      "started_at": "2026-05-04T14:05Z",
+      "completed_at": "2026-05-04T14:10Z"
+    },
+    {
+      "id": "T0.3",
+      "title": "Tool-Setup",
+      "complexity": "S",
+      "status": "completed",
+      "implementer": "hermes",
+      "started_at": "2026-05-04T14:10Z",
+      "completed_at": "2026-05-04T14:55Z"
+    },
+    {
+      "id": "T0.4",
+      "title": "Source-Code inventarisieren",
+      "complexity": "S",
+      "status": "completed",
+      "implementer": "hermes",
+      "started_at": "2026-05-04T14:15Z",
+      "completed_at": "2026-05-04T14:30Z"
+    },
+    {
+      "id": "T0.5",
+      "title": "Test-Fixtures katalogisieren",
+      "complexity": "S",
+      "status": "completed",
+      "implementer": "hermes",
+      "started_at": "2026-05-04T14:30Z",
+      "completed_at": "2026-05-04T14:35Z"
+    },
+    {
+      "id": "T0.6",
+      "title": "Goldfile-Generator + Goldfiles",
+      "complexity": "S",
+      "status": "completed",
+      "implementer": "hermes",
+      "started_at": "2026-05-04T14:35Z",
+      "completed_at": "2026-05-04T14:55Z"
+    },
+    {
+      "id": "T0.7",
+      "title": "MIGRATION_LOG.md + tasks.json",
+      "complexity": "S",
+      "status": "completed",
+      "implementer": "hermes",
+      "started_at": "2026-05-04T14:55Z",
+      "completed_at": "2026-05-04T15:00Z"
+    }
+  ],
+  "rate_limit_state": {}
+}

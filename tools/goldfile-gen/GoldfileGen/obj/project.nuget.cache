@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "dgSpecHash": "xUMi/BUgdRY=",
+  "success": true,
+  "projectFilePath": "/root/target-folio-rs/tools/goldfile-gen/GoldfileGen/GoldfileGen.csproj",
+  "expectedPackageFiles": [
+    "/root/.nuget/packages/markdig/1.1.3/markdig.1.1.3.nupkg.sha512"
+  ],
+  "logs": []
+}
