@@ -11,13 +11,4 @@
     <PackageReference Include="Markdig" Version="1.1.3" />
   </ItemGroup>
 
-  <ItemGroup>
-    <EmbeddedResource Include="Resources\shell-template.html">
-      <LogicalName>Folio.Resources.shell-template.html</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Resources\editor.bundle.js">
-      <LogicalName>Folio.Resources.editor.bundle.js</LogicalName>
-    </EmbeddedResource>
-  </ItemGroup>
-
 </Project>

@@ -53,7 +53,7 @@
       "status": "completed",
       "implementer": "hermes",
       "started_at": "2026-05-04T14:35Z",
-      "completed_at": "2026-05-04T14:55Z"
+      "completed_at": "2026-05-04T15:00Z"
     },
     {
       "id": "T0.7",
@@ -61,8 +61,25 @@
       "complexity": "S",
       "status": "completed",
       "implementer": "hermes",
-      "started_at": "2026-05-04T14:55Z",
-      "completed_at": "2026-05-04T15:00Z"
+      "started_at": "2026-05-04T15:00Z",
+      "completed_at": "2026-05-04T15:05Z"
+    },
+    {
+      "id": "T0.8",
+      "title": "Review-Fixes: Goldfile-Scope + Risiko-Matrix + Phase-Tasks",
+      "complexity": "S",
+      "status": "completed",
+      "implementer": "hermes",
+      "reviewer": "claude",
+      "started_at": "2026-05-04T15:05Z",
+      "completed_at": "2026-05-04T15:15Z",
+      "review_findings": [
+        "Goldfiles enthielten komplettes Shell-Template + Editor-Bundle → auf Pipeline-Ausgabe reduziert",
+        "RewriteImages ist WebView2-spezifisch → aus Goldfile-Scope entfernt",
+        "Risiko-Matrix um comrak-Slugifier vs. Markdig AutoIdentifier ergänzt",
+        "Phase-1 T1.4 in T1.4a (Extract) + T1.4b (RenderHtml) gesplittet",
+        "Phase-4 um WebViewBridge-Lifecycle-Pendants erweitert"
+      ]
     }
   ],
   "rate_limit_state": {}

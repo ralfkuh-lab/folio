@@ -38,7 +38,7 @@ End: 2026-05-04T15:00Z
 | LinkInterceptor | 74 | `link_interceptor.rs` |
 | ShellBridge | 75 | `shell_bridge.rs` |
 | AutomationServer | 325 | `automation.rs` |
-| WebViewBridge | 200 | (Tauri WebView übernimmt) |
+| WebViewBridge | 200 | Phase 4: Tauri Command/Event-System — JS-Queue, PostJson, Theme-Propagation, Accelerator-Key-Disable |
 
 **Tests:** 12 Dateien, 2043 Zeilen. Jeder Service hat äquivalente Rust-`#[test]`-Pendants.
 
@@ -46,16 +46,17 @@ End: 2026-05-04T15:00Z
 - `src/Folio/web/src/editor.ts` → `web/src/editor.ts`
 - `src/Folio/Resources/shell-template.html` → `src-tauri/assets/shell-template.html`
 
-**Goldfiles:**
-- `goldfiles/expected/index.html` (613 KB)
-- `goldfiles/expected/frontmatter-example.html` (613 KB)
-- `goldfiles/expected/large-document.html` (777 KB)
+**Goldfiles (nach Fix: nur Pipeline-Ausgabe, kein Shell-Template/Bundle/RewriteImages):**
+- `goldfiles/expected/index.html` (1.851 bytes, 53 lines)
+- `goldfiles/expected/frontmatter-example.html` (1.122 bytes, 15 lines)
+- `goldfiles/expected/large-document.html` (164.941 bytes, 2.282 lines)
 
 ### Risikoeinschätzung
 
 | Risiko | Wahrscheinlichkeit | Impact | Mitigation |
 |---|---|---|---|
 | comrak hat kein GenericAttributes-Äquivalent | Hoch | Mittel | AST-Postprocess oder eigenes Plugin |
+| **comrak Slugifier vs. Markdig AutoIdentifier** (Umlaute, Non-ASCII) | **Hoch** | **Hoch** | **Eigener Slugifier statt comrak-Default** |
 | CSS Custom Highlight API nicht in WebKitGTK | Mittel | Hoch | Fallback-Strategie in `MIGRATION_LOG.md` dokumentieren |
 | IPC-Payload-Größe (Tauri) | Mittel | Mittel | Events für große Payloads, nicht invoke |
 | CRLF/LF/BOM-Roundtrip | Niedrig | Hoch | Dokumentation + Tests aus Source übernehmen |
@@ -85,8 +86,31 @@ Start: TBD
 - [ ] T1.1 comrak-Setup (S)
 - [ ] T1.2 GenericAttributes-Plugin / AST-Postprocess (M)
 - [ ] T1.3 HeadingAnchorPreprocessor-Port (S)
-- [ ] T1.4 FrontmatterExtractor-Port (S)
+- [ ] T1.4a FrontmatterExtractor.Extract (YAML → Entries) (S)
+- [ ] T1.4b FrontmatterExtractor.RenderHtml (Entries → HTML-Box) (S)
 - [ ] T1.5 TocExtractor-Port (M)
-- [ ] T1.6 MarkdownRenderer.RewriteImages-Port (S)
+- [ ] T1.6 MarkdownRenderer.RewriteImages-Port (S) — **nicht im Goldfile, separat getestet**
 - [ ] T1.7 Goldfile-Diff (S)
 - [ ] T1.8 Rust-Tests für alle obigen Module (M)
+
+### Goldfile-Scope (Phase-1-Checkpoint)
+Der Diff vergleicht **nur** die Markdown→HTML-Pipeline-Ausgabe:
+`frontmatterHtml + Markdown.ToHtml(preprocessed, pipeline)`.
+**Nicht** enthalten: Shell-Template, Editor-Bundle, RewriteImages (WebView2-spezifisch).
+
+---
+
+## Phase 4 — Tauri-Shell & Frontend-Asset-Migration (Vorschau)
+Status: pending
+Komplexität: M
+
+### WebViewBridge-Lifecycle-Pendants (aus C# → Rust/Tauri)
+Die WebView selbst ersetzt Tauri, aber die Lifecycle-Logik braucht explizite Rust-Pendants:
+
+- **T4.1** JS-Dispatch-Queue (Pending-JS vor WebView-Ready) — `tauri::async_runtime` + Event-Queue
+- **T4.2** PostJson-Äquivalent — Tauri `emit` für große/strukturierte Payloads (nicht `invoke`)
+- **T4.3** NavigationStarting-Sicherheitsnetz — Tauri `on_navigation` Hook, Cancel für non-about:/data:-URIs
+- **T4.4** Theme-Propagation (PreferredColorScheme + html.className) — Tauri Command + JS-Injection
+- **T4.5** Accelerator-Key-Disable (F3, Ctrl+F, F5, Ctrl+P) — Tauri `disable_browser_shortcuts` oder JS `preventDefault`
+- **T4.6** Message-Routing (ShellBridge → Tauri invoke-handler Tabelle)
+
