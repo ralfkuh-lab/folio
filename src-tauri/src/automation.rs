@@ -9,7 +9,12 @@ use axum::{
     Router,
 };
 use serde::{Deserialize, Serialize};
-use std::{io::Cursor, net::SocketAddr, sync::Arc};
+use std::{
+    fs,
+    io::Cursor,
+    net::SocketAddr,
+    sync::{Arc, Mutex},
+};
 use tauri::{AppHandle, Emitter, LogicalSize, Manager, Size};
 use tokio::{net::TcpListener, sync::Notify};
 
@@ -128,6 +133,49 @@ struct ResizeRequest {
 }
 
 type ApiResult<T> = Result<T, ApiError>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MockAutomationState {
+    pub title: String,
+    pub file: Option<String>,
+    pub text: String,
+    pub dirty: bool,
+    pub view_mode: String,
+    pub theme: String,
+    pub editor_ready: bool,
+    pub selection_start: usize,
+    pub selection_length: usize,
+    pub quit_requested: bool,
+}
+
+impl Default for MockAutomationState {
+    fn default() -> Self {
+        Self {
+            title: "Folio RS".into(),
+            file: None,
+            text: String::new(),
+            dirty: false,
+            view_mode: "view".into(),
+            theme: "light".into(),
+            editor_ready: false,
+            selection_start: 0,
+            selection_length: 0,
+            quit_requested: false,
+        }
+    }
+}
+
+pub fn build_mock_router(state: Arc<Mutex<MockAutomationState>>) -> Router {
+    Router::new()
+        .route("/state", get(mock_get_state))
+        .route("/open", post(mock_post_open))
+        .route("/save", post(mock_post_save))
+        .route("/quit", post(mock_post_quit))
+        .fallback(not_found)
+        .method_not_allowed_fallback(method_not_allowed)
+        .layer(middleware::from_fn(loopback_only))
+        .with_state(state)
+}
 
 impl<'a> AutomationServer<'a> {
     pub fn new(app_handle: AppHandle, state: &'a AppState) -> Self {
@@ -258,6 +306,41 @@ async fn get_state(
     }))
 }
 
+async fn mock_get_state(
+    AxumState(state): AxumState<Arc<Mutex<MockAutomationState>>>,
+) -> ApiResult<Json<AutomationState>> {
+    let state = state
+        .lock()
+        .map_err(|_| ApiError::internal("mock automation state lock poisoned"))?;
+    let toc = toc::extract(&state.text)
+        .into_iter()
+        .map(|entry| TocEntry {
+            level: entry.level,
+            text: entry.text,
+            slug: entry.slug,
+            number: entry.number,
+        })
+        .collect();
+
+    Ok(Json(AutomationState {
+        title: state.title.clone(),
+        file: state.file.clone(),
+        dirty: state.dirty,
+        view_mode: state.view_mode.clone(),
+        theme: state.theme.clone(),
+        left_rail_visible: true,
+        right_rail_visible: true,
+        toc,
+        editor: EditorAutomationState {
+            ready: state.editor_ready,
+            selection_start: state.selection_start,
+            selection_length: state.selection_length,
+            left_rail_width: 260.0,
+            right_rail_width: 300.0,
+        },
+    }))
+}
+
 async fn get_screenshot() -> ApiResult<impl IntoResponse> {
     let bytes = tauri::async_runtime::spawn_blocking(capture_png)
         .await
@@ -282,6 +365,22 @@ async fn post_open(
         .lock()
         .map_err(|_| ApiError::internal("vault lock poisoned"))?
         .set_active(Some(payload.path));
+    ok()
+}
+
+async fn mock_post_open(
+    AxumState(state): AxumState<Arc<Mutex<MockAutomationState>>>,
+    payload: Result<Json<OpenRequest>, JsonRejection>,
+) -> ApiResult<Json<OkResponse>> {
+    let Json(payload) = json_payload(payload)?;
+    let text =
+        fs::read_to_string(&payload.path).map_err(|error| ApiError::internal(error.to_string()))?;
+    let mut state = state
+        .lock()
+        .map_err(|_| ApiError::internal("mock automation state lock poisoned"))?;
+    state.file = Some(payload.path);
+    state.text = text.replace("\r\n", "\n");
+    state.dirty = false;
     ok()
 }
 
@@ -455,10 +554,30 @@ async fn post_save(
     Ok(Json(OkResponse { ok: saved }))
 }
 
+async fn mock_post_save(
+    AxumState(state): AxumState<Arc<Mutex<MockAutomationState>>>,
+) -> ApiResult<Json<OkResponse>> {
+    let mut state = state
+        .lock()
+        .map_err(|_| ApiError::internal("mock automation state lock poisoned"))?;
+    state.dirty = false;
+    ok()
+}
+
 async fn post_quit(
     AxumState(context): AxumState<AutomationContext>,
 ) -> ApiResult<Json<OkResponse>> {
     context.app_handle.exit(0);
+    ok()
+}
+
+async fn mock_post_quit(
+    AxumState(state): AxumState<Arc<Mutex<MockAutomationState>>>,
+) -> ApiResult<Json<OkResponse>> {
+    state
+        .lock()
+        .map_err(|_| ApiError::internal("mock automation state lock poisoned"))?
+        .quit_requested = true;
     ok()
 }
 
