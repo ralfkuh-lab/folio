@@ -34,7 +34,7 @@ pub fn render_body(markdown: &str) -> String {
     html
 }
 
-fn markdown_options() -> Options<'static> {
+pub(crate) fn markdown_options() -> Options<'static> {
     let mut options = Options::default();
     options.extension.table = true;
     options.extension.strikethrough = true;
@@ -81,7 +81,7 @@ fn strip_explicit_heading_id<'a>(heading: &'a AstNode<'a>) -> Option<String> {
     None
 }
 
-fn split_explicit_id(text: &str) -> Option<(String, String)> {
+pub(crate) fn split_explicit_id(text: &str) -> Option<(String, String)> {
     let captures = explicit_id_regex().captures(text)?;
     let stripped = captures
         .name("text")
@@ -106,7 +106,7 @@ fn explicit_id_regex() -> &'static Regex {
     })
 }
 
-fn slugify_heading(text: &str) -> String {
+pub fn slugify_heading(text: &str) -> String {
     let mut slug = String::new();
     let mut last_was_dash = false;
 
