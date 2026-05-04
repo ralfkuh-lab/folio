@@ -25,6 +25,7 @@ xcap = "0.4"
 
 # Phase 4: Tauri
 tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"
 
 [build-dependencies]
