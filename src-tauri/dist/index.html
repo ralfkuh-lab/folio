@@ -112,6 +112,7 @@
   .toolbar button:disabled { opacity: 0.4; cursor: default; }
   .toolbar button svg { display: block; }
   body:not(.edit-mode) .toolbar .edit-only { display: none; }
+  body:not(.edit-mode) #cheatsheet-overlay { display: none !important; }
   .statusbar {
     grid-row: 3;
     grid-column: 1 / -1;
@@ -1772,8 +1773,29 @@
                 e.preventDefault();
                 e.stopPropagation();
                 var cmd = cmdBtn.getAttribute('data-cmd');
-                if (cmd === 'addFile') post({ type: 'addFile' });
-                else if (cmd === 'addFolder') post({ type: 'addFolder' });
+                var inv = window.__folioInvoke || (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke);
+                if (cmd === 'addFile') {
+                    if (inv) {
+                        inv('pick_file').then(function (path) {
+                            if (!path) return;
+                            if (typeof window.openDocument === 'function') {
+                                window.openDocument(path);
+                            } else {
+                                post({ type: 'open', path: path });
+                            }
+                        }).catch(function () {});
+                    } else {
+                        post({ type: 'addFile' });
+                    }
+                } else if (cmd === 'addFolder') {
+                    if (inv) {
+                        inv('pick_folder').then(function (path) {
+                            if (path) inv('workspace_pin', { path: path, isDirectory: true }).catch(function () {});
+                        }).catch(function () {});
+                    } else {
+                        post({ type: 'addFolder' });
+                    }
+                }
                 return;
             }
             // Tree-Rows
@@ -1788,7 +1810,13 @@
                 if (kind === 'dir') { toggleDir(node); return; }
                 if (kind === 'file') {
                     var p = node.getAttribute('data-path');
-                    if (p) post({ type: 'open', path: p });
+                    if (p) {
+                        if (typeof window.openDocument === 'function') {
+                            window.openDocument(p);
+                        } else {
+                            post({ type: 'open', path: p });
+                        }
+                    }
                     return;
                 }
             }
@@ -1825,6 +1853,28 @@
         var dragState = null;
         var rightOffset = 16;
         var topOffset = 80;
+        var wantsVisible = false;
+        var lastRows = null;
+        var STORAGE_KEY = 'folio.cheatsheet';
+
+        function loadStored() {
+            try {
+                var raw = localStorage.getItem(STORAGE_KEY);
+                if (!raw) return;
+                var s = JSON.parse(raw);
+                if (typeof s.right === 'number' && s.right >= 0) rightOffset = s.right;
+                if (typeof s.top === 'number' && s.top >= 0) topOffset = s.top;
+                if (typeof s.visible === 'boolean') wantsVisible = s.visible;
+            } catch (_) {}
+        }
+        function saveStored() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                    right: rightOffset, top: topOffset, visible: wantsVisible
+                }));
+            } catch (_) {}
+        }
+        loadStored();
 
         function applyPosition() {
             overlay.style.right = rightOffset + 'px';
@@ -1833,25 +1883,31 @@
             overlay.style.bottom = 'auto';
         }
 
+        function verticalBounds() {
+            var tb = document.getElementById('toolbar');
+            var sb = document.getElementById('statusbar');
+            var top = tb ? tb.getBoundingClientRect().bottom : 0;
+            var bottom = sb ? sb.getBoundingClientRect().top : window.innerHeight;
+            return { top: Math.max(0, top), bottom: Math.max(top, bottom) };
+        }
+
         function clampInsideViewport() {
             var rect = overlay.getBoundingClientRect();
             var winW = window.innerWidth;
-            var winH = window.innerHeight;
-            // Right-Anchor: rightOffset = winW - rect.right; korrigiere wenn out-of-bounds.
+            var bounds = verticalBounds();
             if (rect.right > winW - 1) rightOffset = 0;
             if (rect.left < 0) rightOffset = Math.max(0, winW - rect.width);
-            if (rect.bottom > winH) topOffset = Math.max(0, winH - rect.height);
-            if (rect.top < 0) topOffset = 0;
+            if (rect.bottom > bounds.bottom) topOffset = Math.max(bounds.top, bounds.bottom - rect.height);
+            if (rect.top < bounds.top) topOffset = bounds.top;
             applyPosition();
         }
 
-        window.showCheatSheet = function (rowsJson, rOff, tOff) {
-            if (typeof rOff === 'number' && rOff >= 0) rightOffset = rOff;
-            if (typeof tOff === 'number' && tOff >= 0) topOffset = tOff;
+        function renderRows(rowsJson) {
             body.innerHTML = '';
             try {
                 var rows = (typeof rowsJson === 'string') ? JSON.parse(rowsJson) : rowsJson;
                 if (Array.isArray(rows)) {
+                    lastRows = rows;
                     rows.forEach(function (r) {
                         var l = document.createElement('div'); l.className = 'label'; l.textContent = r.label || '';
                         var c = document.createElement('div'); c.className = 'code'; c.textContent = r.code || '';
@@ -1859,17 +1915,48 @@
                     });
                 }
             } catch (_) { /* defensive */ }
+        }
+
+        window.showCheatSheet = function (rowsJson) {
+            wantsVisible = true;
+            saveStored();
+            renderRows(rowsJson);
             overlay.hidden = false;
             applyPosition();
-            // Nach dem Render: Layout messen und ggf. clampen.
             requestAnimationFrame(clampInsideViewport);
         };
 
         window.hideCheatSheet = function () {
+            wantsVisible = false;
+            saveStored();
             if (overlay.hidden) return;
             overlay.hidden = true;
             post({ type: 'cheatsheetClosed', rightOffset: rightOffset, topOffset: topOffset });
         };
+
+        // Mode-Sync: vom setActiveMode aufgerufen. Aendert wantsVisible nicht.
+        window.cheatsheetSyncMode = function (isEdit) {
+            if (isEdit) {
+                if (wantsVisible) {
+                    var rows = lastRows;
+                    if (!rows && window.__cheatSheetRows) {
+                        rows = window.__cheatSheetRows.map(function (r) {
+                            return { label: r[0], code: r[1] };
+                        });
+                    }
+                    if (rows) renderRows(rows);
+                    overlay.hidden = false;
+                    applyPosition();
+                    requestAnimationFrame(clampInsideViewport);
+                }
+            } else {
+                if (!overlay.hidden) {
+                    overlay.hidden = true;
+                }
+            }
+        };
+
+        window.cheatsheetWantsVisible = function () { return wantsVisible; };
 
         // Drag am Header
         dragHeader.addEventListener('pointerdown', function (e) {
@@ -1883,17 +1970,18 @@
             var dy = e.clientY - dragState.y;
             var rect = overlay.getBoundingClientRect();
             var winW = window.innerWidth;
-            var winH = window.innerHeight;
+            var bounds = verticalBounds();
             var maxR = Math.max(0, winW - rect.width);
-            var maxT = Math.max(0, winH - rect.height);
+            var maxT = Math.max(bounds.top, bounds.bottom - rect.height);
             rightOffset = Math.min(maxR, Math.max(0, dragState.r - dx));
-            topOffset = Math.min(maxT, Math.max(0, dragState.t + dy));
+            topOffset = Math.min(maxT, Math.max(bounds.top, dragState.t + dy));
             applyPosition();
         });
         function endDrag(e) {
             if (!dragState) return;
             try { dragHeader.releasePointerCapture(e.pointerId); } catch (_) {}
             dragState = null;
+            saveStored();
         }
         dragHeader.addEventListener('pointerup', endDrag);
         dragHeader.addEventListener('pointercancel', endDrag);
@@ -1920,6 +2008,7 @@
 (function () {
     if (!window.__TAURI__) return;
     var invoke = window.__TAURI__.core && window.__TAURI__.core.invoke;
+    window.__folioInvoke = invoke;
     var emit = window.__TAURI__.event && window.__TAURI__.event.emit;
     var listen = window.__TAURI__.event && window.__TAURI__.event.listen;
     if (!invoke || !emit || !listen) return;
@@ -2017,6 +2106,7 @@
             });
         });
     }
+    window.openDocument = openDocument;
     function setMode(mode) {
         return requestSaveIfDirty().then(function (ok) {
             if (!ok) return false;
@@ -2032,6 +2122,9 @@
         $('tb-mode-view').classList.toggle('active', mode === 'view');
         $('tb-mode-edit').classList.toggle('active', mode === 'edit');
         var sm = $('status-mode'); if (sm) sm.textContent = mode === 'edit' ? 'Edit' : 'View';
+        if (typeof window.cheatsheetSyncMode === 'function') {
+            window.cheatsheetSyncMode(mode === 'edit');
+        }
     }
     function setRailButton(side, visible) {
         var btn = side === 'left' ? $('tb-rail-left') : $('tb-rail-right');
@@ -2121,22 +2214,8 @@
     bind('tb-table',     function () { applyCmd('table'); });
     bind('tb-code',      function () { applyCmd('code'); });
     bind('tb-codeblock', function () { applyCmd('codeblock'); });
-    /* Strike: Backend kennt das (noch) nicht — direkt im Frontend wrappen. */
-    bind('tb-strike', function () {
-        if (!window.FolioEditor) return;
-        var text = window.FolioEditor.getText();
-        var sel = window.FolioEditor.getSelection() || { start: 0, length: 0 };
-        var s = sel.start, l = sel.length;
-        var inside = text.slice(s, s + l);
-        var newInside = inside ? '~~' + inside + '~~' : '~~~~';
-        var newText = text.slice(0, s) + newInside + text.slice(s + l);
-        window.FolioEditor.applyReplace({
-            fullText: newText,
-            selectionStart: inside ? s : s + 2,
-            selectionLength: inside ? newInside.length : 0,
-        });
-    });
-    var cheatSheetRows = [
+    bind('tb-strike',    function () { applyCmd('strike'); });
+    var cheatSheetRows = window.__cheatSheetRows = [
         ['Überschrift',     '# H1   ## H2   ### H3'],
         ['Fett / Kursiv',   '**fett**   *kursiv*'],
         ['Durchgestrichen', '~~text~~'],
@@ -2152,11 +2231,12 @@
         ['Aufgabe',         '- [ ] offen   - [x] erledigt'],
     ];
     bind('tb-cheatsheet', function () {
+        if (!document.body.classList.contains('edit-mode')) return;
         var ov = $('cheatsheet-overlay');
         if (!ov) return;
         if (ov.hidden) {
             if (typeof window.showCheatSheet === 'function') {
-                window.showCheatSheet(JSON.stringify(cheatSheetRows.map(function(r){return{label:r[0],code:r[1]};})), 16, 80);
+                window.showCheatSheet(JSON.stringify(cheatSheetRows.map(function(r){return{label:r[0],code:r[1]};})));
             } else {
                 ov.hidden = false;
             }
@@ -2191,7 +2271,10 @@
         if (ctrl && e.key === '1') { e.preventDefault(); $('tb-mode-view').click(); }
         else if (ctrl && e.key === '2') { e.preventDefault(); $('tb-mode-edit').click(); }
         else if (ctrl && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); invoke('open_find').catch(function(){}); }
-        else if (e.key === 'F1') { e.preventDefault(); $('tb-cheatsheet').click(); }
+        else if (e.key === 'F1') {
+            e.preventDefault();
+            if (document.body.classList.contains('edit-mode')) $('tb-cheatsheet').click();
+        }
         else if (e.altKey && e.key === 'ArrowLeft') {
             e.preventDefault();
             requestSaveIfDirty().then(function (ok) {
@@ -2263,26 +2346,8 @@
         });
     }
 
-    /* ----- Vault-Header-Buttons (Datei/Ordner öffnen) ----- */
-    var vaultHeader = document.querySelector('.vault-header');
-    if (vaultHeader) {
-        vaultHeader.addEventListener('click', function (e) {
-            var btn = e.target.closest('.vault-cmd');
-            if (!btn) return;
-            var cmd = btn.getAttribute('data-cmd');
-            if (cmd === 'addFile') {
-                invoke('pick_file').then(function (path) {
-                    if (path) {
-                        openDocument(path);
-                    }
-                }).catch(function(){});
-            } else if (cmd === 'addFolder') {
-                invoke('pick_folder').then(function (path) {
-                    if (path) invoke('workspace_pin', { path: path, isDirectory: true }).catch(function(){});
-                }).catch(function(){});
-            }
-        });
-    }
+    /* Vault-Header-Buttons (Datei/Ordner öffnen) werden vom REGION-Click-Handler
+       in der Vault-IIFE behandelt — dort mit Dirty-Check via window.openDocument. */
 
     /* ----- Kontextmenü ----- */
     var ctxMenu = $('context-menu');

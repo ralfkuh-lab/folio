@@ -161,6 +161,7 @@ pub fn apply_command(
         "image" => editor_commands::insert_image(text, start, length),
         "table" => editor_commands::insert_table(text, start, length),
         "code" => editor_commands::toggle_wrap(text, start, length, "`"),
+        "strike" => editor_commands::toggle_wrap(text, start, length, "~~"),
         "codeblock" => editor_commands::insert_code_block(text, start, length),
         _ => return Err(format!("unknown editor command: {command}")),
     };
