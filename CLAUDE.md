@@ -1,70 +1,48 @@
 # CLAUDE.md
 
-## Projektkontext
+## Projekt
 
-**folio-rs** ist eine frische Portierung der WPF/.NET-App [Folio](https://github.com/fsrakul/Folio)
-auf **Tauri 2 + Rust**. Markdown-Viewer/-Editor mit Live-Vorschau, Vault-Navigation,
-Workspace-Pins und HTTP-Automation-API für E2E-Tests.
-
-Migration ist abgeschlossen (Phasen 0–7, siehe `MIGRATION_LOG.md`). Codebase ist jung —
-beim Lesen/Ändern bitte beachten, dass viele Module 1:1-Ports von C#-Services sind
-(siehe Mapping in `MIGRATION_LOG.md`, z. B. `MarkdownRenderer` → `renderer.rs`).
+**folio-rs** — Markdown-Viewer/-Editor auf Tauri 2 + Rust. Live-Vorschau,
+Vault-Navigation, Workspace-Pins, HTTP-Automation-API für E2E-Tests.
 
 ## Tech-Stack
 
-- Rust 2021, Tauri 2 (Backend)
-- comrak 0.35 für GFM-Markdown
-- axum 0.8 für Automation-HTTP-API (Loopback `127.0.0.1:9876`, CORS/OPTIONS für WebView-POSTs)
-- Vanilla TypeScript Frontend (in `src-tauri/dist/`)
-- notify 7.0 für File-Watching, xcap für Screenshots
-
-## Verzeichnisstruktur (Kurz)
-
-- `src-tauri/src/` — Rust-Backend, ein Modul pro ehemaligem C#-Service
-- `src-tauri/src/commands/` — Tauri-IPC-Commands (`app`, `editor`, `file`, `nav`, `shell`,
-  `vault_cmd`, `workspace_cmd`)
-- `src-tauri/dist/` — Frontend-Assets (HTML/TS/CSS), 1:1 aus dem WPF-Resources-Ordner übernommen
-- `src-tauri/tests/` — Integration, Smoke, Goldfile-Diffs
-- `goldfiles/expected/` — HTML-Fixtures aus dem C#-Generator (`tools/goldfile-gen/`),
-  dienen als Regressionsanker für Pipeline-Parität
-- `MIGRATION_LOG.md` — Phasen-Doku inkl. Service-Mapping, Risiken, Entscheidungen
+- Rust 2021, Tauri 2
+- comrak 0.35 (GFM-Markdown)
+- axum 0.8 (Automation-API auf `127.0.0.1:9876`, Loopback-only, CORS für WebView-POSTs)
+- Vanilla TypeScript Frontend in `src-tauri/dist/`
+- notify 7.0 (File-Watching), xcap (Screenshots)
 
 ## Build & Test
 
-Arbeitsverzeichnis für Cargo-Befehle: `src-tauri/`.
+Cargo-Befehle aus `src-tauri/`:
 
 ```bash
-cd src-tauri
-cargo build                              # Dev-Build (~2–3 min initial)
-cargo test                               # 121 Tests (Unit + Goldfile + Integration)
+cargo build
+cargo test
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
-cargo tauri build                        # Release-Bundle (Linux: braucht libwebkit2gtk-4.1-dev)
+cargo tauri build      # Linux: braucht libwebkit2gtk-4.1-dev
 ```
 
-Frontend-Assets (in `src-tauri/dist/`) werden via `npm install && npm run build` gebaut,
-bevor `cargo tauri build` läuft.
+Frontend-Assets vor `cargo tauri build` bauen: `cd src-tauri/dist && npm install && npm run build`.
 
-## Konventionen / Hinweise für Änderungen
+## Konventionen
 
-- **Goldfiles sind heilig**: Renderer-Output muss byte-genau zu `goldfiles/expected/*.html`
-  passen. Bei beabsichtigten Änderungen Goldfiles über `tools/goldfile-gen` neu erzeugen
-  und Diff bewusst commiten.
-- **Slugifier**: comrak-Default wird bewusst nicht benutzt — eigener Slugifier in
-  `heading_anchor.rs` repliziert Markdig-`AutoIdentifier`. Nicht ohne Goldfile-Update ändern.
-- **AST-Postprocess** in `renderer.rs` ersetzt das fehlende `GenericAttributes`-Feature
-  von Markdig.
-- **CRLF/LF/BOM**: Roundtrip-Erhalt ist getestet (`document_store.rs`). Beim Schreiben
-  immer Original-Encoding/Line-Endings beibehalten.
-- **IPC-Payloads**: Große Payloads (gerendertes HTML) gehen über Tauri-Events, nicht über
-  Command-Returns.
-- **Automation-API**: nur Loopback. Keine externen Bind-Adressen einführen. WebView-JSON-POSTs
-  brauchen CORS/OPTIONS-Preflight; `/click` darf IDs, `data-name` und CSS-Selektoren für
-  E2E-Verifikation auslösen.
-- **Vault-Markup**: Frontend-Klicklogik erwartet Baum-Markup mit `.section`, `.node`,
-  `.row`, `.caret` und `ul.children`; nicht auf flache `.vault-item`-Einträge zurückbauen.
+- **Goldfiles** (`goldfiles/expected/*.html`) sind Regressionsanker für den
+  Renderer-Output. Tests in `src-tauri/tests/goldfile_diff.rs` vergleichen byte-genau.
+  Bei beabsichtigten Renderer-Änderungen Goldfiles bewusst aktualisieren.
+- **Slugifier**: eigener in `heading_anchor.rs` (kein comrak-Default) — repliziert
+  Markdig-`AutoIdentifier`. Ohne Goldfile-Update nicht ändern.
+- **AST-Postprocess** in `renderer.rs` ergänzt fehlendes `GenericAttributes`-Feature.
+- **CRLF/LF/BOM**: Roundtrip ist getestet (`document_store.rs`). Beim Schreiben
+  Original-Encoding/Line-Endings beibehalten.
+- **IPC-Payloads**: gerendertes HTML geht über Tauri-Events, nicht über Command-Returns.
+- **Automation-API**: nur Loopback. Keine externen Bind-Adressen. WebView-POSTs brauchen
+  CORS/OPTIONS-Preflight; `/click` akzeptiert IDs, `data-name` und CSS-Selektoren.
+- **Vault-Markup**: Frontend erwartet Baum-Markup mit `.section`, `.node`, `.row`,
+  `.caret`, `ul.children`.
 
 ## GitHub
 
-- Remote: `ralfkuh-lab/folio-rs` (privat-Account von Ralf)
-- Source-Repo (Original WPF): `fsrakul/Folio`
+Remote: `ralfkuh-lab/folio-rs`. Original-WPF-App: `fsrakul/Folio`.
