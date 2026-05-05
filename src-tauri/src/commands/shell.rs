@@ -245,6 +245,11 @@ fn open_document(path: String, state: &AppState) -> Result<(), String> {
         .load(&path)
         .map_err(|error| error.to_string())?;
     state
+        .navigation
+        .lock()
+        .map_err(|_| "navigation lock poisoned".to_string())?
+        .navigate(path.clone(), None);
+    state
         .vault
         .lock()
         .map_err(|_| "vault lock poisoned".to_string())?

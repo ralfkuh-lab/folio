@@ -3,8 +3,9 @@ use crate::{
     link_interceptor::LinkInterceptor,
     navigation::NavigationController,
     panel_state::PanelState,
-    renderer, toc,
+    renderer,
     theme::ThemeService,
+    toc,
     vault::Vault,
     workspace::Workspace,
 };
@@ -95,8 +96,16 @@ impl AppState {
             })),
             saved: Some(Arc::new({
                 let app = app.clone();
-                move |path| {
-                    let _ = app.emit("document:saved", serde_json::json!({ "path": path }));
+                move |path, text| {
+                    let _ = app.emit(
+                        "document:saved",
+                        serde_json::json!({
+                            "path": path,
+                            "text": text,
+                            "content": renderer::render_body(&text),
+                            "tocHtml": toc::render_html(&toc::extract(&text)),
+                        }),
+                    );
                 }
             })),
             text_changed: None,

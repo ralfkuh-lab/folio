@@ -1,6 +1,6 @@
 use crate::state::AppState;
 use std::path::Path;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_dialog::{DialogExt, FilePath};
 use tauri_plugin_shell::ShellExt;
 
@@ -43,6 +43,26 @@ pub async fn show_in_file_manager(path: String, handle: AppHandle) -> Result<(),
 }
 
 #[tauri::command]
+pub async fn set_view_mode(
+    mode: String,
+    handle: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let mode = mode.to_ascii_lowercase();
+    if !matches!(mode.as_str(), "view" | "edit" | "split") {
+        return Err(format!("unknown mode '{mode}'"));
+    }
+    state
+        .automation
+        .lock()
+        .map_err(|_| "automation state lock poisoned".to_string())?
+        .view_mode = mode.clone();
+    handle
+        .emit("app:set_mode", serde_json::json!({ "mode": mode }))
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub async fn theme_get(state: State<'_, AppState>) -> Result<String, String> {
     Ok(state
         .theme
@@ -50,6 +70,80 @@ pub async fn theme_get(state: State<'_, AppState>) -> Result<String, String> {
         .map_err(|_| "theme lock poisoned".to_string())?
         .mode()
         .to_string())
+}
+
+#[tauri::command]
+pub async fn theme_set(
+    mode: String,
+    handle: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let mode = mode.to_ascii_lowercase();
+    if !matches!(mode.as_str(), "light" | "dark" | "toggle") {
+        return Err(format!("unknown theme '{mode}'"));
+    }
+    let resolved = {
+        let mut theme = state
+            .theme
+            .lock()
+            .map_err(|_| "theme lock poisoned".to_string())?;
+        if mode == "toggle" {
+            theme.toggle().map_err(|error| error.to_string())?;
+        } else {
+            theme.set_mode(&mode).map_err(|error| error.to_string())?;
+        }
+        theme.mode().to_string()
+    };
+    state
+        .automation
+        .lock()
+        .map_err(|_| "automation state lock poisoned".to_string())?
+        .theme = resolved.clone();
+    handle
+        .emit("app:set_theme", serde_json::json!({ "mode": resolved }))
+        .map_err(|error| error.to_string())?;
+    Ok(resolved)
+}
+
+#[tauri::command]
+pub async fn set_rail_visible(
+    side: String,
+    visible: bool,
+    handle: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let side = side.to_ascii_lowercase();
+    if !matches!(side.as_str(), "left" | "right") {
+        return Err(format!("unknown side '{side}'"));
+    }
+    let panel = {
+        let mut panel_state = state
+            .panel_state
+            .lock()
+            .map_err(|_| "panel state lock poisoned".to_string())?;
+        panel_state
+            .set_rail_visible(&side, visible)
+            .map_err(|error| error.to_string())?;
+        panel_state.data()
+    };
+    handle
+        .emit(
+            "panel:rail_changed",
+            serde_json::json!({
+                "side": side,
+                "visible": visible,
+                "leftRailVisible": panel.left_rail_visible,
+                "rightRailVisible": panel.right_rail_visible,
+            }),
+        )
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn open_find(handle: AppHandle) -> Result<(), String> {
+    handle
+        .emit("editor:open_find", serde_json::json!({}))
+        .map_err(|error| error.to_string())
 }
 
 fn file_path_to_string(path: FilePath) -> String {

@@ -35,22 +35,28 @@ pub async fn navigate(
 
 #[tauri::command]
 pub async fn go_back(state: State<'_, AppState>) -> Result<Option<NavEntry>, String> {
-    Ok(state
-        .navigation
-        .lock()
-        .map_err(|_| "navigation lock poisoned".to_string())?
-        .go_back()
-        .map(NavEntry::from))
+    move_history(false, &state, None)
 }
 
 #[tauri::command]
 pub async fn go_forward(state: State<'_, AppState>) -> Result<Option<NavEntry>, String> {
-    Ok(state
-        .navigation
-        .lock()
-        .map_err(|_| "navigation lock poisoned".to_string())?
-        .go_forward()
-        .map(NavEntry::from))
+    move_history(true, &state, None)
+}
+
+#[tauri::command]
+pub async fn go_back_and_emit(
+    handle: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<NavEntry>, String> {
+    move_history(false, &state, Some(handle))
+}
+
+#[tauri::command]
+pub async fn go_forward_and_emit(
+    handle: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<NavEntry>, String> {
+    move_history(true, &state, Some(handle))
 }
 
 #[tauri::command]
@@ -61,6 +67,48 @@ pub async fn update_scroll(y: f64, state: State<'_, AppState>) -> Result<(), Str
         .map_err(|_| "navigation lock poisoned".to_string())?
         .update_scroll_position(y);
     Ok(())
+}
+
+fn move_history(
+    forward: bool,
+    state: &AppState,
+    handle: Option<AppHandle>,
+) -> Result<Option<NavEntry>, String> {
+    let entry = {
+        let mut navigation = state
+            .navigation
+            .lock()
+            .map_err(|_| "navigation lock poisoned".to_string())?;
+        if forward {
+            navigation.go_forward().map(NavEntry::from)
+        } else {
+            navigation.go_back().map(NavEntry::from)
+        }
+    };
+
+    let Some(entry) = entry else {
+        return Ok(None);
+    };
+
+    state
+        .document_store
+        .lock()
+        .map_err(|_| "document store lock poisoned".to_string())?
+        .load(&entry.path)
+        .map_err(|error| error.to_string())?;
+    state
+        .vault
+        .lock()
+        .map_err(|_| "vault lock poisoned".to_string())?
+        .set_active(Some(entry.path.clone()));
+
+    if let Some(handle) = handle {
+        handle
+            .emit("navigation:changed", &entry)
+            .map_err(|error| error.to_string())?;
+    }
+
+    Ok(Some(entry))
 }
 
 #[tauri::command]

@@ -40,6 +40,19 @@ pub async fn editor_save_requested(state: State<'_, AppState>) -> Result<bool, S
 }
 
 #[tauri::command]
+pub async fn discard_editor_changes(state: State<'_, AppState>) -> Result<bool, String> {
+    let mut store = state
+        .document_store
+        .lock()
+        .map_err(|_| "document store lock poisoned".to_string())?;
+    let Some(path) = store.path.clone() else {
+        return Ok(false);
+    };
+    store.load(&path).map_err(|error| error.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
 pub async fn apply_editor_command(
     command: String,
     text: String,
@@ -47,7 +60,30 @@ pub async fn apply_editor_command(
     length: usize,
     _state: State<'_, AppState>,
 ) -> Result<EditResult, String> {
-    apply_command(&command, &text, start, length)
+    apply_command_utf16(&command, &text, start, length)
+}
+
+pub fn apply_command_utf16(
+    command: &str,
+    text: &str,
+    start_utf16: usize,
+    length_utf16: usize,
+) -> Result<EditResult, String> {
+    let start = utf16_offset_to_byte_offset(text, start_utf16);
+    let end = utf16_offset_to_byte_offset(text, start_utf16.saturating_add(length_utf16));
+    let result = apply_command(command, text, start, end.saturating_sub(start))?;
+    Ok(EditResult {
+        new_selection_start: byte_offset_to_utf16_offset(
+            &result.new_text,
+            result.new_selection_start,
+        ),
+        new_selection_length: byte_range_utf16_len(
+            &result.new_text,
+            result.new_selection_start,
+            result.new_selection_start + result.new_selection_length,
+        ),
+        ..result
+    })
 }
 
 #[tauri::command]
@@ -60,6 +96,30 @@ pub async fn editor_ready(handle: AppHandle, state: State<'_, AppState>) -> Resu
     handle
         .emit("editor:ready", serde_json::json!({}))
         .map_err(|error| error.to_string())
+}
+
+fn utf16_offset_to_byte_offset(text: &str, utf16_offset: usize) -> usize {
+    let mut units = 0usize;
+    for (byte_index, ch) in text.char_indices() {
+        let next_units = units + ch.len_utf16();
+        if next_units > utf16_offset {
+            return byte_index;
+        }
+        units = next_units;
+    }
+    text.len()
+}
+
+fn byte_offset_to_utf16_offset(text: &str, byte_offset: usize) -> usize {
+    let byte_offset = byte_offset.min(text.len());
+    text.char_indices()
+        .take_while(|(byte_index, _)| *byte_index < byte_offset)
+        .map(|(_, ch)| ch.len_utf16())
+        .sum()
+}
+
+fn byte_range_utf16_len(text: &str, start: usize, end: usize) -> usize {
+    byte_offset_to_utf16_offset(text, end) - byte_offset_to_utf16_offset(text, start)
 }
 
 #[tauri::command]
@@ -141,5 +201,24 @@ mod tests {
         }
         .into();
         assert_eq!("x", result.new_text);
+    }
+
+    #[test]
+    fn apply_command_translates_codemirror_utf16_offsets_to_rust_bytes() {
+        let text = "Ä\nTitle";
+        let result = apply_command_utf16("heading", text, 2, 0).unwrap();
+
+        assert_eq!("Ä\n# Title", result.new_text);
+        assert_eq!(4, result.new_selection_start);
+        assert_eq!(0, result.new_selection_length);
+    }
+
+    #[test]
+    fn apply_command_returns_utf16_selection_offsets() {
+        let result = apply_command_utf16("bold", "😀x", 2, 1).unwrap();
+
+        assert_eq!("😀**x**", result.new_text);
+        assert_eq!(4, result.new_selection_start);
+        assert_eq!(1, result.new_selection_length);
     }
 }

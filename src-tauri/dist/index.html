@@ -161,6 +161,56 @@
     pointer-events: none;
   }
   body.dnd-active #dnd-overlay { display: flex; }
+  #unsaved-dialog[hidden] { display: none; }
+  #unsaved-dialog {
+    position: fixed;
+    inset: 0;
+    z-index: 10001;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.28);
+  }
+  .unsaved-dialog__panel {
+    width: min(420px, calc(100vw - 32px));
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.28);
+    padding: 18px;
+  }
+  .unsaved-dialog__title {
+    font-weight: 700;
+    font-size: 14px;
+    margin-bottom: 8px;
+  }
+  .unsaved-dialog__text {
+    color: var(--fg-muted);
+    font-size: 13px;
+    line-height: 1.45;
+    margin-bottom: 16px;
+  }
+  .unsaved-dialog__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+  .unsaved-dialog__actions button {
+    min-width: 86px;
+    border: 1px solid var(--border);
+    background: var(--rail-bg);
+    color: var(--fg);
+    border-radius: 4px;
+    padding: 5px 10px;
+    cursor: pointer;
+  }
+  .unsaved-dialog__actions button:hover { background: var(--rail-hover-bg); }
+  .unsaved-dialog__actions .primary {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: white;
+  }
   /* Vault-Sektionen mit Pinned/Recent */
   .vault-region .vault-section { padding: 4px 0; }
   .vault-region .vault-section + .vault-section { border-top: 1px solid var(--border); margin-top: 4px; }
@@ -849,6 +899,17 @@
 </footer>
 <div id="dnd-overlay">Datei hier ablegen, um zu öffnen</div>
 <nav id="context-menu" role="menu"></nav>
+<div id="unsaved-dialog" hidden>
+  <div class="unsaved-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="unsaved-title">
+    <div class="unsaved-dialog__title" id="unsaved-title">Ungespeicherte Änderungen</div>
+    <div class="unsaved-dialog__text">Die Datei wurde geändert. Änderungen speichern?</div>
+    <div class="unsaved-dialog__actions">
+      <button type="button" id="unsaved-discard">Verwerfen</button>
+      <button type="button" id="unsaved-cancel">Abbrechen</button>
+      <button type="button" id="unsaved-save" class="primary">Speichern</button>
+    </div>
+  </div>
+</div>
 <div id="cheatsheet-overlay" hidden>
   <header class="overlay__drag">Markdown Cheat-Sheet</header>
   <div class="overlay__body" id="cheatsheet-body"></div>
@@ -1865,11 +1926,104 @@
 
     function $(id) { return document.getElementById(id); }
     function bind(id, fn) { var el = $(id); if (el) el.addEventListener('click', fn); }
-    function http(method, path, body) {
-        return fetch('http://127.0.0.1:9876' + path, {
-            method: method,
-            headers: body ? { 'Content-Type': 'application/json' } : {},
-            body: body ? JSON.stringify(body) : undefined,
+    var currentPath = null;
+    var isDirty = false;
+    var cleanText = '';
+    function markDirty(dirty) {
+        isDirty = !!dirty;
+        var el = $('status-path');
+        if (el) el.classList.toggle('dirty', isDirty);
+    }
+    function editorText() {
+        if (window.FolioEditor && typeof window.FolioEditor.getText === 'function') {
+            return window.FolioEditor.getText();
+        }
+        return cleanText;
+    }
+    function refreshDirtyFromEditor() {
+        var dirty = !!currentPath && editorText() !== cleanText;
+        markDirty(dirty);
+        return dirty;
+    }
+    function syncEditorTextToStore() {
+        if (!currentPath) return Promise.resolve();
+        return invoke('editor_text_changed', { text: editorText() }).catch(function(){});
+    }
+    function showUnsavedDialog() {
+        var dialog = $('unsaved-dialog');
+        if (!dialog) return Promise.resolve('cancel');
+        dialog.hidden = false;
+        return new Promise(function (resolve) {
+            function done(decision) {
+                dialog.hidden = true;
+                $('unsaved-save').removeEventListener('click', save);
+                $('unsaved-discard').removeEventListener('click', discard);
+                $('unsaved-cancel').removeEventListener('click', cancel);
+                document.removeEventListener('keydown', onKey);
+                resolve(decision);
+            }
+            function save() { done('save'); }
+            function discard() { done('discard'); }
+            function cancel() { done('cancel'); }
+            function onKey(e) {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    cancel();
+                }
+            }
+            $('unsaved-save').addEventListener('click', save);
+            $('unsaved-discard').addEventListener('click', discard);
+            $('unsaved-cancel').addEventListener('click', cancel);
+            document.addEventListener('keydown', onKey);
+            setTimeout(function () { var btn = $('unsaved-save'); if (btn) btn.focus(); }, 0);
+        });
+    }
+    function renderDocumentPayload(data) {
+        if (!data || typeof data !== 'object') return;
+        if (typeof window.setTocList === 'function') {
+            window.setTocList(data.tocHtml || data.toc_html || '');
+        }
+        var view = document.getElementById('view-region');
+        var body = view && view.querySelector('.markdown-body');
+        if (body) body.innerHTML = data.content || data.html || '';
+    }
+    function requestSaveIfDirty() {
+        var dirty = refreshDirtyFromEditor();
+        if (!dirty && !isDirty) return Promise.resolve(true);
+        return syncEditorTextToStore().then(showUnsavedDialog).then(function (decision) {
+            if (decision === 'cancel') return false;
+            if (decision === 'discard') {
+                return invoke('discard_editor_changes').then(function () {
+                    cleanText = editorText();
+                    markDirty(false);
+                    return true;
+                }).catch(function () { return false; });
+            }
+            return invoke('editor_save_requested').then(function (saved) {
+                if (saved) {
+                    cleanText = editorText();
+                    markDirty(false);
+                }
+                return !!saved;
+            }).catch(function () { return false; });
+        });
+    }
+    function openDocument(path) {
+        return requestSaveIfDirty().then(function (ok) {
+            if (!ok) return false;
+            return invoke('read_file', { path: path }).then(function () {
+                invoke('workspace_add_recent', { path: path }).catch(function(){});
+                return true;
+            });
+        });
+    }
+    function setMode(mode) {
+        return requestSaveIfDirty().then(function (ok) {
+            if (!ok) return false;
+            return invoke('set_view_mode', { mode: mode }).then(function () {
+                setActiveMode(mode);
+                return true;
+            });
         });
     }
 
@@ -1913,28 +2067,29 @@
             window.setTocWidth(editor.rightRailWidth);
         }
     }
-    function syncShellState(attempt) {
-        http('GET', '/state').then(function (response) {
-            return response.ok ? response.json() : null;
-        }).then(applyShellState).catch(function () {
-            if ((attempt || 0) < 2) setTimeout(function () { syncShellState((attempt || 0) + 1); }, 150);
-        });
-    }
-    bind('tb-mode-view', function () { http('POST', '/mode', { mode: 'view' }); setActiveMode('view'); });
-    bind('tb-mode-edit', function () { http('POST', '/mode', { mode: 'edit' }); setActiveMode('edit'); });
+    bind('tb-mode-view', function () { setMode('view'); });
+    bind('tb-mode-edit', function () { setMode('edit'); });
     bind('tb-rail-left', function () {
         var btn = $('tb-rail-left'); var on = !btn.classList.contains('active');
         btn.classList.toggle('active', on);
-        http('POST', '/rail', { side: 'left', visible: on });
+        invoke('set_rail_visible', { side: 'left', visible: on }).catch(function(){});
     });
     bind('tb-rail-right', function () {
         var btn = $('tb-rail-right'); var on = !btn.classList.contains('active');
         btn.classList.toggle('active', on);
-        http('POST', '/rail', { side: 'right', visible: on });
+        invoke('set_rail_visible', { side: 'right', visible: on }).catch(function(){});
     });
-    bind('tb-find', function () { http('POST', '/find'); });
-    bind('tb-back', function () { invoke('go_back').catch(function () {}); });
-    bind('tb-forward', function () { invoke('go_forward').catch(function () {}); });
+    bind('tb-find', function () { invoke('open_find').catch(function(){}); });
+    bind('tb-back', function () {
+        requestSaveIfDirty().then(function (ok) {
+            if (ok) invoke('go_back_and_emit').catch(function () {});
+        });
+    });
+    bind('tb-forward', function () {
+        requestSaveIfDirty().then(function (ok) {
+            if (ok) invoke('go_forward_and_emit').catch(function () {});
+        });
+    });
 
     /* ----- Edit-Toolbar: aktuellen Editor-Text+Selection holen, Command
             ans Backend schicken, Ergebnis via applyEditorReplace zurückspielen ----- */
@@ -2028,18 +2183,36 @@
         el.hidden = false;
         el.textContent = words + ' Wörter · ' + chars + ' Zeichen · ' + lines + ' Zeilen';
     }
-    bind('status-theme-toggle', function () { http('POST', '/theme', { mode: 'toggle' }); });
+    bind('status-theme-toggle', function () { invoke('theme_set', { mode: 'toggle' }).catch(function(){}); });
 
     /* ----- Tastatur-Shortcuts ----- */
     document.addEventListener('keydown', function (e) {
         var ctrl = e.ctrlKey || e.metaKey;
         if (ctrl && e.key === '1') { e.preventDefault(); $('tb-mode-view').click(); }
         else if (ctrl && e.key === '2') { e.preventDefault(); $('tb-mode-edit').click(); }
-        else if (ctrl && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); http('POST', '/find'); }
+        else if (ctrl && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); invoke('open_find').catch(function(){}); }
         else if (e.key === 'F1') { e.preventDefault(); $('tb-cheatsheet').click(); }
-        else if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); invoke('go_back').catch(function(){}); }
-        else if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); invoke('go_forward').catch(function(){}); }
-        else if (ctrl && (e.key === 's' || e.key === 'S')) { e.preventDefault(); http('POST', '/save'); }
+        else if (e.altKey && e.key === 'ArrowLeft') {
+            e.preventDefault();
+            requestSaveIfDirty().then(function (ok) {
+                if (ok) invoke('go_back_and_emit').catch(function(){});
+            });
+        }
+        else if (e.altKey && e.key === 'ArrowRight') {
+            e.preventDefault();
+            requestSaveIfDirty().then(function (ok) {
+                if (ok) invoke('go_forward_and_emit').catch(function(){});
+            });
+        }
+        else if (ctrl && (e.key === 's' || e.key === 'S')) {
+            e.preventDefault();
+            syncEditorTextToStore().then(function () { return invoke('editor_save_requested'); }).then(function (saved) {
+                if (saved) {
+                    cleanText = editorText();
+                    markDirty(false);
+                }
+            });
+        }
     });
 
     /* ----- Theme beim Boot laden + an html anwenden ----- */
@@ -2049,7 +2222,6 @@
         html.classList.toggle('theme-light', mode === 'light');
         if (typeof window.setEditorTheme === 'function') window.setEditorTheme(mode);
     }).catch(function(){});
-    syncShellState(0);
 
     /* ----- Vault: Workspace laden + rendern + Klicks ----- */
     var vaultTree = $('vault-tree');
@@ -2078,9 +2250,7 @@
             if (isDir) {
                 invoke('vault_expand_dir', { path: path }).catch(function () {});
             } else {
-                http('POST', '/open', { path: path }).then(function () {
-                    invoke('workspace_add_recent', { path: path }).catch(function(){});
-                });
+                openDocument(path);
             }
         });
         vaultTree.addEventListener('contextmenu', function (e) {
@@ -2103,9 +2273,7 @@
             if (cmd === 'addFile') {
                 invoke('pick_file').then(function (path) {
                     if (path) {
-                        http('POST', '/open', { path: path }).then(function () {
-                            invoke('workspace_add_recent', { path: path }).catch(function(){});
-                        });
+                        openDocument(path);
                     }
                 }).catch(function(){});
             } else if (cmd === 'addFolder') {
@@ -2148,7 +2316,7 @@
             var isDir = ctxTarget.isDirectory;
             closeContextMenu();
             if (act === 'open' && !isDir) {
-                http('POST', '/open', { path: path });
+                openDocument(path);
             } else if (act === 'pin') {
                 invoke('workspace_pin', { path: path, isDirectory: isDir }).catch(function(){});
             } else if (act === 'unpin') {
@@ -2184,26 +2352,29 @@
         var paths = (event && event.payload && event.payload.paths) || [];
         if (paths.length === 0) return;
         var first = paths[0];
-        http('POST', '/open', { path: first }).then(function () {
-            invoke('workspace_add_recent', { path: first }).catch(function(){});
-        });
+        openDocument(first);
     });
 
     /* ----- Backend-Events ----- */
     listen('document:loaded', function (event) {
         var data = event && event.payload || {};
+        currentPath = data.path || null;
+        cleanText = data.text || '';
+        markDirty(false);
         setStatusPath(data.path || 'Bereit', false);
         updateWordCount(data.text || '');
         invoke('workspace_add_recent', { path: data.path }).catch(function(){});
     });
     listen('document:dirty_changed', function (event) {
         var dirty = event && event.payload && (event.payload.is_dirty || event.payload.isDirty);
-        var el = $('status-path');
-        if (el) el.classList.toggle('dirty', !!dirty);
+        markDirty(!!dirty);
     });
-    listen('document:saved', function () {
-        var el = $('status-path');
-        if (el) el.classList.remove('dirty');
+    listen('document:saved', function (event) {
+        var data = event && event.payload || {};
+        cleanText = data.text || editorText();
+        markDirty(false);
+        renderDocumentPayload(data);
+        updateWordCount(data.text || '');
     });
     listen('vault:refresh', function () {
         refreshVault();
@@ -2229,10 +2400,24 @@
         }
         if (el && typeof el.click === 'function') el.click();
     });
+    listen('automation:set_editor_text', function (event) {
+        var data = event && event.payload || {};
+        var text = data.text || '';
+        if (typeof window.loadEditorText === 'function') window.loadEditorText(text);
+        updateWordCount(text);
+        if (currentPath) markDirty(text !== cleanText);
+    });
+    listen('automation:open_document', function (event) {
+        var data = event && event.payload || {};
+        if (data.path) openDocument(data.path);
+    });
 
     /* ----- Editor-Text-Tracking für Wordcount im Edit-Modus ----- */
     window.addEventListener('folio-editor-text-updated', function (e) {
-        updateWordCount(e.detail || '');
+        var text = e.detail || '';
+        updateWordCount(text);
+        if (currentPath) markDirty(text !== cleanText);
+        invoke('editor_text_changed', { text: text }).catch(function(){});
     });
 })();
 </script>

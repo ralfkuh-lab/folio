@@ -18,7 +18,7 @@ pub mod vault;
 pub mod workspace;
 
 use state::AppState;
-use tauri::{LogicalPosition, LogicalSize, Listener, Manager, WindowEvent};
+use tauri::{Listener, LogicalPosition, LogicalSize, Manager, WindowEvent};
 
 pub fn builder() -> tauri::Builder<tauri::Wry> {
     tauri::Builder::default()
@@ -116,12 +116,17 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::app::pick_folder,
             commands::app::pick_file,
             commands::app::theme_get,
+            commands::app::theme_set,
+            commands::app::set_view_mode,
+            commands::app::set_rail_visible,
+            commands::app::open_find,
             commands::app::show_in_file_manager,
             commands::file::read_file,
             commands::file::write_file,
             commands::file::file_list,
             commands::editor::editor_text_changed,
             commands::editor::editor_save_requested,
+            commands::editor::discard_editor_changes,
             commands::editor::apply_editor_command,
             commands::editor::editor_ready,
             commands::editor::editor_selection,
@@ -134,6 +139,8 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::nav::navigate,
             commands::nav::go_back,
             commands::nav::go_forward,
+            commands::nav::go_back_and_emit,
+            commands::nav::go_forward_and_emit,
             commands::nav::update_scroll,
             commands::nav::link_click,
             commands::nav::visible_heading,

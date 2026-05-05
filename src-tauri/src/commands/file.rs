@@ -24,6 +24,11 @@ pub async fn read_file(path: String, state: State<'_, AppState>) -> Result<FileD
         .map_err(|_| "document store lock poisoned".to_string())?
         .load(&path)
         .map_err(|error| error.to_string())?;
+    state
+        .navigation
+        .lock()
+        .map_err(|_| "navigation lock poisoned".to_string())?
+        .navigate(path, None);
     Ok(FileData {
         path: loaded.path,
         content: loaded.text,

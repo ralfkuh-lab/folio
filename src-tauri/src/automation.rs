@@ -127,6 +127,11 @@ struct FindTextRequest {
 }
 
 #[derive(Debug, Deserialize)]
+struct EditorTextRequest {
+    text: String,
+}
+
+#[derive(Debug, Deserialize)]
 struct ResizeRequest {
     width: f64,
     height: f64,
@@ -227,6 +232,7 @@ fn build_router(context: AutomationContext) -> Router {
         .route("/state", get(get_state))
         .route("/screenshot", get(get_screenshot))
         .route("/open", post(post_open))
+        .route("/open-ui", post(post_open_ui))
         .route("/mode", post(post_mode))
         .route("/theme", post(post_theme))
         .route("/rail", post(post_rail))
@@ -235,6 +241,7 @@ fn build_router(context: AutomationContext) -> Router {
         .route("/focus", post(post_focus))
         .route("/find", post(post_find))
         .route("/find/text", post(post_find_text))
+        .route("/editor/text", post(post_editor_text))
         .route("/resize", post(post_resize))
         .route("/save", post(post_save))
         .route("/quit", post(post_quit))
@@ -391,10 +398,28 @@ async fn post_open(
         .load(&payload.path)
         .map_err(|error| ApiError::internal(error.to_string()))?;
     state
+        .navigation
+        .lock()
+        .map_err(|_| ApiError::internal("navigation lock poisoned"))?
+        .navigate(payload.path.clone(), None);
+    state
         .vault
         .lock()
         .map_err(|_| ApiError::internal("vault lock poisoned"))?
         .set_active(Some(payload.path));
+    ok()
+}
+
+async fn post_open_ui(
+    AxumState(context): AxumState<AutomationContext>,
+    payload: Result<Json<OpenRequest>, JsonRejection>,
+) -> ApiResult<Json<OkResponse>> {
+    let Json(payload) = json_payload(payload)?;
+    emit(
+        &context,
+        "automation:open_document",
+        serde_json::json!({ "path": payload.path }),
+    )?;
     ok()
 }
 
@@ -567,6 +592,26 @@ async fn post_find_text(
         &context,
         "editor:set_find_term",
         serde_json::json!({ "term": payload.term }),
+    )?;
+    ok()
+}
+
+async fn post_editor_text(
+    AxumState(context): AxumState<AutomationContext>,
+    payload: Result<Json<EditorTextRequest>, JsonRejection>,
+) -> ApiResult<Json<OkResponse>> {
+    let Json(payload) = json_payload(payload)?;
+    context
+        .app_handle
+        .state::<AppState>()
+        .document_store
+        .lock()
+        .map_err(|_| ApiError::internal("document store lock poisoned"))?
+        .update_text(payload.text.clone());
+    emit(
+        &context,
+        "automation:set_editor_text",
+        serde_json::json!({ "text": payload.text }),
     )?;
     ok()
 }

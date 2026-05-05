@@ -24,7 +24,7 @@ pub struct LoadedDocument {
 pub struct DocumentEvents {
     pub loaded: Option<Arc<dyn Fn(LoadedDocument) + Send + Sync>>,
     pub dirty_changed: Option<Arc<dyn Fn(bool) + Send + Sync>>,
-    pub saved: Option<Arc<dyn Fn(String) + Send + Sync>>,
+    pub saved: Option<Arc<dyn Fn(String, String) + Send + Sync>>,
     pub text_changed: Option<Arc<dyn Fn(String) + Send + Sync>>,
     pub external_changed: Option<Arc<dyn Fn(String) + Send + Sync>>,
 }
@@ -130,7 +130,7 @@ impl DocumentStore {
         self.has_external_changes = false;
         self.set_dirty(false);
         if let Some(callback) = &self.events.saved {
-            callback(path);
+            callback(path, self.text.clone());
         }
         Ok(true)
     }
