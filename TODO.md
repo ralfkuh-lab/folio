@@ -16,6 +16,13 @@
 
 ## Mittlere Priorität
 
+- **Edit-Toolbar dateityp-spezifisch**: Markdown-spezifische Buttons (Bold, Italic,
+  Heading, Tabelle, Link, Bild, Codeblock, …) nur bei Markdown-Dateien zeigen.
+  Für Nicht-MD-Text-Dateien stattdessen ggf. nur generische Edit-Aktionen.
+- **Save-Button in der Edit-Toolbar**: Nur im Edit-Mode sichtbar, enabled wenn die
+  Datei dirty ist; ruft `editor_save_requested` auf, deaktiviert sich nach Save.
+
+
 - **HTML im View-Mode rendern**: `.html`/`.htm` als Datei-Klasse "richtig" anzeigen,
   Skripte/inline-Event-Handler beim Render rauspatchen (Sandbox-iframe oder
   serverseitige Sanitization). Aktuell öffnet der Edit-Mode den Source.
