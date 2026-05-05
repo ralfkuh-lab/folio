@@ -1,5 +1,19 @@
 # TODO
 
+## Hohe Priorität
+
+- **Icons überarbeiten**: App-Icon fehlt komplett, im Arbeitsbereich sind einige
+  Vault-Icons defekt, Toolbar/Statusbar sollen weg vom minimalistischen
+  Schwarz-Weiß hin zu farbigen, modernen Icons (schnellere Erkennbarkeit).
+  Designvorschlag professionell generieren lassen (z. B. via Codex-imagegen-Skill);
+  dann konsistent durch Toolbar, Vault-Header, Kontextmenüs und das App-Icon
+  (Linux `.png`/`.svg`, Windows `.ico`, macOS `.icns`) ziehen.
+- **Export Markdown → HTML / PDF**: Aktuelles Dokument exportieren. HTML kann der
+  vorhandene Renderer liefern (Standalone-Datei mit eingebettetem CSS). Für PDF:
+  über das WebView drucken (Tauri-WebView print → "Save as PDF") oder einen Rust-
+  Renderer anbinden (z. B. `printpdf`/`weasyprint`-CLI). Menü/Toolbar-Eintrag
+  inklusive Datei-Pfad-Dialog.
+
 ## Mittlere Priorität
 
 - **HTML im View-Mode rendern**: `.html`/`.htm` als Datei-Klasse "richtig" anzeigen,
