@@ -2096,12 +2096,37 @@
             }).catch(function () { return false; });
         });
     }
+    var MD_EXT_RE = /\.(md|markdown|mdown|mkd)$/i;
+    function isMarkdownPath(p) { return !!p && MD_EXT_RE.test(p); }
+    function applyKindLock(path) {
+        var md = isMarkdownPath(path);
+        var btnView = $('tb-mode-view');
+        if (btnView) {
+            btnView.disabled = !md;
+            btnView.title = md ? 'View (Ctrl+1)' : 'View nur für Markdown verfügbar';
+        }
+    }
+    function showStatus(msg) {
+        var el = $('status-path');
+        if (el) el.textContent = msg;
+    }
     function openDocument(path) {
         return requestSaveIfDirty().then(function (ok) {
             if (!ok) return false;
-            return invoke('read_file', { path: path }).then(function () {
+            return invoke('read_file', { path: path }).then(function (data) {
                 invoke('workspace_add_recent', { path: path }).catch(function(){});
+                var kind = data && data.kind;
+                if (kind && kind !== 'markdown' &&
+                    !document.body.classList.contains('edit-mode')) {
+                    invoke('set_view_mode', { mode: 'edit' }).then(function () {
+                        setActiveMode('edit');
+                    }).catch(function(){});
+                }
+                applyKindLock(path);
                 return true;
+            }).catch(function (err) {
+                showStatus(typeof err === 'string' ? err : 'Datei konnte nicht geöffnet werden');
+                return false;
             });
         });
     }
@@ -2432,6 +2457,7 @@
         markDirty(false);
         setStatusPath(data.path || 'Bereit', false);
         updateWordCount(data.text || '');
+        applyKindLock(data.path || '');
         invoke('workspace_add_recent', { path: data.path }).catch(function(){});
         // Such-Highlights gehen im View-Mode beim innerHTML-Replace verloren — neu setzen.
         var bar = document.getElementById('find-bar');

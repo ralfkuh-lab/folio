@@ -15,3 +15,4 @@ tools/goldfile-gen/**/obj
 src-tauri/target/
 folio-rs-debug
 folio-rs-release
+goldfiles/actual/

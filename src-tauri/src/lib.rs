@@ -2,6 +2,7 @@ pub mod automation;
 pub mod commands;
 pub mod document_store;
 pub mod editor_commands;
+pub mod file_kind;
 pub mod file_resolver;
 pub mod frontmatter;
 pub mod heading_anchor;
