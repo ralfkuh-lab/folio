@@ -1515,6 +1515,7 @@
         var inputDebounce = null;
         var INPUT_DEBOUNCE_MS = 150;
         input.addEventListener('input', function () {
+            if (input.value) lastTermMemo = input.value;
             if (inputDebounce) clearTimeout(inputDebounce);
             inputDebounce = setTimeout(function () {
                 inputDebounce = null;
@@ -1556,8 +1557,14 @@
         // Bar geschlossen ist, oeffnet F3 sie mit diesem Begriff (Datei-Wechsel:
         // weitersuchen ohne neu tippen). Bei offener leerer Bar wird der lastTerm
         // ebenfalls als Startwert eingespielt.
+        var lastTermMemo = '';
+        function pickSeed(arg) {
+            if (typeof arg === 'string' && arg) return arg;
+            if (input.value) return input.value;
+            return lastTermMemo;
+        }
         window.findNext = function (lastTerm) {
-            var seed = (typeof lastTerm === 'string') ? lastTerm : '';
+            var seed = pickSeed(lastTerm);
             if (!bar.classList.contains('open')) { open(seed); return; }
             if (!input.value) {
                 if (seed) { input.value = seed; var f0 = getFinder(); if (f0) f0.openFind(seed); }
@@ -1566,7 +1573,7 @@
             var f = getFinder(); if (f) f.findNext();
         };
         window.findPrev = function (lastTerm) {
-            var seed = (typeof lastTerm === 'string') ? lastTerm : '';
+            var seed = pickSeed(lastTerm);
             if (!bar.classList.contains('open')) { open(seed); return; }
             if (!input.value) {
                 if (seed) { input.value = seed; var f0 = getFinder(); if (f0) f0.openFind(seed); }
@@ -1986,14 +1993,6 @@
         dragHeader.addEventListener('pointerup', endDrag);
         dragHeader.addEventListener('pointercancel', endDrag);
 
-        // Esc schliesst.
-        document.addEventListener('keydown', function (e) {
-            if (overlay.hidden) return;
-            if (e.key === 'Escape') {
-                e.preventDefault();
-                window.hideCheatSheet();
-            }
-        });
 
         // Window-Resize: in den Viewport zurueckholen.
         window.addEventListener('resize', function () {
@@ -2271,6 +2270,11 @@
         if (ctrl && e.key === '1') { e.preventDefault(); $('tb-mode-view').click(); }
         else if (ctrl && e.key === '2') { e.preventDefault(); $('tb-mode-edit').click(); }
         else if (ctrl && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); invoke('open_find').catch(function(){}); }
+        else if (e.key === 'F3') {
+            e.preventDefault();
+            var fn = e.shiftKey ? window.findPrev : window.findNext;
+            if (typeof fn === 'function') fn();
+        }
         else if (e.key === 'F1') {
             e.preventDefault();
             if (document.body.classList.contains('edit-mode')) $('tb-cheatsheet').click();
@@ -2429,6 +2433,14 @@
         setStatusPath(data.path || 'Bereit', false);
         updateWordCount(data.text || '');
         invoke('workspace_add_recent', { path: data.path }).catch(function(){});
+        // Such-Highlights gehen im View-Mode beim innerHTML-Replace verloren — neu setzen.
+        var bar = document.getElementById('find-bar');
+        if (bar && bar.classList.contains('open') && !document.body.classList.contains('edit-mode')) {
+            var input = document.getElementById('find-input');
+            if (input && input.value && window.ViewFinder) {
+                setTimeout(function () { window.ViewFinder.setFindTerm(input.value); }, 0);
+            }
+        }
     });
     listen('document:dirty_changed', function (event) {
         var dirty = event && event.payload && (event.payload.is_dirty || event.payload.isDirty);
@@ -2447,6 +2459,7 @@
     listen('app:set_mode', function (event) {
         var mode = (event && event.payload && event.payload.mode) || 'view';
         setActiveMode(mode);
+        if (typeof window.afterModeSwitch === 'function') window.afterModeSwitch();
     });
     listen('panel:rail_changed', function (event) {
         var data = event && event.payload || {};
