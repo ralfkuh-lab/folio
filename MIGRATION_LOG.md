@@ -40,7 +40,7 @@ End: 2026-05-04T15:00Z
 | AutomationServer | 325 | `automation.rs` |
 | WebViewBridge | 200 | Phase 4: Tauri Command/Event-System |
 
-**Tests:** 120 Tests (96 unit + 3 goldfile + 21 integration/smoke). Alle passing.
+**Tests:** 121 Tests (96 unit + 3 goldfile + 22 integration/smoke). Alle passing.
 
 **Frontend-Assets (verbatim übernommen):**
 - `src/Folio/web/src/editor.ts` → `dist/editor.ts`
@@ -202,10 +202,10 @@ End: 2026-05-04T23:30Z
 - [x] T6.2 integration_editor.rs: Formatting-Sequenzen, Link/Table-Insertion, Cursor-Positionen
 - [x] T6.3 integration_pipeline.rs: End-to-End Markdown-Pipeline, TOC/HTML-Konsistenz, Duplicate-Slugs
 - [x] T6.4 integration_file.rs: DocumentStore + FileResolver + Workspace Integration
-- [x] T6.5 smoke_automation.rs: HTTP-Router-Tests (/state, /open, /save, /quit, 403, 404)
+- [x] T6.5 smoke_automation.rs: HTTP-Router-Tests (/state, /open, /save, /quit, CORS-Preflight, 403, 404)
 
 ### Done-Gate Ergebnis
-- **120 Tests total** (96 unit + 3 goldfile + 21 integration/smoke)
+- **121 Tests total** (96 unit + 3 goldfile + 22 integration/smoke)
 - Alle Tests passing
 - clippy clean, fmt clean
 
@@ -226,9 +226,41 @@ End: 2026-05-04T23:45Z
 ### Done-Gate Ergebnis
 - MIGRATION_LOG.md vollständig
 - README.md mit Build-Anleitung
-- 120 Tests passing
+- 121 Tests passing
 - clippy clean, fmt clean
 - Repo auf GitHub: https://github.com/ralfkuh-lab/folio-rs
+
+---
+
+## Post-Migration Stabilisierung — WebView-Interaktion
+Datum: 2026-05-05
+
+### Befund
+- Toolbar-/Statusbar-Aktionen mit JSON-POSTs aus der Tauri-WebView wurden durch fehlende
+  CORS/OPTIONS-Preflight-Unterstützung der Automation-API blockiert; der Suchbutton war
+  deshalb als einfacher Request weiterhin funktionsfähig.
+- Das Vault-HTML war auf flache `.vault-item`-Einträge zurückgefallen, während die
+  portierte Shell-Klicklogik Baum-Markup mit Sections, Nodes, Carets und `ul.children`
+  erwartet.
+- Persistierte Rail-Zustände wurden beim Boot nicht in Toolbar-Button-States und Body-Klassen
+  zurückgespiegelt.
+
+### Ergebnis
+- Automation-API setzt CORS-Header und beantwortet `OPTIONS`-Preflights.
+- Vault rendert wieder Pinned/Recent-Sections, aufklappbare Ordner, Dateien, aktive Einträge
+  und Carets im erwarteten Markup.
+- Toolbar-/Statusbar-Buttons synchronisieren initialen Mode, Theme, Rail-Sichtbarkeit und
+  Rail-Breiten aus `/state`.
+- `/click` kann IDs, `data-name` und CSS-Selektoren auslösen, damit Vault-Dateiklicks und
+  Ordner-Expand über die Automation-API verifizierbar sind.
+
+### Verifikation
+- `rustfmt --edition 2021 --check src/automation.rs src/vault.rs tests/smoke_automation.rs`
+- `cargo test --test smoke_automation`
+- `cargo test vault`
+- `cargo check`
+- Manuelle E2E-Verifikation über Automation-API und Screenshots: Mode, Theme, Vault/TOC-Rails,
+  Vault-Dateiklick, Ordner-Expand, TOC-Aktivierung.
 
 ---
 

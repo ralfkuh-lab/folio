@@ -2,10 +2,10 @@ use crate::{state::AppState, toc};
 use axum::{
     body::Body,
     extract::{rejection::JsonRejection, ConnectInfo, Json, Request, State as AxumState},
-    http::{Method, StatusCode, Uri},
+    http::{header, HeaderValue, Method, StatusCode, Uri},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{get, options, post},
     Router,
 };
 use serde::{Deserialize, Serialize};
@@ -171,6 +171,7 @@ pub fn build_mock_router(state: Arc<Mutex<MockAutomationState>>) -> Router {
         .route("/open", post(mock_post_open))
         .route("/save", post(mock_post_save))
         .route("/quit", post(mock_post_quit))
+        .route("/{*path}", options(preflight))
         .fallback(not_found)
         .method_not_allowed_fallback(method_not_allowed)
         .layer(middleware::from_fn(loopback_only))
@@ -237,6 +238,7 @@ fn build_router(context: AutomationContext) -> Router {
         .route("/resize", post(post_resize))
         .route("/save", post(post_save))
         .route("/quit", post(post_quit))
+        .route("/{*path}", options(preflight))
         .fallback(not_found)
         .method_not_allowed_fallback(method_not_allowed)
         .layer(middleware::from_fn(loopback_only))
@@ -249,9 +251,37 @@ async fn loopback_only(
     next: Next,
 ) -> Response {
     if !addr.ip().is_loopback() {
-        return ApiError::forbidden("loopback only").into_response();
+        let mut response = ApiError::forbidden("loopback only").into_response();
+        add_cors_headers(&mut response);
+        return response;
     }
-    next.run(request).await
+    let mut response = next.run(request).await;
+    add_cors_headers(&mut response);
+    response
+}
+
+fn add_cors_headers(response: &mut Response) {
+    let headers = response.headers_mut();
+    headers.insert(
+        header::ACCESS_CONTROL_ALLOW_ORIGIN,
+        HeaderValue::from_static("*"),
+    );
+    headers.insert(
+        header::ACCESS_CONTROL_ALLOW_METHODS,
+        HeaderValue::from_static("GET, POST, OPTIONS"),
+    );
+    headers.insert(
+        header::ACCESS_CONTROL_ALLOW_HEADERS,
+        HeaderValue::from_static("content-type"),
+    );
+    headers.insert(
+        header::ACCESS_CONTROL_MAX_AGE,
+        HeaderValue::from_static("86400"),
+    );
+}
+
+async fn preflight() -> StatusCode {
+    StatusCode::NO_CONTENT
 }
 
 async fn get_state(
@@ -600,8 +630,11 @@ async fn not_found(method: Method, uri: Uri) -> ApiError {
     ApiError::not_found(format!("no route for {method} {}", uri.path()))
 }
 
-async fn method_not_allowed(method: Method, uri: Uri) -> ApiError {
-    ApiError::not_found(format!("no route for {method} {}", uri.path()))
+async fn method_not_allowed(method: Method, uri: Uri) -> Response {
+    if method == Method::OPTIONS {
+        return preflight().await.into_response();
+    }
+    ApiError::not_found(format!("no route for {method} {}", uri.path())).into_response()
 }
 
 fn ok() -> ApiResult<Json<OkResponse>> {

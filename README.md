@@ -9,7 +9,7 @@ Folio RS ist eine vollständige Neuimplementierung der [Folio](https://github.co
 - **Live-Vorschau** von Markdown mit GitHub-Flavored Markdown (GFM), Tasklisten, Tabellen und Frontmatter
 - **Split-View-Editor** mit Syntax-Highlighting und WYSIWYG-Shortcuts
 - **Datei-Navigation** mit Ordnerbaum (Vault), Workspace-Pins und Recent-Dateien
-- **Automatisierungs-API** für End-to-End-Tests (HTTP-Server auf Port 9876)
+- **Automatisierungs-API** für End-to-End-Tests (HTTP-Server auf Port 9876, inkl. WebView-CORS/Preflight)
 - **Cross-Platform** dank Tauri 2 und WebView2/WebKitGTK
 
 ## Tech-Stack
@@ -105,10 +105,10 @@ cargo fmt --check
 
 ## Testabdeckung
 
-- **120 Tests total**
+- **121 Tests total**
   - 96 Unit-Tests (Renderer, TOC, Frontmatter, Editor-Commands, Navigation, FileResolver, Workspace, Vault, PanelState)
   - 3 Goldfile-Regressionstests
-  - 21 Integration/Smoke-Tests (Navigation, Editor, Pipeline, File-Operations, Automation-API)
+  - 22 Integration/Smoke-Tests (Navigation, Editor, Pipeline, File-Operations, Automation-API)
 
 ## Automation-API
 
@@ -130,6 +130,10 @@ Für End-to-End-Tests läuft ein HTTP-Server auf `127.0.0.1:9876` (Loopback-only
 | `/resize` | POST | Fenstergröße ändern |
 | `/save` | POST | Speichern |
 | `/quit` | POST | App beenden |
+
+Die API akzeptiert `OPTIONS`-Preflight-Requests und setzt CORS-Header, damit Toolbar- und
+Statusbar-Aktionen aus der Tauri-WebView heraus dieselben JSON-POST-Endpunkte verwenden
+können wie externe E2E-Tests.
 
 ## Migration
 

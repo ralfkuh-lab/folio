@@ -14,7 +14,7 @@ beim Lesen/Ändern bitte beachten, dass viele Module 1:1-Ports von C#-Services s
 
 - Rust 2021, Tauri 2 (Backend)
 - comrak 0.35 für GFM-Markdown
-- axum 0.8 für Automation-HTTP-API (Loopback `127.0.0.1:9876`)
+- axum 0.8 für Automation-HTTP-API (Loopback `127.0.0.1:9876`, CORS/OPTIONS für WebView-POSTs)
 - Vanilla TypeScript Frontend (in `src-tauri/dist/`)
 - notify 7.0 für File-Watching, xcap für Screenshots
 
@@ -36,7 +36,7 @@ Arbeitsverzeichnis für Cargo-Befehle: `src-tauri/`.
 ```bash
 cd src-tauri
 cargo build                              # Dev-Build (~2–3 min initial)
-cargo test                               # 120 Tests (Unit + Goldfile + Integration)
+cargo test                               # 121 Tests (Unit + Goldfile + Integration)
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 cargo tauri build                        # Release-Bundle (Linux: braucht libwebkit2gtk-4.1-dev)
@@ -58,7 +58,11 @@ bevor `cargo tauri build` läuft.
   immer Original-Encoding/Line-Endings beibehalten.
 - **IPC-Payloads**: Große Payloads (gerendertes HTML) gehen über Tauri-Events, nicht über
   Command-Returns.
-- **Automation-API**: nur Loopback. Keine externen Bind-Adressen einführen.
+- **Automation-API**: nur Loopback. Keine externen Bind-Adressen einführen. WebView-JSON-POSTs
+  brauchen CORS/OPTIONS-Preflight; `/click` darf IDs, `data-name` und CSS-Selektoren für
+  E2E-Verifikation auslösen.
+- **Vault-Markup**: Frontend-Klicklogik erwartet Baum-Markup mit `.section`, `.node`,
+  `.row`, `.caret` und `ul.children`; nicht auf flache `.vault-item`-Einträge zurückbauen.
 
 ## GitHub
 

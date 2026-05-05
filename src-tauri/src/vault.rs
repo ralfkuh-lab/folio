@@ -25,18 +25,16 @@ impl Vault {
 
     pub fn build_initial_tree_html(&self, workspace: &Workspace) -> String {
         let mut html = String::new();
-        html.push_str(r#"<section class="vault-section" data-section="pinned">"#);
-        html.push_str(r#"<div class="vault-section-title">📌 Pinned</div>"#);
-        for item in workspace.pinned() {
-            html.push_str(&self.item_html(&item.path, item.is_directory));
-        }
-        html.push_str("</section>");
-        html.push_str(r#"<section class="vault-section" data-section="recent">"#);
-        html.push_str(r#"<div class="vault-section-title">🕘 Recent</div>"#);
-        for item in workspace.recent() {
-            html.push_str(&self.item_html(&item.path, false));
-        }
-        html.push_str("</section>");
+        html.push_str(&self.section_html(
+            "pinned",
+            "Pinned Files",
+            self.pinned_children_html(workspace),
+        ));
+        html.push_str(&self.section_html(
+            "recent",
+            "Recent Files",
+            self.recent_children_html(workspace),
+        ));
         html
     }
 
@@ -58,8 +56,8 @@ impl Vault {
 
     pub fn compute_refresh_delta(&self, workspace: &Workspace) -> VaultRefreshDelta {
         VaultRefreshDelta {
-            pinned: Some(self.build_initial_tree_html(workspace)),
-            recent: None,
+            pinned: Some(self.pinned_children_html(workspace)),
+            recent: Some(self.recent_children_html(workspace)),
         }
     }
 
@@ -85,21 +83,72 @@ impl Vault {
     fn item_html(&self, path: &str, is_directory: bool) -> String {
         let expanded = is_directory && self.is_expanded(path);
         let active = self.active_path.as_deref() == Some(path);
-        let class = if active {
-            "vault-item active"
+        let class = if active { "node active" } else { "node" };
+        let kind = if is_directory { "dir" } else { "file" };
+        let loaded = if expanded { "1" } else { "0" };
+        let caret_class = if is_directory {
+            if expanded {
+                "caret open"
+            } else {
+                "caret"
+            }
         } else {
-            "vault-item"
+            "caret hidden"
         };
         let icon = match (is_directory, expanded) {
             (true, true) => "📂",
             (true, false) => "📁",
             (false, _) => "📄",
         };
+        let children_class = if expanded {
+            "children"
+        } else {
+            "children collapsed"
+        };
+        let children = if expanded {
+            self.build_dir_children_html(path).unwrap_or_default()
+        } else {
+            String::new()
+        };
         format!(
-            r#"<div class="{class}" data-path="{path}" data-directory="{is_directory}"><span class="vault-icon">{icon}</span><span class="vault-name">{name}</span></div>"#,
+            r#"<li class="{class}" data-kind="{kind}" data-path="{path}" data-loaded="{loaded}"><div class="row"><span class="{caret_class}">▾</span><span class="icon">{icon}</span><span class="label">{name}</span></div><ul class="{children_class}">{children}</ul></li>"#,
             path = escape_attr(path),
             name = escape_html(&display_name(Path::new(path))),
         )
+    }
+
+    fn section_html(&self, key: &str, title: &str, children: String) -> String {
+        format!(
+            r#"<li class="section" data-section="{key}"><div class="row"><span class="caret open">▾</span><span class="icon">▣</span><span class="label">{title}</span></div><ul class="children">{children}</ul></li>"#,
+            key = escape_attr(key),
+            title = escape_html(title),
+        )
+    }
+
+    fn pinned_children_html(&self, workspace: &Workspace) -> String {
+        let html = workspace
+            .pinned()
+            .iter()
+            .map(|item| self.item_html(&item.path, item.is_directory))
+            .collect::<String>();
+        empty_placeholder(html)
+    }
+
+    fn recent_children_html(&self, workspace: &Workspace) -> String {
+        let html = workspace
+            .recent()
+            .iter()
+            .map(|item| self.item_html(&item.path, false))
+            .collect::<String>();
+        empty_placeholder(html)
+    }
+}
+
+fn empty_placeholder(html: String) -> String {
+    if html.is_empty() {
+        r#"<li class="empty">Keine Einträge</li>"#.to_string()
+    } else {
+        html
     }
 }
 
@@ -142,8 +191,9 @@ mod tests {
         workspace.pin("/tmp/a.md".into(), false).unwrap();
         workspace.add_recent("/tmp/b.md".into()).unwrap();
         let html = Vault::new().build_initial_tree_html(&workspace);
-        assert!(html.contains("📌 Pinned"));
-        assert!(html.contains("🕘 Recent"));
+        assert!(html.contains("Pinned Files"));
+        assert!(html.contains("Recent Files"));
+        assert!(html.contains(r#"class="section" data-section="pinned""#));
         assert!(html.contains("a.md"));
     }
 
@@ -165,6 +215,14 @@ mod tests {
         let mut vault = Vault::new();
         vault.set_active(Some("/tmp/a.md".into()));
         let html = vault.item_html("/tmp/a.md", false);
-        assert!(html.contains("vault-item active"));
+        assert!(html.contains("node active"));
+    }
+
+    #[test]
+    fn directories_render_caret_and_child_container() {
+        let html = Vault::new().item_html("/tmp/dir", true);
+        assert!(html.contains(r#"data-kind="dir""#));
+        assert!(html.contains(r#"class="caret""#));
+        assert!(html.contains(r#"class="children collapsed""#));
     }
 }

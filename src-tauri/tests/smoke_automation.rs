@@ -1,7 +1,7 @@
 use axum::{
     body::{to_bytes, Body},
     extract::connect_info::ConnectInfo,
-    http::{Request, StatusCode},
+    http::{header, Request, StatusCode},
     Router,
 };
 use folio_rs::automation::{build_mock_router, MockAutomationState};
@@ -55,6 +55,38 @@ async fn post_open_loads_temp_file_and_updates_state() {
     assert_eq!(Some(path.to_string_lossy().into_owned()), state.file);
     assert_eq!("# Opened\n", state.text);
     assert!(!state.dirty);
+}
+
+#[tokio::test]
+async fn preflight_allows_json_posts_from_webview() {
+    let state = Arc::new(Mutex::new(MockAutomationState::default()));
+    let mut request = Request::builder()
+        .method("OPTIONS")
+        .uri("/open")
+        .header(header::ORIGIN, "tauri://localhost")
+        .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+        .header(header::ACCESS_CONTROL_REQUEST_HEADERS, "content-type")
+        .body(Body::empty())
+        .unwrap();
+    request.extensions_mut().insert(ConnectInfo(loopback()));
+
+    let response = build_mock_router(state).oneshot(request).await.unwrap();
+
+    assert_eq!(StatusCode::NO_CONTENT, response.status());
+    assert_eq!(
+        "*",
+        response
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .unwrap()
+    );
+    assert!(response
+        .headers()
+        .get(header::ACCESS_CONTROL_ALLOW_HEADERS)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .contains("content-type"));
 }
 
 #[tokio::test]

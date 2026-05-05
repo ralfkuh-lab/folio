@@ -1708,6 +1708,8 @@
                 cmdBtn = cmdBtn.parentElement;
             }
             if (cmdBtn && cmdBtn !== REGION && cmdBtn.classList.contains('vault-cmd')) {
+                e.preventDefault();
+                e.stopPropagation();
                 var cmd = cmdBtn.getAttribute('data-cmd');
                 if (cmd === 'addFile') post({ type: 'addFile' });
                 else if (cmd === 'addFolder') post({ type: 'addFolder' });
@@ -1866,7 +1868,7 @@
     function http(method, path, body) {
         return fetch('http://127.0.0.1:9876' + path, {
             method: method,
-            headers: body ? { 'Content-Type': 'application/json' } : { 'Content-Length': '0' },
+            headers: body ? { 'Content-Type': 'application/json' } : {},
             body: body ? JSON.stringify(body) : undefined,
         });
     }
@@ -1876,6 +1878,47 @@
         $('tb-mode-view').classList.toggle('active', mode === 'view');
         $('tb-mode-edit').classList.toggle('active', mode === 'edit');
         var sm = $('status-mode'); if (sm) sm.textContent = mode === 'edit' ? 'Edit' : 'View';
+    }
+    function setRailButton(side, visible) {
+        var btn = side === 'left' ? $('tb-rail-left') : $('tb-rail-right');
+        if (btn) btn.classList.toggle('active', !!visible);
+    }
+    function applyRailVisibility(side, visible) {
+        if (typeof window.setRailVisibility === 'function') {
+            window.setRailVisibility(side, !!visible);
+        } else if (side === 'left') {
+            document.body.classList.toggle('vault-hidden', !visible);
+        } else if (side === 'right') {
+            document.body.classList.toggle('toc-hidden', !visible);
+        }
+        setRailButton(side, visible);
+    }
+    function applyShellState(state) {
+        if (!state || typeof state !== 'object') return;
+        var mode = state.viewMode || state.view_mode || 'view';
+        document.body.classList.toggle('edit-mode', mode === 'edit');
+        document.body.classList.toggle('split-mode', mode === 'split');
+        setActiveMode(mode);
+        var theme = state.theme || 'light';
+        document.documentElement.classList.toggle('theme-dark', theme === 'dark');
+        document.documentElement.classList.toggle('theme-light', theme === 'light');
+        if (typeof window.setEditorTheme === 'function') window.setEditorTheme(theme);
+        if (typeof state.leftRailVisible === 'boolean') applyRailVisibility('left', state.leftRailVisible);
+        if (typeof state.rightRailVisible === 'boolean') applyRailVisibility('right', state.rightRailVisible);
+        var editor = state.editor || {};
+        if (typeof editor.leftRailWidth === 'number' && typeof window.setVaultWidth === 'function') {
+            window.setVaultWidth(editor.leftRailWidth);
+        }
+        if (typeof editor.rightRailWidth === 'number' && typeof window.setTocWidth === 'function') {
+            window.setTocWidth(editor.rightRailWidth);
+        }
+    }
+    function syncShellState(attempt) {
+        http('GET', '/state').then(function (response) {
+            return response.ok ? response.json() : null;
+        }).then(applyShellState).catch(function () {
+            if ((attempt || 0) < 2) setTimeout(function () { syncShellState((attempt || 0) + 1); }, 150);
+        });
     }
     bind('tb-mode-view', function () { http('POST', '/mode', { mode: 'view' }); setActiveMode('view'); });
     bind('tb-mode-edit', function () { http('POST', '/mode', { mode: 'edit' }); setActiveMode('edit'); });
@@ -2006,6 +2049,7 @@
         html.classList.toggle('theme-light', mode === 'light');
         if (typeof window.setEditorTheme === 'function') window.setEditorTheme(mode);
     }).catch(function(){});
+    syncShellState(0);
 
     /* ----- Vault: Workspace laden + rendern + Klicks ----- */
     var vaultTree = $('vault-tree');
@@ -2168,10 +2212,21 @@
         var mode = (event && event.payload && event.payload.mode) || 'view';
         setActiveMode(mode);
     });
+    listen('panel:rail_changed', function (event) {
+        var data = event && event.payload || {};
+        if (typeof data.leftRailVisible === 'boolean') setRailButton('left', data.leftRailVisible);
+        if (typeof data.rightRailVisible === 'boolean') setRailButton('right', data.rightRailVisible);
+    });
     listen('automation:click', function (event) {
         var name = event && event.payload && event.payload.name;
         if (!name) return;
-        var el = document.getElementById(name) || document.querySelector('[data-name="' + name + '"]');
+        var el = document.getElementById(name);
+        if (!el) {
+            try { el = document.querySelector('[data-name="' + CSS.escape(name) + '"]'); } catch (_) {}
+        }
+        if (!el) {
+            try { el = document.querySelector(name); } catch (_) {}
+        }
         if (el && typeof el.click === 'function') el.click();
     });
 
