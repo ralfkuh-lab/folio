@@ -19,6 +19,10 @@
 - **Edit-Toolbar dateityp-spezifisch**: Markdown-spezifische Buttons (Bold, Italic,
   Heading, Tabelle, Link, Bild, Codeblock, …) nur bei Markdown-Dateien zeigen.
   Für Nicht-MD-Text-Dateien stattdessen ggf. nur generische Edit-Aktionen.
+- **Config-/Einstellungen-Bereich**: Eigener Settings-Dialog/-Panel für
+  Anwendungs-Einstellungen (Theme, Font/Schriftgröße, Editor-Optionen,
+  Vault-Pfade, Automation-Port, …). Persistenz analog zur Window-State-
+  Speicherung; Aufruf über Menü oder Statusbar.
 - **Klassische Menüleiste**: Aufklappbares Menü (File, Edit, View, Help, …)
   zusätzlich zur bestehenden Toolbar. Standard-Punkte (Öffnen, Speichern,
   Speichern unter, Beenden / Rückgängig, Suchen / Theme, Rails / About).
