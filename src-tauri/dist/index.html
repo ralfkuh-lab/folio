@@ -809,6 +809,10 @@
   </div>
   <div class="sep edit-only"></div>
   <div class="group edit-only">
+    <button id="tb-save" title="Speichern (Ctrl+S)" aria-label="Speichern" disabled><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 2.5h8.5l2.5 2.5v8.5h-11z"/><path d="M5 2.5v4h5v-4"/><rect x="4.5" y="9" width="7" height="4.5"/></svg></button>
+  </div>
+  <div class="sep edit-only"></div>
+  <div class="group edit-only">
     <button id="tb-bold" title="Fett (Ctrl+B)"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M3 2h4.5a3 3 0 012.2 5 3 3 0 01-1.7 5H3V2zm2 2v3h2.4a1.5 1.5 0 100-3H5zm0 5v3h2.7a1.5 1.5 0 100-3H5z"/></svg></button>
     <button id="tb-italic" title="Kursiv (Ctrl+I)"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="6" y1="2" x2="11" y2="2"/><line x1="3" y1="12" x2="8" y2="12"/><line x1="9" y1="2" x2="5" y2="12"/></svg></button>
     <button id="tb-strike" title="Durchgestrichen"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="2" y1="7" x2="12" y2="7"/><path d="M4 4c0-1 1-2 3-2s3 1 3 2"/><path d="M4 10c0 1 1 2 3 2s3-1 3-2"/></svg></button>
@@ -2021,6 +2025,8 @@
         isDirty = !!dirty;
         var el = $('status-path');
         if (el) el.classList.toggle('dirty', isDirty);
+        var btn = $('tb-save');
+        if (btn) btn.disabled = !isDirty;
     }
     function editorText() {
         if (window.FolioEditor && typeof window.FolioEditor.getText === 'function') {
@@ -2074,6 +2080,17 @@
         var view = document.getElementById('view-region');
         var body = view && view.querySelector('.markdown-body');
         if (body) body.innerHTML = data.content || data.html || '';
+    }
+    function saveCurrent() {
+        return syncEditorTextToStore().then(function () {
+            return invoke('editor_save_requested');
+        }).then(function (saved) {
+            if (saved) {
+                cleanText = editorText();
+                markDirty(false);
+            }
+            return !!saved;
+        }).catch(function () { return false; });
     }
     function requestSaveIfDirty() {
         var dirty = refreshDirtyFromEditor();
@@ -2186,6 +2203,7 @@
     }
     bind('tb-mode-view', function () { setMode('view'); });
     bind('tb-mode-edit', function () { setMode('edit'); });
+    bind('tb-save', function () { if (isDirty) saveCurrent(); });
     bind('tb-rail-left', function () {
         var btn = $('tb-rail-left'); var on = !btn.classList.contains('active');
         btn.classList.toggle('active', on);
@@ -2318,12 +2336,7 @@
         }
         else if (ctrl && (e.key === 's' || e.key === 'S')) {
             e.preventDefault();
-            syncEditorTextToStore().then(function () { return invoke('editor_save_requested'); }).then(function (saved) {
-                if (saved) {
-                    cleanText = editorText();
-                    markDirty(false);
-                }
-            });
+            saveCurrent();
         }
     });
 

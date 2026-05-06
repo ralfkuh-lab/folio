@@ -19,8 +19,6 @@
 - **Edit-Toolbar dateityp-spezifisch**: Markdown-spezifische Buttons (Bold, Italic,
   Heading, Tabelle, Link, Bild, Codeblock, …) nur bei Markdown-Dateien zeigen.
   Für Nicht-MD-Text-Dateien stattdessen ggf. nur generische Edit-Aktionen.
-- **Save-Button in der Edit-Toolbar**: Nur im Edit-Mode sichtbar, enabled wenn die
-  Datei dirty ist; ruft `editor_save_requested` auf, deaktiviert sich nach Save.
 - **WebView-Zoom (Ctrl+Mausrad)**: `document.documentElement.style.zoom`-basiert,
   Skalar in `localStorage` persistieren. Ctrl+Wheel ±0.1, Ctrl+0 reset, Ctrl+± als
   Bonus. Clamp ca. `[0.5, 3.0]`. Wegen 4K-Monitoren.
