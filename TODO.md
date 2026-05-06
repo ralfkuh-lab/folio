@@ -44,6 +44,11 @@
 
 ## Niedrige Priorität
 
+- **KI-Funktionen (Ideen sammeln)**: Sinnvolle Integrationen prüfen, z. B.
+  Zusammenfassung des aktuellen Dokuments, Übersetzung, Rechtschreib-/
+  Grammatik-Check, Markdown-Reformatierung, Linkvorschläge im Vault,
+  TOC/Heading-Vorschläge, Cheat-Sheet-„Frag mich"-Modus. Erst Ideen
+  sammeln, dann eine konkrete priorisieren (Provider/Datenschutz klären).
 - **About-Dialog**: Versions-/Autor-Info anzeigen, ggf. Lizenz und Build-Hash.
   Idee: Spendenmöglichkeit für den Autor einbinden (Plattform/Form später
   klären). Aufruf z. B. über Statusbar oder Menü.
