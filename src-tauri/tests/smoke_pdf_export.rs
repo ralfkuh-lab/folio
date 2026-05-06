@@ -31,6 +31,25 @@ fn renders_simple_pdf_via_headless_chromium() {
 }
 
 #[test]
+fn renders_long_code_lines_pdf_in_all_layouts() {
+    // Stellt sicher dass lange Code-Zeilen im PDF wrappen statt eine
+    // Scrollbar zu produzieren (kein automatischer Pixel-Check, aber
+    // verifiziert dass der Render-Pfad mit dem korrigierten white-space
+    // durchläuft).
+    if pdf_export::find_chromium().is_none() { return; }
+
+    let temp = tempfile::tempdir().expect("temp dir");
+    let markdown = "# Code\n\n```\nikaros.EmailDispatchTemplate                       (1)  -- Designation, Sender, MessageType, Spooler, AnotherLongIdentifierThatShouldWrap\nikaros.EmailDispatchTemplateLocalisation        (n)  -- (TemplateId, Language, Subject, Body), PK = (TemplateId, Language)\n```\n";
+
+    for layout in &["classic", "clean", "github"] {
+        let target = temp.path().join(format!("code-{layout}.pdf"));
+        let html = export::render_document(layout, "Code", markdown).expect("render html");
+        pdf_export::render_pdf(&html, Some(temp.path()), &target).expect("render pdf");
+        assert!(target.exists(), "{layout}: PDF nicht erzeugt");
+    }
+}
+
+#[test]
 fn renders_wide_table_pdf_in_all_layouts() {
     if pdf_export::find_chromium().is_none() {
         eprintln!("Skipping: kein Chromium-Browser auf diesem System gefunden.");
