@@ -111,10 +111,6 @@
   .toolbar button.active { background: var(--rail-selected-bg); color: var(--rail-selected-fg); }
   .toolbar button:disabled { opacity: 0.4; cursor: default; }
   .toolbar button svg { display: block; }
-  /* PNG-Icons (toolbar/vault/statusbar) — 64x64-Source, scaled per Slot */
-  .toolbar button img.ti { display: block; width: 16px; height: 16px; image-rendering: -webkit-optimize-contrast; }
-  .vault-region .vault-cmd img.ti { display: block; width: 14px; height: 14px; image-rendering: -webkit-optimize-contrast; }
-  .statusbar button img.ti { display: block; width: 14px; height: 14px; image-rendering: -webkit-optimize-contrast; }
   body:not(.edit-mode) .toolbar .edit-only { display: none; }
   body:not(.edit-mode) #cheatsheet-overlay { display: none !important; }
   .statusbar {
@@ -959,17 +955,17 @@
 <body class="">
 <header class="toolbar" id="toolbar" role="toolbar">
   <div class="group">
-    <button id="tb-back" title="Zurück (Alt+←)" aria-label="Zurück"><img class="ti" src="icons/back.png" alt=""></button>
-    <button id="tb-forward" title="Vorwärts (Alt+→)" aria-label="Vorwärts"><img class="ti" src="icons/forward.png" alt=""></button>
+    <button id="tb-back" title="Zurück (Alt+←)" aria-label="Zurück"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="10 3 5 8 10 13"/></svg></button>
+    <button id="tb-forward" title="Vorwärts (Alt+→)" aria-label="Vorwärts"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 3 11 8 6 13"/></svg></button>
   </div>
   <div class="sep"></div>
   <div class="group">
-    <button id="tb-mode-view" class="active" title="View (Ctrl+1)" aria-label="Anzeigen"><img class="ti" src="icons/view.png" alt=""></button>
-    <button id="tb-mode-edit" title="Edit (Ctrl+2)" aria-label="Bearbeiten"><img class="ti" src="icons/edit.png" alt=""></button>
+    <button id="tb-mode-view" class="active" title="View (Ctrl+1)" aria-label="Anzeigen"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5S1 8 1 8z"/><circle cx="8" cy="8" r="2"/></svg></button>
+    <button id="tb-mode-edit" title="Edit (Ctrl+2)" aria-label="Bearbeiten"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2l3 3-8.5 8.5L2 14l.5-3.5z"/></svg></button>
   </div>
   <div class="sep edit-only"></div>
   <div class="group edit-only">
-    <button id="tb-save" title="Speichern (Ctrl+S)" aria-label="Speichern" disabled><img class="ti" src="icons/save.png" alt=""></button>
+    <button id="tb-save" title="Speichern (Ctrl+S)" aria-label="Speichern" disabled><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 2.5h8.5l2.5 2.5v8.5h-11z"/><path d="M5 2.5v4h5v-4"/><rect x="4.5" y="9" width="7" height="4.5"/></svg></button>
   </div>
   <div class="sep edit-only"></div>
   <div class="group edit-only">
@@ -980,40 +976,44 @@
   <div class="sep edit-only"></div>
   <div class="group edit-only">
     <button id="tb-heading" title="Überschrift (zyklisch H1/H2/H3)" style="font-weight:bold;font-family:Georgia,serif;">H</button>
-    <button id="tb-bullet" title="Aufzählung"><img class="ti" src="icons/bullet-list.png" alt=""></button>
+    <button id="tb-bullet" title="Aufzählung"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="2.5" cy="3.5" r="1" fill="currentColor"/><circle cx="2.5" cy="7" r="1" fill="currentColor"/><circle cx="2.5" cy="10.5" r="1" fill="currentColor"/><line x1="5.5" y1="3.5" x2="12" y2="3.5"/><line x1="5.5" y1="7" x2="12" y2="7"/><line x1="5.5" y1="10.5" x2="12" y2="10.5"/></svg></button>
     <button id="tb-numbered" title="Nummerierte Liste" style="font-weight:bold;font-family:Georgia,serif;font-size:12px;">1.</button>
   </div>
   <div class="sep edit-only"></div>
   <div class="group edit-only">
-    <button id="tb-link" title="Link (Ctrl+K)"><img class="ti" src="icons/link.png" alt=""></button>
-    <button id="tb-image" title="Bild einfügen"><img class="ti" src="icons/image.png" alt=""></button>
-    <button id="tb-table" title="Tabelle einfügen"><img class="ti" src="icons/table.png" alt=""></button>
+    <button id="tb-link" title="Link (Ctrl+K)"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M6 8a3 3 0 014-1l2 2a3 3 0 01-4 4l-1-1"/><path d="M8 6a3 3 0 00-4 1l-2 2a3 3 0 004 4l1-1"/></svg></button>
+    <button id="tb-image" title="Bild einfügen"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="2.5" width="11" height="9" rx="1"/><circle cx="5" cy="6" r="1"/><polyline points="2 11 6 7 9 10 12 7"/></svg></button>
+    <button id="tb-table" title="Tabelle einfügen"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><rect x="1.5" y="2.5" width="11" height="9" rx="1"/><line x1="1.5" y1="6" x2="12.5" y2="6"/><line x1="5" y1="2.5" x2="5" y2="11.5"/><line x1="9" y1="2.5" x2="9" y2="11.5"/></svg></button>
     <button id="tb-code" title="Inline-Code" style="font-family:Consolas,monospace;font-weight:bold;">&lt;/&gt;</button>
     <button id="tb-codeblock" title="Codeblock" style="font-family:Consolas,monospace;font-weight:bold;font-size:11px;">```</button>
   </div>
   <div class="sep edit-only"></div>
   <div class="group edit-only">
-    <button id="tb-cheatsheet" title="Markdown Cheat-Sheet (F1)" aria-label="Hilfe"><img class="ti" src="icons/help.png" alt=""></button>
+    <button id="tb-cheatsheet" title="Markdown Cheat-Sheet (F1)" aria-label="Hilfe"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="6.5"/><path d="M6 6c0-1.1 1-2 2-2s2 .9 2 2c0 1-2 1.5-2 3"/><circle cx="8" cy="11.5" r="0.6" fill="currentColor"/></svg></button>
   </div>
   <div class="spacer"></div>
   <div class="group">
-    <button id="tb-export" title="Exportieren…" aria-label="Exportieren" disabled><img class="ti" src="icons/export.png" alt=""></button>
+    <button id="tb-export" title="Exportieren…" aria-label="Exportieren" disabled><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8"/><polyline points="5 7 8 10 11 7"/><path d="M3 12v1.5h10V12"/></svg></button>
   </div>
   <div class="sep"></div>
   <div class="group">
-    <button id="tb-find" title="Suchen (Ctrl+F)" aria-label="Suchen"><img class="ti" src="icons/find.png" alt=""></button>
-    <button id="tb-rail-left" class="active" title="Linke Leiste umschalten" aria-label="Linke Leiste"><img class="ti" src="icons/rail-left.png" alt=""></button>
-    <button id="tb-rail-right" class="active" title="Rechte Leiste umschalten" aria-label="Rechte Leiste"><img class="ti" src="icons/rail-right.png" alt=""></button>
+    <button id="tb-find" title="Suchen (Ctrl+F)" aria-label="Suchen"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="6" cy="6" r="4"/><line x1="9" y1="9" x2="12" y2="12"/></svg></button>
+    <button id="tb-rail-left" class="active" title="Linke Leiste umschalten" aria-label="Linke Leiste"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="12" height="10" rx="1"/><line x1="6" y1="3" x2="6" y2="13"/><rect x="2" y="3" width="4" height="10" fill="currentColor" opacity="0.25"/></svg></button>
+    <button id="tb-rail-right" class="active" title="Rechte Leiste umschalten" aria-label="Rechte Leiste"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="12" height="10" rx="1"/><line x1="10" y1="3" x2="10" y2="13"/><rect x="10" y="3" width="4" height="10" fill="currentColor" opacity="0.25"/></svg></button>
   </div>
 </header>
 <aside class="vault-region" id="vault-region">
   <header class="vault-header">
     <span class="title">Arbeitsbereich</span>
     <button class="vault-cmd" data-cmd="addFile" title="Datei öffnen…" aria-label="Datei öffnen">
-      <img class="ti" src="icons/add-file.png" alt="" />
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3 2h6l4 4v8H3z"/><path d="M9 2v4h4"/>
+      </svg>
     </button>
     <button class="vault-cmd" data-cmd="addFolder" title="Ordner hinzufügen…" aria-label="Ordner hinzufügen">
-      <img class="ti" src="icons/add-folder.png" alt="" />
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M2 4h4l1.5 1.5H14V13H2z"/><path d="M8 8v3M6.5 9.5h3"/>
+      </svg>
     </button>
   </header>
   <ul id="vault-tree" class="tree"></ul>
@@ -1059,7 +1059,7 @@
   <span class="status-cell" id="status-wordcount" hidden></span>
   <span class="status-cell" id="status-mode">View</span>
   <button class="status-cell" id="status-theme-toggle" title="Theme umschalten" aria-label="Theme">
-    <img class="ti" src="icons/theme-moon.png" alt="">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 8.5A4.5 4.5 0 016.5 3a4.5 4.5 0 105 5.5z"/></svg>
   </button>
 </footer>
 <div id="zoom-indicator" hidden>100 %</div>
