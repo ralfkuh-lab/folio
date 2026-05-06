@@ -87,6 +87,98 @@ fn compute_icon(ext: &str) -> Option<IconBytes> {
 
 #[cfg(target_os = "windows")]
 fn compute_icon(ext: &str) -> Option<IconBytes> {
+    // Erst per AssocQueryString versuchen (respektiert User-Choice in HKCU,
+    // z. B. Chrome statt legacy htmlfile/iexplore.exe). Fallback: SHGetFileInfo.
+    if let Some(icon) = icon_via_assoc_query(ext) {
+        return Some(icon);
+    }
+    icon_via_shgetfileinfo(ext)
+}
+
+#[cfg(target_os = "windows")]
+fn icon_via_assoc_query(ext: &str) -> Option<IconBytes> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use windows::core::PCWSTR;
+    use windows::Win32::UI::Shell::{
+        AssocQueryStringW, ExtractIconExW, ASSOCF_NONE, ASSOCSTR_DEFAULTICON,
+    };
+
+    if ext.is_empty() {
+        return None;
+    }
+    let dotted = format!(".{ext}");
+    let assoc_wide: Vec<u16> = OsStr::new(&dotted)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    unsafe {
+        let mut needed: u32 = 0;
+        // Erste Anfrage ermittelt nur die Puffergröße.
+        let _ = AssocQueryStringW(
+            ASSOCF_NONE,
+            ASSOCSTR_DEFAULTICON,
+            PCWSTR(assoc_wide.as_ptr()),
+            PCWSTR::null(),
+            windows::core::PWSTR::null(),
+            &mut needed,
+        );
+        if needed == 0 {
+            return None;
+        }
+
+        let mut buf = vec![0u16; needed as usize];
+        let result = AssocQueryStringW(
+            ASSOCF_NONE,
+            ASSOCSTR_DEFAULTICON,
+            PCWSTR(assoc_wide.as_ptr()),
+            PCWSTR::null(),
+            windows::core::PWSTR(buf.as_mut_ptr()),
+            &mut needed,
+        );
+        if result.is_err() {
+            return None;
+        }
+
+        let nul = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+        let icon_string = String::from_utf16_lossy(&buf[..nul]);
+        // Format: "path,index". Index kann negativ sein (Resource-ID).
+        let (path, index) = match icon_string.rsplit_once(',') {
+            Some((p, i)) => (p.trim().trim_matches('"'), i.trim().parse::<i32>().ok()?),
+            None => (icon_string.trim(), 0),
+        };
+        if path.is_empty() {
+            return None;
+        }
+
+        let path_wide: Vec<u16> = OsStr::new(path)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let mut large_icon = windows::Win32::UI::WindowsAndMessaging::HICON::default();
+        let extracted = ExtractIconExW(
+            PCWSTR(path_wide.as_ptr()),
+            index,
+            None,
+            Some(&mut large_icon),
+            1,
+        );
+        if extracted == 0 || large_icon.is_invalid() {
+            return None;
+        }
+
+        let png = hicon_to_png(large_icon);
+        let _ = windows::Win32::UI::WindowsAndMessaging::DestroyIcon(large_icon);
+        png.map(|bytes| IconBytes {
+            bytes,
+            mime: "image/png",
+        })
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn icon_via_shgetfileinfo(ext: &str) -> Option<IconBytes> {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
     use windows::core::PCWSTR;
