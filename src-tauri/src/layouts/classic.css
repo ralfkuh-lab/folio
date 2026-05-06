@@ -90,8 +90,23 @@ img { max-width: 100%; height: auto; display: block; margin: 1em auto; }
 .task-list-item { list-style: none; }
 .task-list-item input[type=checkbox] { margin-right: 0.4em; }
 @media print {
-  .markdown-body { margin: 0; padding: 18mm 22mm; max-width: none; }
-  body { font-size: 11pt; }
+  @page { size: A4; margin: 0; }
+  .markdown-body { margin: 0; padding: 14mm 16mm; max-width: none; }
+  body { font-size: 10.5pt; }
   a { color: var(--fg); border-bottom: none; }
+  table {
+    display: table;
+    width: 100%;
+    max-width: 100%;
+    table-layout: auto;
+    font-size: 0.88em;
+    overflow: visible;
+  }
+  th, td {
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    padding: 0.3em 0.5em;
+  }
   pre, blockquote { break-inside: avoid; }
+  pre { white-space: pre-wrap; word-break: break-word; }
 }

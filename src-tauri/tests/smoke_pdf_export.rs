@@ -29,3 +29,30 @@ fn renders_simple_pdf_via_headless_chromium() {
     let header = fs::read(&target).expect("read pdf");
     assert!(header.starts_with(b"%PDF-"), "Kein PDF-Header");
 }
+
+#[test]
+fn renders_wide_table_pdf_in_all_layouts() {
+    if pdf_export::find_chromium().is_none() {
+        eprintln!("Skipping: kein Chromium-Browser auf diesem System gefunden.");
+        return;
+    }
+
+    let temp = tempfile::tempdir().expect("temp dir");
+
+    // Tabelle mit vielen Spalten und langen Werten — würde ohne Overflow-Fix
+    // über die A4-Breite hinausgehen.
+    let markdown = "# Tabellen-Test\n\n\
+        | SpalteEinsLang | SpalteZweiLang | SpalteDreiLang | SpalteVierLang | SpalteFunfLang | SpalteSechsLang |\n\
+        |----------------|----------------|----------------|----------------|----------------|-----------------|\n\
+        | langerWertOhneLeerzeichen | abcdefghijklmnopqrstuvwxyz | x | x | x | x |\n\
+        | y | y | y | y | y | y |\n";
+
+    for layout in &["classic", "clean", "github"] {
+        let target = temp.path().join(format!("table-{layout}.pdf"));
+        let html = export::render_document(layout, "Tabellen-Test", markdown).expect("render html");
+        pdf_export::render_pdf(&html, Some(temp.path()), &target).expect("render pdf");
+        assert!(target.exists(), "{layout}: PDF nicht erzeugt");
+        let size = fs::metadata(&target).expect("metadata").len();
+        assert!(size > 1000, "{layout}: PDF zu klein ({size} bytes)");
+    }
+}

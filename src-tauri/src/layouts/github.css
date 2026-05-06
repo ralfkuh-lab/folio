@@ -84,7 +84,26 @@ img { max-width: 100%; box-sizing: content-box; background: #fff; }
 .task-list-item input[type=checkbox] { margin: 0 0.2em 0.25em -1.4em; vertical-align: middle; }
 .contains-task-list { padding-left: 1.4em; }
 @media print {
-  .markdown-body { margin: 0; padding: 18mm 22mm; max-width: none; }
+  @page { size: A4; margin: 0; }
+  .markdown-body { margin: 0; padding: 14mm 16mm; max-width: none; }
+  body { font-size: 10.5pt; }
   a { color: var(--fg); }
-  pre, blockquote, table { break-inside: avoid; }
+  /* GitHub-Tabellen sind im Screen display:block + max-content für Scroll —
+     im Print zurück zu klassischem Tabellen-Layout, sonst Überlauf. */
+  table {
+    display: table;
+    width: 100%;
+    max-width: 100%;
+    table-layout: auto;
+    font-size: 0.88em;
+    overflow: visible;
+  }
+  th, td {
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    padding: 4px 8px;
+  }
+  tr:nth-child(2n) { background: transparent; }
+  pre, blockquote { break-inside: avoid; }
+  pre { white-space: pre-wrap; word-break: break-word; }
 }
