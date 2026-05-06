@@ -12,7 +12,7 @@ pub struct IconBytes {
     pub mime: &'static str,
 }
 
-const APP_ICON_PNG: &[u8] = include_bytes!("../icons/icon.png");
+const APP_ICON_PNG: &[u8] = include_bytes!("../icons/32x32.png");
 
 const MARKDOWN_EXT: &[&str] = &["md", "markdown", "mdown", "mkd"];
 
