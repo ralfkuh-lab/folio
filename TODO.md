@@ -35,6 +35,9 @@
 
 ## Niedrige Priorität
 
+- **About-Dialog**: Versions-/Autor-Info anzeigen, ggf. Lizenz und Build-Hash.
+  Idee: Spendenmöglichkeit für den Autor einbinden (Plattform/Form später
+  klären). Aufruf z. B. über Statusbar oder Menü.
 - **Editor-Minimap**: CodeMirror 6 hat keine eingebaute Minimap. Optional
   `@replit/codemirror-minimap` einbinden — Toggle in der Edit-Toolbar,
   ggf. Suchtreffer in die Minimap mappen (analog zur View-Marker-Lane).
