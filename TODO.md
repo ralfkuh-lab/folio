@@ -23,11 +23,6 @@
   Speichern unter, Beenden / Rückgängig, Suchen / Theme, Rails / About).
   Über Tauri-Native-Menu oder eigenes HTML/CSS-Menü; Shortcuts mit den
   bestehenden Toolbar-Aktionen synchron halten.
-- **WebView-Zoom (Ctrl+Mausrad)**: `document.documentElement.style.zoom`-basiert,
-  Skalar in `localStorage` persistieren. Ctrl+Wheel ±0.1, Ctrl+0 reset, Ctrl+± als
-  Bonus. Clamp ca. `[0.5, 3.0]`. Wegen 4K-Monitoren.
-
-
 - **HTML im View-Mode rendern**: `.html`/`.htm` als Datei-Klasse "richtig" anzeigen,
   Skripte/inline-Event-Handler beim Render rauspatchen (Sandbox-iframe oder
   serverseitige Sanitization). Aktuell öffnet der Edit-Mode den Source.
