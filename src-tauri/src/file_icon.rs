@@ -257,7 +257,7 @@ unsafe fn hicon_to_png(hicon: windows::Win32::UI::WindowsAndMessaging::HICON) ->
         biHeight: -(height as i32), // top-down
         biPlanes: 1,
         biBitCount: 32,
-        biCompression: BI_RGB.0 as u32,
+        biCompression: BI_RGB.0,
         ..std::mem::zeroed()
     };
 
