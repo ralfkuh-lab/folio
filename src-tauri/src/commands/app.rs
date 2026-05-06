@@ -1,6 +1,6 @@
 use crate::state::AppState;
 use std::path::Path;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::{DialogExt, FilePath};
 use tauri_plugin_shell::ShellExt;
 
@@ -137,6 +137,14 @@ pub async fn set_rail_visible(
             }),
         )
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn set_window_title(title: String, handle: AppHandle) -> Result<(), String> {
+    let window = handle
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    window.set_title(&title).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

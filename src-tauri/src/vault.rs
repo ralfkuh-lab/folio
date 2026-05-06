@@ -27,12 +27,14 @@ impl Vault {
         let mut html = String::new();
         html.push_str(&self.section_html(
             "pinned",
-            "Pinned Files",
+            "📌",
+            "Angepinnt",
             self.pinned_children_html(workspace),
         ));
         html.push_str(&self.section_html(
             "recent",
-            "Recent Files",
+            "🕘",
+            "Zuletzt geöffnet",
             self.recent_children_html(workspace),
         ));
         html
@@ -95,10 +97,19 @@ impl Vault {
         } else {
             "caret hidden"
         };
-        let icon = match (is_directory, expanded) {
-            (true, true) => "📂",
-            (true, false) => "📁",
-            (false, _) => "📄",
+        let icon_html = if is_directory {
+            let emoji = if expanded { "📂" } else { "📁" };
+            format!(r#"<span class="icon">{emoji}</span>"#)
+        } else {
+            let ext = Path::new(path)
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            format!(
+                r#"<span class="icon"><img class="ftype-icon" data-ext="{ext}" alt=""></span>"#,
+                ext = escape_attr(&ext),
+            )
         };
         let children_class = if expanded {
             "children"
@@ -111,16 +122,17 @@ impl Vault {
             String::new()
         };
         format!(
-            r#"<li class="{class}" data-kind="{kind}" data-path="{path}" data-loaded="{loaded}"><div class="row"><span class="{caret_class}">▾</span><span class="icon">{icon}</span><span class="label">{name}</span></div><ul class="{children_class}">{children}</ul></li>"#,
+            r#"<li class="{class}" data-kind="{kind}" data-path="{path}" data-loaded="{loaded}"><div class="row"><span class="{caret_class}">▾</span>{icon_html}<span class="label">{name}</span></div><ul class="{children_class}">{children}</ul></li>"#,
             path = escape_attr(path),
             name = escape_html(&display_name(Path::new(path))),
         )
     }
 
-    fn section_html(&self, key: &str, title: &str, children: String) -> String {
+    fn section_html(&self, key: &str, icon: &str, title: &str, children: String) -> String {
         format!(
-            r#"<li class="section" data-section="{key}"><div class="row"><span class="caret open">▾</span><span class="icon">▣</span><span class="label">{title}</span></div><ul class="children">{children}</ul></li>"#,
+            r#"<li class="section" data-section="{key}"><div class="row"><span class="caret open">▾</span><span class="icon">{icon}</span><span class="label">{title}</span></div><ul class="children">{children}</ul></li>"#,
             key = escape_attr(key),
+            icon = escape_html(icon),
             title = escape_html(title),
         )
     }
@@ -191,8 +203,8 @@ mod tests {
         workspace.pin("/tmp/a.md".into(), false).unwrap();
         workspace.add_recent("/tmp/b.md".into()).unwrap();
         let html = Vault::new().build_initial_tree_html(&workspace);
-        assert!(html.contains("Pinned Files"));
-        assert!(html.contains("Recent Files"));
+        assert!(html.contains("Angepinnt"));
+        assert!(html.contains("Zuletzt geöffnet"));
         assert!(html.contains(r#"class="section" data-section="pinned""#));
         assert!(html.contains("a.md"));
     }

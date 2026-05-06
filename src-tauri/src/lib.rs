@@ -2,6 +2,8 @@ pub mod automation;
 pub mod commands;
 pub mod document_store;
 pub mod editor_commands;
+pub mod export;
+pub mod file_icon;
 pub mod file_kind;
 pub mod file_resolver;
 pub mod frontmatter;
@@ -121,6 +123,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::app::set_view_mode,
             commands::app::set_rail_visible,
             commands::app::open_find,
+            commands::app::set_window_title,
             commands::app::show_in_file_manager,
             commands::file::read_file,
             commands::file::write_file,
@@ -131,6 +134,11 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::editor::apply_editor_command,
             commands::editor::editor_ready,
             commands::editor::editor_selection,
+            commands::export::export_layouts,
+            commands::export::export_render,
+            commands::export::export_html,
+            commands::export::pick_export_target,
+            commands::icon::file_icon_data_uri,
             commands::vault_cmd::vault_expand_dir,
             commands::vault_cmd::vault_collapse_dir,
             commands::vault_cmd::vault_toggle_section,

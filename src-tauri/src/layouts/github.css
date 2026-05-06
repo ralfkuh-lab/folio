@@ -1,0 +1,90 @@
+/* Folio-Export: "GitHub" — Stil angelehnt an die GitHub-Markdown-Vorschau. */
+:root {
+  --fg: #1f2328;
+  --muted: #59636e;
+  --rule: #d1d9e0;
+  --rule-soft: #d8dee4;
+  --accent: #0969da;
+  --code-bg: #f6f8fa;
+  --quote-bar: #d1d9e0;
+}
+* { box-sizing: border-box; }
+html, body { background: #fff; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--fg);
+  word-wrap: break-word;
+}
+.markdown-body {
+  max-width: 980px;
+  margin: 32px auto;
+  padding: 24px 40px 80px;
+  background: #fff;
+}
+h1, h2, h3, h4, h5, h6 {
+  margin-top: 24px;
+  margin-bottom: 16px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+h1 { font-size: 2em; padding-bottom: 0.3em; border-bottom: 1px solid var(--rule); }
+h2 { font-size: 1.5em; padding-bottom: 0.3em; border-bottom: 1px solid var(--rule); }
+h3 { font-size: 1.25em; }
+h4 { font-size: 1em; }
+h5 { font-size: 0.875em; }
+h6 { font-size: 0.85em; color: var(--muted); }
+p { margin: 0 0 16px; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+ul, ol { padding-left: 2em; margin: 0 0 16px; }
+li + li { margin-top: 0.25em; }
+li > p { margin-top: 16px; }
+blockquote {
+  margin: 0 0 16px;
+  padding: 0 1em;
+  color: var(--muted);
+  border-left: 4px solid var(--quote-bar);
+}
+hr { height: 1px; padding: 0; margin: 24px 0; background: var(--rule-soft); border: 0; }
+code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 85%;
+  padding: 0.2em 0.4em;
+  background: rgba(175, 184, 193, 0.2);
+  border-radius: 6px;
+  white-space: break-spaces;
+}
+pre {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 85%;
+  line-height: 1.45;
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 16px;
+  overflow: auto;
+  margin: 0 0 16px;
+}
+pre code { background: transparent; padding: 0; font-size: 100%; border: 0; white-space: pre; }
+table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow: auto;
+  border-collapse: collapse;
+  margin: 0 0 16px;
+}
+th, td { padding: 6px 13px; border: 1px solid var(--rule); }
+th { font-weight: 600; background: var(--code-bg); }
+tr:nth-child(2n) { background: #f6f8fa; }
+img { max-width: 100%; box-sizing: content-box; background: #fff; }
+.task-list-item { list-style: none; }
+.task-list-item input[type=checkbox] { margin: 0 0.2em 0.25em -1.4em; vertical-align: middle; }
+.contains-task-list { padding-left: 1.4em; }
+@media print {
+  .markdown-body { margin: 0; padding: 18mm 22mm; max-width: none; }
+  a { color: var(--fg); }
+  pre, blockquote, table { break-inside: avoid; }
+}

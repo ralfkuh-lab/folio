@@ -212,6 +212,132 @@
     background: var(--accent);
     color: white;
   }
+  /* Export-Dialog */
+  #export-dialog[hidden] { display: none; }
+  #export-dialog {
+    position: fixed;
+    inset: 0;
+    z-index: 10001;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.28);
+  }
+  .export-dialog__panel {
+    width: min(820px, calc(100vw - 48px));
+    max-height: calc(100vh - 48px);
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.28);
+    padding: 18px;
+  }
+  .export-dialog__title {
+    font-weight: 700;
+    font-size: 14px;
+    margin-bottom: 12px;
+  }
+  .export-dialog__formats {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .export-dialog__formats button {
+    border: 1px solid var(--border);
+    background: var(--rail-bg);
+    color: var(--fg);
+    border-radius: 4px;
+    padding: 5px 12px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .export-dialog__formats button.active {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+  }
+  .export-dialog__formats button:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .export-dialog__cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    overflow: auto;
+    padding-bottom: 4px;
+  }
+  .export-card {
+    border: 2px solid var(--border);
+    border-radius: 6px;
+    padding: 10px;
+    background: var(--rail-bg);
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: border-color 0.15s;
+  }
+  .export-card:hover { border-color: var(--rail-hover-bg); }
+  .export-card.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent) inset;
+  }
+  .export-card__name {
+    font-weight: 600;
+    font-size: 13px;
+  }
+  .export-card__desc {
+    font-size: 11.5px;
+    color: var(--fg-muted);
+    line-height: 1.35;
+    min-height: 2.6em;
+  }
+  .export-card__preview {
+    width: 100%;
+    height: 220px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: #fff;
+    pointer-events: none;
+  }
+  .export-card__preview iframe {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    transform: scale(0.45);
+    transform-origin: top left;
+    width: 222%;
+    height: 222%;
+  }
+  .export-dialog__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 14px;
+  }
+  .export-dialog__actions button {
+    min-width: 96px;
+    border: 1px solid var(--border);
+    background: var(--rail-bg);
+    color: var(--fg);
+    border-radius: 4px;
+    padding: 5px 10px;
+    cursor: pointer;
+  }
+  .export-dialog__actions button:hover:not(:disabled) { background: var(--rail-hover-bg); }
+  .export-dialog__actions .primary {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: white;
+  }
+  .export-dialog__actions .primary:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
   /* Vault-Sektionen mit Pinned/Recent */
   .vault-region .vault-section { padding: 4px 0; }
   .vault-region .vault-section + .vault-section { border-top: 1px solid var(--border); margin-top: 4px; }
@@ -421,13 +547,23 @@
   .vault-region .caret.open { transform: rotate(0deg); }
   .vault-region .caret.hidden { visibility: hidden; }
   .vault-region .icon {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     width: 18px;
+    height: 16px;
     flex: 0 0 auto;
     text-align: center;
     margin-right: 4px;
     font-size: 13px;
     line-height: 1;
+  }
+  .vault-region .icon img.ftype-icon {
+    width: 16px;
+    height: 16px;
+    display: block;
+    object-fit: contain;
+    image-rendering: -webkit-optimize-contrast;
   }
   .vault-region .label {
     flex: 1 1 auto;
@@ -837,6 +973,10 @@
   </div>
   <div class="spacer"></div>
   <div class="group">
+    <button id="tb-export" title="Exportieren…" aria-label="Exportieren" disabled><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8"/><polyline points="5 7 8 10 11 7"/><path d="M3 12v1.5h10V12"/></svg></button>
+  </div>
+  <div class="sep"></div>
+  <div class="group">
     <button id="tb-find" title="Suchen (Ctrl+F)" aria-label="Suchen"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="6" cy="6" r="4"/><line x1="9" y1="9" x2="12" y2="12"/></svg></button>
     <button id="tb-rail-left" class="active" title="Linke Leiste umschalten" aria-label="Linke Leiste"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="12" height="10" rx="1"/><line x1="6" y1="3" x2="6" y2="13"/><rect x="2" y="3" width="4" height="10" fill="currentColor" opacity="0.25"/></svg></button>
     <button id="tb-rail-right" class="active" title="Rechte Leiste umschalten" aria-label="Rechte Leiste"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="12" height="10" rx="1"/><line x1="10" y1="3" x2="10" y2="13"/><rect x="10" y="3" width="4" height="10" fill="currentColor" opacity="0.25"/></svg></button>
@@ -912,6 +1052,20 @@
       <button type="button" id="unsaved-discard">Verwerfen</button>
       <button type="button" id="unsaved-cancel">Abbrechen</button>
       <button type="button" id="unsaved-save" class="primary">Speichern</button>
+    </div>
+  </div>
+</div>
+<div id="export-dialog" hidden>
+  <div class="export-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="export-title">
+    <div class="export-dialog__title" id="export-title">Exportieren</div>
+    <div class="export-dialog__formats" id="export-formats">
+      <button type="button" data-format="html" class="active">HTML</button>
+      <button type="button" data-format="pdf" disabled title="In Vorbereitung">PDF</button>
+    </div>
+    <div class="export-dialog__cards" id="export-cards"></div>
+    <div class="export-dialog__actions">
+      <button type="button" id="export-cancel">Abbrechen</button>
+      <button type="button" id="export-save" class="primary" disabled>Speichern…</button>
     </div>
   </div>
 </div>
@@ -1093,7 +1247,12 @@
                 window.setTocList(data.tocHtml || data.toc_html || '');
             }
             var body = contentEl.querySelector('.markdown-body');
-            if (body) body.innerHTML = data.content || data.html || '';
+            if (body) {
+                body.innerHTML = data.content || data.html || '';
+                if (typeof window.rewriteRelativeAssets === 'function') {
+                    window.rewriteRelativeAssets(body, data.path || '');
+                }
+            }
             if (typeof window.setVaultActive === 'function') {
                 window.setVaultActive(data.path || '');
             }
@@ -1702,6 +1861,15 @@
             }
             return null;
         }
+        function findAllNodesByPath(path) {
+            if (!path) return [];
+            var matches = [];
+            var nodes = ROOT.querySelectorAll('.node');
+            for (var i = 0; i < nodes.length; i++) {
+                if (nodes[i].getAttribute('data-path') === path) matches.push(nodes[i]);
+            }
+            return matches;
+        }
         function findAncestor(el, cls) {
             while (el && el !== ROOT && el.nodeType === 1) {
                 if (el.classList && el.classList.contains(cls)) return el;
@@ -1723,17 +1891,22 @@
             if (ul) ul.innerHTML = html || '';
         };
         window.insertVaultChildren = function (path, html) {
-            var li = findNodeByPath(path);
-            if (!li) return;
-            var ul = li.querySelector(':scope > ul.children');
-            if (!ul) return;
-            ul.innerHTML = html || '';
-            ul.classList.remove('collapsed');
-            li.setAttribute('data-loaded', '1');
-            var caret = li.querySelector(':scope > .row > .caret');
-            if (caret) caret.classList.add('open');
-            var iconEl = li.querySelector(':scope > .row > .icon');
-            if (iconEl) iconEl.textContent = '📂';
+            // Pfad kann mehrfach im Baum vorkommen (z. B. neu angepinntes
+            // Unterverzeichnis eines bereits angepinnten Ordners). Alle Vorkommen
+            // aktualisieren, sonst landen die Children im falschen (ersten) Node.
+            var lis = findAllNodesByPath(path);
+            for (var n = 0; n < lis.length; n++) {
+                var li = lis[n];
+                var ul = li.querySelector(':scope > ul.children');
+                if (!ul) continue;
+                ul.innerHTML = html || '';
+                ul.classList.remove('collapsed');
+                li.setAttribute('data-loaded', '1');
+                var caret = li.querySelector(':scope > .row > .caret');
+                if (caret) caret.classList.add('open');
+                var iconEl = li.querySelector(':scope > .row > .icon');
+                if (iconEl) iconEl.textContent = '📂';
+            }
         };
         window.setVaultActive = function (path) {
             var prev = ROOT.querySelectorAll('.node.active');
@@ -2027,6 +2200,19 @@
         if (el) el.classList.toggle('dirty', isDirty);
         var btn = $('tb-save');
         if (btn) btn.disabled = !isDirty;
+        applyWindowTitle();
+    }
+    function fileFullName(p) {
+        if (!p) return null;
+        return p.replace(/\\/g, '/').split('/').pop() || p;
+    }
+    function applyWindowTitle() {
+        var name = fileFullName(currentPath);
+        var title = name
+            ? (isDirty ? '* ' + name : name) + ' — Folio'
+            : 'Folio RS';
+        document.title = title;
+        invoke('set_window_title', { title: title }).catch(function () { /* ignore */ });
     }
     function editorText() {
         if (window.FolioEditor && typeof window.FolioEditor.getText === 'function') {
@@ -2079,8 +2265,35 @@
         }
         var view = document.getElementById('view-region');
         var body = view && view.querySelector('.markdown-body');
-        if (body) body.innerHTML = data.content || data.html || '';
+        if (body) {
+            body.innerHTML = data.content || data.html || '';
+            rewriteRelativeAssets(body, data.path || currentPath);
+        }
     }
+    function rewriteRelativeAssets(rootEl, documentPath) {
+        if (!rootEl || !documentPath) return;
+        var convert = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.convertFileSrc;
+        if (typeof convert !== 'function') return;
+        var dir = documentPath.replace(/[\\/][^\\/]*$/, '');
+        var imgs = rootEl.querySelectorAll('img');
+        for (var i = 0; i < imgs.length; i++) {
+            var src = imgs[i].getAttribute('src');
+            if (!src) continue;
+            // Skip absolute URLs (http, https, data:, asset:, blob:, etc.)
+            if (/^[a-z][a-z0-9+.-]*:/i.test(src)) continue;
+            if (src.indexOf('//') === 0) continue;
+            var abs;
+            if (/^[a-zA-Z]:[\\/]/.test(src) || src.charAt(0) === '/') {
+                abs = src;
+            } else {
+                abs = dir + '/' + src;
+            }
+            // Normalisiere Backslashes (Windows)
+            abs = abs.replace(/\\/g, '/');
+            try { imgs[i].src = convert(abs); } catch (e) { /* ignore */ }
+        }
+    }
+    window.rewriteRelativeAssets = rewriteRelativeAssets;
     function saveCurrent() {
         return syncEditorTextToStore().then(function () {
             return invoke('editor_save_requested');
@@ -2121,6 +2334,11 @@
         if (btnView) {
             btnView.disabled = !md;
             btnView.title = md ? 'View (Ctrl+1)' : 'View nur für Markdown verfügbar';
+        }
+        var btnExport = $('tb-export');
+        if (btnExport) {
+            btnExport.disabled = !md;
+            btnExport.title = md ? 'Exportieren…' : 'Export nur für Markdown verfügbar';
         }
     }
     function showStatus(msg) {
@@ -2204,6 +2422,99 @@
     bind('tb-mode-view', function () { setMode('view'); });
     bind('tb-mode-edit', function () { setMode('edit'); });
     bind('tb-save', function () { if (isDirty) saveCurrent(); });
+
+    /* ----- Export-Dialog ----- */
+    var selectedLayoutId = null;
+    var exportKeydownHandler = null;
+    function fileBaseName(p) {
+        if (!p) return 'Dokument';
+        var s = p.replace(/\\/g, '/').split('/').pop() || p;
+        return s.replace(/\.(md|markdown|mdown|mkd)$/i, '') || 'Dokument';
+    }
+    function selectLayoutCard(id) {
+        selectedLayoutId = id;
+        var cards = document.querySelectorAll('#export-cards .export-card');
+        for (var i = 0; i < cards.length; i++) {
+            cards[i].classList.toggle('selected', cards[i].dataset.layoutId === id);
+        }
+        var saveBtn = $('export-save');
+        if (saveBtn) saveBtn.disabled = !id;
+    }
+    function openExportDialog() {
+        if (!isMarkdownPath(currentPath)) return;
+        // Editor-Text in den Store syncen, damit die Vorschau den aktuellen Stand zeigt.
+        var sync = (document.body.classList.contains('edit-mode') && currentPath)
+            ? syncEditorTextToStore() : Promise.resolve();
+        sync.then(function () { return invoke('export_layouts'); }).then(function (layouts) {
+            var cards = $('export-cards');
+            cards.innerHTML = '';
+            (layouts || []).forEach(function (layout) {
+                var card = document.createElement('div');
+                card.className = 'export-card';
+                card.dataset.layoutId = layout.id;
+                card.tabIndex = 0;
+                card.innerHTML =
+                    '<div class="export-card__name"></div>' +
+                    '<div class="export-card__desc"></div>' +
+                    '<div class="export-card__preview"><iframe sandbox></iframe></div>';
+                card.querySelector('.export-card__name').textContent = layout.name;
+                card.querySelector('.export-card__desc').textContent = layout.description || '';
+                card.addEventListener('click', function () { selectLayoutCard(layout.id); });
+                card.addEventListener('keydown', function (e) {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        selectLayoutCard(layout.id);
+                    }
+                });
+                cards.appendChild(card);
+                invoke('export_render', { layoutId: layout.id }).then(function (html) {
+                    var iframe = card.querySelector('iframe');
+                    if (iframe && typeof html === 'string') iframe.srcdoc = html;
+                }).catch(function () {});
+            });
+            selectLayoutCard((layouts && layouts[0] && layouts[0].id) || null);
+            $('export-dialog').hidden = false;
+            exportKeydownHandler = function (e) {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    closeExportDialog();
+                } else if (e.key === 'Enter' && selectedLayoutId) {
+                    if (e.target && e.target.id === 'export-cancel') return;
+                    e.preventDefault();
+                    doExportSave();
+                }
+            };
+            document.addEventListener('keydown', exportKeydownHandler);
+        }).catch(function (err) {
+            showStatus(typeof err === 'string' ? err : 'Export fehlgeschlagen');
+        });
+    }
+    function closeExportDialog() {
+        $('export-dialog').hidden = true;
+        if (exportKeydownHandler) {
+            document.removeEventListener('keydown', exportKeydownHandler);
+            exportKeydownHandler = null;
+        }
+        var cards = $('export-cards');
+        if (cards) cards.innerHTML = '';
+    }
+    function doExportSave() {
+        if (!selectedLayoutId) return;
+        var defaultName = fileBaseName(currentPath) + '.html';
+        invoke('pick_export_target', { defaultName: defaultName }).then(function (targetPath) {
+            if (!targetPath) return;
+            return invoke('export_html', { layoutId: selectedLayoutId, targetPath: targetPath })
+                .then(function () {
+                    closeExportDialog();
+                    showStatus('Exportiert: ' + targetPath);
+                });
+        }).catch(function (err) {
+            showStatus(typeof err === 'string' ? err : 'Export fehlgeschlagen');
+        });
+    }
+    bind('tb-export', openExportDialog);
+    bind('export-cancel', closeExportDialog);
+    bind('export-save', doExportSave);
     bind('tb-rail-left', function () {
         var btn = $('tb-rail-left'); var on = !btn.classList.contains('active');
         btn.classList.toggle('active', on);
@@ -2350,6 +2661,57 @@
 
     /* ----- Vault: Workspace laden + rendern + Klicks ----- */
     var vaultTree = $('vault-tree');
+    var fileIconCache = {};       // ext → data-URI
+    var fileIconPending = {};     // ext → Promise (Anti-Stampede)
+    function resolveFileIcon(ext) {
+        if (fileIconCache[ext] !== undefined) {
+            return Promise.resolve(fileIconCache[ext]);
+        }
+        if (fileIconPending[ext]) return fileIconPending[ext];
+        var p = invoke('file_icon_data_uri', { ext: ext }).then(function (uri) {
+            fileIconCache[ext] = uri || '';
+            delete fileIconPending[ext];
+            return fileIconCache[ext];
+        }).catch(function () {
+            fileIconCache[ext] = '';
+            delete fileIconPending[ext];
+            return '';
+        });
+        fileIconPending[ext] = p;
+        return p;
+    }
+    function applyIconsToNode(rootNode) {
+        if (!rootNode) return;
+        var imgs;
+        if (rootNode.matches && rootNode.matches('img.ftype-icon')) {
+            imgs = [rootNode];
+        } else if (rootNode.querySelectorAll) {
+            imgs = rootNode.querySelectorAll('img.ftype-icon');
+        } else {
+            return;
+        }
+        for (var i = 0; i < imgs.length; i++) {
+            var img = imgs[i];
+            if (img.src) continue;
+            var ext = img.getAttribute('data-ext') || '';
+            (function (target, e) {
+                resolveFileIcon(e).then(function (uri) {
+                    if (uri) target.src = uri;
+                });
+            })(img, ext);
+        }
+    }
+    if (vaultTree && typeof MutationObserver === 'function') {
+        var iconObserver = new MutationObserver(function (mutations) {
+            for (var m = 0; m < mutations.length; m++) {
+                var added = mutations[m].addedNodes;
+                for (var n = 0; n < added.length; n++) {
+                    if (added[n].nodeType === 1) applyIconsToNode(added[n]);
+                }
+            }
+        });
+        iconObserver.observe(vaultTree, { childList: true, subtree: true });
+    }
     function renderVault(html) {
         if (!vaultTree) return;
         if (!html || html.length === 0) {
@@ -2357,6 +2719,7 @@
             return;
         }
         vaultTree.innerHTML = html;
+        applyIconsToNode(vaultTree);
     }
     function refreshVault() {
         invoke('vault_build_tree').then(renderVault).catch(function (err) {
@@ -2379,13 +2742,24 @@
             }
         });
         vaultTree.addEventListener('contextmenu', function (e) {
-            var item = e.target.closest('.vault-item');
+            var item = e.target.closest('li.node');
             if (!item) return;
             e.preventDefault();
             var path = item.getAttribute('data-path');
-            var isDir = item.getAttribute('data-directory') === 'true';
-            openContextMenu(e.clientX, e.clientY, path, isDir);
+            var isDir = item.getAttribute('data-kind') === 'dir';
+            var inPinned = isDirectChildOfSection(item, 'pinned');
+            var inRecent = isDirectChildOfSection(item, 'recent');
+            openContextMenu(e.clientX, e.clientY, path, isDir, inPinned, inRecent);
         });
+    }
+    function isDirectChildOfSection(node, sectionKey) {
+        var parentUl = node.parentElement;
+        if (!parentUl) return false;
+        var sectionLi = parentUl.parentElement;
+        return !!(sectionLi
+            && sectionLi.classList
+            && sectionLi.classList.contains('section')
+            && sectionLi.getAttribute('data-section') === sectionKey);
     }
 
     /* Vault-Header-Buttons (Datei/Ordner öffnen) werden vom REGION-Click-Handler
@@ -2394,18 +2768,25 @@
     /* ----- Kontextmenü ----- */
     var ctxMenu = $('context-menu');
     var ctxTarget = null;
-    function openContextMenu(x, y, path, isDir) {
+    function openContextMenu(x, y, path, isDir, inPinned, inRecent) {
         if (!ctxMenu) return;
         ctxTarget = { path: path, isDirectory: isDir };
-        ctxMenu.innerHTML =
-            '<div class="ctx-item" data-act="open">Öffnen</div>' +
-            '<div class="ctx-sep"></div>' +
-            '<div class="ctx-item" data-act="pin">Anpinnen</div>' +
-            '<div class="ctx-item" data-act="unpin">Vom Pin lösen</div>' +
-            '<div class="ctx-item" data-act="remove-recent">Aus Zuletzt entfernen</div>' +
-            '<div class="ctx-sep"></div>' +
-            '<div class="ctx-item" data-act="show">Im Dateimanager zeigen</div>' +
-            '<div class="ctx-item" data-act="copy">Pfad kopieren</div>';
+        var parts = [];
+        if (!isDir) parts.push('<div class="ctx-item" data-act="open">Öffnen</div>');
+        var actionsBefore = parts.length;
+        var actions = [];
+        if (!inPinned) actions.push('<div class="ctx-item" data-act="pin">Anpinnen</div>');
+        if (inPinned) actions.push('<div class="ctx-item" data-act="unpin">Vom Pin lösen</div>');
+        if (inRecent) actions.push('<div class="ctx-item" data-act="remove-recent">Aus „Zuletzt" entfernen</div>');
+        if (actions.length && actionsBefore) parts.push('<div class="ctx-sep"></div>');
+        parts = parts.concat(actions);
+        var tail = [
+            '<div class="ctx-item" data-act="show">Im Explorer zeigen</div>',
+            '<div class="ctx-item" data-act="copy">Pfad kopieren</div>',
+        ];
+        if (parts.length) parts.push('<div class="ctx-sep"></div>');
+        parts = parts.concat(tail);
+        ctxMenu.innerHTML = parts.join('');
         ctxMenu.style.left = x + 'px';
         ctxMenu.style.top = y + 'px';
         ctxMenu.classList.add('open');
