@@ -36,6 +36,15 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             let app = window.app_handle();
             match event {
                 WindowEvent::Resized(_) => {
+                    let maximized = window.is_maximized().unwrap_or(false);
+                    if let Some(state) = app.try_state::<AppState>() {
+                        if let Ok(mut panel) = state.panel_state.lock() {
+                            let _ = panel.set_window_maximized(maximized);
+                        }
+                    }
+                    if maximized {
+                        return;
+                    }
                     if let Ok(size) = window.inner_size() {
                         if let Ok(scale) = window.scale_factor() {
                             let logical = size.to_logical::<f64>(scale);
@@ -48,6 +57,9 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
                     }
                 }
                 WindowEvent::Moved(_) => {
+                    if window.is_maximized().unwrap_or(false) {
+                        return;
+                    }
                     if let Ok(pos) = window.outer_position() {
                         if let Ok(scale) = window.scale_factor() {
                             let logical = pos.to_logical::<f64>(scale);
@@ -76,6 +88,9 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
                 }
                 if let (Some(x), Some(y)) = (panel.window_x, panel.window_y) {
                     let _ = window.set_position(LogicalPosition::new(x, y));
+                }
+                if panel.window_maximized {
+                    let _ = window.maximize();
                 }
             }
             let automation = automation::AutomationServer::new(app.handle().clone(), state.inner());
