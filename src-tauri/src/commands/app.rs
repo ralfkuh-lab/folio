@@ -148,6 +148,14 @@ pub async fn set_window_title(title: String, handle: AppHandle) -> Result<(), St
 }
 
 #[tauri::command]
+pub async fn set_webview_zoom(zoom: f64, handle: AppHandle) -> Result<(), String> {
+    let window = handle
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    window.set_zoom(zoom).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn open_find(handle: AppHandle) -> Result<(), String> {
     handle
         .emit("editor:open_find", serde_json::json!({}))

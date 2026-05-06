@@ -212,6 +212,26 @@
     background: var(--accent);
     color: white;
   }
+  /* Zoom-Indikator (browser-ähnliche Pille beim Skalieren) */
+  #zoom-indicator {
+    position: fixed;
+    top: 14px;
+    right: 14px;
+    z-index: 10020;
+    padding: 6px 14px;
+    background: rgba(36, 36, 36, 0.92);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+    user-select: none;
+  }
+  #zoom-indicator.visible { opacity: 1; }
   /* Export-Dialog */
   #export-dialog[hidden] { display: none; }
   #export-dialog {
@@ -1042,6 +1062,7 @@
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 8.5A4.5 4.5 0 016.5 3a4.5 4.5 0 105 5.5z"/></svg>
   </button>
 </footer>
+<div id="zoom-indicator" hidden>100 %</div>
 <div id="dnd-overlay">Datei hier ablegen, um zu öffnen</div>
 <nav id="context-menu" role="menu"></nav>
 <div id="unsaved-dialog" hidden>
@@ -2647,20 +2668,41 @@
         var ZOOM_STEP = 0.1;
         var ZOOM_MIN = 0.5;
         var ZOOM_MAX = 3.0;
-        function getZoom() {
+        var current = 1.0;
+        var indicator = $('zoom-indicator');
+        var hideTimer = null;
+        var fadeTimer = null;
+        function showIndicator(z) {
+            if (!indicator) return;
+            indicator.textContent = Math.round(z * 100) + ' %';
+            indicator.hidden = false;
+            // requestAnimationFrame, damit die Transition aus 'hidden' heraus greift
+            requestAnimationFrame(function () { indicator.classList.add('visible'); });
+            if (hideTimer) clearTimeout(hideTimer);
+            if (fadeTimer) clearTimeout(fadeTimer);
+            hideTimer = setTimeout(function () {
+                indicator.classList.remove('visible');
+                fadeTimer = setTimeout(function () { indicator.hidden = true; }, 250);
+            }, 1500);
+        }
+        function loadStoredZoom() {
             var z = parseFloat(localStorage.getItem(ZOOM_KEY));
             return (isFinite(z) && z > 0) ? z : 1.0;
         }
-        function applyZoom(z) {
+        function applyZoom(z, opts) {
             z = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(z * 100) / 100));
-            document.documentElement.style.zoom = z;
+            current = z;
+            // Native Webview-Zoom — passt Viewport-Einheiten korrekt an,
+            // im Gegensatz zu document.documentElement.style.zoom.
+            invoke('set_webview_zoom', { zoom: z }).catch(function () { /* ignore */ });
             try { localStorage.setItem(ZOOM_KEY, String(z)); } catch (e) { /* ignore */ }
+            if (!opts || opts.indicator !== false) showIndicator(z);
             return z;
         }
-        function adjustZoom(delta) { return applyZoom(getZoom() + delta); }
+        function adjustZoom(delta) { return applyZoom(current + delta); }
         function resetZoom() { return applyZoom(1.0); }
-        // Beim Boot persistierten Zoom wiederherstellen
-        applyZoom(getZoom());
+        // Beim Boot persistierten Zoom anwenden — ohne Indikator-Flash
+        applyZoom(loadStoredZoom(), { indicator: false });
         // Ctrl+Mausrad → Zoom in/out
         window.addEventListener('wheel', function (e) {
             if (!e.ctrlKey && !e.metaKey) return;

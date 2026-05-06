@@ -125,6 +125,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::app::set_rail_visible,
             commands::app::open_find,
             commands::app::set_window_title,
+            commands::app::set_webview_zoom,
             commands::app::show_in_file_manager,
             commands::file::read_file,
             commands::file::write_file,
