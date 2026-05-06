@@ -11,6 +11,7 @@ pub mod heading_anchor;
 pub mod link_interceptor;
 pub mod navigation;
 pub mod panel_state;
+pub mod pdf_export;
 mod persist;
 pub mod renderer;
 pub mod state;
@@ -137,6 +138,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::export::export_layouts,
             commands::export::export_render,
             commands::export::export_html,
+            commands::export::export_pdf,
             commands::export::pick_export_target,
             commands::icon::file_icon_data_uri,
             commands::vault_cmd::vault_expand_dir,

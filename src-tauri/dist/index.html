@@ -1060,7 +1060,7 @@
     <div class="export-dialog__title" id="export-title">Exportieren</div>
     <div class="export-dialog__formats" id="export-formats">
       <button type="button" data-format="html" class="active">HTML</button>
-      <button type="button" data-format="pdf" disabled title="In Vorbereitung">PDF</button>
+      <button type="button" data-format="pdf">PDF</button>
     </div>
     <div class="export-dialog__cards" id="export-cards"></div>
     <div class="export-dialog__actions">
@@ -2425,11 +2425,20 @@
 
     /* ----- Export-Dialog ----- */
     var selectedLayoutId = null;
+    var selectedExportFormat = 'html';
     var exportKeydownHandler = null;
     function fileBaseName(p) {
         if (!p) return 'Dokument';
         var s = p.replace(/\\/g, '/').split('/').pop() || p;
         return s.replace(/\.(md|markdown|mdown|mkd)$/i, '') || 'Dokument';
+    }
+    function setExportFormat(fmt) {
+        selectedExportFormat = (fmt === 'pdf') ? 'pdf' : 'html';
+        var buttons = document.querySelectorAll('#export-formats button');
+        for (var i = 0; i < buttons.length; i++) {
+            buttons[i].classList.toggle('active',
+                buttons[i].getAttribute('data-format') === selectedExportFormat);
+        }
     }
     function selectLayoutCard(id) {
         selectedLayoutId = id;
@@ -2442,6 +2451,7 @@
     }
     function openExportDialog() {
         if (!isMarkdownPath(currentPath)) return;
+        setExportFormat('html');
         // Editor-Text in den Store syncen, damit die Vorschau den aktuellen Stand zeigt.
         var sync = (document.body.classList.contains('edit-mode') && currentPath)
             ? syncEditorTextToStore() : Promise.resolve();
@@ -2500,21 +2510,33 @@
     }
     function doExportSave() {
         if (!selectedLayoutId) return;
-        var defaultName = fileBaseName(currentPath) + '.html';
-        invoke('pick_export_target', { defaultName: defaultName }).then(function (targetPath) {
-            if (!targetPath) return;
-            return invoke('export_html', { layoutId: selectedLayoutId, targetPath: targetPath })
-                .then(function () {
-                    closeExportDialog();
-                    showStatus('Exportiert: ' + targetPath);
-                });
-        }).catch(function (err) {
-            showStatus(typeof err === 'string' ? err : 'Export fehlgeschlagen');
-        });
+        var fmt = selectedExportFormat;
+        var defaultName = fileBaseName(currentPath) + '.' + fmt;
+        var cmd = (fmt === 'pdf') ? 'export_pdf' : 'export_html';
+        invoke('pick_export_target', { defaultName: defaultName, format: fmt })
+            .then(function (targetPath) {
+                if (!targetPath) return;
+                showStatus('Export läuft…');
+                return invoke(cmd, { layoutId: selectedLayoutId, targetPath: targetPath })
+                    .then(function () {
+                        closeExportDialog();
+                        showStatus('Exportiert: ' + targetPath);
+                    });
+            }).catch(function (err) {
+                showStatus(typeof err === 'string' ? err : 'Export fehlgeschlagen');
+            });
     }
     bind('tb-export', openExportDialog);
     bind('export-cancel', closeExportDialog);
     bind('export-save', doExportSave);
+    var exportFormats = document.getElementById('export-formats');
+    if (exportFormats) {
+        exportFormats.addEventListener('click', function (e) {
+            var btn = e.target.closest('button[data-format]');
+            if (!btn || btn.disabled) return;
+            setExportFormat(btn.getAttribute('data-format'));
+        });
+    }
     bind('tb-rail-left', function () {
         var btn = $('tb-rail-left'); var on = !btn.classList.contains('active');
         btn.classList.toggle('active', on);
