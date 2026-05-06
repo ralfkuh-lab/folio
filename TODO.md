@@ -19,6 +19,11 @@
 - **Edit-Toolbar dateityp-spezifisch**: Markdown-spezifische Buttons (Bold, Italic,
   Heading, Tabelle, Link, Bild, Codeblock, …) nur bei Markdown-Dateien zeigen.
   Für Nicht-MD-Text-Dateien stattdessen ggf. nur generische Edit-Aktionen.
+- **Klassische Menüleiste**: Aufklappbares Menü (File, Edit, View, Help, …)
+  zusätzlich zur bestehenden Toolbar. Standard-Punkte (Öffnen, Speichern,
+  Speichern unter, Beenden / Rückgängig, Suchen / Theme, Rails / About).
+  Über Tauri-Native-Menu oder eigenes HTML/CSS-Menü; Shortcuts mit den
+  bestehenden Toolbar-Aktionen synchron halten.
 - **WebView-Zoom (Ctrl+Mausrad)**: `document.documentElement.style.zoom`-basiert,
   Skalar in `localStorage` persistieren. Ctrl+Wheel ±0.1, Ctrl+0 reset, Ctrl+± als
   Bonus. Clamp ca. `[0.5, 3.0]`. Wegen 4K-Monitoren.
