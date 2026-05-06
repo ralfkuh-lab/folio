@@ -30,6 +30,7 @@ const LAYOUTS: &[LayoutInfo] = &[
 const CLASSIC_CSS: &str = include_str!("layouts/classic.css");
 const CLEAN_CSS: &str = include_str!("layouts/clean.css");
 const GITHUB_CSS: &str = include_str!("layouts/github.css");
+const BASE_CSS: &str = include_str!("layouts/base.css");
 
 pub fn layouts() -> Vec<LayoutInfo> {
     LAYOUTS.to_vec()
@@ -65,6 +66,11 @@ pub fn derive_default_filename(path: Option<&str>) -> String {
 
 fn wrap_html(title: &str, css: &str, body_html: &str) -> String {
     let title_escaped = escape_html(title);
+    // Layout-CSS zuerst, Base-CSS danach: Base liefert Print-Defaults für
+    // alle Themes; Custom-Themes können konkurrierende Werte über ihre
+    // eigene @media print-Regel setzen (gleiche Spezifität, gewinnt durch
+    // spätere Position innerhalb des Layout-CSS).
+    let base = BASE_CSS;
     format!(
         "<!doctype html>\n\
 <html lang=\"de\">\n\
@@ -72,7 +78,7 @@ fn wrap_html(title: &str, css: &str, body_html: &str) -> String {
 <meta charset=\"utf-8\">\n\
 <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
 <title>{title_escaped}</title>\n\
-<style>\n{css}\n</style>\n\
+<style>\n{css}\n{base}\n</style>\n\
 </head>\n\
 <body>\n\
 <article class=\"markdown-body\">\n\

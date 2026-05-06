@@ -83,34 +83,10 @@ img { max-width: 100%; box-sizing: content-box; background: #fff; }
 .task-list-item { list-style: none; }
 .task-list-item input[type=checkbox] { margin: 0 0.2em 0.25em -1.4em; vertical-align: middle; }
 .contains-task-list { padding-left: 1.4em; }
+/* Layout-spezifische Print-Anpassungen — allgemeine Print-Defaults
+   (Page-Margin, Tabellen-/Code-Wrap) liegen in base.css. */
 @media print {
-  @page { size: A4; margin: 14mm 16mm; }
-  .markdown-body { margin: 0; padding: 0; max-width: none; }
-  body { font-size: 10.5pt; }
   a { color: var(--fg); }
-  /* GitHub-Tabellen sind im Screen display:block + max-content für Scroll —
-     im Print zurück zu klassischem Tabellen-Layout, sonst Überlauf. */
-  table {
-    display: table;
-    width: 100%;
-    max-width: 100%;
-    table-layout: auto;
-    font-size: 0.88em;
-    overflow: visible;
-  }
-  th, td {
-    word-break: break-word;
-    overflow-wrap: anywhere;
-    padding: 4px 8px;
-  }
+  th, td { padding: 4px 8px; }
   tr:nth-child(2n) { background: transparent; }
-  pre, blockquote { break-inside: avoid; }
-  /* GitHub setzt pre code { white-space: pre } — im Print überschreiben,
-     sonst kein Wrap und Scrollbar im PDF. */
-  pre, pre code {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-    overflow: visible;
-  }
 }

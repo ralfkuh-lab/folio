@@ -89,30 +89,9 @@ th { background: #f3ede0; font-weight: 700; }
 img { max-width: 100%; height: auto; display: block; margin: 1em auto; }
 .task-list-item { list-style: none; }
 .task-list-item input[type=checkbox] { margin-right: 0.4em; }
+/* Layout-spezifische Print-Anpassungen — allgemeine Print-Defaults
+   (Page-Margin, Tabellen-/Code-Wrap) liegen in base.css. */
 @media print {
-  /* Ränder gehören auf @page, sonst greift Padding nur auf der ersten/letzten Seite. */
-  @page { size: A4; margin: 14mm 16mm; }
-  .markdown-body { margin: 0; padding: 0; max-width: none; }
-  body { font-size: 10.5pt; }
   a { color: var(--fg); border-bottom: none; }
-  table {
-    display: table;
-    width: 100%;
-    max-width: 100%;
-    table-layout: auto;
-    font-size: 0.88em;
-    overflow: visible;
-  }
-  th, td {
-    word-break: break-word;
-    overflow-wrap: anywhere;
-    padding: 0.3em 0.5em;
-  }
-  pre, blockquote { break-inside: avoid; }
-  pre, pre code {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-    overflow: visible;
-  }
+  th, td { padding: 0.3em 0.5em; }
 }
