@@ -1,4 +1,4 @@
-use folio_rs::{
+use folio::{
     document_store::{DocumentStore, LineEnding},
     file_resolver,
     workspace::Workspace,

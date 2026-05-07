@@ -327,7 +327,7 @@ function buildExtensions(): Extension[] {
         findHighlightPlugin,
         // Keymaps: defaults + history; foldKeymap; searchKeymap intern (Esc/Enter
         // wickelt unsere Find-Bar). Ctrl-S/F/B/I/K sollen *nicht* hier behandelt
-        // werden — die schluckt ansonsten unsere WPF-Bindings.
+        // werden — die routen wir selbst auf die Toolbar/Shortcut-Handler.
         keymap.of([
             ...defaultKeymap,
             ...historyKeymap,

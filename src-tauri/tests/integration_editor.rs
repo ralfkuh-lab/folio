@@ -1,4 +1,4 @@
-use folio_rs::editor_commands::{
+use folio::editor_commands::{
     cycle_heading, insert_link, insert_table, toggle_wrap, EditResult,
 };
 

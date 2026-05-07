@@ -30,7 +30,7 @@ fn diff_fixture(name: &str) {
     let expected = fs::read_to_string(&expected_path)
         .unwrap_or_else(|e| panic!("failed to read {}: {e}", expected_path.display()));
 
-    let actual = folio_rs::renderer::render_body(&markdown);
+    let actual = folio::renderer::render_body(&markdown);
 
     if actual != expected {
         let diff_path = ws.join(format!("goldfiles/actual/{name}.html"));

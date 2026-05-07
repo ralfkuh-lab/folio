@@ -2,7 +2,7 @@
 
 ## Projekt
 
-**folio-rs** — Markdown-Viewer/-Editor auf Tauri 2 + Rust. Live-Vorschau,
+**folio** — Markdown-Viewer/-Editor auf Tauri 2 + Rust. Live-Vorschau,
 Vault-Navigation, Workspace-Pins, HTTP-Automation-API für E2E-Tests.
 
 ## Tech-Stack
@@ -45,4 +45,4 @@ Frontend-Assets vor `cargo tauri build` bauen: `cd src-tauri/dist && npm install
 
 ## GitHub
 
-Remote: `ralfkuh-lab/folio-rs`. Original-WPF-App: `fsrakul/Folio`.
+Remote: `ralfkuh-lab/folio`.

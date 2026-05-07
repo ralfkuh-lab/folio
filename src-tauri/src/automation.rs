@@ -156,7 +156,7 @@ pub struct MockAutomationState {
 impl Default for MockAutomationState {
     fn default() -> Self {
         Self {
-            title: "Folio RS".into(),
+            title: "Folio".into(),
             file: None,
             text: String::new(),
             dirty: false,
@@ -298,7 +298,7 @@ async fn get_state(
         .app_handle
         .get_webview_window("main")
         .and_then(|window| window.title().ok())
-        .unwrap_or_else(|| "Folio RS".into());
+        .unwrap_or_else(|| "Folio".into());
     let state = context.app_handle.state::<AppState>();
     let document = state
         .document_store
@@ -712,8 +712,8 @@ fn capture_png() -> ApiResult<Vec<u8>> {
     let image = xcap::Window::all()
         .map_err(|error| ApiError::internal(error.to_string()))?
         .into_iter()
-        .find(|window| window.title().is_ok_and(|title| title == "Folio RS"))
-        .ok_or_else(|| ApiError::internal("Folio RS window not found"))?
+        .find(|window| window.title().is_ok_and(|title| title == "Folio"))
+        .ok_or_else(|| ApiError::internal("Folio window not found"))?
         .capture_image()
         .map_err(|error| ApiError::internal(error.to_string()))?;
     let mut cursor = Cursor::new(Vec::new());

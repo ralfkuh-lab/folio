@@ -4,7 +4,7 @@ use axum::{
     http::{header, Request, StatusCode},
     Router,
 };
-use folio_rs::automation::{build_mock_router, MockAutomationState};
+use folio::automation::{build_mock_router, MockAutomationState};
 use serde_json::{json, Value};
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -25,7 +25,7 @@ async fn get_state_returns_expected_json_shape() {
     let response = request(build_mock_router(state), "GET", "/state", None, loopback()).await;
 
     assert_eq!(StatusCode::OK, response.status);
-    assert_eq!("Folio RS", response.json["title"]);
+    assert_eq!("Folio", response.json["title"]);
     assert_eq!(false, response.json["dirty"]);
     assert_eq!("view", response.json["viewMode"]);
     assert_eq!(true, response.json["editor"]["ready"]);

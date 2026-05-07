@@ -13,6 +13,6 @@ tools/goldfile-gen/**/obj
 *.tmp
 .DS_Store
 src-tauri/target/
-folio-rs-debug
-folio-rs-release
+folio-debug
+folio-release
 goldfiles/actual/

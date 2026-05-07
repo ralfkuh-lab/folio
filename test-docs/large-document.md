@@ -132,7 +132,7 @@ dotnet run --project src/Folio -- test-docs/large-document.md
 
 ## Task-Listen
 
-- [x] Editor in WebView statt WPF-Popup
+- [x] Editor direkt in der WebView
 - [x] Bug A: PostMessage statt ExecuteScriptAsync fuer grosse Payloads
 - [x] Bug B: Line-Ending-Preservation in DocumentStore
 - [x] Tests fuer CRLF/LF/BOM

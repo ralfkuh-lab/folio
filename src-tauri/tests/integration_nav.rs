@@ -1,4 +1,4 @@
-use folio_rs::navigation::NavigationController;
+use folio::navigation::NavigationController;
 
 #[test]
 fn full_navigation_lifecycle_walks_back_and_forward() {

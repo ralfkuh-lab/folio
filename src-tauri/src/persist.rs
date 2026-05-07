@@ -5,10 +5,13 @@ use std::{
 };
 
 pub(crate) fn config_file(name: &str) -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("folio-rs")
-        .join(name)
+    let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+    let dir = base.join("folio");
+    let legacy = base.join("folio-rs");
+    if !dir.exists() && legacy.exists() {
+        let _ = fs::rename(&legacy, &dir);
+    }
+    dir.join(name)
 }
 
 pub(crate) fn load_json<T: DeserializeOwned + Default>(path: &Path) -> T {

@@ -126,6 +126,6 @@ mod tests {
 
     #[test]
     fn missing_directory_returns_error() {
-        assert!(list_dir("/definitely/missing/folio-rs").is_err());
+        assert!(list_dir("/definitely/missing/folio").is_err());
     }
 }

@@ -1,4 +1,4 @@
-use folio_rs::{renderer, toc};
+use folio::{renderer, toc};
 
 #[test]
 fn render_pipeline_extracts_toc_and_html_for_rich_markdown() {

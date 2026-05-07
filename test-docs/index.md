@@ -7,7 +7,7 @@ Diese Datei dient zum manuellen Smoketest.
 - [Entscheidungsgrundlage](../markdown-viewer-entscheidung.md) — sollte navigieren und diese andere `.md`-Datei rendern.
 - [Mit Anker](../markdown-viewer-entscheidung.md#empfehlung) — sollte navigieren und zum Abschnitt „Empfehlung" scrollen.
 - [Anker auf diese Datei](#abschnitt-b) — sollte nur scrollen, nicht navigieren.
-- [GitHub Repo](https://github.com/fsrakul/Folio) — sollte im Standardbrowser öffnen, nicht im Viewer.
+- [GitHub Repo](https://github.com/ralfkuh-lab/folio) — sollte im Standardbrowser öffnen, nicht im Viewer.
 
 ## Typografie
 

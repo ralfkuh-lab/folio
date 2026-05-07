@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <base href="./">
-<title>Folio RS</title>
+<title>Folio</title>
 <style>
   :root {
     color-scheme: light dark;
@@ -111,7 +111,7 @@
   .toolbar button.active { background: var(--rail-selected-bg); color: var(--rail-selected-fg); }
   .toolbar button:disabled { opacity: 0.4; cursor: default; }
   .toolbar button svg { display: block; }
-  /* Segoe-Fluent-Icons-Glyphen (monochrom, analog WPF-Original auf Win11) */
+  /* Segoe-Fluent-Icons-Glyphen (monochrom, Win11). */
   .toolbar button.ti-fluent {
     font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets", sans-serif;
     font-size: 15px;
@@ -957,7 +957,7 @@
     white-space: pre-wrap;
   }
   /* Folio-Scrollbar: 12px Track, transparenter Border laesst den Thumb bei
-     8px effektiver Breite landen (matched WPF-Thumb mit Margin=2 auf 12px). */
+     8px effektiver Breite landen. */
   ::-webkit-scrollbar { width: 12px; height: 12px; }
   ::-webkit-scrollbar-thumb {
     background: rgba(128,128,128,0.35);
@@ -1744,8 +1744,8 @@
         caseChk.addEventListener('change', syncOptions);
         wordChk.addEventListener('change', syncOptions);
 
-        // Modus-agnostische Next/Prev-Helfer fuer F3 / Shift+F3 aus der WPF-Seite.
-        // C# uebergibt den letzten nicht-leeren Suchbegriff (lastTerm) — wenn die
+        // Modus-agnostische Next/Prev-Helfer fuer F3 / Shift+F3.
+        // Aufrufer uebergeben den letzten nicht-leeren Suchbegriff (lastTerm) — wenn die
         // Bar geschlossen ist, oeffnet F3 sie mit diesem Begriff (Datei-Wechsel:
         // weitersuchen ohne neu tippen). Bei offener leerer Bar wird der lastTerm
         // ebenfalls als Startwert eingespielt.
@@ -2037,8 +2037,7 @@
             if (section) toggleSection(section);
         });
 
-        // Rechtsklick → Context-Menu-Anfrage an C# (Position relativ zum Viewport,
-        // C# rechnet ggf. auf DIPs um und oeffnet die WPF-ContextMenu).
+        // Rechtsklick → Context-Menu-Anfrage (Position relativ zum Viewport).
         REGION.addEventListener('contextmenu', function (e) {
             e.preventDefault();
             var node = findAncestor(e.target, 'node');
@@ -2239,7 +2238,7 @@
         var name = fileFullName(currentPath);
         var title = name
             ? (isDirty ? '* ' + name : name) + ' — Folio'
-            : 'Folio RS';
+            : 'Folio';
         document.title = title;
         invoke('set_window_title', { title: title }).catch(function () { /* ignore */ });
     }

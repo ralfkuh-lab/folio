@@ -1,4 +1,4 @@
-# Folio RS
+# Folio
 
 Plattformübergreifender Markdown-Viewer und -Editor auf **Tauri 2 + Rust**.
 
@@ -24,7 +24,7 @@ Plattformübergreifender Markdown-Viewer und -Editor auf **Tauri 2 + Rust**.
 ## Projektstruktur
 
 ```
-folio-rs/
+folio/
 ├── src-tauri/
 │   ├── src/                     # Rust-Backend
 │   │   └── commands/            # Tauri-IPC-Commands
@@ -49,8 +49,8 @@ folio-rs/
 ### Schritte
 
 ```bash
-git clone https://github.com/ralfkuh-lab/folio-rs.git
-cd folio-rs
+git clone https://github.com/ralfkuh-lab/folio.git
+cd folio
 
 cargo install tauri-cli
 

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Folio RS",
+  "productName": "Folio",
   "version": "0.1.0",
-  "identifier": "com.folio.rs",
+  "identifier": "com.folio.app",
   "build": {
     "frontendDist": "dist"
   },
@@ -29,7 +29,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Folio RS",
+        "title": "Folio",
         "width": 1200,
         "height": 800
       }
