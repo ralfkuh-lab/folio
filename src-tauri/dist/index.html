@@ -2835,6 +2835,20 @@
     }
     refreshVault();
 
+    invoke('cli_pending_open').then(function (path) {
+        if (typeof path === 'string' && path.length > 0) {
+            openDocument(path);
+        }
+    }).catch(function () {});
+
+    window.__TAURI__.event.listen('cli:open', function (event) {
+        var data = event && event.payload;
+        var path = (data && typeof data === 'object') ? data.path : null;
+        if (typeof path === 'string' && path.length > 0) {
+            openDocument(path);
+        }
+    });
+
     if (vaultTree) {
         vaultTree.addEventListener('click', function (e) {
             var item = e.target.closest('.vault-item');

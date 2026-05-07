@@ -42,6 +42,7 @@ pub struct AppState {
     pub navigation: Mutex<NavigationController>,
     pub link_interceptor: LinkInterceptor,
     pub automation: Mutex<AutomationUiState>,
+    pub cli_open_path: Mutex<Option<String>>,
 }
 
 impl Default for AppState {
@@ -66,6 +67,7 @@ impl AppState {
                 theme: initial_theme,
                 ..AutomationUiState::default()
             }),
+            cli_open_path: Mutex::new(None),
         }
     }
 

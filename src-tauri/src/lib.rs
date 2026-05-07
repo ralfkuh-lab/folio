@@ -22,10 +22,43 @@ pub mod vault;
 pub mod workspace;
 
 use state::AppState;
-use tauri::{Listener, LogicalPosition, LogicalSize, Manager, WindowEvent};
+use std::path::Path;
+use tauri::{Emitter, Listener, LogicalPosition, LogicalSize, Manager, WindowEvent};
+
+/// Findet im Argv-Stream den ersten Pfad, der wie eine zu öffnende Datei aussieht.
+/// Skip: argv[0] (Programmname), Flags (`--foo`, `-x`), nicht-existente Pfade.
+fn first_file_arg<I, S>(args: I) -> Option<String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut iter = args.into_iter();
+    iter.next(); // argv[0]
+    for arg in iter {
+        let value = arg.as_ref();
+        if value.is_empty() || value.starts_with('-') {
+            continue;
+        }
+        if Path::new(value).is_file() {
+            return Some(value.to_string());
+        }
+    }
+    None
+}
 
 pub fn builder() -> tauri::Builder<tauri::Wry> {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            let Some(path) = first_file_arg(args) else {
+                return;
+            };
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+            let _ = app.emit("cli:open", serde_json::json!({ "path": path }));
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(AppState::new())
@@ -77,6 +110,11 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
         .setup(|app| {
             let state = app.state::<AppState>();
             state.install_document_events(app.handle().clone())?;
+            if let Some(path) = first_file_arg(std::env::args()) {
+                if let Ok(mut slot) = state.cli_open_path.lock() {
+                    *slot = Some(path);
+                }
+            }
             if let Some(window) = app.get_webview_window("main") {
                 let panel = state
                     .panel_state
@@ -139,6 +177,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::app::set_view_mode,
             commands::app::set_rail_visible,
             commands::app::open_find,
+            commands::app::cli_pending_open,
             commands::app::set_window_title,
             commands::app::set_webview_zoom,
             commands::app::show_in_file_manager,

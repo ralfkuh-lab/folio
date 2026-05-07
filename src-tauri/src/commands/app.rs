@@ -162,6 +162,15 @@ pub async fn open_find(handle: AppHandle) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+pub async fn cli_pending_open(state: State<'_, AppState>) -> Result<Option<String>, String> {
+    Ok(state
+        .cli_open_path
+        .lock()
+        .map_err(|_| "cli open path lock poisoned".to_string())?
+        .take())
+}
+
 fn file_path_to_string(path: FilePath) -> String {
     path.into_path()
         .map(|path| path.to_string_lossy().into_owned())

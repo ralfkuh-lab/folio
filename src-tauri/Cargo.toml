@@ -27,6 +27,7 @@ xcap = "0.4"
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"
+tauri-plugin-single-instance = "2"
 
 # File-type icons
 image = { version = "0.25", default-features = false, features = ["png"] }
