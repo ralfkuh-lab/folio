@@ -712,7 +712,11 @@ fn capture_png() -> ApiResult<Vec<u8>> {
     let image = xcap::Window::all()
         .map_err(|error| ApiError::internal(error.to_string()))?
         .into_iter()
-        .find(|window| window.title().is_ok_and(|title| title == "Folio"))
+        .find(|window| {
+            window
+                .title()
+                .is_ok_and(|title| title == "Folio" || title.ends_with("— Folio"))
+        })
         .ok_or_else(|| ApiError::internal("Folio window not found"))?
         .capture_image()
         .map_err(|error| ApiError::internal(error.to_string()))?;
