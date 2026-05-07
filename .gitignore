@@ -14,3 +14,4 @@ src-tauri/target/
 folio-debug
 folio-release
 *.lnk
+.playwright-mcp/
