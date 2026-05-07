@@ -1,14 +1,5 @@
 # TODO
 
-## Hohe Priorität
-
-- **Toolbar/Statusbar-Icons überarbeiten**: Aktuell minimalistisch
-  schwarz-weiß; sollen weg zu farbigen, modernen Icons (schnellere
-  Erkennbarkeit). Designvorschlag professionell generieren lassen
-  (z. B. via Codex-imagegen-Skill); dann konsistent durch Toolbar,
-  Vault-Header und Kontextmenüs ziehen. App-Icon (Marky-MD) ist
-  erledigt; Vault-File-Icons kommen aus dem System-Theme.
-
 ## Mittlere Priorität
 
 - **Edit-Toolbar dateityp-spezifisch**: Markdown-spezifische Buttons (Bold, Italic,
