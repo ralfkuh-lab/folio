@@ -24,18 +24,29 @@ impl Vault {
     }
 
     pub fn build_initial_tree_html(&self, workspace: &Workspace) -> String {
+        self.build_initial_tree_html_with(workspace, true, true)
+    }
+
+    pub fn build_initial_tree_html_with(
+        &self,
+        workspace: &Workspace,
+        pinned_expanded: bool,
+        recent_expanded: bool,
+    ) -> String {
         let mut html = String::new();
         html.push_str(&self.section_html(
             "pinned",
             "📌",
             "Angepinnt",
             self.pinned_children_html(workspace),
+            pinned_expanded,
         ));
         html.push_str(&self.section_html(
             "recent",
             "🕘",
             "Zuletzt geöffnet",
             self.recent_children_html(workspace),
+            recent_expanded,
         ));
         html
     }
@@ -128,9 +139,22 @@ impl Vault {
         )
     }
 
-    fn section_html(&self, key: &str, icon: &str, title: &str, children: String) -> String {
+    fn section_html(
+        &self,
+        key: &str,
+        icon: &str,
+        title: &str,
+        children: String,
+        expanded: bool,
+    ) -> String {
+        let caret_class = if expanded { "caret open" } else { "caret" };
+        let children_class = if expanded {
+            "children"
+        } else {
+            "children collapsed"
+        };
         format!(
-            r#"<li class="section" data-section="{key}"><div class="row"><span class="caret open">▾</span><span class="icon">{icon}</span><span class="label">{title}</span></div><ul class="children">{children}</ul></li>"#,
+            r#"<li class="section" data-section="{key}"><div class="row"><span class="{caret_class}">▾</span><span class="icon">{icon}</span><span class="label">{title}</span></div><ul class="{children_class}">{children}</ul></li>"#,
             key = escape_attr(key),
             icon = escape_html(icon),
             title = escape_html(title),

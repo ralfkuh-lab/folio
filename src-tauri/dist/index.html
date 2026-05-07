@@ -459,7 +459,7 @@
     overflow: auto;
     background: var(--rail-bg);
     color: var(--rail-fg);
-    font-family: "Segoe UI", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+    font-family: "Segoe UI", system-ui, -apple-system, "Noto Sans", sans-serif;
     font-size: 12px;
     line-height: 1.45;
     user-select: none;
@@ -605,6 +605,7 @@
     flex: 0 0 auto;
     text-align: center;
     margin-right: 4px;
+    font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
     font-size: 13px;
     line-height: 1;
   }
@@ -1919,17 +1920,27 @@
             return null;
         }
 
+        var currentActivePath = '';
+        function reapplyActiveMarker() {
+            var prev = ROOT.querySelectorAll('.node.active');
+            for (var i = 0; i < prev.length; i++) prev[i].classList.remove('active');
+            if (!currentActivePath) return;
+            var nodes = findAllNodesByPath(currentActivePath);
+            for (var n = 0; n < nodes.length; n++) nodes[n].classList.add('active');
+        }
         window.setVaultPinned = function (html) {
             var section = ROOT.querySelector('li.section[data-section="pinned"]');
             if (!section) return;
             var ul = section.querySelector(':scope > ul.children');
             if (ul) ul.innerHTML = html || '';
+            reapplyActiveMarker();
         };
         window.setVaultRecent = function (html) {
             var section = ROOT.querySelector('li.section[data-section="recent"]');
             if (!section) return;
             var ul = section.querySelector(':scope > ul.children');
             if (ul) ul.innerHTML = html || '';
+            reapplyActiveMarker();
         };
         window.insertVaultChildren = function (path, html) {
             // Pfad kann mehrfach im Baum vorkommen (z. B. neu angepinntes
@@ -1948,14 +1959,13 @@
                 var iconEl = li.querySelector(':scope > .row > .icon');
                 if (iconEl) iconEl.textContent = '📂';
             }
+            reapplyActiveMarker();
         };
         window.setVaultActive = function (path) {
-            var prev = ROOT.querySelectorAll('.node.active');
-            for (var i = 0; i < prev.length; i++) prev[i].classList.remove('active');
-            if (!path) return;
-            var el = findNodeByPath(path);
-            if (el) el.classList.add('active');
+            currentActivePath = path || '';
+            reapplyActiveMarker();
         };
+        window.reapplyVaultActive = reapplyActiveMarker;
 
         function toggleSection(section) {
             var key = section.getAttribute('data-section');
@@ -2838,6 +2848,7 @@
         }
         vaultTree.innerHTML = html;
         applyIconsToNode(vaultTree);
+        if (typeof window.reapplyVaultActive === 'function') window.reapplyVaultActive();
     }
     function refreshVault() {
         invoke('vault_build_tree').then(renderVault).catch(function (err) {

@@ -51,7 +51,16 @@ pub async fn vault_build_tree(state: State<'_, AppState>) -> Result<String, Stri
         .vault
         .lock()
         .map_err(|_| "vault lock poisoned".to_string())?;
-    Ok(vault.build_initial_tree_html(&workspace))
+    let panel = state
+        .panel_state
+        .lock()
+        .map_err(|_| "panel state lock poisoned".to_string())?
+        .data();
+    Ok(vault.build_initial_tree_html_with(
+        &workspace,
+        panel.pinned_expanded,
+        panel.recent_expanded,
+    ))
 }
 
 #[tauri::command]

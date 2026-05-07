@@ -40,7 +40,12 @@ pub async fn read_file(path: String, state: State<'_, AppState>) -> Result<FileD
         .navigation
         .lock()
         .map_err(|_| "navigation lock poisoned".to_string())?
-        .navigate(path, None);
+        .navigate(path.clone(), None);
+    state
+        .vault
+        .lock()
+        .map_err(|_| "vault lock poisoned".to_string())?
+        .set_active(Some(path));
     Ok(FileData {
         path: loaded.path,
         content: loaded.text,
