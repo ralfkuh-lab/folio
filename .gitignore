@@ -8,12 +8,9 @@ dist
 !src-tauri/dist/editor.bundle.js
 !src-tauri/dist/package.json
 !src-tauri/dist/package-lock.json
-tools/goldfile-gen/**/bin
-tools/goldfile-gen/**/obj
 *.tmp
 .DS_Store
 src-tauri/target/
 folio-debug
 folio-release
-goldfiles/actual/
 *.lnk

@@ -29,11 +29,7 @@ Frontend-Assets vor `cargo tauri build` bauen: `cd src-tauri/dist && npm install
 
 ## Konventionen
 
-- **Goldfiles** (`goldfiles/expected/*.html`) sind Regressionsanker für den
-  Renderer-Output. Tests in `src-tauri/tests/goldfile_diff.rs` vergleichen byte-genau.
-  Bei beabsichtigten Renderer-Änderungen Goldfiles bewusst aktualisieren.
-- **Slugifier**: eigener in `heading_anchor.rs` (kein comrak-Default) — repliziert
-  Markdig-`AutoIdentifier`. Ohne Goldfile-Update nicht ändern.
+- **Slugifier**: eigener in `heading_anchor.rs` (kein comrak-Default).
 - **AST-Postprocess** in `renderer.rs` ergänzt fehlendes `GenericAttributes`-Feature.
 - **CRLF/LF/BOM**: Roundtrip ist getestet (`document_store.rs`). Beim Schreiben
   Original-Encoding/Line-Endings beibehalten.

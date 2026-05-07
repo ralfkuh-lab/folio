@@ -28,11 +28,10 @@ folio/
 ├── src-tauri/
 │   ├── src/                     # Rust-Backend
 │   │   └── commands/            # Tauri-IPC-Commands
-│   ├── tests/                   # Unit-, Integration-, Goldfile-Tests
+│   ├── tests/                   # Unit- und Integration-Tests
 │   ├── dist/                    # Frontend-Assets (HTML/TS/CSS)
 │   ├── Cargo.toml
 │   └── tauri.conf.json
-├── goldfiles/expected/          # Renderer-Regressionsfixtures
 ├── test-docs/                   # Beispiel-Markdown für manuelle Tests
 ├── CLAUDE.md
 └── README.md

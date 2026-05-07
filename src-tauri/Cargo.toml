@@ -50,8 +50,6 @@ windows = { version = "0.58", features = [
 tauri-build = { version = "2", features = [] }
 
 [dev-dependencies]
-# für Goldfile-Diffs
-pretty_assertions = "1.4"
 tower = "0.5"
 
 [lib]
