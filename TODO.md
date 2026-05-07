@@ -22,6 +22,12 @@
   read-only oder eigener Renderer).
 - **Syntax-Highlighting im Edit-Mode** für die Text-Klasse: CodeMirror-Lang-Plugins
   per Extension auswählen (lang-json, lang-html, lang-yaml, …).
+- **Linux-Paket: `.md`-Icon im Datei-Manager**: Aktuell muss
+  [`scripts/install-folio-icons.sh`](scripts/install-folio-icons.sh)
+  manuell laufen, damit Nemo/Nautilus & Co. das Folio-Icon für `.md`
+  zeigen. Reproduzierbare Lösung im `.deb`-Build wäre schöner —
+  Hintergrund, bisherige Erkenntnisse und mögliche Wege in
+  [`docs/linux-md-icon.md`](docs/linux-md-icon.md).
 
 ## Niedrige Priorität
 
