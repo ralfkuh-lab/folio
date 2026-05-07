@@ -53,7 +53,7 @@ cd folio
 
 cargo install tauri-cli
 
-cd src-tauri/dist && npm install && npm run build && cd ..
+cd src-tauri/web && npm install && npm run build && cd ../..
 
 cargo tauri build      # Release-Bundle
 # oder:

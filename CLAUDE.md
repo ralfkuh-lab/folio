@@ -13,7 +13,9 @@ mittel / niedrig). Vor Vorschlägen, was als nächstes ansteht, dort nachsehen.
 - Rust 2021, Tauri 2
 - comrak 0.35 (GFM-Markdown)
 - axum 0.8 (Automation-API auf `127.0.0.1:9876`, Loopback-only, CORS für WebView-POSTs)
-- Vanilla TypeScript Frontend in `src-tauri/dist/`
+- Frontend: handgeschriebenes `src-tauri/dist/index.html` + CodeMirror-6-
+  Bundle. Bundle-Quellen liegen in `src-tauri/web/` (`editor.ts`,
+  `package.json`); Build-Output (`editor.bundle.js`) landet in `dist/`.
 - notify 7.0 (File-Watching), xcap (Screenshots)
 
 ## Build & Test
@@ -28,7 +30,9 @@ cargo fmt --check
 cargo tauri build      # Linux: braucht libwebkit2gtk-4.1-dev
 ```
 
-Frontend-Assets vor `cargo tauri build` bauen: `cd src-tauri/dist && npm install && npm run build`.
+Editor-Bundle vor `cargo tauri build` bauen (nur nötig bei Änderungen an
+`editor.ts` — `editor.bundle.js` ist eingecheckt):
+`cd src-tauri/web && npm install && npm run build`.
 
 ## Konventionen
 

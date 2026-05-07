@@ -1,10 +1,10 @@
 {
-  "name": "folio-tauri-dist",
+  "name": "folio-web",
   "version": "1.0.0",
   "private": true,
   "description": "CodeMirror 6 bundle for Folio's Tauri shell.",
   "scripts": {
-    "build": "esbuild editor.ts --bundle --format=iife --global-name=FolioEditor --target=chrome120 --platform=browser --outfile=editor.bundle.js --minify --legal-comments=none"
+    "build": "esbuild editor.ts --bundle --format=iife --global-name=FolioEditor --target=chrome120 --platform=browser --outfile=../dist/editor.bundle.js --minify --legal-comments=none"
   },
   "dependencies": {
     "@codemirror/commands": "^6.7.1",
