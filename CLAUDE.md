@@ -5,6 +5,9 @@
 **folio** — Markdown-Viewer/-Editor auf Tauri 2 + Rust. Live-Vorschau,
 Vault-Navigation, Workspace-Pins, HTTP-Automation-API für E2E-Tests.
 
+Offene Aufgaben werden in [`TODO.md`](TODO.md) gepflegt (priorisiert: hoch /
+mittel / niedrig). Vor Vorschlägen, was als nächstes ansteht, dort nachsehen.
+
 ## Tech-Stack
 
 - Rust 2021, Tauri 2
