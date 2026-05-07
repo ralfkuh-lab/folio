@@ -23,7 +23,9 @@ pub mod workspace;
 
 use state::AppState;
 use std::path::Path;
-use tauri::{Emitter, Listener, LogicalPosition, LogicalSize, Manager, WindowEvent};
+use tauri::{
+    webview::Color, Emitter, Listener, LogicalPosition, LogicalSize, Manager, Theme, WindowEvent,
+};
 
 /// Findet im Argv-Stream den ersten Pfad, der wie eine zu öffnende Datei aussieht.
 /// Skip: argv[0] (Programmname), Flags (`--foo`, `-x`), nicht-existente Pfade.
@@ -130,6 +132,18 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
                 if panel.window_maximized {
                     let _ = window.maximize();
                 }
+                // Phase-2-Flicker fixen: WebView-Hintergrund noch vor dem
+                // ersten Show passend zum aktiven OS-Theme setzen. Default
+                // ist sonst weiß (HTML-Spec) — sieht im Dark-Mode kurz
+                // grell aus. Tauri 2's `theme()` liest auf Linux das
+                // GTK-`prefer-dark-theme`, auf Windows die System-Pref,
+                // auf macOS NSAppearance.
+                let bg = match window.theme().unwrap_or(Theme::Dark) {
+                    Theme::Light => Color(0xff, 0xff, 0xff, 0xff),
+                    _ => Color(0x1e, 0x1e, 0x1e, 0xff),
+                };
+                let _ = window.set_background_color(Some(bg));
+                let _ = window.show();
             }
             let automation = automation::AutomationServer::new(app.handle().clone(), state.inner());
             let automation_handle = automation.start();

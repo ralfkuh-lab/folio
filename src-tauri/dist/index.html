@@ -4,6 +4,18 @@
 <meta charset="UTF-8">
 <base href="./">
 <title>Folio</title>
+<script>
+  // Synchron, blocking — läuft vor dem CSS-Parse, damit der erste Paint
+  // schon die richtige Theme-Klasse + Hintergrundfarbe hat. Verhindert
+  // das kurze Weiß-Flackern beim WebView-Start. Wird später ggf. durch
+  // theme_get überschrieben (persistierter User-Override).
+  (function () {
+    var dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    var html = document.documentElement;
+    html.classList.add(dark ? 'theme-dark' : 'theme-light');
+    html.style.background = dark ? '#1e1e1e' : '#ffffff';
+  })();
+</script>
 <style>
   :root {
     color-scheme: light dark;
