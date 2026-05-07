@@ -27,12 +27,18 @@ cargo build
 cargo test
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
-cargo tauri build      # Linux: braucht libwebkit2gtk-4.1-dev
+cargo tauri build                   # Linux: deb + rpm + appimage in target/release/bundle/
+cargo tauri build --bundles deb     # einzelnes Bundle-Target
 ```
 
-Editor-Bundle vor `cargo tauri build` bauen (nur nötig bei Änderungen an
-`editor.ts` — `editor.bundle.js` ist eingecheckt):
-`cd src-tauri/web && npm install && npm run build`.
+Editor-Bundle nur bauen, wenn `src-tauri/web/editor.ts` geändert wurde
+(`editor.bundle.js` ist eingecheckt):
+`cd src-tauri/web && npm install && npm run build`. Output landet in
+`../dist/editor.bundle.js`.
+
+Frontend-Quellen liegen in `src-tauri/web/`, ausgeliefert wird über
+`src-tauri/dist/` — `dist/` darf keine npm-Artefakte mehr enthalten,
+sonst lehnt Tauri den Build ab.
 
 ## Konventionen
 

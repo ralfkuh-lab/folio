@@ -29,9 +29,12 @@ folio/
 │   ├── src/                     # Rust-Backend
 │   │   └── commands/            # Tauri-IPC-Commands
 │   ├── tests/                   # Unit- und Integration-Tests
-│   ├── dist/                    # Frontend-Assets (HTML/TS/CSS)
+│   ├── web/                     # Editor-Bundle-Quellen (editor.ts, package.json)
+│   ├── dist/                    # Ausgelieferte Frontend-Assets (index.html,
+│   │                            #   editor.bundle.js)
 │   ├── Cargo.toml
 │   └── tauri.conf.json
+├── scripts/                     # Linux-Helper (Icon-Install)
 ├── test-docs/                   # Beispiel-Markdown für manuelle Tests
 ├── CLAUDE.md
 └── README.md
@@ -42,29 +45,69 @@ folio/
 ### Voraussetzungen
 
 - [Rust](https://rustup.rs/) 1.75+
-- [Node.js](https://nodejs.org/) 18+
+- [Node.js](https://nodejs.org/) 18+ (nur, wenn `editor.ts` geändert wird —
+  `editor.bundle.js` ist eingecheckt)
 - Linux: `libwebkit2gtk-4.1-dev`
+- Tauri-CLI: `cargo install tauri-cli`
 
-### Schritte
+### Editor-Bundle (CodeMirror)
+
+Nur nötig nach Änderungen an `src-tauri/web/editor.ts`:
 
 ```bash
-git clone https://github.com/ralfkuh-lab/folio.git
-cd folio
-
-cargo install tauri-cli
-
-cd src-tauri/web && npm install && npm run build && cd ../..
-
-cargo tauri build      # Release-Bundle
-# oder:
-cargo tauri dev        # Entwicklung
+cd src-tauri/web
+npm install                # einmalig bzw. nach package.json-Änderung
+npm run build              # erzeugt ../dist/editor.bundle.js
 ```
 
-### Tests
+### Entwicklung
 
 ```bash
 cd src-tauri
-cargo test
+cargo build                # Debug-Binary unter target/debug/folio
+cargo run                  # baut + startet
+cargo tauri dev            # mit Hot-Reload-Setup
+```
+
+### Release-Pakete
+
+`cargo tauri build` erzeugt auf Linux DEB, RPM und AppImage in einem Rutsch:
+
+```bash
+cd src-tauri
+cargo build --release          # nur das Release-Binary
+cargo tauri build              # Release-Binary + alle Bundle-Targets
+cargo tauri build --bundles deb       # nur DEB
+cargo tauri build --bundles rpm       # nur RPM
+cargo tauri build --bundles appimage  # nur AppImage
+```
+
+Output:
+
+```
+src-tauri/target/release/
+├── folio                                                # Standalone-Binary
+└── bundle/
+    ├── deb/Folio_<version>_amd64.deb
+    ├── rpm/Folio-<version>-1.x86_64.rpm
+    └── appimage/Folio_<version>_amd64.AppImage
+```
+
+### Linux: .md-Icon im Datei-Manager
+
+Optional, läuft ohne `sudo` (nur User-Profile, `XDG_DATA_HOME`):
+
+```bash
+scripts/install-folio-icons.sh
+```
+
+Hintergrund: [`docs/linux-md-icon.md`](docs/linux-md-icon.md).
+
+### Tests & Lint
+
+```bash
+cd src-tauri
+cargo test                                # Unit + Integration
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 ```
@@ -77,7 +120,8 @@ Loopback-HTTP-Server auf `127.0.0.1:9876` für E2E-Tests:
 |---|---|---|
 | `/state` | GET | Aktueller App-Zustand |
 | `/screenshot` | GET | PNG-Screenshot |
-| `/open` | POST | Datei öffnen |
+| `/open` | POST | Datei öffnen (Backend-Pfad, setzt Vault-Active) |
+| `/open-ui` | POST | Datei via UI-Flow öffnen (Dirty-Check etc.) |
 | `/mode` | POST | ViewMode setzen |
 | `/theme` | POST | Theme setzen |
 | `/rail` | POST | Rail-Sichtbarkeit |
@@ -86,6 +130,7 @@ Loopback-HTTP-Server auf `127.0.0.1:9876` für E2E-Tests:
 | `/focus` | POST | Fenster fokussieren |
 | `/find` | POST | Find-Dialog öffnen |
 | `/find/text` | POST | Suchbegriff setzen |
+| `/editor/text` | POST | Editor-Inhalt setzen |
 | `/resize` | POST | Fenstergröße ändern |
 | `/save` | POST | Speichern |
 | `/quit` | POST | App beenden |
