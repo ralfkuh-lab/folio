@@ -54,7 +54,11 @@ impl ThemeService {
     }
 
     pub fn toggle(&mut self) -> io::Result<&str> {
-        let next = if self.data.mode == "dark" { "light" } else { "dark" };
+        let next = if self.data.mode == "dark" {
+            "light"
+        } else {
+            "dark"
+        };
         self.set_mode(next)?;
         Ok(self.mode())
     }

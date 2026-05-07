@@ -618,8 +618,11 @@ mod tests {
             wrapped.new_selection_length,
         );
         assert_eq!("before\n\ncode\n\nafter", unwrapped.new_text);
-        assert_eq!("code", &unwrapped.new_text[unwrapped.new_selection_start
-            ..unwrapped.new_selection_start + unwrapped.new_selection_length]);
+        assert_eq!(
+            "code",
+            &unwrapped.new_text[unwrapped.new_selection_start
+                ..unwrapped.new_selection_start + unwrapped.new_selection_length]
+        );
     }
 
     #[test]

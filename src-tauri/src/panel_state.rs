@@ -207,8 +207,7 @@ mod tests {
         state.set_window_position(250.0, 250.0).unwrap();
         // Simulate enough time passing that this is clearly a deliberate maximize,
         // not maximize fallout from the last Moved event.
-        state.last_position_change_at =
-            Some(Instant::now() - Duration::from_secs(5));
+        state.last_position_change_at = Some(Instant::now() - Duration::from_secs(5));
         state.set_window_maximized(true).unwrap();
         let reloaded = PanelState::load_from(path).data();
         assert_eq!(Some(250.0), reloaded.window_x);

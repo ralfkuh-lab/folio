@@ -68,9 +68,7 @@ pub async fn pick_export_target(
         .map(file_path_to_string))
 }
 
-fn current_document(
-    state: &State<'_, AppState>,
-) -> Result<(Option<String>, String), String> {
+fn current_document(state: &State<'_, AppState>) -> Result<(Option<String>, String), String> {
     let store = state
         .document_store
         .lock()

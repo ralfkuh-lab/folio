@@ -63,7 +63,8 @@ fn chromium_candidates() -> Vec<PathBuf> {
 
 pub fn render_pdf(html: &str, source_dir: Option<&Path>, target_path: &Path) -> Result<(), String> {
     let chromium = find_chromium().ok_or_else(|| {
-        "Chromium-Browser nicht gefunden. Bitte Chrome, Edge oder Chromium installieren.".to_string()
+        "Chromium-Browser nicht gefunden. Bitte Chrome, Edge oder Chromium installieren."
+            .to_string()
     })?;
 
     // Temp-HTML bevorzugt im Source-Verzeichnis (relative Bilder funktionieren),
@@ -84,10 +85,7 @@ pub fn render_pdf(html: &str, source_dir: Option<&Path>, target_path: &Path) -> 
     ));
     std::fs::write(&temp_html, html).map_err(|e| format!("Temp-HTML schreiben: {e}"))?;
 
-    let url = format!(
-        "file:///{}",
-        temp_html.to_string_lossy().replace('\\', "/")
-    );
+    let url = format!("file:///{}", temp_html.to_string_lossy().replace('\\', "/"));
 
     let result = Command::new(&chromium)
         .args([
@@ -129,7 +127,11 @@ mod tests {
     #[test]
     fn candidates_list_is_non_empty_on_supported_platforms() {
         let cands = chromium_candidates();
-        if cfg!(any(target_os = "windows", target_os = "linux", target_os = "macos")) {
+        if cfg!(any(
+            target_os = "windows",
+            target_os = "linux",
+            target_os = "macos"
+        )) {
             assert!(!cands.is_empty(), "candidates should not be empty");
         }
     }

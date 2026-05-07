@@ -1,6 +1,4 @@
-use folio::editor_commands::{
-    cycle_heading, insert_link, insert_table, toggle_wrap, EditResult,
-};
+use folio::editor_commands::{cycle_heading, insert_link, insert_table, toggle_wrap, EditResult};
 
 #[test]
 fn formatting_sequence_updates_text_and_selection() {

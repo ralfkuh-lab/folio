@@ -46,8 +46,7 @@ pub fn layout_css(id: &str) -> Option<&'static str> {
 }
 
 pub fn render_document(layout_id: &str, title: &str, markdown: &str) -> Result<String, String> {
-    let css = layout_css(layout_id)
-        .ok_or_else(|| format!("Unbekanntes Layout: '{layout_id}'"))?;
+    let css = layout_css(layout_id).ok_or_else(|| format!("Unbekanntes Layout: '{layout_id}'"))?;
     let body = renderer::render_body(markdown);
     Ok(wrap_html(title, css, &body))
 }
@@ -156,7 +155,10 @@ mod tests {
 
     #[test]
     fn escape_html_handles_entities() {
-        assert_eq!("a&amp;b&lt;c&gt;d&quot;e&#39;f", escape_html("a&b<c>d\"e'f"));
+        assert_eq!(
+            "a&amp;b&lt;c&gt;d&quot;e&#39;f",
+            escape_html("a&b<c>d\"e'f")
+        );
     }
 
     #[test]

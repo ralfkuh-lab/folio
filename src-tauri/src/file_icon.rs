@@ -63,11 +63,7 @@ fn compute_icon(ext: &str) -> Option<IconBytes> {
 
     // Fallback-Kette: spezifischer Name → generischer Typ → text-x-generic
     let generic_type = mime.type_().as_str().to_string() + "-x-generic";
-    let candidates = [
-        icon_name.as_str(),
-        generic_type.as_str(),
-        "text-x-generic",
-    ];
+    let candidates = [icon_name.as_str(), generic_type.as_str(), "text-x-generic"];
 
     for name in candidates {
         if let Some(path) = freedesktop_icons::lookup(name).with_size(32).find() {
@@ -78,7 +74,10 @@ fn compute_icon(ext: &str) -> Option<IconBytes> {
                     Some("xpm") => "image/x-xpixmap",
                     _ => "application/octet-stream",
                 };
-                return Some(IconBytes { bytes, mime: mime_kind });
+                return Some(IconBytes {
+                    bytes,
+                    mime: mime_kind,
+                });
             }
         }
     }
@@ -222,8 +221,8 @@ fn icon_via_shgetfileinfo(ext: &str) -> Option<IconBytes> {
 #[cfg(target_os = "windows")]
 unsafe fn hicon_to_png(hicon: windows::Win32::UI::WindowsAndMessaging::HICON) -> Option<Vec<u8>> {
     use windows::Win32::Graphics::Gdi::{
-        DeleteObject, GetDC, GetDIBits, GetObjectW, ReleaseDC, BITMAP, BITMAPINFO, BITMAPINFOHEADER,
-        BI_RGB, DIB_RGB_COLORS, HGDIOBJ,
+        DeleteObject, GetDC, GetDIBits, GetObjectW, ReleaseDC, BITMAP, BITMAPINFO,
+        BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HGDIOBJ,
     };
     use windows::Win32::UI::WindowsAndMessaging::{GetIconInfo, ICONINFO};
 
@@ -306,7 +305,10 @@ mod tests {
     fn markdown_returns_app_icon() {
         let icon = icon_for_extension("md").expect("markdown should always resolve");
         assert_eq!(icon.mime, "image/png");
-        assert!(icon.bytes.starts_with(&[0x89, 0x50, 0x4e, 0x47]), "PNG-Header");
+        assert!(
+            icon.bytes.starts_with(&[0x89, 0x50, 0x4e, 0x47]),
+            "PNG-Header"
+        );
     }
 
     #[test]

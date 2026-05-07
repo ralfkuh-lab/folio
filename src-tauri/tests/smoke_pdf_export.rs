@@ -24,7 +24,10 @@ fn renders_simple_pdf_via_headless_chromium() {
 
     assert!(target.exists(), "PDF-Datei wurde nicht erzeugt");
     let size = fs::metadata(&target).expect("metadata").len();
-    assert!(size > 1000, "PDF zu klein ({size} bytes), wahrscheinlich kaputt");
+    assert!(
+        size > 1000,
+        "PDF zu klein ({size} bytes), wahrscheinlich kaputt"
+    );
     // PDF-Header prüfen: %PDF-
     let header = fs::read(&target).expect("read pdf");
     assert!(header.starts_with(b"%PDF-"), "Kein PDF-Header");
@@ -36,7 +39,9 @@ fn renders_long_code_lines_pdf_in_all_layouts() {
     // Scrollbar zu produzieren (kein automatischer Pixel-Check, aber
     // verifiziert dass der Render-Pfad mit dem korrigierten white-space
     // durchläuft).
-    if pdf_export::find_chromium().is_none() { return; }
+    if pdf_export::find_chromium().is_none() {
+        return;
+    }
 
     let temp = tempfile::tempdir().expect("temp dir");
     let markdown = "# Code\n\n```\nikaros.EmailDispatchTemplate                       (1)  -- Designation, Sender, MessageType, Spooler, AnotherLongIdentifierThatShouldWrap\nikaros.EmailDispatchTemplateLocalisation        (n)  -- (TemplateId, Language, Subject, Body), PK = (TemplateId, Language)\n```\n";
