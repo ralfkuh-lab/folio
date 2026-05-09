@@ -1242,6 +1242,7 @@
     //       Airspace-Konflikt mit dem Cheat-Sheet-Overlay.
     window.setEditMode = function (on) {
         document.body.classList.toggle('edit-mode', !!on);
+        if (on && typeof window.layoutEditor === 'function') window.layoutEditor();
     };
 
     // ----- Inbound-Channel: chrome.webview.message-Events fuer C#→JS-
@@ -1409,10 +1410,27 @@
             if (window.FolioEditor.getText() !== (text || '')) {
                 window.FolioEditor.setText(text || '');
             }
+            if (document.body.classList.contains('edit-mode')) {
+                window.layoutEditor();
+            }
         });
     };
     window.focusEditor = function () {
-        if (window.FolioEditor && editorMounted) window.FolioEditor.focus();
+        var initial = typeof cleanText === 'string' ? cleanText : '';
+        ensureEditorMounted(initial).then(function (ok) {
+            if (!ok) return;
+            window.layoutEditor();
+            window.FolioEditor.focus();
+        });
+    };
+    window.layoutEditor = function () {
+        if (!window.FolioEditor || !editorMounted || typeof window.FolioEditor.layout !== 'function') return;
+        requestAnimationFrame(function () {
+            window.FolioEditor.layout();
+            requestAnimationFrame(function () {
+                window.FolioEditor.layout();
+            });
+        });
     };
     window.setEditorTheme = function (mode) {
         if (window.FolioEditor) window.FolioEditor.setTheme(mode);
@@ -2467,6 +2485,7 @@
         document.body.classList.toggle('edit-mode', mode === 'edit');
         document.body.classList.toggle('split-mode', mode === 'split');
         setActiveMode(mode);
+        if (mode === 'edit' && typeof window.layoutEditor === 'function') window.layoutEditor();
         var theme = state.theme || 'light';
         document.documentElement.classList.toggle('theme-dark', theme === 'dark');
         document.documentElement.classList.toggle('theme-light', theme === 'light');

@@ -5,7 +5,6 @@ dist
 !src-tauri/dist/
 !src-tauri/dist/index.html
 !src-tauri/dist/editor.bundle.js
-src-tauri/dist/monaco/
 *.tmp
 .DS_Store
 src-tauri/target/

@@ -4,7 +4,7 @@
   "private": true,
   "description": "Monaco Editor bundle for Folio's Tauri shell.",
   "scripts": {
-    "build": "node copy-monaco.js && esbuild editor.ts --bundle --format=iife --target=chrome120 --platform=browser --outfile=../dist/editor.bundle.js --minify --legal-comments=none"
+    "build": "node copy-monaco.js && esbuild editor.ts --bundle --format=iife --target=es2018 --platform=browser --outfile=../dist/editor.bundle.js --minify --legal-comments=none"
   },
   "dependencies": {
     "monaco-editor": "^0.52.2"

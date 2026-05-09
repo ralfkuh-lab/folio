@@ -55,6 +55,11 @@ const monacoPromise = loadMonaco();
 
 function loadMonaco(): Promise<void> {
     return new Promise((resolve, reject) => {
+        if (window.monaco?.editor) {
+            monacoInstance = window.monaco;
+            resolve();
+            return;
+        }
         if (typeof window.require === "undefined") {
             reject(new Error("Monaco loader (window.require) not available"));
             return;
@@ -67,8 +72,12 @@ function loadMonaco(): Promise<void> {
         }
         window.require(
             ["vs/editor/editor.main"],
-            (m: any) => {
-                monacoInstance = m;
+            () => {
+                if (!window.monaco?.editor) {
+                    reject(new Error("Monaco AMD loader finished without window.monaco.editor"));
+                    return;
+                }
+                monacoInstance = window.monaco;
                 resolve();
             },
             (err: any) => {
@@ -344,6 +353,7 @@ function mount(elementId: string, initialText: string): Promise<void> {
             }
         );
 
+        layout();
         post({ type: "editorReady" });
     }).catch((err: any) => {
         throw err;
@@ -410,7 +420,15 @@ function applyReplace(args: {
 }
 
 function focus(): void {
-    if (editorInstance) editorInstance.focus();
+    if (!editorInstance) return;
+    layout();
+    editorInstance.focus();
+}
+
+function layout(): void {
+    if (!editorInstance) return;
+    editorInstance.layout();
+    renderMarkerLane();
 }
 
 function setTheme(_mode: "light" | "dark"): void {
@@ -497,4 +515,5 @@ function findPrev(): void {
     setFindTerm,
     findNext,
     findPrev,
+    layout,
 };
