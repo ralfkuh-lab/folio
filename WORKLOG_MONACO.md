@@ -60,3 +60,12 @@
 - Alle 123 Unit-Tests + Integrationstests bestehen.
 - `cargo clippy --all-targets -- -D warnings` sauber.
 - `cargo fmt` angewendet.
+
+### Debugging & Fix (Headless-Verifikation)
+
+- **Problem:** `editor.ready: False` nach Migration — Monaco initialisierte sich nicht.
+- **Ursache:** `--global-name=FolioEditor` in esbuild erzeugte `var FolioEditor=(()=>{...})()`, das den manuellen `window.FolioEditor`-Assignment überschrieb. Ergebnis: `window.FolioEditor` war `undefined`.
+- **Fix:** `--global-name=FolioEditor` aus `package.json` entfernt. `editor.bundle.js` setzt jetzt direkt `window.FolioEditor={...}`.
+- **Tauri `dist/` Caching:** Jede Änderung in `dist/` erfordert `touch build.rs && cargo build --release`, damit Tauri die Assets neu einbettet.
+- **Screenshot-Verifikation:** Monaco rendert in Xvfb/WebKitGTK nicht visuell (Canvas-basiert), funktioniert aber einwandfrei über die Automation API (`editor.ready=true`, Text setzen/lesen, TOC-Parsing). Visuelle Verifikation erfordert echten Bildschirm.
+

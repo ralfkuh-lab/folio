@@ -59,7 +59,12 @@ function loadMonaco(): Promise<void> {
             reject(new Error("Monaco loader (window.require) not available"));
             return;
         }
-        window.require.config({ paths: { vs: "monaco/vs" } });
+        try {
+            window.require.config({ paths: { vs: "monaco/vs" } });
+        } catch (e) {
+            reject(e);
+            return;
+        }
         window.require(
             ["vs/editor/editor.main"],
             (m: any) => {
@@ -271,22 +276,26 @@ function mount(elementId: string, initialText: string): Promise<void> {
 
         const isDark = document.documentElement.classList.contains("theme-dark");
 
-        editorInstance = monaco.editor.create(el, {
-            value: initialText || "",
-            language: "markdown",
-            theme: isDark ? "vs-dark" : "vs",
-            automaticLayout: true,
-            minimap: { enabled: false },
-            lineNumbers: "on",
-            wordWrap: "on",
-            folding: true,
-            scrollBeyondLastLine: false,
-            renderLineHighlight: "all",
-            fontSize: 13.5,
-            fontFamily:
-                'Consolas, "Cascadia Mono", "Courier New", monospace',
-            padding: { top: 12, bottom: 12 },
-        });
+        try {
+            editorInstance = monaco.editor.create(el, {
+                value: initialText || "",
+                language: "markdown",
+                theme: isDark ? "vs-dark" : "vs",
+                automaticLayout: true,
+                minimap: { enabled: false },
+                lineNumbers: "on",
+                wordWrap: "on",
+                folding: true,
+                scrollBeyondLastLine: false,
+                renderLineHighlight: "all",
+                fontSize: 13.5,
+                fontFamily:
+                    'Consolas, "Cascadia Mono", "Courier New", monospace',
+                padding: { top: 12, bottom: 12 },
+            });
+        } catch (e) {
+            throw e;
+        }
 
         // Disable Monaco built-in find widget shortcuts
         editorInstance.addCommand(
@@ -336,6 +345,8 @@ function mount(elementId: string, initialText: string): Promise<void> {
         );
 
         post({ type: "editorReady" });
+    }).catch((err: any) => {
+        throw err;
     });
 }
 
