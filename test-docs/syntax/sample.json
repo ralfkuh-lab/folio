@@ -1,0 +1,39 @@
+{
+  "name": "folio",
+  "version": "0.4.2",
+  "active": true,
+  "deprecated": false,
+  "license": null,
+  "description": "Markdown-Viewer/-Editor auf Tauri 2 + Rust",
+  "keywords": ["markdown", "tauri", "rust", "editor"],
+  "config": {
+    "automation_port": 9876,
+    "max_recent_files": 20,
+    "themes": {
+      "default": "light",
+      "available": ["light", "dark"]
+    },
+    "thresholds": {
+      "warn_kb": 512,
+      "error_kb": 2048,
+      "ratio": 0.75,
+      "negative_offset": -1.5
+    }
+  },
+  "links": [
+    {
+      "label": "Repo",
+      "url": "https://github.com/ralfkuh-lab/folio",
+      "internal": false
+    },
+    {
+      "label": "Docs",
+      "url": "https://docs.example.invalid",
+      "internal": true
+    }
+  ],
+  "escape_test": "Backslash \\, Quote \", Newline \\n, Unicode ☃ done.",
+  "empty_object": {},
+  "empty_array": [],
+  "trailing_number": 42
+}

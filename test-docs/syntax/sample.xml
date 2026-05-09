@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Folio-XML-Test-Fixture. In dieser Iteration: KEIN Highlight. -->
+<library xmlns="https://example.invalid/library" version="1.2">
+    <metadata>
+        <title>Folio Sample Library</title>
+        <created>2026-05-09T10:30:00+02:00</created>
+        <count>3</count>
+    </metadata>
+    <book id="b-001" available="true">
+        <title>Programming Rust</title>
+        <author>Jim Blandy</author>
+        <author>Jason Orendorff</author>
+        <year>2021</year>
+        <tags>
+            <tag>rust</tag>
+            <tag>systems</tag>
+        </tags>
+    </book>
+    <book id="b-002" available="false">
+        <title>The Rust Programming Language</title>
+        <author>Steve Klabnik</author>
+        <year>2019</year>
+        <tags>
+            <tag>rust</tag>
+            <tag>introductory</tag>
+        </tags>
+    </book>
+    <book id="b-003" available="true">
+        <title>Rust for Rustaceans</title>
+        <author>Jon Gjengset</author>
+        <year>2021</year>
+        <description><![CDATA[
+            Enthält Beispiele wie <Generics<T>>, & Lifetimes,
+            sowie Sonderzeichen: < > & " '.
+        ]]></description>
+    </book>
+</library>

@@ -1,0 +1,25 @@
+Plain-Text-Sample für die Folio-Highlight-Regressionsprüfung.
+
+Dieses Dokument MUSS im Editor komplett ohne jede Token-Färbung
+dargestellt werden — keine Farben, kein Underline, kein Bold, kein
+Italic. Nur die Folio-Default-Vordergrundfarbe.
+
+Inhalts-Mix als Lockmittel für eventuell zu eifrige Heuristiken:
+
+- Zahlen: 0, 42, 3.1415, -1.5e10, 0xFF, 1_000_000
+- Boolesches: true, false, null, None, nil
+- Klammern: ( ) [ ] { } < >
+- Anführungszeichen: 'einfach' "doppelt" `backtick`
+- URL-artig: https://example.invalid/path?q=1#frag
+- Pfad-artig: /usr/local/bin/folio
+- Code-artig: function foo(x) { return x + 1; }
+- Markdown-artig: # Heading, **bold**, *italic*, `mono`, [link](url)
+- Tag-artig: <div class="x">Text</div>
+
+Wenn auch nur EINE dieser Zeilen Färbung bekommt, ist das ein
+Regression-Bug. Plain bleibt plain.
+
+Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod
+tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim
+veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea
+commodo consequat.
