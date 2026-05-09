@@ -3,6 +3,13 @@ pub struct Entry {
     pub absolute_path: String,
     pub anchor: Option<String>,
     pub scroll_y: f64,
+    pub view_mode: String,
+    pub editor_scroll_y: f64,
+    pub editor_cursor: usize,
+}
+
+fn default_view_mode() -> String {
+    "view".to_string()
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -56,6 +63,9 @@ impl NavigationController {
             absolute_path,
             anchor,
             scroll_y: 0.0,
+            view_mode: default_view_mode(),
+            editor_scroll_y: 0.0,
+            editor_cursor: 0,
         });
         self.current_index = Some(self.history.len() - 1);
         self.current().expect("newly pushed entry exists")
@@ -79,6 +89,30 @@ impl NavigationController {
         if let Some(index) = self.current_index {
             if let Some(entry) = self.history.get_mut(index) {
                 entry.scroll_y = scroll_y;
+            }
+        }
+    }
+
+    pub fn update_view_mode(&mut self, mode: impl Into<String>) {
+        if let Some(index) = self.current_index {
+            if let Some(entry) = self.history.get_mut(index) {
+                entry.view_mode = mode.into();
+            }
+        }
+    }
+
+    pub fn update_editor_scroll(&mut self, scroll_y: f64) {
+        if let Some(index) = self.current_index {
+            if let Some(entry) = self.history.get_mut(index) {
+                entry.editor_scroll_y = scroll_y;
+            }
+        }
+    }
+
+    pub fn update_editor_cursor(&mut self, cursor: usize) {
+        if let Some(index) = self.current_index {
+            if let Some(entry) = self.history.get_mut(index) {
+                entry.editor_cursor = cursor;
             }
         }
     }
@@ -175,6 +209,46 @@ mod tests {
 
         assert_eq!(99.0, controller.history()[0].scroll_y);
         assert_eq!(0.0, controller.history()[1].scroll_y);
+    }
+
+    #[test]
+    fn navigate_creates_entry_with_default_session_state() {
+        let mut controller = NavigationController::new();
+        let entry = controller.navigate("/a.md", None).clone();
+
+        assert_eq!("view", entry.view_mode);
+        assert_eq!(0.0, entry.editor_scroll_y);
+        assert_eq!(0, entry.editor_cursor);
+    }
+
+    #[test]
+    fn update_view_mode_only_updates_current_entry() {
+        let mut controller = NavigationController::new();
+        controller.navigate("/a.md", None);
+        controller.navigate("/b.md", None);
+        controller.update_view_mode("edit");
+        controller.go_back();
+        controller.update_view_mode("split");
+
+        assert_eq!("split", controller.history()[0].view_mode);
+        assert_eq!("edit", controller.history()[1].view_mode);
+    }
+
+    #[test]
+    fn update_editor_scroll_and_cursor_only_updates_current_entry() {
+        let mut controller = NavigationController::new();
+        controller.navigate("/a.md", None);
+        controller.navigate("/b.md", None);
+        controller.update_editor_scroll(120.0);
+        controller.update_editor_cursor(42);
+        controller.go_back();
+        controller.update_editor_scroll(7.0);
+        controller.update_editor_cursor(3);
+
+        assert_eq!(7.0, controller.history()[0].editor_scroll_y);
+        assert_eq!(3, controller.history()[0].editor_cursor);
+        assert_eq!(120.0, controller.history()[1].editor_scroll_y);
+        assert_eq!(42, controller.history()[1].editor_cursor);
     }
 
     fn paths(entries: &[Entry]) -> Vec<&str> {

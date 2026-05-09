@@ -104,12 +104,26 @@ pub fn route_editor_event(
                 automation.selection_start = start;
                 automation.selection_length = length;
             }
+            state
+                .navigation
+                .lock()
+                .map_err(|_| "navigation lock poisoned".to_string())?
+                .update_editor_cursor(start);
             handle
                 .emit(
                     "editor:selection",
                     serde_json::json!({ "start": start, "length": length }),
                 )
                 .map_err(|error| error.to_string())
+        }
+        "editorScroll" => {
+            let y = number_field(payload, "y")?;
+            state
+                .navigation
+                .lock()
+                .map_err(|_| "navigation lock poisoned".to_string())?
+                .update_editor_scroll(y);
+            Ok(())
         }
         "editorSaveRequested" => {
             state

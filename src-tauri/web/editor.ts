@@ -375,6 +375,16 @@ function mount(elementId: string, initialText: string): void {
         extensions: buildExtensions(),
     });
     view = new EditorView({ state, parent: el });
+    let scrollRafQueued = false;
+    view.scrollDOM.addEventListener("scroll", () => {
+        if (scrollRafQueued || !view) return;
+        scrollRafQueued = true;
+        requestAnimationFrame(() => {
+            scrollRafQueued = false;
+            if (!view) return;
+            post({ type: "editorScroll", y: view.scrollDOM.scrollTop });
+        });
+    });
     post({ type: "editorReady" });
 }
 
@@ -401,6 +411,26 @@ function getSelection(): { start: number; length: number } {
     if (!view) return { start: 0, length: 0 };
     const sel = view.state.selection.main;
     return { start: sel.from, length: sel.to - sel.from };
+}
+
+function setSelection(start: number, length: number): void {
+    if (!view) return;
+    const docLen = view.state.doc.length;
+    const from = Math.max(0, Math.min(start, docLen));
+    const to = Math.max(0, Math.min(start + length, docLen));
+    view.dispatch({
+        selection: EditorSelection.range(from, to),
+        scrollIntoView: false,
+    });
+}
+
+function getScroll(): number {
+    return view ? view.scrollDOM.scrollTop : 0;
+}
+
+function setScroll(y: number): void {
+    if (!view) return;
+    view.scrollDOM.scrollTop = Math.max(0, y);
 }
 
 function applyReplace(args: {
@@ -504,6 +534,9 @@ export {
     setText,
     getText,
     getSelection,
+    setSelection,
+    getScroll,
+    setScroll,
     applyReplace,
     focus,
     setTheme,
