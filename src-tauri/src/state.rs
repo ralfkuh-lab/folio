@@ -80,6 +80,7 @@ impl AppState {
                         "document:loaded",
                         serde_json::json!({
                             "path": payload.path,
+                            "kind": crate::file_kind::classify(&payload.path),
                             "text": payload.text,
                             "content": renderer::render_body(&payload.text),
                             "tocHtml": toc::render_html(&toc::extract(&payload.text)),

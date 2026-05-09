@@ -85,6 +85,14 @@
   body.vault-hidden.toc-hidden {
     grid-template-columns: 0 0 1fr 0 0;
   }
+  body:not(.kind-markdown):not(.vault-hidden) {
+    grid-template-columns: var(--vault-w, 240px) 4px 1fr 0 0;
+  }
+  body:not(.kind-markdown).vault-hidden {
+    grid-template-columns: 0 0 1fr 0 0;
+  }
+  body:not(.kind-markdown) .toc-region,
+  body:not(.kind-markdown) .splitter-right { display: none; }
   .toolbar {
     grid-row: 1;
     grid-column: 1 / -1;
@@ -142,6 +150,7 @@
   .vault-region .vault-cmd.ti-emoji,
   .statusbar button.ti-emoji { font-size: 14px; }
   body:not(.edit-mode) .toolbar .edit-only { display: none; }
+  body:not(.kind-markdown) .toolbar .md-only { display: none; }
   body:not(.edit-mode) #cheatsheet-overlay { display: none !important; }
   .statusbar {
     grid-row: 3;
@@ -996,28 +1005,28 @@
   <div class="group edit-only">
     <button id="tb-save" class="ti-emoji" title="Speichern (Ctrl+S)" aria-label="Speichern" disabled>&#x1F4BE;</button>
   </div>
-  <div class="sep edit-only"></div>
-  <div class="group edit-only">
+  <div class="sep edit-only md-only"></div>
+  <div class="group edit-only md-only">
     <button id="tb-bold" title="Fett (Ctrl+B)" style="font-weight:bold;font-family:Georgia,serif;">B</button>
     <button id="tb-italic" title="Kursiv (Ctrl+I)"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="6" y1="2" x2="11" y2="2"/><line x1="3" y1="12" x2="8" y2="12"/><line x1="9" y1="2" x2="5" y2="12"/></svg></button>
     <button id="tb-strike" title="Durchgestrichen" style="text-decoration:line-through;font-family:Georgia,serif;">S</button>
   </div>
-  <div class="sep edit-only"></div>
-  <div class="group edit-only">
+  <div class="sep edit-only md-only"></div>
+  <div class="group edit-only md-only">
     <button id="tb-heading" title="Überschrift (zyklisch H1/H2/H3)" style="font-weight:bold;font-family:Georgia,serif;">H</button>
     <button id="tb-bullet" title="Aufzählung"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="2.5" cy="3.5" r="1" fill="currentColor"/><circle cx="2.5" cy="7" r="1" fill="currentColor"/><circle cx="2.5" cy="10.5" r="1" fill="currentColor"/><line x1="5.5" y1="3.5" x2="12" y2="3.5"/><line x1="5.5" y1="7" x2="12" y2="7"/><line x1="5.5" y1="10.5" x2="12" y2="10.5"/></svg></button>
     <button id="tb-numbered" title="Nummerierte Liste" style="font-weight:bold;font-family:Georgia,serif;font-size:12px;">1.</button>
   </div>
-  <div class="sep edit-only"></div>
-  <div class="group edit-only">
+  <div class="sep edit-only md-only"></div>
+  <div class="group edit-only md-only">
     <button id="tb-link" class="ti-emoji" title="Link (Ctrl+K)">&#x1F517;</button>
     <button id="tb-image" class="ti-emoji" title="Bild einfügen">&#x1F5BC;&#xFE0F;</button>
     <button id="tb-table" title="Tabelle einfügen"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><rect x="1.5" y="2.5" width="11" height="9" rx="1"/><line x1="1.5" y1="6" x2="12.5" y2="6"/><line x1="5" y1="2.5" x2="5" y2="11.5"/><line x1="9" y1="2.5" x2="9" y2="11.5"/></svg></button>
     <button id="tb-code" title="Inline-Code" style="font-family:Consolas,monospace;font-weight:bold;font-size:13px;">{<span style="font-size:0.7em;letter-spacing:-0.15em;margin-left:-2px;margin-right:-2px;position:relative;top:2px;">..</span>}</button>
     <button id="tb-codeblock" title="Codeblock" style="font-family:Consolas,monospace;font-weight:bold;font-size:11px;line-height:1;"><span style="position:relative;top:-3px;font-size:0.9em;">{</span><span style="display:inline-flex;flex-direction:column;line-height:0.5;font-size:0.85em;vertical-align:middle;"><span>·</span><span>·</span><span>·</span><span>·</span></span><span style="position:relative;top:3px;font-size:0.9em;">}</span></button>
   </div>
-  <div class="sep edit-only"></div>
-  <div class="group edit-only">
+  <div class="sep edit-only md-only"></div>
+  <div class="group edit-only md-only">
     <button id="tb-cheatsheet" class="ti-emoji" title="Markdown Cheat-Sheet (F1)" aria-label="Hilfe">&#x2753;</button>
   </div>
   <div class="spacer"></div>
@@ -1028,7 +1037,7 @@
   <div class="group">
     <button id="tb-find" class="ti-emoji" title="Suchen (Ctrl+F)" aria-label="Suchen">&#x1F50D;</button>
     <button id="tb-rail-left" class="active" title="Linke Leiste umschalten" aria-label="Linke Leiste"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="12" height="10" rx="1"/><line x1="6" y1="3" x2="6" y2="13"/><rect x="2" y="3" width="4" height="10" fill="currentColor" opacity="0.25"/></svg></button>
-    <button id="tb-rail-right" class="active" title="Rechte Leiste umschalten" aria-label="Rechte Leiste"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="12" height="10" rx="1"/><line x1="10" y1="3" x2="10" y2="13"/><rect x="10" y="3" width="4" height="10" fill="currentColor" opacity="0.25"/></svg></button>
+    <button id="tb-rail-right" class="active md-only" title="Rechte Leiste umschalten" aria-label="Rechte Leiste"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="12" height="10" rx="1"/><line x1="10" y1="3" x2="10" y2="13"/><rect x="10" y="3" width="4" height="10" fill="currentColor" opacity="0.25"/></svg></button>
   </div>
 </header>
 <aside class="vault-region" id="vault-region">
@@ -2406,10 +2415,14 @@
             }).catch(function () { return false; });
         });
     }
-    var MD_EXT_RE = /\.(md|markdown|mdown|mkd)$/i;
-    function isMarkdownPath(p) { return !!p && MD_EXT_RE.test(p); }
-    function applyKindLock(path) {
-        var md = isMarkdownPath(path);
+    var DOC_KIND_CLASSES = ['kind-markdown', 'kind-text', 'kind-binary', 'kind-unknown'];
+    function applyDocKind(kind) {
+        var resolved = kind || 'unknown';
+        var body = document.body;
+        DOC_KIND_CLASSES.forEach(function (c) { body.classList.remove(c); });
+        body.classList.add('kind-' + resolved);
+
+        var md = resolved === 'markdown';
         var btnView = $('tb-mode-view');
         if (btnView) {
             btnView.disabled = !md;
@@ -2421,6 +2434,7 @@
             btnExport.title = md ? 'Exportieren…' : 'Export nur für Markdown verfügbar';
         }
     }
+    applyDocKind('unknown');
     function showStatus(msg) {
         var el = $('status-path');
         if (el) el.textContent = msg;
@@ -2437,7 +2451,7 @@
                         setActiveMode('edit');
                     }).catch(function(){});
                 }
-                applyKindLock(path);
+                applyDocKind(kind);
                 return true;
             }).catch(function (err) {
                 showStatus(typeof err === 'string' ? err : 'Datei konnte nicht geöffnet werden');
@@ -2531,7 +2545,7 @@
         if (saveBtn) saveBtn.disabled = !id;
     }
     function openExportDialog() {
-        if (!isMarkdownPath(currentPath)) return;
+        if (!document.body.classList.contains('kind-markdown')) return;
         setExportFormat('html');
         // Editor-Text in den Store syncen, damit die Vorschau den aktuellen Stand zeigt.
         var sync = (document.body.classList.contains('edit-mode') && currentPath)
@@ -3028,7 +3042,7 @@
         markDirty(false);
         setStatusPath(data.path || 'Bereit', false);
         updateWordCount(data.text || '');
-        applyKindLock(data.path || '');
+        applyDocKind(data.kind || 'unknown');
         invoke('workspace_add_recent', { path: data.path }).catch(function(){});
         // Such-Highlights gehen im View-Mode beim innerHTML-Replace verloren — neu setzen.
         var bar = document.getElementById('find-bar');
