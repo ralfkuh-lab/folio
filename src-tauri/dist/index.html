@@ -2956,6 +2956,7 @@
         parts = parts.concat(actions);
         var tail = [
             '<div class="ctx-item" data-act="show">Im Explorer zeigen</div>',
+            '<div class="ctx-item" data-act="terminal">Terminal hier öffnen</div>',
             '<div class="ctx-item" data-act="copy">Pfad kopieren</div>',
         ];
         if (parts.length) parts.push('<div class="ctx-sep"></div>');
@@ -2987,6 +2988,8 @@
                 invoke('workspace_remove_recent', { path: path }).catch(function(){});
             } else if (act === 'show') {
                 invoke('show_in_file_manager', { path: path }).catch(function(){});
+            } else if (act === 'terminal') {
+                invoke('open_terminal_at', { path: path }).catch(function(){});
             } else if (act === 'copy') {
                 if (navigator.clipboard) navigator.clipboard.writeText(path).catch(function(){});
             }
