@@ -31,22 +31,26 @@ Editor-API-Erweiterungen aus dem History-Commit (`setSelection`,
 
 ## Resume-Marker
 
-**Aktueller Stand:** Schritte 0–3 abgeschlossen.
+**Aktueller Stand:** Schritte 0–4 abgeschlossen.
 - `monaco-merge`-Branch lokal aus `origin/monaco`
 - Cherry-Pick `00b6ba3` (Terminal-Kontextmenü) → `9bddeea`
 - Plan-Commit `2b4d20c` (docs) → `f0d1afa`
 - Cherry-Pick `572494c` (toolbar/toc md-only) → `df3f10d`
-- 123 Cargo-Tests grün
-- Visueller Quick-Check: bei `.json`-Datei sind MD-Toolbar-Buttons und
-  TOC-Rail ausgeblendet — `body.kind-*`-Logik greift in Monaco-Shell.
-- Hinweis: bei dem Screenshot-Test zeigte Monaco den Datei-Inhalt nicht
-  (vermutlich Mount-Timing der Automation-Sequenz). Kein md-only-Problem;
-  beim ausführlichen Audit nach Schritt 4 nochmal prüfen.
+- Cherry-Pick `61e5a4b` (History per-Entry) → `fbbd7ba`
+  - Backend (navigation/commands/lib): konfliktfrei
+  - `editor.ts`: API-Funktionen (setSelection, getScroll, setScroll)
+    auf Monaco portiert; `editorScroll`-Event via `onDidScrollChange`
+  - `editor.bundle.js`: neu gebaut
+- 126 Cargo-Tests grün (3 neue Navigation-Tests)
+- Quick-Visual: index.md lädt mit Markdown-Highlight in Monaco ✓
+- **Offen für Schritt 7-Audit**: Verhalten beim Datei-Wechsel via
+  Automation-API zwischen zwei Dateien — der zweite `/open` greift
+  optisch nicht durch (Pre-existing? oder Cherry-Pick-Folge?). Manuell
+  via Vault-Klick testen.
 
-**Nächster Schritt:** Schritt 4 — Cherry-Pick `61e5a4b` (History
-per-Entry). DICKER BROCKEN. Backend sollte konfliktfrei applybar sein,
-aber `web/editor.ts` braucht komplette Portierung von CodeMirror auf
-Monaco-APIs (setSelection/setScroll/getScroll + editorScroll-Event).
+**Nächster Schritt:** Schritt 5 — Cherry-Pick `418a35a` (Docs-Update).
+Erwartete Konflikte: mittel in `CLAUDE.md` (Monaco hat eigene Sektion),
+mittel in `README.md`, keiner in `TODO.md`.
 
 ## Schrittliste
 
@@ -74,9 +78,18 @@ Monaco-APIs (setSelection/setScroll/getScroll + editorScroll-Event).
 - [x] Visueller Check: bei `.json` keine MD-Toolbar, kein TOC ✅
 - [x] Resume-Marker geupdatet
 
-### 4. Cherry-Pick `61e5a4b` — History per-Entry (DICKER BROCKEN)
-- [ ] `git cherry-pick 61e5a4b`
-- Erwartete Konflikte:
+### 4. Cherry-Pick `61e5a4b` — History per-Entry ✅ (`fbbd7ba`)
+- [x] `git cherry-pick 61e5a4b`
+- Tatsächliche Konflikte: 2 (editor.ts + editor.bundle.js); Rest auto-merged
+- [x] editor.ts: setSelection/getScroll/setScroll auf Monaco-APIs portiert,
+      Scroll-Listener via `onDidScrollChange` (RAF-debounced)
+- [x] editor.bundle.js: Monaco-Version übernommen, dann `npm run build`
+- [x] Build + 126 Tests grün
+- [x] Visueller Sanity-Check (index.md lädt, MD-Highlight aktiv)
+- [x] Resume-Marker geupdatet
+
+#### Originaler Plan-Hinweis (für Audit-Phase)
+- Erwartete Konflikte (waren korrekt):
   - **Backend** (`navigation.rs`, `commands/nav.rs`, `commands/app.rs`,
     `commands/shell.rs`, `lib.rs`): konfliktfrei applybar — Monaco
     rührt Backend nicht an
