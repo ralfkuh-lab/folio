@@ -46,8 +46,8 @@
 |-------|---------|--------|--------|
 | 0 | Setup & Dependencies | ✅ done | `5621341` → `monaco-setup` |
 | 1 | Monaco-Wrapper `editor.ts` | ✅ done | `monaco-setup` → ... |
-| 2 | `index.html` Anpassungen | 🔄 in progress | — |
-| 3 | Cleanup & Tests | ⏳ pending | — |
+| 2 | `index.html` Anpassungen | ✅ done | `5ad6ce1` → ... |
+| 3 | Cleanup & Tests | 🔄 in progress | — |
 | 4 | Finale & Dokumentation | ⏳ pending | — |
 
 ---

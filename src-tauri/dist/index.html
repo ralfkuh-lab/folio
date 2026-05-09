@@ -801,7 +801,7 @@
   }
   /* Anchor scroll offset when the title bar is visible */
   :target { scroll-margin-top: 20px; }
-  /* ----- Editor-Region (CodeMirror 6 mount + Marker-Lane) ----- */
+  /* ----- Editor-Region (Monaco Editor mount + Marker-Lane) ----- */
   .editor-region {
     flex: 1 1 auto;
     position: relative;
@@ -823,10 +823,8 @@
     min-width: 0;
     height: 100%;
   }
-  /* CodeMirror reset overrides */
-  #editor-mount .cm-editor { height: 100%; outline: none; }
-  #editor-mount .cm-scroller { overflow: auto; }
-  #editor-mount .cm-line { padding: 0 8px; }
+  /* Monaco Editor fills container */
+  #editor-mount .monaco-editor { height: 100%; }
   /* Marker-Lane: 6px-Streifen rechts neben dem Scroller */
   #editor-marker-lane {
     flex: 0 0 6px;
@@ -844,13 +842,13 @@
     pointer-events: none;
   }
   .folio-marker.active { background: #FF8C00; }
-  /* Inline-Treffer im Editor (CodeMirror nutzt <mark class="folio-find-match">). */
+  /* Inline-Treffer im Editor (Monaco nutzt inlineClassName). */
   .folio-find-match {
     background: #FFD700;
     color: #000;
     border-radius: 2px;
   }
-  .folio-find-match.active {
+  .folio-find-match-active {
     background: #FF8C00;
     color: #000;
     border-radius: 2px;
@@ -1115,6 +1113,7 @@
   <header class="overlay__drag">Markdown Cheat-Sheet</header>
   <div class="overlay__body" id="cheatsheet-body"></div>
 </div>
+<script src="monaco/loader.js"></script>
 <script src="editor.bundle.js"></script>
 <script>
 (function () {
@@ -1239,7 +1238,7 @@
     };
 
     // ----- Edit-Modus: tauscht View-Region gegen Editor-Region in derselben
-    //       Grid-Spalte. CodeMirror lebt im DOM, kein zweites HWnd, kein
+    //       Grid-Spalte. Monaco Editor lebt im DOM, kein zweites HWnd, kein
     //       Airspace-Konflikt mit dem Cheat-Sheet-Overlay.
     window.setEditMode = function (on) {
         document.body.classList.toggle('edit-mode', !!on);
@@ -1388,25 +1387,29 @@
         });
     }
 
-    // ----- Editor-API (CodeMirror via FolioEditor-Bundle) -----
+    // ----- Editor-API (Monaco Editor via FolioEditor-Bundle) -----
     var editorMounted = false;
     function ensureEditorMounted(initial) {
-        if (editorMounted) return true;
+        if (editorMounted) return Promise.resolve(true);
         if (!window.FolioEditor || typeof window.FolioEditor.mount !== 'function') {
             console.error('[folio] FolioEditor bundle not available');
-            return false;
+            return Promise.resolve(false);
         }
-        window.FolioEditor.mount('editor-mount', initial || '');
-        editorMounted = true;
-        return true;
+        return window.FolioEditor.mount('editor-mount', initial || '').then(function () {
+            editorMounted = true;
+            return true;
+        }).catch(function (err) {
+            console.error('[folio] Editor mount failed:', err);
+            return false;
+        });
     }
     window.loadEditorText = function (text) {
-        if (!ensureEditorMounted(text || '')) return;
-        // Wenn wir gerade gemountet haben, ist der Text schon drin —
-        // sonst explizit setzen.
-        if (window.FolioEditor.getText() !== (text || '')) {
-            window.FolioEditor.setText(text || '');
-        }
+        ensureEditorMounted(text || '').then(function (ok) {
+            if (!ok) return;
+            if (window.FolioEditor.getText() !== (text || '')) {
+                window.FolioEditor.setText(text || '');
+            }
+        });
     };
     window.focusEditor = function () {
         if (window.FolioEditor && editorMounted) window.FolioEditor.focus();
@@ -1579,7 +1582,7 @@
                 window.dispatchEvent(new CustomEvent('folio-find-state', { detail: detail }));
             } catch (e) {}
             // C# hoert auf den editorFindState-Channel und persistiert den Term
-            // ueber Datei-Wechsel; analog zur CodeMirror-Pipeline in editor.ts.
+            // ueber Datei-Wechsel; analog zur Monaco-Pipeline in editor.ts.
             try {
                 post({ type: 'editorFindState', term: detail.term, total: detail.total, active: detail.active });
             } catch (e) {}
@@ -1675,11 +1678,10 @@
         var wordChk = document.getElementById('find-word');
 
         function isEditMode() { return document.body.classList.contains('edit-mode'); }
-        // Liefert die aktive Backend-Implementierung: CodeMirror (Edit) oder DOM-Sucher (View).
+        // Liefert die aktive Backend-Implementierung: Monaco Editor (Edit) oder DOM-Sucher (View).
         function getFinder() { return isEditMode() ? window.FolioEditor : window.ViewFinder; }
         function isOpen() { return bar.classList.contains('open'); }
-        function open(initial) {
-            if (isEditMode() && !ensureEditorMounted('')) return;
+        function doOpen(initial) {
             bar.classList.add('open');
             if (typeof initial === 'string' && initial.length > 0) {
                 input.value = initial;
@@ -1694,6 +1696,16 @@
             }
             input.focus();
             input.select();
+        }
+        function open(initial) {
+            if (isEditMode()) {
+                ensureEditorMounted('').then(function (ok) {
+                    if (!ok) return;
+                    doOpen(initial);
+                });
+            } else {
+                doOpen(initial);
+            }
         }
         function close() {
             bar.classList.remove('open');
