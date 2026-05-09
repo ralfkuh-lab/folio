@@ -128,6 +128,11 @@ pub async fn set_view_mode(
         .lock()
         .map_err(|_| "automation state lock poisoned".to_string())?
         .view_mode = mode.clone();
+    state
+        .navigation
+        .lock()
+        .map_err(|_| "navigation lock poisoned".to_string())?
+        .update_view_mode(&mode);
     handle
         .emit("app:set_mode", serde_json::json!({ "mode": mode }))
         .map_err(|error| error.to_string())

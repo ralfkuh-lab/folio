@@ -1321,6 +1321,20 @@
             if (typeof window.setTocActive === 'function') {
                 window.setTocActive(anchor);
             }
+            if (data.view_mode) {
+                window.__TAURI__.core.invoke('set_view_mode', { mode: data.view_mode }).catch(function(){});
+            }
+            var editorCursor = (typeof data.editor_cursor === 'number') ? data.editor_cursor : 0;
+            var editorScroll = (typeof data.editor_scroll_y === 'number') ? data.editor_scroll_y : 0;
+            requestAnimationFrame(function () {
+                if (!window.FolioEditor) return;
+                if (typeof window.FolioEditor.setSelection === 'function') {
+                    window.FolioEditor.setSelection(editorCursor, 0);
+                }
+                if (typeof window.FolioEditor.setScroll === 'function') {
+                    window.FolioEditor.setScroll(editorScroll);
+                }
+            });
         });
         window.__TAURI__.event.listen("editor:load_text", function (event) {
             var data = event && event.payload;

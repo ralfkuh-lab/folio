@@ -353,6 +353,18 @@ function mount(elementId: string, initialText: string): Promise<void> {
             }
         );
 
+        // Scroll listener (RAF-debounced) → editorScroll-Event für History-Capture
+        let scrollRafQueued = false;
+        editorInstance.onDidScrollChange(() => {
+            if (scrollRafQueued || !editorInstance) return;
+            scrollRafQueued = true;
+            requestAnimationFrame(() => {
+                scrollRafQueued = false;
+                if (!editorInstance) return;
+                post({ type: "editorScroll", y: editorInstance.getScrollTop() });
+            });
+        });
+
         layout();
         post({ type: "editorReady" });
     }).catch((err: any) => {
@@ -384,6 +396,35 @@ function getSelection(): { start: number; length: number } {
     const start = model.getOffsetAt(sel.getStartPosition());
     const end = model.getOffsetAt(sel.getEndPosition());
     return { start, length: end - start };
+}
+
+function setSelection(start: number, length: number): void {
+    if (!editorInstance) return;
+    const model = editorInstance.getModel();
+    if (!model) return;
+    const monaco = monacoInstance;
+    const docLen = model.getValueLength();
+    const from = Math.max(0, Math.min(start, docLen));
+    const to = Math.max(0, Math.min(start + length, docLen));
+    const startPos = model.getPositionAt(from);
+    const endPos = model.getPositionAt(to);
+    editorInstance.setSelection(
+        new monaco.Selection(
+            startPos.lineNumber,
+            startPos.column,
+            endPos.lineNumber,
+            endPos.column
+        )
+    );
+}
+
+function getScroll(): number {
+    return editorInstance ? editorInstance.getScrollTop() : 0;
+}
+
+function setScroll(y: number): void {
+    if (!editorInstance) return;
+    editorInstance.setScrollTop(Math.max(0, y));
 }
 
 function applyReplace(args: {
@@ -506,6 +547,9 @@ function findPrev(): void {
     setText,
     getText,
     getSelection,
+    setSelection,
+    getScroll,
+    setScroll,
     applyReplace,
     focus,
     setTheme,

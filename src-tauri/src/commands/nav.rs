@@ -8,6 +8,9 @@ pub struct NavEntry {
     pub path: String,
     pub anchor: Option<String>,
     pub scroll_y: f64,
+    pub view_mode: String,
+    pub editor_scroll_y: f64,
+    pub editor_cursor: usize,
 }
 
 impl From<&Entry> for NavEntry {
@@ -16,6 +19,9 @@ impl From<&Entry> for NavEntry {
             path: entry.absolute_path.clone(),
             anchor: entry.anchor.clone(),
             scroll_y: entry.scroll_y,
+            view_mode: entry.view_mode.clone(),
+            editor_scroll_y: entry.editor_scroll_y,
+            editor_cursor: entry.editor_cursor,
         }
     }
 }
@@ -66,6 +72,45 @@ pub async fn update_scroll(y: f64, state: State<'_, AppState>) -> Result<(), Str
         .lock()
         .map_err(|_| "navigation lock poisoned".to_string())?
         .update_scroll_position(y);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn update_history_view_mode(
+    mode: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state
+        .navigation
+        .lock()
+        .map_err(|_| "navigation lock poisoned".to_string())?
+        .update_view_mode(mode);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn update_history_editor_scroll(
+    y: f64,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state
+        .navigation
+        .lock()
+        .map_err(|_| "navigation lock poisoned".to_string())?
+        .update_editor_scroll(y);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn update_history_editor_cursor(
+    cursor: usize,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state
+        .navigation
+        .lock()
+        .map_err(|_| "navigation lock poisoned".to_string())?
+        .update_editor_cursor(cursor);
     Ok(())
 }
 
@@ -186,12 +231,18 @@ mod tests {
             absolute_path: "/a".into(),
             anchor: Some("x".into()),
             scroll_y: 1.5,
+            view_mode: "edit".into(),
+            editor_scroll_y: 12.0,
+            editor_cursor: 7,
         };
         assert_eq!(
             NavEntry {
                 path: "/a".into(),
                 anchor: Some("x".into()),
-                scroll_y: 1.5
+                scroll_y: 1.5,
+                view_mode: "edit".into(),
+                editor_scroll_y: 12.0,
+                editor_cursor: 7,
             },
             NavEntry::from(&entry)
         );
