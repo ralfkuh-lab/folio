@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="utf-8" />
+    <title>Folio HTML-Sample</title>
+    <!-- Hinweis: in dieser Iteration darf hier KEIN Highlight aktiv sein. -->
+    <style>
+        body { font-family: sans-serif; color: #1f2328; }
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>HTML-Beispiel</h1>
+        <p class="lead">Test-Fixture für Folios Edit-Mode.</p>
+    </header>
+    <main>
+        <section id="intro">
+            <p>Ein Absatz mit einem <a href="https://example.invalid">Link</a>
+               und etwas <strong>fett</strong> sowie <em>kursiv</em>.</p>
+            <ul>
+                <li>Listenpunkt 1</li>
+                <li>Listenpunkt 2 mit <code>inline-code</code></li>
+            </ul>
+        </section>
+        <section id="form">
+            <form action="/submit" method="post">
+                <label for="name">Name:</label>
+                <input type="text" id="name" name="name" value="" required />
+                <button type="submit" disabled>Absenden</button>
+            </form>
+        </section>
+    </main>
+    <footer>
+        <small>&copy; 2026 — Folio Test-Fixture</small>
+    </footer>
+    <script>
+        // Auch das hier soll plain bleiben.
+        const greet = (n) => `Hallo, ${n}!`;
+        console.log(greet("Welt"));
+    </script>
+</body>
+</html>
