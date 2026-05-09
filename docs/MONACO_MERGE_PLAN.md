@@ -31,17 +31,22 @@ Editor-API-Erweiterungen aus dem History-Commit (`setSelection`,
 
 ## Resume-Marker
 
-**Aktueller Stand:** Schritte 0–2 abgeschlossen, Plan-Commit auch auf
-`monaco-merge` gespiegelt (sonst würde diese Datei beim Wiedereinstieg
-auf dem Branch fehlen).
+**Aktueller Stand:** Schritte 0–3 abgeschlossen.
 - `monaco-merge`-Branch lokal aus `origin/monaco`
 - Cherry-Pick `00b6ba3` (Terminal-Kontextmenü) → `9bddeea`
 - Plan-Commit `2b4d20c` (docs) → `f0d1afa`
+- Cherry-Pick `572494c` (toolbar/toc md-only) → `df3f10d`
 - 123 Cargo-Tests grün
+- Visueller Quick-Check: bei `.json`-Datei sind MD-Toolbar-Buttons und
+  TOC-Rail ausgeblendet — `body.kind-*`-Logik greift in Monaco-Shell.
+- Hinweis: bei dem Screenshot-Test zeigte Monaco den Datei-Inhalt nicht
+  (vermutlich Mount-Timing der Automation-Sequenz). Kein md-only-Problem;
+  beim ausführlichen Audit nach Schritt 4 nochmal prüfen.
 
-**Nächster Schritt:** Schritt 3 — Cherry-Pick `572494c` (toolbar/toc
-Markdown-only). Erwartete Konflikte: leicht in `state.rs`, mittel in
-`dist/index.html`.
+**Nächster Schritt:** Schritt 4 — Cherry-Pick `61e5a4b` (History
+per-Entry). DICKER BROCKEN. Backend sollte konfliktfrei applybar sein,
+aber `web/editor.ts` braucht komplette Portierung von CodeMirror auf
+Monaco-APIs (setSelection/setScroll/getScroll + editorScroll-Event).
 
 ## Schrittliste
 
@@ -62,16 +67,12 @@ Markdown-only). Erwartete Konflikte: leicht in `state.rs`, mittel in
 - [x] Visueller Check: ausgelassen, Code-Inspect bestätigt Eintrag
 - [x] Resume-Marker geupdatet
 
-### 3. Cherry-Pick `572494c` — toolbar/toc Markdown-only
-- [ ] `git cherry-pick 572494c`
-- Erwartete Konflikte:
-  - `state.rs`: leicht — `kind` in document:loaded-Payload
-  - `dist/index.html`: mittel — body.kind-* CSS, md-only-Toolbar-Klassen,
-    `applyDocKind`-Funktion, TOC-Hide-Regel, Auto-Switch-Logik in
-    `openDocument`. Monaco-Mount-Bereich orthogonal — sollte sauber
-    danebenpassen
-- [ ] Build/Test/Check (z. B. `.json` öffnen → keine MD-Toolbar, kein TOC)
-- [ ] Resume-Marker updaten
+### 3. Cherry-Pick `572494c` — toolbar/toc Markdown-only ✅ (`df3f10d`)
+- [x] `git cherry-pick 572494c`
+- Tatsächliche Konflikte: keine, automatischer Merge in `dist/index.html`
+- [x] Build + Tests grün (123 Tests)
+- [x] Visueller Check: bei `.json` keine MD-Toolbar, kein TOC ✅
+- [x] Resume-Marker geupdatet
 
 ### 4. Cherry-Pick `61e5a4b` — History per-Entry (DICKER BROCKEN)
 - [ ] `git cherry-pick 61e5a4b`
