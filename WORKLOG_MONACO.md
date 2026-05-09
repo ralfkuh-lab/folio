@@ -47,8 +47,8 @@
 | 0 | Setup & Dependencies | ✅ done | `5621341` → `monaco-setup` |
 | 1 | Monaco-Wrapper `editor.ts` | ✅ done | `monaco-setup` → ... |
 | 2 | `index.html` Anpassungen | ✅ done | `5ad6ce1` → ... |
-| 3 | Cleanup & Tests | 🔄 in progress | — |
-| 4 | Finale & Dokumentation | ⏳ pending | — |
+| 3 | Cleanup & Tests | ✅ done | `8f17b1f` → ... |
+| 4 | Finale & Dokumentation | ✅ done | ... → final |
 
 ---
 
@@ -57,3 +57,6 @@
 - Monaco-Worker in Tauri-WebView: via `MonacoEnvironment.getWorkerUrl` mit Blob-URLs oder lokale Pfade.
 - `dist/` darf laut CLAUDE.md keine npm-Artefakte enthalten — Monaco-Dateien sind reine JS/CSS, keine `package.json`.
 - Find-Logik: eigene HTML-Find-Bar bleibt, Monaco-eigenes Find-Widget wird über Keybindings deaktiviert.
+- Alle 123 Unit-Tests + Integrationstests bestehen.
+- `cargo clippy --all-targets -- -D warnings` sauber.
+- `cargo fmt` angewendet.

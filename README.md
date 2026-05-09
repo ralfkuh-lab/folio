@@ -16,7 +16,7 @@ Plattformübergreifender Markdown-Viewer und -Editor auf **Tauri 2 + Rust**.
 |---|---|
 | Backend | Rust 2021, Tauri 2 |
 | Markdown-Engine | comrak 0.35 |
-| Frontend | Vanilla TypeScript |
+| Frontend | Vanilla TypeScript, Monaco Editor |
 | HTTP-API | axum 0.8 |
 | Screenshots | xcap |
 | File-Watching | notify 7.0 |
@@ -50,14 +50,15 @@ folio/
 - Linux: `libwebkit2gtk-4.1-dev`
 - Tauri-CLI: `cargo install tauri-cli`
 
-### Editor-Bundle (CodeMirror)
+### Editor-Bundle (Monaco Editor)
 
 Nur nötig nach Änderungen an `src-tauri/web/editor.ts`:
 
 ```bash
 cd src-tauri/web
 npm install                # einmalig bzw. nach package.json-Änderung
-npm run build              # erzeugt ../dist/editor.bundle.js
+npm run build              # kopiert Monaco-Assets nach ../dist/monaco/
+                           # und bündelt ../dist/editor.bundle.js
 ```
 
 ### Entwicklung

@@ -13,9 +13,10 @@ mittel / niedrig). Vor Vorschlägen, was als nächstes ansteht, dort nachsehen.
 - Rust 2021, Tauri 2
 - comrak 0.35 (GFM-Markdown)
 - axum 0.8 (Automation-API auf `127.0.0.1:9876`, Loopback-only, CORS für WebView-POSTs)
-- Frontend: handgeschriebenes `src-tauri/dist/index.html` + CodeMirror-6-
+- Frontend: handgeschriebenes `src-tauri/dist/index.html` + Monaco Editor
   Bundle. Bundle-Quellen liegen in `src-tauri/web/` (`editor.ts`,
-  `package.json`); Build-Output (`editor.bundle.js`) landet in `dist/`.
+  `package.json`, `copy-monaco.js`); Build-Output (`editor.bundle.js` +
+  `dist/monaco/`) landet in `dist/`.
 - notify 7.0 (File-Watching), xcap (Screenshots)
 
 ## Build & Test
