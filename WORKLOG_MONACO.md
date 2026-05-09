@@ -44,9 +44,9 @@
 
 | Phase | Schritt | Status | Commit |
 |-------|---------|--------|--------|
-| 0 | Setup & Dependencies | 🔄 pending | — |
-| 1 | Monaco-Wrapper `editor.ts` | ⏳ pending | — |
-| 2 | `index.html` Anpassungen | ⏳ pending | — |
+| 0 | Setup & Dependencies | ✅ done | `5621341` → `monaco-setup` |
+| 1 | Monaco-Wrapper `editor.ts` | ✅ done | `monaco-setup` → ... |
+| 2 | `index.html` Anpassungen | 🔄 in progress | — |
 | 3 | Cleanup & Tests | ⏳ pending | — |
 | 4 | Finale & Dokumentation | ⏳ pending | — |
 

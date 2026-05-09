@@ -1,45 +1,19 @@
-// CodeMirror 6 bundle fuer Folio's Edit-Modus.
-// Wird per esbuild als IIFE gebaut (globalName "FolioEditor"), dann von der
-// Shell-WebView geladen. Alle hier exportierten Funktionen liegen unter
-// window.FolioEditor.* und werden von shell-template.html aufgerufen.
+// Monaco Editor wrapper for Folio's Tauri shell.
+// Loads Monaco via AMD loader (window.require), exposes window.FolioEditor API
+// compatible with the previous CodeMirror 6 bundle.
 //
-// Bridge-Vertrag zur C#-Seite:
+// Bridge contract (unchanged from CodeMirror era):
 //   Outbound (postMessage): editorReady, editorTextChanged, editorSelection,
 //                           editorFindState, editorSaveRequested
-//   Inbound (Funktionen):   mount, setText, getText, getSelection,
+//   Inbound (functions):    mount, setText, getText, getSelection,
 //                           applyReplace, focus, setTheme, openFind,
 //                           closeFind, setFindOptions, findNext, findPrev,
 //                           setFindTerm
 
-import { EditorState, EditorSelection, Compartment, Extension, RangeSetBuilder } from "@codemirror/state";
-import {
-    EditorView,
-    keymap,
-    drawSelection,
-    highlightActiveLine,
-    lineNumbers,
-    highlightActiveLineGutter,
-    Decoration,
-    DecorationSet,
-    ViewPlugin,
-    ViewUpdate,
-    placeholder as cmPlaceholder,
-} from "@codemirror/view";
-import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
-import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import {
-    syntaxHighlighting,
-    HighlightStyle,
-    bracketMatching,
-    foldGutter,
-    foldKeymap,
-    indentOnInput,
-} from "@codemirror/language";
-import { searchKeymap, SearchCursor } from "@codemirror/search";
-import { tags as t } from "@lezer/highlight";
-
 declare global {
     interface Window {
+        require?: any;
+        monaco?: any;
         __TAURI__?: {
             event?: {
                 emit(event: string, payload?: unknown): Promise<void>;
@@ -71,84 +45,36 @@ function post(msg: unknown): void {
     }
 }
 
-// ----- Theme ------------------------------------------------------------
-// Editor-Farben kommen aus den CSS-Variablen der Shell, damit Light/Dark-Toggle
-// automatisch greift. Selektoren matchen CodeMirror 6 Selektor-Layout.
+// ----- Monaco Loading ---------------------------------------------------
 
-function buildEditorTheme(): Extension {
-    return EditorView.theme(
-        {
-            "&": {
-                color: "var(--fg)",
-                backgroundColor: "var(--bg)",
-                height: "100%",
-                fontSize: "13.5px",
+let monacoInstance: any = null;
+let editorInstance: any = null;
+let suppressTextEvent = false;
+
+const monacoPromise = loadMonaco();
+
+function loadMonaco(): Promise<void> {
+    return new Promise((resolve, reject) => {
+        if (typeof window.require === "undefined") {
+            reject(new Error("Monaco loader (window.require) not available"));
+            return;
+        }
+        window.require.config({ paths: { vs: "monaco/vs" } });
+        window.require(
+            ["vs/editor/editor.main"],
+            (m: any) => {
+                monacoInstance = m;
+                resolve();
             },
-            ".cm-content": {
-                fontFamily: 'Consolas, "Cascadia Mono", "Courier New", monospace',
-                caretColor: "var(--fg)",
-                padding: "12px 8px",
-            },
-            ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--fg)" },
-            "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
-                backgroundColor: "var(--accent-bg-subtle, rgba(64,128,255,0.25))",
-            },
-            ".cm-activeLine": { backgroundColor: "rgba(128,128,128,0.07)" },
-            ".cm-gutters": {
-                backgroundColor: "var(--bg)",
-                color: "var(--fg-muted, #888)",
-                border: "none",
-                borderRight: "1px solid var(--border, rgba(128,128,128,0.18))",
-            },
-            ".cm-activeLineGutter": { backgroundColor: "rgba(128,128,128,0.10)" },
-            ".cm-foldPlaceholder": {
-                backgroundColor: "transparent",
-                border: "none",
-                color: "var(--fg-muted, #888)",
-            },
-            ".cm-scroller": { fontFamily: "inherit", overflow: "auto" },
-            ".cm-tooltip": {
-                backgroundColor: "var(--bg)",
-                color: "var(--fg)",
-                border: "1px solid var(--border, rgba(128,128,128,0.3))",
-            },
-        },
-        { dark: false } // wir steuern dark/light selbst per CSS-Variablen
-    );
+            (err: any) => {
+                console.error("[folio-editor] Monaco load failed:", err);
+                reject(err);
+            }
+        );
+    });
 }
 
-// Markdown-Highlight-Tags. Farben passen zu unserem AvalonEdit-XSHD und
-// nutzen die Tokens-Variablen der Shell.
-const markdownHighlight = HighlightStyle.define([
-    { tag: t.heading1, color: "var(--md-heading, #4493F8)", fontWeight: "bold", fontSize: "1.15em" },
-    { tag: t.heading2, color: "var(--md-heading, #4493F8)", fontWeight: "bold" },
-    { tag: t.heading3, color: "var(--md-heading, #4493F8)", fontWeight: "bold" },
-    { tag: t.heading4, color: "var(--md-heading, #4493F8)", fontWeight: "bold" },
-    { tag: t.heading5, color: "var(--md-heading, #4493F8)", fontWeight: "bold" },
-    { tag: t.heading6, color: "var(--md-heading, #4493F8)", fontWeight: "bold" },
-    { tag: t.strong, fontWeight: "bold" },
-    { tag: t.emphasis, fontStyle: "italic" },
-    { tag: t.strikethrough, textDecoration: "line-through" },
-    { tag: t.link, color: "var(--md-link, #4493F8)", textDecoration: "underline" },
-    { tag: t.url, color: "var(--md-link, #4493F8)" },
-    { tag: t.monospace, color: "var(--md-code, #C97A28)", fontFamily: "inherit" },
-    { tag: t.quote, color: "var(--fg-muted, #888)", fontStyle: "italic" },
-    { tag: t.list, color: "var(--md-list, #888)" },
-    { tag: t.meta, color: "var(--fg-muted, #888)" },
-    { tag: t.processingInstruction, color: "var(--md-list, #888)" },
-    { tag: t.contentSeparator, color: "var(--fg-muted, #888)" },
-]);
-
-// ----- Find: Decorations + Marker-Lane ----------------------------------
-// Wir bauen eigene Decorations statt @codemirror/search-Panel, damit die
-// HTML-Find-Bar in der Shell die UX kontrolliert (Counter, Optionen, Marker-
-// Lane). SearchCursor liefert die Treffer.
-
-interface FindOptions {
-    term: string;
-    caseSensitive: boolean;
-    wholeWord: boolean;
-}
+// ----- Find State -------------------------------------------------------
 
 interface FindMatch {
     from: number;
@@ -158,7 +84,7 @@ interface FindMatch {
 interface FindStateSnapshot {
     term: string;
     total: number;
-    active: number; // -1 wenn keiner aktiv
+    active: number;
     matches: FindMatch[];
 }
 
@@ -168,91 +94,10 @@ let findOptions: { caseSensitive: boolean; wholeWord: boolean } = {
     wholeWord: false,
 };
 
-const matchMark = Decoration.mark({ class: "folio-find-match" });
-const activeMatchMark = Decoration.mark({ class: "folio-find-match active" });
-
-function findDecorationSet(view: EditorView): DecorationSet {
-    if (findState.matches.length === 0) return Decoration.none;
-    const builder = new RangeSetBuilder<Decoration>();
-    findState.matches.forEach((m, idx) => {
-        if (m.from === m.to) return;
-        builder.add(m.from, m.to, idx === findState.active ? activeMatchMark : matchMark);
-    });
-    return builder.finish();
-}
-
-const findHighlightPlugin = ViewPlugin.fromClass(
-    class {
-        decorations: DecorationSet;
-        constructor(view: EditorView) {
-            this.decorations = findDecorationSet(view);
-        }
-        update(u: ViewUpdate) {
-            // Doc-Aenderungen invalidieren matches; werden bei naechster
-            // recomputeMatches() neu gesetzt.
-            this.decorations = findDecorationSet(u.view);
-        }
-    },
-    { decorations: (v) => v.decorations }
-);
+let matchDecorations: string[] = [];
 
 function isWordChar(ch: string): boolean {
     return /[\p{L}\p{N}_]/u.test(ch);
-}
-
-function recomputeMatches(view: EditorView): void {
-    const term = findOptions ? findState.term : "";
-    if (!term) {
-        findState = { term: "", total: 0, active: -1, matches: [] };
-        view.dispatch({ effects: [] }); // trigger update
-        publishFindState();
-        renderMarkerLane(view);
-        return;
-    }
-    const doc = view.state.doc;
-    const text = doc.toString();
-    const matches: FindMatch[] = [];
-
-    if (findOptions.caseSensitive) {
-        const cursor = new SearchCursor(view.state.doc, term, 0, doc.length, undefined);
-        while (!cursor.next().done) {
-            const v = cursor.value;
-            if (!findOptions.wholeWord || isWholeWordHit(text, v.from, v.to)) {
-                matches.push({ from: v.from, to: v.to });
-            }
-        }
-    } else {
-        const cursor = new SearchCursor(
-            view.state.doc,
-            term,
-            0,
-            doc.length,
-            (s) => s.toLowerCase()
-        );
-        while (!cursor.next().done) {
-            const v = cursor.value;
-            if (!findOptions.wholeWord || isWholeWordHit(text, v.from, v.to)) {
-                matches.push({ from: v.from, to: v.to });
-            }
-        }
-    }
-
-    // Aktiven Treffer waehlen: erster ab Caret, sonst 0.
-    const caret = view.state.selection.main.from;
-    let active = matches.length > 0 ? 0 : -1;
-    for (let i = 0; i < matches.length; i++) {
-        if (matches[i].from >= caret) {
-            active = i;
-            break;
-        }
-    }
-
-    findState = { term, total: matches.length, active, matches };
-    // Repaint Decorations + Lane.
-    view.dispatch({ effects: [] });
-    if (active >= 0) scrollMatchIntoView(view, matches[active]);
-    publishFindState();
-    renderMarkerLane(view);
 }
 
 function isWholeWordHit(text: string, from: number, to: number): boolean {
@@ -261,11 +106,110 @@ function isWholeWordHit(text: string, from: number, to: number): boolean {
     return true;
 }
 
-function scrollMatchIntoView(view: EditorView, m: FindMatch): void {
-    view.dispatch({
-        selection: EditorSelection.cursor(m.from),
-        effects: EditorView.scrollIntoView(m.from, { y: "center" }),
+function recomputeMatches(): void {
+    const editor = editorInstance;
+    const monaco = monacoInstance;
+    if (!editor || !monaco) return;
+
+    const model = editor.getModel();
+    if (!model) return;
+
+    const term = findState.term;
+    if (!term) {
+        findState = { term: "", total: 0, active: -1, matches: [] };
+        clearDecorations();
+        publishFindState();
+        renderMarkerLane();
+        return;
+    }
+
+    const text = model.getValue();
+    const matches: FindMatch[] = [];
+
+    const searchTerm = findOptions.caseSensitive ? term : term.toLowerCase();
+    const searchText = findOptions.caseSensitive ? text : text.toLowerCase();
+    let pos = 0;
+    while (true) {
+        const idx = searchText.indexOf(searchTerm, pos);
+        if (idx === -1) break;
+        const end = idx + term.length;
+        if (!findOptions.wholeWord || isWholeWordHit(text, idx, end)) {
+            matches.push({ from: idx, to: end });
+        }
+        pos = end;
+    }
+
+    const cursorPos = editor.getPosition();
+    const cursorOffset = cursorPos ? model.getOffsetAt(cursorPos) : 0;
+    let active = matches.length > 0 ? 0 : -1;
+    for (let i = 0; i < matches.length; i++) {
+        if (matches[i].from >= cursorOffset) {
+            active = i;
+            break;
+        }
+    }
+
+    findState = { term, total: matches.length, active, matches };
+    applyDecorations();
+    if (active >= 0) scrollMatchIntoView(matches[active]);
+    publishFindState();
+    renderMarkerLane();
+}
+
+function applyDecorations(): void {
+    const editor = editorInstance;
+    const monaco = monacoInstance;
+    if (!editor || !monaco) return;
+
+    const model = editor.getModel();
+    if (!model) return;
+
+    const decorations: any[] = [];
+    findState.matches.forEach((m: FindMatch, idx: number) => {
+        const startPos = model.getPositionAt(m.from);
+        const endPos = model.getPositionAt(m.to);
+        decorations.push({
+            range: new monaco.Range(
+                startPos.lineNumber,
+                startPos.column,
+                endPos.lineNumber,
+                endPos.column
+            ),
+            options: {
+                inlineClassName:
+                    idx === findState.active
+                        ? "folio-find-match-active"
+                        : "folio-find-match",
+                overviewRuler: {
+                    color: idx === findState.active ? "#FF8C00" : "#FFD700",
+                    position: monaco.editor.OverviewRulerLane.Center,
+                },
+                minimap: {
+                    color: idx === findState.active ? "#FF8C00" : "#FFD700",
+                    position: monaco.editor.MinimapPosition.Inline,
+                },
+            },
+        });
     });
+
+    matchDecorations = editor.deltaDecorations(matchDecorations, decorations);
+}
+
+function clearDecorations(): void {
+    if (editorInstance) {
+        matchDecorations = editorInstance.deltaDecorations(matchDecorations, []);
+    }
+}
+
+function scrollMatchIntoView(m: FindMatch): void {
+    const editor = editorInstance;
+    const monaco = monacoInstance;
+    if (!editor || !monaco) return;
+    const model = editor.getModel();
+    if (!model) return;
+    const pos = model.getPositionAt(m.from);
+    editor.setPosition(pos);
+    editor.revealPositionInCenterIfOutsideViewport(pos);
 }
 
 function publishFindState(): void {
@@ -275,8 +219,6 @@ function publishFindState(): void {
         active: findState.active,
     };
     post({ type: "editorFindState", ...detail });
-    // Lokales Event fuer die Find-Bar-UI in der Shell, damit sie ohne
-    // Round-Trip ueber C# auf den Stand reagieren kann.
     try {
         window.dispatchEvent(new CustomEvent("folio-find-state", { detail }));
     } catch {
@@ -284,21 +226,27 @@ function publishFindState(): void {
     }
 }
 
-// Marker-Lane: 6px-Streifen rechts neben dem Scroller. Renderable HTML, das
-// wir bei jeder findState-Aenderung neu malen.
-function renderMarkerLane(view: EditorView): void {
+function renderMarkerLane(): void {
     const lane = document.getElementById("editor-marker-lane");
     if (!lane) return;
     while (lane.firstChild) lane.removeChild(lane.firstChild);
     if (findState.matches.length === 0) return;
-    const docLines = view.state.doc.lines || 1;
+
+    const editor = editorInstance;
+    if (!editor) return;
+    const model = editor.getModel();
+    if (!model) return;
+
+    const lineCount = model.getLineCount();
     const laneHeight = lane.clientHeight;
     if (laneHeight <= 0) return;
-    findState.matches.forEach((m, idx) => {
-        const line = view.state.doc.lineAt(m.from).number;
-        const y = ((line - 1) / docLines) * laneHeight;
+
+    findState.matches.forEach((m: FindMatch, idx: number) => {
+        const pos = model.getPositionAt(m.from);
+        const y = ((pos.lineNumber - 1) / lineCount) * laneHeight;
         const dot = document.createElement("div");
-        dot.className = "folio-marker" + (idx === findState.active ? " active" : "");
+        dot.className =
+            "folio-marker" + (idx === findState.active ? " active" : "");
         dot.style.top = Math.max(0, Math.min(laneHeight - 3, y)) + "px";
         lane.appendChild(dot);
     });
@@ -306,101 +254,115 @@ function renderMarkerLane(view: EditorView): void {
 
 // ----- Mounting --------------------------------------------------------
 
-let view: EditorView | null = null;
-let suppressTextEvent = false;
-const themeCompartment = new Compartment();
+function mount(elementId: string, initialText: string): Promise<void> {
+    return monacoPromise.then(() => {
+        const el = document.getElementById(elementId);
+        if (!el) {
+            console.error(
+                "[folio-editor] mount target '" + elementId + "' not found"
+            );
+            return;
+        }
+        if (editorInstance) {
+            editorInstance.dispose();
+            editorInstance = null;
+        }
+        const monaco = monacoInstance;
 
-function buildExtensions(): Extension[] {
-    return [
-        history(),
-        lineNumbers(),
-        highlightActiveLineGutter(),
-        highlightActiveLine(),
-        drawSelection(),
-        bracketMatching(),
-        indentOnInput(),
-        foldGutter(),
-        EditorView.lineWrapping,
-        markdown({ base: markdownLanguage, codeLanguages: [] }),
-        syntaxHighlighting(markdownHighlight),
-        themeCompartment.of(buildEditorTheme()),
-        findHighlightPlugin,
-        // Keymaps: defaults + history; foldKeymap; searchKeymap intern (Esc/Enter
-        // wickelt unsere Find-Bar). Ctrl-S/F/B/I/K sollen *nicht* hier behandelt
-        // werden — die routen wir selbst auf die Toolbar/Shortcut-Handler.
-        keymap.of([
-            ...defaultKeymap,
-            ...historyKeymap,
-            ...foldKeymap,
-            ...searchKeymap.filter((b) =>
-                // Standard-Find-UI von CM unterdruecken — wir haben unsere eigene.
-                b.key !== "Mod-f" && b.key !== "F3" && b.key !== "Shift-F3"
-            ),
-            indentWithTab,
-        ]),
-        EditorView.updateListener.of((u: ViewUpdate) => {
-            if (u.docChanged && !suppressTextEvent) {
-                post({ type: "editorTextChanged", text: u.state.doc.toString() });
-                if (findState.term) recomputeMatches(u.view);
-            }
-            if (u.selectionSet || u.docChanged) {
-                const sel = u.state.selection.main;
-                post({
-                    type: "editorSelection",
-                    start: sel.from,
-                    length: sel.to - sel.from,
-                });
-            }
-            if (u.geometryChanged && findState.matches.length > 0) {
-                renderMarkerLane(u.view);
-            }
-        }),
-        cmPlaceholder(""),
-    ];
-}
+        const isDark = document.documentElement.classList.contains("theme-dark");
 
-function mount(elementId: string, initialText: string): void {
-    const el = document.getElementById(elementId);
-    if (!el) {
-        console.error("[folio-editor] mount target '" + elementId + "' not found");
-        return;
-    }
-    if (view) {
-        // Re-mount: bestehenden View entsorgen.
-        view.destroy();
-        view = null;
-    }
-    const state = EditorState.create({
-        doc: initialText || "",
-        extensions: buildExtensions(),
+        editorInstance = monaco.editor.create(el, {
+            value: initialText || "",
+            language: "markdown",
+            theme: isDark ? "vs-dark" : "vs",
+            automaticLayout: true,
+            minimap: { enabled: false },
+            lineNumbers: "on",
+            wordWrap: "on",
+            folding: true,
+            scrollBeyondLastLine: false,
+            renderLineHighlight: "all",
+            fontSize: 13.5,
+            fontFamily:
+                'Consolas, "Cascadia Mono", "Courier New", monospace',
+            padding: { top: 12, bottom: 12 },
+        });
+
+        // Disable Monaco built-in find widget shortcuts
+        editorInstance.addCommand(
+            monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyF,
+            () => {
+                /* handled by shell find-bar */
+            }
+        );
+        editorInstance.addCommand(monaco.KeyCode.F3, () => {
+            /* handled by shell find-bar */
+        });
+        editorInstance.addCommand(
+            monaco.KeyMod.Shift | monaco.KeyCode.F3,
+            () => {
+                /* handled by shell find-bar */
+            }
+        );
+
+        // Content change listener
+        editorInstance.onDidChangeModelContent(() => {
+            if (!suppressTextEvent) {
+                const text = editorInstance.getValue();
+                post({ type: "editorTextChanged", text });
+                if (findState.term) recomputeMatches();
+            }
+        });
+
+        // Selection change listener
+        editorInstance.onDidChangeCursorSelection((e: any) => {
+            const model = editorInstance.getModel();
+            if (!model) return;
+            const start = model.getOffsetAt(e.selection.getStartPosition());
+            const end = model.getOffsetAt(e.selection.getEndPosition());
+            post({
+                type: "editorSelection",
+                start,
+                length: end - start,
+            });
+        });
+
+        // Save shortcut (Ctrl+S)
+        editorInstance.addCommand(
+            monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
+            () => {
+                post({ type: "editorSaveRequested" });
+            }
+        );
+
+        post({ type: "editorReady" });
     });
-    view = new EditorView({ state, parent: el });
-    post({ type: "editorReady" });
 }
 
 function setText(text: string): void {
-    if (!view) return;
+    if (!editorInstance) return;
     suppressTextEvent = true;
     try {
-        view.dispatch({
-            changes: { from: 0, to: view.state.doc.length, insert: text },
-            selection: EditorSelection.cursor(0),
-            scrollIntoView: false,
-        });
+        editorInstance.setValue(text || "");
     } finally {
         suppressTextEvent = false;
     }
-    if (findState.term) recomputeMatches(view);
+    if (findState.term) recomputeMatches();
 }
 
 function getText(): string {
-    return view ? view.state.doc.toString() : "";
+    return editorInstance ? editorInstance.getValue() : "";
 }
 
 function getSelection(): { start: number; length: number } {
-    if (!view) return { start: 0, length: 0 };
-    const sel = view.state.selection.main;
-    return { start: sel.from, length: sel.to - sel.from };
+    if (!editorInstance) return { start: 0, length: 0 };
+    const model = editorInstance.getModel();
+    if (!model) return { start: 0, length: 0 };
+    const sel = editorInstance.getSelection();
+    if (!sel) return { start: 0, length: 0 };
+    const start = model.getOffsetAt(sel.getStartPosition());
+    const end = model.getOffsetAt(sel.getEndPosition());
+    return { start, length: end - start };
 }
 
 function applyReplace(args: {
@@ -408,98 +370,109 @@ function applyReplace(args: {
     selectionStart: number;
     selectionLength: number;
 }): void {
-    if (!view) return;
+    if (!editorInstance) return;
+    const model = editorInstance.getModel();
+    if (!model) return;
+    const monaco = monacoInstance;
+
     suppressTextEvent = true;
     try {
-        view.dispatch({
-            changes: { from: 0, to: view.state.doc.length, insert: args.fullText },
-            selection: EditorSelection.range(
-                args.selectionStart,
-                args.selectionStart + args.selectionLength
-            ),
-            scrollIntoView: true,
-        });
+        editorInstance.setValue(args.fullText || "");
+        const startPos = model.getPositionAt(args.selectionStart || 0);
+        const endPos = model.getPositionAt(
+            (args.selectionStart || 0) + (args.selectionLength || 0)
+        );
+        editorInstance.setSelection(
+            new monaco.Selection(
+                startPos.lineNumber,
+                startPos.column,
+                endPos.lineNumber,
+                endPos.column
+            )
+        );
+        editorInstance.revealPositionInCenterIfOutsideViewport(startPos);
     } finally {
         suppressTextEvent = false;
     }
-    // Manuell post, weil wir suppress'd haben — C# erwartet aber den Change.
-    post({ type: "editorTextChanged", text: view.state.doc.toString() });
-    if (findState.term) recomputeMatches(view);
+    post({ type: "editorTextChanged", text: editorInstance.getValue() });
+    if (findState.term) recomputeMatches();
 }
 
 function focus(): void {
-    if (view) view.focus();
+    if (editorInstance) editorInstance.focus();
 }
 
 function setTheme(_mode: "light" | "dark"): void {
-    // Theme reagiert ueber CSS-Variablen automatisch — die werden vom Shell-
-    // Body-Theme gesteuert. Compartment-Reconfigure hier triggert Repaint, falls
-    // wir spaeter mode-spezifische Anpassungen brauchen.
-    if (!view) return;
-    view.dispatch({ effects: themeCompartment.reconfigure(buildEditorTheme()) });
+    if (!monacoInstance || !editorInstance) return;
+    monacoInstance.editor.setTheme(_mode === "dark" ? "vs-dark" : "vs");
 }
 
 function openFind(initialTerm?: string): void {
-    if (!view) return;
+    if (!editorInstance) return;
     if (typeof initialTerm === "string" && initialTerm.length > 0) {
         findState.term = initialTerm;
     } else if (!findState.term) {
-        // Selection als Default-Suchbegriff uebernehmen, falls einzeilig.
-        const sel = view.state.selection.main;
-        if (sel.from !== sel.to) {
-            const candidate = view.state.doc.sliceString(sel.from, sel.to);
+        const sel = getSelection();
+        if (sel.length > 0) {
+            const text = getText();
+            const candidate = text.substring(sel.start, sel.start + sel.length);
             if (!candidate.includes("\n") && candidate.length < 200) {
                 findState.term = candidate;
             }
         }
     }
-    recomputeMatches(view);
+    recomputeMatches();
 }
 
 function closeFind(): void {
-    if (!view) return;
+    if (!editorInstance) return;
     findState = { term: "", total: 0, active: -1, matches: [] };
     publishFindState();
-    view.dispatch({ effects: [] });
-    renderMarkerLane(view);
-    view.focus();
+    clearDecorations();
+    renderMarkerLane();
+    editorInstance.focus();
 }
 
-function setFindOptions(opts: { caseSensitive?: boolean; wholeWord?: boolean }): void {
-    if (typeof opts.caseSensitive === "boolean") findOptions.caseSensitive = opts.caseSensitive;
-    if (typeof opts.wholeWord === "boolean") findOptions.wholeWord = opts.wholeWord;
-    if (view && findState.term) recomputeMatches(view);
+function setFindOptions(opts: {
+    caseSensitive?: boolean;
+    wholeWord?: boolean;
+}): void {
+    if (typeof opts.caseSensitive === "boolean")
+        findOptions.caseSensitive = opts.caseSensitive;
+    if (typeof opts.wholeWord === "boolean")
+        findOptions.wholeWord = opts.wholeWord;
+    if (editorInstance && findState.term) recomputeMatches();
 }
 
 function setFindTerm(term: string): void {
     findState.term = term || "";
-    if (view) recomputeMatches(view);
+    if (editorInstance) recomputeMatches();
 }
 
 function findNext(): void {
-    if (!view || findState.matches.length === 0) return;
+    if (!editorInstance || findState.matches.length === 0) return;
     const next = (findState.active + 1) % findState.matches.length;
     findState.active = next;
-    scrollMatchIntoView(view, findState.matches[next]);
+    scrollMatchIntoView(findState.matches[next]);
     publishFindState();
-    view.dispatch({ effects: [] });
-    renderMarkerLane(view);
+    applyDecorations();
+    renderMarkerLane();
 }
 
 function findPrev(): void {
-    if (!view || findState.matches.length === 0) return;
+    if (!editorInstance || findState.matches.length === 0) return;
     const n = findState.matches.length;
     const prev = (findState.active - 1 + n) % n;
     findState.active = prev;
-    scrollMatchIntoView(view, findState.matches[prev]);
+    scrollMatchIntoView(findState.matches[prev]);
     publishFindState();
-    view.dispatch({ effects: [] });
-    renderMarkerLane(view);
+    applyDecorations();
+    renderMarkerLane();
 }
 
 // ----- Public API (window.FolioEditor) ---------------------------------
 
-export {
+(window as any).FolioEditor = {
     mount,
     setText,
     getText,
