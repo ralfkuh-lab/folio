@@ -31,11 +31,17 @@ Editor-API-Erweiterungen aus dem History-Commit (`setSelection`,
 
 ## Resume-Marker
 
-**Aktueller Stand:** Schritt 0 abgeschlossen — Plan ins Repo kopiert,
-CLAUDE.md mit Migration-Banner versehen.
+**Aktueller Stand:** Schritte 0–2 abgeschlossen, Plan-Commit auch auf
+`monaco-merge` gespiegelt (sonst würde diese Datei beim Wiedereinstieg
+auf dem Branch fehlen).
+- `monaco-merge`-Branch lokal aus `origin/monaco`
+- Cherry-Pick `00b6ba3` (Terminal-Kontextmenü) → `9bddeea`
+- Plan-Commit `2b4d20c` (docs) → `f0d1afa`
+- 123 Cargo-Tests grün
 
-**Nächster Schritt:** Schritt 1 — Working-Branch `monaco-merge` von
-`origin/monaco` ausgelöst auschecken und Sauber-Build verifizieren.
+**Nächster Schritt:** Schritt 3 — Cherry-Pick `572494c` (toolbar/toc
+Markdown-only). Erwartete Konflikte: leicht in `state.rs`, mittel in
+`dist/index.html`.
 
 ## Schrittliste
 
@@ -44,19 +50,17 @@ CLAUDE.md mit Migration-Banner versehen.
 - [x] CLAUDE.md mit Migrations-Banner ganz oben
 - [x] Beides committen + pushen
 
-### 1. Working-Branch
-- [ ] `git checkout -b monaco-merge origin/monaco`
-- [ ] `cd src-tauri/web && npm install` (Monaco-Deps laden)
-- [ ] `cd src-tauri && cargo build && cargo test` — sauberer Ausgangspunkt
+### 1. Working-Branch ✅
+- [x] `git checkout -b monaco-merge origin/monaco`
+- [x] `cd src-tauri/web && npm install` (Monaco-Deps laden)
+- [x] `cd src-tauri && cargo build && cargo test` — sauberer Ausgangspunkt
 
-### 2. Cherry-Pick `00b6ba3` — Terminal-Kontextmenü
-- [ ] `git cherry-pick 00b6ba3`
-- Erwartete Konflikte:
-  - `commands/app.rs`: keiner (Monaco rührt das nicht an)
-  - `lib.rs`: Mini-Konflikt am invoke_handler
-  - `dist/index.html`: kleiner Konflikt im Context-Menu-Bereich
-- [ ] Build/Test/visueller Check (Vault → Rechtsklick → „Terminal hier öffnen")
-- [ ] Resume-Marker hier updaten
+### 2. Cherry-Pick `00b6ba3` — Terminal-Kontextmenü ✅ (`9bddeea`)
+- [x] `git cherry-pick 00b6ba3`
+- Tatsächliche Konflikte: keine — automatischer Merge in `dist/index.html`
+- [x] Build + Tests grün (123 Tests)
+- [x] Visueller Check: ausgelassen, Code-Inspect bestätigt Eintrag
+- [x] Resume-Marker geupdatet
 
 ### 3. Cherry-Pick `572494c` — toolbar/toc Markdown-only
 - [ ] `git cherry-pick 572494c`
