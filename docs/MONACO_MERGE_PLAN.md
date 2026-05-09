@@ -31,12 +31,14 @@ Editor-API-Erweiterungen aus dem History-Commit (`setSelection`,
 
 ## Resume-Marker
 
-**Aktueller Stand:** Schritte 0–4 abgeschlossen.
+**Aktueller Stand:** Schritte 0–6 abgeschlossen, alle Cherry-Picks durch.
 - `monaco-merge`-Branch lokal aus `origin/monaco`
 - Cherry-Pick `00b6ba3` (Terminal-Kontextmenü) → `9bddeea`
 - Plan-Commit `2b4d20c` (docs) → `f0d1afa`
 - Cherry-Pick `572494c` (toolbar/toc md-only) → `df3f10d`
 - Cherry-Pick `61e5a4b` (History per-Entry) → `fbbd7ba`
+- Cherry-Pick `418a35a` (Docs-Update) → `2769081` (auto-merged, kein Konflikt)
+- Cherry-Pick `bd6c122` (Test-Fixtures) → `a95115b` (reine Adds)
   - Backend (navigation/commands/lib): konfliktfrei
   - `editor.ts`: API-Funktionen (setSelection, getScroll, setScroll)
     auf Monaco portiert; `editorScroll`-Event via `onDidScrollChange`
@@ -48,9 +50,10 @@ Editor-API-Erweiterungen aus dem History-Commit (`setSelection`,
   optisch nicht durch (Pre-existing? oder Cherry-Pick-Folge?). Manuell
   via Vault-Klick testen.
 
-**Nächster Schritt:** Schritt 5 — Cherry-Pick `418a35a` (Docs-Update).
-Erwartete Konflikte: mittel in `CLAUDE.md` (Monaco hat eigene Sektion),
-mittel in `README.md`, keiner in `TODO.md`.
+**Nächster Schritt:** Schritt 7 — Vollverifikation. Visueller Audit der
+`test-docs/syntax/`-Matrix in beiden Themes plus Feature-Smoketest
+(Terminal-Kontextmenü, History-Restore, TOC nur bei MD). Manuell — die
+Automation-API hat sich beim 2. `/open` als unzuverlässig gezeigt.
 
 ## Schrittliste
 
