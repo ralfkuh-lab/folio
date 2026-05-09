@@ -59,6 +59,21 @@ sonst lehnt Tauri den Build ab.
   CORS/OPTIONS-Preflight; `/click` akzeptiert IDs, `data-name` und CSS-Selektoren.
 - **Vault-Markup**: Frontend erwartet Baum-Markup mit `.section`, `.node`, `.row`,
   `.caret`, `ul.children`.
+- **Dateityp-Klassifizierung**: zentral in `file_kind.rs`
+  (`FileKind::{Markdown, Text, Binary}`, `classify(path)`). `read_file` und
+  `document:loaded` liefern `kind` ans Frontend; das setzt
+  `body.kind-<value>` als Single Source of Truth. UI, die nur für
+  Markdown gilt (Edit-Toolbar-Markdown-Gruppen, TOC-Rail,
+  Rail-Right-Toggle), wird ausschließlich über CSS auf `.kind-markdown`
+  beschränkt — keine eigene Endungs-Heuristik im Frontend.
+- **History/Sitzungs-State**: `NavigationController::Entry` speichert pro
+  Eintrag zusätzlich `view_mode`, `editor_scroll_y`, `editor_cursor`
+  (neben `scroll_y`/`anchor`). Capture läuft automatisch über
+  `set_view_mode` (Mode-Sync ins aktuelle Entry) und die
+  `editorSelection`/`editorScroll`-Events aus `editor.ts`. Restore
+  passiert ausschließlich im `navigation:changed`-Handler (Back/Forward);
+  `openDocument`-Pfade (Vault-Klick, Datei-Dialog, Recent, Pin) erzeugen
+  frische Entries und laden ohne Sprung.
 
 ## GitHub
 

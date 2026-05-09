@@ -2,9 +2,6 @@
 
 ## Mittlere Priorität
 
-- **Edit-Toolbar dateityp-spezifisch**: Markdown-spezifische Buttons (Bold, Italic,
-  Heading, Tabelle, Link, Bild, Codeblock, …) nur bei Markdown-Dateien zeigen.
-  Für Nicht-MD-Text-Dateien stattdessen ggf. nur generische Edit-Aktionen.
 - **Config-/Einstellungen-Bereich**: Eigener Settings-Dialog/-Panel für
   Anwendungs-Einstellungen (Theme, Font/Schriftgröße, Editor-Optionen,
   Vault-Pfade, Automation-Port, …). Persistenz analog zur Window-State-

@@ -7,6 +7,10 @@ Plattformübergreifender Markdown-Viewer und -Editor auf **Tauri 2 + Rust**.
 - **Live-Vorschau** mit GitHub-Flavored Markdown (Tasklisten, Tabellen, Frontmatter)
 - **Split-View-Editor** mit Syntax-Highlighting und WYSIWYG-Shortcuts
 - **Vault-Navigation** mit Ordnerbaum, Workspace-Pins und Recent-Dateien
+- **Dateityp-bewusste Toolbar**: Markdown-spezifische Buttons und TOC-Rail
+  blenden sich für Nicht-Markdown-Dateien automatisch aus
+- **Browser-artige History** mit Zurück/Vorwärts: stellt View/Edit-Mode,
+  Scroll-Position und Cursor pro Eintrag wieder her
 - **Automatisierungs-API** für E2E-Tests (HTTP auf `127.0.0.1:9876`)
 - **Cross-Platform** dank Tauri 2 (WebView2 / WebKitGTK)
 
