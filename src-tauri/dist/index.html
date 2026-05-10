@@ -185,6 +185,9 @@
     align-items: center;
   }
   .statusbar button:hover { background: var(--rail-hover-bg); }
+  /* Sprach-Cell nur bei aktivem Editor (Edit/Split) sichtbar — im View-Mode
+     sieht man eh nur die rendered Preview, da hat die Editor-Sprache keinen Sinn. */
+  body:not(.edit-mode):not(.split-mode) #status-language { display: none; }
   /* DnD-Overlay */
   #dnd-overlay {
     position: fixed;
@@ -932,6 +935,58 @@
   /* ----- Cheat-Sheet-Overlay: position:fixed loest aus dem CSS-Grid, sodass
      das Overlay frei ueber View- und TOC-Region schwebt. Drag nur am Header,
      Body ist scrollbar bei kleinem Fenster. ----- */
+  /* Editor-Sprach-Picker — Quick-Pick-Style: Suchfeld + scrollbare Liste,
+     positioniert bottom-right über der Status-Cell. */
+  #lang-picker {
+    position: fixed;
+    z-index: 110;
+    bottom: 28px;
+    right: 8px;
+    width: 320px;
+    max-height: 50vh;
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    font-size: 13px;
+  }
+  #lang-picker[hidden] { display: none; }
+  #lang-picker-input {
+    border: none;
+    border-bottom: 1px solid var(--border);
+    background: transparent;
+    color: inherit;
+    padding: 8px 10px;
+    font: inherit;
+    outline: none;
+  }
+  #lang-picker-list {
+    list-style: none;
+    margin: 0;
+    padding: 4px 0;
+    overflow-y: auto;
+    flex: 1 1 auto;
+  }
+  #lang-picker-list li {
+    padding: 4px 12px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: baseline;
+  }
+  #lang-picker-list li.active,
+  #lang-picker-list li:hover { background: var(--rail-hover-bg); }
+  #lang-picker-list li.current { font-weight: 600; }
+  #lang-picker-list li .lang-id {
+    font-family: ui-monospace, Consolas, "Cascadia Mono", "Courier New", monospace;
+    font-size: 11.5px;
+    color: var(--fg-muted, #888);
+  }
   #cheatsheet-overlay {
     position: fixed;
     z-index: 100;
@@ -1081,6 +1136,7 @@
   <span class="status-path" id="status-path">Bereit</span>
   <span class="status-cell" id="status-wordcount" hidden></span>
   <span class="status-cell" id="status-mode">View</span>
+  <button class="status-cell" id="status-language" type="button" hidden title="Editor-Sprache wählen">Plain Text</button>
   <button class="status-cell" id="status-theme-toggle" title="Theme umschalten" aria-label="Theme" style="display:inline-flex;align-items:center;justify-content:center;padding:2px 6px;"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><line x1="8" y1="1.5" x2="8" y2="3"/><line x1="8" y1="13" x2="8" y2="14.5"/><line x1="1.5" y1="8" x2="3" y2="8"/><line x1="13" y1="8" x2="14.5" y2="8"/><line x1="3.4" y1="3.4" x2="4.5" y2="4.5"/><line x1="11.5" y1="11.5" x2="12.6" y2="12.6"/><line x1="3.4" y1="12.6" x2="4.5" y2="11.5"/><line x1="11.5" y1="4.5" x2="12.6" y2="3.4"/></svg></button>
 </footer>
 <div id="zoom-indicator" hidden>100 %</div>
@@ -1114,6 +1170,10 @@
 <div id="cheatsheet-overlay" hidden>
   <header class="overlay__drag">Markdown Cheat-Sheet</header>
   <div class="overlay__body" id="cheatsheet-body"></div>
+</div>
+<div id="lang-picker" hidden role="dialog" aria-label="Editor-Sprache wählen">
+  <input type="text" id="lang-picker-input" placeholder="Sprache suchen…" autocomplete="off" spellcheck="false" />
+  <ul id="lang-picker-list" role="listbox"></ul>
 </div>
 <script src="monaco/loader.js"></script>
 <script src="editor.bundle.js"></script>
@@ -1286,6 +1346,9 @@
             if (!data || typeof data !== 'object') return;
             if (typeof window.loadEditorText === 'function') {
                 window.loadEditorText(data.text || '', data.language || '');
+            }
+            if (typeof window.setEditorLanguageDisplay === 'function') {
+                window.setEditorLanguageDisplay(data.language || 'plaintext');
             }
             if (typeof window.setTocList === 'function') {
                 window.setTocList(data.tocHtml || data.toc_html || '');
@@ -3116,6 +3179,141 @@
         if (currentPath) markDirty(text !== cleanText);
         invoke('editor_text_changed', { text: text }).catch(function(){});
     });
+
+    /* ----- Editor-Sprach-Picker (Status-Cell + Quick-Pick-Popup) -----
+       Override gilt bis zum nächsten Document-Wechsel — dann setzt
+       document:loaded die Anzeige (und Monaco's Model-Sprache) wieder
+       auf die Auto-Erkennung aus der Pfad-Endung. */
+    (function () {
+        var btn = document.getElementById('status-language');
+        var picker = document.getElementById('lang-picker');
+        var input = document.getElementById('lang-picker-input');
+        var list = document.getElementById('lang-picker-list');
+        if (!btn || !picker || !input || !list) return;
+
+        var allLanguages = [];
+        var currentId = 'plaintext';
+        var visibleItems = [];
+        var activeIdx = -1;
+
+        function ensureLoaded() {
+            if (allLanguages.length > 0) return true;
+            var f = window.FolioEditor;
+            if (!f || typeof f.listLanguages !== 'function') return false;
+            allLanguages = f.listLanguages();
+            allLanguages.sort(function (a, b) { return a.label.localeCompare(b.label); });
+            return allLanguages.length > 0;
+        }
+
+        function labelFor(id) {
+            for (var i = 0; i < allLanguages.length; i++) {
+                if (allLanguages[i].id === id) return allLanguages[i].label;
+            }
+            return id ? id.charAt(0).toUpperCase() + id.slice(1) : 'Plain Text';
+        }
+
+        function applyDisplay(id) {
+            currentId = id || 'plaintext';
+            ensureLoaded();
+            btn.textContent = labelFor(currentId);
+            btn.hidden = false;
+        }
+        window.setEditorLanguageDisplay = applyDisplay;
+
+        function highlightActive() {
+            for (var i = 0; i < visibleItems.length; i++) {
+                visibleItems[i].classList.toggle('active', i === activeIdx);
+            }
+            if (activeIdx >= 0 && visibleItems[activeIdx]) {
+                visibleItems[activeIdx].scrollIntoView({ block: 'nearest' });
+            }
+        }
+
+        function renderList(filter) {
+            list.innerHTML = '';
+            visibleItems = [];
+            var f = (filter || '').trim().toLowerCase();
+            for (var i = 0; i < allLanguages.length; i++) {
+                var l = allLanguages[i];
+                if (f) {
+                    var hay = (l.label + ' ' + l.id + ' ' + l.aliases.join(' ')).toLowerCase();
+                    if (hay.indexOf(f) === -1) continue;
+                }
+                var li = document.createElement('li');
+                li.setAttribute('role', 'option');
+                li.dataset.langId = l.id;
+                if (l.id === currentId) li.classList.add('current');
+                var labelEl = document.createElement('span');
+                labelEl.textContent = l.label;
+                var idEl = document.createElement('span');
+                idEl.className = 'lang-id';
+                idEl.textContent = l.id;
+                li.appendChild(labelEl);
+                li.appendChild(idEl);
+                list.appendChild(li);
+                visibleItems.push(li);
+            }
+            // Initial Highlight: aktuelle Sprache, sonst erstes Item
+            activeIdx = -1;
+            for (var j = 0; j < visibleItems.length; j++) {
+                if (visibleItems[j].dataset.langId === currentId) { activeIdx = j; break; }
+            }
+            if (activeIdx === -1 && visibleItems.length > 0) activeIdx = 0;
+            highlightActive();
+        }
+
+        function open() {
+            if (!ensureLoaded()) return;
+            picker.hidden = false;
+            input.value = '';
+            renderList('');
+            input.focus();
+        }
+        function close() { picker.hidden = true; }
+        function select(langId) {
+            if (!langId) return;
+            var f = window.FolioEditor;
+            if (f && typeof f.setLanguage === 'function') f.setLanguage(langId);
+            applyDisplay(langId);
+            close();
+        }
+
+        btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (picker.hidden) open(); else close();
+        });
+        input.addEventListener('input', function () { renderList(input.value); });
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') { e.preventDefault(); close(); }
+            else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (activeIdx >= 0 && visibleItems[activeIdx]) {
+                    select(visibleItems[activeIdx].dataset.langId);
+                }
+            }
+            else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (visibleItems.length === 0) return;
+                activeIdx = (activeIdx + 1) % visibleItems.length;
+                highlightActive();
+            }
+            else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (visibleItems.length === 0) return;
+                activeIdx = (activeIdx - 1 + visibleItems.length) % visibleItems.length;
+                highlightActive();
+            }
+        });
+        list.addEventListener('click', function (e) {
+            var li = e.target.closest('li');
+            if (li && li.dataset.langId) select(li.dataset.langId);
+        });
+        document.addEventListener('mousedown', function (e) {
+            if (picker.hidden) return;
+            if (e.target === btn || picker.contains(e.target)) return;
+            close();
+        });
+    })();
 })();
 </script>
 </body>

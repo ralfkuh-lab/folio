@@ -397,6 +397,32 @@ function getText(): string {
     return editorInstance ? editorInstance.getValue() : "";
 }
 
+function getLanguage(): string {
+    if (!editorInstance) return "";
+    const model = editorInstance.getModel();
+    return model ? model.getLanguageId() : "";
+}
+
+function setLanguage(language: string): void {
+    if (!editorInstance) return;
+    const monaco = monacoInstance;
+    const model = editorInstance.getModel();
+    if (!model) return;
+    const lang = (language && language.trim()) || "plaintext";
+    if (model.getLanguageId() === lang) return;
+    monaco.editor.setModelLanguage(model, lang);
+}
+
+function listLanguages(): Array<{ id: string; label: string; aliases: string[] }> {
+    const monaco = monacoInstance;
+    if (!monaco) return [];
+    return monaco.languages.getLanguages().map((l: any) => {
+        const aliases: string[] = Array.isArray(l.aliases) ? l.aliases.slice() : [];
+        const label = aliases[0] || l.id;
+        return { id: l.id, label, aliases };
+    });
+}
+
 function getSelection(): { start: number; length: number } {
     if (!editorInstance) return { start: 0, length: 0 };
     const model = editorInstance.getModel();
@@ -566,4 +592,7 @@ function findPrev(): void {
     findNext,
     findPrev,
     layout,
+    getLanguage,
+    setLanguage,
+    listLanguages,
 };

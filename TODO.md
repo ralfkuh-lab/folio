@@ -17,15 +17,6 @@
 - **JSON / XML Pretty-View**: für `.json`, `.xml`, ggf. `.yaml`/`.toml` im
   View-Mode formatiert + syntaxgehighlighted anzeigen (CodeMirror-Renderer
   read-only oder eigener Renderer).
-- **Syntax-Highlighting im Edit-Mode** für die Text-Klasse: CodeMirror-Lang-Plugins
-  per Extension auswählen (lang-json, lang-html, lang-yaml, …).
-- **Editor-Sprache: Status-Leiste + Picker**: Aktive Monaco-Sprache (z. B.
-  „Markdown", „JSON", „Plain Text") in der Status-Leiste anzeigen,
-  klickbar → Auswahl-Popup mit allen verfügbaren Monaco-Sprachen. Setzt
-  einen Per-Dokument-Override (in-session, ggf. pro History-Entry
-  persistiert), der die Auto-Erkennung aus der Endung übersteuert.
-  Beeinflusst nur das Highlighting — FileKind/MD-Toolbar/TOC bleiben
-  unangetastet (siehe Modell-1-Architektur in der Monaco-Migration).
 - **„Speichern unter"**: Aktuelles Dokument unter neuem Pfad/Namen ablegen
   (Save-As-Dialog), inkl. optionalem Endungs-Wechsel — z. B. `.txt` mit
   Notizen als `.md` weiterführen. Workspace-Recent updaten, document_store
@@ -51,6 +42,7 @@
 - **About-Dialog**: Versions-/Autor-Info anzeigen, ggf. Lizenz und Build-Hash.
   Idee: Spendenmöglichkeit für den Autor einbinden (Plattform/Form später
   klären). Aufruf z. B. über Statusbar oder Menü.
-- **Editor-Minimap**: CodeMirror 6 hat keine eingebaute Minimap. Optional
-  `@replit/codemirror-minimap` einbinden — Toggle in der Edit-Toolbar,
-  ggf. Suchtreffer in die Minimap mappen (analog zur View-Marker-Lane).
+- **Editor-Minimap aktivierbar machen**: Monaco hat eine Minimap eingebaut
+  (in `editor.ts` aktuell `minimap: { enabled: false }`). Toggle in der
+  Edit-Toolbar oder Statusbar, Persistenz analog zu Theme/RailVisibility.
+  Suchtreffer landen schon in der Minimap-Position-Inline.
