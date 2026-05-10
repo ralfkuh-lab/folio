@@ -378,10 +378,29 @@ async fn mock_get_state(
     }))
 }
 
-async fn get_screenshot() -> ApiResult<impl IntoResponse> {
-    let bytes = tauri::async_runtime::spawn_blocking(capture_png)
+async fn get_screenshot(
+    AxumState(context): AxumState<AutomationContext>,
+) -> ApiResult<impl IntoResponse> {
+    // Option 3: tauri-plugin-screenshots (Monitor-Screenshot)
+    let monitors = tauri_plugin_screenshots::get_screenshotable_monitors()
         .await
-        .map_err(|error| ApiError::internal(error.to_string()))??;
+        .map_err(|error| ApiError::internal(error))?;
+
+    let first_monitor = monitors
+        .first()
+        .ok_or_else(|| ApiError::internal("no monitors found"))?;
+
+    let path = tauri_plugin_screenshots::get_monitor_screenshot(
+        context.app_handle.clone(),
+        first_monitor.id,
+    )
+    .await
+    .map_err(|error| ApiError::internal(error))?;
+
+    let bytes = std::fs::read(&path).map_err(|error| ApiError::internal(error.to_string()))?;
+
+    let _ = std::fs::remove_file(&path);
+
     Ok(([(axum::http::header::CONTENT_TYPE, "image/png")], bytes))
 }
 

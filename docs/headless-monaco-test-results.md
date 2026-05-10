@@ -100,6 +100,37 @@ DISPLAY=:100 ./src-tauri/target/release/folio
 
 ---
 
+### Option 3: tauri-plugin-screenshots (Monitor-Screenshot)
+
+**Änderung:** Plugin `tauri-plugin-screenshots` v2.2.0 eingebunden. Die interne `/screenshot` Route wurde von `xcap::Window`-Capture auf `tauri_plugin_screenshots::get_monitor_screenshot` umgestellt.
+
+**Befehl:**
+```bash
+# Plugin in Cargo.toml hinzugefügt
+# In lib.rs: .plugin(tauri_plugin_screenshots::init())
+# In automation.rs: get_screenshot() nutzt jetzt get_monitor_screenshot()
+
+Xvfb :99 -screen 0 1280x720x24 -ac +extension COMPOSITE +extension RANDR +extension RENDER
+DISPLAY=:99 ./src-tauri/target/release/folio
+```
+
+**Ergebnis:**
+- `editor.ready`: `True` ✅
+- ImageMagick-Screenshot (`import -window root`): Center-Bereich zeigt **Monaco Editor mit vollständigem Inhalt** ✅
+  - Line Numbers sichtbar (1–31)
+  - Syntax Highlighting aktiv (Markdown: Headings rot, Links blau/grau, Inline-Code, C# Codeblock)
+  - Text vollständig lesbar
+  - Kein leerer/weißer Bereich
+- Plugin-API `/screenshot`: Liefert 160.919 Bytes PNG, identischer visueller Inhalt ✅
+
+**Ergebnis ohne geöffnetes Dokument:**
+- App-Oberfläche (Menü, Toolbar, Sidebars) sichtbar
+- Editor-Bereich weiß/leer (erwartet, da kein Dokument offen)
+
+**Interpretation:** Im Gegensatz zu `xcap::Window::capture_image()` (das einen einzelnen Fenster-Pixmap liest) erfasst `get_monitor_screenshot()` den gesamten Monitor-Framebuffer. In Xvfb scheint der Monaco-Canvas-Output zwar nicht im individuellen Window-Pixmap zu landen, wohl aber im globalen Screen-Buffer. Damit ist der Monitor-Screenshot der einzige Weg, Monaco visuell in Headless zu erfassen.
+
+---
+
 ### Option 5: View-Mode-Screenshot (Folio-spezifisch)
 
 **Befehl:**
@@ -126,27 +157,30 @@ import -window root /tmp/viewmode.png
 |---|---|---|---|---|
 | 1. Env-Vars | ✅ True | ❌ Nein | ImageMagick / xcap | Funktional OK, visuell nicht verifizierbar |
 | 2. Xvfb + Mesa-GL | ✅ True | ❌ Nein | ImageMagick / xcap | Gleiches Problem wie Option 1 |
+| 3. tauri-plugin-screenshots | ✅ True | ✅ **Ja** | Monitor-Framebuffer via Plugin | **Funktioniert** – einziger Weg, Monaco in Headless zu screenshotten |
 | 4. xpra | ❌ False | ❌ Nein | ImageMagick / xpra | Monaco initialisiert sich gar nicht |
-| 5. View-Mode | N/A (kein Editor) | ✅ HTML+CSS | ImageMagick | **Einzige funktionierende Option** |
+| 5. View-Mode | N/A (kein Editor) | ✅ HTML+CSS | ImageMagick | Zuverlässig für gerendertes Markdown |
 
 ---
 
 ## Fazit
 
-**Keine der getesteten Optionen ermöglicht einen visuell korrekten Screenshot des Monaco-Editors in einer Headless-Umgebung.**
+**Option 3 (`tauri-plugin-screenshots` mit Monitor-Capture) ist die einzige getestete Option, die Monaco in einer Headless-Umgebung visuell erfassbar macht.**
 
-- Option 1 und 2 zeigen, dass selbst mit Software-Rendering der Canvas-Output von WebKitGTK nicht in den X11-Framebuffer gelangt, den externe Tools abgreifen.
+- Option 1 und 2 zeigen, dass `xcap::Window::capture_image()` den Monaco-Canvas-Output nicht erfasst – vermutlich landet dieser nicht im individuellen Window-Pixmap, sondern nur im globalen Screen-Buffer.
+- **Option 3 umgeht dies, indem sie den gesamten Monitor-Framebuffer captured.** Das funktioniert, weil Xvfb den gesamten Screen-Inhalt (inkl. Canvas) im globalen Framebuffer hält.
 - Option 4 (xpra) ist inkompatibel mit Monaco's Initialisierung.
-- **Option 5 (View-Mode) ist der einzige zuverlässige Weg**, visuelles Feedback in Headless-Umgebungen zu bekommen – allerdings nur für gerendertes Markdown, nicht für den Editor selbst.
+- Option 5 (View-Mode) funktioniert weiterhin für reines Markdown-HTML, erfordert aber keinen Editor.
 
 **Empfehlung für CI/Agent-Tests:**
-- Funktionale Tests (Text-API, TOC, State) laufen in Headless-Umgebungen einwandfrei.
-- Visuelle Verifikation des Monaco-Editors erfordert einen **echten Bildschirm** (`DISPLAY=:0` o. ä.) oder einen VNC-Server mit Hardware-Compositor.
-- Für Layout-/Theme-Tests in CI: **View-Mode-Screenshots** verwenden.
+- Für visuelle Monaco-Editor-Verifikation in Headless: **Monitor-Screenshot via `tauri-plugin-screenshots`** (oder äquivalente Monitor-Capture-Library) verwenden.
+- `xcap::Window`-Capture ist in Xvfb für Canvas-basierte Inhalte ungeeignet.
+- Funktionale Tests (Text-API, TOC, State) laufen weiterhin einwandfrei ohne Workarounds.
+- Für Layout-/Theme-Tests, die keinen Editor benötigen: View-Mode-Screenshots bleiben eine einfache Alternative.
 
 ---
 
 ## Offene Punkte
 
-- Option 3 (WebView-eigener Snapshot via `tauri-plugin-screenshots`) wurde nicht getestet, da sie Code-Änderungen am Projekt erfordert.
 - Ein Test auf echtem Display (`DISPLAY=:0`) wurde nicht durchgeführt, da der VPS keinen physischen Bildschirm hat.
+- Ob `xcap::Monitor::capture_image()` (ohne Plugin) denselben Erfolg bringt, wurde nicht explizit getestet, ist aber wahrscheinlich.

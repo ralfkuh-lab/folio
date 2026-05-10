@@ -64,6 +64,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_screenshots::init())
         .menu(|handle| menu::build(handle, "de"))
         .on_menu_event(menu::on_menu_event)
         .manage(AppState::new())
