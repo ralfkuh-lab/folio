@@ -1,4 +1,9 @@
-use crate::{link_interceptor::LinkAction, navigation::Entry, state::AppState};
+use crate::{
+    file_kind::{classify, FileKind},
+    link_interceptor::LinkAction,
+    navigation::Entry,
+    state::AppState,
+};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_shell::ShellExt;
@@ -15,11 +20,19 @@ pub struct NavEntry {
 
 impl From<&Entry> for NavEntry {
     fn from(entry: &Entry) -> Self {
+        // Non-Markdown kennt keinen View-Mode: clampen, damit ein zuvor
+        // gespeicherter "view"-Wert beim Restore nicht in einen leeren
+        // Markdown-Body führt.
+        let view_mode = if classify(&entry.absolute_path) == FileKind::Markdown {
+            entry.view_mode.clone()
+        } else {
+            "edit".to_string()
+        };
         Self {
             path: entry.absolute_path.clone(),
             anchor: entry.anchor.clone(),
             scroll_y: entry.scroll_y,
-            view_mode: entry.view_mode.clone(),
+            view_mode,
             editor_scroll_y: entry.editor_scroll_y,
             editor_cursor: entry.editor_cursor,
         }
@@ -246,6 +259,32 @@ mod tests {
             },
             NavEntry::from(&entry)
         );
+    }
+
+    #[test]
+    fn nav_entry_clamps_view_mode_to_edit_for_non_markdown() {
+        let entry = Entry {
+            absolute_path: "/notes.txt".into(),
+            anchor: None,
+            scroll_y: 0.0,
+            view_mode: "view".into(),
+            editor_scroll_y: 0.0,
+            editor_cursor: 0,
+        };
+        assert_eq!("edit", NavEntry::from(&entry).view_mode);
+    }
+
+    #[test]
+    fn nav_entry_preserves_view_mode_for_markdown() {
+        let entry = Entry {
+            absolute_path: "/notes.md".into(),
+            anchor: None,
+            scroll_y: 0.0,
+            view_mode: "split".into(),
+            editor_scroll_y: 0.0,
+            editor_cursor: 0,
+        };
+        assert_eq!("split", NavEntry::from(&entry).view_mode);
     }
 
     #[test]

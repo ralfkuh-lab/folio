@@ -1312,21 +1312,24 @@
             var data = event && event.payload;
             if (!data || typeof data !== 'object') return;
             var anchor = data.anchor || data.slug || '';
-            if (anchor && typeof window.scrollViewToAnchor === 'function') {
-                window.scrollViewToAnchor(anchor);
-            }
-            if (typeof data.scroll_y === 'number' && typeof window.scrollViewTo === 'function') {
-                window.scrollViewTo(data.scroll_y);
-            }
             if (typeof window.setTocActive === 'function') {
                 window.setTocActive(anchor);
             }
             if (data.view_mode) {
                 window.__TAURI__.core.invoke('set_view_mode', { mode: data.view_mode }).catch(function(){});
             }
+            var viewScroll = (typeof data.scroll_y === 'number') ? data.scroll_y : 0;
             var editorCursor = (typeof data.editor_cursor === 'number') ? data.editor_cursor : 0;
             var editorScroll = (typeof data.editor_scroll_y === 'number') ? data.editor_scroll_y : 0;
+            // Restore nach Layout: document:loaded ersetzt body.innerHTML, scrollTo
+            // klemmt sonst an einer noch nicht aufgebauten scrollHeight auf 0,
+            // und der Scroll-Watcher überschreibt prompt entry.scroll_y mit 0.
             requestAnimationFrame(function () {
+                if (anchor && typeof window.scrollViewToAnchor === 'function') {
+                    window.scrollViewToAnchor(anchor);
+                } else if (typeof window.scrollViewTo === 'function') {
+                    window.scrollViewTo(viewScroll);
+                }
                 if (!window.FolioEditor) return;
                 if (typeof window.FolioEditor.setSelection === 'function') {
                     window.FolioEditor.setSelection(editorCursor, 0);
