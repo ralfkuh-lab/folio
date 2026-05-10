@@ -1,4 +1,4 @@
-use crate::file_kind::{classify, FileKind};
+use crate::file_kind::{classify, editor_language, FileKind};
 use crate::state::AppState;
 use serde::Serialize;
 use std::{fs, path::Path};
@@ -9,6 +9,7 @@ pub struct FileData {
     pub path: String,
     pub content: String,
     pub kind: FileKind,
+    pub language: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -46,10 +47,12 @@ pub async fn read_file(path: String, state: State<'_, AppState>) -> Result<FileD
         .lock()
         .map_err(|_| "vault lock poisoned".to_string())?
         .set_active(Some(path));
+    let language = editor_language(&loaded.path).to_string();
     Ok(FileData {
         path: loaded.path,
         content: loaded.text,
         kind,
+        language,
     })
 }
 
@@ -124,6 +127,7 @@ mod tests {
             path: "a".into(),
             content: "b".into(),
             kind: FileKind::Markdown,
+            language: "markdown".into(),
         };
         assert_eq!("a", data.path);
         assert_eq!("b", data.content);

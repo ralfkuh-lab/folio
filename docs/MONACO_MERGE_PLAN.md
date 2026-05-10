@@ -31,11 +31,29 @@ Editor-API-Erweiterungen aus dem History-Commit (`setSelection`,
 
 ## Resume-Marker
 
-**Aktueller Stand:** Schritt 0 abgeschlossen — Plan ins Repo kopiert,
-CLAUDE.md mit Migration-Banner versehen.
+**Aktueller Stand:** Schritte 0–7 abgeschlossen. Smoketest grün, zwei
+Folge-Bugs (View-Mode-Clamp + View-Scroll-RAF) behoben (`7ece72d`),
+Editor-Language pro Dokument an Monaco durchgereicht (`2af6d58`).
+- `monaco-merge`-Branch lokal aus `origin/monaco`
+- Cherry-Pick `00b6ba3` (Terminal-Kontextmenü) → `9bddeea`
+- Plan-Commit `2b4d20c` (docs) → `f0d1afa`
+- Cherry-Pick `572494c` (toolbar/toc md-only) → `df3f10d`
+- Cherry-Pick `61e5a4b` (History per-Entry) → `fbbd7ba`
+- Cherry-Pick `418a35a` (Docs-Update) → `2769081` (auto-merged, kein Konflikt)
+- Cherry-Pick `bd6c122` (Test-Fixtures) → `a95115b` (reine Adds)
+  - Backend (navigation/commands/lib): konfliktfrei
+  - `editor.ts`: API-Funktionen (setSelection, getScroll, setScroll)
+    auf Monaco portiert; `editorScroll`-Event via `onDidScrollChange`
+  - `editor.bundle.js`: neu gebaut
+- 126 Cargo-Tests grün (3 neue Navigation-Tests)
+- Quick-Visual: index.md lädt mit Markdown-Highlight in Monaco ✓
+- **Offen für Schritt 7-Audit**: Verhalten beim Datei-Wechsel via
+  Automation-API zwischen zwei Dateien — der zweite `/open` greift
+  optisch nicht durch (Pre-existing? oder Cherry-Pick-Folge?). Manuell
+  via Vault-Klick testen.
 
-**Nächster Schritt:** Schritt 1 — Working-Branch `monaco-merge` von
-`origin/monaco` ausgelöst auschecken und Sauber-Build verifizieren.
+**Nächster Schritt:** Schritt 8 — Merge nach `main` (--no-ff), danach
+Schritt 9 (Banner aus CLAUDE.md raus, Plan-Doc löschen).
 
 ## Schrittliste
 
@@ -44,34 +62,37 @@ CLAUDE.md mit Migration-Banner versehen.
 - [x] CLAUDE.md mit Migrations-Banner ganz oben
 - [x] Beides committen + pushen
 
-### 1. Working-Branch
-- [ ] `git checkout -b monaco-merge origin/monaco`
-- [ ] `cd src-tauri/web && npm install` (Monaco-Deps laden)
-- [ ] `cd src-tauri && cargo build && cargo test` — sauberer Ausgangspunkt
+### 1. Working-Branch ✅
+- [x] `git checkout -b monaco-merge origin/monaco`
+- [x] `cd src-tauri/web && npm install` (Monaco-Deps laden)
+- [x] `cd src-tauri && cargo build && cargo test` — sauberer Ausgangspunkt
 
-### 2. Cherry-Pick `00b6ba3` — Terminal-Kontextmenü
-- [ ] `git cherry-pick 00b6ba3`
-- Erwartete Konflikte:
-  - `commands/app.rs`: keiner (Monaco rührt das nicht an)
-  - `lib.rs`: Mini-Konflikt am invoke_handler
-  - `dist/index.html`: kleiner Konflikt im Context-Menu-Bereich
-- [ ] Build/Test/visueller Check (Vault → Rechtsklick → „Terminal hier öffnen")
-- [ ] Resume-Marker hier updaten
+### 2. Cherry-Pick `00b6ba3` — Terminal-Kontextmenü ✅ (`9bddeea`)
+- [x] `git cherry-pick 00b6ba3`
+- Tatsächliche Konflikte: keine — automatischer Merge in `dist/index.html`
+- [x] Build + Tests grün (123 Tests)
+- [x] Visueller Check: ausgelassen, Code-Inspect bestätigt Eintrag
+- [x] Resume-Marker geupdatet
 
-### 3. Cherry-Pick `572494c` — toolbar/toc Markdown-only
-- [ ] `git cherry-pick 572494c`
-- Erwartete Konflikte:
-  - `state.rs`: leicht — `kind` in document:loaded-Payload
-  - `dist/index.html`: mittel — body.kind-* CSS, md-only-Toolbar-Klassen,
-    `applyDocKind`-Funktion, TOC-Hide-Regel, Auto-Switch-Logik in
-    `openDocument`. Monaco-Mount-Bereich orthogonal — sollte sauber
-    danebenpassen
-- [ ] Build/Test/Check (z. B. `.json` öffnen → keine MD-Toolbar, kein TOC)
-- [ ] Resume-Marker updaten
+### 3. Cherry-Pick `572494c` — toolbar/toc Markdown-only ✅ (`df3f10d`)
+- [x] `git cherry-pick 572494c`
+- Tatsächliche Konflikte: keine, automatischer Merge in `dist/index.html`
+- [x] Build + Tests grün (123 Tests)
+- [x] Visueller Check: bei `.json` keine MD-Toolbar, kein TOC ✅
+- [x] Resume-Marker geupdatet
 
-### 4. Cherry-Pick `61e5a4b` — History per-Entry (DICKER BROCKEN)
-- [ ] `git cherry-pick 61e5a4b`
-- Erwartete Konflikte:
+### 4. Cherry-Pick `61e5a4b` — History per-Entry ✅ (`fbbd7ba`)
+- [x] `git cherry-pick 61e5a4b`
+- Tatsächliche Konflikte: 2 (editor.ts + editor.bundle.js); Rest auto-merged
+- [x] editor.ts: setSelection/getScroll/setScroll auf Monaco-APIs portiert,
+      Scroll-Listener via `onDidScrollChange` (RAF-debounced)
+- [x] editor.bundle.js: Monaco-Version übernommen, dann `npm run build`
+- [x] Build + 126 Tests grün
+- [x] Visueller Sanity-Check (index.md lädt, MD-Highlight aktiv)
+- [x] Resume-Marker geupdatet
+
+#### Originaler Plan-Hinweis (für Audit-Phase)
+- Erwartete Konflikte (waren korrekt):
   - **Backend** (`navigation.rs`, `commands/nav.rs`, `commands/app.rs`,
     `commands/shell.rs`, `lib.rs`): konfliktfrei applybar — Monaco
     rührt Backend nicht an
@@ -112,15 +133,23 @@ CLAUDE.md mit Migration-Banner versehen.
 - Erwartete Konflikte: keine (reine Adds in `test-docs/syntax/`)
 - [ ] Resume-Marker updaten
 
-### 7. Vollverifikation
-- [ ] `cargo build --release && cargo test`
-- [ ] Visueller Audit der `test-docs/syntax/`-Matrix in beiden Themes:
-      JSON, TXT, HTML, XML, SQL, YAML, plus eine MD-Datei
-- [ ] Feature-Smoketest:
-      - Terminal-Kontextmenü öffnet Terminal im richtigen Verzeichnis
-      - History-Back stellt Mode/Scroll/Cursor wieder her
-      - TOC nur bei MD sichtbar, MD-Toolbar nur bei MD
-- [ ] `git push origin monaco-merge`
+### 7. Vollverifikation ✅
+- [x] `cargo test` — 129 Tests grün
+- [x] Visueller Audit der `test-docs/syntax/`-Matrix in beiden Themes
+- [x] Feature-Smoketest:
+      - Terminal-Kontextmenü ✓
+      - History-Back stellt Mode/Scroll/Cursor wieder her — zwei Bugs
+        gefunden + behoben (`7ece72d`):
+        - View-Mode-Restore: NavEntry::from clampt view_mode auf "edit"
+          für Non-Markdown-Pfade — zuvor konnte ein Non-MD-Doc nach
+          Back/Forward in einem leeren View-Body landen
+        - View-Scroll-Restore: scrollViewTo lief synchron vor dem Layout
+          des frisch ersetzten body.innerHTML → Browser klemmte auf 0.
+          Restore läuft jetzt in der gleichen RAF wie Editor-Scroll
+      - TOC nur bei MD ✓, MD-Toolbar nur bei MD ✓
+- [x] Bonus: Editor-Sprache pro Dokument an Monaco durchgereicht
+      (`2af6d58`) — vorher war Monaco auf Markdown festgenagelt
+- [x] `git push origin monaco-merge`
 
 ### 8. Merge nach main
 - [ ] `git checkout main`

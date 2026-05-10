@@ -56,11 +56,13 @@ pub async fn vault_build_tree(state: State<'_, AppState>) -> Result<String, Stri
         .lock()
         .map_err(|_| "panel state lock poisoned".to_string())?
         .data();
-    Ok(vault.build_initial_tree_html_with(
-        &workspace,
-        panel.pinned_expanded,
-        panel.recent_expanded,
-    ))
+    Ok(
+        vault.build_initial_tree_html_with(
+            &workspace,
+            panel.pinned_expanded,
+            panel.recent_expanded,
+        ),
+    )
 }
 
 #[tauri::command]

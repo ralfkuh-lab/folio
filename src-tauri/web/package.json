@@ -2,18 +2,12 @@
   "name": "folio-web",
   "version": "1.0.0",
   "private": true,
-  "description": "CodeMirror 6 bundle for Folio's Tauri shell.",
+  "description": "Monaco Editor bundle for Folio's Tauri shell.",
   "scripts": {
-    "build": "esbuild editor.ts --bundle --format=iife --global-name=FolioEditor --target=chrome120 --platform=browser --outfile=../dist/editor.bundle.js --minify --legal-comments=none"
+    "build": "node copy-monaco.js && esbuild editor.ts --bundle --format=iife --target=es2018 --platform=browser --outfile=../dist/editor.bundle.js --minify --legal-comments=none"
   },
   "dependencies": {
-    "@codemirror/commands": "^6.7.1",
-    "@codemirror/lang-markdown": "^6.3.1",
-    "@codemirror/language": "^6.10.6",
-    "@codemirror/search": "^6.5.8",
-    "@codemirror/state": "^6.4.1",
-    "@codemirror/view": "^6.34.2",
-    "@lezer/highlight": "^1.2.1"
+    "monaco-editor": "^0.52.2"
   },
   "devDependencies": {
     "esbuild": "^0.24.0"
