@@ -59,6 +59,13 @@ sonst lehnt Tauri den Build ab.
   Markdown gilt (Edit-Toolbar-Markdown-Gruppen, TOC-Rail,
   Rail-Right-Toggle), wird ausschließlich über CSS auf `.kind-markdown`
   beschränkt — keine eigene Endungs-Heuristik im Frontend.
+- **Editor-Sprache (Monaco)**: zweite, unabhängige Klassifikation neben
+  `FileKind` — `editor_language(path)` in `file_kind.rs` liefert eine
+  Monaco-Sprach-ID (`markdown`, `json`, `typescript`, …, Default
+  `plaintext`). Wird über `read_file`/`document:loaded` als `language`-
+  Feld ans Frontend gegeben und bestimmt nur das Syntax-Highlighting im
+  Monaco-Model. FileKind bleibt die Source of Truth für MD-vs-Nicht-MD
+  (Toolbar/TOC/View-Mode); Picker/Override sind als TODO geplant.
 - **History/Sitzungs-State**: `NavigationController::Entry` speichert pro
   Eintrag zusätzlich `view_mode`, `editor_scroll_y`, `editor_cursor`
   (neben `scroll_y`/`anchor`). Capture läuft automatisch über
@@ -67,6 +74,15 @@ sonst lehnt Tauri den Build ab.
   passiert ausschließlich im `navigation:changed`-Handler (Back/Forward);
   `openDocument`-Pfade (Vault-Klick, Datei-Dialog, Recent, Pin) erzeugen
   frische Entries und laden ohne Sprung.
+
+## Bekannte Einschränkungen
+
+- **Headless-Screenshots zeigen Monaco nicht**: Monaco rendert Canvas-
+  basiert und kommt in Xvfb/WebKitGTK-Sessions visuell nicht durch
+  (leerer Editor-Bereich auf dem Bild). Funktional ist alles intakt —
+  Automation-API kann Text setzen/lesen, `editor.ready=true` etc. Für
+  visuelle Verifikation des Edit-Modus braucht es einen echten
+  Bildschirm.
 
 ## GitHub
 
