@@ -26,6 +26,7 @@ pub mod ids {
     pub const FILE_RECENT_EMPTY: &str = "file.recent.empty";
     /// Prefix für dynamisch eingehängte Recent-Einträge: `file.recent.<index>`.
     pub const FILE_RECENT_ITEM_PREFIX: &str = "file.recent.";
+    pub const FILE_RENAME: &str = "file.rename";
     pub const FILE_CLOSE: &str = "file.close";
     pub const FILE_QUIT: &str = "file.quit";
     pub const EDIT_UNDO: &str = "edit.undo";
@@ -59,6 +60,12 @@ pub fn build(handle: &AppHandle, lang: &str) -> tauri::Result<Menu<Wry>> {
         .accelerator("CmdOrCtrl+Shift+S")
         .enabled(false)
         .build(handle)?;
+    // file.rename: nur bei geladenem Dokument aktiv — Frontend toggelt
+    // analog zu file.save_as via applyDocKind.
+    let item_rename = MenuItemBuilder::with_id(ids::FILE_RENAME, l.file_rename)
+        .accelerator("F2")
+        .enabled(false)
+        .build(handle)?;
     // file.close: nur bei geladenem Dokument aktiv — Frontend toggelt
     // analog zu file.save_as via applyDocKind.
     let item_close = MenuItemBuilder::with_id(ids::FILE_CLOSE, l.file_close)
@@ -82,6 +89,7 @@ pub fn build(handle: &AppHandle, lang: &str) -> tauri::Result<Menu<Wry>> {
         .item(&recent_submenu)
         .item(&item_save)
         .item(&item_save_as)
+        .item(&item_rename)
         .item(&PredefinedMenuItem::separator(handle)?)
         .item(&item_close)
         .item(&PredefinedMenuItem::separator(handle)?)
@@ -375,6 +383,16 @@ pub fn on_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
                 let state = handle.state::<crate::state::AppState>();
                 if let Err(error) = commands::file::run_save_as(&state, &handle) {
                     eprintln!("save_as failed: {error}");
+                }
+            });
+        }
+        ids::FILE_RENAME => {
+            let handle = app.clone();
+            std::thread::spawn(move || {
+                let state = handle.state::<crate::state::AppState>();
+                if let Err(error) = commands::file::run_rename_dialog(&state, &handle) {
+                    eprintln!("rename failed: {error}");
+                    let _ = handle.emit("status:error", serde_json::json!({ "message": error }));
                 }
             });
         }

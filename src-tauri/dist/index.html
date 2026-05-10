@@ -205,8 +205,8 @@
     pointer-events: none;
   }
   body.dnd-active #dnd-overlay { display: flex; }
-  #unsaved-dialog[hidden] { display: none; }
-  #unsaved-dialog {
+  #unsaved-dialog[hidden], #rename-dialog[hidden] { display: none; }
+  #unsaved-dialog, #rename-dialog {
     position: fixed;
     inset: 0;
     z-index: 10001;
@@ -254,6 +254,22 @@
     border-color: var(--accent);
     background: var(--accent);
     color: white;
+  }
+  .rename-input {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 8px;
+    margin-bottom: 14px;
+    font: inherit;
+  }
+  .rename-input:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: -1px;
+    border-color: var(--accent);
   }
   /* Zoom-Indikator (browser-ähnliche Pille beim Skalieren) */
   #zoom-indicator {
@@ -1143,6 +1159,18 @@
 <div id="zoom-indicator" hidden>100 %</div>
 <div id="dnd-overlay">Datei hier ablegen, um zu öffnen</div>
 <nav id="context-menu" role="menu"></nav>
+<div id="rename-dialog" hidden>
+  <div class="unsaved-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="rename-title">
+    <div class="unsaved-dialog__title" id="rename-title">Umbenennen</div>
+    <div class="unsaved-dialog__text" id="rename-subtitle">Neuen Dateinamen eingeben:</div>
+    <input type="text" id="rename-input" class="rename-input" autocomplete="off" spellcheck="false" />
+    <div class="unsaved-dialog__actions">
+      <button type="button" id="rename-cancel">Abbrechen</button>
+      <button type="button" id="rename-ok" class="primary">Umbenennen</button>
+    </div>
+  </div>
+</div>
+
 <div id="unsaved-dialog" hidden>
   <div class="unsaved-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="unsaved-title">
     <div class="unsaved-dialog__title" id="unsaved-title">Ungespeicherte Änderungen</div>
@@ -2408,6 +2436,57 @@
         if (!currentPath) return Promise.resolve();
         return invoke('editor_text_changed', { text: editorText() }).catch(function(){});
     }
+    // Rename-Modal: gibt einen neuen Dateinamen (ohne Pfad) zurück oder
+    // null bei Abbruch. Wird vom Vault-Kontextmenü genutzt; das Datei-
+    // Menü geht über den nativen Save-Dialog im Backend.
+    function showRenameDialog(initialName, subtitle) {
+        return new Promise(function (resolve) {
+            var dialog = $('rename-dialog');
+            var input = $('rename-input');
+            var ok = $('rename-ok');
+            var cancel = $('rename-cancel');
+            var sub = $('rename-subtitle');
+            if (!dialog || !input || !ok || !cancel) {
+                resolve(null);
+                return;
+            }
+            if (sub) sub.textContent = subtitle || 'Neuen Dateinamen eingeben:';
+            input.value = initialName || '';
+            dialog.hidden = false;
+            // Selektion: Stamm vor der Endung markieren, damit Tippen
+            // den Namen ersetzt aber die Endung erhält. Bei "notes.md"
+            // wird "notes" selektiert.
+            var dot = input.value.lastIndexOf('.');
+            input.focus();
+            if (dot > 0) input.setSelectionRange(0, dot);
+            else input.select();
+            function done(result) {
+                dialog.hidden = true;
+                ok.removeEventListener('click', onOk);
+                cancel.removeEventListener('click', onCancel);
+                input.removeEventListener('keydown', onKey);
+                document.removeEventListener('keydown', onEsc);
+                resolve(result);
+            }
+            function onOk() {
+                var v = (input.value || '').trim();
+                done(v.length ? v : null);
+            }
+            function onCancel() { done(null); }
+            function onKey(e) {
+                if (e.key === 'Enter') { e.preventDefault(); onOk(); }
+            }
+            function onEsc(e) {
+                if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+            }
+            ok.addEventListener('click', onOk);
+            cancel.addEventListener('click', onCancel);
+            input.addEventListener('keydown', onKey);
+            document.addEventListener('keydown', onEsc);
+        });
+    }
+    window.showRenameDialog = showRenameDialog;
+
     function showUnsavedDialog() {
         var dialog = $('unsaved-dialog');
         if (!dialog) return Promise.resolve('cancel');
@@ -2534,6 +2613,7 @@
         invoke('menu_set_enabled', { id: 'view.mode.view', enabled: md }).catch(function(){});
         invoke('menu_set_enabled', { id: 'view.mode.edit', enabled: hasDoc }).catch(function(){});
         invoke('menu_set_enabled', { id: 'file.save_as', enabled: hasDoc }).catch(function(){});
+        invoke('menu_set_enabled', { id: 'file.rename', enabled: hasDoc }).catch(function(){});
         invoke('menu_set_enabled', { id: 'file.close', enabled: hasDoc }).catch(function(){});
         syncCheatsheetMenu();
         // Häkchen nach dem Enable-Wechsel erneut anwenden — Tauri scheint
@@ -3106,6 +3186,7 @@
         if (!isDir) parts.push('<div class="ctx-item" data-act="open">Öffnen</div>');
         var actionsBefore = parts.length;
         var actions = [];
+        if (!isDir) actions.push('<div class="ctx-item" data-act="rename">Umbenennen…</div>');
         if (!inPinned) actions.push('<div class="ctx-item" data-act="pin">Anpinnen</div>');
         if (inPinned) actions.push('<div class="ctx-item" data-act="unpin">Vom Pin lösen</div>');
         if (inRecent) actions.push('<div class="ctx-item" data-act="remove-recent">Aus „Zuletzt" entfernen</div>');
@@ -3143,6 +3224,16 @@
                 invoke('workspace_unpin', { path: path }).catch(function(){});
             } else if (act === 'remove-recent') {
                 invoke('workspace_remove_recent', { path: path }).catch(function(){});
+            } else if (act === 'rename') {
+                var basename = path.replace(/\\/g, '/').split('/').pop() || path;
+                var parent = path.slice(0, path.length - basename.length);
+                showRenameDialog(basename, 'Neuer Dateiname für „' + basename + '":').then(function (newName) {
+                    if (!newName || newName === basename) return;
+                    var newPath = parent + newName;
+                    invoke('rename_file', { oldPath: path, newPath: newPath }).catch(function (err) {
+                        showStatus(typeof err === 'string' ? err : 'Umbenennen fehlgeschlagen');
+                    });
+                });
             } else if (act === 'show') {
                 invoke('show_in_file_manager', { path: path }).catch(function(){});
             } else if (act === 'terminal') {

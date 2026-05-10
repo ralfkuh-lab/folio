@@ -76,6 +76,148 @@ pub async fn write_file(
     Ok(())
 }
 
+/// Benennt eine Datei um. Wenn die Datei aktuell geöffnet ist, wandert
+/// der Pfad im DocumentStore mit (`rename_to`) und das Frontend bekommt
+/// per `document:loaded` den neuen `kind`/`language` für die ggf. neue
+/// Endung. Workspace.recent wird von `old_path` auf `new_path` umgehängt;
+/// der Vault wird per `vault:refresh` zum Reload getriggert.
+#[tauri::command]
+pub async fn rename_file(
+    old_path: String,
+    new_path: String,
+    state: State<'_, AppState>,
+    handle: AppHandle,
+) -> Result<String, String> {
+    if old_path == new_path {
+        return Ok(new_path);
+    }
+    let target = Path::new(&new_path);
+    if target.exists() {
+        return Err(format!(
+            "Zieldatei existiert bereits: {}",
+            target
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(&new_path)
+        ));
+    }
+    fs::rename(&old_path, &new_path).map_err(|error| error.to_string())?;
+
+    let is_current = {
+        let mut store = state
+            .document_store
+            .lock()
+            .map_err(|_| "document store lock poisoned".to_string())?;
+        if store.path.as_deref() == Some(old_path.as_str()) {
+            store
+                .rename_to(&new_path)
+                .map_err(|error| error.to_string())?;
+            true
+        } else {
+            false
+        }
+    };
+
+    let was_in_recent = if let Ok(workspace) = state.workspace.lock() {
+        workspace.recent().iter().any(|r| r.path == old_path)
+    } else {
+        false
+    };
+    if let Ok(mut workspace) = state.workspace.lock() {
+        let _ = workspace.remove_recent(&old_path);
+        if was_in_recent || is_current {
+            let _ = workspace.add_recent(new_path.clone());
+        }
+    }
+    crate::menu::refresh_recent_from_workspace(&handle);
+
+    if is_current {
+        if let Ok(mut vault) = state.vault.lock() {
+            vault.set_active(Some(new_path.clone()));
+        }
+    }
+
+    if let (Ok(workspace), Ok(vault)) = (state.workspace.lock(), state.vault.lock()) {
+        let _ = handle.emit("vault:refresh", vault.compute_refresh_delta(&workspace));
+    }
+    Ok(new_path)
+}
+
+/// Save-Dialog für „Datei → Umbenennen…" — Default-Filename ist der
+/// aktuelle Dateiname, Default-Verzeichnis das aktuelle Verzeichnis.
+/// Cancel → `Ok(None)`. Bei Pick wird `rename_file` gerufen (das den
+/// eigentlichen Move + State-Updates erledigt).
+pub fn run_rename_dialog(
+    state: &State<'_, AppState>,
+    handle: &AppHandle,
+) -> Result<Option<String>, String> {
+    let current_path = {
+        let store = state
+            .document_store
+            .lock()
+            .map_err(|_| "document store lock poisoned".to_string())?;
+        store
+            .path
+            .clone()
+            .ok_or_else(|| "Kein Dokument geöffnet.".to_string())?
+    };
+
+    let labels = menu_strings::labels("de");
+    let mut builder = handle.dialog().file().set_title("Umbenennen…");
+    let current_filename = Path::new(&current_path)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("untitled");
+    builder = builder.set_file_name(current_filename);
+    if let Some(parent) = Path::new(&current_path).parent() {
+        builder = builder.set_directory(parent);
+    }
+    builder = builder.add_filter(labels.save_as_filter_all, &["*"]);
+
+    let Some(target) = builder.blocking_save_file() else {
+        return Ok(None);
+    };
+    let new_path = file_path_to_string(target);
+    if new_path.is_empty() {
+        return Ok(None);
+    }
+    if new_path == current_path {
+        return Ok(None);
+    }
+    if Path::new(&new_path).exists() {
+        return Err(format!(
+            "Zieldatei existiert bereits: {}",
+            Path::new(&new_path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(&new_path)
+        ));
+    }
+    fs::rename(&current_path, &new_path).map_err(|error| error.to_string())?;
+
+    {
+        let mut store = state
+            .document_store
+            .lock()
+            .map_err(|_| "document store lock poisoned".to_string())?;
+        store
+            .rename_to(&new_path)
+            .map_err(|error| error.to_string())?;
+    }
+    if let Ok(mut workspace) = state.workspace.lock() {
+        let _ = workspace.remove_recent(&current_path);
+        let _ = workspace.add_recent(new_path.clone());
+    }
+    crate::menu::refresh_recent_from_workspace(handle);
+    if let Ok(mut vault) = state.vault.lock() {
+        vault.set_active(Some(new_path.clone()));
+    }
+    if let (Ok(workspace), Ok(vault)) = (state.workspace.lock(), state.vault.lock()) {
+        let _ = handle.emit("vault:refresh", vault.compute_refresh_delta(&workspace));
+    }
+    Ok(Some(new_path))
+}
+
 /// Schließt das aktuell geladene Dokument: leert den `DocumentStore`,
 /// hebt den aktiven Vault-Pfad auf und emittiert `document:closed` ans
 /// Frontend, das daraufhin Editor/Statusbar/Menü-State zurücksetzt. Der

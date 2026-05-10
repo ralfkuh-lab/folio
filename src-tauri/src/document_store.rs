@@ -185,6 +185,27 @@ impl DocumentStore {
         Ok(loaded)
     }
 
+    /// Aktualisiert den Pfad, ohne den Inhalt neu zu lesen — die Datei
+    /// liegt bereits unter `new_path` (per `fs::rename` durch den
+    /// Aufrufer). Ersetzt den Watcher und feuert den `loaded`-Callback,
+    /// damit das Frontend `kind`/`language` für die ggf. neue Endung
+    /// nachzieht. `is_dirty` bleibt erhalten — der ungespeicherte
+    /// Editor-Inhalt wandert mit der Datei mit.
+    pub fn rename_to(&mut self, new_path: &str) -> io::Result<LoadedDocument> {
+        self.path = Some(new_path.to_string());
+        self.has_external_changes = false;
+        self.watch(new_path)?;
+
+        let loaded = LoadedDocument {
+            path: new_path.to_string(),
+            text: self.text.clone(),
+        };
+        if let Some(callback) = &self.events.loaded {
+            callback(loaded.clone());
+        }
+        Ok(loaded)
+    }
+
     pub fn mark_external_changed(&mut self, path: String) {
         if self.path.as_deref() != Some(path.as_str()) {
             return;
