@@ -1,12 +1,5 @@
 # CLAUDE.md
 
-> 🚧 **Migration läuft:** Monaco-Editor wird per Cherry-Pick vom
-> `monaco`-Branch nach `main` gezogen. Vollständiger Plan und
-> Resume-Marker in [`docs/MONACO_MERGE_PLAN.md`](docs/MONACO_MERGE_PLAN.md).
-> **Zum Wiedereinstieg**: dort den Resume-Marker lesen und beim
-> nächsten offenen Schritt fortsetzen. Banner wird nach Abschluss in
-> Schritt 9 entfernt.
-
 ## Projekt
 
 **folio** — Markdown-Viewer/-Editor auf Tauri 2 + Rust. Live-Vorschau,
