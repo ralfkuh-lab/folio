@@ -530,9 +530,10 @@
     overflow: auto;
     min-width: 0;
   }
-  /* Marker-Lane fuer View-Modus — analog zum Editor (#editor-marker-lane).
-     Marker werden vom ViewFinder als position:absolute mit top:X% (relativ
-     zur Doc-scrollHeight) eingefuegt; .folio-marker bringt das Styling. */
+  /* Marker-Lane fuer View-Modus. Marker werden vom ViewFinder als
+     position:absolute mit top:X% (relativ zur Doc-scrollHeight) eingefuegt;
+     .folio-marker bringt das Styling. Im Edit-Modus übernimmt diese Aufgabe
+     Monacos eigener Overview-Ruler. */
   #view-marker-lane {
     flex: 0 0 6px;
     position: relative;
@@ -834,13 +835,6 @@
   }
   /* Monaco Editor fills container */
   #editor-mount .monaco-editor { height: 100%; }
-  /* Marker-Lane: 6px-Streifen rechts neben dem Scroller */
-  #editor-marker-lane {
-    flex: 0 0 6px;
-    position: relative;
-    background: rgba(128, 128, 128, 0.08);
-    border-left: 1px solid var(--border);
-  }
   .folio-marker {
     position: absolute;
     left: 1px;
@@ -1075,7 +1069,6 @@
   <div class="editor-region" id="editor-region">
     <div class="editor-content">
       <div id="editor-mount"></div>
-      <div id="editor-marker-lane"></div>
     </div>
   </div>
 </div>

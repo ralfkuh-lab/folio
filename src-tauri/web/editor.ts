@@ -133,8 +133,7 @@ function recomputeMatches(): void {
         findState = { term: "", total: 0, active: -1, matches: [] };
         clearDecorations();
         publishFindState();
-        renderMarkerLane();
-        return;
+            return;
     }
 
     const text = model.getValue();
@@ -167,7 +166,6 @@ function recomputeMatches(): void {
     applyDecorations();
     if (active >= 0) scrollMatchIntoView(matches[active]);
     publishFindState();
-    renderMarkerLane();
 }
 
 function applyDecorations(): void {
@@ -238,32 +236,6 @@ function publishFindState(): void {
     } catch {
         /* defensive */
     }
-}
-
-function renderMarkerLane(): void {
-    const lane = document.getElementById("editor-marker-lane");
-    if (!lane) return;
-    while (lane.firstChild) lane.removeChild(lane.firstChild);
-    if (findState.matches.length === 0) return;
-
-    const editor = editorInstance;
-    if (!editor) return;
-    const model = editor.getModel();
-    if (!model) return;
-
-    const lineCount = model.getLineCount();
-    const laneHeight = lane.clientHeight;
-    if (laneHeight <= 0) return;
-
-    findState.matches.forEach((m: FindMatch, idx: number) => {
-        const pos = model.getPositionAt(m.from);
-        const y = ((pos.lineNumber - 1) / lineCount) * laneHeight;
-        const dot = document.createElement("div");
-        dot.className =
-            "folio-marker" + (idx === findState.active ? " active" : "");
-        dot.style.top = Math.max(0, Math.min(laneHeight - 3, y)) + "px";
-        lane.appendChild(dot);
-    });
 }
 
 // ----- Mounting --------------------------------------------------------
@@ -507,7 +479,6 @@ function focus(): void {
 function layout(): void {
     if (!editorInstance) return;
     editorInstance.layout();
-    renderMarkerLane();
 }
 
 function setTheme(_mode: "light" | "dark"): void {
@@ -537,7 +508,6 @@ function closeFind(): void {
     findState = { term: "", total: 0, active: -1, matches: [] };
     publishFindState();
     clearDecorations();
-    renderMarkerLane();
     editorInstance.focus();
 }
 
@@ -564,7 +534,6 @@ function findNext(): void {
     scrollMatchIntoView(findState.matches[next]);
     publishFindState();
     applyDecorations();
-    renderMarkerLane();
 }
 
 function findPrev(): void {
@@ -575,7 +544,6 @@ function findPrev(): void {
     scrollMatchIntoView(findState.matches[prev]);
     publishFindState();
     applyDecorations();
-    renderMarkerLane();
 }
 
 // ----- Public API (window.FolioEditor) ---------------------------------
