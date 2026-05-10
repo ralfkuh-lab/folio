@@ -100,6 +100,24 @@ impl DocumentStore {
         Ok(loaded)
     }
 
+    /// Setzt den Store auf "kein Dokument geladen" zurück. Der Watcher
+    /// wird beim Drop des `RecommendedWatcher`-Felds automatisch
+    /// abgemeldet. Feuert `dirty_changed(false)`, damit das Frontend den
+    /// Dirty-Indikator zurücksetzt.
+    pub fn close(&mut self) {
+        self.path = None;
+        self.text = String::new();
+        self.is_dirty = false;
+        self.has_external_changes = false;
+        self.line_ending = LineEnding::Lf;
+        self.had_bom = false;
+        self.watcher = None;
+        self.watcher_tx = None;
+        if let Some(callback) = &self.events.dirty_changed {
+            callback(false);
+        }
+    }
+
     pub fn update_text(&mut self, text: String) {
         if self.text == text {
             return;

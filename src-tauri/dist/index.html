@@ -151,7 +151,8 @@
   .statusbar button.ti-emoji { font-size: 14px; }
   body:not(.edit-mode) .toolbar .edit-only { display: none; }
   body:not(.kind-markdown) .toolbar .md-only { display: none; }
-  body:not(.edit-mode) #cheatsheet-overlay { display: none !important; }
+  body:not(.edit-mode) #cheatsheet-overlay,
+  body:not(.kind-markdown) #cheatsheet-overlay { display: none !important; }
   .statusbar {
     grid-row: 3;
     grid-column: 1 / -1;
@@ -1355,8 +1356,13 @@
             }
             var body = contentEl.querySelector('.markdown-body');
             if (body) {
-                body.innerHTML = data.content || data.html || '';
-                if (typeof window.rewriteRelativeAssets === 'function') {
+                // Nur Markdown wird in der View-Region gerendert. Für
+                // Text/Code-Dateien würde sonst der Roh-Inhalt durch den
+                // MD-Renderer kurz aufflackern, bevor applyDocKind in
+                // den Edit-Mode wechselt.
+                var isMd = data.kind === 'markdown';
+                body.innerHTML = isMd ? (data.content || data.html || '') : '';
+                if (isMd && typeof window.rewriteRelativeAssets === 'function') {
                     window.rewriteRelativeAssets(body, data.path || '');
                 }
             }
@@ -1421,11 +1427,13 @@
             if (mode === 'edit' && typeof window.focusEditor === 'function') {
                 window.focusEditor();
             }
-            // Cheat-Sheet ist nur im Edit-Mode sinnvoll (Markdown-Shortcuts).
-            window.__TAURI__.core.invoke('menu_set_enabled', {
-                id: 'edit.cheatsheet',
-                enabled: mode === 'edit'
-            }).catch(function(){});
+            if (typeof window.syncCheatsheetMenu === 'function') window.syncCheatsheetMenu();
+            // Rückgängig/Wiederholen leben in Monaco — nur im Edit-Mode
+            // sinnvoll. Im View-Mode (statisches HTML) gibt es nichts
+            // rückgängig zu machen.
+            var core = window.__TAURI__.core;
+            core.invoke('menu_set_enabled', { id: 'edit.undo', enabled: mode === 'edit' }).catch(function(){});
+            core.invoke('menu_set_enabled', { id: 'edit.redo', enabled: mode === 'edit' }).catch(function(){});
         });
         window.__TAURI__.event.listen("app:set_theme", function (event) {
             var data = event && event.payload;
@@ -1439,6 +1447,11 @@
             if (typeof window.setEditorTheme === 'function') {
                 window.setEditorTheme(mode);
             }
+            // Theme-Submenü-Häkchen synchron halten — egal über welchen
+            // Pfad der Wechsel kam (Menü, Statusbar-Button, Init).
+            var core = window.__TAURI__.core;
+            core.invoke('menu_set_checked', { id: 'view.theme.light', checked: mode === 'light' }).catch(function(){});
+            core.invoke('menu_set_checked', { id: 'view.theme.dark', checked: mode === 'dark' }).catch(function(){});
         });
         window.__TAURI__.event.listen("panel:rail_changed", function (event) {
             var data = event && event.payload;
@@ -2500,10 +2513,16 @@
         body.classList.add('kind-' + resolved);
 
         var md = resolved === 'markdown';
+        var hasDoc = resolved !== 'unknown' && resolved !== 'binary';
         var btnView = $('tb-mode-view');
         if (btnView) {
             btnView.disabled = !md;
             btnView.title = md ? 'View (Ctrl+1)' : 'View nur für Markdown verfügbar';
+        }
+        var btnEdit = $('tb-mode-edit');
+        if (btnEdit) {
+            btnEdit.disabled = !hasDoc;
+            btnEdit.title = hasDoc ? 'Edit (Ctrl+2)' : 'Kein Dokument geladen';
         }
         var btnExport = $('tb-export');
         if (btnExport) {
@@ -2512,10 +2531,43 @@
         }
         // Menü-Items synchron halten: View-Mode nur bei MD, Save-As bei
         // jedem geladenen, lesbaren Dokument (also nicht 'unknown').
-        var hasDoc = resolved !== 'unknown' && resolved !== 'binary';
         invoke('menu_set_enabled', { id: 'view.mode.view', enabled: md }).catch(function(){});
+        invoke('menu_set_enabled', { id: 'view.mode.edit', enabled: hasDoc }).catch(function(){});
         invoke('menu_set_enabled', { id: 'file.save_as', enabled: hasDoc }).catch(function(){});
+        invoke('menu_set_enabled', { id: 'file.close', enabled: hasDoc }).catch(function(){});
+        syncCheatsheetMenu();
+        // Häkchen nach dem Enable-Wechsel erneut anwenden — Tauri scheint
+        // set_checked auf disabled Items zu verwerfen, sodass beim ersten
+        // Doc-Laden der View/Edit-Mode-Haken sonst leer bleibt, bis der
+        // User selbst umschaltet.
+        syncViewModeMenuChecks();
     }
+    // Liest den aktuellen Mode aus body.classList und setzt die Häkchen
+    // im Ansicht-Menü. Kein State neben dem DOM — gleiche Strategie wie
+    // syncCheatsheetMenu.
+    function syncViewModeMenuChecks() {
+        var body = document.body;
+        // Ohne geladenes Dokument soll kein Mode angehakt sein, auch
+        // wenn edit-mode/split-mode-Klassen noch im DOM stehen.
+        var hasDoc = !body.classList.contains('kind-unknown')
+                  && !body.classList.contains('kind-binary');
+        var mode = !hasDoc ? null
+                 : body.classList.contains('edit-mode') ? 'edit'
+                 : body.classList.contains('split-mode') ? 'split'
+                 : 'view';
+        invoke('menu_set_checked', { id: 'view.mode.view', checked: mode === 'view' }).catch(function(){});
+        invoke('menu_set_checked', { id: 'view.mode.edit', checked: mode === 'edit' }).catch(function(){});
+        invoke('menu_set_checked', { id: 'view.mode.split', checked: mode === 'split' }).catch(function(){});
+    }
+    // Cheat-Sheet ist nur im Edit-Mode bei Markdown sinnvoll. Wird
+    // sowohl von applyDocKind als auch vom app:set_mode-Listener
+    // gerufen, damit jede Zustandsänderung das Menü mitnimmt.
+    function syncCheatsheetMenu() {
+        var enabled = document.body.classList.contains('edit-mode')
+            && document.body.classList.contains('kind-markdown');
+        invoke('menu_set_enabled', { id: 'help.cheatsheet', enabled: enabled }).catch(function(){});
+    }
+    window.syncCheatsheetMenu = syncCheatsheetMenu;
     applyDocKind('unknown');
     function showStatus(msg) {
         var el = $('status-path');
@@ -2560,6 +2612,11 @@
         if (typeof window.cheatsheetSyncMode === 'function') {
             window.cheatsheetSyncMode(mode === 'edit');
         }
+        // View-Mode-Häkchen im Menü synchron halten (alle Pfade laufen
+        // hier durch: setMode(), applyShellState, navigation:changed).
+        invoke('menu_set_checked', { id: 'view.mode.view', checked: mode === 'view' }).catch(function(){});
+        invoke('menu_set_checked', { id: 'view.mode.edit', checked: mode === 'edit' }).catch(function(){});
+        invoke('menu_set_checked', { id: 'view.mode.split', checked: mode === 'split' }).catch(function(){});
     }
     function setRailButton(side, visible) {
         var btn = side === 'left' ? $('tb-rail-left') : $('tb-rail-right');
@@ -2912,6 +2969,10 @@
         html.classList.toggle('theme-dark', mode === 'dark');
         html.classList.toggle('theme-light', mode === 'light');
         if (typeof window.setEditorTheme === 'function') window.setEditorTheme(mode);
+        // Häkchen im Theme-Submenü beim Boot setzen — danach hält der
+        // app:set_theme-Listener sie synchron.
+        invoke('menu_set_checked', { id: 'view.theme.light', checked: mode === 'light' }).catch(function(){});
+        invoke('menu_set_checked', { id: 'view.theme.dark', checked: mode === 'dark' }).catch(function(){});
     }).catch(function(){});
 
     /* ----- Vault: Workspace laden + rendern + Klicks ----- */
@@ -3139,6 +3200,27 @@
         var dirty = event && event.payload && (event.payload.is_dirty || event.payload.isDirty);
         markDirty(!!dirty);
     });
+    // document:closed wird vom close_document-Command emittiert. Wir
+    // setzen die Frontend-Sicht analog zum Boot-Zustand zurück: kein
+    // Pfad, leerer Editor, „Bereit"-Statusbar, kein Word-Count.
+    listen('document:closed', function () {
+        currentPath = null;
+        cleanText = '';
+        markDirty(false);
+        if (window.FolioEditor && typeof window.FolioEditor.setText === 'function') {
+            window.FolioEditor.setText('', 'plaintext');
+        }
+        // View-Region und TOC zurücksetzen, sonst bleibt das zuletzt
+        // gerenderte HTML stehen.
+        var view = document.getElementById('view-region');
+        var body = view && view.querySelector('.markdown-body');
+        if (body) body.innerHTML = '';
+        if (typeof window.setTocList === 'function') window.setTocList('');
+        applyDocKind('unknown');
+        setStatusPath('Bereit', false);
+        updateWordCount('');
+        applyWindowTitle();
+    });
     listen('document:saved', function (event) {
         var data = event && event.payload || {};
         cleanText = data.text || editorText();
@@ -3346,17 +3428,43 @@
         ev.listen('menu:file_save', function () {
             if (isDirty) saveCurrent();
         });
+        ev.listen('menu:file_recent', function (event) {
+            var p = event && event.payload && event.payload.path;
+            if (p && typeof window.openDocument === 'function') {
+                window.openDocument(p);
+            }
+        });
+        ev.listen('menu:file_close', function () {
+            if (!currentPath) return;
+            requestSaveIfDirty().then(function (ok) {
+                if (!ok) return;
+                invoke('close_document').catch(function(){});
+            });
+        });
+        ev.listen('menu:edit_undo', function () {
+            if (window.FolioEditor && typeof window.FolioEditor.undo === 'function') {
+                window.FolioEditor.undo();
+            }
+        });
+        ev.listen('menu:edit_redo', function () {
+            if (window.FolioEditor && typeof window.FolioEditor.redo === 'function') {
+                window.FolioEditor.redo();
+            }
+        });
         ev.listen('menu:edit_find', function () {
             if (typeof window.openEditorFind === 'function') window.openEditorFind('');
         });
-        ev.listen('menu:edit_cheatsheet', function () {
+        ev.listen('menu:help_cheatsheet', function () {
             var b = $('tb-cheatsheet'); if (b) b.click();
         });
         ev.listen('menu:view_mode_view', function () { setMode('view'); });
         ev.listen('menu:view_mode_edit', function () { setMode('edit'); });
         ev.listen('menu:view_mode_split', function () { setMode('split'); });
-        ev.listen('menu:view_theme_toggle', function () {
-            var b = $('status-theme-toggle'); if (b) b.click();
+        ev.listen('menu:view_theme_light', function () {
+            invoke('theme_set', { mode: 'light' }).catch(function(){});
+        });
+        ev.listen('menu:view_theme_dark', function () {
+            invoke('theme_set', { mode: 'dark' }).catch(function(){});
         });
         ev.listen('menu:view_rail_left', function () {
             var visible = !document.body.classList.contains('vault-hidden');

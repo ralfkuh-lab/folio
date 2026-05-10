@@ -507,6 +507,18 @@ function layout(): void {
     editorInstance.layout();
 }
 
+function undo(): void {
+    if (!editorInstance) return;
+    editorInstance.focus();
+    editorInstance.trigger("menu", "undo", null);
+}
+
+function redo(): void {
+    if (!editorInstance) return;
+    editorInstance.focus();
+    editorInstance.trigger("menu", "redo", null);
+}
+
 function setTheme(_mode: "light" | "dark"): void {
     if (!monacoInstance || !editorInstance) return;
     monacoInstance.editor.setTheme(_mode === "dark" ? "vs-dark" : "vs");
@@ -584,6 +596,8 @@ function findPrev(): void {
     setScroll,
     applyReplace,
     focus,
+    undo,
+    redo,
     setTheme,
     openFind,
     closeFind,

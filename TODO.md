@@ -2,38 +2,6 @@
 
 ## Mittlere Priorität
 
-- **Menü-Vollausbau**: Vollständige Anfangs-Skizze als Soll, was bereits
-  drin ist mit ✅ markiert. Offene Punkte am besten in einem Schwung
-  (Undo/Redo + Schließen + Recent-Submenü) — der Rest steht schon.
-
-  ```
-  Datei                Bearbeiten          Ansicht                Hilfe
-  ├─ Öffnen…       ✅  ├─ Rückgängig        ├─ View            ✅  ├─ Cheat-Sheet
-  ├─ Recent ▶          ├─ Wiederholen       ├─ Edit            ✅  ├─ Über folio    ✅
-  ├─ Speichern     ✅  ├─ ─────             ├─ Split           ✅(Stub)
-  ├─ Save As…      ✅  ├─ Suchen…       ✅  ├─ ─────
-  ├─ ─────             └─ Cheat-Sheet   ✅  ├─ Theme hell/dunkel ✅(Toggle)
-  ├─ Schließen                              └─ Vault/TOC ein-/aus ✅
-  └─ Beenden       ✅
-  ```
-
-  Konkret offen:
-  - **Datei → Schließen**: aktuelles Dokument zumachen (mit Dirty-
-    Prompt), document_store leert, Editor-Mount disposed, Status zurück
-    auf „Bereit". Eigene close_document-Command nötig.
-  - **Datei → Recent ▶** (separat schon als Item gelistet): dynamisches
-    Submenü aus workspace.recent.
-  - **Bearbeiten → Rückgängig / Wiederholen**: an Monaco's Undo/Redo
-    durchreichen. Im View-Mode disabled. Editor-API-Erweiterung im
-    `editor.ts` (`undo()`, `redo()`), neuer Command oder Frontend-Hop.
-  - **Hilfe → Cheat-Sheet (Duplikat)**: Skizze hatte Cheat-Sheet sowohl
-    unter Bearbeiten als auch unter Hilfe. Aktuell nur unter Bearbeiten.
-    Klären, ob das Duplikat sinnvoll ist (analog VS Code: nur unter
-    Help) oder verzichtbar.
-  - **Ansicht → Theme hell/dunkel**: aktuell ein „Theme umschalten"-
-    Toggle. Skizze impliziert ein Submenü mit zwei Items
-    (Hell / Dunkel) + Häkchen am aktiven. Optional, der Toggle reicht
-    funktional.
 - **Config-/Einstellungen-Bereich**: Eigener Settings-Dialog/-Panel für
   Anwendungs-Einstellungen (Theme, Font/Schriftgröße, Editor-Optionen,
   Vault-Pfade, Automation-Port, …). Persistenz analog zur Window-State-
@@ -66,10 +34,6 @@
   Idee: Spendenmöglichkeit für den Autor einbinden (Plattform/Form später
   klären). Aktuell zeigt **Hilfe → Über folio** nur ein simples
   `alert("folio v…")` als Stub.
-- **Recent-Files-Submenü**: Im Menü „Datei" eine dynamische Liste der
-  zuletzt geöffneten Dateien (analog Workspace-Recents). Refresh nach
-  Open/Save-As; macht den ohnehin gepflegten `workspace.recent`-State
-  über die Tastatur erreichbar.
 - **Englisches Menü-Set**: `src-tauri/src/menu/strings.rs::en()` ist
   aktuell ein Platzhalter (gibt deutsche Strings zurück). Wenn das
   Settings-Panel die Sprachwahl bekommt, hier die englische Übersetzung

@@ -44,6 +44,7 @@ pub async fn workspace_add_recent(
         .map_err(|_| "workspace lock poisoned".to_string())?
         .add_recent(path)
         .map_err(|error| error.to_string())?;
+    crate::menu::refresh_recent_from_workspace(&handle);
     emit_vault_refresh(&state, &handle)
 }
 
@@ -59,6 +60,7 @@ pub async fn workspace_remove_recent(
         .map_err(|_| "workspace lock poisoned".to_string())?
         .remove_recent(&path)
         .map_err(|error| error.to_string())?;
+    crate::menu::refresh_recent_from_workspace(&handle);
     emit_vault_refresh(&state, &handle)
 }
 

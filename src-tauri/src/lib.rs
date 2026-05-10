@@ -115,6 +115,10 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
         .setup(|app| {
             let state = app.state::<AppState>();
             state.install_document_events(app.handle().clone())?;
+            // Recent-Submenü beim Boot mit den aktuellen workspace.recent
+            // füllen — sonst zeigt es bis zur ersten Änderung "(keine
+            // Einträge)".
+            menu::refresh_recent_from_workspace(app.handle());
             if let Some(path) = first_file_arg(std::env::args()) {
                 if let Ok(mut slot) = state.cli_open_path.lock() {
                     *slot = Some(path);
@@ -203,7 +207,9 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::file::write_file,
             commands::file::file_list,
             commands::file::save_as,
+            commands::file::close_document,
             menu::menu_set_enabled,
+            menu::menu_set_checked,
             commands::editor::editor_text_changed,
             commands::editor::editor_save_requested,
             commands::editor::discard_editor_changes,
