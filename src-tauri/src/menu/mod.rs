@@ -11,7 +11,9 @@
 pub mod strings;
 
 use crate::commands;
-use tauri::menu::{Menu, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+use tauri::menu::{
+    Menu, MenuBuilder, MenuItemBuilder, MenuItemKind, PredefinedMenuItem, SubmenuBuilder,
+};
 use tauri::{AppHandle, Emitter, Manager, Wry};
 
 pub mod ids {
@@ -37,11 +39,15 @@ pub fn build(handle: &AppHandle, lang: &str) -> tauri::Result<Menu<Wry>> {
     let item_open = MenuItemBuilder::with_id(ids::FILE_OPEN, l.file_open)
         .accelerator("CmdOrCtrl+O")
         .build(handle)?;
+    // file.save: nur bei dirty aktiv — Frontend toggelt via markDirty().
     let item_save = MenuItemBuilder::with_id(ids::FILE_SAVE, l.file_save)
         .accelerator("CmdOrCtrl+S")
+        .enabled(false)
         .build(handle)?;
+    // file.save_as: nur bei geladenem Dokument — Frontend togget via applyDocKind.
     let item_save_as = MenuItemBuilder::with_id(ids::FILE_SAVE_AS, l.file_save_as)
         .accelerator("CmdOrCtrl+Shift+S")
+        .enabled(false)
         .build(handle)?;
     let item_quit = MenuItemBuilder::with_id(ids::FILE_QUIT, l.file_quit)
         .accelerator("CmdOrCtrl+Q")
@@ -58,8 +64,10 @@ pub fn build(handle: &AppHandle, lang: &str) -> tauri::Result<Menu<Wry>> {
     let item_find = MenuItemBuilder::with_id(ids::EDIT_FIND, l.edit_find)
         .accelerator("CmdOrCtrl+F")
         .build(handle)?;
+    // edit.cheatsheet: nur im Edit-Mode — Frontend toggelt via app:set_mode.
     let item_cheatsheet = MenuItemBuilder::with_id(ids::EDIT_CHEATSHEET, l.edit_cheatsheet)
         .accelerator("F1")
+        .enabled(false)
         .build(handle)?;
     let edit_menu = SubmenuBuilder::new(handle, l.edit)
         .item(&item_find)
@@ -67,14 +75,18 @@ pub fn build(handle: &AppHandle, lang: &str) -> tauri::Result<Menu<Wry>> {
         .build()?;
 
     // Ansicht
+    // view.mode.view: nur für Markdown — Frontend toggelt via applyDocKind.
     let item_mode_view = MenuItemBuilder::with_id(ids::VIEW_MODE_VIEW, l.view_mode_view)
         .accelerator("CmdOrCtrl+1")
+        .enabled(false)
         .build(handle)?;
     let item_mode_edit = MenuItemBuilder::with_id(ids::VIEW_MODE_EDIT, l.view_mode_edit)
         .accelerator("CmdOrCtrl+2")
         .build(handle)?;
+    // view.mode.split: Stub — Feature noch nicht implementiert.
     let item_mode_split = MenuItemBuilder::with_id(ids::VIEW_MODE_SPLIT, l.view_mode_split)
         .accelerator("CmdOrCtrl+3")
+        .enabled(false)
         .build(handle)?;
     let item_theme =
         MenuItemBuilder::with_id(ids::VIEW_THEME_TOGGLE, l.view_theme_toggle).build(handle)?;
@@ -107,6 +119,44 @@ pub fn build(handle: &AppHandle, lang: &str) -> tauri::Result<Menu<Wry>> {
         .item(&view_menu)
         .item(&help_menu)
         .build()
+}
+
+/// Setzt den Enabled-State eines Menü-Items per ID. Wird vom Frontend
+/// aus den existierenden State-Wechseln gerufen (markDirty, applyDocKind,
+/// app:set_mode etc.). Unbekannte IDs sind ein No-op (keine Fehlerflut
+/// beim Initial-Render, falls die Liste sich verschiebt).
+#[tauri::command]
+pub async fn menu_set_enabled(handle: AppHandle, id: String, enabled: bool) -> Result<(), String> {
+    let Some(menu) = handle.menu() else {
+        return Ok(());
+    };
+    if let Some(item) = find_menu_item(&menu, &id) {
+        item.set_enabled(enabled).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Rekursive Suche nach einem MenuItem über alle Untermenüs.
+/// `Menu::get(id)` macht das in Tauri 2 nur top-level — wir wollen aber
+/// in die Datei/Bearbeiten/Ansicht-Submenüs rein.
+fn find_menu_item(menu: &Menu<Wry>, id: &str) -> Option<tauri::menu::MenuItem<Wry>> {
+    fn walk(items: &[MenuItemKind<Wry>], id: &str) -> Option<tauri::menu::MenuItem<Wry>> {
+        for item in items {
+            match item {
+                MenuItemKind::MenuItem(mi) if mi.id().0.as_str() == id => return Some(mi.clone()),
+                MenuItemKind::Submenu(sm) => {
+                    if let Ok(children) = sm.items() {
+                        if let Some(found) = walk(&children, id) {
+                            return Some(found);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+    walk(&menu.items().ok()?, id)
 }
 
 pub fn on_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {

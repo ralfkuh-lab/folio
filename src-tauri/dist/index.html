@@ -1421,6 +1421,11 @@
             if (mode === 'edit' && typeof window.focusEditor === 'function') {
                 window.focusEditor();
             }
+            // Cheat-Sheet ist nur im Edit-Mode sinnvoll (Markdown-Shortcuts).
+            window.__TAURI__.core.invoke('menu_set_enabled', {
+                id: 'edit.cheatsheet',
+                enabled: mode === 'edit'
+            }).catch(function(){});
         });
         window.__TAURI__.event.listen("app:set_theme", function (event) {
             var data = event && event.payload;
@@ -2360,6 +2365,7 @@
         if (el) el.classList.toggle('dirty', isDirty);
         var btn = $('tb-save');
         if (btn) btn.disabled = !isDirty;
+        invoke('menu_set_enabled', { id: 'file.save', enabled: isDirty }).catch(function(){});
         applyWindowTitle();
     }
     function fileFullName(p) {
@@ -2504,6 +2510,11 @@
             btnExport.disabled = !md;
             btnExport.title = md ? 'Exportieren…' : 'Export nur für Markdown verfügbar';
         }
+        // Menü-Items synchron halten: View-Mode nur bei MD, Save-As bei
+        // jedem geladenen, lesbaren Dokument (also nicht 'unknown').
+        var hasDoc = resolved !== 'unknown' && resolved !== 'binary';
+        invoke('menu_set_enabled', { id: 'view.mode.view', enabled: md }).catch(function(){});
+        invoke('menu_set_enabled', { id: 'file.save_as', enabled: hasDoc }).catch(function(){});
     }
     applyDocKind('unknown');
     function showStatus(msg) {

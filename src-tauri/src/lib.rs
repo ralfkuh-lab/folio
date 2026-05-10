@@ -203,6 +203,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::file::write_file,
             commands::file::file_list,
             commands::file::save_as,
+            menu::menu_set_enabled,
             commands::editor::editor_text_changed,
             commands::editor::editor_save_requested,
             commands::editor::discard_editor_changes,
