@@ -2,12 +2,6 @@
 
 ## Mittlere Priorität
 
-- **Find-Shortcuts im Monaco-Editor**: Ctrl+F und F3/Shift+F3 lösen die
-  Shell-Find-Bar derzeit nicht aus, wenn der Fokus im Editor liegt — die
-  Monaco-eigenen Shortcuts sind zwar disabled (`editor.ts:310-324`), aber
-  der ersetzende Aufruf der Shell-Find-Bar fehlt. Stattdessen entweder
-  die Shell-Bar direkt aus den Monaco-Commands öffnen oder die Shortcuts
-  auf Window-Ebene abfangen (capture phase, bevor Monaco sie sieht).
 - **Config-/Einstellungen-Bereich**: Eigener Settings-Dialog/-Panel für
   Anwendungs-Einstellungen (Theme, Font/Schriftgröße, Editor-Optionen,
   Vault-Pfade, Automation-Port, …). Persistenz analog zur Window-State-

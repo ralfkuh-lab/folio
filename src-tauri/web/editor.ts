@@ -306,20 +306,40 @@ function mount(elementId: string, initialText: string): Promise<void> {
             throw e;
         }
 
-        // Disable Monaco built-in find widget shortcuts
+        // Find-Shortcuts: Monacos eigenes Find-Widget bleibt deaktiviert,
+        // stattdessen die Shell-Find-Bar öffnen / weiterspringen. Monaco
+        // schluckt die Tasten in seinem Bubble-Handler, also müssen die
+        // addCommand-Callbacks die window-Funktionen selbst aufrufen.
         editorInstance.addCommand(
             monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyF,
             () => {
-                /* handled by shell find-bar */
+                const open = (window as any).openEditorFind;
+                if (typeof open !== "function") return;
+                // Einzeilige Selektion als Seed übernehmen (VS-Code-Verhalten);
+                // mehrzeilige Selektion ignorieren — der Find-Term ist Single-Line.
+                let seed = "";
+                if (editorInstance) {
+                    const sel = editorInstance.getSelection();
+                    const model = editorInstance.getModel();
+                    if (
+                        sel && model && !sel.isEmpty() &&
+                        sel.startLineNumber === sel.endLineNumber
+                    ) {
+                        seed = model.getValueInRange(sel) || "";
+                    }
+                }
+                open(seed);
             }
         );
         editorInstance.addCommand(monaco.KeyCode.F3, () => {
-            /* handled by shell find-bar */
+            const next = (window as any).findNext;
+            if (typeof next === "function") next();
         });
         editorInstance.addCommand(
             monaco.KeyMod.Shift | monaco.KeyCode.F3,
             () => {
-                /* handled by shell find-bar */
+                const prev = (window as any).findPrev;
+                if (typeof prev === "function") prev();
             }
         );
 
