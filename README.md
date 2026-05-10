@@ -33,9 +33,10 @@ folio/
 │   ├── src/                     # Rust-Backend
 │   │   └── commands/            # Tauri-IPC-Commands
 │   ├── tests/                   # Unit- und Integration-Tests
-│   ├── web/                     # Editor-Bundle-Quellen (editor.ts, package.json)
+│   ├── web/                     # Editor-Bundle-Quellen (editor.ts, package.json,
+│   │                            #   copy-monaco.js)
 │   ├── dist/                    # Ausgelieferte Frontend-Assets (index.html,
-│   │                            #   editor.bundle.js)
+│   │                            #   editor.bundle.js, monaco/)
 │   ├── Cargo.toml
 │   └── tauri.conf.json
 ├── scripts/                     # Linux-Helper (Icon-Install)
