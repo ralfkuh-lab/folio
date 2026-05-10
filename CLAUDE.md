@@ -84,7 +84,10 @@ sonst lehnt Tauri den Build ab.
   `editor.ready=true` etc.). Auf einer echten X11/Wayland-Sitzung
   (`DISPLAY=:0` o. ä.) rendert Monaco normal — Screenshots via
   `GET /screenshot` der Automation-API zeigen den Editor inklusive
-  Syntax-Highlighting und Zeilennummern.
+  Syntax-Highlighting und Zeilennummern. Workarounds für VPS/CI
+  (Compositor-Env-Vars, Xvfb+Mesa, WebView-Snapshot via Plugin,
+  xpra, View-Mode-Fallback) gesammelt in
+  [`docs/headless-monaco-screenshots.md`](docs/headless-monaco-screenshots.md).
 
 ## GitHub
 
