@@ -19,6 +19,14 @@
   read-only oder eigener Renderer).
 - **Syntax-Highlighting im Edit-Mode** für die Text-Klasse: CodeMirror-Lang-Plugins
   per Extension auswählen (lang-json, lang-html, lang-yaml, …).
+- **„Speichern unter"**: Aktuelles Dokument unter neuem Pfad/Namen ablegen
+  (Save-As-Dialog), inkl. optionalem Endungs-Wechsel — z. B. `.txt` mit
+  Notizen als `.md` weiterführen. Workspace-Recent updaten, document_store
+  auf den neuen Pfad umhängen.
+- **Datei-Typ ändern**: Bestehende Datei via Rename auf eine andere Endung
+  umheben (z. B. `notes.txt` → `notes.md`), damit FileKind und Editor-
+  Language automatisch nachziehen. Konflikt-Check (Zieldatei existiert),
+  Vault refreshen, History-Eintrag aktualisieren.
 - **Linux-Paket: `.md`-Icon im Datei-Manager**: Aktuell muss
   [`scripts/install-folio-icons.sh`](scripts/install-folio-icons.sh)
   manuell laufen, damit Nemo/Nautilus & Co. das Folio-Icon für `.md`

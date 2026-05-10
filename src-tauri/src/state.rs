@@ -81,6 +81,7 @@ impl AppState {
                         serde_json::json!({
                             "path": payload.path,
                             "kind": crate::file_kind::classify(&payload.path),
+                            "language": crate::file_kind::editor_language(&payload.path),
                             "text": payload.text,
                             "content": renderer::render_body(&payload.text),
                             "tocHtml": toc::render_html(&toc::extract(&payload.text)),

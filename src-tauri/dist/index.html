@@ -1292,7 +1292,7 @@
             var data = event && event.payload;
             if (!data || typeof data !== 'object') return;
             if (typeof window.loadEditorText === 'function') {
-                window.loadEditorText(data.text || '');
+                window.loadEditorText(data.text || '', data.language || '');
             }
             if (typeof window.setTocList === 'function') {
                 window.setTocList(data.tocHtml || data.toc_html || '');
@@ -1430,12 +1430,10 @@
             return false;
         });
     }
-    window.loadEditorText = function (text) {
+    window.loadEditorText = function (text, language) {
         ensureEditorMounted(text || '').then(function (ok) {
             if (!ok) return;
-            if (window.FolioEditor.getText() !== (text || '')) {
-                window.FolioEditor.setText(text || '');
-            }
+            window.FolioEditor.setText(text || '', language || 'plaintext');
             if (document.body.classList.contains('edit-mode')) {
                 window.layoutEditor();
             }

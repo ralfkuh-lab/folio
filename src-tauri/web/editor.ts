@@ -372,11 +372,29 @@ function mount(elementId: string, initialText: string): Promise<void> {
     });
 }
 
-function setText(text: string): void {
+function setText(text: string, language?: string): void {
     if (!editorInstance) return;
+    const monaco = monacoInstance;
+    const next = text || "";
+    const lang = (language && language.trim()) || "plaintext";
+    const currentModel = editorInstance.getModel();
+    const currentLang = currentModel ? currentModel.getLanguageId() : "";
+    const sameText = currentModel && currentModel.getValue() === next;
+    const sameLang = currentLang === lang;
+    if (sameText && sameLang) return;
+
     suppressTextEvent = true;
     try {
-        editorInstance.setValue(text || "");
+        if (!sameLang) {
+            // Sprache wechselt: frischen Model anlegen, alten verwerfen.
+            // setModelLanguage() würde reichen, aber ein frischer Model
+            // resettet auch die Tokenizer-/Decoration-State sauber.
+            const fresh = monaco.editor.createModel(next, lang);
+            editorInstance.setModel(fresh);
+            if (currentModel) currentModel.dispose();
+        } else {
+            editorInstance.setValue(next);
+        }
     } finally {
         suppressTextEvent = false;
     }
