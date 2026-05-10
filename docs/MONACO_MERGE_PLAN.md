@@ -31,7 +31,9 @@ Editor-API-Erweiterungen aus dem History-Commit (`setSelection`,
 
 ## Resume-Marker
 
-**Aktueller Stand:** Schritte 0–6 abgeschlossen, alle Cherry-Picks durch.
+**Aktueller Stand:** Schritte 0–7 abgeschlossen. Smoketest grün, zwei
+Folge-Bugs (View-Mode-Clamp + View-Scroll-RAF) behoben (`7ece72d`),
+Editor-Language pro Dokument an Monaco durchgereicht (`2af6d58`).
 - `monaco-merge`-Branch lokal aus `origin/monaco`
 - Cherry-Pick `00b6ba3` (Terminal-Kontextmenü) → `9bddeea`
 - Plan-Commit `2b4d20c` (docs) → `f0d1afa`
@@ -50,10 +52,8 @@ Editor-API-Erweiterungen aus dem History-Commit (`setSelection`,
   optisch nicht durch (Pre-existing? oder Cherry-Pick-Folge?). Manuell
   via Vault-Klick testen.
 
-**Nächster Schritt:** Schritt 7 — Vollverifikation. Visueller Audit der
-`test-docs/syntax/`-Matrix in beiden Themes plus Feature-Smoketest
-(Terminal-Kontextmenü, History-Restore, TOC nur bei MD). Manuell — die
-Automation-API hat sich beim 2. `/open` als unzuverlässig gezeigt.
+**Nächster Schritt:** Schritt 8 — Merge nach `main` (--no-ff), danach
+Schritt 9 (Banner aus CLAUDE.md raus, Plan-Doc löschen).
 
 ## Schrittliste
 
@@ -133,15 +133,23 @@ Automation-API hat sich beim 2. `/open` als unzuverlässig gezeigt.
 - Erwartete Konflikte: keine (reine Adds in `test-docs/syntax/`)
 - [ ] Resume-Marker updaten
 
-### 7. Vollverifikation
-- [ ] `cargo build --release && cargo test`
-- [ ] Visueller Audit der `test-docs/syntax/`-Matrix in beiden Themes:
-      JSON, TXT, HTML, XML, SQL, YAML, plus eine MD-Datei
-- [ ] Feature-Smoketest:
-      - Terminal-Kontextmenü öffnet Terminal im richtigen Verzeichnis
-      - History-Back stellt Mode/Scroll/Cursor wieder her
-      - TOC nur bei MD sichtbar, MD-Toolbar nur bei MD
-- [ ] `git push origin monaco-merge`
+### 7. Vollverifikation ✅
+- [x] `cargo test` — 129 Tests grün
+- [x] Visueller Audit der `test-docs/syntax/`-Matrix in beiden Themes
+- [x] Feature-Smoketest:
+      - Terminal-Kontextmenü ✓
+      - History-Back stellt Mode/Scroll/Cursor wieder her — zwei Bugs
+        gefunden + behoben (`7ece72d`):
+        - View-Mode-Restore: NavEntry::from clampt view_mode auf "edit"
+          für Non-Markdown-Pfade — zuvor konnte ein Non-MD-Doc nach
+          Back/Forward in einem leeren View-Body landen
+        - View-Scroll-Restore: scrollViewTo lief synchron vor dem Layout
+          des frisch ersetzten body.innerHTML → Browser klemmte auf 0.
+          Restore läuft jetzt in der gleichen RAF wie Editor-Scroll
+      - TOC nur bei MD ✓, MD-Toolbar nur bei MD ✓
+- [x] Bonus: Editor-Sprache pro Dokument an Monaco durchgereicht
+      (`2af6d58`) — vorher war Monaco auf Markdown festgenagelt
+- [x] `git push origin monaco-merge`
 
 ### 8. Merge nach main
 - [ ] `git checkout main`
