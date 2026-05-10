@@ -135,6 +135,38 @@ impl DocumentStore {
         Ok(true)
     }
 
+    /// Speichert den aktuellen Inhalt unter einem neuen Pfad. Behält
+    /// `line_ending`/`had_bom` des Originals (User-Intent: „selbe Datei,
+    /// nur woanders/anders benannt"). Hängt den Watcher um, ruft den
+    /// `loaded`-Callback (damit das Frontend mit neuem Pfad/Kind/
+    /// Sprache re-rendert) und triggert `dirty_changed(false)`.
+    pub fn save_as(&mut self, new_path: &str) -> io::Result<LoadedDocument> {
+        let disk_text = match self.line_ending {
+            LineEnding::Lf => self.text.clone(),
+            LineEnding::Crlf => self.text.replace('\n', "\r\n"),
+        };
+        let mut bytes = Vec::with_capacity(disk_text.len() + 3);
+        if self.had_bom {
+            bytes.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
+        }
+        bytes.extend_from_slice(disk_text.as_bytes());
+        fs::write(new_path, bytes)?;
+
+        self.path = Some(new_path.to_string());
+        self.has_external_changes = false;
+        self.set_dirty(false);
+        self.watch(new_path)?;
+
+        let loaded = LoadedDocument {
+            path: new_path.to_string(),
+            text: self.text.clone(),
+        };
+        if let Some(callback) = &self.events.loaded {
+            callback(loaded.clone());
+        }
+        Ok(loaded)
+    }
+
     pub fn mark_external_changed(&mut self, path: String) {
         if self.path.as_deref() != Some(path.as_str()) {
             return;
@@ -237,6 +269,27 @@ mod tests {
         store.load(path.to_str().unwrap()).unwrap();
         store.update_text("two".into());
         assert!(store.is_dirty);
+    }
+
+    #[test]
+    fn save_as_writes_target_and_updates_path() {
+        let temp = TempDir::new().unwrap();
+        let src = temp.path().join("alt.md");
+        let dst = temp.path().join("neu.md");
+        fs::write(&src, b"hello\r\n").unwrap();
+        let mut store = DocumentStore::new();
+        store.load(src.to_str().unwrap()).unwrap();
+        store.update_text("world\n".into());
+        assert!(store.is_dirty);
+        let loaded = store.save_as(dst.to_str().unwrap()).unwrap();
+        assert_eq!(dst.to_string_lossy().to_string(), loaded.path);
+        // Pfad umgehängt, dirty zurückgesetzt
+        assert_eq!(Some(dst.to_string_lossy().to_string()), store.path);
+        assert!(!store.is_dirty);
+        // Inhalt am neuen Pfad mit Original-Line-Endings (CRLF)
+        assert_eq!(b"world\r\n".to_vec(), fs::read(&dst).unwrap());
+        // Original bleibt unangetastet
+        assert_eq!(b"hello\r\n".to_vec(), fs::read(&src).unwrap());
     }
 
     #[test]

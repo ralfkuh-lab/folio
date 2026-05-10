@@ -9,6 +9,7 @@ pub mod file_resolver;
 pub mod frontmatter;
 pub mod heading_anchor;
 pub mod link_interceptor;
+pub mod menu;
 pub mod navigation;
 pub mod panel_state;
 pub mod pdf_export;
@@ -63,6 +64,8 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        .menu(|handle| menu::build(handle, "de"))
+        .on_menu_event(menu::on_menu_event)
         .manage(AppState::new())
         .on_window_event(|window, event| {
             if window.label() != "main" {
@@ -199,6 +202,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::file::read_file,
             commands::file::write_file,
             commands::file::file_list,
+            commands::file::save_as,
             commands::editor::editor_text_changed,
             commands::editor::editor_save_requested,
             commands::editor::discard_editor_changes,

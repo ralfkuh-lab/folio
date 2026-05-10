@@ -3314,6 +3314,51 @@
             close();
         });
     })();
+
+    /* ----- Anwendungs-Menü: menu:*-Events auf bestehende Funktionen routen.
+       Backend-Aktionen (Save-As, Beenden) laufen direkt in Rust; alles
+       andere triggert hier dieselbe Funktion wie der Toolbar-Pfad — so
+       gibt es nur eine Implementierung pro Aktion. */
+    (function () {
+        var ev = window.__TAURI__ && window.__TAURI__.event;
+        if (!ev || typeof ev.listen !== 'function') return;
+        ev.listen('menu:file.open', function () {
+            invoke('pick_file').then(function (path) {
+                if (path && typeof window.openDocument === 'function') {
+                    window.openDocument(path);
+                }
+            }).catch(function () {});
+        });
+        ev.listen('menu:file.save', function () {
+            if (isDirty) saveCurrent();
+        });
+        ev.listen('menu:edit.find', function () {
+            if (typeof window.openEditorFind === 'function') window.openEditorFind('');
+        });
+        ev.listen('menu:edit.cheatsheet', function () {
+            var b = $('tb-cheatsheet'); if (b) b.click();
+        });
+        ev.listen('menu:view.mode.view', function () { setMode('view'); });
+        ev.listen('menu:view.mode.edit', function () { setMode('edit'); });
+        ev.listen('menu:view.mode.split', function () { setMode('split'); });
+        ev.listen('menu:view.theme_toggle', function () {
+            var b = $('status-theme-toggle'); if (b) b.click();
+        });
+        ev.listen('menu:view.rail_left', function () {
+            var visible = !document.body.classList.contains('vault-hidden');
+            applyRailVisibility('left', !visible);
+            invoke('set_rail_visible', { side: 'left', visible: !visible }).catch(function () {});
+        });
+        ev.listen('menu:view.rail_right', function () {
+            var visible = !document.body.classList.contains('toc-hidden');
+            applyRailVisibility('right', !visible);
+            invoke('set_rail_visible', { side: 'right', visible: !visible }).catch(function () {});
+        });
+        ev.listen('menu:about', function (event) {
+            var v = (event && event.payload && event.payload.version) || '?';
+            alert('folio v' + v);
+        });
+    })();
 })();
 </script>
 </body>

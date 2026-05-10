@@ -6,21 +6,12 @@
   Anwendungs-Einstellungen (Theme, Font/Schriftgröße, Editor-Optionen,
   Vault-Pfade, Automation-Port, …). Persistenz analog zur Window-State-
   Speicherung; Aufruf über Menü oder Statusbar.
-- **Klassische Menüleiste**: Aufklappbares Menü (File, Edit, View, Help, …)
-  zusätzlich zur bestehenden Toolbar. Standard-Punkte (Öffnen, Speichern,
-  Speichern unter, Beenden / Rückgängig, Suchen / Theme, Rails / About).
-  Über Tauri-Native-Menu oder eigenes HTML/CSS-Menü; Shortcuts mit den
-  bestehenden Toolbar-Aktionen synchron halten.
 - **HTML im View-Mode rendern**: `.html`/`.htm` als Datei-Klasse "richtig" anzeigen,
   Skripte/inline-Event-Handler beim Render rauspatchen (Sandbox-iframe oder
   serverseitige Sanitization). Aktuell öffnet der Edit-Mode den Source.
 - **JSON / XML Pretty-View**: für `.json`, `.xml`, ggf. `.yaml`/`.toml` im
   View-Mode formatiert + syntaxgehighlighted anzeigen (CodeMirror-Renderer
   read-only oder eigener Renderer).
-- **„Speichern unter"**: Aktuelles Dokument unter neuem Pfad/Namen ablegen
-  (Save-As-Dialog), inkl. optionalem Endungs-Wechsel — z. B. `.txt` mit
-  Notizen als `.md` weiterführen. Workspace-Recent updaten, document_store
-  auf den neuen Pfad umhängen.
 - **Datei-Typ ändern**: Bestehende Datei via Rename auf eine andere Endung
   umheben (z. B. `notes.txt` → `notes.md`), damit FileKind und Editor-
   Language automatisch nachziehen. Konflikt-Check (Zieldatei existiert),
@@ -41,7 +32,16 @@
   sammeln, dann eine konkrete priorisieren (Provider/Datenschutz klären).
 - **About-Dialog**: Versions-/Autor-Info anzeigen, ggf. Lizenz und Build-Hash.
   Idee: Spendenmöglichkeit für den Autor einbinden (Plattform/Form später
-  klären). Aufruf z. B. über Statusbar oder Menü.
+  klären). Aktuell zeigt **Hilfe → Über folio** nur ein simples
+  `alert("folio v…")` als Stub.
+- **Recent-Files-Submenü**: Im Menü „Datei" eine dynamische Liste der
+  zuletzt geöffneten Dateien (analog Workspace-Recents). Refresh nach
+  Open/Save-As; macht den ohnehin gepflegten `workspace.recent`-State
+  über die Tastatur erreichbar.
+- **Englisches Menü-Set**: `src-tauri/src/menu/strings.rs::en()` ist
+  aktuell ein Platzhalter (gibt deutsche Strings zurück). Wenn das
+  Settings-Panel die Sprachwahl bekommt, hier die englische Übersetzung
+  ergänzen — der Builder zieht sie automatisch über `labels(lang)`.
 - **Editor-Minimap aktivierbar machen**: Monaco hat eine Minimap eingebaut
   (in `editor.ts` aktuell `minimap: { enabled: false }`). Toggle in der
   Edit-Toolbar oder Statusbar, Persistenz analog zu Theme/RailVisibility.
