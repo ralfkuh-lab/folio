@@ -137,7 +137,10 @@ pub fn on_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
             );
         }
         _ => {
-            let _ = app.emit(&format!("menu:{id}"), serde_json::json!({}));
+            // Tauri-Event-Namen erlauben keine Punkte; Menü-IDs nutzen
+            // sie aber als Namespace-Trenner (file.save). Umwandeln.
+            let event_name = format!("menu:{}", id.replace('.', "_"));
+            let _ = app.emit(&event_name, serde_json::json!({}));
         }
     }
 }
