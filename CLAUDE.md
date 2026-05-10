@@ -77,12 +77,14 @@ sonst lehnt Tauri den Build ab.
 
 ## Bekannte Einschränkungen
 
-- **Headless-Screenshots zeigen Monaco nicht**: Monaco rendert Canvas-
-  basiert und kommt in Xvfb/WebKitGTK-Sessions visuell nicht durch
-  (leerer Editor-Bereich auf dem Bild). Funktional ist alles intakt —
-  Automation-API kann Text setzen/lesen, `editor.ready=true` etc. Für
-  visuelle Verifikation des Edit-Modus braucht es einen echten
-  Bildschirm.
+- **Monaco rendert nur auf echtem Display**: Monaco ist Canvas-basiert
+  und kommt **in Xvfb/Headless-WebKitGTK-Sessions** (CI, VPS ohne X)
+  visuell nicht durch — Screenshot zeigt dann leeren Editor-Bereich.
+  Funktional bleibt alles intakt (Automation-API kann Text setzen/lesen,
+  `editor.ready=true` etc.). Auf einer echten X11/Wayland-Sitzung
+  (`DISPLAY=:0` o. ä.) rendert Monaco normal — Screenshots via
+  `GET /screenshot` der Automation-API zeigen den Editor inklusive
+  Syntax-Highlighting und Zeilennummern.
 
 ## GitHub
 
