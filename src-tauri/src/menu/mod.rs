@@ -61,9 +61,10 @@ pub fn build(handle: &AppHandle, lang: &str) -> tauri::Result<Menu<Wry>> {
         .enabled(false)
         .build(handle)?;
     // file.rename: nur bei geladenem Dokument aktiv — Frontend toggelt
-    // analog zu file.save_as via applyDocKind.
+    // analog zu file.save_as via applyDocKind. Kein Shortcut, da Inline-
+    // Rename im Vault-Kontextmenü die Standard-Geste ist und der Menü-
+    // Pfad nur den Save-As-artigen Verzeichniswechsel anbietet.
     let item_rename = MenuItemBuilder::with_id(ids::FILE_RENAME, l.file_rename)
-        .accelerator("F2")
         .enabled(false)
         .build(handle)?;
     // file.close: nur bei geladenem Dokument aktiv — Frontend toggelt
