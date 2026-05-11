@@ -21,6 +21,7 @@ import {
     afterModeSwitch as findBarAfterModeSwitch,
 } from './ui/find-bar';
 import { showUnsavedDialog } from './ui/dialogs';
+import { initExportDialog } from './ui/export-dialog';
 
 // === IIFE #1 (TOC/View bridge, Editor bridge, ViewFinder, Cheatsheet, Vault setters) ===
 
@@ -1246,120 +1247,12 @@ import { showUnsavedDialog } from './ui/dialogs';
     bind('tb-mode-edit', function () { setMode('edit'); });
     bind('tb-save', function () { if (isDirty) saveCurrent(); });
 
-    /* ----- Export-Dialog ----- */
-    var selectedLayoutId = null;
-    var selectedExportFormat = 'html';
-    var exportKeydownHandler = null;
-    function fileBaseName(p) {
-        if (!p) return 'Dokument';
-        var s = p.replace(/\\/g, '/').split('/').pop() || p;
-        return s.replace(/\.(md|markdown|mdown|mkd)$/i, '') || 'Dokument';
-    }
-    function setExportFormat(fmt) {
-        selectedExportFormat = (fmt === 'pdf') ? 'pdf' : 'html';
-        var buttons = document.querySelectorAll('#export-formats button');
-        for (var i = 0; i < buttons.length; i++) {
-            buttons[i].classList.toggle('active',
-                buttons[i].getAttribute('data-format') === selectedExportFormat);
-        }
-    }
-    function selectLayoutCard(id) {
-        selectedLayoutId = id;
-        var cards = document.querySelectorAll('#export-cards .export-card');
-        for (var i = 0; i < cards.length; i++) {
-            cards[i].classList.toggle('selected', cards[i].dataset.layoutId === id);
-        }
-        var saveBtn = $('export-save');
-        if (saveBtn) saveBtn.disabled = !id;
-    }
-    function openExportDialog() {
-        if (!document.body.classList.contains('kind-markdown')) return;
-        setExportFormat('html');
-        // Editor-Text in den Store syncen, damit die Vorschau den aktuellen Stand zeigt.
-        var sync = (document.body.classList.contains('edit-mode') && currentPath)
-            ? syncEditorTextToStore() : Promise.resolve();
-        sync.then(function () { return invoke('export_layouts'); }).then(function (layouts) {
-            var cards = $('export-cards');
-            cards.innerHTML = '';
-            (layouts || []).forEach(function (layout) {
-                var card = document.createElement('div');
-                card.className = 'export-card';
-                card.dataset.layoutId = layout.id;
-                card.tabIndex = 0;
-                card.innerHTML =
-                    '<div class="export-card__name"></div>' +
-                    '<div class="export-card__desc"></div>' +
-                    '<div class="export-card__preview"><iframe sandbox></iframe></div>';
-                card.querySelector('.export-card__name').textContent = layout.name;
-                card.querySelector('.export-card__desc').textContent = layout.description || '';
-                card.addEventListener('click', function () { selectLayoutCard(layout.id); });
-                card.addEventListener('keydown', function (e) {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        selectLayoutCard(layout.id);
-                    }
-                });
-                cards.appendChild(card);
-                invoke('export_render', { layoutId: layout.id }).then(function (html) {
-                    var iframe = card.querySelector('iframe');
-                    if (iframe && typeof html === 'string') iframe.srcdoc = html;
-                }).catch(function () {});
-            });
-            selectLayoutCard((layouts && layouts[0] && layouts[0].id) || null);
-            $('export-dialog').hidden = false;
-            exportKeydownHandler = function (e) {
-                if (e.key === 'Escape') {
-                    e.preventDefault();
-                    closeExportDialog();
-                } else if (e.key === 'Enter' && selectedLayoutId) {
-                    if (e.target && e.target.id === 'export-cancel') return;
-                    e.preventDefault();
-                    doExportSave();
-                }
-            };
-            document.addEventListener('keydown', exportKeydownHandler);
-        }).catch(function (err) {
-            showStatus(typeof err === 'string' ? err : 'Export fehlgeschlagen');
-        });
-    }
-    function closeExportDialog() {
-        $('export-dialog').hidden = true;
-        if (exportKeydownHandler) {
-            document.removeEventListener('keydown', exportKeydownHandler);
-            exportKeydownHandler = null;
-        }
-        var cards = $('export-cards');
-        if (cards) cards.innerHTML = '';
-    }
-    function doExportSave() {
-        if (!selectedLayoutId) return;
-        var fmt = selectedExportFormat;
-        var defaultName = fileBaseName(currentPath) + '.' + fmt;
-        var cmd = (fmt === 'pdf') ? 'export_pdf' : 'export_html';
-        invoke('pick_export_target', { defaultName: defaultName, format: fmt })
-            .then(function (targetPath) {
-                if (!targetPath) return;
-                showStatus('Export läuft…');
-                return invoke(cmd, { layoutId: selectedLayoutId, targetPath: targetPath })
-                    .then(function () {
-                        closeExportDialog();
-                        showStatus('Exportiert: ' + targetPath);
-                    });
-            }).catch(function (err) {
-                showStatus(typeof err === 'string' ? err : 'Export fehlgeschlagen');
-            });
-    }
-    bind('tb-export', openExportDialog);
-    bind('export-cancel', closeExportDialog);
-    bind('export-save', doExportSave);
-    var exportFormats = document.getElementById('export-formats');
-    if (exportFormats) {
-        exportFormats.addEventListener('click', function (e) {
-            var btn = e.target.closest('button[data-format]');
-            if (!btn || btn.disabled) return;
-            setExportFormat(btn.getAttribute('data-format'));
-        });
-    }
+    /* ----- Export-Dialog (Modul) ----- */
+    initExportDialog({
+        getCurrentPath: function () { return currentPath; },
+        syncEditorTextToStore: syncEditorTextToStore,
+        showStatus: showStatus,
+    });
     bind('tb-rail-left', function () {
         var btn = $('tb-rail-left'); var on = !btn.classList.contains('active');
         btn.classList.toggle('active', on);

@@ -505,8 +505,8 @@
       }
     }, 0);
   }
-  function initFindBar(deps) {
-    ensureEditorMountedDep = deps.ensureEditorMounted;
+  function initFindBar(deps2) {
+    ensureEditorMountedDep = deps2.ensureEditorMounted;
     bar = document.getElementById("find-bar");
     input2 = document.getElementById("find-input");
     counter = document.getElementById("find-counter");
@@ -620,6 +620,134 @@
         if (btn2) btn2.focus();
       }, 0);
     });
+  }
+
+  // app/ui/export-dialog.ts
+  var deps = null;
+  var selectedLayoutId = null;
+  var selectedExportFormat = "html";
+  var exportKeydownHandler = null;
+  function $2(id) {
+    return document.getElementById(id);
+  }
+  function invoke(cmd, args) {
+    return window.__TAURI__.core.invoke(cmd, args);
+  }
+  function fileBaseName(p) {
+    if (!p) return "Dokument";
+    const s = p.replace(/\\/g, "/").split("/").pop() || p;
+    return s.replace(/\.(md|markdown|mdown|mkd)$/i, "") || "Dokument";
+  }
+  function setExportFormat(fmt) {
+    selectedExportFormat = fmt === "pdf" ? "pdf" : "html";
+    const buttons = document.querySelectorAll("#export-formats button");
+    for (let i = 0; i < buttons.length; i++) {
+      buttons[i].classList.toggle(
+        "active",
+        buttons[i].getAttribute("data-format") === selectedExportFormat
+      );
+    }
+  }
+  function selectLayoutCard(id) {
+    selectedLayoutId = id;
+    const cards = document.querySelectorAll("#export-cards .export-card");
+    for (let i = 0; i < cards.length; i++) {
+      cards[i].classList.toggle("selected", cards[i].dataset.layoutId === id);
+    }
+    const saveBtn = $2("export-save");
+    if (saveBtn) saveBtn.disabled = !id;
+  }
+  function openExportDialog() {
+    if (!document.body.classList.contains("kind-markdown")) return;
+    setExportFormat("html");
+    const sync = document.body.classList.contains("edit-mode") && deps.getCurrentPath() ? deps.syncEditorTextToStore() : Promise.resolve();
+    sync.then(function() {
+      return invoke("export_layouts");
+    }).then(function(layouts) {
+      const cards = $2("export-cards");
+      cards.innerHTML = "";
+      (layouts || []).forEach(function(layout) {
+        const card = document.createElement("div");
+        card.className = "export-card";
+        card.dataset.layoutId = layout.id;
+        card.tabIndex = 0;
+        card.innerHTML = '<div class="export-card__name"></div><div class="export-card__desc"></div><div class="export-card__preview"><iframe sandbox></iframe></div>';
+        card.querySelector(".export-card__name").textContent = layout.name;
+        card.querySelector(".export-card__desc").textContent = layout.description || "";
+        card.addEventListener("click", function() {
+          selectLayoutCard(layout.id);
+        });
+        card.addEventListener("keydown", function(e) {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            selectLayoutCard(layout.id);
+          }
+        });
+        cards.appendChild(card);
+        invoke("export_render", { layoutId: layout.id }).then(function(html) {
+          const iframe = card.querySelector("iframe");
+          if (iframe && typeof html === "string") iframe.srcdoc = html;
+        }).catch(function() {
+        });
+      });
+      selectLayoutCard(layouts && layouts[0] && layouts[0].id || null);
+      $2("export-dialog").hidden = false;
+      exportKeydownHandler = function(e) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          closeExportDialog();
+        } else if (e.key === "Enter" && selectedLayoutId) {
+          if (e.target && e.target.id === "export-cancel") return;
+          e.preventDefault();
+          doExportSave();
+        }
+      };
+      document.addEventListener("keydown", exportKeydownHandler);
+    }).catch(function(err) {
+      deps.showStatus(typeof err === "string" ? err : "Export fehlgeschlagen");
+    });
+  }
+  function closeExportDialog() {
+    $2("export-dialog").hidden = true;
+    if (exportKeydownHandler) {
+      document.removeEventListener("keydown", exportKeydownHandler);
+      exportKeydownHandler = null;
+    }
+    const cards = $2("export-cards");
+    if (cards) cards.innerHTML = "";
+  }
+  function doExportSave() {
+    if (!selectedLayoutId) return;
+    const fmt = selectedExportFormat;
+    const defaultName = fileBaseName(deps.getCurrentPath()) + "." + fmt;
+    const cmd = fmt === "pdf" ? "export_pdf" : "export_html";
+    invoke("pick_export_target", { defaultName, format: fmt }).then(function(targetPath) {
+      if (!targetPath) return;
+      deps.showStatus("Export l\xE4uft\u2026");
+      return invoke(cmd, { layoutId: selectedLayoutId, targetPath }).then(function() {
+        closeExportDialog();
+        deps.showStatus("Exportiert: " + targetPath);
+      });
+    }).catch(function(err) {
+      deps.showStatus(typeof err === "string" ? err : "Export fehlgeschlagen");
+    });
+  }
+  function initExportDialog(d) {
+    deps = d;
+    const tbExport = $2("tb-export");
+    if (tbExport) tbExport.addEventListener("click", openExportDialog);
+    const cancel = $2("export-cancel");
+    if (cancel) cancel.addEventListener("click", closeExportDialog);
+    const save = $2("export-save");
+    if (save) save.addEventListener("click", doExportSave);
+    const exportFormats = $2("export-formats");
+    if (exportFormats) {
+      exportFormats.addEventListener("click", function(e) {
+        const btn2 = e.target.closest("button[data-format]");
+        if (!btn2 || btn2.disabled) return;
+        setExportFormat(btn2.getAttribute("data-format"));
+      });
+    }
   }
 
   // app/main.ts
@@ -1455,16 +1583,16 @@
   })();
   (function() {
     if (!window.__TAURI__) return;
-    var invoke = window.__TAURI__.core && window.__TAURI__.core.invoke;
-    window.__folioInvoke = invoke;
+    var invoke2 = window.__TAURI__.core && window.__TAURI__.core.invoke;
+    window.__folioInvoke = invoke2;
     var emit = window.__TAURI__.event && window.__TAURI__.event.emit;
     var listen = window.__TAURI__.event && window.__TAURI__.event.listen;
-    if (!invoke || !emit || !listen) return;
-    function $2(id) {
+    if (!invoke2 || !emit || !listen) return;
+    function $3(id) {
       return document.getElementById(id);
     }
     function bind(id, fn) {
-      var el = $2(id);
+      var el = $3(id);
       if (el) el.addEventListener("click", fn);
     }
     var currentPath = null;
@@ -1472,11 +1600,11 @@
     var cleanText2 = "";
     function markDirty(dirty) {
       isDirty = !!dirty;
-      var el = $2("status-path");
+      var el = $3("status-path");
       if (el) el.classList.toggle("dirty", isDirty);
-      var btn2 = $2("tb-save");
+      var btn2 = $3("tb-save");
       if (btn2) btn2.disabled = !isDirty;
-      invoke("menu_set_enabled", { id: "file.save", enabled: isDirty }).catch(function() {
+      invoke2("menu_set_enabled", { id: "file.save", enabled: isDirty }).catch(function() {
       });
       applyWindowTitle();
     }
@@ -1488,7 +1616,7 @@
       var name = fileFullName(currentPath);
       var title = name ? (isDirty ? "* " + name : name) + " \u2014 Folio" : "Folio";
       document.title = title;
-      invoke("set_window_title", { title }).catch(function() {
+      invoke2("set_window_title", { title }).catch(function() {
       });
     }
     function editorText() {
@@ -1504,7 +1632,7 @@
     }
     function syncEditorTextToStore() {
       if (!currentPath) return Promise.resolve();
-      return invoke("editor_text_changed", { text: editorText() }).catch(function() {
+      return invoke2("editor_text_changed", { text: editorText() }).catch(function() {
       });
     }
     function startInlineRename(path) {
@@ -1565,7 +1693,7 @@
         var lastSlash = normalized.lastIndexOf("/");
         var parent = lastSlash >= 0 ? path.slice(0, lastSlash + 1) : "";
         var newPath = parent + newName;
-        invoke("rename_file", { oldPath: path, newPath }).catch(function(err) {
+        invoke2("rename_file", { oldPath: path, newPath }).catch(function(err) {
           showStatus(typeof err === "string" ? err : "Umbenennen fehlgeschlagen");
           refreshVault();
         });
@@ -1638,7 +1766,7 @@
     window.rewriteRelativeAssets = rewriteRelativeAssets;
     function saveCurrent() {
       return syncEditorTextToStore().then(function() {
-        return invoke("editor_save_requested");
+        return invoke2("editor_save_requested");
       }).then(function(saved) {
         if (saved) {
           cleanText2 = editorText();
@@ -1655,7 +1783,7 @@
       return syncEditorTextToStore().then(showUnsavedDialog).then(function(decision) {
         if (decision === "cancel") return false;
         if (decision === "discard") {
-          return invoke("discard_editor_changes").then(function() {
+          return invoke2("discard_editor_changes").then(function() {
             cleanText2 = editorText();
             markDirty(false);
             return true;
@@ -1663,7 +1791,7 @@
             return false;
           });
         }
-        return invoke("editor_save_requested").then(function(saved) {
+        return invoke2("editor_save_requested").then(function(saved) {
           if (saved) {
             cleanText2 = editorText();
             markDirty(false);
@@ -1684,30 +1812,30 @@
       body2.classList.add("kind-" + resolved);
       var md = resolved === "markdown";
       var hasDoc = resolved !== "unknown" && resolved !== "binary";
-      var btnView = $2("tb-mode-view");
+      var btnView = $3("tb-mode-view");
       if (btnView) {
         btnView.disabled = !md;
         btnView.title = md ? "View (Ctrl+1)" : "View nur f\xFCr Markdown verf\xFCgbar";
       }
-      var btnEdit = $2("tb-mode-edit");
+      var btnEdit = $3("tb-mode-edit");
       if (btnEdit) {
         btnEdit.disabled = !hasDoc;
         btnEdit.title = hasDoc ? "Edit (Ctrl+2)" : "Kein Dokument geladen";
       }
-      var btnExport = $2("tb-export");
+      var btnExport = $3("tb-export");
       if (btnExport) {
         btnExport.disabled = !md;
         btnExport.title = md ? "Exportieren\u2026" : "Export nur f\xFCr Markdown verf\xFCgbar";
       }
-      invoke("menu_set_enabled", { id: "view.mode.view", enabled: md }).catch(function() {
+      invoke2("menu_set_enabled", { id: "view.mode.view", enabled: md }).catch(function() {
       });
-      invoke("menu_set_enabled", { id: "view.mode.edit", enabled: hasDoc }).catch(function() {
+      invoke2("menu_set_enabled", { id: "view.mode.edit", enabled: hasDoc }).catch(function() {
       });
-      invoke("menu_set_enabled", { id: "file.save_as", enabled: hasDoc }).catch(function() {
+      invoke2("menu_set_enabled", { id: "file.save_as", enabled: hasDoc }).catch(function() {
       });
-      invoke("menu_set_enabled", { id: "file.rename", enabled: hasDoc }).catch(function() {
+      invoke2("menu_set_enabled", { id: "file.rename", enabled: hasDoc }).catch(function() {
       });
-      invoke("menu_set_enabled", { id: "file.close", enabled: hasDoc }).catch(function() {
+      invoke2("menu_set_enabled", { id: "file.close", enabled: hasDoc }).catch(function() {
       });
       syncCheatsheetMenu();
       syncViewModeMenuChecks();
@@ -1716,27 +1844,27 @@
       var body2 = document.body;
       var hasDoc = !body2.classList.contains("kind-unknown") && !body2.classList.contains("kind-binary");
       var mode = !hasDoc ? null : body2.classList.contains("edit-mode") ? "edit" : body2.classList.contains("split-mode") ? "split" : "view";
-      invoke("menu_set_checked", { id: "view.mode.view", checked: mode === "view" }).catch(function() {
+      invoke2("menu_set_checked", { id: "view.mode.view", checked: mode === "view" }).catch(function() {
       });
-      invoke("menu_set_checked", { id: "view.mode.edit", checked: mode === "edit" }).catch(function() {
+      invoke2("menu_set_checked", { id: "view.mode.edit", checked: mode === "edit" }).catch(function() {
       });
-      invoke("menu_set_checked", { id: "view.mode.split", checked: mode === "split" }).catch(function() {
+      invoke2("menu_set_checked", { id: "view.mode.split", checked: mode === "split" }).catch(function() {
       });
     }
     applyDocKind("unknown");
     function showStatus(msg) {
-      var el = $2("status-path");
+      var el = $3("status-path");
       if (el) el.textContent = msg;
     }
     function openDocument(path) {
       return requestSaveIfDirty().then(function(ok) {
         if (!ok) return false;
-        return invoke("read_file", { path }).then(function(data) {
-          invoke("workspace_add_recent", { path }).catch(function() {
+        return invoke2("read_file", { path }).then(function(data) {
+          invoke2("workspace_add_recent", { path }).catch(function() {
           });
           var kind = data && data.kind;
           if (kind && kind !== "markdown" && !document.body.classList.contains("edit-mode")) {
-            invoke("set_view_mode", { mode: "edit" }).then(function() {
+            invoke2("set_view_mode", { mode: "edit" }).then(function() {
               setActiveMode("edit");
             }).catch(function() {
             });
@@ -1753,27 +1881,27 @@
     function setMode(mode) {
       return requestSaveIfDirty().then(function(ok) {
         if (!ok) return false;
-        return invoke("set_view_mode", { mode }).then(function() {
+        return invoke2("set_view_mode", { mode }).then(function() {
           setActiveMode(mode);
           return true;
         });
       });
     }
     function setActiveMode(mode) {
-      $2("tb-mode-view").classList.toggle("active", mode === "view");
-      $2("tb-mode-edit").classList.toggle("active", mode === "edit");
-      var sm = $2("status-mode");
+      $3("tb-mode-view").classList.toggle("active", mode === "view");
+      $3("tb-mode-edit").classList.toggle("active", mode === "edit");
+      var sm = $3("status-mode");
       if (sm) sm.textContent = mode === "edit" ? "Edit" : "View";
       cheatsheetSyncMode(mode === "edit");
-      invoke("menu_set_checked", { id: "view.mode.view", checked: mode === "view" }).catch(function() {
+      invoke2("menu_set_checked", { id: "view.mode.view", checked: mode === "view" }).catch(function() {
       });
-      invoke("menu_set_checked", { id: "view.mode.edit", checked: mode === "edit" }).catch(function() {
+      invoke2("menu_set_checked", { id: "view.mode.edit", checked: mode === "edit" }).catch(function() {
       });
-      invoke("menu_set_checked", { id: "view.mode.split", checked: mode === "split" }).catch(function() {
+      invoke2("menu_set_checked", { id: "view.mode.split", checked: mode === "split" }).catch(function() {
       });
     }
     function setRailButton(side, visible) {
-      var btn2 = side === "left" ? $2("tb-rail-left") : $2("tb-rail-right");
+      var btn2 = side === "left" ? $3("tb-rail-left") : $3("tb-rail-right");
       if (btn2) btn2.classList.toggle("active", !!visible);
     }
     function applyRailVisibility(side, visible) {
@@ -1816,146 +1944,40 @@
     bind("tb-save", function() {
       if (isDirty) saveCurrent();
     });
-    var selectedLayoutId = null;
-    var selectedExportFormat = "html";
-    var exportKeydownHandler = null;
-    function fileBaseName(p) {
-      if (!p) return "Dokument";
-      var s = p.replace(/\\/g, "/").split("/").pop() || p;
-      return s.replace(/\.(md|markdown|mdown|mkd)$/i, "") || "Dokument";
-    }
-    function setExportFormat(fmt) {
-      selectedExportFormat = fmt === "pdf" ? "pdf" : "html";
-      var buttons = document.querySelectorAll("#export-formats button");
-      for (var i = 0; i < buttons.length; i++) {
-        buttons[i].classList.toggle(
-          "active",
-          buttons[i].getAttribute("data-format") === selectedExportFormat
-        );
-      }
-    }
-    function selectLayoutCard(id) {
-      selectedLayoutId = id;
-      var cards = document.querySelectorAll("#export-cards .export-card");
-      for (var i = 0; i < cards.length; i++) {
-        cards[i].classList.toggle("selected", cards[i].dataset.layoutId === id);
-      }
-      var saveBtn = $2("export-save");
-      if (saveBtn) saveBtn.disabled = !id;
-    }
-    function openExportDialog() {
-      if (!document.body.classList.contains("kind-markdown")) return;
-      setExportFormat("html");
-      var sync = document.body.classList.contains("edit-mode") && currentPath ? syncEditorTextToStore() : Promise.resolve();
-      sync.then(function() {
-        return invoke("export_layouts");
-      }).then(function(layouts) {
-        var cards = $2("export-cards");
-        cards.innerHTML = "";
-        (layouts || []).forEach(function(layout) {
-          var card = document.createElement("div");
-          card.className = "export-card";
-          card.dataset.layoutId = layout.id;
-          card.tabIndex = 0;
-          card.innerHTML = '<div class="export-card__name"></div><div class="export-card__desc"></div><div class="export-card__preview"><iframe sandbox></iframe></div>';
-          card.querySelector(".export-card__name").textContent = layout.name;
-          card.querySelector(".export-card__desc").textContent = layout.description || "";
-          card.addEventListener("click", function() {
-            selectLayoutCard(layout.id);
-          });
-          card.addEventListener("keydown", function(e) {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              selectLayoutCard(layout.id);
-            }
-          });
-          cards.appendChild(card);
-          invoke("export_render", { layoutId: layout.id }).then(function(html) {
-            var iframe = card.querySelector("iframe");
-            if (iframe && typeof html === "string") iframe.srcdoc = html;
-          }).catch(function() {
-          });
-        });
-        selectLayoutCard(layouts && layouts[0] && layouts[0].id || null);
-        $2("export-dialog").hidden = false;
-        exportKeydownHandler = function(e) {
-          if (e.key === "Escape") {
-            e.preventDefault();
-            closeExportDialog();
-          } else if (e.key === "Enter" && selectedLayoutId) {
-            if (e.target && e.target.id === "export-cancel") return;
-            e.preventDefault();
-            doExportSave();
-          }
-        };
-        document.addEventListener("keydown", exportKeydownHandler);
-      }).catch(function(err) {
-        showStatus(typeof err === "string" ? err : "Export fehlgeschlagen");
-      });
-    }
-    function closeExportDialog() {
-      $2("export-dialog").hidden = true;
-      if (exportKeydownHandler) {
-        document.removeEventListener("keydown", exportKeydownHandler);
-        exportKeydownHandler = null;
-      }
-      var cards = $2("export-cards");
-      if (cards) cards.innerHTML = "";
-    }
-    function doExportSave() {
-      if (!selectedLayoutId) return;
-      var fmt = selectedExportFormat;
-      var defaultName = fileBaseName(currentPath) + "." + fmt;
-      var cmd = fmt === "pdf" ? "export_pdf" : "export_html";
-      invoke("pick_export_target", { defaultName, format: fmt }).then(function(targetPath) {
-        if (!targetPath) return;
-        showStatus("Export l\xE4uft\u2026");
-        return invoke(cmd, { layoutId: selectedLayoutId, targetPath }).then(function() {
-          closeExportDialog();
-          showStatus("Exportiert: " + targetPath);
-        });
-      }).catch(function(err) {
-        showStatus(typeof err === "string" ? err : "Export fehlgeschlagen");
-      });
-    }
-    bind("tb-export", openExportDialog);
-    bind("export-cancel", closeExportDialog);
-    bind("export-save", doExportSave);
-    var exportFormats = document.getElementById("export-formats");
-    if (exportFormats) {
-      exportFormats.addEventListener("click", function(e) {
-        var btn2 = e.target.closest("button[data-format]");
-        if (!btn2 || btn2.disabled) return;
-        setExportFormat(btn2.getAttribute("data-format"));
-      });
-    }
+    initExportDialog({
+      getCurrentPath: function() {
+        return currentPath;
+      },
+      syncEditorTextToStore,
+      showStatus
+    });
     bind("tb-rail-left", function() {
-      var btn2 = $2("tb-rail-left");
+      var btn2 = $3("tb-rail-left");
       var on = !btn2.classList.contains("active");
       btn2.classList.toggle("active", on);
-      invoke("set_rail_visible", { side: "left", visible: on }).catch(function() {
+      invoke2("set_rail_visible", { side: "left", visible: on }).catch(function() {
       });
     });
     bind("tb-rail-right", function() {
-      var btn2 = $2("tb-rail-right");
+      var btn2 = $3("tb-rail-right");
       var on = !btn2.classList.contains("active");
       btn2.classList.toggle("active", on);
-      invoke("set_rail_visible", { side: "right", visible: on }).catch(function() {
+      invoke2("set_rail_visible", { side: "right", visible: on }).catch(function() {
       });
     });
     bind("tb-find", function() {
-      invoke("open_find").catch(function() {
+      invoke2("open_find").catch(function() {
       });
     });
     bind("tb-back", function() {
       requestSaveIfDirty().then(function(ok) {
-        if (ok) invoke("go_back_and_emit").catch(function() {
+        if (ok) invoke2("go_back_and_emit").catch(function() {
         });
       });
     });
     bind("tb-forward", function() {
       requestSaveIfDirty().then(function(ok) {
-        if (ok) invoke("go_forward_and_emit").catch(function() {
+        if (ok) invoke2("go_forward_and_emit").catch(function() {
         });
       });
     });
@@ -1963,7 +1985,7 @@
       if (!window.FolioEditor || typeof window.FolioEditor.getText !== "function") return;
       var text = window.FolioEditor.getText();
       var sel = window.FolioEditor.getSelection() || { start: 0, length: 0 };
-      invoke("apply_editor_command", {
+      invoke2("apply_editor_command", {
         command: name,
         text,
         start: sel.start || 0,
@@ -2014,7 +2036,7 @@
     });
     bind("tb-cheatsheet", function() {
       if (!document.body.classList.contains("edit-mode")) return;
-      var ov = $2("cheatsheet-overlay");
+      var ov = $3("cheatsheet-overlay");
       if (!ov) return;
       if (ov.hidden) {
         showCheatSheet(JSON.stringify(cheatSheetRows.map(function(r) {
@@ -2025,13 +2047,13 @@
       }
     });
     function setStatusPath(path, dirty) {
-      var el = $2("status-path");
+      var el = $3("status-path");
       if (!el) return;
       el.textContent = path || "Bereit";
       el.classList.toggle("dirty", !!dirty);
     }
     function updateWordCount(text) {
-      var el = $2("status-wordcount");
+      var el = $3("status-wordcount");
       if (!el) return;
       if (!text) {
         el.hidden = true;
@@ -2045,7 +2067,7 @@
       el.textContent = words + " W\xF6rter \xB7 " + chars + " Zeichen \xB7 " + lines + " Zeilen";
     }
     bind("status-theme-toggle", function() {
-      invoke("theme_set", { mode: "toggle" }).catch(function() {
+      invoke2("theme_set", { mode: "toggle" }).catch(function() {
       });
     });
     initZoom();
@@ -2053,13 +2075,13 @@
       var ctrl = e.ctrlKey || e.metaKey;
       if (ctrl && e.key === "1") {
         e.preventDefault();
-        $2("tb-mode-view").click();
+        $3("tb-mode-view").click();
       } else if (ctrl && e.key === "2") {
         e.preventDefault();
-        $2("tb-mode-edit").click();
+        $3("tb-mode-edit").click();
       } else if (ctrl && (e.key === "f" || e.key === "F")) {
         e.preventDefault();
-        invoke("open_find").catch(function() {
+        invoke2("open_find").catch(function() {
         });
       } else if (e.key === "F3") {
         e.preventDefault();
@@ -2068,13 +2090,13 @@
       } else if (e.altKey && e.key === "ArrowLeft") {
         e.preventDefault();
         requestSaveIfDirty().then(function(ok) {
-          if (ok) invoke("go_back_and_emit").catch(function() {
+          if (ok) invoke2("go_back_and_emit").catch(function() {
           });
         });
       } else if (e.altKey && e.key === "ArrowRight") {
         e.preventDefault();
         requestSaveIfDirty().then(function(ok) {
-          if (ok) invoke("go_forward_and_emit").catch(function() {
+          if (ok) invoke2("go_forward_and_emit").catch(function() {
           });
         });
       } else if (ctrl && (e.key === "s" || e.key === "S")) {
@@ -2082,18 +2104,18 @@
         saveCurrent();
       }
     });
-    invoke("theme_get").then(function(mode) {
+    invoke2("theme_get").then(function(mode) {
       var html = document.documentElement;
       html.classList.toggle("theme-dark", mode === "dark");
       html.classList.toggle("theme-light", mode === "light");
       if (typeof window.setEditorTheme === "function") window.setEditorTheme(mode);
-      invoke("menu_set_checked", { id: "view.theme.light", checked: mode === "light" }).catch(function() {
+      invoke2("menu_set_checked", { id: "view.theme.light", checked: mode === "light" }).catch(function() {
       });
-      invoke("menu_set_checked", { id: "view.theme.dark", checked: mode === "dark" }).catch(function() {
+      invoke2("menu_set_checked", { id: "view.theme.dark", checked: mode === "dark" }).catch(function() {
       });
     }).catch(function() {
     });
-    var vaultTree = $2("vault-tree");
+    var vaultTree = $3("vault-tree");
     var fileIconCache = {};
     var fileIconPending = {};
     function resolveFileIcon(ext) {
@@ -2101,7 +2123,7 @@
         return Promise.resolve(fileIconCache[ext]);
       }
       if (fileIconPending[ext]) return fileIconPending[ext];
-      var p = invoke("file_icon_data_uri", { ext }).then(function(uri) {
+      var p = invoke2("file_icon_data_uri", { ext }).then(function(uri) {
         fileIconCache[ext] = uri || "";
         delete fileIconPending[ext];
         return fileIconCache[ext];
@@ -2156,12 +2178,12 @@
       if (typeof window.reapplyVaultActive === "function") window.reapplyVaultActive();
     }
     function refreshVault() {
-      invoke("vault_build_tree").then(renderVault).catch(function(err) {
+      invoke2("vault_build_tree").then(renderVault).catch(function(err) {
         console.warn("vault_build_tree failed:", err);
       });
     }
     refreshVault();
-    invoke("cli_pending_open").then(function(path) {
+    invoke2("cli_pending_open").then(function(path) {
       if (typeof path === "string" && path.length > 0) {
         openDocument(path);
       }
@@ -2182,7 +2204,7 @@
         var isDir = item.getAttribute("data-directory") === "true";
         if (!path) return;
         if (isDir) {
-          invoke("vault_expand_dir", { path }).catch(function() {
+          invoke2("vault_expand_dir", { path }).catch(function() {
           });
         } else {
           openDocument(path);
@@ -2205,7 +2227,7 @@
       var sectionLi = parentUl.parentElement;
       return !!(sectionLi && sectionLi.classList && sectionLi.classList.contains("section") && sectionLi.getAttribute("data-section") === sectionKey);
     }
-    var ctxMenu = $2("context-menu");
+    var ctxMenu = $3("context-menu");
     var ctxTarget = null;
     function openContextMenu(x, y, path, isDir, inPinned, inRecent) {
       if (!ctxMenu) return;
@@ -2247,21 +2269,21 @@
         if (act === "open" && !isDir) {
           openDocument(path);
         } else if (act === "pin") {
-          invoke("workspace_pin", { path, isDirectory: isDir }).catch(function() {
+          invoke2("workspace_pin", { path, isDirectory: isDir }).catch(function() {
           });
         } else if (act === "unpin") {
-          invoke("workspace_unpin", { path }).catch(function() {
+          invoke2("workspace_unpin", { path }).catch(function() {
           });
         } else if (act === "remove-recent") {
-          invoke("workspace_remove_recent", { path }).catch(function() {
+          invoke2("workspace_remove_recent", { path }).catch(function() {
           });
         } else if (act === "rename") {
           startInlineRename(path);
         } else if (act === "show") {
-          invoke("show_in_file_manager", { path }).catch(function() {
+          invoke2("show_in_file_manager", { path }).catch(function() {
           });
         } else if (act === "terminal") {
-          invoke("open_terminal_at", { path }).catch(function() {
+          invoke2("open_terminal_at", { path }).catch(function() {
           });
         } else if (act === "copy") {
           if (navigator.clipboard) navigator.clipboard.writeText(path).catch(function() {
@@ -2299,7 +2321,7 @@
       setStatusPath(data.path || "Bereit", false);
       updateWordCount(data.text || "");
       applyDocKind(data.kind || "unknown");
-      invoke("workspace_add_recent", { path: data.path }).catch(function() {
+      invoke2("workspace_add_recent", { path: data.path }).catch(function() {
       });
       var bar2 = document.getElementById("find-bar");
       if (bar2 && bar2.classList.contains("open") && !document.body.classList.contains("edit-mode")) {
@@ -2384,7 +2406,7 @@
       var text = e.detail || "";
       updateWordCount(text);
       if (currentPath) markDirty(text !== cleanText2);
-      invoke("editor_text_changed", { text }).catch(function() {
+      invoke2("editor_text_changed", { text }).catch(function() {
       });
     });
     initLanguagePicker();
@@ -2392,7 +2414,7 @@
       var ev = window.__TAURI__ && window.__TAURI__.event;
       if (!ev || typeof ev.listen !== "function") return;
       ev.listen("menu:file_open", function() {
-        invoke("pick_file").then(function(path) {
+        invoke2("pick_file").then(function(path) {
           if (path && typeof window.openDocument === "function") {
             window.openDocument(path);
           }
@@ -2412,7 +2434,7 @@
         if (!currentPath) return;
         requestSaveIfDirty().then(function(ok) {
           if (!ok) return;
-          invoke("close_document").catch(function() {
+          invoke2("close_document").catch(function() {
           });
         });
       });
@@ -2430,7 +2452,7 @@
         openEditorFind("");
       });
       ev.listen("menu:help_cheatsheet", function() {
-        var b = $2("tb-cheatsheet");
+        var b = $3("tb-cheatsheet");
         if (b) b.click();
       });
       ev.listen("menu:view_mode_view", function() {
@@ -2443,23 +2465,23 @@
         setMode("split");
       });
       ev.listen("menu:view_theme_light", function() {
-        invoke("theme_set", { mode: "light" }).catch(function() {
+        invoke2("theme_set", { mode: "light" }).catch(function() {
         });
       });
       ev.listen("menu:view_theme_dark", function() {
-        invoke("theme_set", { mode: "dark" }).catch(function() {
+        invoke2("theme_set", { mode: "dark" }).catch(function() {
         });
       });
       ev.listen("menu:view_rail_left", function() {
         var visible = !document.body.classList.contains("vault-hidden");
         applyRailVisibility("left", !visible);
-        invoke("set_rail_visible", { side: "left", visible: !visible }).catch(function() {
+        invoke2("set_rail_visible", { side: "left", visible: !visible }).catch(function() {
         });
       });
       ev.listen("menu:view_rail_right", function() {
         var visible = !document.body.classList.contains("toc-hidden");
         applyRailVisibility("right", !visible);
-        invoke("set_rail_visible", { side: "right", visible: !visible }).catch(function() {
+        invoke2("set_rail_visible", { side: "right", visible: !visible }).catch(function() {
         });
       });
       ev.listen("menu:about", function(event) {
