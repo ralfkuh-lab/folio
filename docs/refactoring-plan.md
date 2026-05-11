@@ -1,6 +1,6 @@
 # Refactoring-Plan: Modularisierung & Aufräumen
 
-Status: **Phase 1 in Arbeit** · Letzte Aktualisierung: 2026-05-11
+Status: **Phase 1 abgeschlossen** · Letzte Aktualisierung: 2026-05-11
 
 Architektur-/Strukturreview vom 2026-05-11 (Claude + Codex als 2. Meinung)
 ergab klare Splitting-Kandidaten und Smells. Plan ist in vier Phasen
@@ -14,29 +14,26 @@ abgrenzbare Commits, jeweils mit `cargo test + clippy + fmt` grün.
 Pure-Function-Module ohne Tauri-Coupling. Tests existieren und greifen
 ohne Anpassung weiter (Public-API über `mod.rs` re-exportiert).
 
-- [ ] **`src/editor_commands.rs` (639 LOC)** → `src/editor_commands/`
+- [x] **`src/editor_commands.rs` (639 LOC)** → `src/editor_commands/` ✓ Commit
   - `mod.rs` — `EditResult` + Re-Exports der `pub fn` Commands
   - `inline.rs` — `toggle_wrap` (bold/italic/code/strike), `insert_link`, `insert_image`
   - `lines.rs` — `toggle_line_prefix`, `toggle_numbered_list_prefix`, `cycle_heading`
   - `blocks.rs` — `insert_table`, `insert_code_block`
-  - `util.rs` — Range-/UTF-8-/Line-Helper (`clamp_range`, `clamp_to_char_boundary`,
-    `line_start_of`, `line_end_of`, `trim_eol`, `split_keep_endings`,
-    `numbered_prefix_length`, `touched_line_range`, `replace_lines`,
-    `heading_hash_count`, `insert_snippet`, `replace_selection`,
-    `insertion_newline_prefix/suffix`, `table_insertion_newline_suffix`)
-  - Verifizieren: `tests/integration_editor.rs` (5 Tests) bleibt grün.
+  - `util.rs` — Range-/UTF-8-/Line-Helper (alle `pub(super)`)
+  - Tests: 22 Unit-Tests + 5 Integration-Tests grün, Public-API unverändert.
 
-- [ ] **`src/file_icon.rs` (405 LOC)** → `src/file_icon/`
-  - `mod.rs` — Public-API (`icon_for_extension` / Cache-Wrapper), OS-Auswahl per
-    `#[cfg(target_os = …)] pub mod …` an der Modul-Deklaration
-  - `linux.rs` — Linux-Implementierung + `LINUX_ICON_THEME`-Detection
-  - `windows.rs` — Windows-Implementierung
-  - `fallback.rs` — Default-Pfad für andere Plattformen
-  - `markdown.rs` — Markdown-spezifischer eingebetteter Icon-Asset (falls vorhanden)
-  - `cache.rs` — Cache-Layer (falls separierbar)
-  - Verifizieren: existierende Tests in `file_icon.rs` (Linux- und Windows-Zweige) bleiben grün.
+- [x] **`src/file_icon.rs` (405 LOC)** → `src/file_icon/` ✓ Commit
+  - `mod.rs` — Public-API (`IconBytes`, `icon_for_extension`, Cache, Markdown-Pfad),
+    OS-Auswahl per `#[cfg(target_os = …)] mod …` an der Modul-Deklaration
+  - `linux.rs` — Linux-`compute_icon` + `LINUX_ICON_THEME`-Detection (`pub(super)`)
+  - `windows.rs` — Windows-`compute_icon` + `icon_via_assoc_query`,
+    `icon_via_shgetfileinfo`, `hicon_to_png`. Modulname kollidiert nicht mit
+    der `windows`-Crate (Extern-Prelude vs. Self-Scope).
+  - `fallback.rs` — `None`-Pfad für andere Plattformen
+  - Tests: 3 generische Unit-Tests grün (Markdown + Cache); Linux-Tests bleiben
+    `#[cfg(target_os = "linux")]`-gegated und laufen nur auf Linux.
 
-**Phase-1-Abschluss:** Commit pro Datei. `cargo build && cargo test && cargo clippy --all-targets -- -D warnings && cargo fmt --check`.
+**Phase-1-Abschluss:** Build + 128 Tests + Clippy + Fmt grün auf Windows.
 
 ### Phase 2 — mittlere Rust-Splits
 
@@ -151,7 +148,7 @@ unbedingt eigene Tasks — sie informieren die Splits.
 
 | Phase | Status | Commits |
 |---|---|---|
-| 1: risikoarme Splits | ⏳ in Arbeit | — |
+| 1: risikoarme Splits | ✅ abgeschlossen | `editor_commands`-Split + Plan, `file_icon`-Split |
 | 2: mittlere Rust-Splits | ⏸ wartet | — |
 | 3: State-Refactor + Splits | ⏸ wartet | — |
 | 4: Frontend-Build-Umbau | ⏸ wartet | — |
