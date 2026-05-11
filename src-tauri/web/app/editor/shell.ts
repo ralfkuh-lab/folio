@@ -29,6 +29,8 @@ function $(id: string): HTMLElement | null { return document.getElementById(id);
 
 // ----- Editor-API (Monaco Editor via FolioEditor-Bundle) -----
 
+export function isEditorMounted(): boolean { return editorMounted; }
+
 export function ensureEditorMounted(initial?: string): Promise<boolean> {
     if (editorMounted) return Promise.resolve(true);
     if (!window.FolioEditor || typeof window.FolioEditor.mount !== 'function') {

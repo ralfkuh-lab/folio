@@ -20,6 +20,7 @@ import { setVaultActive } from '../vault/tree';
 import { setEditorLanguageDisplay } from '../ui/language-picker';
 import { syncCheatsheetMenu } from '../ui/cheatsheet';
 import { showUnsavedDialog } from '../ui/dialogs';
+import { isEditorMounted, loadEditorText } from '../editor/shell';
 
 type Deps = {
     setActiveMode: (mode: string) => void;
@@ -88,7 +89,10 @@ export function showStatus(msg: string): void {
 }
 
 function editorText(): string {
-    if (window.FolioEditor && typeof window.FolioEditor.getText === 'function') {
+    // Nur fragen, wenn der Editor wirklich gemountet ist — sonst gibt
+    // FolioEditor.getText() im View-Mode "" zurueck und der Dirty-Check
+    // schlaegt faelschlich an (Bug: Save-Dialog beim Dateiwechsel im View-Mode).
+    if (isEditorMounted() && window.FolioEditor && typeof window.FolioEditor.getText === 'function') {
         return window.FolioEditor.getText();
     }
     return cleanText;
@@ -253,13 +257,9 @@ export function initDocumentState(d: Deps): void {
         applyDocKind(data.kind || 'unknown');
         invoke('workspace_add_recent', { path: data.path }).catch(function () {});
 
-        // 2. UI-Rendering
-        if (window.FolioEditor && typeof window.FolioEditor.setText === 'function'
-            && typeof (window as any).loadEditorText === 'function') {
-            // loadEditorText kuemmert sich um den ensureEditorMounted-Pfad;
-            // wandert in 4.5.3 nach editor/shell.ts und wird dann direkt importiert.
-            (window as any).loadEditorText(data.text || '', data.language || '');
-        }
+        // 2. UI-Rendering. loadEditorText kuemmert sich um den
+        // ensureEditorMounted-Pfad (mount-on-demand bei erstem Edit-Switch).
+        loadEditorText(data.text || '', data.language || '');
         setEditorLanguageDisplay(data.language || 'plaintext');
         setTocList(data.tocHtml || data.toc_html || '');
         const contentEl = document.getElementById('view-region');
