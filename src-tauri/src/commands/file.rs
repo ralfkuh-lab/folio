@@ -91,26 +91,45 @@ pub async fn rename_file(
     if old_path == new_path {
         return Ok(new_path);
     }
-    let target = Path::new(&new_path);
+    perform_rename(&old_path, &new_path, &state, &handle)?;
+    Ok(new_path)
+}
+
+/// Validiert + verschiebt + synchronisiert State für eine Rename-Aktion.
+/// Wird sowohl vom Tauri-Command `rename_file` (Inline-Rename im Vault)
+/// als auch von `run_rename_dialog` (Datei-Menü, Save-As-artiger
+/// Verzeichniswechsel) gerufen — beide brauchen den gleichen
+/// State-Choreografie-Block (DocumentStore, Workspace.recent,
+/// Recent-Submenü, Vault.active, `vault:refresh`).
+///
+/// Vorbedingung: `old_path != new_path`. Bei Gleichheit ist der Aufruf
+/// ein No-op und sollte vom Caller abgefangen werden.
+fn perform_rename(
+    old_path: &str,
+    new_path: &str,
+    state: &State<'_, AppState>,
+    handle: &AppHandle,
+) -> Result<(), String> {
+    let target = Path::new(new_path);
     if target.exists() {
         return Err(format!(
             "Zieldatei existiert bereits: {}",
             target
                 .file_name()
                 .and_then(|n| n.to_str())
-                .unwrap_or(&new_path)
+                .unwrap_or(new_path)
         ));
     }
-    fs::rename(&old_path, &new_path).map_err(|error| error.to_string())?;
+    fs::rename(old_path, new_path).map_err(|error| error.to_string())?;
 
     let is_current = {
         let mut store = state
             .document_store
             .lock()
             .map_err(|_| "document store lock poisoned".to_string())?;
-        if store.path.as_deref() == Some(old_path.as_str()) {
+        if store.path.as_deref() == Some(old_path) {
             store
-                .rename_to(&new_path)
+                .rename_to(new_path)
                 .map_err(|error| error.to_string())?;
             true
         } else {
@@ -124,23 +143,23 @@ pub async fn rename_file(
         false
     };
     if let Ok(mut workspace) = state.workspace.lock() {
-        let _ = workspace.remove_recent(&old_path);
+        let _ = workspace.remove_recent(old_path);
         if was_in_recent || is_current {
-            let _ = workspace.add_recent(new_path.clone());
+            let _ = workspace.add_recent(new_path.to_string());
         }
     }
-    crate::menu::refresh_recent_from_workspace(&handle);
+    crate::menu::refresh_recent_from_workspace(handle);
 
     if is_current {
         if let Ok(mut vault) = state.vault.lock() {
-            vault.set_active(Some(new_path.clone()));
+            vault.set_active(Some(new_path.to_string()));
         }
     }
 
     if let (Ok(workspace), Ok(vault)) = (state.workspace.lock(), state.vault.lock()) {
         let _ = handle.emit("vault:refresh", vault.compute_refresh_delta(&workspace));
     }
-    Ok(new_path)
+    Ok(())
 }
 
 /// Save-Dialog für „Datei → Umbenennen…" — Default-Filename ist der
@@ -184,37 +203,7 @@ pub fn run_rename_dialog(
     if new_path == current_path {
         return Ok(None);
     }
-    if Path::new(&new_path).exists() {
-        return Err(format!(
-            "Zieldatei existiert bereits: {}",
-            Path::new(&new_path)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or(&new_path)
-        ));
-    }
-    fs::rename(&current_path, &new_path).map_err(|error| error.to_string())?;
-
-    {
-        let mut store = state
-            .document_store
-            .lock()
-            .map_err(|_| "document store lock poisoned".to_string())?;
-        store
-            .rename_to(&new_path)
-            .map_err(|error| error.to_string())?;
-    }
-    if let Ok(mut workspace) = state.workspace.lock() {
-        let _ = workspace.remove_recent(&current_path);
-        let _ = workspace.add_recent(new_path.clone());
-    }
-    crate::menu::refresh_recent_from_workspace(handle);
-    if let Ok(mut vault) = state.vault.lock() {
-        vault.set_active(Some(new_path.clone()));
-    }
-    if let (Ok(workspace), Ok(vault)) = (state.workspace.lock(), state.vault.lock()) {
-        let _ = handle.emit("vault:refresh", vault.compute_refresh_delta(&workspace));
-    }
+    perform_rename(&current_path, &new_path, state, handle)?;
     Ok(Some(new_path))
 }
 
