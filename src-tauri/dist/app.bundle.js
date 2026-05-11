@@ -1974,9 +1974,6 @@
         e.preventDefault();
         var fn = e.shiftKey ? window.findPrev : window.findNext;
         if (typeof fn === "function") fn();
-      } else if (e.key === "F1") {
-        e.preventDefault();
-        if (document.body.classList.contains("edit-mode")) $("tb-cheatsheet").click();
       } else if (e.altKey && e.key === "ArrowLeft") {
         e.preventDefault();
         requestSaveIfDirty().then(function(ok) {

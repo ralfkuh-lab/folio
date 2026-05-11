@@ -140,8 +140,8 @@ pub fn build(handle: &AppHandle, lang: &str) -> tauri::Result<Menu<Wry>> {
     // Hilfe
     // help.cheatsheet: nur im Edit-Mode bei Markdown-Dokumenten — Frontend
     // toggelt via app:set_mode + applyDocKind.
+    // Kein Accelerator: F1 ist Monacos Command-Palette im Editor-Fokus.
     let item_cheatsheet = MenuItemBuilder::with_id(ids::HELP_CHEATSHEET, l.help_cheatsheet)
-        .accelerator("F1")
         .enabled(false)
         .build(handle)?;
     let item_about = MenuItemBuilder::with_id(ids::HELP_ABOUT, l.help_about).build(handle)?;
