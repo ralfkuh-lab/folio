@@ -8,6 +8,11 @@ Vault-Navigation, Workspace-Pins, HTTP-Automation-API für E2E-Tests.
 Offene Aufgaben werden in [`TODO.md`](TODO.md) gepflegt (priorisiert: hoch /
 mittel / niedrig). Vor Vorschlägen, was als nächstes ansteht, dort nachsehen.
 
+Laufende Strukturarbeiten (Modul-Splits, State-Konsolidierungen, geplanter
+Frontend-Build-Umbau) tracken wir in
+[`docs/refactoring-plan.md`](docs/refactoring-plan.md). Phasen 1-3 sind
+abgeschlossen, Phase 4 (Frontend-Bundle) ist eigener Sprint.
+
 ## Tech-Stack
 
 - Rust 2021, Tauri 2
