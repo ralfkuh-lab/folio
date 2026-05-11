@@ -172,6 +172,79 @@
     });
   }
 
+  // app/ui/zoom.ts
+  var ZOOM_KEY = "folio.zoom";
+  var ZOOM_STEP = 0.1;
+  var ZOOM_MIN = 0.5;
+  var ZOOM_MAX = 3;
+  var current = 1;
+  var indicator = null;
+  var hideTimer = null;
+  var fadeTimer = null;
+  function showIndicator(z) {
+    if (!indicator) return;
+    indicator.textContent = Math.round(z * 100) + " %";
+    indicator.hidden = false;
+    requestAnimationFrame(function() {
+      indicator.classList.add("visible");
+    });
+    if (hideTimer) clearTimeout(hideTimer);
+    if (fadeTimer) clearTimeout(fadeTimer);
+    hideTimer = setTimeout(function() {
+      indicator.classList.remove("visible");
+      fadeTimer = setTimeout(function() {
+        indicator.hidden = true;
+      }, 250);
+    }, 1500);
+  }
+  function loadStoredZoom() {
+    const z = parseFloat(localStorage.getItem(ZOOM_KEY));
+    return isFinite(z) && z > 0 ? z : 1;
+  }
+  function applyZoom(z, opts) {
+    z = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(z * 100) / 100));
+    current = z;
+    if (window.__TAURI__ && window.__TAURI__.core) {
+      window.__TAURI__.core.invoke("set_webview_zoom", { zoom: z }).catch(function() {
+      });
+    }
+    try {
+      localStorage.setItem(ZOOM_KEY, String(z));
+    } catch (_) {
+    }
+    if (!opts || opts.indicator !== false) showIndicator(z);
+    return z;
+  }
+  function adjustZoom(delta) {
+    return applyZoom(current + delta);
+  }
+  function resetZoom() {
+    return applyZoom(1);
+  }
+  function initZoom() {
+    indicator = document.getElementById("zoom-indicator");
+    applyZoom(loadStoredZoom(), { indicator: false });
+    window.addEventListener("wheel", function(e) {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      e.stopPropagation();
+      adjustZoom(e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP);
+    }, { capture: true, passive: false });
+    document.addEventListener("keydown", function(e) {
+      if (!e.ctrlKey && !e.metaKey) return;
+      if (e.key === "0") {
+        e.preventDefault();
+        resetZoom();
+      } else if (e.key === "+" || e.key === "=") {
+        e.preventDefault();
+        adjustZoom(ZOOM_STEP);
+      } else if (e.key === "-" || e.key === "_") {
+        e.preventDefault();
+        adjustZoom(-ZOOM_STEP);
+      }
+    });
+  }
+
   // app/main.ts
   (function() {
     var post2 = function(msg) {
@@ -1886,74 +1959,7 @@
       invoke("theme_set", { mode: "toggle" }).catch(function() {
       });
     });
-    (function() {
-      var ZOOM_KEY = "folio.zoom";
-      var ZOOM_STEP = 0.1;
-      var ZOOM_MIN = 0.5;
-      var ZOOM_MAX = 3;
-      var current = 1;
-      var indicator = $("zoom-indicator");
-      var hideTimer = null;
-      var fadeTimer = null;
-      function showIndicator(z) {
-        if (!indicator) return;
-        indicator.textContent = Math.round(z * 100) + " %";
-        indicator.hidden = false;
-        requestAnimationFrame(function() {
-          indicator.classList.add("visible");
-        });
-        if (hideTimer) clearTimeout(hideTimer);
-        if (fadeTimer) clearTimeout(fadeTimer);
-        hideTimer = setTimeout(function() {
-          indicator.classList.remove("visible");
-          fadeTimer = setTimeout(function() {
-            indicator.hidden = true;
-          }, 250);
-        }, 1500);
-      }
-      function loadStoredZoom() {
-        var z = parseFloat(localStorage.getItem(ZOOM_KEY));
-        return isFinite(z) && z > 0 ? z : 1;
-      }
-      function applyZoom(z, opts) {
-        z = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(z * 100) / 100));
-        current = z;
-        invoke("set_webview_zoom", { zoom: z }).catch(function() {
-        });
-        try {
-          localStorage.setItem(ZOOM_KEY, String(z));
-        } catch (e) {
-        }
-        if (!opts || opts.indicator !== false) showIndicator(z);
-        return z;
-      }
-      function adjustZoom(delta) {
-        return applyZoom(current + delta);
-      }
-      function resetZoom() {
-        return applyZoom(1);
-      }
-      applyZoom(loadStoredZoom(), { indicator: false });
-      window.addEventListener("wheel", function(e) {
-        if (!e.ctrlKey && !e.metaKey) return;
-        e.preventDefault();
-        e.stopPropagation();
-        adjustZoom(e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP);
-      }, { capture: true, passive: false });
-      document.addEventListener("keydown", function(e) {
-        if (!e.ctrlKey && !e.metaKey) return;
-        if (e.key === "0") {
-          e.preventDefault();
-          resetZoom();
-        } else if (e.key === "+" || e.key === "=") {
-          e.preventDefault();
-          adjustZoom(ZOOM_STEP);
-        } else if (e.key === "-" || e.key === "_") {
-          e.preventDefault();
-          adjustZoom(-ZOOM_STEP);
-        }
-      });
-    })();
+    initZoom();
     document.addEventListener("keydown", function(e) {
       var ctrl = e.ctrlKey || e.metaKey;
       if (ctrl && e.key === "1") {

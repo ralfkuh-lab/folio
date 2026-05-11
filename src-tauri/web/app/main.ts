@@ -11,6 +11,7 @@ import {
     syncCheatsheetMenu,
     cheatSheetRows,
 } from './ui/cheatsheet';
+import { initZoom } from './ui/zoom';
 
 // === IIFE #1 (TOC/View bridge, Editor bridge, ViewFinder, Cheatsheet, Vault setters) ===
 
@@ -1681,63 +1682,8 @@ import {
     bind('status-theme-toggle', function () { invoke('theme_set', { mode: 'toggle' }).catch(function(){}); });
 
     /* ----- Tastatur-Shortcuts ----- */
-    /* ----- WebView-Zoom (Ctrl+Mausrad / Ctrl+0 / Ctrl+± ) ----- */
-    (function () {
-        var ZOOM_KEY = 'folio.zoom';
-        var ZOOM_STEP = 0.1;
-        var ZOOM_MIN = 0.5;
-        var ZOOM_MAX = 3.0;
-        var current = 1.0;
-        var indicator = $('zoom-indicator');
-        var hideTimer = null;
-        var fadeTimer = null;
-        function showIndicator(z) {
-            if (!indicator) return;
-            indicator.textContent = Math.round(z * 100) + ' %';
-            indicator.hidden = false;
-            // requestAnimationFrame, damit die Transition aus 'hidden' heraus greift
-            requestAnimationFrame(function () { indicator.classList.add('visible'); });
-            if (hideTimer) clearTimeout(hideTimer);
-            if (fadeTimer) clearTimeout(fadeTimer);
-            hideTimer = setTimeout(function () {
-                indicator.classList.remove('visible');
-                fadeTimer = setTimeout(function () { indicator.hidden = true; }, 250);
-            }, 1500);
-        }
-        function loadStoredZoom() {
-            var z = parseFloat(localStorage.getItem(ZOOM_KEY));
-            return (isFinite(z) && z > 0) ? z : 1.0;
-        }
-        function applyZoom(z, opts) {
-            z = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(z * 100) / 100));
-            current = z;
-            // Native Webview-Zoom — passt Viewport-Einheiten korrekt an,
-            // im Gegensatz zu document.documentElement.style.zoom.
-            invoke('set_webview_zoom', { zoom: z }).catch(function () { /* ignore */ });
-            try { localStorage.setItem(ZOOM_KEY, String(z)); } catch (e) { /* ignore */ }
-            if (!opts || opts.indicator !== false) showIndicator(z);
-            return z;
-        }
-        function adjustZoom(delta) { return applyZoom(current + delta); }
-        function resetZoom() { return applyZoom(1.0); }
-        // Beim Boot persistierten Zoom anwenden — ohne Indikator-Flash
-        applyZoom(loadStoredZoom(), { indicator: false });
-        // Ctrl+Mausrad → Zoom in/out. capture:true greift, bevor Monaco im
-        // Editor-Fokus das Wheel-Event mit stopPropagation verschluckt.
-        window.addEventListener('wheel', function (e) {
-            if (!e.ctrlKey && !e.metaKey) return;
-            e.preventDefault();
-            e.stopPropagation();
-            adjustZoom(e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP);
-        }, { capture: true, passive: false });
-        // Ctrl+0 reset, Ctrl++ / Ctrl+- als Bonus
-        document.addEventListener('keydown', function (e) {
-            if (!e.ctrlKey && !e.metaKey) return;
-            if (e.key === '0') { e.preventDefault(); resetZoom(); }
-            else if (e.key === '+' || e.key === '=') { e.preventDefault(); adjustZoom(ZOOM_STEP); }
-            else if (e.key === '-' || e.key === '_') { e.preventDefault(); adjustZoom(-ZOOM_STEP); }
-        });
-    })();
+    /* ----- WebView-Zoom (Modul) ----- */
+    initZoom();
 
     document.addEventListener('keydown', function (e) {
         var ctrl = e.ctrlKey || e.metaKey;
