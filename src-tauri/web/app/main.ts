@@ -165,22 +165,7 @@ import {
     initRails();
 
     // ----- Vault-Tree (Modul) — siehe vault/tree.ts -----
-    // openDocument lebt heute noch in IIFE #2; wir verdrahten den Tree
-    // ueber einen Getter, der zur Init-Zeit noch nicht bekannte Funktion
-    // erst beim Klick aufloest.
-    initVaultTree({
-        openDocument: function (path) {
-            // openDocument wird in IIFE #2 als var definiert (Hoisting greift
-            // bei function declarations dort, hier aber als window-Bridge).
-            if (typeof (window as any).openDocument === 'function') {
-                (window as any).openDocument(path);
-            } else {
-                if (window.__TAURI__ && window.__TAURI__.event) {
-                    window.__TAURI__.event.emit('shell:event', { type: 'open', path });
-                }
-            }
-        },
-    });
+    initVaultTree({ openDocument });
 
     // ----- Cheat-Sheet-Overlay (Modul) -----
     initCheatsheet();
@@ -346,7 +331,7 @@ import {
         var html = document.documentElement;
         html.classList.toggle('theme-dark', mode === 'dark');
         html.classList.toggle('theme-light', mode === 'light');
-        if (typeof window.setEditorTheme === 'function') window.setEditorTheme(mode);
+        setEditorTheme(mode);
         // Häkchen im Theme-Submenü beim Boot setzen — danach hält der
         // app:set_theme-Listener sie synchron.
         invoke('menu_set_checked', { id: 'view.theme.light', checked: mode === 'light' }).catch(function(){});
@@ -428,7 +413,7 @@ import {
     listen('automation:set_editor_text', function (event) {
         var data = event && event.payload || {};
         var text = data.text || '';
-        if (typeof window.loadEditorText === 'function') window.loadEditorText(text);
+        loadEditorText(text);
         updateWordCount(text);
         if (currentPath) markDirty(text !== cleanText);
     });
@@ -460,9 +445,7 @@ import {
         // den Menü-IDs in mod.rs (Punkt).
         ev.listen('menu:file_open', function () {
             invoke('pick_file').then(function (path) {
-                if (path && typeof window.openDocument === 'function') {
-                    window.openDocument(path);
-                }
+                if (path) openDocument(path);
             }).catch(function () {});
         });
         ev.listen('menu:file_save', function () {
@@ -470,9 +453,7 @@ import {
         });
         ev.listen('menu:file_recent', function (event) {
             var p = event && event.payload && event.payload.path;
-            if (p && typeof window.openDocument === 'function') {
-                window.openDocument(p);
-            }
+            if (p) openDocument(p);
         });
         ev.listen('menu:file_close', function () {
             if (!getCurrentPath()) return;

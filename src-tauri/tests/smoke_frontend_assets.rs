@@ -42,12 +42,16 @@ fn app_css_bundle_is_packaged_with_dist() {
 }
 
 #[test]
-fn app_bundle_carries_the_ipc_wrapper() {
+fn app_bundle_carries_the_cross_bundle_bridges() {
     let bundle =
         fs::read_to_string(dist_path("app.bundle.js")).expect("app.bundle.js should be readable");
     assert!(
         bundle.contains("__folioInvoke"),
         "app.bundle.js must publish the Tauri invoke wrapper as window.__folioInvoke"
+    );
+    assert!(
+        bundle.contains("openDocument"),
+        "app.bundle.js must publish openDocument on window (Link-Klick aus editor.bundle.js)"
     );
 }
 
