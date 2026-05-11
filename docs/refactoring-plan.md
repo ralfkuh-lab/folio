@@ -1,6 +1,6 @@
 # Refactoring-Plan: Modularisierung & Aufräumen
 
-Status: **Phase 1 abgeschlossen** · Letzte Aktualisierung: 2026-05-11
+Status: **Phase 2 abgeschlossen** · Letzte Aktualisierung: 2026-05-11
 
 Architektur-/Strukturreview vom 2026-05-11 (Claude + Codex als 2. Meinung)
 ergab klare Splitting-Kandidaten und Smells. Plan ist in vier Phasen
@@ -39,27 +39,27 @@ ohne Anpassung weiter (Public-API über `mod.rs` re-exportiert).
 
 Mehr Bewegung, aber klare fachliche Grenzen. Public-API bleibt stabil.
 
-- [ ] **`src/automation.rs` (770 LOC)** → `src/automation/`
-  - `mod.rs` — `AutomationServer`, `AutomationServerHandle`, Public-Surface
+- [x] **`src/automation.rs` (770 LOC)** → `src/automation/` ✓ Commit
+  - `mod.rs` — `AutomationServer/Handle` + Re-Exports (Public-API stabil)
+  - `context.rs` — `AutomationContext`
   - `router.rs` — `build_router`, `build_mock_router`
   - `types.rs` — Request/Response-DTOs
-  - `error.rs` — `ApiError`, `ApiResult`, `IntoResponse`-Impl
-  - `middleware.rs` — `loopback_only`, CORS, `preflight`
-  - `handlers/state.rs` — `get_state`, `mock_get_state`
-  - `handlers/document.rs` — `post_open`, `post_save`, `post_editor_text`, `post_quit` (+ Mocks)
-  - `handlers/ui.rs` — `post_mode`, `post_theme`, `post_rail`, `post_click`, `post_focus`, `post_find`, `post_find_text`, `post_resize`, `post_toc_activate`
-  - `screenshot.rs` — `get_screenshot`, `capture_png`
-  - `mock.rs` — `MockAutomationState`, Mock-Router
-  - Verifizieren: `tests/smoke_automation.rs` (7 Tests) bleibt grün.
+  - `error.rs` — `ApiError`, `ApiResult`, `ok`, `json_payload`, `IntoResponse`-Impl
+  - `middleware.rs` — `loopback_only`, CORS, `preflight`, Fallbacks
+  - `helpers.rs` — `emit`, `main_window`
+  - `mock.rs` — `MockAutomationState` (Default)
+  - `handlers/{state,document,ui,screenshot}.rs` — Route-Handler nach Domäne
+  - Sichtbarkeit: `pub(super)` / `pub(in crate::automation)`. Tests
+    (`tests/smoke_automation.rs`, 7 Tests) grün ohne Anpassung.
 
-- [ ] **`src/menu/mod.rs` (416 LOC)** → erweitere `src/menu/`
-  - `mod.rs` — Public-Surface
-  - `ids.rs` — alle Item-ID-Konstanten
+- [x] **`src/menu/mod.rs` (416 LOC)** → erweitere `src/menu/` ✓ Commit
+  - `mod.rs` — Public-Surface (`build`, `on_menu_event`, `refresh_recent_from_workspace`,
+    `rebuild_recent_submenu`, `menu_set_enabled`, `menu_set_checked`, `pub mod strings`)
+  - `ids.rs` — alle Item-ID-Konstanten (`pub(super)`)
   - `build.rs` — `build()` mit Menü-Konstruktion
   - `events.rs` — `on_menu_event` Dispatcher
   - `recent.rs` — `rebuild_recent_submenu`, `refresh_recent_from_workspace`, `recent_label`
   - `lookup.rs` — `find_menu_item`, `find_submenu`, `find_check_menu_item`
-  - Verifizieren: Menü-Funktionalität manuell durchklicken (Save-As, Recent, Toggle-Items).
 
 ### Phase 3 — State-Choreografie aufräumen, dann splitten
 
@@ -149,6 +149,6 @@ unbedingt eigene Tasks — sie informieren die Splits.
 | Phase | Status | Commits |
 |---|---|---|
 | 1: risikoarme Splits | ✅ abgeschlossen | `editor_commands`-Split + Plan, `file_icon`-Split |
-| 2: mittlere Rust-Splits | ⏸ wartet | — |
+| 2: mittlere Rust-Splits | ✅ abgeschlossen | `automation`-Split, `menu`-Split |
 | 3: State-Refactor + Splits | ⏸ wartet | — |
 | 4: Frontend-Build-Umbau | ⏸ wartet | — |
