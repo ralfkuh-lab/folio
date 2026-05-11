@@ -579,6 +579,49 @@
     });
   }
 
+  // app/ui/dialogs.ts
+  function $(id) {
+    return document.getElementById(id);
+  }
+  function showUnsavedDialog() {
+    const dialog = $("unsaved-dialog");
+    if (!dialog) return Promise.resolve("cancel");
+    dialog.hidden = false;
+    return new Promise(function(resolve) {
+      function done(decision) {
+        dialog.hidden = true;
+        $("unsaved-save").removeEventListener("click", save);
+        $("unsaved-discard").removeEventListener("click", discard);
+        $("unsaved-cancel").removeEventListener("click", cancel);
+        document.removeEventListener("keydown", onKey);
+        resolve(decision);
+      }
+      function save() {
+        done("save");
+      }
+      function discard() {
+        done("discard");
+      }
+      function cancel() {
+        done("cancel");
+      }
+      function onKey(e) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          cancel();
+        }
+      }
+      $("unsaved-save").addEventListener("click", save);
+      $("unsaved-discard").addEventListener("click", discard);
+      $("unsaved-cancel").addEventListener("click", cancel);
+      document.addEventListener("keydown", onKey);
+      setTimeout(function() {
+        const btn2 = $("unsaved-save");
+        if (btn2) btn2.focus();
+      }, 0);
+    });
+  }
+
   // app/main.ts
   (function() {
     var post2 = function(msg) {
@@ -1417,11 +1460,11 @@
     var emit = window.__TAURI__.event && window.__TAURI__.event.emit;
     var listen = window.__TAURI__.event && window.__TAURI__.event.listen;
     if (!invoke || !emit || !listen) return;
-    function $(id) {
+    function $2(id) {
       return document.getElementById(id);
     }
     function bind(id, fn) {
-      var el = $(id);
+      var el = $2(id);
       if (el) el.addEventListener("click", fn);
     }
     var currentPath = null;
@@ -1429,9 +1472,9 @@
     var cleanText2 = "";
     function markDirty(dirty) {
       isDirty = !!dirty;
-      var el = $("status-path");
+      var el = $2("status-path");
       if (el) el.classList.toggle("dirty", isDirty);
-      var btn2 = $("tb-save");
+      var btn2 = $2("tb-save");
       if (btn2) btn2.disabled = !isDirty;
       invoke("menu_set_enabled", { id: "file.save", enabled: isDirty }).catch(function() {
       });
@@ -1464,58 +1507,6 @@
       return invoke("editor_text_changed", { text: editorText() }).catch(function() {
       });
     }
-    function showRenameDialog(initialName, subtitle) {
-      return new Promise(function(resolve) {
-        var dialog = $("rename-dialog");
-        var input3 = $("rename-input");
-        var ok = $("rename-ok");
-        var cancel = $("rename-cancel");
-        var sub = $("rename-subtitle");
-        if (!dialog || !input3 || !ok || !cancel) {
-          resolve(null);
-          return;
-        }
-        if (sub) sub.textContent = subtitle || "Neuen Dateinamen eingeben:";
-        input3.value = initialName || "";
-        dialog.hidden = false;
-        var dot = input3.value.lastIndexOf(".");
-        input3.focus();
-        if (dot > 0) input3.setSelectionRange(0, dot);
-        else input3.select();
-        function done(result) {
-          dialog.hidden = true;
-          ok.removeEventListener("click", onOk);
-          cancel.removeEventListener("click", onCancel);
-          input3.removeEventListener("keydown", onKey);
-          document.removeEventListener("keydown", onEsc);
-          resolve(result);
-        }
-        function onOk() {
-          var v = (input3.value || "").trim();
-          done(v.length ? v : null);
-        }
-        function onCancel() {
-          done(null);
-        }
-        function onKey(e) {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            onOk();
-          }
-        }
-        function onEsc(e) {
-          if (e.key === "Escape") {
-            e.preventDefault();
-            onCancel();
-          }
-        }
-        ok.addEventListener("click", onOk);
-        cancel.addEventListener("click", onCancel);
-        input3.addEventListener("keydown", onKey);
-        document.addEventListener("keydown", onEsc);
-      });
-    }
-    window.showRenameDialog = showRenameDialog;
     function startInlineRename(path) {
       if (!path) return;
       var nodes = document.querySelectorAll("#vault-tree li.node[data-path]");
@@ -1608,44 +1599,6 @@
       else input3.select();
     }
     window.startInlineRename = startInlineRename;
-    function showUnsavedDialog() {
-      var dialog = $("unsaved-dialog");
-      if (!dialog) return Promise.resolve("cancel");
-      dialog.hidden = false;
-      return new Promise(function(resolve) {
-        function done(decision) {
-          dialog.hidden = true;
-          $("unsaved-save").removeEventListener("click", save);
-          $("unsaved-discard").removeEventListener("click", discard);
-          $("unsaved-cancel").removeEventListener("click", cancel);
-          document.removeEventListener("keydown", onKey);
-          resolve(decision);
-        }
-        function save() {
-          done("save");
-        }
-        function discard() {
-          done("discard");
-        }
-        function cancel() {
-          done("cancel");
-        }
-        function onKey(e) {
-          if (e.key === "Escape") {
-            e.preventDefault();
-            cancel();
-          }
-        }
-        $("unsaved-save").addEventListener("click", save);
-        $("unsaved-discard").addEventListener("click", discard);
-        $("unsaved-cancel").addEventListener("click", cancel);
-        document.addEventListener("keydown", onKey);
-        setTimeout(function() {
-          var btn2 = $("unsaved-save");
-          if (btn2) btn2.focus();
-        }, 0);
-      });
-    }
     function renderDocumentPayload(data) {
       if (!data || typeof data !== "object") return;
       if (typeof window.setTocList === "function") {
@@ -1731,17 +1684,17 @@
       body2.classList.add("kind-" + resolved);
       var md = resolved === "markdown";
       var hasDoc = resolved !== "unknown" && resolved !== "binary";
-      var btnView = $("tb-mode-view");
+      var btnView = $2("tb-mode-view");
       if (btnView) {
         btnView.disabled = !md;
         btnView.title = md ? "View (Ctrl+1)" : "View nur f\xFCr Markdown verf\xFCgbar";
       }
-      var btnEdit = $("tb-mode-edit");
+      var btnEdit = $2("tb-mode-edit");
       if (btnEdit) {
         btnEdit.disabled = !hasDoc;
         btnEdit.title = hasDoc ? "Edit (Ctrl+2)" : "Kein Dokument geladen";
       }
-      var btnExport = $("tb-export");
+      var btnExport = $2("tb-export");
       if (btnExport) {
         btnExport.disabled = !md;
         btnExport.title = md ? "Exportieren\u2026" : "Export nur f\xFCr Markdown verf\xFCgbar";
@@ -1772,7 +1725,7 @@
     }
     applyDocKind("unknown");
     function showStatus(msg) {
-      var el = $("status-path");
+      var el = $2("status-path");
       if (el) el.textContent = msg;
     }
     function openDocument(path) {
@@ -1807,9 +1760,9 @@
       });
     }
     function setActiveMode(mode) {
-      $("tb-mode-view").classList.toggle("active", mode === "view");
-      $("tb-mode-edit").classList.toggle("active", mode === "edit");
-      var sm = $("status-mode");
+      $2("tb-mode-view").classList.toggle("active", mode === "view");
+      $2("tb-mode-edit").classList.toggle("active", mode === "edit");
+      var sm = $2("status-mode");
       if (sm) sm.textContent = mode === "edit" ? "Edit" : "View";
       cheatsheetSyncMode(mode === "edit");
       invoke("menu_set_checked", { id: "view.mode.view", checked: mode === "view" }).catch(function() {
@@ -1820,7 +1773,7 @@
       });
     }
     function setRailButton(side, visible) {
-      var btn2 = side === "left" ? $("tb-rail-left") : $("tb-rail-right");
+      var btn2 = side === "left" ? $2("tb-rail-left") : $2("tb-rail-right");
       if (btn2) btn2.classList.toggle("active", !!visible);
     }
     function applyRailVisibility(side, visible) {
@@ -1887,7 +1840,7 @@
       for (var i = 0; i < cards.length; i++) {
         cards[i].classList.toggle("selected", cards[i].dataset.layoutId === id);
       }
-      var saveBtn = $("export-save");
+      var saveBtn = $2("export-save");
       if (saveBtn) saveBtn.disabled = !id;
     }
     function openExportDialog() {
@@ -1897,7 +1850,7 @@
       sync.then(function() {
         return invoke("export_layouts");
       }).then(function(layouts) {
-        var cards = $("export-cards");
+        var cards = $2("export-cards");
         cards.innerHTML = "";
         (layouts || []).forEach(function(layout) {
           var card = document.createElement("div");
@@ -1924,7 +1877,7 @@
           });
         });
         selectLayoutCard(layouts && layouts[0] && layouts[0].id || null);
-        $("export-dialog").hidden = false;
+        $2("export-dialog").hidden = false;
         exportKeydownHandler = function(e) {
           if (e.key === "Escape") {
             e.preventDefault();
@@ -1941,12 +1894,12 @@
       });
     }
     function closeExportDialog() {
-      $("export-dialog").hidden = true;
+      $2("export-dialog").hidden = true;
       if (exportKeydownHandler) {
         document.removeEventListener("keydown", exportKeydownHandler);
         exportKeydownHandler = null;
       }
-      var cards = $("export-cards");
+      var cards = $2("export-cards");
       if (cards) cards.innerHTML = "";
     }
     function doExportSave() {
@@ -1977,14 +1930,14 @@
       });
     }
     bind("tb-rail-left", function() {
-      var btn2 = $("tb-rail-left");
+      var btn2 = $2("tb-rail-left");
       var on = !btn2.classList.contains("active");
       btn2.classList.toggle("active", on);
       invoke("set_rail_visible", { side: "left", visible: on }).catch(function() {
       });
     });
     bind("tb-rail-right", function() {
-      var btn2 = $("tb-rail-right");
+      var btn2 = $2("tb-rail-right");
       var on = !btn2.classList.contains("active");
       btn2.classList.toggle("active", on);
       invoke("set_rail_visible", { side: "right", visible: on }).catch(function() {
@@ -2061,7 +2014,7 @@
     });
     bind("tb-cheatsheet", function() {
       if (!document.body.classList.contains("edit-mode")) return;
-      var ov = $("cheatsheet-overlay");
+      var ov = $2("cheatsheet-overlay");
       if (!ov) return;
       if (ov.hidden) {
         showCheatSheet(JSON.stringify(cheatSheetRows.map(function(r) {
@@ -2072,13 +2025,13 @@
       }
     });
     function setStatusPath(path, dirty) {
-      var el = $("status-path");
+      var el = $2("status-path");
       if (!el) return;
       el.textContent = path || "Bereit";
       el.classList.toggle("dirty", !!dirty);
     }
     function updateWordCount(text) {
-      var el = $("status-wordcount");
+      var el = $2("status-wordcount");
       if (!el) return;
       if (!text) {
         el.hidden = true;
@@ -2100,10 +2053,10 @@
       var ctrl = e.ctrlKey || e.metaKey;
       if (ctrl && e.key === "1") {
         e.preventDefault();
-        $("tb-mode-view").click();
+        $2("tb-mode-view").click();
       } else if (ctrl && e.key === "2") {
         e.preventDefault();
-        $("tb-mode-edit").click();
+        $2("tb-mode-edit").click();
       } else if (ctrl && (e.key === "f" || e.key === "F")) {
         e.preventDefault();
         invoke("open_find").catch(function() {
@@ -2140,7 +2093,7 @@
       });
     }).catch(function() {
     });
-    var vaultTree = $("vault-tree");
+    var vaultTree = $2("vault-tree");
     var fileIconCache = {};
     var fileIconPending = {};
     function resolveFileIcon(ext) {
@@ -2252,7 +2205,7 @@
       var sectionLi = parentUl.parentElement;
       return !!(sectionLi && sectionLi.classList && sectionLi.classList.contains("section") && sectionLi.getAttribute("data-section") === sectionKey);
     }
-    var ctxMenu = $("context-menu");
+    var ctxMenu = $2("context-menu");
     var ctxTarget = null;
     function openContextMenu(x, y, path, isDir, inPinned, inRecent) {
       if (!ctxMenu) return;
@@ -2477,7 +2430,7 @@
         openEditorFind("");
       });
       ev.listen("menu:help_cheatsheet", function() {
-        var b = $("tb-cheatsheet");
+        var b = $2("tb-cheatsheet");
         if (b) b.click();
       });
       ev.listen("menu:view_mode_view", function() {

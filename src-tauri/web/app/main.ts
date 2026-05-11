@@ -20,6 +20,7 @@ import {
     findPrev as findPrevBar,
     afterModeSwitch as findBarAfterModeSwitch,
 } from './ui/find-bar';
+import { showUnsavedDialog } from './ui/dialogs';
 
 // === IIFE #1 (TOC/View bridge, Editor bridge, ViewFinder, Cheatsheet, Vault setters) ===
 
@@ -934,56 +935,10 @@ import {
         if (!currentPath) return Promise.resolve();
         return invoke('editor_text_changed', { text: editorText() }).catch(function(){});
     }
-    // Rename-Modal: gibt einen neuen Dateinamen (ohne Pfad) zurück oder
-    // null bei Abbruch. Wird vom Vault-Kontextmenü genutzt; das Datei-
-    // Menü geht über den nativen Save-Dialog im Backend.
-    function showRenameDialog(initialName, subtitle) {
-        return new Promise(function (resolve) {
-            var dialog = $('rename-dialog');
-            var input = $('rename-input');
-            var ok = $('rename-ok');
-            var cancel = $('rename-cancel');
-            var sub = $('rename-subtitle');
-            if (!dialog || !input || !ok || !cancel) {
-                resolve(null);
-                return;
-            }
-            if (sub) sub.textContent = subtitle || 'Neuen Dateinamen eingeben:';
-            input.value = initialName || '';
-            dialog.hidden = false;
-            // Selektion: Stamm vor der Endung markieren, damit Tippen
-            // den Namen ersetzt aber die Endung erhält. Bei "notes.md"
-            // wird "notes" selektiert.
-            var dot = input.value.lastIndexOf('.');
-            input.focus();
-            if (dot > 0) input.setSelectionRange(0, dot);
-            else input.select();
-            function done(result) {
-                dialog.hidden = true;
-                ok.removeEventListener('click', onOk);
-                cancel.removeEventListener('click', onCancel);
-                input.removeEventListener('keydown', onKey);
-                document.removeEventListener('keydown', onEsc);
-                resolve(result);
-            }
-            function onOk() {
-                var v = (input.value || '').trim();
-                done(v.length ? v : null);
-            }
-            function onCancel() { done(null); }
-            function onKey(e) {
-                if (e.key === 'Enter') { e.preventDefault(); onOk(); }
-            }
-            function onEsc(e) {
-                if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
-            }
-            ok.addEventListener('click', onOk);
-            cancel.addEventListener('click', onCancel);
-            input.addEventListener('keydown', onKey);
-            document.addEventListener('keydown', onEsc);
-        });
-    }
-    window.showRenameDialog = showRenameDialog;
+    /* Rename-Modal (showRenameDialog) lebt jetzt in ui/dialogs.ts. Kein
+       Reader im Bundle: das Datei-Menue geht ueber den nativen Save-Dialog
+       im Backend (commands::file::run_rename_dialog), das Vault-Kontext-
+       menue startet Inline-Rename direkt. */
 
     /* Inline-Rename im Vault-Baum (Explorer-Feeling): ersetzt das .label-
        Span temporär durch ein <input>, vorselektiert den Stamm ohne
@@ -1076,35 +1031,7 @@ import {
     }
     window.startInlineRename = startInlineRename;
 
-    function showUnsavedDialog() {
-        var dialog = $('unsaved-dialog');
-        if (!dialog) return Promise.resolve('cancel');
-        dialog.hidden = false;
-        return new Promise(function (resolve) {
-            function done(decision) {
-                dialog.hidden = true;
-                $('unsaved-save').removeEventListener('click', save);
-                $('unsaved-discard').removeEventListener('click', discard);
-                $('unsaved-cancel').removeEventListener('click', cancel);
-                document.removeEventListener('keydown', onKey);
-                resolve(decision);
-            }
-            function save() { done('save'); }
-            function discard() { done('discard'); }
-            function cancel() { done('cancel'); }
-            function onKey(e) {
-                if (e.key === 'Escape') {
-                    e.preventDefault();
-                    cancel();
-                }
-            }
-            $('unsaved-save').addEventListener('click', save);
-            $('unsaved-discard').addEventListener('click', discard);
-            $('unsaved-cancel').addEventListener('click', cancel);
-            document.addEventListener('keydown', onKey);
-            setTimeout(function () { var btn = $('unsaved-save'); if (btn) btn.focus(); }, 0);
-        });
-    }
+    // showUnsavedDialog lebt jetzt in ui/dialogs.ts (importiert oben).
     function renderDocumentPayload(data) {
         if (!data || typeof data !== 'object') return;
         if (typeof window.setTocList === 'function') {
