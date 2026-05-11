@@ -8,10 +8,11 @@ Vault-Navigation, Workspace-Pins, HTTP-Automation-API für E2E-Tests.
 Offene Aufgaben werden in [`TODO.md`](TODO.md) gepflegt (priorisiert: hoch /
 mittel / niedrig). Vor Vorschlägen, was als nächstes ansteht, dort nachsehen.
 
-Laufende Strukturarbeiten (Modul-Splits, State-Konsolidierungen, geplanter
-Frontend-Build-Umbau) tracken wir in
-[`docs/refactoring-plan.md`](docs/refactoring-plan.md). Phasen 1-3 sind
-abgeschlossen, Phase 4 (Frontend-Bundle) ist eigener Sprint.
+Die Modularisierungs-Phasen 1–4 aus
+[`docs/refactoring-plan.md`](docs/refactoring-plan.md) sind abgeschlossen.
+Das Dokument bleibt als historische Referenz liegen — wer wissen will, wie
+die heutige Modul-/Bundle-Struktur entstanden ist, findet dort die
+schrittweise Begründung.
 
 ## Tech-Stack
 
