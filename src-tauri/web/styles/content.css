@@ -1,0 +1,202 @@
+/* Wrapper um view-region + editor-region: gemeinsamer Bezugsrahmen fuer
+   position:absolute der find-bar (oben rechts im mittleren Pane), und
+   flex-Container, in dem die jeweils sichtbare Region die volle Hoehe fuellt. */
+.content-region {
+  grid-row: 2;
+  grid-column: 3;
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+body.edit-mode .view-region { display: none; }
+body:not(.edit-mode) .editor-region { display: none; }
+.view-region {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+}
+.view-content {
+  flex: 1 1 auto;
+  overflow: auto;
+  min-width: 0;
+}
+/* Marker-Lane fuer View-Modus. Marker werden vom ViewFinder als
+   position:absolute mit top:X% (relativ zur Doc-scrollHeight) eingefuegt;
+   .folio-marker bringt das Styling. Im Edit-Modus übernimmt diese Aufgabe
+   Monacos eigener Overview-Ruler. */
+#view-marker-lane {
+  flex: 0 0 6px;
+  position: relative;
+  background: rgba(128, 128, 128, 0.08);
+  border-left: 1px solid var(--border);
+}
+/* Markdown-Body: 900px-Constraint relativ zur View-Region (nicht zum
+   gesamten Viewport — sonst springt der Inhalt seitlich, wenn die TOC
+   ein-/ausgeblendet wird). */
+main.markdown-body {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 32px 40px 64px;
+  box-sizing: border-box;
+}
+h1, h2, h3, h4, h5, h6 {
+  margin-top: 24px;
+  margin-bottom: 16px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+h1 { font-size: 2em; border-bottom: 1px solid var(--border); padding-bottom: .3em; }
+h2 { font-size: 1.5em; border-bottom: 1px solid var(--border); padding-bottom: .3em; }
+h3 { font-size: 1.25em; }
+h4 { font-size: 1em; }
+h5 { font-size: .875em; }
+h6 { font-size: .85em; color: var(--fg-muted); }
+p { margin: 0 0 16px; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+ul:not(.toc), ol { padding-left: 2em; margin: 0 0 16px; }
+li + li { margin-top: .25em; }
+blockquote {
+  border-left: .25em solid var(--quote-border);
+  color: var(--fg-muted);
+  padding: 0 1em;
+  margin: 0 0 16px;
+}
+code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: .875em;
+  padding: .2em .4em;
+  background: var(--code-bg);
+  border-radius: 6px;
+}
+pre {
+  background: var(--code-bg);
+  padding: 16px;
+  overflow: auto;
+  border-radius: 6px;
+  line-height: 1.45;
+}
+pre code {
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  font-size: .875em;
+}
+table {
+  border-collapse: collapse;
+  margin: 0 0 16px;
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow: auto;
+}
+th, td {
+  border: 1px solid var(--border);
+  padding: 6px 13px;
+}
+th { background: var(--code-bg); font-weight: 600; }
+tr:nth-child(2n) td { background: rgba(175, 184, 193, 0.08); }
+hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 24px 0;
+}
+img { max-width: 100%; height: auto; }
+kbd {
+  font-family: ui-monospace, monospace;
+  font-size: .75em;
+  padding: 3px 5px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--code-bg);
+}
+/* Task lists */
+input[type="checkbox"] { margin-right: .5em; }
+/* Frontmatter-Box */
+aside.frontmatter {
+  margin: 0 0 24px;
+  padding: 10px 14px;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: .875em;
+  color: var(--fg-muted);
+}
+aside.frontmatter dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 16px;
+  row-gap: 4px;
+  margin: 0;
+}
+aside.frontmatter dt {
+  font-weight: 600;
+  color: var(--fg);
+}
+aside.frontmatter dd {
+  margin: 0;
+  word-break: break-word;
+}
+/* Anchor scroll offset when the title bar is visible */
+:target { scroll-margin-top: 20px; }
+/* ----- Editor-Region (Monaco Editor mount + Marker-Lane) ----- */
+.editor-region {
+  flex: 1 1 auto;
+  position: relative;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
+}
+body.edit-mode .editor-region { display: flex; }
+.editor-content {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: row;
+  min-height: 0;
+}
+#editor-mount {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+}
+/* Monaco Editor fills container */
+#editor-mount .monaco-editor { height: 100%; }
+.folio-marker {
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  height: 3px;
+  border-radius: 1px;
+  background: #FFD700;
+  pointer-events: none;
+}
+.folio-marker.active { background: #FF8C00; }
+/* Inline-Treffer im Editor (Monaco nutzt inlineClassName). */
+.folio-find-match {
+  background: #FFD700;
+  color: #000;
+  border-radius: 2px;
+}
+.folio-find-match-active {
+  background: #FF8C00;
+  color: #000;
+  border-radius: 2px;
+}
+/* View-Modus nutzt die CSS Custom Highlight API: keine DOM-Mutation,
+   daher kein Reflow durch Mark-Wrapping und O(1)-Clear bei neuer Suche. */
+::highlight(folio-find) {
+  background-color: #FFD700;
+  color: #000;
+}
+::highlight(folio-find-active) {
+  background-color: #FF8C00;
+  color: #000;
+}

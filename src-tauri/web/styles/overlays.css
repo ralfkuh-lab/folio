@@ -1,0 +1,156 @@
+/* DnD-Overlay */
+#dnd-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(9, 105, 218, 0.12);
+  border: 3px dashed var(--accent);
+  z-index: 9999;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 18px;
+  pointer-events: none;
+}
+body.dnd-active #dnd-overlay { display: flex; }
+/* Zoom-Indikator (browser-ähnliche Pille beim Skalieren) */
+#zoom-indicator {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 10020;
+  padding: 6px 14px;
+  background: rgba(36, 36, 36, 0.92);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+  user-select: none;
+}
+#zoom-indicator.visible { opacity: 1; }
+/* Kontextmenü */
+#context-menu {
+  position: fixed;
+  z-index: 10000;
+  min-width: 200px;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+  padding: 4px 0;
+  font-size: 12px;
+  display: none;
+}
+#context-menu.open { display: block; }
+#context-menu .ctx-item {
+  padding: 5px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+#context-menu .ctx-item:hover { background: var(--rail-hover-bg); }
+#context-menu .ctx-item.disabled { opacity: 0.4; cursor: default; }
+#context-menu .ctx-item.disabled:hover { background: transparent; }
+#context-menu .ctx-sep { height: 1px; background: var(--border); margin: 4px 0; }
+/* Editor-Sprach-Picker — Quick-Pick-Style: Suchfeld + scrollbare Liste,
+   positioniert bottom-right über der Status-Cell. */
+#lang-picker {
+  position: fixed;
+  z-index: 110;
+  bottom: 28px;
+  right: 8px;
+  width: 320px;
+  max-height: 50vh;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-size: 13px;
+}
+#lang-picker[hidden] { display: none; }
+#lang-picker-input {
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  padding: 8px 10px;
+  font: inherit;
+  outline: none;
+}
+#lang-picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  overflow-y: auto;
+  flex: 1 1 auto;
+}
+#lang-picker-list li {
+  padding: 4px 12px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+#lang-picker-list li.active,
+#lang-picker-list li:hover { background: var(--rail-hover-bg); }
+#lang-picker-list li.current { font-weight: 600; }
+#lang-picker-list li .lang-id {
+  font-family: ui-monospace, Consolas, "Cascadia Mono", "Courier New", monospace;
+  font-size: 11.5px;
+  color: var(--fg-muted, #888);
+}
+/* ----- Cheat-Sheet-Overlay: position:fixed loest aus dem CSS-Grid, sodass
+   das Overlay frei ueber View- und TOC-Region schwebt. Drag nur am Header,
+   Body ist scrollbar bei kleinem Fenster. ----- */
+#cheatsheet-overlay {
+  position: fixed;
+  z-index: 100;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.22);
+  font-size: 13px;
+  user-select: none;
+  -webkit-user-select: none;
+  min-width: 320px;
+  max-width: 460px;
+}
+#cheatsheet-overlay[hidden] { display: none; }
+#cheatsheet-overlay .overlay__drag {
+  cursor: move;
+  padding: 10px 16px;
+  font-weight: 700;
+  font-size: 14px;
+  border-bottom: 1px solid var(--border);
+}
+#cheatsheet-overlay .overlay__body {
+  padding: 12px 16px 14px;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 16px;
+  row-gap: 4px;
+  max-height: 70vh;
+  overflow: auto;
+}
+#cheatsheet-overlay .overlay__body .label { color: var(--fg); }
+#cheatsheet-overlay .overlay__body .code {
+  font-family: ui-monospace, Consolas, "Cascadia Mono", "Courier New", monospace;
+  font-size: 12.5px;
+  color: var(--accent);
+  white-space: pre-wrap;
+}
+/* Cheat-Sheet ist nur im Edit-Mode + Markdown sinnvoll. */
+body:not(.edit-mode) #cheatsheet-overlay,
+body:not(.kind-markdown) #cheatsheet-overlay { display: none !important; }

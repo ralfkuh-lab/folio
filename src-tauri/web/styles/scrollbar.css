@@ -1,0 +1,12 @@
+/* Folio-Scrollbar: 12px Track, transparenter Border laesst den Thumb bei
+   8px effektiver Breite landen. */
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-thumb {
+  background: rgba(128,128,128,0.35);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(128,128,128,0.6); background-clip: padding-box; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-corner { background: transparent; }

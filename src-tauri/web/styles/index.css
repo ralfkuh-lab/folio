@@ -1,0 +1,13 @@
+/* Folio-Frontend-Styles. esbuild buendelt diesen Entry zu dist/app.css.
+   Reihenfolge: Tokens/Layout -> Chrome -> Region-spezifisch -> Floating-UI
+   -> Cosmetic. Aenderungen bitte in der jeweiligen *.css-Datei vornehmen. */
+@import "./base.css";
+@import "./toolbar.css";
+@import "./statusbar.css";
+@import "./vault.css";
+@import "./content.css";
+@import "./toc.css";
+@import "./find-bar.css";
+@import "./dialogs.css";
+@import "./overlays.css";
+@import "./scrollbar.css";

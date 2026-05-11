@@ -32,3 +32,24 @@ fn editor_bundle_leaves_folio_editor_on_window() {
         "esbuild --global-name overwrites window.FolioEditor with undefined for this bundle"
     );
 }
+
+#[test]
+fn app_css_bundle_is_packaged_with_dist() {
+    assert!(
+        dist_path("app.css").is_file(),
+        "app.css bundle (built from src-tauri/web/styles/) must be present in src-tauri/dist"
+    );
+}
+
+#[test]
+fn index_html_does_not_inline_styles() {
+    let html = fs::read_to_string(dist_path("index.html")).expect("index.html should be readable");
+    assert!(
+        !html.contains("<style>"),
+        "index.html must not inline <style> blocks anymore; CSS lives in app.css"
+    );
+    assert!(
+        html.contains("href=\"app.css\""),
+        "index.html must link the app.css bundle"
+    );
+}

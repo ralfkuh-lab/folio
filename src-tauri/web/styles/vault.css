@@ -1,0 +1,168 @@
+.vault-region {
+  grid-row: 2;
+  grid-column: 1;
+  overflow: auto;
+  background: var(--rail-bg);
+  color: var(--rail-fg);
+  font-family: "Segoe UI", system-ui, -apple-system, "Noto Sans", sans-serif;
+  font-size: 12px;
+  line-height: 1.45;
+  user-select: none;
+  -webkit-user-select: none;
+}
+body.vault-hidden .vault-region { display: none; }
+.vault-header {
+  display: flex;
+  align-items: center;
+  padding: 8px 6px 6px 10px;
+  background: var(--rail-header-bg);
+  border-bottom: 1px solid var(--border);
+}
+.vault-header .title {
+  flex: 1 1 auto;
+  color: var(--rail-accent);
+  font-weight: 600;
+  font-size: 12px;
+}
+.vault-header .vault-cmd {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--rail-fg);
+  padding: 2px 6px;
+  margin-left: 2px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.vault-header .vault-cmd:hover {
+  background: var(--rail-hover-bg);
+}
+/* Vault-Sektionen mit Pinned/Recent */
+.vault-region .vault-section { padding: 4px 0; }
+.vault-region .vault-section + .vault-section { border-top: 1px solid var(--border); margin-top: 4px; }
+.vault-region .vault-section-title {
+  padding: 4px 10px 2px;
+  color: var(--rail-accent);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.vault-region .vault-item {
+  display: flex;
+  align-items: center;
+  padding: 3px 10px;
+  margin: 1px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.vault-region .vault-item:hover { background: var(--rail-hover-bg); }
+.vault-region .vault-item.active {
+  background: var(--rail-selected-bg);
+  color: var(--rail-selected-fg);
+  font-weight: 600;
+}
+.vault-region .vault-item .vault-icon { width: 18px; flex: 0 0 auto; text-align: center; margin-right: 4px; }
+.vault-region .vault-item .vault-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Vault-Tree (innerhalb .vault-region) */
+.vault-region ul.tree { list-style: none; margin: 0; padding: 4px 0 24px 0; }
+.vault-region ul { list-style: none; margin: 0; padding: 0; }
+.vault-region .section > .row {
+  display: flex;
+  align-items: center;
+  padding: 4px 10px 4px 4px;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--rail-accent);
+}
+.vault-region .section > .row:hover { background: var(--rail-hover-bg); }
+.vault-region .node > .row {
+  display: flex;
+  align-items: center;
+  padding: 2px 6px 2px 0;
+  margin: 1px 6px 1px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.vault-region .node > .row:hover { background: var(--rail-hover-bg); }
+.vault-region .node.active > .row {
+  background: var(--rail-selected-bg);
+  color: var(--rail-selected-fg);
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--rail-accent);
+}
+.vault-region .caret {
+  display: inline-block;
+  width: 14px;
+  flex: 0 0 auto;
+  color: var(--rail-fg-muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  text-align: center;
+  transform: rotate(-90deg);
+  transition: transform 0.12s;
+  user-select: none;
+}
+.vault-region .caret.open { transform: rotate(0deg); }
+.vault-region .caret.hidden { visibility: hidden; }
+.vault-region .icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 16px;
+  flex: 0 0 auto;
+  text-align: center;
+  margin-right: 4px;
+  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+  font-size: 13px;
+  line-height: 1;
+}
+.vault-region .icon img.ftype-icon {
+  width: 16px;
+  height: 16px;
+  display: block;
+  object-fit: contain;
+  image-rendering: -webkit-optimize-contrast;
+}
+.vault-region .label {
+  flex: 1 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  position: relative;
+  top: 2px;
+}
+.vault-region .label.editing { overflow: visible; }
+.vault-region .label > input.vault-rename-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0 3px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--rail-accent);
+  border-radius: 2px;
+  outline: none;
+  line-height: 1.3;
+}
+/* Papierblatt-Emoji hat im Light-Mode kaum Kontrast — dezente Drop-Shadow. */
+html:not(.theme-dark) .vault-region .node.file > .row > .icon {
+  filter: drop-shadow(0 0 0.4px rgba(0,0,0,0.7));
+}
+.vault-region ul.children { padding-left: 14px; }
+.vault-region ul.children.collapsed { display: none; }
+.vault-region li.empty {
+  color: var(--rail-fg-muted);
+  font-style: italic;
+  padding: 2px 10px 4px 36px;
+  cursor: default;
+}
