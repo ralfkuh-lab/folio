@@ -23,9 +23,16 @@ import { initExportDialog } from './ui/export-dialog';
 import { initRails, setRailVisibility, setTocWidth, setVaultWidth } from './ui/rails';
 import {
     initContextMenu,
-    openContextMenu,
-    startInlineRename,
 } from './vault/context-menu';
+import {
+    initVaultTree,
+    setVaultPinned,
+    setVaultRecent,
+    insertVaultChildren,
+    setVaultActive,
+    reapplyVaultActive,
+    refreshVault,
+} from './vault/tree';
 
 // === IIFE #1 (TOC/View bridge, Editor bridge, ViewFinder, Cheatsheet, Vault setters) ===
 
@@ -169,9 +176,7 @@ import {
                     }
                     break;
                 case 'insertVaultChildren':
-                    if (typeof window.insertVaultChildren === 'function') {
-                        window.insertVaultChildren(data.path || '', data.html || '');
-                    }
+                    insertVaultChildren(data.path || '', data.html || '');
                     break;
                 default:
                     /* ignored */
@@ -200,9 +205,7 @@ import {
                     window.rewriteRelativeAssets(body, data.path || '');
                 }
             }
-            if (typeof window.setVaultActive === 'function') {
-                window.setVaultActive(data.path || '');
-            }
+            setVaultActive(data.path || '');
         });
         window.__TAURI__.event.listen("navigation:changed", function (event) {
             var data = event && event.payload;
@@ -247,12 +250,8 @@ import {
                 window.applyEditorReplace(data.fullText || '', data.start || 0, data.length || 0);
             }
         });
-        window.__TAURI__.event.listen("vault:refresh", function (event) {
-            var data = event && event.payload;
-            if (!data || typeof data !== 'object') return;
-            if (data.pinned && typeof window.setVaultPinned === 'function') window.setVaultPinned(data.pinned);
-            if (data.recent && typeof window.setVaultRecent === 'function') window.setVaultRecent(data.recent);
-        });
+        // vault:refresh-Listener lebt jetzt in vault/tree.ts (Listener-
+        // Fusion mit dem IIFE-#2-Pendant — siehe Plan-Phase 4.4).
         window.__TAURI__.event.listen("app:set_mode", function (event) {
             var data = event && event.payload;
             var mode = (data && data.mode) || 'view';
@@ -620,194 +619,23 @@ import {
     // ----- Splitter-Drag (Vault- und TOC-Rail, Modul) -----
     initRails();
 
-    // ----- Vault-Region (Tree, Klick, ContextMenu) -----
-    (function () {
-        var ROOT = document.getElementById('vault-tree');
-        var REGION = document.getElementById('vault-region');
-
-        function findNodeByPath(path) {
-            if (!path) return null;
-            var nodes = ROOT.querySelectorAll('.node');
-            for (var i = 0; i < nodes.length; i++) {
-                if (nodes[i].getAttribute('data-path') === path) return nodes[i];
-            }
-            return null;
-        }
-        function findAllNodesByPath(path) {
-            if (!path) return [];
-            var matches = [];
-            var nodes = ROOT.querySelectorAll('.node');
-            for (var i = 0; i < nodes.length; i++) {
-                if (nodes[i].getAttribute('data-path') === path) matches.push(nodes[i]);
-            }
-            return matches;
-        }
-        function findAncestor(el, cls) {
-            while (el && el !== ROOT && el.nodeType === 1) {
-                if (el.classList && el.classList.contains(cls)) return el;
-                el = el.parentElement;
-            }
-            return null;
-        }
-
-        var currentActivePath = '';
-        function reapplyActiveMarker() {
-            var prev = ROOT.querySelectorAll('.node.active');
-            for (var i = 0; i < prev.length; i++) prev[i].classList.remove('active');
-            if (!currentActivePath) return;
-            var nodes = findAllNodesByPath(currentActivePath);
-            for (var n = 0; n < nodes.length; n++) nodes[n].classList.add('active');
-        }
-        window.setVaultPinned = function (html) {
-            var section = ROOT.querySelector('li.section[data-section="pinned"]');
-            if (!section) return;
-            var ul = section.querySelector(':scope > ul.children');
-            if (ul) ul.innerHTML = html || '';
-            reapplyActiveMarker();
-        };
-        window.setVaultRecent = function (html) {
-            var section = ROOT.querySelector('li.section[data-section="recent"]');
-            if (!section) return;
-            var ul = section.querySelector(':scope > ul.children');
-            if (ul) ul.innerHTML = html || '';
-            reapplyActiveMarker();
-        };
-        window.insertVaultChildren = function (path, html) {
-            // Pfad kann mehrfach im Baum vorkommen (z. B. neu angepinntes
-            // Unterverzeichnis eines bereits angepinnten Ordners). Alle Vorkommen
-            // aktualisieren, sonst landen die Children im falschen (ersten) Node.
-            var lis = findAllNodesByPath(path);
-            for (var n = 0; n < lis.length; n++) {
-                var li = lis[n];
-                var ul = li.querySelector(':scope > ul.children');
-                if (!ul) continue;
-                ul.innerHTML = html || '';
-                ul.classList.remove('collapsed');
-                li.setAttribute('data-loaded', '1');
-                var caret = li.querySelector(':scope > .row > .caret');
-                if (caret) caret.classList.add('open');
-                var iconEl = li.querySelector(':scope > .row > .icon');
-                if (iconEl) iconEl.textContent = '📂';
-            }
-            reapplyActiveMarker();
-        };
-        window.setVaultActive = function (path) {
-            currentActivePath = path || '';
-            reapplyActiveMarker();
-        };
-        window.reapplyVaultActive = reapplyActiveMarker;
-
-        function toggleSection(section) {
-            var key = section.getAttribute('data-section');
-            var caret = section.querySelector(':scope > .row > .caret');
-            var ul = section.querySelector(':scope > ul.children');
-            var nowExpanded = !(caret && caret.classList.contains('open'));
-            if (caret) caret.classList.toggle('open', nowExpanded);
-            if (ul) ul.classList.toggle('collapsed', !nowExpanded);
-            post({ type: 'toggle-section', section: key, expanded: nowExpanded });
-        }
-        function toggleDir(node) {
-            var caret = node.querySelector(':scope > .row > .caret');
-            var ul = node.querySelector(':scope > ul.children');
-            var iconEl = node.querySelector(':scope > .row > .icon');
-            var path = node.getAttribute('data-path');
-            var loaded = node.getAttribute('data-loaded') === '1';
-            var open = caret && caret.classList.contains('open');
-            if (open) {
-                if (caret) caret.classList.remove('open');
-                if (ul) ul.classList.add('collapsed');
-                if (iconEl) iconEl.textContent = '📁';
-                post({ type: 'collapse-dir', path: path });
+    // ----- Vault-Tree (Modul) — siehe vault/tree.ts -----
+    // openDocument lebt heute noch in IIFE #2; wir verdrahten den Tree
+    // ueber einen Getter, der zur Init-Zeit noch nicht bekannte Funktion
+    // erst beim Klick aufloest.
+    initVaultTree({
+        openDocument: function (path) {
+            // openDocument wird in IIFE #2 als var definiert (Hoisting greift
+            // bei function declarations dort, hier aber als window-Bridge).
+            if (typeof (window as any).openDocument === 'function') {
+                (window as any).openDocument(path);
             } else {
-                if (caret) caret.classList.add('open');
-                if (ul) ul.classList.remove('collapsed');
-                if (iconEl) iconEl.textContent = '📂';
-                if (!loaded) post({ type: 'expand-dir', path: path });
-            }
-        }
-
-        // Klicks innerhalb der Vault-Region (Tree-Reihen + Header-Buttons)
-        REGION.addEventListener('click', function (e) {
-            if (e.button !== 0) return;
-            // Header-Buttons (addFile/addFolder)
-            var cmdBtn = e.target;
-            while (cmdBtn && cmdBtn !== REGION && !(cmdBtn.classList && cmdBtn.classList.contains('vault-cmd'))) {
-                cmdBtn = cmdBtn.parentElement;
-            }
-            if (cmdBtn && cmdBtn !== REGION && cmdBtn.classList.contains('vault-cmd')) {
-                e.preventDefault();
-                e.stopPropagation();
-                var cmd = cmdBtn.getAttribute('data-cmd');
-                var inv = window.__folioInvoke || (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke);
-                if (cmd === 'addFile') {
-                    if (inv) {
-                        inv('pick_file').then(function (path) {
-                            if (!path) return;
-                            if (typeof window.openDocument === 'function') {
-                                window.openDocument(path);
-                            } else {
-                                post({ type: 'open', path: path });
-                            }
-                        }).catch(function () {});
-                    } else {
-                        post({ type: 'addFile' });
-                    }
-                } else if (cmd === 'addFolder') {
-                    if (inv) {
-                        inv('pick_folder').then(function (path) {
-                            if (path) inv('workspace_pin', { path: path, isDirectory: true }).catch(function () {});
-                        }).catch(function () {});
-                    } else {
-                        post({ type: 'addFolder' });
-                    }
-                }
-                return;
-            }
-            // Tree-Rows
-            var row = e.target;
-            while (row && row !== ROOT && !(row.classList && row.classList.contains('row'))) {
-                row = row.parentElement;
-            }
-            if (!row || row === ROOT) return;
-            var node = findAncestor(row.parentElement, 'node');
-            if (node) {
-                var kind = node.getAttribute('data-kind');
-                if (kind === 'dir') { toggleDir(node); return; }
-                if (kind === 'file') {
-                    var p = node.getAttribute('data-path');
-                    if (p) {
-                        if (typeof window.openDocument === 'function') {
-                            window.openDocument(p);
-                        } else {
-                            post({ type: 'open', path: p });
-                        }
-                    }
-                    return;
+                if (window.__TAURI__ && window.__TAURI__.event) {
+                    window.__TAURI__.event.emit('shell:event', { type: 'open', path });
                 }
             }
-            var section = findAncestor(row.parentElement, 'section');
-            if (section) toggleSection(section);
-        });
-
-        // Rechtsklick → Context-Menu-Anfrage (Position relativ zum Viewport).
-        REGION.addEventListener('contextmenu', function (e) {
-            e.preventDefault();
-            var node = findAncestor(e.target, 'node');
-            if (!node) {
-                post({ type: 'context', path: null, x: e.clientX, y: e.clientY });
-                return;
-            }
-            post({
-                type: 'context',
-                path: node.getAttribute('data-path'),
-                kind: node.getAttribute('data-kind'),
-                isPinned: node.getAttribute('data-pinned') === '1',
-                isInRecent: node.getAttribute('data-recent') === '1',
-                x: e.clientX,
-                y: e.clientY
-            });
-        });
-    })();
+        },
+    });
 
     // ----- Cheat-Sheet-Overlay (Modul) -----
     initCheatsheet();
@@ -1217,75 +1045,9 @@ import {
         invoke('menu_set_checked', { id: 'view.theme.dark', checked: mode === 'dark' }).catch(function(){});
     }).catch(function(){});
 
-    /* ----- Vault: Workspace laden + rendern + Klicks ----- */
-    var vaultTree = $('vault-tree');
-    var fileIconCache = {};       // ext → data-URI
-    var fileIconPending = {};     // ext → Promise (Anti-Stampede)
-    function resolveFileIcon(ext) {
-        if (fileIconCache[ext] !== undefined) {
-            return Promise.resolve(fileIconCache[ext]);
-        }
-        if (fileIconPending[ext]) return fileIconPending[ext];
-        var p = invoke('file_icon_data_uri', { ext: ext }).then(function (uri) {
-            fileIconCache[ext] = uri || '';
-            delete fileIconPending[ext];
-            return fileIconCache[ext];
-        }).catch(function () {
-            fileIconCache[ext] = '';
-            delete fileIconPending[ext];
-            return '';
-        });
-        fileIconPending[ext] = p;
-        return p;
-    }
-    function applyIconsToNode(rootNode) {
-        if (!rootNode) return;
-        var imgs;
-        if (rootNode.matches && rootNode.matches('img.ftype-icon')) {
-            imgs = [rootNode];
-        } else if (rootNode.querySelectorAll) {
-            imgs = rootNode.querySelectorAll('img.ftype-icon');
-        } else {
-            return;
-        }
-        for (var i = 0; i < imgs.length; i++) {
-            var img = imgs[i];
-            if (img.src) continue;
-            var ext = img.getAttribute('data-ext') || '';
-            (function (target, e) {
-                resolveFileIcon(e).then(function (uri) {
-                    if (uri) target.src = uri;
-                });
-            })(img, ext);
-        }
-    }
-    if (vaultTree && typeof MutationObserver === 'function') {
-        var iconObserver = new MutationObserver(function (mutations) {
-            for (var m = 0; m < mutations.length; m++) {
-                var added = mutations[m].addedNodes;
-                for (var n = 0; n < added.length; n++) {
-                    if (added[n].nodeType === 1) applyIconsToNode(added[n]);
-                }
-            }
-        });
-        iconObserver.observe(vaultTree, { childList: true, subtree: true });
-    }
-    function renderVault(html) {
-        if (!vaultTree) return;
-        if (!html || html.length === 0) {
-            vaultTree.innerHTML = '<li class="empty">Keine Einträge. Datei öffnen oder per Drag&amp;Drop ablegen.</li>';
-            return;
-        }
-        vaultTree.innerHTML = html;
-        applyIconsToNode(vaultTree);
-        if (typeof window.reapplyVaultActive === 'function') window.reapplyVaultActive();
-    }
-    function refreshVault() {
-        invoke('vault_build_tree').then(renderVault).catch(function (err) {
-            console.warn('vault_build_tree failed:', err);
-        });
-    }
-    refreshVault();
+    /* ----- Vault: Initial-Load + Listener leben jetzt in vault/tree.ts.
+       refreshVault wird hier nur noch als Import bereitgestellt, falls
+       andere Stellen es brauchen (z. B. context-menu nach Rename-Fehler). */
 
     invoke('cli_pending_open').then(function (path) {
         if (typeof path === 'string' && path.length > 0) {
@@ -1301,42 +1063,9 @@ import {
         }
     });
 
-    if (vaultTree) {
-        vaultTree.addEventListener('click', function (e) {
-            var item = e.target.closest('.vault-item');
-            if (!item) return;
-            var path = item.getAttribute('data-path');
-            var isDir = item.getAttribute('data-directory') === 'true';
-            if (!path) return;
-            if (isDir) {
-                invoke('vault_expand_dir', { path: path }).catch(function () {});
-            } else {
-                openDocument(path);
-            }
-        });
-        vaultTree.addEventListener('contextmenu', function (e) {
-            var item = e.target.closest('li.node');
-            if (!item) return;
-            e.preventDefault();
-            var path = item.getAttribute('data-path');
-            var isDir = item.getAttribute('data-kind') === 'dir';
-            var inPinned = isDirectChildOfSection(item, 'pinned');
-            var inRecent = isDirectChildOfSection(item, 'recent');
-            openContextMenu(e.clientX, e.clientY, path, isDir, inPinned, inRecent);
-        });
-    }
-    function isDirectChildOfSection(node, sectionKey) {
-        var parentUl = node.parentElement;
-        if (!parentUl) return false;
-        var sectionLi = parentUl.parentElement;
-        return !!(sectionLi
-            && sectionLi.classList
-            && sectionLi.classList.contains('section')
-            && sectionLi.getAttribute('data-section') === sectionKey);
-    }
-
-    /* Vault-Header-Buttons (Datei/Ordner öffnen) werden vom REGION-Click-Handler
-       in der Vault-IIFE behandelt — dort mit Dirty-Check via window.openDocument. */
+    /* Vault-Tree-Listener (click + contextmenu, isDirectChildOfSection-Logik)
+       leben jetzt in vault/tree.ts (Modul-Init). Tree wird beim initVaultTree
+       initial geladen und durch den dortigen vault:refresh-Listener aktualisiert. */
 
     /* ----- Kontextmenue (Modul) ----- */
     initContextMenu({
@@ -1414,9 +1143,8 @@ import {
         renderDocumentPayload(data);
         updateWordCount(data.text || '');
     });
-    listen('vault:refresh', function () {
-        refreshVault();
-    });
+    // vault:refresh-Listener lebt jetzt in vault/tree.ts (Listener-Fusion
+    // mit dem IIFE-#1-Pendant — Plan-Phase 4.4).
     listen('app:set_mode', function (event) {
         var mode = (event && event.payload && event.payload.mode) || 'view';
         setActiveMode(mode);

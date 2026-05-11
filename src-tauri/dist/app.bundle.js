@@ -505,8 +505,8 @@
       }
     }, 0);
   }
-  function initFindBar(deps3) {
-    ensureEditorMountedDep = deps3.ensureEditorMounted;
+  function initFindBar(deps4) {
+    ensureEditorMountedDep = deps4.ensureEditorMounted;
     bar = document.getElementById("find-bar");
     input2 = document.getElementById("find-input");
     counter = document.getElementById("find-counter");
@@ -1031,9 +1031,281 @@
     });
   }
 
+  // app/vault/tree.ts
+  var deps3 = null;
+  var ROOT = null;
+  var REGION = null;
+  var currentActivePath = "";
+  var fileIconCache = {};
+  var fileIconPending = {};
+  function post3(msg) {
+    if (window.__TAURI__ && window.__TAURI__.event) {
+      window.__TAURI__.event.emit("shell:event", msg);
+    }
+  }
+  function invoke3(cmd, args) {
+    return window.__TAURI__.core.invoke(cmd, args);
+  }
+  function findAllNodesByPath(path) {
+    if (!path) return [];
+    const matches = [];
+    const nodes = ROOT.querySelectorAll(".node");
+    for (let i = 0; i < nodes.length; i++) {
+      if (nodes[i].getAttribute("data-path") === path) matches.push(nodes[i]);
+    }
+    return matches;
+  }
+  function findAncestor(el, cls) {
+    while (el && el !== ROOT && el.nodeType === 1) {
+      if (el.classList && el.classList.contains(cls)) return el;
+      el = el.parentElement;
+    }
+    return null;
+  }
+  function reapplyActiveMarker() {
+    const prev = ROOT.querySelectorAll(".node.active");
+    for (let i = 0; i < prev.length; i++) prev[i].classList.remove("active");
+    if (!currentActivePath) return;
+    const nodes = findAllNodesByPath(currentActivePath);
+    for (let n = 0; n < nodes.length; n++) nodes[n].classList.add("active");
+  }
+  function setVaultPinned(html) {
+    const section = ROOT.querySelector('li.section[data-section="pinned"]');
+    if (!section) return;
+    const ul = section.querySelector(":scope > ul.children");
+    if (ul) ul.innerHTML = html || "";
+    reapplyActiveMarker();
+  }
+  function setVaultRecent(html) {
+    const section = ROOT.querySelector('li.section[data-section="recent"]');
+    if (!section) return;
+    const ul = section.querySelector(":scope > ul.children");
+    if (ul) ul.innerHTML = html || "";
+    reapplyActiveMarker();
+  }
+  function insertVaultChildren(path, html) {
+    const lis = findAllNodesByPath(path);
+    for (let n = 0; n < lis.length; n++) {
+      const li = lis[n];
+      const ul = li.querySelector(":scope > ul.children");
+      if (!ul) continue;
+      ul.innerHTML = html || "";
+      ul.classList.remove("collapsed");
+      li.setAttribute("data-loaded", "1");
+      const caret = li.querySelector(":scope > .row > .caret");
+      if (caret) caret.classList.add("open");
+      const iconEl = li.querySelector(":scope > .row > .icon");
+      if (iconEl) iconEl.textContent = "\u{1F4C2}";
+    }
+    reapplyActiveMarker();
+  }
+  function setVaultActive(path) {
+    currentActivePath = path || "";
+    reapplyActiveMarker();
+  }
+  function toggleSection(section) {
+    const key = section.getAttribute("data-section");
+    const caret = section.querySelector(":scope > .row > .caret");
+    const ul = section.querySelector(":scope > ul.children");
+    const nowExpanded = !(caret && caret.classList.contains("open"));
+    if (caret) caret.classList.toggle("open", nowExpanded);
+    if (ul) ul.classList.toggle("collapsed", !nowExpanded);
+    post3({ type: "toggle-section", section: key, expanded: nowExpanded });
+  }
+  function toggleDir(node) {
+    const caret = node.querySelector(":scope > .row > .caret");
+    const ul = node.querySelector(":scope > ul.children");
+    const iconEl = node.querySelector(":scope > .row > .icon");
+    const path = node.getAttribute("data-path");
+    const loaded = node.getAttribute("data-loaded") === "1";
+    const open3 = caret && caret.classList.contains("open");
+    if (open3) {
+      if (caret) caret.classList.remove("open");
+      if (ul) ul.classList.add("collapsed");
+      if (iconEl) iconEl.textContent = "\u{1F4C1}";
+      post3({ type: "collapse-dir", path });
+    } else {
+      if (caret) caret.classList.add("open");
+      if (ul) ul.classList.remove("collapsed");
+      if (iconEl) iconEl.textContent = "\u{1F4C2}";
+      if (!loaded) post3({ type: "expand-dir", path });
+    }
+  }
+  function resolveFileIcon(ext) {
+    if (fileIconCache[ext] !== void 0) {
+      return Promise.resolve(fileIconCache[ext]);
+    }
+    if (fileIconPending[ext]) return fileIconPending[ext];
+    const p = invoke3("file_icon_data_uri", { ext }).then(function(uri) {
+      fileIconCache[ext] = uri || "";
+      delete fileIconPending[ext];
+      return fileIconCache[ext];
+    }).catch(function() {
+      fileIconCache[ext] = "";
+      delete fileIconPending[ext];
+      return "";
+    });
+    fileIconPending[ext] = p;
+    return p;
+  }
+  function applyIconsToNode(rootNode) {
+    if (!rootNode) return;
+    let imgs;
+    if (rootNode.matches && rootNode.matches("img.ftype-icon")) {
+      imgs = [rootNode];
+    } else if (rootNode.querySelectorAll) {
+      imgs = rootNode.querySelectorAll("img.ftype-icon");
+    } else {
+      return;
+    }
+    for (let i = 0; i < imgs.length; i++) {
+      const img = imgs[i];
+      if (img.src) continue;
+      const ext = img.getAttribute("data-ext") || "";
+      (function(target, e) {
+        resolveFileIcon(e).then(function(uri) {
+          if (uri) target.src = uri;
+        });
+      })(img, ext);
+    }
+  }
+  function renderVault(html) {
+    if (!ROOT) return;
+    if (!html || html.length === 0) {
+      ROOT.innerHTML = '<li class="empty">Keine Eintr\xE4ge. Datei \xF6ffnen oder per Drag&amp;Drop ablegen.</li>';
+      return;
+    }
+    ROOT.innerHTML = html;
+    applyIconsToNode(ROOT);
+    reapplyActiveMarker();
+  }
+  function refreshVault() {
+    invoke3("vault_build_tree").then(renderVault).catch(function(err) {
+      console.warn("vault_build_tree failed:", err);
+    });
+  }
+  function isDirectChildOfSection(node, sectionKey) {
+    let n = node.parentElement;
+    while (n) {
+      if (n.classList && n.classList.contains("section") && n.getAttribute("data-section") === sectionKey) return true;
+      if (n.classList && n.classList.contains("node")) return false;
+      n = n.parentElement;
+    }
+    return false;
+  }
+  function initVaultTree(d) {
+    deps3 = d;
+    ROOT = document.getElementById("vault-tree");
+    REGION = document.getElementById("vault-region");
+    if (!ROOT || !REGION) return;
+    REGION.addEventListener("click", function(e) {
+      if (e.button !== 0) return;
+      let cmdBtn = e.target;
+      while (cmdBtn && cmdBtn !== REGION && !(cmdBtn.classList && cmdBtn.classList.contains("vault-cmd"))) {
+        cmdBtn = cmdBtn.parentElement;
+      }
+      if (cmdBtn && cmdBtn !== REGION && cmdBtn.classList.contains("vault-cmd")) {
+        e.preventDefault();
+        e.stopPropagation();
+        const cmd = cmdBtn.getAttribute("data-cmd");
+        if (cmd === "addFile") {
+          invoke3("pick_file").then(function(path) {
+            if (path) deps3.openDocument(path);
+          }).catch(function() {
+          });
+        } else if (cmd === "addFolder") {
+          invoke3("pick_folder").then(function(path) {
+            if (path) invoke3("workspace_pin", { path, isDirectory: true }).catch(function() {
+            });
+          }).catch(function() {
+          });
+        }
+        return;
+      }
+      let row = e.target;
+      while (row && row !== ROOT && !(row.classList && row.classList.contains("row"))) {
+        row = row.parentElement;
+      }
+      if (!row || row === ROOT) return;
+      const node = findAncestor(row.parentElement, "node");
+      if (node) {
+        const kind = node.getAttribute("data-kind");
+        if (kind === "dir") {
+          toggleDir(node);
+          return;
+        }
+        if (kind === "file") {
+          const p = node.getAttribute("data-path");
+          if (p) deps3.openDocument(p);
+          return;
+        }
+      }
+      const section = findAncestor(row.parentElement, "section");
+      if (section) toggleSection(section);
+    });
+    REGION.addEventListener("contextmenu", function(e) {
+      e.preventDefault();
+      const node = findAncestor(e.target, "node");
+      if (!node) {
+        post3({ type: "context", path: null, x: e.clientX, y: e.clientY });
+        return;
+      }
+      post3({
+        type: "context",
+        path: node.getAttribute("data-path"),
+        kind: node.getAttribute("data-kind"),
+        isPinned: node.getAttribute("data-pinned") === "1",
+        isInRecent: node.getAttribute("data-recent") === "1",
+        x: e.clientX,
+        y: e.clientY
+      });
+    });
+    ROOT.addEventListener("click", function(e) {
+      const item = e.target.closest(".vault-item");
+      if (!item) return;
+      const path = item.getAttribute("data-path");
+      const isDir = item.getAttribute("data-directory") === "true";
+      if (!path) return;
+      if (isDir) {
+        invoke3("vault_expand_dir", { path }).catch(function() {
+        });
+      } else {
+        deps3.openDocument(path);
+      }
+    });
+    ROOT.addEventListener("contextmenu", function(e) {
+      const item = e.target.closest("li.node");
+      if (!item) return;
+      e.preventDefault();
+      const path = item.getAttribute("data-path");
+      const isDir = item.getAttribute("data-kind") === "dir";
+      const inPinned = isDirectChildOfSection(item, "pinned");
+      const inRecent = isDirectChildOfSection(item, "recent");
+      openContextMenu(e.clientX, e.clientY, path, isDir, inPinned, inRecent);
+    });
+    if (typeof MutationObserver === "function") {
+      const iconObserver = new MutationObserver(function(mutations) {
+        for (let m = 0; m < mutations.length; m++) {
+          const added = mutations[m].addedNodes;
+          for (let n = 0; n < added.length; n++) {
+            if (added[n].nodeType === 1) applyIconsToNode(added[n]);
+          }
+        }
+      });
+      iconObserver.observe(ROOT, { childList: true, subtree: true });
+    }
+    window.__TAURI__.event.listen("vault:refresh", function(event) {
+      const data = event && event.payload || {};
+      if (data.pinned) setVaultPinned(data.pinned);
+      if (data.recent) setVaultRecent(data.recent);
+      refreshVault();
+    });
+    refreshVault();
+  }
+
   // app/main.ts
   (function() {
-    var post3 = function(msg) {
+    var post4 = function(msg) {
       if (window.__TAURI__ && window.__TAURI__.event) {
         window.__TAURI__.event.emit("shell:event", msg);
       }
@@ -1046,7 +1318,7 @@
       var href = el.getAttribute("href");
       if (href === null) return;
       e.preventDefault();
-      post3({ type: "linkClick", href });
+      post4({ type: "linkClick", href });
     }, true);
     (function() {
       var currentHeading = null;
@@ -1059,12 +1331,12 @@
       function sendHeading(id) {
         if (id === currentHeading) return;
         currentHeading = id;
-        post3({ type: "visibleHeading", id: id || "" });
+        post4({ type: "visibleHeading", id: id || "" });
       }
       function sendScroll(y) {
         if (y === lastScrollY) return;
         lastScrollY = y;
-        post3({ type: "scrollPosition", y });
+        post4({ type: "scrollPosition", y });
       }
       function update() {
         var hs = collectHeadings();
@@ -1102,7 +1374,7 @@
       while (el && !(el.classList && el.classList.contains("entry"))) el = el.parentElement;
       if (!el) return;
       var slug = el.getAttribute("data-slug");
-      if (slug) post3({ type: "tocClick", slug });
+      if (slug) post4({ type: "tocClick", slug });
     });
     window.setTocActive = function(slug) {
       var prev = tocEl.querySelectorAll("li.entry.active");
@@ -1150,9 +1422,7 @@
             }
             break;
           case "insertVaultChildren":
-            if (typeof window.insertVaultChildren === "function") {
-              window.insertVaultChildren(data.path || "", data.html || "");
-            }
+            insertVaultChildren(data.path || "", data.html || "");
             break;
           default:
             break;
@@ -1176,9 +1446,7 @@
             window.rewriteRelativeAssets(body2, data.path || "");
           }
         }
-        if (typeof window.setVaultActive === "function") {
-          window.setVaultActive(data.path || "");
-        }
+        setVaultActive(data.path || "");
       });
       window.__TAURI__.event.listen("navigation:changed", function(event) {
         var data = event && event.payload;
@@ -1220,12 +1488,6 @@
         if (typeof window.applyEditorReplace === "function") {
           window.applyEditorReplace(data.fullText || "", data.start || 0, data.length || 0);
         }
-      });
-      window.__TAURI__.event.listen("vault:refresh", function(event) {
-        var data = event && event.payload;
-        if (!data || typeof data !== "object") return;
-        if (data.pinned && typeof window.setVaultPinned === "function") window.setVaultPinned(data.pinned);
-        if (data.recent && typeof window.setVaultRecent === "function") window.setVaultRecent(data.recent);
       });
       window.__TAURI__.event.listen("app:set_mode", function(event) {
         var data = event && event.payload;
@@ -1495,7 +1757,7 @@
         } catch (e) {
         }
         try {
-          post3({ type: "editorFindState", term: detail.term, total: detail.total, active: detail.active });
+          post4({ type: "editorFindState", term: detail.term, total: detail.total, active: detail.active });
         } catch (e) {
         }
       }
@@ -1595,196 +1857,26 @@
     })();
     initFindBar({ ensureEditorMounted });
     initRails();
-    (function() {
-      var ROOT = document.getElementById("vault-tree");
-      var REGION = document.getElementById("vault-region");
-      function findNodeByPath(path) {
-        if (!path) return null;
-        var nodes = ROOT.querySelectorAll(".node");
-        for (var i = 0; i < nodes.length; i++) {
-          if (nodes[i].getAttribute("data-path") === path) return nodes[i];
-        }
-        return null;
-      }
-      function findAllNodesByPath(path) {
-        if (!path) return [];
-        var matches = [];
-        var nodes = ROOT.querySelectorAll(".node");
-        for (var i = 0; i < nodes.length; i++) {
-          if (nodes[i].getAttribute("data-path") === path) matches.push(nodes[i]);
-        }
-        return matches;
-      }
-      function findAncestor(el, cls) {
-        while (el && el !== ROOT && el.nodeType === 1) {
-          if (el.classList && el.classList.contains(cls)) return el;
-          el = el.parentElement;
-        }
-        return null;
-      }
-      var currentActivePath = "";
-      function reapplyActiveMarker() {
-        var prev = ROOT.querySelectorAll(".node.active");
-        for (var i = 0; i < prev.length; i++) prev[i].classList.remove("active");
-        if (!currentActivePath) return;
-        var nodes = findAllNodesByPath(currentActivePath);
-        for (var n = 0; n < nodes.length; n++) nodes[n].classList.add("active");
-      }
-      window.setVaultPinned = function(html) {
-        var section = ROOT.querySelector('li.section[data-section="pinned"]');
-        if (!section) return;
-        var ul = section.querySelector(":scope > ul.children");
-        if (ul) ul.innerHTML = html || "";
-        reapplyActiveMarker();
-      };
-      window.setVaultRecent = function(html) {
-        var section = ROOT.querySelector('li.section[data-section="recent"]');
-        if (!section) return;
-        var ul = section.querySelector(":scope > ul.children");
-        if (ul) ul.innerHTML = html || "";
-        reapplyActiveMarker();
-      };
-      window.insertVaultChildren = function(path, html) {
-        var lis = findAllNodesByPath(path);
-        for (var n = 0; n < lis.length; n++) {
-          var li = lis[n];
-          var ul = li.querySelector(":scope > ul.children");
-          if (!ul) continue;
-          ul.innerHTML = html || "";
-          ul.classList.remove("collapsed");
-          li.setAttribute("data-loaded", "1");
-          var caret = li.querySelector(":scope > .row > .caret");
-          if (caret) caret.classList.add("open");
-          var iconEl = li.querySelector(":scope > .row > .icon");
-          if (iconEl) iconEl.textContent = "\u{1F4C2}";
-        }
-        reapplyActiveMarker();
-      };
-      window.setVaultActive = function(path) {
-        currentActivePath = path || "";
-        reapplyActiveMarker();
-      };
-      window.reapplyVaultActive = reapplyActiveMarker;
-      function toggleSection(section) {
-        var key = section.getAttribute("data-section");
-        var caret = section.querySelector(":scope > .row > .caret");
-        var ul = section.querySelector(":scope > ul.children");
-        var nowExpanded = !(caret && caret.classList.contains("open"));
-        if (caret) caret.classList.toggle("open", nowExpanded);
-        if (ul) ul.classList.toggle("collapsed", !nowExpanded);
-        post3({ type: "toggle-section", section: key, expanded: nowExpanded });
-      }
-      function toggleDir(node) {
-        var caret = node.querySelector(":scope > .row > .caret");
-        var ul = node.querySelector(":scope > ul.children");
-        var iconEl = node.querySelector(":scope > .row > .icon");
-        var path = node.getAttribute("data-path");
-        var loaded = node.getAttribute("data-loaded") === "1";
-        var open3 = caret && caret.classList.contains("open");
-        if (open3) {
-          if (caret) caret.classList.remove("open");
-          if (ul) ul.classList.add("collapsed");
-          if (iconEl) iconEl.textContent = "\u{1F4C1}";
-          post3({ type: "collapse-dir", path });
+    initVaultTree({
+      openDocument: function(path) {
+        if (typeof window.openDocument === "function") {
+          window.openDocument(path);
         } else {
-          if (caret) caret.classList.add("open");
-          if (ul) ul.classList.remove("collapsed");
-          if (iconEl) iconEl.textContent = "\u{1F4C2}";
-          if (!loaded) post3({ type: "expand-dir", path });
+          if (window.__TAURI__ && window.__TAURI__.event) {
+            window.__TAURI__.event.emit("shell:event", { type: "open", path });
+          }
         }
       }
-      REGION.addEventListener("click", function(e) {
-        if (e.button !== 0) return;
-        var cmdBtn = e.target;
-        while (cmdBtn && cmdBtn !== REGION && !(cmdBtn.classList && cmdBtn.classList.contains("vault-cmd"))) {
-          cmdBtn = cmdBtn.parentElement;
-        }
-        if (cmdBtn && cmdBtn !== REGION && cmdBtn.classList.contains("vault-cmd")) {
-          e.preventDefault();
-          e.stopPropagation();
-          var cmd = cmdBtn.getAttribute("data-cmd");
-          var inv = window.__folioInvoke || window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
-          if (cmd === "addFile") {
-            if (inv) {
-              inv("pick_file").then(function(path) {
-                if (!path) return;
-                if (typeof window.openDocument === "function") {
-                  window.openDocument(path);
-                } else {
-                  post3({ type: "open", path });
-                }
-              }).catch(function() {
-              });
-            } else {
-              post3({ type: "addFile" });
-            }
-          } else if (cmd === "addFolder") {
-            if (inv) {
-              inv("pick_folder").then(function(path) {
-                if (path) inv("workspace_pin", { path, isDirectory: true }).catch(function() {
-                });
-              }).catch(function() {
-              });
-            } else {
-              post3({ type: "addFolder" });
-            }
-          }
-          return;
-        }
-        var row = e.target;
-        while (row && row !== ROOT && !(row.classList && row.classList.contains("row"))) {
-          row = row.parentElement;
-        }
-        if (!row || row === ROOT) return;
-        var node = findAncestor(row.parentElement, "node");
-        if (node) {
-          var kind = node.getAttribute("data-kind");
-          if (kind === "dir") {
-            toggleDir(node);
-            return;
-          }
-          if (kind === "file") {
-            var p = node.getAttribute("data-path");
-            if (p) {
-              if (typeof window.openDocument === "function") {
-                window.openDocument(p);
-              } else {
-                post3({ type: "open", path: p });
-              }
-            }
-            return;
-          }
-        }
-        var section = findAncestor(row.parentElement, "section");
-        if (section) toggleSection(section);
-      });
-      REGION.addEventListener("contextmenu", function(e) {
-        e.preventDefault();
-        var node = findAncestor(e.target, "node");
-        if (!node) {
-          post3({ type: "context", path: null, x: e.clientX, y: e.clientY });
-          return;
-        }
-        post3({
-          type: "context",
-          path: node.getAttribute("data-path"),
-          kind: node.getAttribute("data-kind"),
-          isPinned: node.getAttribute("data-pinned") === "1",
-          isInRecent: node.getAttribute("data-recent") === "1",
-          x: e.clientX,
-          y: e.clientY
-        });
-      });
-    })();
+    });
     initCheatsheet();
   })();
   (function() {
     if (!window.__TAURI__) return;
-    var invoke3 = window.__TAURI__.core && window.__TAURI__.core.invoke;
-    window.__folioInvoke = invoke3;
+    var invoke4 = window.__TAURI__.core && window.__TAURI__.core.invoke;
+    window.__folioInvoke = invoke4;
     var emit = window.__TAURI__.event && window.__TAURI__.event.emit;
     var listen = window.__TAURI__.event && window.__TAURI__.event.listen;
-    if (!invoke3 || !emit || !listen) return;
+    if (!invoke4 || !emit || !listen) return;
     function $3(id) {
       return document.getElementById(id);
     }
@@ -1801,7 +1893,7 @@
       if (el) el.classList.toggle("dirty", isDirty);
       var btn2 = $3("tb-save");
       if (btn2) btn2.disabled = !isDirty;
-      invoke3("menu_set_enabled", { id: "file.save", enabled: isDirty }).catch(function() {
+      invoke4("menu_set_enabled", { id: "file.save", enabled: isDirty }).catch(function() {
       });
       applyWindowTitle();
     }
@@ -1813,7 +1905,7 @@
       var name = fileFullName(currentPath);
       var title = name ? (isDirty ? "* " + name : name) + " \u2014 Folio" : "Folio";
       document.title = title;
-      invoke3("set_window_title", { title }).catch(function() {
+      invoke4("set_window_title", { title }).catch(function() {
       });
     }
     function editorText() {
@@ -1829,7 +1921,7 @@
     }
     function syncEditorTextToStore() {
       if (!currentPath) return Promise.resolve();
-      return invoke3("editor_text_changed", { text: editorText() }).catch(function() {
+      return invoke4("editor_text_changed", { text: editorText() }).catch(function() {
       });
     }
     function renderDocumentPayload(data) {
@@ -1871,7 +1963,7 @@
     window.rewriteRelativeAssets = rewriteRelativeAssets;
     function saveCurrent() {
       return syncEditorTextToStore().then(function() {
-        return invoke3("editor_save_requested");
+        return invoke4("editor_save_requested");
       }).then(function(saved) {
         if (saved) {
           cleanText2 = editorText();
@@ -1888,7 +1980,7 @@
       return syncEditorTextToStore().then(showUnsavedDialog).then(function(decision) {
         if (decision === "cancel") return false;
         if (decision === "discard") {
-          return invoke3("discard_editor_changes").then(function() {
+          return invoke4("discard_editor_changes").then(function() {
             cleanText2 = editorText();
             markDirty(false);
             return true;
@@ -1896,7 +1988,7 @@
             return false;
           });
         }
-        return invoke3("editor_save_requested").then(function(saved) {
+        return invoke4("editor_save_requested").then(function(saved) {
           if (saved) {
             cleanText2 = editorText();
             markDirty(false);
@@ -1932,15 +2024,15 @@
         btnExport.disabled = !md;
         btnExport.title = md ? "Exportieren\u2026" : "Export nur f\xFCr Markdown verf\xFCgbar";
       }
-      invoke3("menu_set_enabled", { id: "view.mode.view", enabled: md }).catch(function() {
+      invoke4("menu_set_enabled", { id: "view.mode.view", enabled: md }).catch(function() {
       });
-      invoke3("menu_set_enabled", { id: "view.mode.edit", enabled: hasDoc }).catch(function() {
+      invoke4("menu_set_enabled", { id: "view.mode.edit", enabled: hasDoc }).catch(function() {
       });
-      invoke3("menu_set_enabled", { id: "file.save_as", enabled: hasDoc }).catch(function() {
+      invoke4("menu_set_enabled", { id: "file.save_as", enabled: hasDoc }).catch(function() {
       });
-      invoke3("menu_set_enabled", { id: "file.rename", enabled: hasDoc }).catch(function() {
+      invoke4("menu_set_enabled", { id: "file.rename", enabled: hasDoc }).catch(function() {
       });
-      invoke3("menu_set_enabled", { id: "file.close", enabled: hasDoc }).catch(function() {
+      invoke4("menu_set_enabled", { id: "file.close", enabled: hasDoc }).catch(function() {
       });
       syncCheatsheetMenu();
       syncViewModeMenuChecks();
@@ -1949,11 +2041,11 @@
       var body2 = document.body;
       var hasDoc = !body2.classList.contains("kind-unknown") && !body2.classList.contains("kind-binary");
       var mode = !hasDoc ? null : body2.classList.contains("edit-mode") ? "edit" : body2.classList.contains("split-mode") ? "split" : "view";
-      invoke3("menu_set_checked", { id: "view.mode.view", checked: mode === "view" }).catch(function() {
+      invoke4("menu_set_checked", { id: "view.mode.view", checked: mode === "view" }).catch(function() {
       });
-      invoke3("menu_set_checked", { id: "view.mode.edit", checked: mode === "edit" }).catch(function() {
+      invoke4("menu_set_checked", { id: "view.mode.edit", checked: mode === "edit" }).catch(function() {
       });
-      invoke3("menu_set_checked", { id: "view.mode.split", checked: mode === "split" }).catch(function() {
+      invoke4("menu_set_checked", { id: "view.mode.split", checked: mode === "split" }).catch(function() {
       });
     }
     applyDocKind("unknown");
@@ -1964,12 +2056,12 @@
     function openDocument(path) {
       return requestSaveIfDirty().then(function(ok) {
         if (!ok) return false;
-        return invoke3("read_file", { path }).then(function(data) {
-          invoke3("workspace_add_recent", { path }).catch(function() {
+        return invoke4("read_file", { path }).then(function(data) {
+          invoke4("workspace_add_recent", { path }).catch(function() {
           });
           var kind = data && data.kind;
           if (kind && kind !== "markdown" && !document.body.classList.contains("edit-mode")) {
-            invoke3("set_view_mode", { mode: "edit" }).then(function() {
+            invoke4("set_view_mode", { mode: "edit" }).then(function() {
               setActiveMode("edit");
             }).catch(function() {
             });
@@ -1986,7 +2078,7 @@
     function setMode(mode) {
       return requestSaveIfDirty().then(function(ok) {
         if (!ok) return false;
-        return invoke3("set_view_mode", { mode }).then(function() {
+        return invoke4("set_view_mode", { mode }).then(function() {
           setActiveMode(mode);
           return true;
         });
@@ -1998,11 +2090,11 @@
       var sm = $3("status-mode");
       if (sm) sm.textContent = mode === "edit" ? "Edit" : "View";
       cheatsheetSyncMode(mode === "edit");
-      invoke3("menu_set_checked", { id: "view.mode.view", checked: mode === "view" }).catch(function() {
+      invoke4("menu_set_checked", { id: "view.mode.view", checked: mode === "view" }).catch(function() {
       });
-      invoke3("menu_set_checked", { id: "view.mode.edit", checked: mode === "edit" }).catch(function() {
+      invoke4("menu_set_checked", { id: "view.mode.edit", checked: mode === "edit" }).catch(function() {
       });
-      invoke3("menu_set_checked", { id: "view.mode.split", checked: mode === "split" }).catch(function() {
+      invoke4("menu_set_checked", { id: "view.mode.split", checked: mode === "split" }).catch(function() {
       });
     }
     function setRailButton(side, visible) {
@@ -2054,29 +2146,29 @@
       var btn2 = $3("tb-rail-left");
       var on = !btn2.classList.contains("active");
       btn2.classList.toggle("active", on);
-      invoke3("set_rail_visible", { side: "left", visible: on }).catch(function() {
+      invoke4("set_rail_visible", { side: "left", visible: on }).catch(function() {
       });
     });
     bind("tb-rail-right", function() {
       var btn2 = $3("tb-rail-right");
       var on = !btn2.classList.contains("active");
       btn2.classList.toggle("active", on);
-      invoke3("set_rail_visible", { side: "right", visible: on }).catch(function() {
+      invoke4("set_rail_visible", { side: "right", visible: on }).catch(function() {
       });
     });
     bind("tb-find", function() {
-      invoke3("open_find").catch(function() {
+      invoke4("open_find").catch(function() {
       });
     });
     bind("tb-back", function() {
       requestSaveIfDirty().then(function(ok) {
-        if (ok) invoke3("go_back_and_emit").catch(function() {
+        if (ok) invoke4("go_back_and_emit").catch(function() {
         });
       });
     });
     bind("tb-forward", function() {
       requestSaveIfDirty().then(function(ok) {
-        if (ok) invoke3("go_forward_and_emit").catch(function() {
+        if (ok) invoke4("go_forward_and_emit").catch(function() {
         });
       });
     });
@@ -2084,7 +2176,7 @@
       if (!window.FolioEditor || typeof window.FolioEditor.getText !== "function") return;
       var text = window.FolioEditor.getText();
       var sel = window.FolioEditor.getSelection() || { start: 0, length: 0 };
-      invoke3("apply_editor_command", {
+      invoke4("apply_editor_command", {
         command: name,
         text,
         start: sel.start || 0,
@@ -2166,7 +2258,7 @@
       el.textContent = words + " W\xF6rter \xB7 " + chars + " Zeichen \xB7 " + lines + " Zeilen";
     }
     bind("status-theme-toggle", function() {
-      invoke3("theme_set", { mode: "toggle" }).catch(function() {
+      invoke4("theme_set", { mode: "toggle" }).catch(function() {
       });
     });
     initZoom();
@@ -2181,13 +2273,13 @@
       } else if (e.altKey && e.key === "ArrowLeft") {
         e.preventDefault();
         requestSaveIfDirty().then(function(ok) {
-          if (ok) invoke3("go_back_and_emit").catch(function() {
+          if (ok) invoke4("go_back_and_emit").catch(function() {
           });
         });
       } else if (e.altKey && e.key === "ArrowRight") {
         e.preventDefault();
         requestSaveIfDirty().then(function(ok) {
-          if (ok) invoke3("go_forward_and_emit").catch(function() {
+          if (ok) invoke4("go_forward_and_emit").catch(function() {
           });
         });
       } else if (ctrl && (e.key === "s" || e.key === "S")) {
@@ -2195,86 +2287,18 @@
         saveCurrent();
       }
     });
-    invoke3("theme_get").then(function(mode) {
+    invoke4("theme_get").then(function(mode) {
       var html = document.documentElement;
       html.classList.toggle("theme-dark", mode === "dark");
       html.classList.toggle("theme-light", mode === "light");
       if (typeof window.setEditorTheme === "function") window.setEditorTheme(mode);
-      invoke3("menu_set_checked", { id: "view.theme.light", checked: mode === "light" }).catch(function() {
+      invoke4("menu_set_checked", { id: "view.theme.light", checked: mode === "light" }).catch(function() {
       });
-      invoke3("menu_set_checked", { id: "view.theme.dark", checked: mode === "dark" }).catch(function() {
+      invoke4("menu_set_checked", { id: "view.theme.dark", checked: mode === "dark" }).catch(function() {
       });
     }).catch(function() {
     });
-    var vaultTree = $3("vault-tree");
-    var fileIconCache = {};
-    var fileIconPending = {};
-    function resolveFileIcon(ext) {
-      if (fileIconCache[ext] !== void 0) {
-        return Promise.resolve(fileIconCache[ext]);
-      }
-      if (fileIconPending[ext]) return fileIconPending[ext];
-      var p = invoke3("file_icon_data_uri", { ext }).then(function(uri) {
-        fileIconCache[ext] = uri || "";
-        delete fileIconPending[ext];
-        return fileIconCache[ext];
-      }).catch(function() {
-        fileIconCache[ext] = "";
-        delete fileIconPending[ext];
-        return "";
-      });
-      fileIconPending[ext] = p;
-      return p;
-    }
-    function applyIconsToNode(rootNode) {
-      if (!rootNode) return;
-      var imgs;
-      if (rootNode.matches && rootNode.matches("img.ftype-icon")) {
-        imgs = [rootNode];
-      } else if (rootNode.querySelectorAll) {
-        imgs = rootNode.querySelectorAll("img.ftype-icon");
-      } else {
-        return;
-      }
-      for (var i = 0; i < imgs.length; i++) {
-        var img = imgs[i];
-        if (img.src) continue;
-        var ext = img.getAttribute("data-ext") || "";
-        (function(target, e) {
-          resolveFileIcon(e).then(function(uri) {
-            if (uri) target.src = uri;
-          });
-        })(img, ext);
-      }
-    }
-    if (vaultTree && typeof MutationObserver === "function") {
-      var iconObserver = new MutationObserver(function(mutations) {
-        for (var m = 0; m < mutations.length; m++) {
-          var added = mutations[m].addedNodes;
-          for (var n = 0; n < added.length; n++) {
-            if (added[n].nodeType === 1) applyIconsToNode(added[n]);
-          }
-        }
-      });
-      iconObserver.observe(vaultTree, { childList: true, subtree: true });
-    }
-    function renderVault(html) {
-      if (!vaultTree) return;
-      if (!html || html.length === 0) {
-        vaultTree.innerHTML = '<li class="empty">Keine Eintr\xE4ge. Datei \xF6ffnen oder per Drag&amp;Drop ablegen.</li>';
-        return;
-      }
-      vaultTree.innerHTML = html;
-      applyIconsToNode(vaultTree);
-      if (typeof window.reapplyVaultActive === "function") window.reapplyVaultActive();
-    }
-    function refreshVault() {
-      invoke3("vault_build_tree").then(renderVault).catch(function(err) {
-        console.warn("vault_build_tree failed:", err);
-      });
-    }
-    refreshVault();
-    invoke3("cli_pending_open").then(function(path) {
+    invoke4("cli_pending_open").then(function(path) {
       if (typeof path === "string" && path.length > 0) {
         openDocument(path);
       }
@@ -2287,37 +2311,6 @@
         openDocument(path);
       }
     });
-    if (vaultTree) {
-      vaultTree.addEventListener("click", function(e) {
-        var item = e.target.closest(".vault-item");
-        if (!item) return;
-        var path = item.getAttribute("data-path");
-        var isDir = item.getAttribute("data-directory") === "true";
-        if (!path) return;
-        if (isDir) {
-          invoke3("vault_expand_dir", { path }).catch(function() {
-          });
-        } else {
-          openDocument(path);
-        }
-      });
-      vaultTree.addEventListener("contextmenu", function(e) {
-        var item = e.target.closest("li.node");
-        if (!item) return;
-        e.preventDefault();
-        var path = item.getAttribute("data-path");
-        var isDir = item.getAttribute("data-kind") === "dir";
-        var inPinned = isDirectChildOfSection(item, "pinned");
-        var inRecent = isDirectChildOfSection(item, "recent");
-        openContextMenu(e.clientX, e.clientY, path, isDir, inPinned, inRecent);
-      });
-    }
-    function isDirectChildOfSection(node, sectionKey) {
-      var parentUl = node.parentElement;
-      if (!parentUl) return false;
-      var sectionLi = parentUl.parentElement;
-      return !!(sectionLi && sectionLi.classList && sectionLi.classList.contains("section") && sectionLi.getAttribute("data-section") === sectionKey);
-    }
     initContextMenu({
       openDocument,
       refreshVault,
@@ -2347,7 +2340,7 @@
       setStatusPath(data.path || "Bereit", false);
       updateWordCount(data.text || "");
       applyDocKind(data.kind || "unknown");
-      invoke3("workspace_add_recent", { path: data.path }).catch(function() {
+      invoke4("workspace_add_recent", { path: data.path }).catch(function() {
       });
       var bar2 = document.getElementById("find-bar");
       if (bar2 && bar2.classList.contains("open") && !document.body.classList.contains("edit-mode")) {
@@ -2385,9 +2378,6 @@
       markDirty(false);
       renderDocumentPayload(data);
       updateWordCount(data.text || "");
-    });
-    listen("vault:refresh", function() {
-      refreshVault();
     });
     listen("app:set_mode", function(event) {
       var mode = event && event.payload && event.payload.mode || "view";
@@ -2432,7 +2422,7 @@
       var text = e.detail || "";
       updateWordCount(text);
       if (currentPath) markDirty(text !== cleanText2);
-      invoke3("editor_text_changed", { text }).catch(function() {
+      invoke4("editor_text_changed", { text }).catch(function() {
       });
     });
     initLanguagePicker();
@@ -2440,7 +2430,7 @@
       var ev = window.__TAURI__ && window.__TAURI__.event;
       if (!ev || typeof ev.listen !== "function") return;
       ev.listen("menu:file_open", function() {
-        invoke3("pick_file").then(function(path) {
+        invoke4("pick_file").then(function(path) {
           if (path && typeof window.openDocument === "function") {
             window.openDocument(path);
           }
@@ -2460,7 +2450,7 @@
         if (!currentPath) return;
         requestSaveIfDirty().then(function(ok) {
           if (!ok) return;
-          invoke3("close_document").catch(function() {
+          invoke4("close_document").catch(function() {
           });
         });
       });
@@ -2491,23 +2481,23 @@
         setMode("split");
       });
       ev.listen("menu:view_theme_light", function() {
-        invoke3("theme_set", { mode: "light" }).catch(function() {
+        invoke4("theme_set", { mode: "light" }).catch(function() {
         });
       });
       ev.listen("menu:view_theme_dark", function() {
-        invoke3("theme_set", { mode: "dark" }).catch(function() {
+        invoke4("theme_set", { mode: "dark" }).catch(function() {
         });
       });
       ev.listen("menu:view_rail_left", function() {
         var visible = !document.body.classList.contains("vault-hidden");
         applyRailVisibility("left", !visible);
-        invoke3("set_rail_visible", { side: "left", visible: !visible }).catch(function() {
+        invoke4("set_rail_visible", { side: "left", visible: !visible }).catch(function() {
         });
       });
       ev.listen("menu:view_rail_right", function() {
         var visible = !document.body.classList.contains("toc-hidden");
         applyRailVisibility("right", !visible);
-        invoke3("set_rail_visible", { side: "right", visible: !visible }).catch(function() {
+        invoke4("set_rail_visible", { side: "right", visible: !visible }).catch(function() {
         });
       });
       ev.listen("menu:about", function(event) {
