@@ -382,6 +382,203 @@
     });
   }
 
+  // app/ui/find-bar.ts
+  var bar = null;
+  var input2 = null;
+  var counter = null;
+  var prevBtn = null;
+  var nextBtn = null;
+  var optsBtn = null;
+  var closeBtn = null;
+  var optsPanel = null;
+  var caseChk = null;
+  var wordChk = null;
+  var ensureEditorMountedDep = null;
+  var lastTermMemo = "";
+  var inputDebounce = null;
+  var INPUT_DEBOUNCE_MS = 150;
+  function isEditMode() {
+    return document.body.classList.contains("edit-mode");
+  }
+  function getFinder() {
+    return isEditMode() ? window.FolioEditor : window.ViewFinder;
+  }
+  function doOpen(initial) {
+    bar.classList.add("open");
+    if (typeof initial === "string" && initial.length > 0) {
+      input2.value = initial;
+    }
+    const f = getFinder();
+    if (f) {
+      f.setFindOptions({
+        caseSensitive: caseChk.checked,
+        wholeWord: wordChk.checked
+      });
+      f.openFind(input2.value);
+    }
+    input2.focus();
+    input2.select();
+  }
+  function open2(initial) {
+    if (isEditMode()) {
+      ensureEditorMountedDep("").then(function(ok) {
+        if (!ok) return;
+        doOpen(initial);
+      });
+    } else {
+      doOpen(initial);
+    }
+  }
+  function close2() {
+    bar.classList.remove("open");
+    optsPanel.classList.remove("open");
+    optsBtn.classList.remove("active");
+    if (window.FolioEditor) window.FolioEditor.closeFind();
+    if (window.ViewFinder) window.ViewFinder.closeFind();
+    if (isEditMode() && window.focusEditor) window.focusEditor();
+  }
+  function openEditorFind(initialTerm) {
+    open2(initialTerm);
+  }
+  function pickSeed(arg) {
+    if (typeof arg === "string" && arg) return arg;
+    if (input2.value) return input2.value;
+    return lastTermMemo;
+  }
+  function findNext(lastTerm) {
+    const seed = pickSeed(lastTerm);
+    if (!bar.classList.contains("open")) {
+      open2(seed);
+      return;
+    }
+    if (!input2.value) {
+      if (seed) {
+        input2.value = seed;
+        const f0 = getFinder();
+        if (f0) f0.openFind(seed);
+      } else {
+        input2.focus();
+        input2.select();
+        return;
+      }
+    }
+    const f = getFinder();
+    if (f) f.findNext();
+  }
+  function findPrev(lastTerm) {
+    const seed = pickSeed(lastTerm);
+    if (!bar.classList.contains("open")) {
+      open2(seed);
+      return;
+    }
+    if (!input2.value) {
+      if (seed) {
+        input2.value = seed;
+        const f0 = getFinder();
+        if (f0) f0.openFind(seed);
+      } else {
+        input2.focus();
+        input2.select();
+        return;
+      }
+    }
+    const f = getFinder();
+    if (f) f.findPrev();
+  }
+  function afterModeSwitch() {
+    setTimeout(function() {
+      if (bar.classList.contains("open")) {
+        if (window.FolioEditor) window.FolioEditor.closeFind();
+        if (window.ViewFinder) window.ViewFinder.closeFind();
+        const f = getFinder();
+        if (f) {
+          f.setFindOptions({
+            caseSensitive: caseChk.checked,
+            wholeWord: wordChk.checked
+          });
+          f.openFind(input2.value);
+        }
+        input2.focus();
+        input2.select();
+      } else if (isEditMode() && window.focusEditor) {
+        window.focusEditor();
+      }
+    }, 0);
+  }
+  function initFindBar(deps) {
+    ensureEditorMountedDep = deps.ensureEditorMounted;
+    bar = document.getElementById("find-bar");
+    input2 = document.getElementById("find-input");
+    counter = document.getElementById("find-counter");
+    prevBtn = document.getElementById("find-prev");
+    nextBtn = document.getElementById("find-next");
+    optsBtn = document.getElementById("find-opts");
+    closeBtn = document.getElementById("find-close");
+    optsPanel = document.getElementById("find-opts-panel");
+    caseChk = document.getElementById("find-case");
+    wordChk = document.getElementById("find-word");
+    input2.addEventListener("input", function() {
+      if (input2.value) lastTermMemo = input2.value;
+      if (inputDebounce) clearTimeout(inputDebounce);
+      inputDebounce = setTimeout(function() {
+        inputDebounce = null;
+        const f = getFinder();
+        if (f) f.setFindTerm(input2.value);
+      }, INPUT_DEBOUNCE_MS);
+    });
+    input2.addEventListener("keydown", function(e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const f = getFinder();
+        if (!f) return;
+        if (e.shiftKey) f.findPrev();
+        else f.findNext();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        close2();
+      }
+    });
+    prevBtn.addEventListener("click", function() {
+      const f = getFinder();
+      if (f) f.findPrev();
+    });
+    nextBtn.addEventListener("click", function() {
+      const f = getFinder();
+      if (f) f.findNext();
+    });
+    closeBtn.addEventListener("click", close2);
+    optsBtn.addEventListener("click", function() {
+      const on = !optsPanel.classList.contains("open");
+      optsPanel.classList.toggle("open", on);
+      optsBtn.classList.toggle("active", on);
+    });
+    function syncOptions() {
+      const f = getFinder();
+      if (f) {
+        f.setFindOptions({
+          caseSensitive: caseChk.checked,
+          wholeWord: wordChk.checked
+        });
+      }
+    }
+    caseChk.addEventListener("change", syncOptions);
+    wordChk.addEventListener("change", syncOptions);
+    window.addEventListener("folio-find-state", function(e) {
+      const s = e.detail || {};
+      if (!s.term && !input2.value) {
+        counter.textContent = "";
+        return;
+      }
+      if (typeof s.total !== "number" || s.total === 0) {
+        counter.textContent = input2.value || s.term ? "0/0" : "";
+      } else if (s.scanning || s.active < 0) {
+        counter.textContent = "\u2026/" + s.total;
+      } else {
+        counter.textContent = s.active + 1 + "/" + s.total;
+      }
+    });
+  }
+
   // app/main.ts
   (function() {
     var post2 = function(msg) {
@@ -637,21 +834,21 @@
         }
       });
       window.__TAURI__.event.listen("editor:open_find", function() {
-        var bar = document.getElementById("find-bar");
-        if (bar) bar.classList.add("open");
-        var input2 = document.getElementById("find-input");
-        if (input2) {
-          input2.focus();
-          input2.select();
+        var bar2 = document.getElementById("find-bar");
+        if (bar2) bar2.classList.add("open");
+        var input3 = document.getElementById("find-input");
+        if (input3) {
+          input3.focus();
+          input3.select();
         }
       });
       window.__TAURI__.event.listen("editor:set_find_term", function(event) {
         var data = event && event.payload;
         var term = data && data.term || "";
-        var input2 = document.getElementById("find-input");
-        if (input2) {
-          input2.value = term;
-          input2.dispatchEvent(new Event("input", { bubbles: true }));
+        var input3 = document.getElementById("find-input");
+        if (input3) {
+          input3.value = term;
+          input3.dispatchEvent(new Event("input", { bubbles: true }));
         }
       });
       window.__TAURI__.event.listen("navigation:toc_click", function(event) {
@@ -959,203 +1156,7 @@
         }
       };
     })();
-    (function() {
-      var bar = document.getElementById("find-bar");
-      var input2 = document.getElementById("find-input");
-      var counter = document.getElementById("find-counter");
-      var prevBtn = document.getElementById("find-prev");
-      var nextBtn = document.getElementById("find-next");
-      var optsBtn = document.getElementById("find-opts");
-      var closeBtn = document.getElementById("find-close");
-      var optsPanel = document.getElementById("find-opts-panel");
-      var caseChk = document.getElementById("find-case");
-      var wordChk = document.getElementById("find-word");
-      function isEditMode() {
-        return document.body.classList.contains("edit-mode");
-      }
-      function getFinder() {
-        return isEditMode() ? window.FolioEditor : window.ViewFinder;
-      }
-      function isOpen() {
-        return bar.classList.contains("open");
-      }
-      function doOpen(initial) {
-        bar.classList.add("open");
-        if (typeof initial === "string" && initial.length > 0) {
-          input2.value = initial;
-        }
-        var f = getFinder();
-        if (f) {
-          f.setFindOptions({
-            caseSensitive: caseChk.checked,
-            wholeWord: wordChk.checked
-          });
-          f.openFind(input2.value);
-        }
-        input2.focus();
-        input2.select();
-      }
-      function open2(initial) {
-        if (isEditMode()) {
-          ensureEditorMounted("").then(function(ok) {
-            if (!ok) return;
-            doOpen(initial);
-          });
-        } else {
-          doOpen(initial);
-        }
-      }
-      function close2() {
-        bar.classList.remove("open");
-        optsPanel.classList.remove("open");
-        optsBtn.classList.remove("active");
-        if (window.FolioEditor) window.FolioEditor.closeFind();
-        if (window.ViewFinder) window.ViewFinder.closeFind();
-        if (isEditMode() && window.focusEditor) window.focusEditor();
-      }
-      window.openEditorFind = function(initialTerm) {
-        open2(initialTerm);
-      };
-      window.closeEditorFind = function() {
-        close2();
-      };
-      window.setEditorFindTerm = function(term) {
-        input2.value = term || "";
-        if (!isOpen()) open2(term || "");
-        else {
-          var f = getFinder();
-          if (f) f.setFindTerm(term || "");
-        }
-      };
-      var inputDebounce = null;
-      var INPUT_DEBOUNCE_MS = 150;
-      input2.addEventListener("input", function() {
-        if (input2.value) lastTermMemo = input2.value;
-        if (inputDebounce) clearTimeout(inputDebounce);
-        inputDebounce = setTimeout(function() {
-          inputDebounce = null;
-          var f = getFinder();
-          if (f) f.setFindTerm(input2.value);
-        }, INPUT_DEBOUNCE_MS);
-      });
-      input2.addEventListener("keydown", function(e) {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          var f = getFinder();
-          if (!f) return;
-          if (e.shiftKey) f.findPrev();
-          else f.findNext();
-        } else if (e.key === "Escape") {
-          e.preventDefault();
-          close2();
-        }
-      });
-      prevBtn.addEventListener("click", function() {
-        var f = getFinder();
-        if (f) f.findPrev();
-      });
-      nextBtn.addEventListener("click", function() {
-        var f = getFinder();
-        if (f) f.findNext();
-      });
-      closeBtn.addEventListener("click", close2);
-      optsBtn.addEventListener("click", function() {
-        var on = !optsPanel.classList.contains("open");
-        optsPanel.classList.toggle("open", on);
-        optsBtn.classList.toggle("active", on);
-      });
-      function syncOptions() {
-        var f = getFinder();
-        if (f) {
-          f.setFindOptions({
-            caseSensitive: caseChk.checked,
-            wholeWord: wordChk.checked
-          });
-        }
-      }
-      caseChk.addEventListener("change", syncOptions);
-      wordChk.addEventListener("change", syncOptions);
-      var lastTermMemo = "";
-      function pickSeed(arg) {
-        if (typeof arg === "string" && arg) return arg;
-        if (input2.value) return input2.value;
-        return lastTermMemo;
-      }
-      window.findNext = function(lastTerm) {
-        var seed = pickSeed(lastTerm);
-        if (!bar.classList.contains("open")) {
-          open2(seed);
-          return;
-        }
-        if (!input2.value) {
-          if (seed) {
-            input2.value = seed;
-            var f0 = getFinder();
-            if (f0) f0.openFind(seed);
-          } else {
-            input2.focus();
-            input2.select();
-            return;
-          }
-        }
-        var f = getFinder();
-        if (f) f.findNext();
-      };
-      window.findPrev = function(lastTerm) {
-        var seed = pickSeed(lastTerm);
-        if (!bar.classList.contains("open")) {
-          open2(seed);
-          return;
-        }
-        if (!input2.value) {
-          if (seed) {
-            input2.value = seed;
-            var f0 = getFinder();
-            if (f0) f0.openFind(seed);
-          } else {
-            input2.focus();
-            input2.select();
-            return;
-          }
-        }
-        var f = getFinder();
-        if (f) f.findPrev();
-      };
-      window.afterModeSwitch = function() {
-        setTimeout(function() {
-          if (bar.classList.contains("open")) {
-            if (window.FolioEditor) window.FolioEditor.closeFind();
-            if (window.ViewFinder) window.ViewFinder.closeFind();
-            var f = getFinder();
-            if (f) {
-              f.setFindOptions({
-                caseSensitive: caseChk.checked,
-                wholeWord: wordChk.checked
-              });
-              f.openFind(input2.value);
-            }
-            input2.focus();
-            input2.select();
-          } else if (isEditMode() && window.focusEditor) {
-            window.focusEditor();
-          }
-        }, 0);
-      };
-      window.addEventListener("folio-find-state", function(e) {
-        var s = e.detail || {};
-        if (!s.term && !input2.value) {
-          counter.textContent = "";
-          return;
-        }
-        if (typeof s.total !== "number" || s.total === 0) {
-          counter.textContent = input2.value || s.term ? "0/0" : "";
-        } else if (s.scanning || s.active < 0) {
-          counter.textContent = "\u2026/" + s.total;
-        } else {
-          counter.textContent = s.active + 1 + "/" + s.total;
-        }
-      });
-    })();
+    initFindBar({ ensureEditorMounted });
     (function() {
       var splitter = document.getElementById("splitter-right");
       var dragState2 = null;
@@ -1311,8 +1312,8 @@
         var iconEl = node.querySelector(":scope > .row > .icon");
         var path = node.getAttribute("data-path");
         var loaded = node.getAttribute("data-loaded") === "1";
-        var open2 = caret && caret.classList.contains("open");
-        if (open2) {
+        var open3 = caret && caret.classList.contains("open");
+        if (open3) {
           if (caret) caret.classList.remove("open");
           if (ul) ul.classList.add("collapsed");
           if (iconEl) iconEl.textContent = "\u{1F4C1}";
@@ -1466,31 +1467,31 @@
     function showRenameDialog(initialName, subtitle) {
       return new Promise(function(resolve) {
         var dialog = $("rename-dialog");
-        var input2 = $("rename-input");
+        var input3 = $("rename-input");
         var ok = $("rename-ok");
         var cancel = $("rename-cancel");
         var sub = $("rename-subtitle");
-        if (!dialog || !input2 || !ok || !cancel) {
+        if (!dialog || !input3 || !ok || !cancel) {
           resolve(null);
           return;
         }
         if (sub) sub.textContent = subtitle || "Neuen Dateinamen eingeben:";
-        input2.value = initialName || "";
+        input3.value = initialName || "";
         dialog.hidden = false;
-        var dot = input2.value.lastIndexOf(".");
-        input2.focus();
-        if (dot > 0) input2.setSelectionRange(0, dot);
-        else input2.select();
+        var dot = input3.value.lastIndexOf(".");
+        input3.focus();
+        if (dot > 0) input3.setSelectionRange(0, dot);
+        else input3.select();
         function done(result) {
           dialog.hidden = true;
           ok.removeEventListener("click", onOk);
           cancel.removeEventListener("click", onCancel);
-          input2.removeEventListener("keydown", onKey);
+          input3.removeEventListener("keydown", onKey);
           document.removeEventListener("keydown", onEsc);
           resolve(result);
         }
         function onOk() {
-          var v = (input2.value || "").trim();
+          var v = (input3.value || "").trim();
           done(v.length ? v : null);
         }
         function onCancel() {
@@ -1510,7 +1511,7 @@
         }
         ok.addEventListener("click", onOk);
         cancel.addEventListener("click", onCancel);
-        input2.addEventListener("keydown", onKey);
+        input3.addEventListener("keydown", onKey);
         document.addEventListener("keydown", onEsc);
       });
     }
@@ -1533,25 +1534,25 @@
       labelEl.dataset.editing = "1";
       labelEl.classList.add("editing");
       labelEl.textContent = "";
-      var input2 = document.createElement("input");
-      input2.type = "text";
-      input2.className = "vault-rename-input";
-      input2.value = basename;
-      input2.spellcheck = false;
-      input2.autocomplete = "off";
-      input2.setAttribute("data-rename-input", "1");
-      labelEl.appendChild(input2);
+      var input3 = document.createElement("input");
+      input3.type = "text";
+      input3.className = "vault-rename-input";
+      input3.value = basename;
+      input3.spellcheck = false;
+      input3.autocomplete = "off";
+      input3.setAttribute("data-rename-input", "1");
+      labelEl.appendChild(input3);
       function stop(e) {
         e.stopPropagation();
       }
-      input2.addEventListener("click", stop);
-      input2.addEventListener("mousedown", stop);
-      input2.addEventListener("dblclick", stop);
-      input2.addEventListener("contextmenu", stop);
+      input3.addEventListener("click", stop);
+      input3.addEventListener("mousedown", stop);
+      input3.addEventListener("dblclick", stop);
+      input3.addEventListener("contextmenu", stop);
       var finished = false;
       function cleanup() {
-        input2.removeEventListener("keydown", onKey);
-        input2.removeEventListener("blur", onBlur);
+        input3.removeEventListener("keydown", onKey);
+        input3.removeEventListener("blur", onBlur);
         labelEl.classList.remove("editing");
         delete labelEl.dataset.editing;
       }
@@ -1562,7 +1563,7 @@
       function commit() {
         if (finished) return;
         finished = true;
-        var newName = (input2.value || "").trim();
+        var newName = (input3.value || "").trim();
         if (!newName || newName === originalText) {
           restore();
           return;
@@ -1599,12 +1600,12 @@
       function onBlur() {
         commit();
       }
-      input2.addEventListener("keydown", onKey);
-      input2.addEventListener("blur", onBlur);
-      input2.focus();
+      input3.addEventListener("keydown", onKey);
+      input3.addEventListener("blur", onBlur);
+      input3.focus();
       var dot = basename.lastIndexOf(".");
-      if (dot > 0) input2.setSelectionRange(0, dot);
-      else input2.select();
+      if (dot > 0) input3.setSelectionRange(0, dot);
+      else input3.select();
     }
     window.startInlineRename = startInlineRename;
     function showUnsavedDialog() {
@@ -2109,8 +2110,8 @@
         });
       } else if (e.key === "F3") {
         e.preventDefault();
-        var fn = e.shiftKey ? window.findPrev : window.findNext;
-        if (typeof fn === "function") fn();
+        if (e.shiftKey) findPrev();
+        else findNext();
       } else if (e.altKey && e.key === "ArrowLeft") {
         e.preventDefault();
         requestSaveIfDirty().then(function(ok) {
@@ -2347,12 +2348,12 @@
       applyDocKind(data.kind || "unknown");
       invoke("workspace_add_recent", { path: data.path }).catch(function() {
       });
-      var bar = document.getElementById("find-bar");
-      if (bar && bar.classList.contains("open") && !document.body.classList.contains("edit-mode")) {
-        var input2 = document.getElementById("find-input");
-        if (input2 && input2.value && window.ViewFinder) {
+      var bar2 = document.getElementById("find-bar");
+      if (bar2 && bar2.classList.contains("open") && !document.body.classList.contains("edit-mode")) {
+        var input3 = document.getElementById("find-input");
+        if (input3 && input3.value && window.ViewFinder) {
           setTimeout(function() {
-            window.ViewFinder.setFindTerm(input2.value);
+            window.ViewFinder.setFindTerm(input3.value);
           }, 0);
         }
       }
@@ -2390,7 +2391,7 @@
     listen("app:set_mode", function(event) {
       var mode = event && event.payload && event.payload.mode || "view";
       setActiveMode(mode);
-      if (typeof window.afterModeSwitch === "function") window.afterModeSwitch();
+      afterModeSwitch();
     });
     listen("panel:rail_changed", function(event) {
       var data = event && event.payload || {};
@@ -2473,7 +2474,7 @@
         }
       });
       ev.listen("menu:edit_find", function() {
-        if (typeof window.openEditorFind === "function") window.openEditorFind("");
+        openEditorFind("");
       });
       ev.listen("menu:help_cheatsheet", function() {
         var b = $("tb-cheatsheet");

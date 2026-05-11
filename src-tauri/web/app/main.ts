@@ -13,6 +13,13 @@ import {
 } from './ui/cheatsheet';
 import { initZoom } from './ui/zoom';
 import { initLanguagePicker, setEditorLanguageDisplay } from './ui/language-picker';
+import {
+    initFindBar,
+    openEditorFind,
+    findNext as findNextBar,
+    findPrev as findPrevBar,
+    afterModeSwitch as findBarAfterModeSwitch,
+} from './ui/find-bar';
 
 // === IIFE #1 (TOC/View bridge, Editor bridge, ViewFinder, Cheatsheet, Vault setters) ===
 
@@ -615,179 +622,8 @@ import { initLanguagePicker, setEditorLanguageDisplay } from './ui/language-pick
         };
     })();
 
-    // ----- Find-Bar (HTML in der Shell, FolioEditor / ViewFinder liefern Logik) -----
-    (function () {
-        var bar = document.getElementById('find-bar');
-        var input = document.getElementById('find-input');
-        var counter = document.getElementById('find-counter');
-        var prevBtn = document.getElementById('find-prev');
-        var nextBtn = document.getElementById('find-next');
-        var optsBtn = document.getElementById('find-opts');
-        var closeBtn = document.getElementById('find-close');
-        var optsPanel = document.getElementById('find-opts-panel');
-        var caseChk = document.getElementById('find-case');
-        var wordChk = document.getElementById('find-word');
-
-        function isEditMode() { return document.body.classList.contains('edit-mode'); }
-        // Liefert die aktive Backend-Implementierung: Monaco Editor (Edit) oder DOM-Sucher (View).
-        function getFinder() { return isEditMode() ? window.FolioEditor : window.ViewFinder; }
-        function isOpen() { return bar.classList.contains('open'); }
-        function doOpen(initial) {
-            bar.classList.add('open');
-            if (typeof initial === 'string' && initial.length > 0) {
-                input.value = initial;
-            }
-            var f = getFinder();
-            if (f) {
-                f.setFindOptions({
-                    caseSensitive: caseChk.checked,
-                    wholeWord: wordChk.checked,
-                });
-                f.openFind(input.value);
-            }
-            input.focus();
-            input.select();
-        }
-        function open(initial) {
-            if (isEditMode()) {
-                ensureEditorMounted('').then(function (ok) {
-                    if (!ok) return;
-                    doOpen(initial);
-                });
-            } else {
-                doOpen(initial);
-            }
-        }
-        function close() {
-            bar.classList.remove('open');
-            optsPanel.classList.remove('open');
-            optsBtn.classList.remove('active');
-            // Beide Finder closen — robust gegen Mode-Switch-Race: SetEditMode laeuft im
-            // Edit→View-Wechsel vor CloseEditorFind, sonst wuerde getFinder() den falschen
-            // Finder treffen und die Edit-Highlights blieben haengen.
-            if (window.FolioEditor) window.FolioEditor.closeFind();
-            if (window.ViewFinder) window.ViewFinder.closeFind();
-            if (isEditMode() && window.focusEditor) window.focusEditor();
-        }
-        window.openEditorFind = function (initialTerm) { open(initialTerm); };
-        window.closeEditorFind = function () { close(); };
-        window.setEditorFindTerm = function (term) {
-            input.value = term || '';
-            if (!isOpen()) open(term || '');
-            else { var f = getFinder(); if (f) f.setFindTerm(term || ''); }
-        };
-
-        // Debounce: setFindTerm laeuft erst nach kurzer Tipp-Pause. Sonst startet
-        // pro Zeichen eine Suche, die in grossen Dokumenten zwar dank Chunking
-        // nicht mehr blockiert, aber unnoetig DOM-Mutation produziert.
-        var inputDebounce = null;
-        var INPUT_DEBOUNCE_MS = 150;
-        input.addEventListener('input', function () {
-            if (input.value) lastTermMemo = input.value;
-            if (inputDebounce) clearTimeout(inputDebounce);
-            inputDebounce = setTimeout(function () {
-                inputDebounce = null;
-                var f = getFinder(); if (f) f.setFindTerm(input.value);
-            }, INPUT_DEBOUNCE_MS);
-        });
-        input.addEventListener('keydown', function (e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                var f = getFinder(); if (!f) return;
-                if (e.shiftKey) f.findPrev(); else f.findNext();
-            } else if (e.key === 'Escape') {
-                e.preventDefault();
-                close();
-            }
-        });
-        prevBtn.addEventListener('click', function () { var f = getFinder(); if (f) f.findPrev(); });
-        nextBtn.addEventListener('click', function () { var f = getFinder(); if (f) f.findNext(); });
-        closeBtn.addEventListener('click', close);
-        optsBtn.addEventListener('click', function () {
-            var on = !optsPanel.classList.contains('open');
-            optsPanel.classList.toggle('open', on);
-            optsBtn.classList.toggle('active', on);
-        });
-        function syncOptions() {
-            var f = getFinder();
-            if (f) {
-                f.setFindOptions({
-                    caseSensitive: caseChk.checked,
-                    wholeWord: wordChk.checked,
-                });
-            }
-        }
-        caseChk.addEventListener('change', syncOptions);
-        wordChk.addEventListener('change', syncOptions);
-
-        // Modus-agnostische Next/Prev-Helfer fuer F3 / Shift+F3.
-        // Aufrufer uebergeben den letzten nicht-leeren Suchbegriff (lastTerm) — wenn die
-        // Bar geschlossen ist, oeffnet F3 sie mit diesem Begriff (Datei-Wechsel:
-        // weitersuchen ohne neu tippen). Bei offener leerer Bar wird der lastTerm
-        // ebenfalls als Startwert eingespielt.
-        var lastTermMemo = '';
-        function pickSeed(arg) {
-            if (typeof arg === 'string' && arg) return arg;
-            if (input.value) return input.value;
-            return lastTermMemo;
-        }
-        window.findNext = function (lastTerm) {
-            var seed = pickSeed(lastTerm);
-            if (!bar.classList.contains('open')) { open(seed); return; }
-            if (!input.value) {
-                if (seed) { input.value = seed; var f0 = getFinder(); if (f0) f0.openFind(seed); }
-                else { input.focus(); input.select(); return; }
-            }
-            var f = getFinder(); if (f) f.findNext();
-        };
-        window.findPrev = function (lastTerm) {
-            var seed = pickSeed(lastTerm);
-            if (!bar.classList.contains('open')) { open(seed); return; }
-            if (!input.value) {
-                if (seed) { input.value = seed; var f0 = getFinder(); if (f0) f0.openFind(seed); }
-                else { input.focus(); input.select(); return; }
-            }
-            var f = getFinder(); if (f) f.findPrev();
-        };
-
-        // Wird nach Mode-Switch von C# getriggert. Wenn die Find-Bar offen war,
-        // bleibt sie offen: alten Mode-Finder closen, neuen mit aktuellem Term
-        // (+ Optionen) starten. setTimeout(0), damit pending PostMessage-Events
-        // (z.B. loadEditorText beim Wechsel zu Edit) vor dem Re-Mount drankommen.
-        window.afterModeSwitch = function () {
-            setTimeout(function () {
-                if (bar.classList.contains('open')) {
-                    if (window.FolioEditor) window.FolioEditor.closeFind();
-                    if (window.ViewFinder) window.ViewFinder.closeFind();
-                    var f = getFinder();
-                    if (f) {
-                        f.setFindOptions({
-                            caseSensitive: caseChk.checked,
-                            wholeWord: wordChk.checked,
-                        });
-                        f.openFind(input.value);
-                    }
-                    input.focus();
-                    input.select();
-                } else if (isEditMode() && window.focusEditor) {
-                    window.focusEditor();
-                }
-            }, 0);
-        };
-
-        window.addEventListener('folio-find-state', function (e) {
-            var s = e.detail || {};
-            if (!s.term && !input.value) { counter.textContent = ''; return; }
-            if (typeof s.total !== 'number' || s.total === 0) {
-                counter.textContent = (input.value || s.term) ? '0/0' : '';
-            } else if (s.scanning || s.active < 0) {
-                // Suchlauf laeuft noch — Total waechst, Active steht erst am Ende fest.
-                counter.textContent = '…/' + s.total;
-            } else {
-                counter.textContent = (s.active + 1) + '/' + s.total;
-            }
-        });
-    })();
+    // ----- Find-Bar (Modul) — siehe ui/find-bar.ts -----
+    initFindBar({ ensureEditorMounted });
 
     // ----- Splitter-Drag (rechte Rail) -----
     (function () {
@@ -1691,8 +1527,7 @@ import { initLanguagePicker, setEditorLanguageDisplay } from './ui/language-pick
         else if (ctrl && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); invoke('open_find').catch(function(){}); }
         else if (e.key === 'F3') {
             e.preventDefault();
-            var fn = e.shiftKey ? window.findPrev : window.findNext;
-            if (typeof fn === 'function') fn();
+            if (e.shiftKey) findPrevBar(); else findNextBar();
         }
         // F1 ist Monaco's Command-Palette im Editor-Fokus. Cheat-Sheet
         // bleibt ueber den Toolbar-Button erreichbar.
@@ -1988,7 +1823,7 @@ import { initLanguagePicker, setEditorLanguageDisplay } from './ui/language-pick
     listen('app:set_mode', function (event) {
         var mode = (event && event.payload && event.payload.mode) || 'view';
         setActiveMode(mode);
-        if (typeof window.afterModeSwitch === 'function') window.afterModeSwitch();
+        findBarAfterModeSwitch();
     });
     listen('panel:rail_changed', function (event) {
         var data = event && event.payload || {};
@@ -2074,7 +1909,7 @@ import { initLanguagePicker, setEditorLanguageDisplay } from './ui/language-pick
             }
         });
         ev.listen('menu:edit_find', function () {
-            if (typeof window.openEditorFind === 'function') window.openEditorFind('');
+            openEditorFind('');
         });
         ev.listen('menu:help_cheatsheet', function () {
             var b = $('tb-cheatsheet'); if (b) b.click();
