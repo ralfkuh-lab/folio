@@ -871,8 +871,8 @@
       }
     }, 0);
   }
-  function initFindBar(deps4) {
-    ensureEditorMountedDep = deps4.ensureEditorMounted;
+  function initFindBar(deps5) {
+    ensureEditorMountedDep = deps5.ensureEditorMounted;
     bar = document.getElementById("find-bar");
     input2 = document.getElementById("find-input");
     counter = document.getElementById("find-counter");
@@ -957,55 +957,12 @@
     });
   }
 
-  // app/ui/dialogs.ts
-  function $(id) {
-    return document.getElementById(id);
-  }
-  function showUnsavedDialog() {
-    const dialog = $("unsaved-dialog");
-    if (!dialog) return Promise.resolve("cancel");
-    dialog.hidden = false;
-    return new Promise(function(resolve) {
-      function done(decision) {
-        dialog.hidden = true;
-        $("unsaved-save").removeEventListener("click", save);
-        $("unsaved-discard").removeEventListener("click", discard);
-        $("unsaved-cancel").removeEventListener("click", cancel);
-        document.removeEventListener("keydown", onKey);
-        resolve(decision);
-      }
-      function save() {
-        done("save");
-      }
-      function discard() {
-        done("discard");
-      }
-      function cancel() {
-        done("cancel");
-      }
-      function onKey(e) {
-        if (e.key === "Escape") {
-          e.preventDefault();
-          cancel();
-        }
-      }
-      $("unsaved-save").addEventListener("click", save);
-      $("unsaved-discard").addEventListener("click", discard);
-      $("unsaved-cancel").addEventListener("click", cancel);
-      document.addEventListener("keydown", onKey);
-      setTimeout(function() {
-        const btn2 = $("unsaved-save");
-        if (btn2) btn2.focus();
-      }, 0);
-    });
-  }
-
   // app/ui/export-dialog.ts
   var deps = null;
   var selectedLayoutId = null;
   var selectedExportFormat = "html";
   var exportKeydownHandler = null;
-  function $2(id) {
+  function $(id) {
     return document.getElementById(id);
   }
   function invoke(cmd, args) {
@@ -1032,7 +989,7 @@
     for (let i = 0; i < cards.length; i++) {
       cards[i].classList.toggle("selected", cards[i].dataset.layoutId === id);
     }
-    const saveBtn = $2("export-save");
+    const saveBtn = $("export-save");
     if (saveBtn) saveBtn.disabled = !id;
   }
   function openExportDialog() {
@@ -1042,7 +999,7 @@
     sync.then(function() {
       return invoke("export_layouts");
     }).then(function(layouts) {
-      const cards = $2("export-cards");
+      const cards = $("export-cards");
       cards.innerHTML = "";
       (layouts || []).forEach(function(layout) {
         const card = document.createElement("div");
@@ -1069,7 +1026,7 @@
         });
       });
       selectLayoutCard(layouts && layouts[0] && layouts[0].id || null);
-      $2("export-dialog").hidden = false;
+      $("export-dialog").hidden = false;
       exportKeydownHandler = function(e) {
         if (e.key === "Escape") {
           e.preventDefault();
@@ -1086,12 +1043,12 @@
     });
   }
   function closeExportDialog() {
-    $2("export-dialog").hidden = true;
+    $("export-dialog").hidden = true;
     if (exportKeydownHandler) {
       document.removeEventListener("keydown", exportKeydownHandler);
       exportKeydownHandler = null;
     }
-    const cards = $2("export-cards");
+    const cards = $("export-cards");
     if (cards) cards.innerHTML = "";
   }
   function doExportSave() {
@@ -1112,13 +1069,13 @@
   }
   function initExportDialog(d) {
     deps = d;
-    const tbExport = $2("tb-export");
+    const tbExport = $("tb-export");
     if (tbExport) tbExport.addEventListener("click", openExportDialog);
-    const cancel = $2("export-cancel");
+    const cancel = $("export-cancel");
     if (cancel) cancel.addEventListener("click", closeExportDialog);
-    const save = $2("export-save");
+    const save = $("export-save");
     if (save) save.addEventListener("click", doExportSave);
-    const exportFormats = $2("export-formats");
+    const exportFormats = $("export-formats");
     if (exportFormats) {
       exportFormats.addEventListener("click", function(e) {
         const btn2 = e.target.closest("button[data-format]");
@@ -1669,6 +1626,314 @@
     refreshVault();
   }
 
+  // app/ui/dialogs.ts
+  function $2(id) {
+    return document.getElementById(id);
+  }
+  function showUnsavedDialog() {
+    const dialog = $2("unsaved-dialog");
+    if (!dialog) return Promise.resolve("cancel");
+    dialog.hidden = false;
+    return new Promise(function(resolve) {
+      function done(decision) {
+        dialog.hidden = true;
+        $2("unsaved-save").removeEventListener("click", save);
+        $2("unsaved-discard").removeEventListener("click", discard);
+        $2("unsaved-cancel").removeEventListener("click", cancel);
+        document.removeEventListener("keydown", onKey);
+        resolve(decision);
+      }
+      function save() {
+        done("save");
+      }
+      function discard() {
+        done("discard");
+      }
+      function cancel() {
+        done("cancel");
+      }
+      function onKey(e) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          cancel();
+        }
+      }
+      $2("unsaved-save").addEventListener("click", save);
+      $2("unsaved-discard").addEventListener("click", discard);
+      $2("unsaved-cancel").addEventListener("click", cancel);
+      document.addEventListener("keydown", onKey);
+      setTimeout(function() {
+        const btn2 = $2("unsaved-save");
+        if (btn2) btn2.focus();
+      }, 0);
+    });
+  }
+
+  // app/state/document.ts
+  var deps4 = null;
+  var currentPath2 = null;
+  var cleanText2 = "";
+  var isDirty = false;
+  function invoke4(cmd, args) {
+    return window.__TAURI__.core.invoke(cmd, args);
+  }
+  function $3(id) {
+    return document.getElementById(id);
+  }
+  function getCurrentPath() {
+    return currentPath2;
+  }
+  function getCleanText() {
+    return cleanText2;
+  }
+  function getIsDirty() {
+    return isDirty;
+  }
+  function fileFullName(p) {
+    if (!p) return null;
+    return p.replace(/\\/g, "/").split("/").pop() || p;
+  }
+  function applyWindowTitle() {
+    const name = fileFullName(currentPath2);
+    const title = name ? (isDirty ? "* " + name : name) + " \u2014 Folio" : "Folio";
+    document.title = title;
+    invoke4("set_window_title", { title }).catch(function() {
+    });
+  }
+  function markDirty(dirty) {
+    isDirty = !!dirty;
+    const el = $3("status-path");
+    if (el) el.classList.toggle("dirty", isDirty);
+    const btn2 = $3("tb-save");
+    if (btn2) btn2.disabled = !isDirty;
+    invoke4("menu_set_enabled", { id: "file.save", enabled: isDirty }).catch(function() {
+    });
+    applyWindowTitle();
+  }
+  function setStatusPath(path, dirty) {
+    const el = $3("status-path");
+    if (!el) return;
+    el.textContent = path || "Bereit";
+    el.classList.toggle("dirty", !!dirty);
+  }
+  function updateWordCount(text) {
+    const el = $3("status-wordcount");
+    if (!el) return;
+    if (!text) {
+      el.hidden = true;
+      el.textContent = "";
+      return;
+    }
+    const chars = text.length;
+    const words = (text.match(/\S+/g) || []).length;
+    const lines = text.split(/\r\n|\r|\n/).length;
+    el.hidden = false;
+    el.textContent = words + " W\xF6rter \xB7 " + chars + " Zeichen \xB7 " + lines + " Zeilen";
+  }
+  function showStatus(msg) {
+    const el = $3("status-path");
+    if (el) el.textContent = msg;
+  }
+  function editorText() {
+    if (window.FolioEditor && typeof window.FolioEditor.getText === "function") {
+      return window.FolioEditor.getText();
+    }
+    return cleanText2;
+  }
+  function refreshDirtyFromEditor() {
+    const dirty = !!currentPath2 && editorText() !== cleanText2;
+    markDirty(dirty);
+    return dirty;
+  }
+  function syncEditorTextToStore() {
+    if (!currentPath2) return Promise.resolve();
+    return invoke4("editor_text_changed", { text: editorText() }).catch(function() {
+    });
+  }
+  function saveCurrent() {
+    return syncEditorTextToStore().then(function() {
+      return invoke4("editor_save_requested");
+    }).then(function(saved) {
+      if (saved) {
+        cleanText2 = editorText();
+        markDirty(false);
+      }
+      return !!saved;
+    }).catch(function() {
+      return false;
+    });
+  }
+  function requestSaveIfDirty() {
+    const dirty = refreshDirtyFromEditor();
+    if (!dirty && !isDirty) return Promise.resolve(true);
+    return syncEditorTextToStore().then(showUnsavedDialog).then(function(decision) {
+      if (decision === "cancel") return false;
+      if (decision === "discard") {
+        return invoke4("discard_editor_changes").then(function() {
+          cleanText2 = editorText();
+          markDirty(false);
+          return true;
+        }).catch(function() {
+          return false;
+        });
+      }
+      return invoke4("editor_save_requested").then(function(saved) {
+        if (saved) {
+          cleanText2 = editorText();
+          markDirty(false);
+        }
+        return !!saved;
+      }).catch(function() {
+        return false;
+      });
+    });
+  }
+  var DOC_KIND_CLASSES = ["kind-markdown", "kind-text", "kind-binary", "kind-unknown"];
+  function syncViewModeMenuChecks() {
+    const body2 = document.body;
+    const hasDoc = !body2.classList.contains("kind-unknown") && !body2.classList.contains("kind-binary");
+    const mode = !hasDoc ? null : body2.classList.contains("edit-mode") ? "edit" : body2.classList.contains("split-mode") ? "split" : "view";
+    invoke4("menu_set_checked", { id: "view.mode.view", checked: mode === "view" }).catch(function() {
+    });
+    invoke4("menu_set_checked", { id: "view.mode.edit", checked: mode === "edit" }).catch(function() {
+    });
+    invoke4("menu_set_checked", { id: "view.mode.split", checked: mode === "split" }).catch(function() {
+    });
+  }
+  function applyDocKind(kind) {
+    const resolved = kind || "unknown";
+    const body2 = document.body;
+    DOC_KIND_CLASSES.forEach(function(c) {
+      body2.classList.remove(c);
+    });
+    body2.classList.add("kind-" + resolved);
+    const md = resolved === "markdown";
+    const hasDoc = resolved !== "unknown" && resolved !== "binary";
+    const btnView = $3("tb-mode-view");
+    if (btnView) {
+      btnView.disabled = !md;
+      btnView.title = md ? "View (Ctrl+1)" : "View nur f\xFCr Markdown verf\xFCgbar";
+    }
+    const btnEdit = $3("tb-mode-edit");
+    if (btnEdit) {
+      btnEdit.disabled = !hasDoc;
+      btnEdit.title = hasDoc ? "Edit (Ctrl+2)" : "Kein Dokument geladen";
+    }
+    const btnExport = $3("tb-export");
+    if (btnExport) {
+      btnExport.disabled = !md;
+      btnExport.title = md ? "Exportieren\u2026" : "Export nur f\xFCr Markdown verf\xFCgbar";
+    }
+    invoke4("menu_set_enabled", { id: "view.mode.view", enabled: md }).catch(function() {
+    });
+    invoke4("menu_set_enabled", { id: "view.mode.edit", enabled: hasDoc }).catch(function() {
+    });
+    invoke4("menu_set_enabled", { id: "file.save_as", enabled: hasDoc }).catch(function() {
+    });
+    invoke4("menu_set_enabled", { id: "file.rename", enabled: hasDoc }).catch(function() {
+    });
+    invoke4("menu_set_enabled", { id: "file.close", enabled: hasDoc }).catch(function() {
+    });
+    syncCheatsheetMenu();
+    syncViewModeMenuChecks();
+  }
+  function openDocument(path) {
+    return requestSaveIfDirty().then(function(ok) {
+      if (!ok) return false;
+      return invoke4("read_file", { path }).then(function(data) {
+        invoke4("workspace_add_recent", { path }).catch(function() {
+        });
+        const kind = data && data.kind;
+        if (kind && kind !== "markdown" && !document.body.classList.contains("edit-mode")) {
+          invoke4("set_view_mode", { mode: "edit" }).then(function() {
+            deps4.setActiveMode("edit");
+          }).catch(function() {
+          });
+        }
+        applyDocKind(kind);
+        return true;
+      }).catch(function(err) {
+        showStatus(typeof err === "string" ? err : "Datei konnte nicht ge\xF6ffnet werden");
+        return false;
+      });
+    });
+  }
+  function renderDocumentPayload(data) {
+    if (!data || typeof data !== "object") return;
+    setTocList(data.tocHtml || data.toc_html || "");
+    const view = document.getElementById("view-region");
+    const body2 = view && view.querySelector(".markdown-body");
+    if (body2) {
+      body2.innerHTML = data.content || data.html || "";
+      rewriteRelativeAssets(body2, data.path || currentPath2);
+    }
+  }
+  function initDocumentState(d) {
+    deps4 = d;
+    const listen = window.__TAURI__.event.listen;
+    listen("document:loaded", function(event) {
+      const data = event && event.payload || {};
+      currentPath2 = data.path || null;
+      cleanText2 = data.text || "";
+      markDirty(false);
+      setStatusPath(data.path || "Bereit", false);
+      updateWordCount(data.text || "");
+      applyDocKind(data.kind || "unknown");
+      invoke4("workspace_add_recent", { path: data.path }).catch(function() {
+      });
+      if (window.FolioEditor && typeof window.FolioEditor.setText === "function" && typeof window.loadEditorText === "function") {
+        window.loadEditorText(data.text || "", data.language || "");
+      }
+      setEditorLanguageDisplay(data.language || "plaintext");
+      setTocList(data.tocHtml || data.toc_html || "");
+      const contentEl2 = document.getElementById("view-region");
+      const body2 = contentEl2 && contentEl2.querySelector(".markdown-body");
+      if (body2) {
+        const isMd = data.kind === "markdown";
+        body2.innerHTML = isMd ? data.content || data.html || "" : "";
+        if (isMd) rewriteRelativeAssets(body2, data.path || "");
+      }
+      setVaultActive(data.path || "");
+      const bar2 = document.getElementById("find-bar");
+      if (bar2 && bar2.classList.contains("open") && !document.body.classList.contains("edit-mode")) {
+        const input3 = document.getElementById("find-input");
+        if (input3 && input3.value) {
+          setTimeout(function() {
+            ViewFinder.setFindTerm(input3.value);
+          }, 0);
+        }
+      }
+    });
+    listen("document:dirty_changed", function(event) {
+      const dirty = event && event.payload && (event.payload.is_dirty || event.payload.isDirty);
+      markDirty(!!dirty);
+    });
+    listen("document:closed", function() {
+      currentPath2 = null;
+      cleanText2 = "";
+      markDirty(false);
+      if (window.FolioEditor && typeof window.FolioEditor.setText === "function") {
+        window.FolioEditor.setText("", "plaintext");
+      }
+      const view = document.getElementById("view-region");
+      const body2 = view && view.querySelector(".markdown-body");
+      if (body2) body2.innerHTML = "";
+      setTocList("");
+      applyDocKind("unknown");
+      setStatusPath("Bereit", false);
+      updateWordCount("");
+      applyWindowTitle();
+    });
+    listen("document:saved", function(event) {
+      const data = event && event.payload || {};
+      cleanText2 = data.text || editorText();
+      markDirty(false);
+      renderDocumentPayload(data);
+      updateWordCount(data.text || "");
+    });
+    applyDocKind("unknown");
+  }
+
   // app/main.ts
   (function() {
     var post5 = function(msg) {
@@ -1707,22 +1972,6 @@
           default:
             break;
         }
-      });
-      window.__TAURI__.event.listen("document:loaded", function(event) {
-        var data = event && event.payload;
-        if (!data || typeof data !== "object") return;
-        if (typeof window.loadEditorText === "function") {
-          window.loadEditorText(data.text || "", data.language || "");
-        }
-        setEditorLanguageDisplay(data.language || "plaintext");
-        setTocList(data.tocHtml || data.toc_html || "");
-        var body2 = contentEl2.querySelector(".markdown-body");
-        if (body2) {
-          var isMd = data.kind === "markdown";
-          body2.innerHTML = isMd ? data.content || data.html || "" : "";
-          if (isMd) rewriteRelativeAssets(body2, data.path || "");
-        }
-        setVaultActive(data.path || "");
       });
       window.__TAURI__.event.listen("navigation:changed", function(event) {
         var data = event && event.payload;
@@ -1853,7 +2102,7 @@
       });
     };
     window.focusEditor = function() {
-      var initial = typeof cleanText === "string" ? cleanText : "";
+      var initial = getCleanText() || "";
       ensureEditorMounted(initial).then(function(ok) {
         if (!ok) return;
         window.layoutEditor();
@@ -1901,206 +2150,43 @@
   })();
   (function() {
     if (!window.__TAURI__) return;
-    var invoke4 = window.__TAURI__.core && window.__TAURI__.core.invoke;
-    window.__folioInvoke = invoke4;
+    var invoke5 = window.__TAURI__.core && window.__TAURI__.core.invoke;
+    window.__folioInvoke = invoke5;
     var emit = window.__TAURI__.event && window.__TAURI__.event.emit;
     var listen = window.__TAURI__.event && window.__TAURI__.event.listen;
-    if (!invoke4 || !emit || !listen) return;
-    function $3(id) {
+    if (!invoke5 || !emit || !listen) return;
+    function $4(id) {
       return document.getElementById(id);
     }
     function bind(id, fn) {
-      var el = $3(id);
+      var el = $4(id);
       if (el) el.addEventListener("click", fn);
-    }
-    var currentPath = null;
-    var isDirty = false;
-    var cleanText2 = "";
-    function markDirty(dirty) {
-      isDirty = !!dirty;
-      var el = $3("status-path");
-      if (el) el.classList.toggle("dirty", isDirty);
-      var btn2 = $3("tb-save");
-      if (btn2) btn2.disabled = !isDirty;
-      invoke4("menu_set_enabled", { id: "file.save", enabled: isDirty }).catch(function() {
-      });
-      applyWindowTitle();
-    }
-    function fileFullName(p) {
-      if (!p) return null;
-      return p.replace(/\\/g, "/").split("/").pop() || p;
-    }
-    function applyWindowTitle() {
-      var name = fileFullName(currentPath);
-      var title = name ? (isDirty ? "* " + name : name) + " \u2014 Folio" : "Folio";
-      document.title = title;
-      invoke4("set_window_title", { title }).catch(function() {
-      });
-    }
-    function editorText() {
-      if (window.FolioEditor && typeof window.FolioEditor.getText === "function") {
-        return window.FolioEditor.getText();
-      }
-      return cleanText2;
-    }
-    function refreshDirtyFromEditor() {
-      var dirty = !!currentPath && editorText() !== cleanText2;
-      markDirty(dirty);
-      return dirty;
-    }
-    function syncEditorTextToStore() {
-      if (!currentPath) return Promise.resolve();
-      return invoke4("editor_text_changed", { text: editorText() }).catch(function() {
-      });
-    }
-    function renderDocumentPayload(data) {
-      if (!data || typeof data !== "object") return;
-      setTocList(data.tocHtml || data.toc_html || "");
-      var view = document.getElementById("view-region");
-      var body2 = view && view.querySelector(".markdown-body");
-      if (body2) {
-        body2.innerHTML = data.content || data.html || "";
-        rewriteRelativeAssets(body2, data.path || currentPath);
-      }
-    }
-    function saveCurrent() {
-      return syncEditorTextToStore().then(function() {
-        return invoke4("editor_save_requested");
-      }).then(function(saved) {
-        if (saved) {
-          cleanText2 = editorText();
-          markDirty(false);
-        }
-        return !!saved;
-      }).catch(function() {
-        return false;
-      });
-    }
-    function requestSaveIfDirty() {
-      var dirty = refreshDirtyFromEditor();
-      if (!dirty && !isDirty) return Promise.resolve(true);
-      return syncEditorTextToStore().then(showUnsavedDialog).then(function(decision) {
-        if (decision === "cancel") return false;
-        if (decision === "discard") {
-          return invoke4("discard_editor_changes").then(function() {
-            cleanText2 = editorText();
-            markDirty(false);
-            return true;
-          }).catch(function() {
-            return false;
-          });
-        }
-        return invoke4("editor_save_requested").then(function(saved) {
-          if (saved) {
-            cleanText2 = editorText();
-            markDirty(false);
-          }
-          return !!saved;
-        }).catch(function() {
-          return false;
-        });
-      });
-    }
-    var DOC_KIND_CLASSES = ["kind-markdown", "kind-text", "kind-binary", "kind-unknown"];
-    function applyDocKind(kind) {
-      var resolved = kind || "unknown";
-      var body2 = document.body;
-      DOC_KIND_CLASSES.forEach(function(c) {
-        body2.classList.remove(c);
-      });
-      body2.classList.add("kind-" + resolved);
-      var md = resolved === "markdown";
-      var hasDoc = resolved !== "unknown" && resolved !== "binary";
-      var btnView = $3("tb-mode-view");
-      if (btnView) {
-        btnView.disabled = !md;
-        btnView.title = md ? "View (Ctrl+1)" : "View nur f\xFCr Markdown verf\xFCgbar";
-      }
-      var btnEdit = $3("tb-mode-edit");
-      if (btnEdit) {
-        btnEdit.disabled = !hasDoc;
-        btnEdit.title = hasDoc ? "Edit (Ctrl+2)" : "Kein Dokument geladen";
-      }
-      var btnExport = $3("tb-export");
-      if (btnExport) {
-        btnExport.disabled = !md;
-        btnExport.title = md ? "Exportieren\u2026" : "Export nur f\xFCr Markdown verf\xFCgbar";
-      }
-      invoke4("menu_set_enabled", { id: "view.mode.view", enabled: md }).catch(function() {
-      });
-      invoke4("menu_set_enabled", { id: "view.mode.edit", enabled: hasDoc }).catch(function() {
-      });
-      invoke4("menu_set_enabled", { id: "file.save_as", enabled: hasDoc }).catch(function() {
-      });
-      invoke4("menu_set_enabled", { id: "file.rename", enabled: hasDoc }).catch(function() {
-      });
-      invoke4("menu_set_enabled", { id: "file.close", enabled: hasDoc }).catch(function() {
-      });
-      syncCheatsheetMenu();
-      syncViewModeMenuChecks();
-    }
-    function syncViewModeMenuChecks() {
-      var body2 = document.body;
-      var hasDoc = !body2.classList.contains("kind-unknown") && !body2.classList.contains("kind-binary");
-      var mode = !hasDoc ? null : body2.classList.contains("edit-mode") ? "edit" : body2.classList.contains("split-mode") ? "split" : "view";
-      invoke4("menu_set_checked", { id: "view.mode.view", checked: mode === "view" }).catch(function() {
-      });
-      invoke4("menu_set_checked", { id: "view.mode.edit", checked: mode === "edit" }).catch(function() {
-      });
-      invoke4("menu_set_checked", { id: "view.mode.split", checked: mode === "split" }).catch(function() {
-      });
-    }
-    applyDocKind("unknown");
-    function showStatus(msg) {
-      var el = $3("status-path");
-      if (el) el.textContent = msg;
-    }
-    function openDocument(path) {
-      return requestSaveIfDirty().then(function(ok) {
-        if (!ok) return false;
-        return invoke4("read_file", { path }).then(function(data) {
-          invoke4("workspace_add_recent", { path }).catch(function() {
-          });
-          var kind = data && data.kind;
-          if (kind && kind !== "markdown" && !document.body.classList.contains("edit-mode")) {
-            invoke4("set_view_mode", { mode: "edit" }).then(function() {
-              setActiveMode("edit");
-            }).catch(function() {
-            });
-          }
-          applyDocKind(kind);
-          return true;
-        }).catch(function(err) {
-          showStatus(typeof err === "string" ? err : "Datei konnte nicht ge\xF6ffnet werden");
-          return false;
-        });
-      });
     }
     window.openDocument = openDocument;
     function setMode(mode) {
       return requestSaveIfDirty().then(function(ok) {
         if (!ok) return false;
-        return invoke4("set_view_mode", { mode }).then(function() {
+        return invoke5("set_view_mode", { mode }).then(function() {
           setActiveMode(mode);
           return true;
         });
       });
     }
     function setActiveMode(mode) {
-      $3("tb-mode-view").classList.toggle("active", mode === "view");
-      $3("tb-mode-edit").classList.toggle("active", mode === "edit");
-      var sm = $3("status-mode");
+      $4("tb-mode-view").classList.toggle("active", mode === "view");
+      $4("tb-mode-edit").classList.toggle("active", mode === "edit");
+      var sm = $4("status-mode");
       if (sm) sm.textContent = mode === "edit" ? "Edit" : "View";
       cheatsheetSyncMode(mode === "edit");
-      invoke4("menu_set_checked", { id: "view.mode.view", checked: mode === "view" }).catch(function() {
+      invoke5("menu_set_checked", { id: "view.mode.view", checked: mode === "view" }).catch(function() {
       });
-      invoke4("menu_set_checked", { id: "view.mode.edit", checked: mode === "edit" }).catch(function() {
+      invoke5("menu_set_checked", { id: "view.mode.edit", checked: mode === "edit" }).catch(function() {
       });
-      invoke4("menu_set_checked", { id: "view.mode.split", checked: mode === "split" }).catch(function() {
+      invoke5("menu_set_checked", { id: "view.mode.split", checked: mode === "split" }).catch(function() {
       });
     }
     function setRailButton(side, visible) {
-      var btn2 = side === "left" ? $3("tb-rail-left") : $3("tb-rail-right");
+      var btn2 = side === "left" ? $4("tb-rail-left") : $4("tb-rail-right");
       if (btn2) btn2.classList.toggle("active", !!visible);
     }
     function applyRailVisibility(side, visible) {
@@ -2135,42 +2221,40 @@
       setMode("edit");
     });
     bind("tb-save", function() {
-      if (isDirty) saveCurrent();
+      if (getIsDirty()) saveCurrent();
     });
     initExportDialog({
-      getCurrentPath: function() {
-        return currentPath;
-      },
+      getCurrentPath,
       syncEditorTextToStore,
       showStatus
     });
     bind("tb-rail-left", function() {
-      var btn2 = $3("tb-rail-left");
+      var btn2 = $4("tb-rail-left");
       var on = !btn2.classList.contains("active");
       btn2.classList.toggle("active", on);
-      invoke4("set_rail_visible", { side: "left", visible: on }).catch(function() {
+      invoke5("set_rail_visible", { side: "left", visible: on }).catch(function() {
       });
     });
     bind("tb-rail-right", function() {
-      var btn2 = $3("tb-rail-right");
+      var btn2 = $4("tb-rail-right");
       var on = !btn2.classList.contains("active");
       btn2.classList.toggle("active", on);
-      invoke4("set_rail_visible", { side: "right", visible: on }).catch(function() {
+      invoke5("set_rail_visible", { side: "right", visible: on }).catch(function() {
       });
     });
     bind("tb-find", function() {
-      invoke4("open_find").catch(function() {
+      invoke5("open_find").catch(function() {
       });
     });
     bind("tb-back", function() {
       requestSaveIfDirty().then(function(ok) {
-        if (ok) invoke4("go_back_and_emit").catch(function() {
+        if (ok) invoke5("go_back_and_emit").catch(function() {
         });
       });
     });
     bind("tb-forward", function() {
       requestSaveIfDirty().then(function(ok) {
-        if (ok) invoke4("go_forward_and_emit").catch(function() {
+        if (ok) invoke5("go_forward_and_emit").catch(function() {
         });
       });
     });
@@ -2178,7 +2262,7 @@
       if (!window.FolioEditor || typeof window.FolioEditor.getText !== "function") return;
       var text = window.FolioEditor.getText();
       var sel = window.FolioEditor.getSelection() || { start: 0, length: 0 };
-      invoke4("apply_editor_command", {
+      invoke5("apply_editor_command", {
         command: name,
         text,
         start: sel.start || 0,
@@ -2229,7 +2313,7 @@
     });
     bind("tb-cheatsheet", function() {
       if (!document.body.classList.contains("edit-mode")) return;
-      var ov = $3("cheatsheet-overlay");
+      var ov = $4("cheatsheet-overlay");
       if (!ov) return;
       if (ov.hidden) {
         showCheatSheet(JSON.stringify(cheatSheetRows.map(function(r) {
@@ -2239,28 +2323,8 @@
         hideCheatSheet();
       }
     });
-    function setStatusPath(path, dirty) {
-      var el = $3("status-path");
-      if (!el) return;
-      el.textContent = path || "Bereit";
-      el.classList.toggle("dirty", !!dirty);
-    }
-    function updateWordCount(text) {
-      var el = $3("status-wordcount");
-      if (!el) return;
-      if (!text) {
-        el.hidden = true;
-        el.textContent = "";
-        return;
-      }
-      var chars = text.length;
-      var words = (text.match(/\S+/g) || []).length;
-      var lines = text.split(/\r\n|\r|\n/).length;
-      el.hidden = false;
-      el.textContent = words + " W\xF6rter \xB7 " + chars + " Zeichen \xB7 " + lines + " Zeilen";
-    }
     bind("status-theme-toggle", function() {
-      invoke4("theme_set", { mode: "toggle" }).catch(function() {
+      invoke5("theme_set", { mode: "toggle" }).catch(function() {
       });
     });
     initZoom();
@@ -2268,20 +2332,20 @@
       var ctrl = e.ctrlKey || e.metaKey;
       if (ctrl && e.key === "1") {
         e.preventDefault();
-        $3("tb-mode-view").click();
+        $4("tb-mode-view").click();
       } else if (ctrl && e.key === "2") {
         e.preventDefault();
-        $3("tb-mode-edit").click();
+        $4("tb-mode-edit").click();
       } else if (e.altKey && e.key === "ArrowLeft") {
         e.preventDefault();
         requestSaveIfDirty().then(function(ok) {
-          if (ok) invoke4("go_back_and_emit").catch(function() {
+          if (ok) invoke5("go_back_and_emit").catch(function() {
           });
         });
       } else if (e.altKey && e.key === "ArrowRight") {
         e.preventDefault();
         requestSaveIfDirty().then(function(ok) {
-          if (ok) invoke4("go_forward_and_emit").catch(function() {
+          if (ok) invoke5("go_forward_and_emit").catch(function() {
           });
         });
       } else if (ctrl && (e.key === "s" || e.key === "S")) {
@@ -2289,18 +2353,18 @@
         saveCurrent();
       }
     });
-    invoke4("theme_get").then(function(mode) {
+    invoke5("theme_get").then(function(mode) {
       var html = document.documentElement;
       html.classList.toggle("theme-dark", mode === "dark");
       html.classList.toggle("theme-light", mode === "light");
       if (typeof window.setEditorTheme === "function") window.setEditorTheme(mode);
-      invoke4("menu_set_checked", { id: "view.theme.light", checked: mode === "light" }).catch(function() {
+      invoke5("menu_set_checked", { id: "view.theme.light", checked: mode === "light" }).catch(function() {
       });
-      invoke4("menu_set_checked", { id: "view.theme.dark", checked: mode === "dark" }).catch(function() {
+      invoke5("menu_set_checked", { id: "view.theme.dark", checked: mode === "dark" }).catch(function() {
       });
     }).catch(function() {
     });
-    invoke4("cli_pending_open").then(function(path) {
+    invoke5("cli_pending_open").then(function(path) {
       if (typeof path === "string" && path.length > 0) {
         openDocument(path);
       }
@@ -2334,53 +2398,7 @@
       var first = paths[0];
       openDocument(first);
     });
-    listen("document:loaded", function(event) {
-      var data = event && event.payload || {};
-      currentPath = data.path || null;
-      cleanText2 = data.text || "";
-      markDirty(false);
-      setStatusPath(data.path || "Bereit", false);
-      updateWordCount(data.text || "");
-      applyDocKind(data.kind || "unknown");
-      invoke4("workspace_add_recent", { path: data.path }).catch(function() {
-      });
-      var bar2 = document.getElementById("find-bar");
-      if (bar2 && bar2.classList.contains("open") && !document.body.classList.contains("edit-mode")) {
-        var input3 = document.getElementById("find-input");
-        if (input3 && input3.value) {
-          setTimeout(function() {
-            ViewFinder.setFindTerm(input3.value);
-          }, 0);
-        }
-      }
-    });
-    listen("document:dirty_changed", function(event) {
-      var dirty = event && event.payload && (event.payload.is_dirty || event.payload.isDirty);
-      markDirty(!!dirty);
-    });
-    listen("document:closed", function() {
-      currentPath = null;
-      cleanText2 = "";
-      markDirty(false);
-      if (window.FolioEditor && typeof window.FolioEditor.setText === "function") {
-        window.FolioEditor.setText("", "plaintext");
-      }
-      var view = document.getElementById("view-region");
-      var body2 = view && view.querySelector(".markdown-body");
-      if (body2) body2.innerHTML = "";
-      setTocList("");
-      applyDocKind("unknown");
-      setStatusPath("Bereit", false);
-      updateWordCount("");
-      applyWindowTitle();
-    });
-    listen("document:saved", function(event) {
-      var data = event && event.payload || {};
-      cleanText2 = data.text || editorText();
-      markDirty(false);
-      renderDocumentPayload(data);
-      updateWordCount(data.text || "");
-    });
+    initDocumentState({ setActiveMode });
     listen("app:set_mode", function(event) {
       var mode = event && event.payload && event.payload.mode || "view";
       setActiveMode(mode);
@@ -2414,7 +2432,7 @@
       var text = data.text || "";
       if (typeof window.loadEditorText === "function") window.loadEditorText(text);
       updateWordCount(text);
-      if (currentPath) markDirty(text !== cleanText2);
+      if (currentPath) markDirty(text !== cleanText);
     });
     listen("automation:open_document", function(event) {
       var data = event && event.payload || {};
@@ -2423,8 +2441,8 @@
     window.addEventListener("folio-editor-text-updated", function(e) {
       var text = e.detail || "";
       updateWordCount(text);
-      if (currentPath) markDirty(text !== cleanText2);
-      invoke4("editor_text_changed", { text }).catch(function() {
+      if (getCurrentPath()) markDirty(text !== getCleanText());
+      invoke5("editor_text_changed", { text }).catch(function() {
       });
     });
     initLanguagePicker();
@@ -2432,7 +2450,7 @@
       var ev = window.__TAURI__ && window.__TAURI__.event;
       if (!ev || typeof ev.listen !== "function") return;
       ev.listen("menu:file_open", function() {
-        invoke4("pick_file").then(function(path) {
+        invoke5("pick_file").then(function(path) {
           if (path && typeof window.openDocument === "function") {
             window.openDocument(path);
           }
@@ -2440,7 +2458,7 @@
         });
       });
       ev.listen("menu:file_save", function() {
-        if (isDirty) saveCurrent();
+        if (getIsDirty()) saveCurrent();
       });
       ev.listen("menu:file_recent", function(event) {
         var p = event && event.payload && event.payload.path;
@@ -2449,10 +2467,10 @@
         }
       });
       ev.listen("menu:file_close", function() {
-        if (!currentPath) return;
+        if (!getCurrentPath()) return;
         requestSaveIfDirty().then(function(ok) {
           if (!ok) return;
-          invoke4("close_document").catch(function() {
+          invoke5("close_document").catch(function() {
           });
         });
       });
@@ -2470,7 +2488,7 @@
         openEditorFind("");
       });
       ev.listen("menu:help_cheatsheet", function() {
-        var b = $3("tb-cheatsheet");
+        var b = $4("tb-cheatsheet");
         if (b) b.click();
       });
       ev.listen("menu:view_mode_view", function() {
@@ -2483,23 +2501,23 @@
         setMode("split");
       });
       ev.listen("menu:view_theme_light", function() {
-        invoke4("theme_set", { mode: "light" }).catch(function() {
+        invoke5("theme_set", { mode: "light" }).catch(function() {
         });
       });
       ev.listen("menu:view_theme_dark", function() {
-        invoke4("theme_set", { mode: "dark" }).catch(function() {
+        invoke5("theme_set", { mode: "dark" }).catch(function() {
         });
       });
       ev.listen("menu:view_rail_left", function() {
         var visible = !document.body.classList.contains("vault-hidden");
         applyRailVisibility("left", !visible);
-        invoke4("set_rail_visible", { side: "left", visible: !visible }).catch(function() {
+        invoke5("set_rail_visible", { side: "left", visible: !visible }).catch(function() {
         });
       });
       ev.listen("menu:view_rail_right", function() {
         var visible = !document.body.classList.contains("toc-hidden");
         applyRailVisibility("right", !visible);
-        invoke4("set_rail_visible", { side: "right", visible: !visible }).catch(function() {
+        invoke5("set_rail_visible", { side: "right", visible: !visible }).catch(function() {
         });
       });
       ev.listen("menu:about", function(event) {

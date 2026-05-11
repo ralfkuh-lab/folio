@@ -42,6 +42,22 @@ import {
     rewriteRelativeAssets,
     ViewFinder,
 } from './view/markdown';
+import {
+    initDocumentState,
+    getCurrentPath,
+    getCleanText,
+    getIsDirty,
+    markDirty,
+    applyDocKind,
+    applyWindowTitle,
+    openDocument,
+    saveCurrent,
+    syncEditorTextToStore,
+    requestSaveIfDirty,
+    setStatusPath,
+    updateWordCount,
+    showStatus,
+} from './state/document';
 
 // === IIFE #1 (TOC/View bridge, Editor bridge, ViewFinder, Cheatsheet, Vault setters) ===
 
@@ -99,26 +115,8 @@ import {
                     break;
             }
         });
-        window.__TAURI__.event.listen("document:loaded", function (event) {
-            var data = event && event.payload;
-            if (!data || typeof data !== 'object') return;
-            if (typeof window.loadEditorText === 'function') {
-                window.loadEditorText(data.text || '', data.language || '');
-            }
-            setEditorLanguageDisplay(data.language || 'plaintext');
-            setTocList(data.tocHtml || data.toc_html || '');
-            var body = contentEl.querySelector('.markdown-body');
-            if (body) {
-                // Nur Markdown wird in der View-Region gerendert. Für
-                // Text/Code-Dateien würde sonst der Roh-Inhalt durch den
-                // MD-Renderer kurz aufflackern, bevor applyDocKind in
-                // den Edit-Mode wechselt.
-                var isMd = data.kind === 'markdown';
-                body.innerHTML = isMd ? (data.content || data.html || '') : '';
-                if (isMd) rewriteRelativeAssets(body, data.path || '');
-            }
-            setVaultActive(data.path || '');
-        });
+        // document:loaded-Listener lebt jetzt in state/document.ts
+        // (Listener-Fusion — siehe Plan-Phase 4.5).
         window.__TAURI__.event.listen("navigation:changed", function (event) {
             var data = event && event.payload;
             if (!data || typeof data !== 'object') return;
@@ -252,7 +250,7 @@ import {
         });
     };
     window.focusEditor = function () {
-        var initial = typeof cleanText === 'string' ? cleanText : '';
+        var initial = getCleanText() || '';
         ensureEditorMounted(initial).then(function (ok) {
             if (!ok) return;
             window.layoutEditor();
@@ -327,185 +325,13 @@ import {
 
     function $(id) { return document.getElementById(id); }
     function bind(id, fn) { var el = $(id); if (el) el.addEventListener('click', fn); }
-    var currentPath = null;
-    var isDirty = false;
-    var cleanText = '';
-    function markDirty(dirty) {
-        isDirty = !!dirty;
-        var el = $('status-path');
-        if (el) el.classList.toggle('dirty', isDirty);
-        var btn = $('tb-save');
-        if (btn) btn.disabled = !isDirty;
-        invoke('menu_set_enabled', { id: 'file.save', enabled: isDirty }).catch(function(){});
-        applyWindowTitle();
-    }
-    function fileFullName(p) {
-        if (!p) return null;
-        return p.replace(/\\/g, '/').split('/').pop() || p;
-    }
-    function applyWindowTitle() {
-        var name = fileFullName(currentPath);
-        var title = name
-            ? (isDirty ? '* ' + name : name) + ' — Folio'
-            : 'Folio';
-        document.title = title;
-        invoke('set_window_title', { title: title }).catch(function () { /* ignore */ });
-    }
-    function editorText() {
-        if (window.FolioEditor && typeof window.FolioEditor.getText === 'function') {
-            return window.FolioEditor.getText();
-        }
-        return cleanText;
-    }
-    function refreshDirtyFromEditor() {
-        var dirty = !!currentPath && editorText() !== cleanText;
-        markDirty(dirty);
-        return dirty;
-    }
-    function syncEditorTextToStore() {
-        if (!currentPath) return Promise.resolve();
-        return invoke('editor_text_changed', { text: editorText() }).catch(function(){});
-    }
-    /* Rename-Modal (showRenameDialog) lebt jetzt in ui/dialogs.ts. Kein
-       Reader im Bundle: das Datei-Menue geht ueber den nativen Save-Dialog
-       im Backend (commands::file::run_rename_dialog), das Vault-Kontext-
-       menue startet Inline-Rename direkt. */
-
-    /* Inline-Rename im Vault-Baum (Explorer-Feeling): ersetzt das .label-
-       Span temporär durch ein <input>, vorselektiert den Stamm ohne
-       Endung. Enter/Blur committen, Escape bricht ab. Nach erfolgreichem
-       rename_file emittiert das Backend vault:refresh, das den Baum neu
-       baut — das Input verschwindet damit automatisch. */
-    // startInlineRename lebt jetzt in vault/context-menu.ts (importiert oben).
-
-    // showUnsavedDialog lebt jetzt in ui/dialogs.ts (importiert oben).
-    function renderDocumentPayload(data) {
-        if (!data || typeof data !== 'object') return;
-        setTocList(data.tocHtml || data.toc_html || '');
-        var view = document.getElementById('view-region');
-        var body = view && view.querySelector('.markdown-body');
-        if (body) {
-            body.innerHTML = data.content || data.html || '';
-            rewriteRelativeAssets(body, data.path || currentPath);
-        }
-    }
-    // rewriteRelativeAssets lebt jetzt in view/markdown.ts (importiert oben).
-    function saveCurrent() {
-        return syncEditorTextToStore().then(function () {
-            return invoke('editor_save_requested');
-        }).then(function (saved) {
-            if (saved) {
-                cleanText = editorText();
-                markDirty(false);
-            }
-            return !!saved;
-        }).catch(function () { return false; });
-    }
-    function requestSaveIfDirty() {
-        var dirty = refreshDirtyFromEditor();
-        if (!dirty && !isDirty) return Promise.resolve(true);
-        return syncEditorTextToStore().then(showUnsavedDialog).then(function (decision) {
-            if (decision === 'cancel') return false;
-            if (decision === 'discard') {
-                return invoke('discard_editor_changes').then(function () {
-                    cleanText = editorText();
-                    markDirty(false);
-                    return true;
-                }).catch(function () { return false; });
-            }
-            return invoke('editor_save_requested').then(function (saved) {
-                if (saved) {
-                    cleanText = editorText();
-                    markDirty(false);
-                }
-                return !!saved;
-            }).catch(function () { return false; });
-        });
-    }
-    var DOC_KIND_CLASSES = ['kind-markdown', 'kind-text', 'kind-binary', 'kind-unknown'];
-    function applyDocKind(kind) {
-        var resolved = kind || 'unknown';
-        var body = document.body;
-        DOC_KIND_CLASSES.forEach(function (c) { body.classList.remove(c); });
-        body.classList.add('kind-' + resolved);
-
-        var md = resolved === 'markdown';
-        var hasDoc = resolved !== 'unknown' && resolved !== 'binary';
-        var btnView = $('tb-mode-view');
-        if (btnView) {
-            btnView.disabled = !md;
-            btnView.title = md ? 'View (Ctrl+1)' : 'View nur für Markdown verfügbar';
-        }
-        var btnEdit = $('tb-mode-edit');
-        if (btnEdit) {
-            btnEdit.disabled = !hasDoc;
-            btnEdit.title = hasDoc ? 'Edit (Ctrl+2)' : 'Kein Dokument geladen';
-        }
-        var btnExport = $('tb-export');
-        if (btnExport) {
-            btnExport.disabled = !md;
-            btnExport.title = md ? 'Exportieren…' : 'Export nur für Markdown verfügbar';
-        }
-        // Menü-Items synchron halten: View-Mode nur bei MD, Save-As bei
-        // jedem geladenen, lesbaren Dokument (also nicht 'unknown').
-        invoke('menu_set_enabled', { id: 'view.mode.view', enabled: md }).catch(function(){});
-        invoke('menu_set_enabled', { id: 'view.mode.edit', enabled: hasDoc }).catch(function(){});
-        invoke('menu_set_enabled', { id: 'file.save_as', enabled: hasDoc }).catch(function(){});
-        invoke('menu_set_enabled', { id: 'file.rename', enabled: hasDoc }).catch(function(){});
-        invoke('menu_set_enabled', { id: 'file.close', enabled: hasDoc }).catch(function(){});
-        syncCheatsheetMenu();
-        // Häkchen nach dem Enable-Wechsel erneut anwenden — Tauri scheint
-        // set_checked auf disabled Items zu verwerfen, sodass beim ersten
-        // Doc-Laden der View/Edit-Mode-Haken sonst leer bleibt, bis der
-        // User selbst umschaltet.
-        syncViewModeMenuChecks();
-    }
-    // Liest den aktuellen Mode aus body.classList und setzt die Häkchen
-    // im Ansicht-Menü. Kein State neben dem DOM — gleiche Strategie wie
-    // syncCheatsheetMenu.
-    function syncViewModeMenuChecks() {
-        var body = document.body;
-        // Ohne geladenes Dokument soll kein Mode angehakt sein, auch
-        // wenn edit-mode/split-mode-Klassen noch im DOM stehen.
-        var hasDoc = !body.classList.contains('kind-unknown')
-                  && !body.classList.contains('kind-binary');
-        var mode = !hasDoc ? null
-                 : body.classList.contains('edit-mode') ? 'edit'
-                 : body.classList.contains('split-mode') ? 'split'
-                 : 'view';
-        invoke('menu_set_checked', { id: 'view.mode.view', checked: mode === 'view' }).catch(function(){});
-        invoke('menu_set_checked', { id: 'view.mode.edit', checked: mode === 'edit' }).catch(function(){});
-        invoke('menu_set_checked', { id: 'view.mode.split', checked: mode === 'split' }).catch(function(){});
-    }
-    // Cheat-Sheet ist nur im Edit-Mode bei Markdown sinnvoll. Wird
-    // sowohl von applyDocKind als auch vom app:set_mode-Listener
-    // gerufen, damit jede Zustandsänderung das Menü mitnimmt.
-    // syncCheatsheetMenu kommt aus ui/cheatsheet (importiert oben).
-    applyDocKind('unknown');
-    function showStatus(msg) {
-        var el = $('status-path');
-        if (el) el.textContent = msg;
-    }
-    function openDocument(path) {
-        return requestSaveIfDirty().then(function (ok) {
-            if (!ok) return false;
-            return invoke('read_file', { path: path }).then(function (data) {
-                invoke('workspace_add_recent', { path: path }).catch(function(){});
-                var kind = data && data.kind;
-                if (kind && kind !== 'markdown' &&
-                    !document.body.classList.contains('edit-mode')) {
-                    invoke('set_view_mode', { mode: 'edit' }).then(function () {
-                        setActiveMode('edit');
-                    }).catch(function(){});
-                }
-                applyDocKind(kind);
-                return true;
-            }).catch(function (err) {
-                showStatus(typeof err === 'string' ? err : 'Datei konnte nicht geöffnet werden');
-                return false;
-            });
-        });
-    }
+    /* Document-State (currentPath, cleanText, isDirty, markDirty, applyDocKind,
+       openDocument, saveCurrent, syncEditorTextToStore, requestSaveIfDirty,
+       setStatusPath, updateWordCount, showStatus, applyWindowTitle) und die
+       Lifecycle-Listener (document:loaded fusioniert, document:dirty_changed,
+       document:closed, document:saved) leben jetzt in state/document.ts.
+       initDocumentState wird unten gerufen, sobald setActiveMode hier
+       deklariert ist. */
     window.openDocument = openDocument;
     function setMode(mode) {
         return requestSaveIfDirty().then(function (ok) {
@@ -560,11 +386,11 @@ import {
     }
     bind('tb-mode-view', function () { setMode('view'); });
     bind('tb-mode-edit', function () { setMode('edit'); });
-    bind('tb-save', function () { if (isDirty) saveCurrent(); });
+    bind('tb-save', function () { if (getIsDirty()) saveCurrent(); });
 
     /* ----- Export-Dialog (Modul) ----- */
     initExportDialog({
-        getCurrentPath: function () { return currentPath; },
+        getCurrentPath,
         syncEditorTextToStore: syncEditorTextToStore,
         showStatus: showStatus,
     });
@@ -632,23 +458,8 @@ import {
         }
     });
 
-    /* ----- Statusbar ----- */
-    function setStatusPath(path, dirty) {
-        var el = $('status-path');
-        if (!el) return;
-        el.textContent = path || 'Bereit';
-        el.classList.toggle('dirty', !!dirty);
-    }
-    function updateWordCount(text) {
-        var el = $('status-wordcount');
-        if (!el) return;
-        if (!text) { el.hidden = true; el.textContent = ''; return; }
-        var chars = text.length;
-        var words = (text.match(/\S+/g) || []).length;
-        var lines = text.split(/\r\n|\r|\n/).length;
-        el.hidden = false;
-        el.textContent = words + ' Wörter · ' + chars + ' Zeichen · ' + lines + ' Zeilen';
-    }
+    /* ----- Statusbar-Setter (setStatusPath, updateWordCount, showStatus)
+       leben jetzt in state/document.ts (importiert oben). */
     bind('status-theme-toggle', function () { invoke('theme_set', { mode: 'toggle' }).catch(function(){}); });
 
     /* ----- Tastatur-Shortcuts ----- */
@@ -740,57 +551,10 @@ import {
         openDocument(first);
     });
 
-    /* ----- Backend-Events ----- */
-    listen('document:loaded', function (event) {
-        var data = event && event.payload || {};
-        currentPath = data.path || null;
-        cleanText = data.text || '';
-        markDirty(false);
-        setStatusPath(data.path || 'Bereit', false);
-        updateWordCount(data.text || '');
-        applyDocKind(data.kind || 'unknown');
-        invoke('workspace_add_recent', { path: data.path }).catch(function(){});
-        // Such-Highlights gehen im View-Mode beim innerHTML-Replace verloren — neu setzen.
-        var bar = document.getElementById('find-bar');
-        if (bar && bar.classList.contains('open') && !document.body.classList.contains('edit-mode')) {
-            var input = document.getElementById('find-input');
-            if (input && input.value) {
-                setTimeout(function () { ViewFinder.setFindTerm(input.value); }, 0);
-            }
-        }
-    });
-    listen('document:dirty_changed', function (event) {
-        var dirty = event && event.payload && (event.payload.is_dirty || event.payload.isDirty);
-        markDirty(!!dirty);
-    });
-    // document:closed wird vom close_document-Command emittiert. Wir
-    // setzen die Frontend-Sicht analog zum Boot-Zustand zurück: kein
-    // Pfad, leerer Editor, „Bereit"-Statusbar, kein Word-Count.
-    listen('document:closed', function () {
-        currentPath = null;
-        cleanText = '';
-        markDirty(false);
-        if (window.FolioEditor && typeof window.FolioEditor.setText === 'function') {
-            window.FolioEditor.setText('', 'plaintext');
-        }
-        // View-Region und TOC zurücksetzen, sonst bleibt das zuletzt
-        // gerenderte HTML stehen.
-        var view = document.getElementById('view-region');
-        var body = view && view.querySelector('.markdown-body');
-        if (body) body.innerHTML = '';
-        setTocList('');
-        applyDocKind('unknown');
-        setStatusPath('Bereit', false);
-        updateWordCount('');
-        applyWindowTitle();
-    });
-    listen('document:saved', function (event) {
-        var data = event && event.payload || {};
-        cleanText = data.text || editorText();
-        markDirty(false);
-        renderDocumentPayload(data);
-        updateWordCount(data.text || '');
-    });
+    /* ----- Backend-Events -----
+       document:loaded (fusioniert) + document:dirty_changed +
+       document:closed + document:saved leben jetzt in state/document.ts. */
+    initDocumentState({ setActiveMode });
     // vault:refresh-Listener lebt jetzt in vault/tree.ts (Listener-Fusion
     // mit dem IIFE-#1-Pendant — Plan-Phase 4.4).
     listen('app:set_mode', function (event) {
@@ -831,7 +595,7 @@ import {
     window.addEventListener('folio-editor-text-updated', function (e) {
         var text = e.detail || '';
         updateWordCount(text);
-        if (currentPath) markDirty(text !== cleanText);
+        if (getCurrentPath()) markDirty(text !== getCleanText());
         invoke('editor_text_changed', { text: text }).catch(function(){});
     });
 
@@ -856,7 +620,7 @@ import {
             }).catch(function () {});
         });
         ev.listen('menu:file_save', function () {
-            if (isDirty) saveCurrent();
+            if (getIsDirty()) saveCurrent();
         });
         ev.listen('menu:file_recent', function (event) {
             var p = event && event.payload && event.payload.path;
@@ -865,7 +629,7 @@ import {
             }
         });
         ev.listen('menu:file_close', function () {
-            if (!currentPath) return;
+            if (!getCurrentPath()) return;
             requestSaveIfDirty().then(function (ok) {
                 if (!ok) return;
                 invoke('close_document').catch(function(){});
