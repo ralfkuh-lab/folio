@@ -168,7 +168,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
                     };
                     let state = handle.state::<AppState>();
                     if let Err(error) =
-                        commands::shell::route_shell_event(&payload, &state, &handle)
+                        commands::events::route_shell_event(&payload, &state, &handle)
                     {
                         eprintln!("shell:event failed: {error}");
                     }
@@ -183,7 +183,8 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
                     }
                 };
                 let state = handle.state::<AppState>();
-                if let Err(error) = commands::shell::route_editor_event(&payload, &state, &handle) {
+                if let Err(error) = commands::events::route_editor_event(&payload, &state, &handle)
+                {
                     eprintln!("editor:event failed: {error}");
                 }
             });
@@ -242,8 +243,8 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::nav::visible_heading,
             commands::nav::scroll_position,
             commands::nav::toc_click,
-            commands::shell::shell_event,
-            commands::shell::editor_event,
+            commands::events::shell_event,
+            commands::events::editor_event,
             commands::workspace_cmd::workspace_pin,
             commands::workspace_cmd::workspace_unpin,
             commands::workspace_cmd::workspace_add_recent,

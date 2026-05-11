@@ -1,6 +1,6 @@
 # Refactoring-Plan: Modularisierung & Aufräumen
 
-Status: **Phase 2 abgeschlossen** · Letzte Aktualisierung: 2026-05-11
+Status: **Phase 3 abgeschlossen** · Letzte Aktualisierung: 2026-05-11
 
 Architektur-/Strukturreview vom 2026-05-11 (Claude + Codex als 2. Meinung)
 ergab klare Splitting-Kandidaten und Smells. Plan ist in vier Phasen
@@ -63,35 +63,54 @@ Mehr Bewegung, aber klare fachliche Grenzen. Public-API bleibt stabil.
 
 ### Phase 3 — State-Choreografie aufräumen, dann splitten
 
-**Vorab-Refactor erforderlich**, bevor Split sinnvoll ist.
+Rename-Choreografie konsolidiert; weitere Open-/Close-Konsolidierungen
+sind kleiner und können bei Bedarf später angefasst werden, sobald
+Schmerz konkret wird.
 
-- [ ] **Zentrale Dokument-Operationen einführen**
-  Mehrere Pfade synchronisieren Workspace.recent + Vault.active + Recent-Menü +
-  Vault.refresh + DocumentStore manuell. Eine `pub fn` pro Operation, alle Pfade rufen sie:
-  - `document::open(path, …)` — gerufen von `read_file`, `commands/shell::open_document`,
-    Automation `/open`, Navigation-Link-Klicks
-  - `document::rename(old, new, …)` — gerufen von Tauri-Command `rename_file` und
-    `run_rename_dialog`
-  - `document::close(…)` — gerufen von Tauri-Command und Menü-Event
+- [x] **Rename-Konsolidierung** ✓ Commit
+  `rename_file` (Tauri-Command) und `run_rename_dialog` (Datei-Menü)
+  teilten ~25 LOC identischer State-Synchronisation. Beide rufen jetzt
+  `fn perform_rename(old, new, state, handle)`, das auch Validierung
+  (Zieldatei existiert) und `fs::rename` kapselt.
 
-- [ ] **`src/commands/file.rs` (411 LOC)** → `src/commands/file/` (nach Refactor)
-  - `mod.rs` — Tauri-Command-Exports
+- [ ] **Open-Konsolidierung** (offen, nicht prioritär)
+  `read_file` (commands/file/read), Automation `post_open`, und
+  `commands::events::vault::open_document` machen alle den gleichen
+  3-Schritt: `document_store.load`, `navigation.navigate`,
+  `vault.set_active`. ~4 LOC Duplikation pro Stelle. Konsolidierung in
+  `document::open(path, state)` wäre sauber, lohnt aber erst, wenn sich
+  ein 4. Caller einreiht oder das Trio sich auseinanderentwickelt.
+
+- [x] **`src/commands/file.rs` (411 LOC)** → `src/commands/file/` ✓ Commit
+  - `mod.rs` — Re-Exports (`FileData`, `FileEntry`, `run_save_as`,
+    `run_rename_dialog`, `list_dir`)
   - `types.rs` — `FileData`, `FileEntry`
-  - `read.rs` — `read_file`, `write_file`, `list_dir`
-  - `dialogs.rs` — `run_save_as`, `run_rename_dialog`
-  - `rename.rs` — `rename_file` (nutzt `document::rename`)
-  - `lifecycle.rs` — `close_document`
+  - `read.rs` — `read_file`, `write_file`
+  - `rename.rs` — `rename_file`, `run_rename_dialog`, `perform_rename`
+  - `save_as.rs` — `run_save_as`, `save_as` (cmd-Wrapper)
+  - `close.rs` — `close_document`
+  - `list.rs` — `file_list`, `list_dir`, `file_name`
+  - `util.rs` — `file_path_to_string` (shared)
+  - **Stolperstein**: `tauri::generate_handler!` findet `__cmd__*`-Companions
+    nicht via `pub use`. lib.rs nutzt jetzt explizite Submodul-Pfade
+    (`commands::file::read::read_file` etc.).
 
-- [ ] **`src/commands/shell.rs` (379 LOC)** umbenennen + splitten
-  Datei ist kein Shell-Modul, sondern ein Event-Gateway. Umbenennen zu
-  `src/commands/events/` (oder `src/event_gateway/`):
-  - `mod.rs` — Public-Tauri-Commands (`shell_event`, `editor_event`)
-  - `router.rs` — Dispatch nach `type`-Feld
-  - `payload.rs` — `payload_type`, `string_field`, `number_field`, `bool_field`, `usize_field`
-  - `editor.rs` — Editor-bezogene Events
-  - `navigation.rs` — Link-Klick, Scroll, TOC-Klick, Visible-Heading, Rail-Resize
-  - `vault.rs` — Vault-Sektion-Toggle, Dir-Expand/Collapse, Vault-Context, Add-File/Folder
-  - `document.rs` — Open-Document, Document-Payload
+- [x] **`src/commands/shell.rs` (379 LOC)** umbenennen + splitten ✓ Commit
+  Datei ist kein Shell-Modul, sondern ein Event-Gateway — umbenannt zu
+  `src/commands/events/`. Tauri-Command-Namen (`shell_event`/`editor_event`)
+  und IPC-Event-Strings (`shell:event`/`editor:event`) bleiben stabil.
+  - `mod.rs` — Tauri-Commands `shell_event`/`editor_event` (thin wrapper)
+  - `router.rs` — `route_shell_event` + `route_editor_event` (Dispatch)
+  - `payload.rs` — `payload_type`, `string_field`, `number_field`,
+    `bool_field`, `usize_field` (alle `pub(super)`)
+  - `navigation.rs` — `link_click`, `visible_heading`, `scroll_position`,
+    `toc_click`, `rail_resize`
+  - `vault.rs` — `toggle_section`, `expand_dir`, `collapse_dir`,
+    `open_document`, `context`, `add_file`, `add_folder`,
+    `emit_vault_refresh`
+  - Editor-Event-Handler bleiben inline im `router.rs` (5 kurze Arms,
+    Extraktion wäre Over-Engineering).
+  - Dead-Code-Entfernung: `pub fn document_payload` (unbenutzt) raus.
 
 ### Phase 4 — Frontend-Build-Umbau (eigener Sprint)
 
@@ -150,5 +169,5 @@ unbedingt eigene Tasks — sie informieren die Splits.
 |---|---|---|
 | 1: risikoarme Splits | ✅ abgeschlossen | `editor_commands`-Split + Plan, `file_icon`-Split |
 | 2: mittlere Rust-Splits | ✅ abgeschlossen | `automation`-Split, `menu`-Split |
-| 3: State-Refactor + Splits | ⏸ wartet | — |
+| 3: State-Refactor + Splits | ✅ abgeschlossen | Rename-Konsolidierung, `commands/file`-Split, `commands/shell` → `commands/events`-Split |
 | 4: Frontend-Build-Umbau | ⏸ wartet | — |
