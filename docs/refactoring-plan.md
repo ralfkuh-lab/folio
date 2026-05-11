@@ -1,11 +1,18 @@
 # Refactoring-Plan: Modularisierung & Aufräumen
 
-Status: **Phase 4 abgeschlossen** · Letzte Aktualisierung: 2026-05-11
+Status: **Phase 5 in Arbeit** · Letzte Aktualisierung: 2026-05-12
 
 Architektur-/Strukturreview vom 2026-05-11 (Claude + Codex als 2. Meinung)
 ergab klare Splitting-Kandidaten und Smells. Plan ist in vier Phasen
 gegliedert, niedriges Risiko zuerst. Jede Phase = ein bis mehrere
 abgrenzbare Commits, jeweils mit `cargo test + clippy + fmt` grün.
+
+Phasen 1-4 sind durch. **Phase 5** (2026-05-12) sammelt die Restbefunde aus
+dem zweiten Review nach Refactoring-Ende — kleinere Konsolidierungen +
+Type-Safety + Frontend-Tests. Vier echte Bugs aus diesem Review wurden
+vorher (Commit unmittelbar vor Phase-5-Start) bereits gefixt:
+`main.ts:418`-ReferenceError, `find-bar.ts`-`window.focusEditor`-Bridge,
+Link-Klick-Dirty-Prompt, `reload_if_changed`-Format-Metadaten.
 
 ## Phasen
 
@@ -165,6 +172,110 @@ unbedingt eigene Tasks — sie informieren die Splits.
    externe Automation OK, für interne Shell-/Editor-Events mittelfristig
    typisieren (eigene Tasks in Phase 3-Refactor).
 
+### Phase 5 — Konsolidierung & Type-Safety nach Post-Refactoring-Review
+
+Restbefunde aus dem zweiten Review (2026-05-12). Niedriges bis mittleres
+Risiko; jeder Punkt ist ein eigener Commit-Kandidat.
+
+#### 5.1 — Backend: Dokument-Öffnen konsolidieren
+
+`document_store.load + navigation.navigate + vault.set_active` werden
+an vier Stellen separat choreografiert — das ist die Ursache, warum
+Link-Klick-Bugs mehrfach landen.
+
+- [ ] **Neue Service-Funktion** `src/document_service.rs::open(path, anchor, options) -> Result<…>`
+  - Kapselt die Choreografie an einer Stelle
+  - Callsites umstellen: `commands/file/read::read_file`,
+    `commands/events/vault::open_document`,
+    `commands/events/navigation::link_click`,
+    `automation/handlers/document::*`
+  - Tests: dirty-Prompt-Pfad (Backend ist agnostisch; Frontend entscheidet)
+- [ ] **Dead Code raus**: `commands/nav.rs::link_click` (Tauri-Command,
+      nie invoked — Event-Pfad ist der echte). Aus `lib.rs::generate_handler!`
+      austragen.
+- [ ] **Dead Code raus**: `DocumentStore::mark_external_changed` +
+      `has_external_changes`-Feld. Der Watcher feuert direkt den
+      `external_changed`-Callback; das Flag wird gesetzt-zurückgesetzt,
+      aber nie auf `true`. Stille Komplikation der API.
+
+#### 5.2 — Frontend-Type-Safety
+
+`@ts-nocheck` ist flächendeckend in `src-tauri/web/app/**.ts`; dadurch
+rutschte `main.ts:418` (ReferenceError auf `currentPath`/`cleanText`)
+am Build vorbei. Build-Script hat keinen Typecheck-Schritt.
+
+- [ ] **`@ts-nocheck` schrittweise raus**, Reihenfolge nach Hebel:
+  - `state/document.ts` (zentraler State, viele Importer)
+  - `main.ts` (Orchestrator, viele Cross-Modul-Aufrufe)
+  - `editor/shell.ts`, `vault/tree.ts`, `ui/find-bar.ts`
+  - Rest folgt automatisch
+- [ ] **`tsc --noEmit` in `package.json::build` ergänzen** — vor esbuild,
+      Build bricht bei Typfehlern ab.
+- [ ] **`window.*`-Surface typisieren** über eigene `.d.ts` oder
+      `declare global` in `globals.d.ts`. Aktueller Stand: `window.FolioEditor`,
+      `window.__folioInvoke`, `window.openDocument`, `window.setVaultPinned`/
+      `setVaultRecent` etc. — siehe `docs/frontend-globals.md`.
+
+#### 5.3 — Frontend-Splits
+
+`main.ts` ist nach Phase 4.6 weiterhin Orchestrator mit ~470 LOC,
+zwei IIFEs, vielen inline-Listenern. `editor.ts` ist ~550 LOC monolitischer
+Monaco-Adapter.
+
+- [ ] **`main.ts` aufteilen** in Leaf-Module:
+  - `ui/toolbar-actions.ts` — `bind('tb-*')` + `applyCmd` aus IIFE #2
+  - `ui/menu-router.ts` — `menu:*`-Listener (file_open, file_save,
+    file_recent, view_mode_*, view_theme_*, view_rail_*, edit_*, help_*, about)
+  - `ui/drag-drop.ts` — `tauri://drag-*`-Listener
+  - `automation/events.ts` — `automation:click`, `automation:set_editor_text`,
+    `automation:open_document`
+  - `main.ts` wird reiner Init-Router (~100 LOC Ziel)
+- [ ] **`editor.ts` splitten** in `web/editor/`:
+  - `editor/mount.ts` — Monaco-Init, `mount`, `setText`, `setTheme`, `layout`
+  - `editor/find.ts` — Find-State (Decorations, openFind/closeFind/setFindTerm)
+  - `editor/events.ts` — Selection-/Scroll-Capture, `editorReady`-Post
+  - `editor/index.ts` — `window.FolioEditor`-Assembly
+  - **`suppressTextEvent` durch Promise-Queue ersetzen** — globaler Boolean
+    ist race-anfällig zwischen `mount` und `setText`
+- [ ] **`commands/app.rs` splitten** (~270 LOC, 13 Verantwortungen):
+  - `commands/app/dialog.rs` — `pick_file`, `pick_folder`, `open_folder`
+  - `commands/app/shell_opener.rs` — `show_in_file_manager`, `open_terminal_at`
+  - `commands/app/mod.rs` — Theme/Rail/View-Mode/Window/Zoom (Core-State)
+
+#### 5.4 — Robustheit & Tests
+
+- [ ] **`commands/file/save_as.rs:87` und `commands/file/rename.rs:119`**:
+      Lock-Fehler werden mit `if let Ok(...)` geschluckt, Command meldet
+      trotzdem `Ok`. Bei Mutex-Poisoning driften Store/Workspace/Vault/
+      Navigation auseinander. → Fehler propagieren oder als bewusste
+      best-effort markieren + vollständigen Refresh emittieren.
+- [ ] **`DocumentStore::load` + `reload_if_changed` DRY**: BOM-/CRLF-/
+      Decode-Logik ist zweimal vorhanden. Private
+      `fn read_and_decode(path) -> io::Result<(String, LineEnding, bool)>`
+      extrahieren, beide Methoden nutzen sie.
+- [ ] **Frontend-Tests einführen** — Vitest minimal-Setup (kein Playwright).
+      Lohnendste Kandidaten:
+  - `state/document.ts` Listener-Logik (document:loaded / dirty_changed /
+    external_changed-Pfade mit mock Tauri-API)
+  - `vault/tree.ts::toggleDir` + Recursive-Collapse
+  - `ui/find-bar.ts` Mode-Wechsel (View↔Edit) + Term-Persistenz
+
+#### 5.5 — Polish (niedriges Risiko, kleine Diffs)
+
+- [ ] **`Vault::on_section_toggle`-Stub** (vault.rs:93) ist No-Op. Entweder
+      Pin/Recent-Section-State im Vault persistieren oder Stub entfernen
+      (DOM-classList reicht).
+- [ ] **`data-loaded`-Attribut** in `Vault::item_html` (vault.rs:101): seit
+      Auto-Refresh im Frontend ignoriert. Aus dem HTML-Output entfernen.
+- [ ] **`commands/events/router.rs` Unknown-Event-Type**: `_ => Ok(())`
+      schluckt Frontend-Typos silent. Mindestens `eprintln!`-Log oder
+      Comment-Block mit kanonischen Event-Namen.
+- [ ] **`window.openDocument` / `window.__folioInvoke`** als DevTools-Surface
+      bewusst dokumentieren (eigenes `debug-bridge.ts` mit Kommentar) oder
+      entfernen, wenn niemand sie konsumiert.
+- [ ] **`Cargo.toml` CRLF-Phantom-Diff** nach `.gitattributes`-Einführung:
+      `git add --renormalize src-tauri/Cargo.toml && git commit`.
+
 ## Was NICHT angefasst werden soll
 
 - `src-tauri/dist/editor.bundle.js`, `src-tauri/dist/monaco/**` — Build-/Vendor-Artefakte.
@@ -182,3 +293,4 @@ unbedingt eigene Tasks — sie informieren die Splits.
 | 2: mittlere Rust-Splits | ✅ abgeschlossen | `automation`-Split, `menu`-Split |
 | 3: State-Refactor + Splits | ✅ abgeschlossen | Rename-Konsolidierung, `commands/file`-Split, `commands/shell` → `commands/events`-Split |
 | 4: Frontend-Build-Umbau | ✅ abgeschlossen | CSS-Extraktion, JS-Verbatim-Move, Global-Contract-Audit, 7 Leaf-Module, Vault-Module + `vault:refresh`-Fusion, Core-Module + `document:loaded`/`app:set_mode`-Fusion, Bridge-Reduktion + Minify |
+| 5: Konsolidierung & Type-Safety | 🚧 in Arbeit | siehe Sub-Tasks 5.1-5.5 oben |

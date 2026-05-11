@@ -3,7 +3,9 @@
    Im Edit-Mode bedient sie Monaco (via window.FolioEditor); im View-Mode
    den DOM-Sucher (ViewFinder aus view/markdown.ts).
 
-   ensureEditorMounted kommt aus dem Editor-Shell und wird per init injiziert. */
+   ensureEditorMounted + focusEditor kommen aus dem Editor-Shell und
+   werden per init injiziert (statt frueher window.focusEditor — die
+   Bridge existiert seit Phase 4.6 nicht mehr). */
 
 import { ViewFinder } from '../view/markdown';
 
@@ -19,6 +21,7 @@ let caseChk: HTMLInputElement = null;
 let wordChk: HTMLInputElement = null;
 
 let ensureEditorMountedDep: (initial?: string) => Promise<boolean> = null;
+let focusEditorDep: () => void = null;
 let lastTermMemo = '';
 let inputDebounce: ReturnType<typeof setTimeout> | null = null;
 const INPUT_DEBOUNCE_MS = 150;
@@ -69,7 +72,7 @@ function close(): void {
     // Finder treffen und die Edit-Highlights blieben haengen.
     if (window.FolioEditor) window.FolioEditor.closeFind();
     if (ViewFinder) ViewFinder.closeFind();
-    if (isEditMode() && window.focusEditor) window.focusEditor();
+    if (isEditMode() && focusEditorDep) focusEditorDep();
 }
 
 export function openEditorFind(initialTerm?: string): void { open(initialTerm); }
@@ -126,14 +129,18 @@ export function afterModeSwitch(): void {
             }
             input.focus();
             input.select();
-        } else if (isEditMode() && window.focusEditor) {
-            window.focusEditor();
+        } else if (isEditMode() && focusEditorDep) {
+            focusEditorDep();
         }
     }, 0);
 }
 
-export function initFindBar(deps: { ensureEditorMounted: (initial?: string) => Promise<boolean> }): void {
+export function initFindBar(deps: {
+    ensureEditorMounted: (initial?: string) => Promise<boolean>;
+    focusEditor: () => void;
+}): void {
     ensureEditorMountedDep = deps.ensureEditorMounted;
+    focusEditorDep = deps.focusEditor;
 
     bar = document.getElementById('find-bar');
     input = document.getElementById('find-input') as HTMLInputElement;

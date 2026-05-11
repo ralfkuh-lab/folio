@@ -8,6 +8,7 @@
 
 let contentEl: HTMLElement = null;
 let tocEl: HTMLElement = null;
+let requestSaveIfDirtyDep: () => Promise<boolean> = null;
 
 function post(msg: any): void {
     if (window.__TAURI__ && window.__TAURI__.event) {
@@ -339,12 +340,16 @@ function initVisibleHeadingTracker(): void {
     window.addEventListener('load', update);
 }
 
-export function initMarkdownView(): void {
+export function initMarkdownView(deps?: { requestSaveIfDirty?: () => Promise<boolean> }): void {
     contentEl = document.getElementById('view-region');
     tocEl = document.getElementById('toc-region');
     if (!contentEl || !tocEl) return;
+    requestSaveIfDirtyDep = (deps && deps.requestSaveIfDirty) || null;
 
     // Link-Klicks (im Content) — Tauri-Backend behandelt das Routing.
+    // Dirty-Prompt vor dem Post: im Split/Edit-Mode mit ungespeicherten
+    // Edits wuerde der Backend-Load-Pfad in events::navigation::link_click
+    // sonst die offenen Aenderungen ueberschreiben (analog openDocument).
     contentEl.addEventListener('click', function (e: MouseEvent) {
         let el = e.target as HTMLElement;
         while (el && el.tagName !== 'A') el = el.parentElement;
@@ -352,7 +357,12 @@ export function initMarkdownView(): void {
         const href = el.getAttribute('href');
         if (href === null) return;
         e.preventDefault();
-        post({ type: 'linkClick', href });
+        const send = function () { post({ type: 'linkClick', href }); };
+        if (requestSaveIfDirtyDep) {
+            requestSaveIfDirtyDep().then(function (ok) { if (ok) send(); });
+        } else {
+            send();
+        }
     }, true);
 
     // TOC-Click → Backend-Event (navigation:toc_click → setTocActive).

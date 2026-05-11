@@ -122,6 +122,13 @@ impl DocumentStore {
         };
         let text = raw.replace("\r\n", "\n");
         if text == self.text {
+            // Inhalt unveraendert. Falls extern ausschliesslich BOM oder
+            // Line-Ending umgestellt wurde, hier die Metadaten nachziehen —
+            // sonst wuerde der naechste Self-Save die externe Format-
+            // Entscheidung zurueckdrehen. Kein loaded-Callback noetig,
+            // die UI rendert nichts Format-Spezifisches.
+            self.had_bom = had_bom;
+            self.line_ending = line_ending;
             self.has_external_changes = false;
             return Ok(false);
         }
@@ -390,6 +397,31 @@ mod tests {
         assert!(store.reload_if_changed().unwrap());
         assert_eq!("two\n", store.text);
         assert!(!store.is_dirty);
+    }
+
+    #[test]
+    fn reload_if_changed_updates_metadata_on_format_only_change() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("doc.md");
+        // Start: LF, kein BOM.
+        fs::write(&path, b"one\n").unwrap();
+        let mut store = DocumentStore::new();
+        store.load(path.to_str().unwrap()).unwrap();
+        assert_eq!(LineEnding::Lf, store.line_ending);
+        assert!(!store.had_bom);
+
+        // Extern auf CRLF + BOM umgestellt, Inhalt identisch.
+        fs::write(&path, b"\xEF\xBB\xBFone\r\n").unwrap();
+        // Kein loaded-Callback (Inhalt gleich) → reload_if_changed gibt false.
+        assert!(!store.reload_if_changed().unwrap());
+        // Metadaten muessen aber nachgezogen sein, sonst rollt der naechste
+        // save() die externe Format-Entscheidung zurueck.
+        assert_eq!(LineEnding::Crlf, store.line_ending);
+        assert!(store.had_bom);
+
+        // Verify: ein anschliessender Save respektiert die neuen Metadaten.
+        assert!(store.save().unwrap());
+        assert_eq!(b"\xEF\xBB\xBFone\r\n".to_vec(), fs::read(&path).unwrap());
     }
 
     #[test]

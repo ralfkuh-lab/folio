@@ -81,7 +81,7 @@ import {
     };
 
     // ----- View-/TOC-/Markdown-Setup (Modul) — siehe view/markdown.ts -----
-    initMarkdownView();
+    initMarkdownView({ requestSaveIfDirty });
     var contentEl = document.getElementById('view-region');
 
     // Rail-Visibility / Width: setRailVisibility, setTocWidth, setVaultWidth
@@ -159,7 +159,7 @@ import {
     // ----- ViewFinder lebt jetzt in view/markdown.ts (importiert oben). -----
 
     // ----- Find-Bar (Modul) — siehe ui/find-bar.ts -----
-    initFindBar({ ensureEditorMounted });
+    initFindBar({ ensureEditorMounted, focusEditor });
 
     // ----- Splitter-Drag (Vault- und TOC-Rail, Modul) -----
     initRails();
@@ -415,7 +415,10 @@ import {
         var text = data.text || '';
         loadEditorText(text);
         updateWordCount(text);
-        if (currentPath) markDirty(text !== cleanText);
+        // currentPath/cleanText leben seit Phase-4-Extract in state/document.ts;
+        // hier nicht mehr im Scope. Ueber die Getter holen, sonst
+        // ReferenceError beim ersten automation:set_editor_text.
+        if (getCurrentPath()) markDirty(text !== getCleanText());
     });
     listen('automation:open_document', function (event) {
         var data = event && event.payload || {};

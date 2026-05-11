@@ -8,11 +8,14 @@ Vault-Navigation, Workspace-Pins, HTTP-Automation-API für E2E-Tests.
 Offene Aufgaben werden in [`TODO.md`](TODO.md) gepflegt (priorisiert: hoch /
 mittel / niedrig). Vor Vorschlägen, was als nächstes ansteht, dort nachsehen.
 
-Die Modularisierungs-Phasen 1–4 aus
-[`docs/refactoring-plan.md`](docs/refactoring-plan.md) sind abgeschlossen.
-Das Dokument bleibt als historische Referenz liegen — wer wissen will, wie
-die heutige Modul-/Bundle-Struktur entstanden ist, findet dort die
-schrittweise Begründung.
+Refactoring-Plan in [`docs/refactoring-plan.md`](docs/refactoring-plan.md):
+Phasen 1–4 sind durch (Modul-Splits Rust + Tauri-Command-/Events-Splits +
+Frontend in TS-Module + esbuild). **Phase 5 ist aktiv** — Konsolidierung
+(Dokument-Open-Service, Dead-Code-Removal), Type-Safety (`@ts-nocheck` raus,
+`tsc --noEmit` im Build), Frontend-Splits (`main.ts`, `editor.ts`,
+`commands/app.rs`), Robustheit (Lock-Errors propagieren), Frontend-Tests
+(Vitest-Setup). Vor neuen Vorschlägen dort die Sub-Tasks 5.1–5.5 prüfen
+und priorisieren.
 
 ## Tech-Stack
 
