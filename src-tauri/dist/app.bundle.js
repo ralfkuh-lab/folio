@@ -382,6 +382,372 @@
     });
   }
 
+  // app/view/markdown.ts
+  var contentEl = null;
+  var tocEl = null;
+  function post2(msg) {
+    if (window.__TAURI__ && window.__TAURI__.event) {
+      window.__TAURI__.event.emit("shell:event", msg);
+    }
+  }
+  function setTocActive(slug) {
+    if (!tocEl) return;
+    const prev = tocEl.querySelectorAll("li.entry.active");
+    for (let i = 0; i < prev.length; i++) prev[i].classList.remove("active");
+    if (!slug) return;
+    const target = tocEl.querySelector('li.entry[data-slug="' + slug + '"]');
+    if (target) {
+      target.classList.add("active");
+      target.scrollIntoView({ block: "nearest" });
+    }
+  }
+  function setTocList(html) {
+    if (!tocEl) return;
+    const ul = tocEl.querySelector("ul.toc");
+    if (ul) ul.innerHTML = html || "";
+  }
+  function scrollViewToAnchor(slug) {
+    if (!slug || !contentEl) return;
+    const target = contentEl.querySelector("#" + CSS.escape(slug));
+    if (target) target.scrollIntoView({ block: "start" });
+  }
+  function scrollViewTo(y) {
+    if (!contentEl) return;
+    contentEl.scrollTo(0, y || 0);
+  }
+  function rewriteRelativeAssets(rootEl, documentPath) {
+    if (!rootEl || !documentPath) return;
+    const convert = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.convertFileSrc;
+    if (typeof convert !== "function") return;
+    const dir = documentPath.replace(/[\\/][^\\/]*$/, "");
+    const imgs = rootEl.querySelectorAll("img");
+    for (let i = 0; i < imgs.length; i++) {
+      const src = imgs[i].getAttribute("src");
+      if (!src) continue;
+      if (/^[a-z][a-z0-9+.-]*:/i.test(src)) continue;
+      if (src.indexOf("//") === 0) continue;
+      let abs;
+      if (/^[a-zA-Z]:[\\/]/.test(src) || src.charAt(0) === "/") {
+        abs = src;
+      } else {
+        abs = dir + "/" + src;
+      }
+      abs = abs.replace(/\\/g, "/");
+      try {
+        imgs[i].src = convert(abs);
+      } catch (_) {
+      }
+    }
+  }
+  var CHUNK_SIZE = 500;
+  var hasHighlightAPI = typeof CSS !== "undefined" && CSS.highlights && typeof window.Highlight !== "undefined";
+  var matchHL = null;
+  var activeHL = null;
+  var rangesArr = [];
+  var activeIdx2 = -1;
+  var currentTerm = "";
+  var findOpts = { caseSensitive: false, wholeWord: false };
+  var searchToken = 0;
+  function ensureHighlights() {
+    if (!hasHighlightAPI) return;
+    if (!matchHL) {
+      matchHL = new window.Highlight();
+      CSS.highlights.set("folio-find", matchHL);
+    }
+    if (!activeHL) {
+      activeHL = new window.Highlight();
+      CSS.highlights.set("folio-find-active", activeHL);
+    }
+  }
+  function getRoot() {
+    return document.querySelector("#view-region main.markdown-body");
+  }
+  function getContent() {
+    return document.getElementById("view-content");
+  }
+  function getLane() {
+    return document.getElementById("view-marker-lane");
+  }
+  function clearLane() {
+    const lane = getLane();
+    if (!lane) return;
+    while (lane.firstChild) lane.removeChild(lane.firstChild);
+  }
+  function updateMarkers() {
+    const lane = getLane();
+    const content = getContent();
+    if (!lane) return;
+    clearLane();
+    if (!content || rangesArr.length === 0) return;
+    const totalH = content.scrollHeight;
+    if (totalH <= 0) return;
+    const contentTop = content.getBoundingClientRect().top;
+    const scrollTop = content.scrollTop;
+    const laneH = Math.max(1, lane.clientHeight);
+    const seen = new Uint8Array(laneH);
+    let activePixel = -1;
+    const pixels = [];
+    for (let i = 0; i < rangesArr.length; i++) {
+      const rect = rangesArr[i].getBoundingClientRect();
+      const pos = scrollTop + (rect.top - contentTop);
+      const px = Math.max(0, Math.min(laneH - 1, Math.round(pos / totalH * laneH)));
+      if (i === activeIdx2) activePixel = px;
+      if (!seen[px]) {
+        seen[px] = 1;
+        pixels.push(px);
+      }
+    }
+    const frag = document.createDocumentFragment();
+    for (let j = 0; j < pixels.length; j++) {
+      const p = pixels[j];
+      const dot = document.createElement("div");
+      dot.className = "folio-marker" + (p === activePixel ? " active" : "");
+      dot.style.top = p / laneH * 100 + "%";
+      frag.appendChild(dot);
+    }
+    lane.appendChild(frag);
+  }
+  function clearMarks() {
+    if (matchHL) matchHL.clear();
+    if (activeHL) activeHL.clear();
+    rangesArr = [];
+    activeIdx2 = -1;
+    clearLane();
+  }
+  function escapeRegExp(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+  function buildRegex(term) {
+    if (!term) return null;
+    let pattern = escapeRegExp(term);
+    if (findOpts.wholeWord) pattern = "\\b" + pattern + "\\b";
+    const flags = findOpts.caseSensitive ? "g" : "gi";
+    try {
+      return new RegExp(pattern, flags);
+    } catch (_) {
+      return null;
+    }
+  }
+  function buildWalker(root) {
+    return document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode: function(node) {
+        let p = node.parentNode;
+        while (p && p !== root) {
+          const tn = p.nodeName ? p.nodeName.toLowerCase() : "";
+          if (tn === "script" || tn === "style") return NodeFilter.FILTER_REJECT;
+          p = p.parentNode;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+  }
+  function collectRangesAsync(root, regex, myToken, done) {
+    const walker = buildWalker(root);
+    function step() {
+      if (myToken !== searchToken) return;
+      const batchStart = rangesArr.length;
+      let node;
+      while (node = walker.nextNode()) {
+        const text = node.nodeValue || "";
+        if (!text) continue;
+        regex.lastIndex = 0;
+        let m;
+        while (m = regex.exec(text)) {
+          if (m[0].length === 0) {
+            regex.lastIndex++;
+            continue;
+          }
+          const r = document.createRange();
+          r.setStart(node, m.index);
+          r.setEnd(node, m.index + m[0].length);
+          rangesArr.push(r);
+          if (matchHL) matchHL.add(r);
+          if (rangesArr.length - batchStart >= CHUNK_SIZE) {
+            dispatchProgress(rangesArr.length);
+            setTimeout(step, 0);
+            return;
+          }
+        }
+      }
+      done();
+    }
+    step();
+  }
+  function dispatchState() {
+    const detail = { term: currentTerm, total: rangesArr.length, active: activeIdx2 };
+    try {
+      window.dispatchEvent(new CustomEvent("folio-find-state", { detail }));
+    } catch (_) {
+    }
+    try {
+      post2({ type: "editorFindState", term: detail.term, total: detail.total, active: detail.active });
+    } catch (_) {
+    }
+  }
+  function dispatchProgress(partialTotal) {
+    try {
+      window.dispatchEvent(new CustomEvent("folio-find-state", {
+        detail: { term: currentTerm, total: partialTotal, active: -1, scanning: true }
+      }));
+    } catch (_) {
+    }
+  }
+  function setActive(idx) {
+    if (rangesArr.length === 0) {
+      activeIdx2 = -1;
+      if (activeHL) activeHL.clear();
+      updateMarkers();
+      dispatchState();
+      return;
+    }
+    if (idx < 0) idx = (idx % rangesArr.length + rangesArr.length) % rangesArr.length;
+    if (idx >= rangesArr.length) idx = idx % rangesArr.length;
+    activeIdx2 = idx;
+    if (activeHL) {
+      activeHL.clear();
+      activeHL.add(rangesArr[activeIdx2]);
+    }
+    const r = rangesArr[activeIdx2];
+    const anchor = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
+    if (anchor) {
+      try {
+        anchor.scrollIntoView({ block: "center", inline: "nearest" });
+      } catch (_) {
+        try {
+          anchor.scrollIntoView(true);
+        } catch (__) {
+        }
+      }
+    }
+    updateMarkers();
+    dispatchState();
+  }
+  function research() {
+    clearMarks();
+    const myToken = ++searchToken;
+    if (!currentTerm) {
+      dispatchState();
+      return;
+    }
+    const root = getRoot();
+    if (!root) {
+      dispatchState();
+      return;
+    }
+    const regex = buildRegex(currentTerm);
+    if (!regex) {
+      dispatchState();
+      return;
+    }
+    ensureHighlights();
+    collectRangesAsync(root, regex, myToken, function() {
+      if (myToken !== searchToken) return;
+      if (rangesArr.length > 0) setActive(0);
+      else {
+        updateMarkers();
+        dispatchState();
+      }
+    });
+  }
+  var ViewFinder = {
+    openFind: function(initial) {
+      if (typeof initial === "string" && initial.length > 0) currentTerm = initial;
+      research();
+    },
+    closeFind: function() {
+      searchToken++;
+      clearMarks();
+      currentTerm = "";
+      dispatchState();
+    },
+    setFindTerm: function(term) {
+      currentTerm = term || "";
+      research();
+    },
+    setFindOptions: function(newOpts) {
+      newOpts = newOpts || {};
+      findOpts.caseSensitive = !!newOpts.caseSensitive;
+      findOpts.wholeWord = !!newOpts.wholeWord;
+      research();
+    },
+    findNext: function() {
+      if (rangesArr.length > 0) setActive((activeIdx2 + 1) % rangesArr.length);
+    },
+    findPrev: function() {
+      if (rangesArr.length > 0) setActive((activeIdx2 - 1 + rangesArr.length) % rangesArr.length);
+    }
+  };
+  function initVisibleHeadingTracker() {
+    let currentHeading = null;
+    let lastScrollY = -1;
+    function collectHeadings() {
+      return Array.prototype.slice.call(
+        contentEl.querySelectorAll("h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]")
+      );
+    }
+    function sendHeading(id) {
+      if (id === currentHeading) return;
+      currentHeading = id;
+      post2({ type: "visibleHeading", id: id || "" });
+    }
+    function sendScroll(y) {
+      if (y === lastScrollY) return;
+      lastScrollY = y;
+      post2({ type: "scrollPosition", y });
+    }
+    function update() {
+      const hs = collectHeadings();
+      if (hs.length === 0) {
+        sendHeading(null);
+      } else {
+        const threshold = 120;
+        let active = hs[0];
+        const contentTop = contentEl.getBoundingClientRect().top;
+        for (let i = 0; i < hs.length; i++) {
+          const top = hs[i].getBoundingClientRect().top - contentTop;
+          if (top <= threshold) active = hs[i];
+          else break;
+        }
+        sendHeading(active.id);
+      }
+      sendScroll(Math.round(contentEl.scrollTop));
+    }
+    let rafQueued = false;
+    function schedule() {
+      if (rafQueued) return;
+      rafQueued = true;
+      requestAnimationFrame(function() {
+        rafQueued = false;
+        update();
+      });
+    }
+    contentEl.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    window.addEventListener("load", update);
+  }
+  function initMarkdownView() {
+    contentEl = document.getElementById("view-region");
+    tocEl = document.getElementById("toc-region");
+    if (!contentEl || !tocEl) return;
+    contentEl.addEventListener("click", function(e) {
+      let el = e.target;
+      while (el && el.tagName !== "A") el = el.parentElement;
+      if (!el) return;
+      const href = el.getAttribute("href");
+      if (href === null) return;
+      e.preventDefault();
+      post2({ type: "linkClick", href });
+    }, true);
+    tocEl.addEventListener("click", function(e) {
+      let el = e.target;
+      while (el && !(el.classList && el.classList.contains("entry"))) el = el.parentElement;
+      if (!el) return;
+      const slug = el.getAttribute("data-slug");
+      if (slug) post2({ type: "tocClick", slug });
+    });
+    initVisibleHeadingTracker();
+  }
+
   // app/ui/find-bar.ts
   var bar = null;
   var input2 = null;
@@ -401,7 +767,7 @@
     return document.body.classList.contains("edit-mode");
   }
   function getFinder() {
-    return isEditMode() ? window.FolioEditor : window.ViewFinder;
+    return isEditMode() ? window.FolioEditor : ViewFinder;
   }
   function doOpen(initial) {
     bar.classList.add("open");
@@ -434,7 +800,7 @@
     optsPanel.classList.remove("open");
     optsBtn.classList.remove("active");
     if (window.FolioEditor) window.FolioEditor.closeFind();
-    if (window.ViewFinder) window.ViewFinder.closeFind();
+    if (ViewFinder) ViewFinder.closeFind();
     if (isEditMode() && window.focusEditor) window.focusEditor();
   }
   function openEditorFind(initialTerm) {
@@ -489,7 +855,7 @@
     setTimeout(function() {
       if (bar.classList.contains("open")) {
         if (window.FolioEditor) window.FolioEditor.closeFind();
-        if (window.ViewFinder) window.ViewFinder.closeFind();
+        if (ViewFinder) ViewFinder.closeFind();
         const f = getFinder();
         if (f) {
           f.setFindOptions({
@@ -763,7 +1129,7 @@
   }
 
   // app/ui/rails.ts
-  function post2(msg) {
+  function post3(msg) {
     if (window.__TAURI__ && window.__TAURI__.event) {
       window.__TAURI__.event.emit("shell:event", msg);
     }
@@ -814,7 +1180,7 @@
       } catch (_) {
       }
       dragState2 = null;
-      post2({ type: "railResize", side: "right", width: currentTocWidth() });
+      post3({ type: "railResize", side: "right", width: currentTocWidth() });
     }
     splitter.addEventListener("pointerup", endDrag);
     splitter.addEventListener("pointercancel", endDrag);
@@ -850,7 +1216,7 @@
       } catch (_) {
       }
       dragState2 = null;
-      post2({ type: "railResize", side: "left", width: currentVaultWidth() });
+      post3({ type: "railResize", side: "left", width: currentVaultWidth() });
     }
     splitter.addEventListener("pointerup", endDrag);
     splitter.addEventListener("pointercancel", endDrag);
@@ -1038,7 +1404,7 @@
   var currentActivePath = "";
   var fileIconCache = {};
   var fileIconPending = {};
-  function post3(msg) {
+  function post4(msg) {
     if (window.__TAURI__ && window.__TAURI__.event) {
       window.__TAURI__.event.emit("shell:event", msg);
     }
@@ -1110,7 +1476,7 @@
     const nowExpanded = !(caret && caret.classList.contains("open"));
     if (caret) caret.classList.toggle("open", nowExpanded);
     if (ul) ul.classList.toggle("collapsed", !nowExpanded);
-    post3({ type: "toggle-section", section: key, expanded: nowExpanded });
+    post4({ type: "toggle-section", section: key, expanded: nowExpanded });
   }
   function toggleDir(node) {
     const caret = node.querySelector(":scope > .row > .caret");
@@ -1123,12 +1489,12 @@
       if (caret) caret.classList.remove("open");
       if (ul) ul.classList.add("collapsed");
       if (iconEl) iconEl.textContent = "\u{1F4C1}";
-      post3({ type: "collapse-dir", path });
+      post4({ type: "collapse-dir", path });
     } else {
       if (caret) caret.classList.add("open");
       if (ul) ul.classList.remove("collapsed");
       if (iconEl) iconEl.textContent = "\u{1F4C2}";
-      if (!loaded) post3({ type: "expand-dir", path });
+      if (!loaded) post4({ type: "expand-dir", path });
     }
   }
   function resolveFileIcon(ext) {
@@ -1247,10 +1613,10 @@
       e.preventDefault();
       const node = findAncestor(e.target, "node");
       if (!node) {
-        post3({ type: "context", path: null, x: e.clientX, y: e.clientY });
+        post4({ type: "context", path: null, x: e.clientX, y: e.clientY });
         return;
       }
-      post3({
+      post4({
         type: "context",
         path: node.getAttribute("data-path"),
         kind: node.getAttribute("data-kind"),
@@ -1305,99 +1671,13 @@
 
   // app/main.ts
   (function() {
-    var post4 = function(msg) {
+    var post5 = function(msg) {
       if (window.__TAURI__ && window.__TAURI__.event) {
         window.__TAURI__.event.emit("shell:event", msg);
       }
     };
-    var contentEl = document.getElementById("view-region");
-    contentEl.addEventListener("click", function(e) {
-      var el = e.target;
-      while (el && el.tagName !== "A") el = el.parentElement;
-      if (!el) return;
-      var href = el.getAttribute("href");
-      if (href === null) return;
-      e.preventDefault();
-      post4({ type: "linkClick", href });
-    }, true);
-    (function() {
-      var currentHeading = null;
-      var lastScrollY = -1;
-      function collectHeadings() {
-        return Array.prototype.slice.call(
-          contentEl.querySelectorAll("h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]")
-        );
-      }
-      function sendHeading(id) {
-        if (id === currentHeading) return;
-        currentHeading = id;
-        post4({ type: "visibleHeading", id: id || "" });
-      }
-      function sendScroll(y) {
-        if (y === lastScrollY) return;
-        lastScrollY = y;
-        post4({ type: "scrollPosition", y });
-      }
-      function update() {
-        var hs = collectHeadings();
-        if (hs.length === 0) {
-          sendHeading(null);
-        } else {
-          var threshold = 120;
-          var active = hs[0];
-          var contentTop = contentEl.getBoundingClientRect().top;
-          for (var i = 0; i < hs.length; i++) {
-            var top = hs[i].getBoundingClientRect().top - contentTop;
-            if (top <= threshold) active = hs[i];
-            else break;
-          }
-          sendHeading(active.id);
-        }
-        sendScroll(Math.round(contentEl.scrollTop));
-      }
-      var rafQueued = false;
-      function schedule() {
-        if (rafQueued) return;
-        rafQueued = true;
-        requestAnimationFrame(function() {
-          rafQueued = false;
-          update();
-        });
-      }
-      contentEl.addEventListener("scroll", schedule, { passive: true });
-      window.addEventListener("resize", schedule);
-      window.addEventListener("load", update);
-    })();
-    var tocEl = document.getElementById("toc-region");
-    tocEl.addEventListener("click", function(e) {
-      var el = e.target;
-      while (el && !(el.classList && el.classList.contains("entry"))) el = el.parentElement;
-      if (!el) return;
-      var slug = el.getAttribute("data-slug");
-      if (slug) post4({ type: "tocClick", slug });
-    });
-    window.setTocActive = function(slug) {
-      var prev = tocEl.querySelectorAll("li.entry.active");
-      for (var i = 0; i < prev.length; i++) prev[i].classList.remove("active");
-      if (!slug) return;
-      var target = tocEl.querySelector('li.entry[data-slug="' + slug + '"]');
-      if (target) {
-        target.classList.add("active");
-        target.scrollIntoView({ block: "nearest" });
-      }
-    };
-    window.setTocList = function(html) {
-      var ul = tocEl.querySelector("ul.toc");
-      if (ul) ul.innerHTML = html;
-    };
-    window.scrollViewToAnchor = function(slug) {
-      if (!slug) return;
-      var target = contentEl.querySelector("#" + CSS.escape(slug));
-      if (target) target.scrollIntoView({ block: "start" });
-    };
-    window.scrollViewTo = function(y) {
-      contentEl.scrollTo(0, y || 0);
-    };
+    initMarkdownView();
+    var contentEl2 = document.getElementById("view-region");
     window.setEditMode = function(on) {
       document.body.classList.toggle("edit-mode", !!on);
       if (on && typeof window.layoutEditor === "function") window.layoutEditor();
@@ -1435,16 +1715,12 @@
           window.loadEditorText(data.text || "", data.language || "");
         }
         setEditorLanguageDisplay(data.language || "plaintext");
-        if (typeof window.setTocList === "function") {
-          window.setTocList(data.tocHtml || data.toc_html || "");
-        }
-        var body2 = contentEl.querySelector(".markdown-body");
+        setTocList(data.tocHtml || data.toc_html || "");
+        var body2 = contentEl2.querySelector(".markdown-body");
         if (body2) {
           var isMd = data.kind === "markdown";
           body2.innerHTML = isMd ? data.content || data.html || "" : "";
-          if (isMd && typeof window.rewriteRelativeAssets === "function") {
-            window.rewriteRelativeAssets(body2, data.path || "");
-          }
+          if (isMd) rewriteRelativeAssets(body2, data.path || "");
         }
         setVaultActive(data.path || "");
       });
@@ -1452,9 +1728,7 @@
         var data = event && event.payload;
         if (!data || typeof data !== "object") return;
         var anchor = data.anchor || data.slug || "";
-        if (typeof window.setTocActive === "function") {
-          window.setTocActive(anchor);
-        }
+        setTocActive(anchor);
         if (data.view_mode) {
           window.__TAURI__.core.invoke("set_view_mode", { mode: data.view_mode }).catch(function() {
           });
@@ -1463,11 +1737,8 @@
         var editorCursor = typeof data.editor_cursor === "number" ? data.editor_cursor : 0;
         var editorScroll = typeof data.editor_scroll_y === "number" ? data.editor_scroll_y : 0;
         requestAnimationFrame(function() {
-          if (anchor && typeof window.scrollViewToAnchor === "function") {
-            window.scrollViewToAnchor(anchor);
-          } else if (typeof window.scrollViewTo === "function") {
-            window.scrollViewTo(viewScroll);
-          }
+          if (anchor) scrollViewToAnchor(anchor);
+          else scrollViewTo(viewScroll);
           if (!window.FolioEditor) return;
           if (typeof window.FolioEditor.setSelection === "function") {
             window.FolioEditor.setSelection(editorCursor, 0);
@@ -1553,10 +1824,8 @@
       window.__TAURI__.event.listen("navigation:toc_click", function(event) {
         var data = event && event.payload;
         var anchor = data && (data.anchor || data.slug);
-        if (anchor && typeof window.scrollViewToAnchor === "function") {
-          window.scrollViewToAnchor(anchor);
-        }
-        if (typeof window.setTocActive === "function") window.setTocActive(anchor || "");
+        if (anchor) scrollViewToAnchor(anchor);
+        setTocActive(anchor || "");
       });
     }
     var editorMounted = false;
@@ -1615,246 +1884,6 @@
         selectionLength: selectionLength || 0
       });
     };
-    (function() {
-      var CHUNK_SIZE = 500;
-      var hasHighlightAPI = typeof CSS !== "undefined" && CSS.highlights && typeof Highlight !== "undefined";
-      var matchHL = null;
-      var activeHL = null;
-      function ensureHighlights() {
-        if (!hasHighlightAPI) return;
-        if (!matchHL) {
-          matchHL = new Highlight();
-          CSS.highlights.set("folio-find", matchHL);
-        }
-        if (!activeHL) {
-          activeHL = new Highlight();
-          CSS.highlights.set("folio-find-active", activeHL);
-        }
-      }
-      var rangesArr = [];
-      var activeIdx2 = -1;
-      var currentTerm = "";
-      var opts = { caseSensitive: false, wholeWord: false };
-      var searchToken = 0;
-      function getRoot() {
-        return document.querySelector("#view-region main.markdown-body");
-      }
-      function getContent() {
-        return document.getElementById("view-content");
-      }
-      function getLane() {
-        return document.getElementById("view-marker-lane");
-      }
-      function clearLane() {
-        var lane = getLane();
-        if (!lane) return;
-        while (lane.firstChild) lane.removeChild(lane.firstChild);
-      }
-      function updateMarkers() {
-        var lane = getLane();
-        var content = getContent();
-        if (!lane) return;
-        clearLane();
-        if (!content || rangesArr.length === 0) return;
-        var totalH = content.scrollHeight;
-        if (totalH <= 0) return;
-        var contentTop = content.getBoundingClientRect().top;
-        var scrollTop = content.scrollTop;
-        var laneH = Math.max(1, lane.clientHeight);
-        var seen = new Uint8Array(laneH);
-        var activePixel = -1;
-        var pixels = [];
-        for (var i = 0; i < rangesArr.length; i++) {
-          var rect = rangesArr[i].getBoundingClientRect();
-          var pos = scrollTop + (rect.top - contentTop);
-          var px = Math.max(0, Math.min(laneH - 1, Math.round(pos / totalH * laneH)));
-          if (i === activeIdx2) activePixel = px;
-          if (!seen[px]) {
-            seen[px] = 1;
-            pixels.push(px);
-          }
-        }
-        var frag = document.createDocumentFragment();
-        for (var j = 0; j < pixels.length; j++) {
-          var p = pixels[j];
-          var dot = document.createElement("div");
-          dot.className = "folio-marker" + (p === activePixel ? " active" : "");
-          dot.style.top = p / laneH * 100 + "%";
-          frag.appendChild(dot);
-        }
-        lane.appendChild(frag);
-      }
-      function clearMarks() {
-        if (matchHL) matchHL.clear();
-        if (activeHL) activeHL.clear();
-        rangesArr = [];
-        activeIdx2 = -1;
-        clearLane();
-      }
-      function escapeRegExp(s) {
-        return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      }
-      function buildRegex(term) {
-        if (!term) return null;
-        var pattern = escapeRegExp(term);
-        if (opts.wholeWord) pattern = "\\b" + pattern + "\\b";
-        var flags = opts.caseSensitive ? "g" : "gi";
-        try {
-          return new RegExp(pattern, flags);
-        } catch (e) {
-          return null;
-        }
-      }
-      function buildWalker(root) {
-        return document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-          acceptNode: function(node) {
-            var p = node.parentNode;
-            while (p && p !== root) {
-              var tn = p.nodeName ? p.nodeName.toLowerCase() : "";
-              if (tn === "script" || tn === "style") return NodeFilter.FILTER_REJECT;
-              p = p.parentNode;
-            }
-            return NodeFilter.FILTER_ACCEPT;
-          }
-        });
-      }
-      function collectRangesAsync(root, regex, myToken, done) {
-        var walker = buildWalker(root);
-        function step() {
-          if (myToken !== searchToken) return;
-          var batchStart = rangesArr.length;
-          var node;
-          while (node = walker.nextNode()) {
-            var text = node.nodeValue || "";
-            if (!text) continue;
-            regex.lastIndex = 0;
-            var m;
-            while (m = regex.exec(text)) {
-              if (m[0].length === 0) {
-                regex.lastIndex++;
-                continue;
-              }
-              var r = document.createRange();
-              r.setStart(node, m.index);
-              r.setEnd(node, m.index + m[0].length);
-              rangesArr.push(r);
-              if (matchHL) matchHL.add(r);
-              if (rangesArr.length - batchStart >= CHUNK_SIZE) {
-                dispatchProgress(rangesArr.length);
-                setTimeout(step, 0);
-                return;
-              }
-            }
-          }
-          done();
-        }
-        step();
-      }
-      function dispatchState() {
-        var detail = { term: currentTerm, total: rangesArr.length, active: activeIdx2 };
-        try {
-          window.dispatchEvent(new CustomEvent("folio-find-state", { detail }));
-        } catch (e) {
-        }
-        try {
-          post4({ type: "editorFindState", term: detail.term, total: detail.total, active: detail.active });
-        } catch (e) {
-        }
-      }
-      function dispatchProgress(partialTotal) {
-        try {
-          window.dispatchEvent(new CustomEvent("folio-find-state", {
-            detail: { term: currentTerm, total: partialTotal, active: -1, scanning: true }
-          }));
-        } catch (e) {
-        }
-      }
-      function setActive(idx) {
-        if (rangesArr.length === 0) {
-          activeIdx2 = -1;
-          if (activeHL) activeHL.clear();
-          updateMarkers();
-          dispatchState();
-          return;
-        }
-        if (idx < 0) idx = (idx % rangesArr.length + rangesArr.length) % rangesArr.length;
-        if (idx >= rangesArr.length) idx = idx % rangesArr.length;
-        activeIdx2 = idx;
-        if (activeHL) {
-          activeHL.clear();
-          activeHL.add(rangesArr[activeIdx2]);
-        }
-        var r = rangesArr[activeIdx2];
-        var anchor = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
-        if (anchor) {
-          try {
-            anchor.scrollIntoView({ block: "center", inline: "nearest" });
-          } catch (e) {
-            try {
-              anchor.scrollIntoView(true);
-            } catch (_) {
-            }
-          }
-        }
-        updateMarkers();
-        dispatchState();
-      }
-      function research() {
-        clearMarks();
-        var myToken = ++searchToken;
-        if (!currentTerm) {
-          dispatchState();
-          return;
-        }
-        var root = getRoot();
-        if (!root) {
-          dispatchState();
-          return;
-        }
-        var regex = buildRegex(currentTerm);
-        if (!regex) {
-          dispatchState();
-          return;
-        }
-        ensureHighlights();
-        collectRangesAsync(root, regex, myToken, function() {
-          if (myToken !== searchToken) return;
-          if (rangesArr.length > 0) setActive(0);
-          else {
-            updateMarkers();
-            dispatchState();
-          }
-        });
-      }
-      window.ViewFinder = {
-        openFind: function(initial) {
-          if (typeof initial === "string" && initial.length > 0) currentTerm = initial;
-          research();
-        },
-        closeFind: function() {
-          searchToken++;
-          clearMarks();
-          currentTerm = "";
-          dispatchState();
-        },
-        setFindTerm: function(term) {
-          currentTerm = term || "";
-          research();
-        },
-        setFindOptions: function(newOpts) {
-          newOpts = newOpts || {};
-          opts.caseSensitive = !!newOpts.caseSensitive;
-          opts.wholeWord = !!newOpts.wholeWord;
-          research();
-        },
-        findNext: function() {
-          if (rangesArr.length > 0) setActive((activeIdx2 + 1) % rangesArr.length);
-        },
-        findPrev: function() {
-          if (rangesArr.length > 0) setActive((activeIdx2 - 1 + rangesArr.length) % rangesArr.length);
-        }
-      };
-    })();
     initFindBar({ ensureEditorMounted });
     initRails();
     initVaultTree({
@@ -1926,9 +1955,7 @@
     }
     function renderDocumentPayload(data) {
       if (!data || typeof data !== "object") return;
-      if (typeof window.setTocList === "function") {
-        window.setTocList(data.tocHtml || data.toc_html || "");
-      }
+      setTocList(data.tocHtml || data.toc_html || "");
       var view = document.getElementById("view-region");
       var body2 = view && view.querySelector(".markdown-body");
       if (body2) {
@@ -1936,31 +1963,6 @@
         rewriteRelativeAssets(body2, data.path || currentPath);
       }
     }
-    function rewriteRelativeAssets(rootEl, documentPath) {
-      if (!rootEl || !documentPath) return;
-      var convert = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.convertFileSrc;
-      if (typeof convert !== "function") return;
-      var dir = documentPath.replace(/[\\/][^\\/]*$/, "");
-      var imgs = rootEl.querySelectorAll("img");
-      for (var i = 0; i < imgs.length; i++) {
-        var src = imgs[i].getAttribute("src");
-        if (!src) continue;
-        if (/^[a-z][a-z0-9+.-]*:/i.test(src)) continue;
-        if (src.indexOf("//") === 0) continue;
-        var abs;
-        if (/^[a-zA-Z]:[\\/]/.test(src) || src.charAt(0) === "/") {
-          abs = src;
-        } else {
-          abs = dir + "/" + src;
-        }
-        abs = abs.replace(/\\/g, "/");
-        try {
-          imgs[i].src = convert(abs);
-        } catch (e) {
-        }
-      }
-    }
-    window.rewriteRelativeAssets = rewriteRelativeAssets;
     function saveCurrent() {
       return syncEditorTextToStore().then(function() {
         return invoke4("editor_save_requested");
@@ -2345,9 +2347,9 @@
       var bar2 = document.getElementById("find-bar");
       if (bar2 && bar2.classList.contains("open") && !document.body.classList.contains("edit-mode")) {
         var input3 = document.getElementById("find-input");
-        if (input3 && input3.value && window.ViewFinder) {
+        if (input3 && input3.value) {
           setTimeout(function() {
-            window.ViewFinder.setFindTerm(input3.value);
+            ViewFinder.setFindTerm(input3.value);
           }, 0);
         }
       }
@@ -2366,7 +2368,7 @@
       var view = document.getElementById("view-region");
       var body2 = view && view.querySelector(".markdown-body");
       if (body2) body2.innerHTML = "";
-      if (typeof window.setTocList === "function") window.setTocList("");
+      setTocList("");
       applyDocKind("unknown");
       setStatusPath("Bereit", false);
       updateWordCount("");

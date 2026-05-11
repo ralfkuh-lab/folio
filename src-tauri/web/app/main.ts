@@ -33,6 +33,15 @@ import {
     reapplyVaultActive,
     refreshVault,
 } from './vault/tree';
+import {
+    initMarkdownView,
+    setTocActive,
+    setTocList,
+    scrollViewToAnchor,
+    scrollViewTo,
+    rewriteRelativeAssets,
+    ViewFinder,
+} from './view/markdown';
 
 // === IIFE #1 (TOC/View bridge, Editor bridge, ViewFinder, Cheatsheet, Vault setters) ===
 
@@ -43,102 +52,9 @@ import {
         }
     };
 
-    // ----- Link-Klicks (im Content) -----
+    // ----- View-/TOC-/Markdown-Setup (Modul) — siehe view/markdown.ts -----
+    initMarkdownView();
     var contentEl = document.getElementById('view-region');
-    contentEl.addEventListener('click', function (e) {
-        var el = e.target;
-        while (el && el.tagName !== 'A') el = el.parentElement;
-        if (!el) return;
-        var href = el.getAttribute('href');
-        if (href === null) return;
-        e.preventDefault();
-        post({ type: 'linkClick', href: href });
-    }, true);
-
-    // ----- Sichtbare Überschrift + Scroll-Position -----
-    (function () {
-        var currentHeading = null;
-        var lastScrollY = -1;
-        function collectHeadings() {
-            return Array.prototype.slice.call(
-                contentEl.querySelectorAll('h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]')
-            );
-        }
-        function sendHeading(id) {
-            if (id === currentHeading) return;
-            currentHeading = id;
-            post({ type: 'visibleHeading', id: id || '' });
-        }
-        function sendScroll(y) {
-            if (y === lastScrollY) return;
-            lastScrollY = y;
-            post({ type: 'scrollPosition', y: y });
-        }
-        function update() {
-            var hs = collectHeadings();
-            if (hs.length === 0) { sendHeading(null); }
-            else {
-                var threshold = 120;
-                var active = hs[0];
-                var contentTop = contentEl.getBoundingClientRect().top;
-                for (var i = 0; i < hs.length; i++) {
-                    var top = hs[i].getBoundingClientRect().top - contentTop;
-                    if (top <= threshold) active = hs[i];
-                    else break;
-                }
-                sendHeading(active.id);
-            }
-            sendScroll(Math.round(contentEl.scrollTop));
-        }
-        var rafQueued = false;
-        function schedule() {
-            if (rafQueued) return;
-            rafQueued = true;
-            requestAnimationFrame(function () { rafQueued = false; update(); });
-        }
-        contentEl.addEventListener('scroll', schedule, { passive: true });
-        window.addEventListener('resize', schedule);
-        window.addEventListener('load', update);
-    })();
-
-    // ----- TOC-Click (im rechten Rail) -----
-    var tocEl = document.getElementById('toc-region');
-    tocEl.addEventListener('click', function (e) {
-        var el = e.target;
-        while (el && !(el.classList && el.classList.contains('entry'))) el = el.parentElement;
-        if (!el) return;
-        var slug = el.getAttribute('data-slug');
-        if (slug) post({ type: 'tocClick', slug: slug });
-    });
-
-    // ----- TOC-API (vom Host gerufen) -----
-    window.setTocActive = function (slug) {
-        var prev = tocEl.querySelectorAll('li.entry.active');
-        for (var i = 0; i < prev.length; i++) prev[i].classList.remove('active');
-        if (!slug) return;
-        var target = tocEl.querySelector('li.entry[data-slug="' + slug + '"]');
-        if (target) {
-            target.classList.add('active');
-            target.scrollIntoView({ block: 'nearest' });
-        }
-    };
-    window.setTocList = function (html) {
-        var ul = tocEl.querySelector('ul.toc');
-        if (ul) ul.innerHTML = html;
-    };
-
-    // ----- Anker-Scroll innerhalb der View-Region -----
-    // location.hash auf einem persistierten Shell-Dokument scrollt sonst die
-    // Shell selbst (die nicht scrollt) — wir uebersetzen explizit auf
-    // contentEl.scrollIntoView, damit Anker funktionieren.
-    window.scrollViewToAnchor = function (slug) {
-        if (!slug) return;
-        var target = contentEl.querySelector('#' + CSS.escape(slug));
-        if (target) target.scrollIntoView({ block: 'start' });
-    };
-    window.scrollViewTo = function (y) {
-        contentEl.scrollTo(0, y || 0);
-    };
 
     // Rail-Visibility / Width: setRailVisibility, setTocWidth, setVaultWidth
     // leben jetzt in ui/rails.ts (importiert oben).
@@ -190,9 +106,7 @@ import {
                 window.loadEditorText(data.text || '', data.language || '');
             }
             setEditorLanguageDisplay(data.language || 'plaintext');
-            if (typeof window.setTocList === 'function') {
-                window.setTocList(data.tocHtml || data.toc_html || '');
-            }
+            setTocList(data.tocHtml || data.toc_html || '');
             var body = contentEl.querySelector('.markdown-body');
             if (body) {
                 // Nur Markdown wird in der View-Region gerendert. Für
@@ -201,9 +115,7 @@ import {
                 // den Edit-Mode wechselt.
                 var isMd = data.kind === 'markdown';
                 body.innerHTML = isMd ? (data.content || data.html || '') : '';
-                if (isMd && typeof window.rewriteRelativeAssets === 'function') {
-                    window.rewriteRelativeAssets(body, data.path || '');
-                }
+                if (isMd) rewriteRelativeAssets(body, data.path || '');
             }
             setVaultActive(data.path || '');
         });
@@ -211,9 +123,7 @@ import {
             var data = event && event.payload;
             if (!data || typeof data !== 'object') return;
             var anchor = data.anchor || data.slug || '';
-            if (typeof window.setTocActive === 'function') {
-                window.setTocActive(anchor);
-            }
+            setTocActive(anchor);
             if (data.view_mode) {
                 window.__TAURI__.core.invoke('set_view_mode', { mode: data.view_mode }).catch(function(){});
             }
@@ -224,11 +134,8 @@ import {
             // klemmt sonst an einer noch nicht aufgebauten scrollHeight auf 0,
             // und der Scroll-Watcher überschreibt prompt entry.scroll_y mit 0.
             requestAnimationFrame(function () {
-                if (anchor && typeof window.scrollViewToAnchor === 'function') {
-                    window.scrollViewToAnchor(anchor);
-                } else if (typeof window.scrollViewTo === 'function') {
-                    window.scrollViewTo(viewScroll);
-                }
+                if (anchor) scrollViewToAnchor(anchor);
+                else scrollViewTo(viewScroll);
                 if (!window.FolioEditor) return;
                 if (typeof window.FolioEditor.setSelection === 'function') {
                     window.FolioEditor.setSelection(editorCursor, 0);
@@ -314,10 +221,8 @@ import {
         window.__TAURI__.event.listen("navigation:toc_click", function (event) {
             var data = event && event.payload;
             var anchor = data && (data.anchor || data.slug);
-            if (anchor && typeof window.scrollViewToAnchor === 'function') {
-                window.scrollViewToAnchor(anchor);
-            }
-            if (typeof window.setTocActive === 'function') window.setTocActive(anchor || '');
+            if (anchor) scrollViewToAnchor(anchor);
+            setTocActive(anchor || '');
         });
     }
 
@@ -379,239 +284,7 @@ import {
         });
     };
 
-    // ----- ViewFinder: DOM-Sucher fuer den View-Modus -----
-    // API spiegelt window.FolioEditor (openFind/closeFind/setFindTerm/setFindOptions/findNext/findPrev),
-    // damit der gemeinsame Find-Bar-IIFE drueber denselben Adapter nutzen kann. Sucht ausschliesslich
-    // in #view-region main.markdown-body; Vault, TOC und Editor bleiben aussen vor.
-    (function () {
-        // Co-operative chunking: pro Tick max so viele Treffer/Wraps verarbeiten,
-        // dann mit setTimeout(0) zurueck an den Browser. Haelt Tasten- und
-        // Scroll-Events responsive auch waehrend ein Suchlauf laeuft.
-        var CHUNK_SIZE = 500;
-
-        // CSS Custom Highlight API: keine DOM-Wraps, kein Reflow pro Treffer,
-        // Clear ist O(1). matchHL haelt alle Treffer, activeHL nur den
-        // gerade aktiven (overlay-Farbe).
-        var hasHighlightAPI = (typeof CSS !== 'undefined') && CSS.highlights
-            && (typeof Highlight !== 'undefined');
-        var matchHL = null;
-        var activeHL = null;
-        function ensureHighlights() {
-            if (!hasHighlightAPI) return;
-            if (!matchHL) { matchHL = new Highlight(); CSS.highlights.set('folio-find', matchHL); }
-            if (!activeHL) { activeHL = new Highlight(); CSS.highlights.set('folio-find-active', activeHL); }
-        }
-
-        var rangesArr = [];   // alle Match-Ranges (auch die Lane-Marker leiten daraus ab)
-        var activeIdx = -1;
-        var currentTerm = '';
-        var opts = { caseSensitive: false, wholeWord: false };
-        // Bei jeder neuen research() inkrementiert. Async-Chunks brechen ab,
-        // sobald myToken !== searchToken — die alte Suche wird so verworfen,
-        // statt die neue zu blockieren.
-        var searchToken = 0;
-
-        function getRoot() { return document.querySelector('#view-region main.markdown-body'); }
-        function getContent() { return document.getElementById('view-content'); }
-        function getLane() { return document.getElementById('view-marker-lane'); }
-
-        function clearLane() {
-            var lane = getLane();
-            if (!lane) return;
-            while (lane.firstChild) lane.removeChild(lane.firstChild);
-        }
-
-        function updateMarkers() {
-            var lane = getLane();
-            var content = getContent();
-            if (!lane) return;
-            clearLane();
-            if (!content || rangesArr.length === 0) return;
-            var totalH = content.scrollHeight;
-            if (totalH <= 0) return;
-            // Read-Phase: alle Range-Top-Positionen lesen, ohne DOM-Mutation
-            // dazwischen. Trennt Reads von Writes (1 Layout-Reflow statt N).
-            var contentTop = content.getBoundingClientRect().top;
-            var scrollTop = content.scrollTop;
-            // Bucketing: maximal 1 Marker pro Pixelreihe der Lane. Dieselbe
-            // Doc-Position 10x malen ist visuell identisch und unnoetig.
-            // laneH = sichtbare Lane-Hoehe ~ Anzahl Pixel-Buckets.
-            var laneH = Math.max(1, lane.clientHeight);
-            var seen = new Uint8Array(laneH);
-            var activePixel = -1;
-            var pixels = [];
-            for (var i = 0; i < rangesArr.length; i++) {
-                var rect = rangesArr[i].getBoundingClientRect();
-                var pos = scrollTop + (rect.top - contentTop);
-                var px = Math.max(0, Math.min(laneH - 1, Math.round((pos / totalH) * laneH)));
-                if (i === activeIdx) activePixel = px;
-                if (!seen[px]) { seen[px] = 1; pixels.push(px); }
-            }
-            var frag = document.createDocumentFragment();
-            for (var j = 0; j < pixels.length; j++) {
-                var p = pixels[j];
-                var dot = document.createElement('div');
-                dot.className = 'folio-marker' + (p === activePixel ? ' active' : '');
-                dot.style.top = ((p / laneH) * 100) + '%';
-                frag.appendChild(dot);
-            }
-            lane.appendChild(frag);
-        }
-
-        function clearMarks() {
-            // Highlight-API: O(1)-Clear. Kein DOM-Walk, kein normalize, kein Reflow.
-            if (matchHL) matchHL.clear();
-            if (activeHL) activeHL.clear();
-            rangesArr = [];
-            activeIdx = -1;
-            clearLane();
-        }
-
-        function escapeRegExp(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
-
-        function buildRegex(term) {
-            if (!term) return null;
-            var pattern = escapeRegExp(term);
-            if (opts.wholeWord) pattern = '\\b' + pattern + '\\b';
-            var flags = opts.caseSensitive ? 'g' : 'gi';
-            try { return new RegExp(pattern, flags); } catch (e) { return null; }
-        }
-
-        function buildWalker(root) {
-            return document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-                acceptNode: function (node) {
-                    var p = node.parentNode;
-                    while (p && p !== root) {
-                        var tn = p.nodeName ? p.nodeName.toLowerCase() : '';
-                        if (tn === 'script' || tn === 'style') return NodeFilter.FILTER_REJECT;
-                        p = p.parentNode;
-                    }
-                    return NodeFilter.FILTER_ACCEPT;
-                }
-            });
-        }
-
-        // Sammelt Match-Ranges in Chunks und schiebt sie progressive in das
-        // CSS Highlight (matchHL) — die Treffer werden also bereits sichtbar
-        // gefaerbt, waehrend der Lauf noch weiterlaeuft. Counter aktualisiert
-        // ueber dispatchProgress; Cancel ueber Token-Mismatch.
-        function collectRangesAsync(root, regex, myToken, done) {
-            var walker = buildWalker(root);
-            function step() {
-                if (myToken !== searchToken) return;
-                var batchStart = rangesArr.length;
-                var node;
-                while ((node = walker.nextNode())) {
-                    var text = node.nodeValue || '';
-                    if (!text) continue;
-                    regex.lastIndex = 0;
-                    var m;
-                    while ((m = regex.exec(text))) {
-                        if (m[0].length === 0) { regex.lastIndex++; continue; }
-                        var r = document.createRange();
-                        r.setStart(node, m.index);
-                        r.setEnd(node, m.index + m[0].length);
-                        rangesArr.push(r);
-                        if (matchHL) matchHL.add(r);
-                        if (rangesArr.length - batchStart >= CHUNK_SIZE) {
-                            dispatchProgress(rangesArr.length);
-                            setTimeout(step, 0);
-                            return;
-                        }
-                    }
-                }
-                done();
-            }
-            step();
-        }
-
-        function dispatchState() {
-            var detail = { term: currentTerm, total: rangesArr.length, active: activeIdx };
-            try {
-                window.dispatchEvent(new CustomEvent('folio-find-state', { detail: detail }));
-            } catch (e) {}
-            // C# hoert auf den editorFindState-Channel und persistiert den Term
-            // ueber Datei-Wechsel; analog zur Monaco-Pipeline in editor.ts.
-            try {
-                post({ type: 'editorFindState', term: detail.term, total: detail.total, active: detail.active });
-            } catch (e) {}
-        }
-
-        // Zwischenstand waehrend collect/wrap: nur DOM-Event (fuer den Counter),
-        // keine Bridge-Nachricht — sonst spammt jedes Chunk den C#-Channel.
-        function dispatchProgress(partialTotal) {
-            try {
-                window.dispatchEvent(new CustomEvent('folio-find-state', {
-                    detail: { term: currentTerm, total: partialTotal, active: -1, scanning: true }
-                }));
-            } catch (e) {}
-        }
-
-        function setActive(idx) {
-            if (rangesArr.length === 0) {
-                activeIdx = -1;
-                if (activeHL) activeHL.clear();
-                updateMarkers();
-                dispatchState();
-                return;
-            }
-            if (idx < 0) idx = (idx % rangesArr.length + rangesArr.length) % rangesArr.length;
-            if (idx >= rangesArr.length) idx = idx % rangesArr.length;
-            activeIdx = idx;
-            if (activeHL) {
-                activeHL.clear();
-                activeHL.add(rangesArr[activeIdx]);
-            }
-            // Highlights haben kein scrollIntoView — wir scrollen das Element
-            // an, in dessen Text der Treffer beginnt.
-            var r = rangesArr[activeIdx];
-            var anchor = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
-            if (anchor) {
-                try { anchor.scrollIntoView({ block: 'center', inline: 'nearest' }); }
-                catch (e) { try { anchor.scrollIntoView(true); } catch (_) {} }
-            }
-            updateMarkers();
-            dispatchState();
-        }
-
-        function research() {
-            clearMarks();
-            var myToken = ++searchToken;
-            if (!currentTerm) { dispatchState(); return; }
-            var root = getRoot(); if (!root) { dispatchState(); return; }
-            var regex = buildRegex(currentTerm); if (!regex) { dispatchState(); return; }
-            ensureHighlights();
-            collectRangesAsync(root, regex, myToken, function () {
-                if (myToken !== searchToken) return;
-                if (rangesArr.length > 0) setActive(0);
-                else { updateMarkers(); dispatchState(); }
-            });
-        }
-
-        window.ViewFinder = {
-            openFind: function (initial) {
-                if (typeof initial === 'string' && initial.length > 0) currentTerm = initial;
-                research();
-            },
-            closeFind: function () {
-                // Token-Bump cancelt eventuell noch laufende async Chunks aus
-                // einer vorherigen Suche, bevor clearMarks die Treffer abraeumt.
-                searchToken++;
-                clearMarks();
-                currentTerm = '';
-                dispatchState();
-            },
-            setFindTerm: function (term) { currentTerm = term || ''; research(); },
-            setFindOptions: function (newOpts) {
-                newOpts = newOpts || {};
-                opts.caseSensitive = !!newOpts.caseSensitive;
-                opts.wholeWord = !!newOpts.wholeWord;
-                research();
-            },
-            findNext: function () { if (rangesArr.length > 0) setActive((activeIdx + 1) % rangesArr.length); },
-            findPrev: function () { if (rangesArr.length > 0) setActive((activeIdx - 1 + rangesArr.length) % rangesArr.length); },
-        };
-    })();
+    // ----- ViewFinder lebt jetzt in view/markdown.ts (importiert oben). -----
 
     // ----- Find-Bar (Modul) — siehe ui/find-bar.ts -----
     initFindBar({ ensureEditorMounted });
@@ -708,9 +381,7 @@ import {
     // showUnsavedDialog lebt jetzt in ui/dialogs.ts (importiert oben).
     function renderDocumentPayload(data) {
         if (!data || typeof data !== 'object') return;
-        if (typeof window.setTocList === 'function') {
-            window.setTocList(data.tocHtml || data.toc_html || '');
-        }
+        setTocList(data.tocHtml || data.toc_html || '');
         var view = document.getElementById('view-region');
         var body = view && view.querySelector('.markdown-body');
         if (body) {
@@ -718,30 +389,7 @@ import {
             rewriteRelativeAssets(body, data.path || currentPath);
         }
     }
-    function rewriteRelativeAssets(rootEl, documentPath) {
-        if (!rootEl || !documentPath) return;
-        var convert = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.convertFileSrc;
-        if (typeof convert !== 'function') return;
-        var dir = documentPath.replace(/[\\/][^\\/]*$/, '');
-        var imgs = rootEl.querySelectorAll('img');
-        for (var i = 0; i < imgs.length; i++) {
-            var src = imgs[i].getAttribute('src');
-            if (!src) continue;
-            // Skip absolute URLs (http, https, data:, asset:, blob:, etc.)
-            if (/^[a-z][a-z0-9+.-]*:/i.test(src)) continue;
-            if (src.indexOf('//') === 0) continue;
-            var abs;
-            if (/^[a-zA-Z]:[\\/]/.test(src) || src.charAt(0) === '/') {
-                abs = src;
-            } else {
-                abs = dir + '/' + src;
-            }
-            // Normalisiere Backslashes (Windows)
-            abs = abs.replace(/\\/g, '/');
-            try { imgs[i].src = convert(abs); } catch (e) { /* ignore */ }
-        }
-    }
-    window.rewriteRelativeAssets = rewriteRelativeAssets;
+    // rewriteRelativeAssets lebt jetzt in view/markdown.ts (importiert oben).
     function saveCurrent() {
         return syncEditorTextToStore().then(function () {
             return invoke('editor_save_requested');
@@ -1106,8 +754,8 @@ import {
         var bar = document.getElementById('find-bar');
         if (bar && bar.classList.contains('open') && !document.body.classList.contains('edit-mode')) {
             var input = document.getElementById('find-input');
-            if (input && input.value && window.ViewFinder) {
-                setTimeout(function () { window.ViewFinder.setFindTerm(input.value); }, 0);
+            if (input && input.value) {
+                setTimeout(function () { ViewFinder.setFindTerm(input.value); }, 0);
             }
         }
     });
@@ -1130,7 +778,7 @@ import {
         var view = document.getElementById('view-region');
         var body = view && view.querySelector('.markdown-body');
         if (body) body.innerHTML = '';
-        if (typeof window.setTocList === 'function') window.setTocList('');
+        setTocList('');
         applyDocKind('unknown');
         setStatusPath('Bereit', false);
         updateWordCount('');

@@ -1,10 +1,11 @@
 // @ts-nocheck
 /* Find-Bar (HTML in der Shell, FolioEditor / ViewFinder liefern Logik).
    Im Edit-Mode bedient sie Monaco (via window.FolioEditor); im View-Mode
-   den DOM-Sucher (window.ViewFinder, noch in main.ts — wird in Plan-Phase
-   4.5 nach view/markdown.ts gezogen).
+   den DOM-Sucher (ViewFinder aus view/markdown.ts).
 
    ensureEditorMounted kommt aus dem Editor-Shell und wird per init injiziert. */
+
+import { ViewFinder } from '../view/markdown';
 
 let bar: HTMLElement = null;
 let input: HTMLInputElement = null;
@@ -26,7 +27,7 @@ function isEditMode(): boolean { return document.body.classList.contains('edit-m
 
 // Liefert die aktive Backend-Implementierung: Monaco-Editor (Edit) oder DOM-Sucher (View).
 function getFinder(): any {
-    return isEditMode() ? window.FolioEditor : window.ViewFinder;
+    return isEditMode() ? window.FolioEditor : ViewFinder;
 }
 
 function isOpen(): boolean { return bar.classList.contains('open'); }
@@ -67,7 +68,7 @@ function close(): void {
     // Edit→View-Wechsel vor CloseEditorFind, sonst wuerde getFinder() den falschen
     // Finder treffen und die Edit-Highlights blieben haengen.
     if (window.FolioEditor) window.FolioEditor.closeFind();
-    if (window.ViewFinder) window.ViewFinder.closeFind();
+    if (ViewFinder) ViewFinder.closeFind();
     if (isEditMode() && window.focusEditor) window.focusEditor();
 }
 
@@ -114,7 +115,7 @@ export function afterModeSwitch(): void {
     setTimeout(function () {
         if (bar.classList.contains('open')) {
             if (window.FolioEditor) window.FolioEditor.closeFind();
-            if (window.ViewFinder) window.ViewFinder.closeFind();
+            if (ViewFinder) ViewFinder.closeFind();
             const f = getFinder();
             if (f) {
                 f.setFindOptions({
