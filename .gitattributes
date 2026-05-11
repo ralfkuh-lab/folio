@@ -1,0 +1,11 @@
+# Default: Git erkennt Textdateien, normalisiert im Repo auf LF, checkt
+# auch im Working Tree auf LF aus. Damit verschwindet das ewige
+# "LF will be replaced by CRLF"-Geblubber unter Windows, weil das
+# Working-Tree-EOL == Index-EOL bleibt.
+* text=auto eol=lf
+
+# Monaco-Editor-Vendor wird ueber copy-monaco.js aus node_modules
+# verbatim ins dist gespiegelt. Diese Dateien sollen 1:1 so im Repo
+# liegen, wie npm sie liefert — keine Zeilenumbruch-Konvertierung,
+# kein Whitespace-Touch. -text behandelt sie wie Binaries.
+src-tauri/dist/monaco/** -text
