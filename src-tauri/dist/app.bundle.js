@@ -1,7 +1,180 @@
 (() => {
+  // app/ui/cheatsheet.ts
+  var STORAGE_KEY = "folio.cheatsheet";
+  var cheatSheetRows = [
+    ["\xDCberschrift", "# H1   ## H2   ### H3"],
+    ["Fett / Kursiv", "**fett**   *kursiv*"],
+    ["Durchgestrichen", "~~text~~"],
+    ["Inline-Code", "`code`"],
+    ["Codeblock", "```codeblock```"],
+    ["Link", "[Text](https://\u2026)"],
+    ["Bild", "![alt](pfad.png)"],
+    ["Aufz\xE4hlung", "- Item   * Item"],
+    ["Nummeriert", "1. Item"],
+    ["Zitat", "> Text"],
+    ["Trennlinie", "---"],
+    ["Tabelle", "| col | col |\n|---|---|"],
+    ["Aufgabe", "- [ ] offen   - [x] erledigt"]
+  ];
+  var overlay = null;
+  var dragHeader = null;
+  var body = null;
+  var dragState = null;
+  var rightOffset = 16;
+  var topOffset = 80;
+  var wantsVisible = false;
+  var lastRows = null;
+  function post(msg) {
+    if (window.__TAURI__ && window.__TAURI__.event) {
+      window.__TAURI__.event.emit("shell:event", msg);
+    }
+  }
+  function loadStored() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const s = JSON.parse(raw);
+      if (typeof s.right === "number" && s.right >= 0) rightOffset = s.right;
+      if (typeof s.top === "number" && s.top >= 0) topOffset = s.top;
+      if (typeof s.visible === "boolean") wantsVisible = s.visible;
+    } catch (_) {
+    }
+  }
+  function saveStored() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        right: rightOffset,
+        top: topOffset,
+        visible: wantsVisible
+      }));
+    } catch (_) {
+    }
+  }
+  function applyPosition() {
+    overlay.style.right = rightOffset + "px";
+    overlay.style.top = topOffset + "px";
+    overlay.style.left = "auto";
+    overlay.style.bottom = "auto";
+  }
+  function verticalBounds() {
+    const tb = document.getElementById("toolbar");
+    const sb = document.getElementById("statusbar");
+    const top = tb ? tb.getBoundingClientRect().bottom : 0;
+    const bottom = sb ? sb.getBoundingClientRect().top : window.innerHeight;
+    return { top: Math.max(0, top), bottom: Math.max(top, bottom) };
+  }
+  function clampInsideViewport() {
+    const rect = overlay.getBoundingClientRect();
+    const winW = window.innerWidth;
+    const bounds = verticalBounds();
+    if (rect.right > winW - 1) rightOffset = 0;
+    if (rect.left < 0) rightOffset = Math.max(0, winW - rect.width);
+    if (rect.bottom > bounds.bottom) topOffset = Math.max(bounds.top, bounds.bottom - rect.height);
+    if (rect.top < bounds.top) topOffset = bounds.top;
+    applyPosition();
+  }
+  function renderRows(rowsJson) {
+    body.innerHTML = "";
+    try {
+      const rows = typeof rowsJson === "string" ? JSON.parse(rowsJson) : rowsJson;
+      if (Array.isArray(rows)) {
+        lastRows = rows;
+        rows.forEach(function(r) {
+          const l = document.createElement("div");
+          l.className = "label";
+          l.textContent = r.label || "";
+          const c = document.createElement("div");
+          c.className = "code";
+          c.textContent = r.code || "";
+          body.appendChild(l);
+          body.appendChild(c);
+        });
+      }
+    } catch (_) {
+    }
+  }
+  function showCheatSheet(rowsJson) {
+    wantsVisible = true;
+    saveStored();
+    renderRows(rowsJson);
+    overlay.hidden = false;
+    applyPosition();
+    requestAnimationFrame(clampInsideViewport);
+  }
+  function hideCheatSheet() {
+    wantsVisible = false;
+    saveStored();
+    if (overlay.hidden) return;
+    overlay.hidden = true;
+    post({ type: "cheatsheetClosed", rightOffset, topOffset });
+  }
+  function cheatsheetSyncMode(isEdit) {
+    if (isEdit) {
+      if (wantsVisible) {
+        const rows = lastRows || cheatSheetRows.map((r) => ({ label: r[0], code: r[1] }));
+        renderRows(rows);
+        overlay.hidden = false;
+        applyPosition();
+        requestAnimationFrame(clampInsideViewport);
+      }
+    } else {
+      if (!overlay.hidden) {
+        overlay.hidden = true;
+      }
+    }
+  }
+  function syncCheatsheetMenu() {
+    if (!window.__TAURI__ || !window.__TAURI__.core) return;
+    const enabled = document.body.classList.contains("edit-mode") && document.body.classList.contains("kind-markdown");
+    window.__TAURI__.core.invoke("menu_set_enabled", { id: "help.cheatsheet", enabled }).catch(function() {
+    });
+  }
+  function initCheatsheet() {
+    overlay = document.getElementById("cheatsheet-overlay");
+    dragHeader = overlay.querySelector(".overlay__drag");
+    body = document.getElementById("cheatsheet-body");
+    loadStored();
+    dragHeader.addEventListener("pointerdown", function(e) {
+      try {
+        dragHeader.setPointerCapture(e.pointerId);
+      } catch (_) {
+      }
+      dragState = { x: e.clientX, y: e.clientY, r: rightOffset, t: topOffset };
+      e.preventDefault();
+    });
+    dragHeader.addEventListener("pointermove", function(e) {
+      if (!dragState) return;
+      const dx = e.clientX - dragState.x;
+      const dy = e.clientY - dragState.y;
+      const rect = overlay.getBoundingClientRect();
+      const winW = window.innerWidth;
+      const bounds = verticalBounds();
+      const maxR = Math.max(0, winW - rect.width);
+      const maxT = Math.max(bounds.top, bounds.bottom - rect.height);
+      rightOffset = Math.min(maxR, Math.max(0, dragState.r - dx));
+      topOffset = Math.min(maxT, Math.max(bounds.top, dragState.t + dy));
+      applyPosition();
+    });
+    function endDrag(e) {
+      if (!dragState) return;
+      try {
+        dragHeader.releasePointerCapture(e.pointerId);
+      } catch (_) {
+      }
+      dragState = null;
+      saveStored();
+    }
+    dragHeader.addEventListener("pointerup", endDrag);
+    dragHeader.addEventListener("pointercancel", endDrag);
+    window.addEventListener("resize", function() {
+      if (overlay.hidden) return;
+      clampInsideViewport();
+    });
+  }
+
   // app/main.ts
   (function() {
-    var post = function(msg) {
+    var post2 = function(msg) {
       if (window.__TAURI__ && window.__TAURI__.event) {
         window.__TAURI__.event.emit("shell:event", msg);
       }
@@ -14,7 +187,7 @@
       var href = el.getAttribute("href");
       if (href === null) return;
       e.preventDefault();
-      post({ type: "linkClick", href });
+      post2({ type: "linkClick", href });
     }, true);
     (function() {
       var currentHeading = null;
@@ -27,12 +200,12 @@
       function sendHeading(id) {
         if (id === currentHeading) return;
         currentHeading = id;
-        post({ type: "visibleHeading", id: id || "" });
+        post2({ type: "visibleHeading", id: id || "" });
       }
       function sendScroll(y) {
         if (y === lastScrollY) return;
         lastScrollY = y;
-        post({ type: "scrollPosition", y });
+        post2({ type: "scrollPosition", y });
       }
       function update() {
         var hs = collectHeadings();
@@ -70,7 +243,7 @@
       while (el && !(el.classList && el.classList.contains("entry"))) el = el.parentElement;
       if (!el) return;
       var slug = el.getAttribute("data-slug");
-      if (slug) post({ type: "tocClick", slug });
+      if (slug) post2({ type: "tocClick", slug });
     });
     window.setTocActive = function(slug) {
       var prev = tocEl.querySelectorAll("li.entry.active");
@@ -153,12 +326,12 @@
         if (typeof window.setTocList === "function") {
           window.setTocList(data.tocHtml || data.toc_html || "");
         }
-        var body = contentEl.querySelector(".markdown-body");
-        if (body) {
+        var body2 = contentEl.querySelector(".markdown-body");
+        if (body2) {
           var isMd = data.kind === "markdown";
-          body.innerHTML = isMd ? data.content || data.html || "" : "";
+          body2.innerHTML = isMd ? data.content || data.html || "" : "";
           if (isMd && typeof window.rewriteRelativeAssets === "function") {
-            window.rewriteRelativeAssets(body, data.path || "");
+            window.rewriteRelativeAssets(body2, data.path || "");
           }
         }
         if (typeof window.setVaultActive === "function") {
@@ -220,7 +393,7 @@
         if (mode === "edit" && typeof window.focusEditor === "function") {
           window.focusEditor();
         }
-        if (typeof window.syncCheatsheetMenu === "function") window.syncCheatsheetMenu();
+        syncCheatsheetMenu();
         var core = window.__TAURI__.core;
         core.invoke("menu_set_enabled", { id: "edit.undo", enabled: mode === "edit" }).catch(function() {
         });
@@ -480,7 +653,7 @@
         } catch (e) {
         }
         try {
-          post({ type: "editorFindState", term: detail.term, total: detail.total, active: detail.active });
+          post2({ type: "editorFindState", term: detail.term, total: detail.total, active: detail.active });
         } catch (e) {
         }
       }
@@ -777,7 +950,7 @@
     })();
     (function() {
       var splitter = document.getElementById("splitter-right");
-      var dragState = null;
+      var dragState2 = null;
       function currentTocWidth() {
         var v = getComputedStyle(document.documentElement).getPropertyValue("--toc-w").trim();
         var n = parseFloat(v);
@@ -788,31 +961,31 @@
           splitter.setPointerCapture(e.pointerId);
         } catch (_) {
         }
-        dragState = { startX: e.clientX, startW: currentTocWidth() };
+        dragState2 = { startX: e.clientX, startW: currentTocWidth() };
         e.preventDefault();
       });
       splitter.addEventListener("pointermove", function(e) {
-        if (!dragState) return;
-        var dx = e.clientX - dragState.startX;
+        if (!dragState2) return;
+        var dx = e.clientX - dragState2.startX;
         var maxW = Math.max(150, window.innerWidth - 320 - 8);
-        var newW = Math.max(150, Math.min(maxW, dragState.startW - dx));
+        var newW = Math.max(150, Math.min(maxW, dragState2.startW - dx));
         document.documentElement.style.setProperty("--toc-w", newW + "px");
       });
       function endDrag(e) {
-        if (!dragState) return;
+        if (!dragState2) return;
         try {
           splitter.releasePointerCapture(e.pointerId);
         } catch (_) {
         }
-        dragState = null;
-        post({ type: "railResize", side: "right", width: currentTocWidth() });
+        dragState2 = null;
+        post2({ type: "railResize", side: "right", width: currentTocWidth() });
       }
       splitter.addEventListener("pointerup", endDrag);
       splitter.addEventListener("pointercancel", endDrag);
     })();
     (function() {
       var splitter = document.getElementById("splitter-left");
-      var dragState = null;
+      var dragState2 = null;
       function currentVaultWidth() {
         var v = getComputedStyle(document.documentElement).getPropertyValue("--vault-w").trim();
         var n = parseFloat(v);
@@ -823,24 +996,24 @@
           splitter.setPointerCapture(e.pointerId);
         } catch (_) {
         }
-        dragState = { startX: e.clientX, startW: currentVaultWidth() };
+        dragState2 = { startX: e.clientX, startW: currentVaultWidth() };
         e.preventDefault();
       });
       splitter.addEventListener("pointermove", function(e) {
-        if (!dragState) return;
-        var dx = e.clientX - dragState.startX;
+        if (!dragState2) return;
+        var dx = e.clientX - dragState2.startX;
         var maxW = Math.max(150, window.innerWidth - 320 - 8);
-        var newW = Math.max(150, Math.min(maxW, dragState.startW + dx));
+        var newW = Math.max(150, Math.min(maxW, dragState2.startW + dx));
         document.documentElement.style.setProperty("--vault-w", newW + "px");
       });
       function endDrag(e) {
-        if (!dragState) return;
+        if (!dragState2) return;
         try {
           splitter.releasePointerCapture(e.pointerId);
         } catch (_) {
         }
-        dragState = null;
-        post({ type: "railResize", side: "left", width: currentVaultWidth() });
+        dragState2 = null;
+        post2({ type: "railResize", side: "left", width: currentVaultWidth() });
       }
       splitter.addEventListener("pointerup", endDrag);
       splitter.addEventListener("pointercancel", endDrag);
@@ -922,7 +1095,7 @@
         var nowExpanded = !(caret && caret.classList.contains("open"));
         if (caret) caret.classList.toggle("open", nowExpanded);
         if (ul) ul.classList.toggle("collapsed", !nowExpanded);
-        post({ type: "toggle-section", section: key, expanded: nowExpanded });
+        post2({ type: "toggle-section", section: key, expanded: nowExpanded });
       }
       function toggleDir(node) {
         var caret = node.querySelector(":scope > .row > .caret");
@@ -935,12 +1108,12 @@
           if (caret) caret.classList.remove("open");
           if (ul) ul.classList.add("collapsed");
           if (iconEl) iconEl.textContent = "\u{1F4C1}";
-          post({ type: "collapse-dir", path });
+          post2({ type: "collapse-dir", path });
         } else {
           if (caret) caret.classList.add("open");
           if (ul) ul.classList.remove("collapsed");
           if (iconEl) iconEl.textContent = "\u{1F4C2}";
-          if (!loaded) post({ type: "expand-dir", path });
+          if (!loaded) post2({ type: "expand-dir", path });
         }
       }
       REGION.addEventListener("click", function(e) {
@@ -961,12 +1134,12 @@
                 if (typeof window.openDocument === "function") {
                   window.openDocument(path);
                 } else {
-                  post({ type: "open", path });
+                  post2({ type: "open", path });
                 }
               }).catch(function() {
               });
             } else {
-              post({ type: "addFile" });
+              post2({ type: "addFile" });
             }
           } else if (cmd === "addFolder") {
             if (inv) {
@@ -976,7 +1149,7 @@
               }).catch(function() {
               });
             } else {
-              post({ type: "addFolder" });
+              post2({ type: "addFolder" });
             }
           }
           return;
@@ -999,7 +1172,7 @@
               if (typeof window.openDocument === "function") {
                 window.openDocument(p);
               } else {
-                post({ type: "open", path: p });
+                post2({ type: "open", path: p });
               }
             }
             return;
@@ -1012,10 +1185,10 @@
         e.preventDefault();
         var node = findAncestor(e.target, "node");
         if (!node) {
-          post({ type: "context", path: null, x: e.clientX, y: e.clientY });
+          post2({ type: "context", path: null, x: e.clientX, y: e.clientY });
           return;
         }
-        post({
+        post2({
           type: "context",
           path: node.getAttribute("data-path"),
           kind: node.getAttribute("data-kind"),
@@ -1026,156 +1199,7 @@
         });
       });
     })();
-    (function() {
-      var overlay = document.getElementById("cheatsheet-overlay");
-      var dragHeader = overlay.querySelector(".overlay__drag");
-      var body = document.getElementById("cheatsheet-body");
-      var dragState = null;
-      var rightOffset = 16;
-      var topOffset = 80;
-      var wantsVisible = false;
-      var lastRows = null;
-      var STORAGE_KEY = "folio.cheatsheet";
-      function loadStored() {
-        try {
-          var raw = localStorage.getItem(STORAGE_KEY);
-          if (!raw) return;
-          var s = JSON.parse(raw);
-          if (typeof s.right === "number" && s.right >= 0) rightOffset = s.right;
-          if (typeof s.top === "number" && s.top >= 0) topOffset = s.top;
-          if (typeof s.visible === "boolean") wantsVisible = s.visible;
-        } catch (_) {
-        }
-      }
-      function saveStored() {
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify({
-            right: rightOffset,
-            top: topOffset,
-            visible: wantsVisible
-          }));
-        } catch (_) {
-        }
-      }
-      loadStored();
-      function applyPosition() {
-        overlay.style.right = rightOffset + "px";
-        overlay.style.top = topOffset + "px";
-        overlay.style.left = "auto";
-        overlay.style.bottom = "auto";
-      }
-      function verticalBounds() {
-        var tb = document.getElementById("toolbar");
-        var sb = document.getElementById("statusbar");
-        var top = tb ? tb.getBoundingClientRect().bottom : 0;
-        var bottom = sb ? sb.getBoundingClientRect().top : window.innerHeight;
-        return { top: Math.max(0, top), bottom: Math.max(top, bottom) };
-      }
-      function clampInsideViewport() {
-        var rect = overlay.getBoundingClientRect();
-        var winW = window.innerWidth;
-        var bounds = verticalBounds();
-        if (rect.right > winW - 1) rightOffset = 0;
-        if (rect.left < 0) rightOffset = Math.max(0, winW - rect.width);
-        if (rect.bottom > bounds.bottom) topOffset = Math.max(bounds.top, bounds.bottom - rect.height);
-        if (rect.top < bounds.top) topOffset = bounds.top;
-        applyPosition();
-      }
-      function renderRows(rowsJson) {
-        body.innerHTML = "";
-        try {
-          var rows = typeof rowsJson === "string" ? JSON.parse(rowsJson) : rowsJson;
-          if (Array.isArray(rows)) {
-            lastRows = rows;
-            rows.forEach(function(r) {
-              var l = document.createElement("div");
-              l.className = "label";
-              l.textContent = r.label || "";
-              var c = document.createElement("div");
-              c.className = "code";
-              c.textContent = r.code || "";
-              body.appendChild(l);
-              body.appendChild(c);
-            });
-          }
-        } catch (_) {
-        }
-      }
-      window.showCheatSheet = function(rowsJson) {
-        wantsVisible = true;
-        saveStored();
-        renderRows(rowsJson);
-        overlay.hidden = false;
-        applyPosition();
-        requestAnimationFrame(clampInsideViewport);
-      };
-      window.hideCheatSheet = function() {
-        wantsVisible = false;
-        saveStored();
-        if (overlay.hidden) return;
-        overlay.hidden = true;
-        post({ type: "cheatsheetClosed", rightOffset, topOffset });
-      };
-      window.cheatsheetSyncMode = function(isEdit) {
-        if (isEdit) {
-          if (wantsVisible) {
-            var rows = lastRows;
-            if (!rows && window.__cheatSheetRows) {
-              rows = window.__cheatSheetRows.map(function(r) {
-                return { label: r[0], code: r[1] };
-              });
-            }
-            if (rows) renderRows(rows);
-            overlay.hidden = false;
-            applyPosition();
-            requestAnimationFrame(clampInsideViewport);
-          }
-        } else {
-          if (!overlay.hidden) {
-            overlay.hidden = true;
-          }
-        }
-      };
-      window.cheatsheetWantsVisible = function() {
-        return wantsVisible;
-      };
-      dragHeader.addEventListener("pointerdown", function(e) {
-        try {
-          dragHeader.setPointerCapture(e.pointerId);
-        } catch (_) {
-        }
-        dragState = { x: e.clientX, y: e.clientY, r: rightOffset, t: topOffset };
-        e.preventDefault();
-      });
-      dragHeader.addEventListener("pointermove", function(e) {
-        if (!dragState) return;
-        var dx = e.clientX - dragState.x;
-        var dy = e.clientY - dragState.y;
-        var rect = overlay.getBoundingClientRect();
-        var winW = window.innerWidth;
-        var bounds = verticalBounds();
-        var maxR = Math.max(0, winW - rect.width);
-        var maxT = Math.max(bounds.top, bounds.bottom - rect.height);
-        rightOffset = Math.min(maxR, Math.max(0, dragState.r - dx));
-        topOffset = Math.min(maxT, Math.max(bounds.top, dragState.t + dy));
-        applyPosition();
-      });
-      function endDrag(e) {
-        if (!dragState) return;
-        try {
-          dragHeader.releasePointerCapture(e.pointerId);
-        } catch (_) {
-        }
-        dragState = null;
-        saveStored();
-      }
-      dragHeader.addEventListener("pointerup", endDrag);
-      dragHeader.addEventListener("pointercancel", endDrag);
-      window.addEventListener("resize", function() {
-        if (overlay.hidden) return;
-        clampInsideViewport();
-      });
-    })();
+    initCheatsheet();
   })();
   (function() {
     if (!window.__TAURI__) return;
@@ -1419,10 +1443,10 @@
         window.setTocList(data.tocHtml || data.toc_html || "");
       }
       var view = document.getElementById("view-region");
-      var body = view && view.querySelector(".markdown-body");
-      if (body) {
-        body.innerHTML = data.content || data.html || "";
-        rewriteRelativeAssets(body, data.path || currentPath);
+      var body2 = view && view.querySelector(".markdown-body");
+      if (body2) {
+        body2.innerHTML = data.content || data.html || "";
+        rewriteRelativeAssets(body2, data.path || currentPath);
       }
     }
     function rewriteRelativeAssets(rootEl, documentPath) {
@@ -1491,11 +1515,11 @@
     var DOC_KIND_CLASSES = ["kind-markdown", "kind-text", "kind-binary", "kind-unknown"];
     function applyDocKind(kind) {
       var resolved = kind || "unknown";
-      var body = document.body;
+      var body2 = document.body;
       DOC_KIND_CLASSES.forEach(function(c) {
-        body.classList.remove(c);
+        body2.classList.remove(c);
       });
-      body.classList.add("kind-" + resolved);
+      body2.classList.add("kind-" + resolved);
       var md = resolved === "markdown";
       var hasDoc = resolved !== "unknown" && resolved !== "binary";
       var btnView = $("tb-mode-view");
@@ -1527,9 +1551,9 @@
       syncViewModeMenuChecks();
     }
     function syncViewModeMenuChecks() {
-      var body = document.body;
-      var hasDoc = !body.classList.contains("kind-unknown") && !body.classList.contains("kind-binary");
-      var mode = !hasDoc ? null : body.classList.contains("edit-mode") ? "edit" : body.classList.contains("split-mode") ? "split" : "view";
+      var body2 = document.body;
+      var hasDoc = !body2.classList.contains("kind-unknown") && !body2.classList.contains("kind-binary");
+      var mode = !hasDoc ? null : body2.classList.contains("edit-mode") ? "edit" : body2.classList.contains("split-mode") ? "split" : "view";
       invoke("menu_set_checked", { id: "view.mode.view", checked: mode === "view" }).catch(function() {
       });
       invoke("menu_set_checked", { id: "view.mode.edit", checked: mode === "edit" }).catch(function() {
@@ -1537,12 +1561,6 @@
       invoke("menu_set_checked", { id: "view.mode.split", checked: mode === "split" }).catch(function() {
       });
     }
-    function syncCheatsheetMenu() {
-      var enabled = document.body.classList.contains("edit-mode") && document.body.classList.contains("kind-markdown");
-      invoke("menu_set_enabled", { id: "help.cheatsheet", enabled }).catch(function() {
-      });
-    }
-    window.syncCheatsheetMenu = syncCheatsheetMenu;
     applyDocKind("unknown");
     function showStatus(msg) {
       var el = $("status-path");
@@ -1584,9 +1602,7 @@
       $("tb-mode-edit").classList.toggle("active", mode === "edit");
       var sm = $("status-mode");
       if (sm) sm.textContent = mode === "edit" ? "Edit" : "View";
-      if (typeof window.cheatsheetSyncMode === "function") {
-        window.cheatsheetSyncMode(mode === "edit");
-      }
+      cheatsheetSyncMode(mode === "edit");
       invoke("menu_set_checked", { id: "view.mode.view", checked: mode === "view" }).catch(function() {
       });
       invoke("menu_set_checked", { id: "view.mode.edit", checked: mode === "edit" }).catch(function() {
@@ -1834,36 +1850,16 @@
     bind("tb-strike", function() {
       applyCmd("strike");
     });
-    var cheatSheetRows = window.__cheatSheetRows = [
-      ["\xDCberschrift", "# H1   ## H2   ### H3"],
-      ["Fett / Kursiv", "**fett**   *kursiv*"],
-      ["Durchgestrichen", "~~text~~"],
-      ["Inline-Code", "`code`"],
-      ["Codeblock", "```codeblock```"],
-      ["Link", "[Text](https://\u2026)"],
-      ["Bild", "![alt](pfad.png)"],
-      ["Aufz\xE4hlung", "- Item   * Item"],
-      ["Nummeriert", "1. Item"],
-      ["Zitat", "> Text"],
-      ["Trennlinie", "---"],
-      ["Tabelle", "| col | col |\n|---|---|"],
-      ["Aufgabe", "- [ ] offen   - [x] erledigt"]
-    ];
     bind("tb-cheatsheet", function() {
       if (!document.body.classList.contains("edit-mode")) return;
       var ov = $("cheatsheet-overlay");
       if (!ov) return;
       if (ov.hidden) {
-        if (typeof window.showCheatSheet === "function") {
-          window.showCheatSheet(JSON.stringify(cheatSheetRows.map(function(r) {
-            return { label: r[0], code: r[1] };
-          })));
-        } else {
-          ov.hidden = false;
-        }
+        showCheatSheet(JSON.stringify(cheatSheetRows.map(function(r) {
+          return { label: r[0], code: r[1] };
+        })));
       } else {
-        if (typeof window.hideCheatSheet === "function") window.hideCheatSheet();
-        else ov.hidden = true;
+        hideCheatSheet();
       }
     });
     function setStatusPath(path, dirty) {
@@ -2232,8 +2228,8 @@
         window.FolioEditor.setText("", "plaintext");
       }
       var view = document.getElementById("view-region");
-      var body = view && view.querySelector(".markdown-body");
-      if (body) body.innerHTML = "";
+      var body2 = view && view.querySelector(".markdown-body");
+      if (body2) body2.innerHTML = "";
       if (typeof window.setTocList === "function") window.setTocList("");
       applyDocKind("unknown");
       setStatusPath("Bereit", false);

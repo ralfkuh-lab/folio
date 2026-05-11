@@ -1,7 +1,16 @@
 // @ts-nocheck
-/* folio app bundle. Plan-Phase 4.2: verbatim move of the two inline <script>
-   IIFE blocks from src-tauri/dist/index.html. No semantic change. Module split
-   follows in Plan-Phase 4.3-4.5; cross-bundle window.* bridge stays for now. */
+/* folio app bundle. Plan-Phase 4.3+: leaf modules out of main.ts. Cross-
+   bundle bridge bleibt window.FolioEditor + Tauri-Runtime; alles andere
+   wird inkrementell in app/{ui,vault,view,editor,state}/ modularisiert. */
+
+import {
+    initCheatsheet,
+    showCheatSheet,
+    hideCheatSheet,
+    cheatsheetSyncMode,
+    syncCheatsheetMenu,
+    cheatSheetRows,
+} from './ui/cheatsheet';
 
 // === IIFE #1 (TOC/View bridge, Editor bridge, ViewFinder, Cheatsheet, Vault setters) ===
 
@@ -253,7 +262,7 @@
             if (mode === 'edit' && typeof window.focusEditor === 'function') {
                 window.focusEditor();
             }
-            if (typeof window.syncCheatsheetMenu === 'function') window.syncCheatsheetMenu();
+            syncCheatsheetMenu();
             // Rückgängig/Wiederholen leben in Monaco — nur im Edit-Mode
             // sinnvoll. Im View-Mode (statisches HTML) gibt es nichts
             // rückgängig zu machen.
@@ -1033,154 +1042,8 @@
         });
     })();
 
-    // ----- Cheat-Sheet-Overlay (Drag, Show/Hide) -----
-    (function () {
-        var overlay = document.getElementById('cheatsheet-overlay');
-        var dragHeader = overlay.querySelector('.overlay__drag');
-        var body = document.getElementById('cheatsheet-body');
-        var dragState = null;
-        var rightOffset = 16;
-        var topOffset = 80;
-        var wantsVisible = false;
-        var lastRows = null;
-        var STORAGE_KEY = 'folio.cheatsheet';
-
-        function loadStored() {
-            try {
-                var raw = localStorage.getItem(STORAGE_KEY);
-                if (!raw) return;
-                var s = JSON.parse(raw);
-                if (typeof s.right === 'number' && s.right >= 0) rightOffset = s.right;
-                if (typeof s.top === 'number' && s.top >= 0) topOffset = s.top;
-                if (typeof s.visible === 'boolean') wantsVisible = s.visible;
-            } catch (_) {}
-        }
-        function saveStored() {
-            try {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify({
-                    right: rightOffset, top: topOffset, visible: wantsVisible
-                }));
-            } catch (_) {}
-        }
-        loadStored();
-
-        function applyPosition() {
-            overlay.style.right = rightOffset + 'px';
-            overlay.style.top = topOffset + 'px';
-            overlay.style.left = 'auto';
-            overlay.style.bottom = 'auto';
-        }
-
-        function verticalBounds() {
-            var tb = document.getElementById('toolbar');
-            var sb = document.getElementById('statusbar');
-            var top = tb ? tb.getBoundingClientRect().bottom : 0;
-            var bottom = sb ? sb.getBoundingClientRect().top : window.innerHeight;
-            return { top: Math.max(0, top), bottom: Math.max(top, bottom) };
-        }
-
-        function clampInsideViewport() {
-            var rect = overlay.getBoundingClientRect();
-            var winW = window.innerWidth;
-            var bounds = verticalBounds();
-            if (rect.right > winW - 1) rightOffset = 0;
-            if (rect.left < 0) rightOffset = Math.max(0, winW - rect.width);
-            if (rect.bottom > bounds.bottom) topOffset = Math.max(bounds.top, bounds.bottom - rect.height);
-            if (rect.top < bounds.top) topOffset = bounds.top;
-            applyPosition();
-        }
-
-        function renderRows(rowsJson) {
-            body.innerHTML = '';
-            try {
-                var rows = (typeof rowsJson === 'string') ? JSON.parse(rowsJson) : rowsJson;
-                if (Array.isArray(rows)) {
-                    lastRows = rows;
-                    rows.forEach(function (r) {
-                        var l = document.createElement('div'); l.className = 'label'; l.textContent = r.label || '';
-                        var c = document.createElement('div'); c.className = 'code'; c.textContent = r.code || '';
-                        body.appendChild(l); body.appendChild(c);
-                    });
-                }
-            } catch (_) { /* defensive */ }
-        }
-
-        window.showCheatSheet = function (rowsJson) {
-            wantsVisible = true;
-            saveStored();
-            renderRows(rowsJson);
-            overlay.hidden = false;
-            applyPosition();
-            requestAnimationFrame(clampInsideViewport);
-        };
-
-        window.hideCheatSheet = function () {
-            wantsVisible = false;
-            saveStored();
-            if (overlay.hidden) return;
-            overlay.hidden = true;
-            post({ type: 'cheatsheetClosed', rightOffset: rightOffset, topOffset: topOffset });
-        };
-
-        // Mode-Sync: vom setActiveMode aufgerufen. Aendert wantsVisible nicht.
-        window.cheatsheetSyncMode = function (isEdit) {
-            if (isEdit) {
-                if (wantsVisible) {
-                    var rows = lastRows;
-                    if (!rows && window.__cheatSheetRows) {
-                        rows = window.__cheatSheetRows.map(function (r) {
-                            return { label: r[0], code: r[1] };
-                        });
-                    }
-                    if (rows) renderRows(rows);
-                    overlay.hidden = false;
-                    applyPosition();
-                    requestAnimationFrame(clampInsideViewport);
-                }
-            } else {
-                if (!overlay.hidden) {
-                    overlay.hidden = true;
-                }
-            }
-        };
-
-        window.cheatsheetWantsVisible = function () { return wantsVisible; };
-
-        // Drag am Header
-        dragHeader.addEventListener('pointerdown', function (e) {
-            try { dragHeader.setPointerCapture(e.pointerId); } catch (_) {}
-            dragState = { x: e.clientX, y: e.clientY, r: rightOffset, t: topOffset };
-            e.preventDefault();
-        });
-        dragHeader.addEventListener('pointermove', function (e) {
-            if (!dragState) return;
-            var dx = e.clientX - dragState.x;
-            var dy = e.clientY - dragState.y;
-            var rect = overlay.getBoundingClientRect();
-            var winW = window.innerWidth;
-            var bounds = verticalBounds();
-            var maxR = Math.max(0, winW - rect.width);
-            var maxT = Math.max(bounds.top, bounds.bottom - rect.height);
-            rightOffset = Math.min(maxR, Math.max(0, dragState.r - dx));
-            topOffset = Math.min(maxT, Math.max(bounds.top, dragState.t + dy));
-            applyPosition();
-        });
-        function endDrag(e) {
-            if (!dragState) return;
-            try { dragHeader.releasePointerCapture(e.pointerId); } catch (_) {}
-            dragState = null;
-            saveStored();
-        }
-        dragHeader.addEventListener('pointerup', endDrag);
-        dragHeader.addEventListener('pointercancel', endDrag);
-
-
-        // Window-Resize: in den Viewport zurueckholen.
-        window.addEventListener('resize', function () {
-            if (overlay.hidden) return;
-            clampInsideViewport();
-        });
-    })();
+    // ----- Cheat-Sheet-Overlay (Modul) -----
+    initCheatsheet();
 })();
 
 // === IIFE #2 (Toolbar/Statusbar/Vault-Workspace/Drag&Drop/Context-Menu/__folioInvoke) ===
@@ -1532,12 +1395,7 @@
     // Cheat-Sheet ist nur im Edit-Mode bei Markdown sinnvoll. Wird
     // sowohl von applyDocKind als auch vom app:set_mode-Listener
     // gerufen, damit jede Zustandsänderung das Menü mitnimmt.
-    function syncCheatsheetMenu() {
-        var enabled = document.body.classList.contains('edit-mode')
-            && document.body.classList.contains('kind-markdown');
-        invoke('menu_set_enabled', { id: 'help.cheatsheet', enabled: enabled }).catch(function(){});
-    }
-    window.syncCheatsheetMenu = syncCheatsheetMenu;
+    // syncCheatsheetMenu kommt aus ui/cheatsheet (importiert oben).
     applyDocKind('unknown');
     function showStatus(msg) {
         var el = $('status-path');
@@ -1579,9 +1437,7 @@
         $('tb-mode-view').classList.toggle('active', mode === 'view');
         $('tb-mode-edit').classList.toggle('active', mode === 'edit');
         var sm = $('status-mode'); if (sm) sm.textContent = mode === 'edit' ? 'Edit' : 'View';
-        if (typeof window.cheatsheetSyncMode === 'function') {
-            window.cheatsheetSyncMode(mode === 'edit');
-        }
+        cheatsheetSyncMode(mode === 'edit');
         // View-Mode-Häkchen im Menü synchron halten (alle Pfade laufen
         // hier durch: setMode(), applyShellState, navigation:changed).
         invoke('menu_set_checked', { id: 'view.mode.view', checked: mode === 'view' }).catch(function(){});
@@ -1794,34 +1650,14 @@
     bind('tb-code',      function () { applyCmd('code'); });
     bind('tb-codeblock', function () { applyCmd('codeblock'); });
     bind('tb-strike',    function () { applyCmd('strike'); });
-    var cheatSheetRows = window.__cheatSheetRows = [
-        ['Überschrift',     '# H1   ## H2   ### H3'],
-        ['Fett / Kursiv',   '**fett**   *kursiv*'],
-        ['Durchgestrichen', '~~text~~'],
-        ['Inline-Code',     '`code`'],
-        ['Codeblock',       '```codeblock```'],
-        ['Link',            '[Text](https://…)'],
-        ['Bild',            '![alt](pfad.png)'],
-        ['Aufzählung',      '- Item   * Item'],
-        ['Nummeriert',      '1. Item'],
-        ['Zitat',           '> Text'],
-        ['Trennlinie',      '---'],
-        ['Tabelle',         '| col | col |\n|---|---|'],
-        ['Aufgabe',         '- [ ] offen   - [x] erledigt'],
-    ];
     bind('tb-cheatsheet', function () {
         if (!document.body.classList.contains('edit-mode')) return;
         var ov = $('cheatsheet-overlay');
         if (!ov) return;
         if (ov.hidden) {
-            if (typeof window.showCheatSheet === 'function') {
-                window.showCheatSheet(JSON.stringify(cheatSheetRows.map(function(r){return{label:r[0],code:r[1]};})));
-            } else {
-                ov.hidden = false;
-            }
+            showCheatSheet(JSON.stringify(cheatSheetRows.map(function(r){return{label:r[0],code:r[1]};})));
         } else {
-            if (typeof window.hideCheatSheet === 'function') window.hideCheatSheet();
-            else ov.hidden = true;
+            hideCheatSheet();
         }
     });
 
