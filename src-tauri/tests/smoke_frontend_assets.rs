@@ -42,6 +42,16 @@ fn app_css_bundle_is_packaged_with_dist() {
 }
 
 #[test]
+fn app_bundle_carries_the_ipc_wrapper() {
+    let bundle =
+        fs::read_to_string(dist_path("app.bundle.js")).expect("app.bundle.js should be readable");
+    assert!(
+        bundle.contains("__folioInvoke"),
+        "app.bundle.js must publish the Tauri invoke wrapper as window.__folioInvoke"
+    );
+}
+
+#[test]
 fn index_html_does_not_inline_styles() {
     let html = fs::read_to_string(dist_path("index.html")).expect("index.html should be readable");
     assert!(

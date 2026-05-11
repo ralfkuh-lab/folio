@@ -6,6 +6,7 @@ dist
 !src-tauri/dist/index.html
 !src-tauri/dist/editor.bundle.js
 !src-tauri/dist/app.css
+!src-tauri/dist/app.bundle.js
 *.tmp
 .DS_Store
 src-tauri/target/
