@@ -22,6 +22,7 @@ import {
 } from './ui/find-bar';
 import { showUnsavedDialog } from './ui/dialogs';
 import { initExportDialog } from './ui/export-dialog';
+import { initRails, setRailVisibility, setTocWidth, setVaultWidth } from './ui/rails';
 
 // === IIFE #1 (TOC/View bridge, Editor bridge, ViewFinder, Cheatsheet, Vault setters) ===
 
@@ -129,22 +130,8 @@ import { initExportDialog } from './ui/export-dialog';
         contentEl.scrollTo(0, y || 0);
     };
 
-    // ----- Rail-Visibility / Width (vom Host gerufen) -----
-    window.setRailVisibility = function (side, visible) {
-        if (side === 'right') {
-            document.body.classList.toggle('toc-hidden', !visible);
-        } else if (side === 'left') {
-            document.body.classList.toggle('vault-hidden', !visible);
-        }
-    };
-    window.setTocWidth = function (w) {
-        if (typeof w !== 'number' || isNaN(w) || w <= 0) return;
-        document.documentElement.style.setProperty('--toc-w', w + 'px');
-    };
-    window.setVaultWidth = function (w) {
-        if (typeof w !== 'number' || isNaN(w) || w <= 0) return;
-        document.documentElement.style.setProperty('--vault-w', w + 'px');
-    };
+    // Rail-Visibility / Width: setRailVisibility, setTocWidth, setVaultWidth
+    // leben jetzt in ui/rails.ts (importiert oben).
 
     // ----- Edit-Modus: tauscht View-Region gegen Editor-Region in derselben
     //       Grid-Spalte. Monaco Editor lebt im DOM, kein zweites HWnd, kein
@@ -299,12 +286,12 @@ import { initExportDialog } from './ui/export-dialog';
         });
         window.__TAURI__.event.listen("panel:rail_changed", function (event) {
             var data = event && event.payload;
-            if (!data || typeof window.setRailVisibility !== 'function') return;
+            if (!data) return;
             if (typeof data.leftRailVisible === 'boolean') {
-                window.setRailVisibility('left', data.leftRailVisible);
+                setRailVisibility('left', data.leftRailVisible);
             }
             if (typeof data.rightRailVisible === 'boolean') {
-                window.setRailVisibility('right', data.rightRailVisible);
+                setRailVisibility('right', data.rightRailVisible);
             }
         });
         window.__TAURI__.event.listen("editor:open_find", function () {
@@ -627,69 +614,8 @@ import { initExportDialog } from './ui/export-dialog';
     // ----- Find-Bar (Modul) — siehe ui/find-bar.ts -----
     initFindBar({ ensureEditorMounted });
 
-    // ----- Splitter-Drag (rechte Rail) -----
-    (function () {
-        var splitter = document.getElementById('splitter-right');
-        var dragState = null;
-        function currentTocWidth() {
-            var v = getComputedStyle(document.documentElement).getPropertyValue('--toc-w').trim();
-            var n = parseFloat(v);
-            return isNaN(n) ? 260 : n;
-        }
-        splitter.addEventListener('pointerdown', function (e) {
-            try { splitter.setPointerCapture(e.pointerId); } catch (_) {}
-            dragState = { startX: e.clientX, startW: currentTocWidth() };
-            e.preventDefault();
-        });
-        splitter.addEventListener('pointermove', function (e) {
-            if (!dragState) return;
-            var dx = e.clientX - dragState.startX;
-            // Splitter sitzt links von der TOC; nach rechts ziehen verkleinert TOC.
-            var maxW = Math.max(150, window.innerWidth - 320 - 8);
-            var newW = Math.max(150, Math.min(maxW, dragState.startW - dx));
-            document.documentElement.style.setProperty('--toc-w', newW + 'px');
-        });
-        function endDrag(e) {
-            if (!dragState) return;
-            try { splitter.releasePointerCapture(e.pointerId); } catch (_) {}
-            dragState = null;
-            post({ type: 'railResize', side: 'right', width: currentTocWidth() });
-        }
-        splitter.addEventListener('pointerup', endDrag);
-        splitter.addEventListener('pointercancel', endDrag);
-    })();
-
-    // ----- Splitter-Drag (linke Rail / Vault) -----
-    (function () {
-        var splitter = document.getElementById('splitter-left');
-        var dragState = null;
-        function currentVaultWidth() {
-            var v = getComputedStyle(document.documentElement).getPropertyValue('--vault-w').trim();
-            var n = parseFloat(v);
-            return isNaN(n) ? 240 : n;
-        }
-        splitter.addEventListener('pointerdown', function (e) {
-            try { splitter.setPointerCapture(e.pointerId); } catch (_) {}
-            dragState = { startX: e.clientX, startW: currentVaultWidth() };
-            e.preventDefault();
-        });
-        splitter.addEventListener('pointermove', function (e) {
-            if (!dragState) return;
-            var dx = e.clientX - dragState.startX;
-            // Splitter sitzt rechts vom Vault; nach rechts ziehen vergroessert Vault.
-            var maxW = Math.max(150, window.innerWidth - 320 - 8);
-            var newW = Math.max(150, Math.min(maxW, dragState.startW + dx));
-            document.documentElement.style.setProperty('--vault-w', newW + 'px');
-        });
-        function endDrag(e) {
-            if (!dragState) return;
-            try { splitter.releasePointerCapture(e.pointerId); } catch (_) {}
-            dragState = null;
-            post({ type: 'railResize', side: 'left', width: currentVaultWidth() });
-        }
-        splitter.addEventListener('pointerup', endDrag);
-        splitter.addEventListener('pointercancel', endDrag);
-    })();
+    // ----- Splitter-Drag (Vault- und TOC-Rail, Modul) -----
+    initRails();
 
     // ----- Vault-Region (Tree, Klick, ContextMenu) -----
     (function () {
@@ -1213,13 +1139,7 @@ import { initExportDialog } from './ui/export-dialog';
         if (btn) btn.classList.toggle('active', !!visible);
     }
     function applyRailVisibility(side, visible) {
-        if (typeof window.setRailVisibility === 'function') {
-            window.setRailVisibility(side, !!visible);
-        } else if (side === 'left') {
-            document.body.classList.toggle('vault-hidden', !visible);
-        } else if (side === 'right') {
-            document.body.classList.toggle('toc-hidden', !visible);
-        }
+        setRailVisibility(side, !!visible);
         setRailButton(side, visible);
     }
     function applyShellState(state) {
@@ -1236,11 +1156,11 @@ import { initExportDialog } from './ui/export-dialog';
         if (typeof state.leftRailVisible === 'boolean') applyRailVisibility('left', state.leftRailVisible);
         if (typeof state.rightRailVisible === 'boolean') applyRailVisibility('right', state.rightRailVisible);
         var editor = state.editor || {};
-        if (typeof editor.leftRailWidth === 'number' && typeof window.setVaultWidth === 'function') {
-            window.setVaultWidth(editor.leftRailWidth);
+        if (typeof editor.leftRailWidth === 'number') {
+            setVaultWidth(editor.leftRailWidth);
         }
-        if (typeof editor.rightRailWidth === 'number' && typeof window.setTocWidth === 'function') {
-            window.setTocWidth(editor.rightRailWidth);
+        if (typeof editor.rightRailWidth === 'number') {
+            setTocWidth(editor.rightRailWidth);
         }
     }
     bind('tb-mode-view', function () { setMode('view'); });

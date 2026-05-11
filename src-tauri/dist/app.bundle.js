@@ -750,9 +750,107 @@
     }
   }
 
+  // app/ui/rails.ts
+  function post2(msg) {
+    if (window.__TAURI__ && window.__TAURI__.event) {
+      window.__TAURI__.event.emit("shell:event", msg);
+    }
+  }
+  function setRailVisibility(side, visible) {
+    if (side === "right") {
+      document.body.classList.toggle("toc-hidden", !visible);
+    } else if (side === "left") {
+      document.body.classList.toggle("vault-hidden", !visible);
+    }
+  }
+  function setTocWidth(w) {
+    if (typeof w !== "number" || isNaN(w) || w <= 0) return;
+    document.documentElement.style.setProperty("--toc-w", w + "px");
+  }
+  function setVaultWidth(w) {
+    if (typeof w !== "number" || isNaN(w) || w <= 0) return;
+    document.documentElement.style.setProperty("--vault-w", w + "px");
+  }
+  function initRightSplitter() {
+    const splitter = document.getElementById("splitter-right");
+    if (!splitter) return;
+    let dragState2 = null;
+    function currentTocWidth() {
+      const v = getComputedStyle(document.documentElement).getPropertyValue("--toc-w").trim();
+      const n = parseFloat(v);
+      return isNaN(n) ? 260 : n;
+    }
+    splitter.addEventListener("pointerdown", function(e) {
+      try {
+        splitter.setPointerCapture(e.pointerId);
+      } catch (_) {
+      }
+      dragState2 = { startX: e.clientX, startW: currentTocWidth() };
+      e.preventDefault();
+    });
+    splitter.addEventListener("pointermove", function(e) {
+      if (!dragState2) return;
+      const dx = e.clientX - dragState2.startX;
+      const maxW = Math.max(150, window.innerWidth - 320 - 8);
+      const newW = Math.max(150, Math.min(maxW, dragState2.startW - dx));
+      document.documentElement.style.setProperty("--toc-w", newW + "px");
+    });
+    function endDrag(e) {
+      if (!dragState2) return;
+      try {
+        splitter.releasePointerCapture(e.pointerId);
+      } catch (_) {
+      }
+      dragState2 = null;
+      post2({ type: "railResize", side: "right", width: currentTocWidth() });
+    }
+    splitter.addEventListener("pointerup", endDrag);
+    splitter.addEventListener("pointercancel", endDrag);
+  }
+  function initLeftSplitter() {
+    const splitter = document.getElementById("splitter-left");
+    if (!splitter) return;
+    let dragState2 = null;
+    function currentVaultWidth() {
+      const v = getComputedStyle(document.documentElement).getPropertyValue("--vault-w").trim();
+      const n = parseFloat(v);
+      return isNaN(n) ? 240 : n;
+    }
+    splitter.addEventListener("pointerdown", function(e) {
+      try {
+        splitter.setPointerCapture(e.pointerId);
+      } catch (_) {
+      }
+      dragState2 = { startX: e.clientX, startW: currentVaultWidth() };
+      e.preventDefault();
+    });
+    splitter.addEventListener("pointermove", function(e) {
+      if (!dragState2) return;
+      const dx = e.clientX - dragState2.startX;
+      const maxW = Math.max(150, window.innerWidth - 320 - 8);
+      const newW = Math.max(150, Math.min(maxW, dragState2.startW + dx));
+      document.documentElement.style.setProperty("--vault-w", newW + "px");
+    });
+    function endDrag(e) {
+      if (!dragState2) return;
+      try {
+        splitter.releasePointerCapture(e.pointerId);
+      } catch (_) {
+      }
+      dragState2 = null;
+      post2({ type: "railResize", side: "left", width: currentVaultWidth() });
+    }
+    splitter.addEventListener("pointerup", endDrag);
+    splitter.addEventListener("pointercancel", endDrag);
+  }
+  function initRails() {
+    initRightSplitter();
+    initLeftSplitter();
+  }
+
   // app/main.ts
   (function() {
-    var post2 = function(msg) {
+    var post3 = function(msg) {
       if (window.__TAURI__ && window.__TAURI__.event) {
         window.__TAURI__.event.emit("shell:event", msg);
       }
@@ -765,7 +863,7 @@
       var href = el.getAttribute("href");
       if (href === null) return;
       e.preventDefault();
-      post2({ type: "linkClick", href });
+      post3({ type: "linkClick", href });
     }, true);
     (function() {
       var currentHeading = null;
@@ -778,12 +876,12 @@
       function sendHeading(id) {
         if (id === currentHeading) return;
         currentHeading = id;
-        post2({ type: "visibleHeading", id: id || "" });
+        post3({ type: "visibleHeading", id: id || "" });
       }
       function sendScroll(y) {
         if (y === lastScrollY) return;
         lastScrollY = y;
-        post2({ type: "scrollPosition", y });
+        post3({ type: "scrollPosition", y });
       }
       function update() {
         var hs = collectHeadings();
@@ -821,7 +919,7 @@
       while (el && !(el.classList && el.classList.contains("entry"))) el = el.parentElement;
       if (!el) return;
       var slug = el.getAttribute("data-slug");
-      if (slug) post2({ type: "tocClick", slug });
+      if (slug) post3({ type: "tocClick", slug });
     });
     window.setTocActive = function(slug) {
       var prev = tocEl.querySelectorAll("li.entry.active");
@@ -844,21 +942,6 @@
     };
     window.scrollViewTo = function(y) {
       contentEl.scrollTo(0, y || 0);
-    };
-    window.setRailVisibility = function(side, visible) {
-      if (side === "right") {
-        document.body.classList.toggle("toc-hidden", !visible);
-      } else if (side === "left") {
-        document.body.classList.toggle("vault-hidden", !visible);
-      }
-    };
-    window.setTocWidth = function(w) {
-      if (typeof w !== "number" || isNaN(w) || w <= 0) return;
-      document.documentElement.style.setProperty("--toc-w", w + "px");
-    };
-    window.setVaultWidth = function(w) {
-      if (typeof w !== "number" || isNaN(w) || w <= 0) return;
-      document.documentElement.style.setProperty("--vault-w", w + "px");
     };
     window.setEditMode = function(on) {
       document.body.classList.toggle("edit-mode", !!on);
@@ -996,12 +1079,12 @@
       });
       window.__TAURI__.event.listen("panel:rail_changed", function(event) {
         var data = event && event.payload;
-        if (!data || typeof window.setRailVisibility !== "function") return;
+        if (!data) return;
         if (typeof data.leftRailVisible === "boolean") {
-          window.setRailVisibility("left", data.leftRailVisible);
+          setRailVisibility("left", data.leftRailVisible);
         }
         if (typeof data.rightRailVisible === "boolean") {
-          window.setRailVisibility("right", data.rightRailVisible);
+          setRailVisibility("right", data.rightRailVisible);
         }
       });
       window.__TAURI__.event.listen("editor:open_find", function() {
@@ -1229,7 +1312,7 @@
         } catch (e) {
         }
         try {
-          post2({ type: "editorFindState", term: detail.term, total: detail.total, active: detail.active });
+          post3({ type: "editorFindState", term: detail.term, total: detail.total, active: detail.active });
         } catch (e) {
         }
       }
@@ -1328,76 +1411,7 @@
       };
     })();
     initFindBar({ ensureEditorMounted });
-    (function() {
-      var splitter = document.getElementById("splitter-right");
-      var dragState2 = null;
-      function currentTocWidth() {
-        var v = getComputedStyle(document.documentElement).getPropertyValue("--toc-w").trim();
-        var n = parseFloat(v);
-        return isNaN(n) ? 260 : n;
-      }
-      splitter.addEventListener("pointerdown", function(e) {
-        try {
-          splitter.setPointerCapture(e.pointerId);
-        } catch (_) {
-        }
-        dragState2 = { startX: e.clientX, startW: currentTocWidth() };
-        e.preventDefault();
-      });
-      splitter.addEventListener("pointermove", function(e) {
-        if (!dragState2) return;
-        var dx = e.clientX - dragState2.startX;
-        var maxW = Math.max(150, window.innerWidth - 320 - 8);
-        var newW = Math.max(150, Math.min(maxW, dragState2.startW - dx));
-        document.documentElement.style.setProperty("--toc-w", newW + "px");
-      });
-      function endDrag(e) {
-        if (!dragState2) return;
-        try {
-          splitter.releasePointerCapture(e.pointerId);
-        } catch (_) {
-        }
-        dragState2 = null;
-        post2({ type: "railResize", side: "right", width: currentTocWidth() });
-      }
-      splitter.addEventListener("pointerup", endDrag);
-      splitter.addEventListener("pointercancel", endDrag);
-    })();
-    (function() {
-      var splitter = document.getElementById("splitter-left");
-      var dragState2 = null;
-      function currentVaultWidth() {
-        var v = getComputedStyle(document.documentElement).getPropertyValue("--vault-w").trim();
-        var n = parseFloat(v);
-        return isNaN(n) ? 240 : n;
-      }
-      splitter.addEventListener("pointerdown", function(e) {
-        try {
-          splitter.setPointerCapture(e.pointerId);
-        } catch (_) {
-        }
-        dragState2 = { startX: e.clientX, startW: currentVaultWidth() };
-        e.preventDefault();
-      });
-      splitter.addEventListener("pointermove", function(e) {
-        if (!dragState2) return;
-        var dx = e.clientX - dragState2.startX;
-        var maxW = Math.max(150, window.innerWidth - 320 - 8);
-        var newW = Math.max(150, Math.min(maxW, dragState2.startW + dx));
-        document.documentElement.style.setProperty("--vault-w", newW + "px");
-      });
-      function endDrag(e) {
-        if (!dragState2) return;
-        try {
-          splitter.releasePointerCapture(e.pointerId);
-        } catch (_) {
-        }
-        dragState2 = null;
-        post2({ type: "railResize", side: "left", width: currentVaultWidth() });
-      }
-      splitter.addEventListener("pointerup", endDrag);
-      splitter.addEventListener("pointercancel", endDrag);
-    })();
+    initRails();
     (function() {
       var ROOT = document.getElementById("vault-tree");
       var REGION = document.getElementById("vault-region");
@@ -1475,7 +1489,7 @@
         var nowExpanded = !(caret && caret.classList.contains("open"));
         if (caret) caret.classList.toggle("open", nowExpanded);
         if (ul) ul.classList.toggle("collapsed", !nowExpanded);
-        post2({ type: "toggle-section", section: key, expanded: nowExpanded });
+        post3({ type: "toggle-section", section: key, expanded: nowExpanded });
       }
       function toggleDir(node) {
         var caret = node.querySelector(":scope > .row > .caret");
@@ -1488,12 +1502,12 @@
           if (caret) caret.classList.remove("open");
           if (ul) ul.classList.add("collapsed");
           if (iconEl) iconEl.textContent = "\u{1F4C1}";
-          post2({ type: "collapse-dir", path });
+          post3({ type: "collapse-dir", path });
         } else {
           if (caret) caret.classList.add("open");
           if (ul) ul.classList.remove("collapsed");
           if (iconEl) iconEl.textContent = "\u{1F4C2}";
-          if (!loaded) post2({ type: "expand-dir", path });
+          if (!loaded) post3({ type: "expand-dir", path });
         }
       }
       REGION.addEventListener("click", function(e) {
@@ -1514,12 +1528,12 @@
                 if (typeof window.openDocument === "function") {
                   window.openDocument(path);
                 } else {
-                  post2({ type: "open", path });
+                  post3({ type: "open", path });
                 }
               }).catch(function() {
               });
             } else {
-              post2({ type: "addFile" });
+              post3({ type: "addFile" });
             }
           } else if (cmd === "addFolder") {
             if (inv) {
@@ -1529,7 +1543,7 @@
               }).catch(function() {
               });
             } else {
-              post2({ type: "addFolder" });
+              post3({ type: "addFolder" });
             }
           }
           return;
@@ -1552,7 +1566,7 @@
               if (typeof window.openDocument === "function") {
                 window.openDocument(p);
               } else {
-                post2({ type: "open", path: p });
+                post3({ type: "open", path: p });
               }
             }
             return;
@@ -1565,10 +1579,10 @@
         e.preventDefault();
         var node = findAncestor(e.target, "node");
         if (!node) {
-          post2({ type: "context", path: null, x: e.clientX, y: e.clientY });
+          post3({ type: "context", path: null, x: e.clientX, y: e.clientY });
           return;
         }
-        post2({
+        post3({
           type: "context",
           path: node.getAttribute("data-path"),
           kind: node.getAttribute("data-kind"),
@@ -1905,13 +1919,7 @@
       if (btn2) btn2.classList.toggle("active", !!visible);
     }
     function applyRailVisibility(side, visible) {
-      if (typeof window.setRailVisibility === "function") {
-        window.setRailVisibility(side, !!visible);
-      } else if (side === "left") {
-        document.body.classList.toggle("vault-hidden", !visible);
-      } else if (side === "right") {
-        document.body.classList.toggle("toc-hidden", !visible);
-      }
+      setRailVisibility(side, !!visible);
       setRailButton(side, visible);
     }
     function applyShellState(state) {
@@ -1928,11 +1936,11 @@
       if (typeof state.leftRailVisible === "boolean") applyRailVisibility("left", state.leftRailVisible);
       if (typeof state.rightRailVisible === "boolean") applyRailVisibility("right", state.rightRailVisible);
       var editor = state.editor || {};
-      if (typeof editor.leftRailWidth === "number" && typeof window.setVaultWidth === "function") {
-        window.setVaultWidth(editor.leftRailWidth);
+      if (typeof editor.leftRailWidth === "number") {
+        setVaultWidth(editor.leftRailWidth);
       }
-      if (typeof editor.rightRailWidth === "number" && typeof window.setTocWidth === "function") {
-        window.setTocWidth(editor.rightRailWidth);
+      if (typeof editor.rightRailWidth === "number") {
+        setTocWidth(editor.rightRailWidth);
       }
     }
     bind("tb-mode-view", function() {
