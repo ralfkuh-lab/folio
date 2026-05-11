@@ -18,10 +18,13 @@ abgeschlossen, Phase 4 (Frontend-Bundle) ist eigener Sprint.
 - Rust 2021, Tauri 2
 - comrak 0.35 (GFM-Markdown)
 - axum 0.8 (Automation-API auf `127.0.0.1:9876`, Loopback-only, CORS für WebView-POSTs)
-- Frontend: handgeschriebenes `src-tauri/dist/index.html` + Monaco Editor
-  Bundle. Bundle-Quellen liegen in `src-tauri/web/` (`editor.ts`,
-  `package.json`, `copy-monaco.js`); Build-Output (`editor.bundle.js` +
-  `dist/monaco/`) landet in `dist/`.
+- Frontend: TypeScript-Module in `src-tauri/web/app/` (Bootstrap +
+  `state/`, `view/`, `editor/`, `vault/`, `ui/`), CSS in
+  `src-tauri/web/styles/`, Monaco-Editor-Adapter in
+  `src-tauri/web/editor.ts`. esbuild bündelt zu `dist/app.bundle.js`,
+  `dist/app.css`, `dist/editor.bundle.js`; `dist/index.html` ist
+  HTML-Shell + 3 `<script src>`-Tags + 1 `<link>`. `dist/monaco/`
+  wird von `copy-monaco.js` aus `node_modules/monaco-editor/min/` befüllt.
 - notify 7.0 (File-Watching), xcap (Screenshots)
 
 ## Build & Test
@@ -37,10 +40,16 @@ cargo tauri build                   # Linux: deb + rpm + appimage in target/rele
 cargo tauri build --bundles deb     # einzelnes Bundle-Target
 ```
 
-Editor-Bundle nur bauen, wenn `src-tauri/web/editor.ts` geändert wurde
-(`editor.bundle.js` ist eingecheckt):
-`cd src-tauri/web && npm install && npm run build`. Output landet in
-`../dist/editor.bundle.js`.
+Frontend-Bundles (`app.bundle.js`, `app.css`, `editor.bundle.js`) sind
+eingecheckt und müssen nur neu gebaut werden, wenn die jeweiligen Quellen
+geändert wurden: `cd src-tauri/web && npm install && npm run build`.
+Outputs landen in `../dist/`. Reihenfolge im `package.json`-Build-Script:
+monaco-copy → editor.bundle → app.bundle → app.css.
+
+Im HTML werden die Bundles in dieser Reihenfolge geladen
+(`monaco/loader.js` → `editor.bundle.js` → `app.bundle.js`), ohne
+`defer` und am Body-Ende — Top-Level-`getElementById`-Aufrufe greifen
+nur, weil der DOM-Body zu diesem Zeitpunkt schon geparst ist.
 
 Frontend-Quellen liegen in `src-tauri/web/`, ausgeliefert wird über
 `src-tauri/dist/` — `dist/` darf keine npm-Artefakte mehr enthalten,

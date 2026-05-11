@@ -1,6 +1,6 @@
 # Refactoring-Plan: Modularisierung & Aufräumen
 
-Status: **Phase 3 abgeschlossen** · Letzte Aktualisierung: 2026-05-11
+Status: **Phase 4 abgeschlossen** · Letzte Aktualisierung: 2026-05-11
 
 Architektur-/Strukturreview vom 2026-05-11 (Claude + Codex als 2. Meinung)
 ergab klare Splitting-Kandidaten und Smells. Plan ist in vier Phasen
@@ -117,32 +117,43 @@ Schmerz konkret wird.
 `dist/index.html` (3676 LOC) ist der größte Hebel, aber **hohes Risiko**.
 Nicht mechanisch zerschneiden — neu strukturieren mit klarer Bridge.
 
-- [ ] **Authored Frontend nach `src-tauri/web/app/`** mit Build über bestehende npm-Pipeline
+- [x] **Authored Frontend nach `src-tauri/web/app/`** mit Build über bestehende npm-Pipeline ✓ Commits 5e81f32 … e771633
   - `app/main.ts` — Bootstrap, Tauri-Invoke/Event-Wiring
-  - `app/state/document.ts` — `currentPath`, `dirty`, `kind`, `title`, save/close/open-Bridge
-  - `app/view/markdown.ts` — TOC, Anchor-Scroll, relative Assets, View-Find
-  - `app/editor/shell.ts` — Mount/Layout/Load-Bridge zu `window.FolioEditor`
-  - `app/vault/tree.ts` — Tree-Interaktion, Active-State, Lazy-Children
+  - `app/state/document.ts` — `currentPath`, `dirty`, `kind`, `title`, save/close/open, fusionierter `document:loaded`-Handler
+  - `app/view/markdown.ts` — TOC, Anchor-Scroll, relative Assets, ViewFinder
+  - `app/editor/shell.ts` — Mount/Layout/Load-Bridge zu `window.FolioEditor`, fusionierter `app:set_mode`-Handler
+  - `app/vault/tree.ts` — Tree-Interaktion, Active-State, Lazy-Children, fusionierter `vault:refresh`-Handler
   - `app/vault/context-menu.ts` — Kontextmenü + Inline-Rename
-  - `app/ui/find-bar.ts`, `ui/rails.ts`, `ui/dialogs.ts`, `ui/export-dialog.ts`,
-    `ui/language-picker.ts`, `ui/zoom.ts`, `ui/cheatsheet.ts`
-  - `styles/base.css`, `styles/vault.css`, `styles/toolbar.css`, `styles/dialogs.css`, …
+  - `app/ui/{find-bar, rails, dialogs, export-dialog, language-picker, zoom, cheatsheet}.ts`
+  - `styles/{base, toolbar, statusbar, vault, content, toc, find-bar, dialogs, overlays, scrollbar}.css` + `index.css`-Entry
+  - Sub-Phasen 4.1 CSS → 4.2 Verbatim-JS-Move → 4.2b Global-Contract-Audit
+    (`docs/frontend-globals.md`) → 4.3 7 Leaf-Module → 4.4 Vault + Listener-
+    Fusion → 4.5 Core + 2 Listener-Fusionen → 4.6 Bridge-Reduktion +
+    `--minify` → 4.7 Sweep.
 
-- [ ] **Vorbedingung: Smells #1+#2 auflösen** (siehe unten)
+- [x] **Smells #1 + #2 aufgelöst** — siehe unten.
+
+**Phase-4-Ergebnis:** `dist/index.html` schrumpft von 3676 LOC auf 174
+(95% Reduktion); `app.bundle.js` minified bei 46.6 KB; alle drei
+Doppel-Listener (`document:loaded`, `vault:refresh`, `app:set_mode`) sind
+fusioniert; `window.*`-Bridge reduziert auf `window.FolioEditor` (Cross-
+Bundle zu `editor.bundle.js`) + `window.__folioInvoke` + `window.openDocument`
+(beide defensive DevTools-Surface). Smoke-Test um drei Marker-Assertions
+erweitert (app.bundle.js carries `__folioInvoke` + `openDocument`,
+app.css exists, index.html ohne `<style>`).
 
 ## Architektur-Smells (Referenz, jenseits Dateigröße)
 
 Diese Beobachtungen aus dem Review sind **Background-Awareness**, nicht
 unbedingt eigene Tasks — sie informieren die Splits.
 
-1. **Frontend als globaler Bus** — viele `window.*`-APIs (`openDocument`,
-   `setTocList`, `FolioEditor`, `ViewFinder`, `__folioInvoke`,
-   `startInlineRename`). Reihenfolge und Ownership implizit. Wird in Phase 4
-   durch echte Module mit klaren Imports/Exports adressiert.
-2. **Doppelte Event-Handler** — `document:loaded`, `vault:refresh`,
-   `app:set_mode` werden in beiden `<script>`-Blöcken in `index.html` separat
-   registriert. Risiko für State-Drift. Phase 4 räumt das beim Modul-Schnitt
-   auf.
+1. **~~Frontend als globaler Bus~~** ✅ Phase 4.6 hat die ~80 `window.*`-
+   Setter auf 3 reduziert (Cross-Bundle + 2 defensive DevTools-Surfaces).
+   Modul-interne Kommunikation läuft über ESM-Imports.
+2. **~~Doppelte Event-Handler~~** ✅ Phase 4.4 (`vault:refresh`) und
+   Phase 4.5 (`document:loaded`, `app:set_mode`) haben die jeweils
+   komplementären Hälften zu je einem Handler im fachlich passenden
+   Modul fusioniert.
 3. **Backend-Duplikation beim "Dokument öffnen"** — `read_file`,
    `commands/shell::open_document`, Automation `/open`, Link-Klick im
    View-Modus aktualisieren Store/Navigation/Vault auf je eigenem Weg.
@@ -170,4 +181,4 @@ unbedingt eigene Tasks — sie informieren die Splits.
 | 1: risikoarme Splits | ✅ abgeschlossen | `editor_commands`-Split + Plan, `file_icon`-Split |
 | 2: mittlere Rust-Splits | ✅ abgeschlossen | `automation`-Split, `menu`-Split |
 | 3: State-Refactor + Splits | ✅ abgeschlossen | Rename-Konsolidierung, `commands/file`-Split, `commands/shell` → `commands/events`-Split |
-| 4: Frontend-Build-Umbau | ⏸ wartet | — |
+| 4: Frontend-Build-Umbau | ✅ abgeschlossen | CSS-Extraktion, JS-Verbatim-Move, Global-Contract-Audit, 7 Leaf-Module, Vault-Module + `vault:refresh`-Fusion, Core-Module + `document:loaded`/`app:set_mode`-Fusion, Bridge-Reduktion + Minify |
