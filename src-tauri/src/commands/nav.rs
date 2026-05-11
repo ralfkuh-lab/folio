@@ -194,11 +194,33 @@ pub async fn link_click(
             Ok(None)
         }
         LinkAction::Navigate { path, anchor } => {
-            let mut navigation = state
-                .navigation
-                .lock()
-                .map_err(|_| "navigation lock poisoned".to_string())?;
-            let entry = NavEntry::from(navigation.navigate(path, anchor));
+            let entry = {
+                let mut navigation = state
+                    .navigation
+                    .lock()
+                    .map_err(|_| "navigation lock poisoned".to_string())?;
+                NavEntry::from(navigation.navigate(path, anchor))
+            };
+            let needs_load = {
+                let store = state
+                    .document_store
+                    .lock()
+                    .map_err(|_| "document store lock poisoned".to_string())?;
+                store.path.as_deref() != Some(entry.path.as_str())
+            };
+            if needs_load {
+                state
+                    .document_store
+                    .lock()
+                    .map_err(|_| "document store lock poisoned".to_string())?
+                    .load(&entry.path)
+                    .map_err(|error| error.to_string())?;
+                state
+                    .vault
+                    .lock()
+                    .map_err(|_| "vault lock poisoned".to_string())?
+                    .set_active(Some(entry.path.clone()));
+            }
             handle
                 .emit("navigation:changed", &entry)
                 .map_err(|error| error.to_string())?;

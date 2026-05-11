@@ -205,6 +205,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::app::show_in_file_manager,
             commands::app::open_terminal_at,
             commands::file::read::read_file,
+            commands::file::read::reload_document,
             commands::file::read::write_file,
             commands::file::list::file_list,
             commands::file::save_as::save_as,

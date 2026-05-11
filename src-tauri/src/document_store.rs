@@ -100,6 +100,49 @@ impl DocumentStore {
         Ok(loaded)
     }
 
+    /// Lädt den aktuell offenen Pfad neu von Disk, wenn sich der Inhalt
+    /// gegenüber `self.text` geändert hat. Ohne offene Datei oder bei
+    /// identischem Inhalt ein No-Op (`Ok(false)`) — letzteres unterdrückt
+    /// das Phantom-`document:loaded` nach einem eigenen `save()`, das den
+    /// notify-Watcher ja auch triggert. Den Watcher hängen wir nicht um;
+    /// der bestehende beobachtet ohnehin denselben Pfad.
+    pub fn reload_if_changed(&mut self) -> io::Result<bool> {
+        let Some(path) = self.path.clone() else {
+            return Ok(false);
+        };
+        let bytes = fs::read(&path)?;
+        let had_bom = bytes.starts_with(&[0xEF, 0xBB, 0xBF]);
+        let content = if had_bom { &bytes[3..] } else { &bytes };
+        let raw = String::from_utf8(content.to_vec())
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        let line_ending = if raw.contains("\r\n") {
+            LineEnding::Crlf
+        } else {
+            LineEnding::Lf
+        };
+        let text = raw.replace("\r\n", "\n");
+        if text == self.text {
+            self.has_external_changes = false;
+            return Ok(false);
+        }
+        self.text = text.clone();
+        self.is_dirty = false;
+        self.has_external_changes = false;
+        self.line_ending = line_ending;
+        self.had_bom = had_bom;
+        let loaded = LoadedDocument {
+            path: path.clone(),
+            text,
+        };
+        if let Some(callback) = &self.events.loaded {
+            callback(loaded);
+        }
+        if let Some(callback) = &self.events.dirty_changed {
+            callback(false);
+        }
+        Ok(true)
+    }
+
     /// Setzt den Store auf "kein Dokument geladen" zurück. Der Watcher
     /// wird beim Drop des `RecommendedWatcher`-Felds automatisch
     /// abgemeldet. Feuert `dirty_changed(false)`, damit das Frontend den
@@ -329,6 +372,24 @@ mod tests {
         assert_eq!(b"world\r\n".to_vec(), fs::read(&dst).unwrap());
         // Original bleibt unangetastet
         assert_eq!(b"hello\r\n".to_vec(), fs::read(&src).unwrap());
+    }
+
+    #[test]
+    fn reload_if_changed_picks_up_disk_changes_and_skips_unchanged() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("doc.md");
+        fs::write(&path, "one\n").unwrap();
+        let mut store = DocumentStore::new();
+        store.load(path.to_str().unwrap()).unwrap();
+
+        // unverändert -> No-Op
+        assert!(!store.reload_if_changed().unwrap());
+
+        // externer Schreibvorgang -> reload zieht den neuen Inhalt nach
+        fs::write(&path, "two\n").unwrap();
+        assert!(store.reload_if_changed().unwrap());
+        assert_eq!("two\n", store.text);
+        assert!(!store.is_dirty);
     }
 
     #[test]

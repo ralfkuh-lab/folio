@@ -79,8 +79,15 @@ impl Vault {
         self.build_dir_children_html(&path)
     }
 
+    /// Beim Zuklappen eines Ordners auch alle bisher aufgeklappten
+    /// Unterordner aus `expanded_dirs` werfen. Damit startet ein
+    /// erneutes Aufklappen mit komplett kollabiertem Subtree —
+    /// kombiniert mit dem "expand-dir immer neu lesen"-Pfad im
+    /// Frontend ist das ein konsequenter Auto-Refresh.
     pub fn on_collapse(&mut self, path: &str) {
-        self.expanded_dirs.remove(path);
+        let target = Path::new(path);
+        self.expanded_dirs
+            .retain(|entry| !Path::new(entry).starts_with(target));
     }
 
     pub fn on_section_toggle(&self, _section: &str, _expanded: bool) {}
@@ -252,6 +259,27 @@ mod tests {
         vault.set_active(Some("/tmp/a.md".into()));
         let html = vault.item_html("/tmp/a.md", false);
         assert!(html.contains("node active"));
+    }
+
+    #[test]
+    fn collapse_recursively_prunes_nested_expanded_dirs() {
+        let temp = TempDir::new().unwrap();
+        let outer = temp.path().join("outer");
+        let inner = outer.join("inner");
+        fs::create_dir_all(&inner).unwrap();
+        let sibling = temp.path().join("other");
+        fs::create_dir(&sibling).unwrap();
+
+        let mut vault = Vault::new();
+        vault.on_expand(outer.to_string_lossy().into_owned()).unwrap();
+        vault.on_expand(inner.to_string_lossy().into_owned()).unwrap();
+        vault.on_expand(sibling.to_string_lossy().into_owned()).unwrap();
+
+        vault.on_collapse(outer.to_str().unwrap());
+
+        assert!(!vault.is_expanded(outer.to_str().unwrap()));
+        assert!(!vault.is_expanded(inner.to_str().unwrap()));
+        assert!(vault.is_expanded(sibling.to_str().unwrap()));
     }
 
     #[test]

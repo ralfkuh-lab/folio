@@ -43,6 +43,16 @@ pub async fn read_file(path: String, state: State<'_, AppState>) -> Result<FileD
 }
 
 #[tauri::command]
+pub async fn reload_document(state: State<'_, AppState>) -> Result<bool, String> {
+    state
+        .document_store
+        .lock()
+        .map_err(|_| "document store lock poisoned".to_string())?
+        .reload_if_changed()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub async fn write_file(
     path: String,
     content: String,

@@ -291,6 +291,22 @@ export function initDocumentState(d: Deps): void {
         markDirty(!!dirty);
     });
 
+    // Externe Datei-Aenderung (notify-Watcher im DocumentStore). Im View-
+    // Mode lautlos reloaden, im Edit-/Split-Mode nur wenn nicht dirty —
+    // sonst wuerden ungespeicherte Edits durch den Reload verworfen.
+    // reload_document selbst ist no-op, wenn Disk-Text == Store-Text
+    // (z. B. unser eigener Save triggert den Watcher mit).
+    listen('document:external_changed', function (event: any) {
+        const data = (event && event.payload) || {};
+        if (!currentPath) return;
+        if (data.path && data.path !== currentPath) return;
+        if (isDirty) {
+            showStatus('Datei extern geändert (ungespeicherte Änderungen) — Reload via Save oder Verwerfen');
+            return;
+        }
+        invoke('reload_document').catch(function () {});
+    });
+
     // document:closed wird vom close_document-Command emittiert. Wir setzen
     // die Frontend-Sicht analog zum Boot-Zustand zurueck: kein Pfad, leerer
     // Editor, "Bereit"-Statusbar, kein Word-Count.
@@ -319,6 +335,9 @@ export function initDocumentState(d: Deps): void {
         markDirty(false);
         renderDocumentPayload(data);
         updateWordCount(data.text || '');
+        // Statusbar zuruecksetzen, falls vorher noch ein showStatus-Hinweis
+        // (z. B. "Datei extern geaendert") im status-path-Element stand.
+        setStatusPath(data.path || currentPath || 'Bereit', false);
     });
 
     applyDocKind('unknown');

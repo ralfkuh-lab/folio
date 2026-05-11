@@ -33,6 +33,30 @@ pub(super) fn link_click(href: String, state: &AppState, handle: &AppHandle) -> 
                     .map_err(|_| "navigation lock poisoned".to_string())?;
                 crate::commands::nav::NavEntry::from(navigation.navigate(path, anchor))
             };
+            // Bei Ziel != aktuellem Dokument das neue Dokument laden, sonst
+            // bleibt der Body auf dem alten Stand und Anker-Restore feuert in
+            // den falschen Content. Anker-only-Links (path == current) ueber-
+            // springen die Disk-IO, damit Scroll/Editor-State erhalten bleibt.
+            let needs_load = {
+                let store = state
+                    .document_store
+                    .lock()
+                    .map_err(|_| "document store lock poisoned".to_string())?;
+                store.path.as_deref() != Some(entry.path.as_str())
+            };
+            if needs_load {
+                state
+                    .document_store
+                    .lock()
+                    .map_err(|_| "document store lock poisoned".to_string())?
+                    .load(&entry.path)
+                    .map_err(|error| error.to_string())?;
+                state
+                    .vault
+                    .lock()
+                    .map_err(|_| "vault lock poisoned".to_string())?
+                    .set_active(Some(entry.path.clone()));
+            }
             handle
                 .emit("navigation:changed", &entry)
                 .map_err(|error| error.to_string())

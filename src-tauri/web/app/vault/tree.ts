@@ -131,7 +131,6 @@ function toggleDir(node: HTMLElement): void {
     const ul = node.querySelector(':scope > ul.children');
     const iconEl = node.querySelector(':scope > .row > .icon');
     const path = node.getAttribute('data-path');
-    const loaded = node.getAttribute('data-loaded') === '1';
     const open = caret && caret.classList.contains('open');
     if (open) {
         if (caret) caret.classList.remove('open');
@@ -142,7 +141,12 @@ function toggleDir(node: HTMLElement): void {
         if (caret) caret.classList.add('open');
         if (ul) ul.classList.remove('collapsed');
         if (iconEl) iconEl.textContent = '📂';
-        if (!loaded) post({ type: 'expand-dir', path });
+        // Immer neu vom Backend lesen — kein data-loaded-Cache. Das ist
+        // der Auto-Refresh-Pfad: externe Dateiaenderungen im Ordner
+        // werden so bei jedem Aufklappen sichtbar. Kombiniert mit dem
+        // rekursiven Prune in Vault::on_collapse startet ein erneutes
+        // Aufklappen mit komplett kollabiertem Subtree.
+        post({ type: 'expand-dir', path });
     }
 }
 
