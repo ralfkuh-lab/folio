@@ -16,8 +16,6 @@ import { initLanguagePicker, setEditorLanguageDisplay } from './ui/language-pick
 import {
     initFindBar,
     openEditorFind,
-    findNext as findNextBar,
-    findPrev as findPrevBar,
     afterModeSwitch as findBarAfterModeSwitch,
 } from './ui/find-bar';
 import { showUnsavedDialog } from './ui/dialogs';
@@ -1264,11 +1262,8 @@ import { initRails, setRailVisibility, setTocWidth, setVaultWidth } from './ui/r
         var ctrl = e.ctrlKey || e.metaKey;
         if (ctrl && e.key === '1') { e.preventDefault(); $('tb-mode-view').click(); }
         else if (ctrl && e.key === '2') { e.preventDefault(); $('tb-mode-edit').click(); }
-        else if (ctrl && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); invoke('open_find').catch(function(){}); }
-        else if (e.key === 'F3') {
-            e.preventDefault();
-            if (e.shiftKey) findPrevBar(); else findNextBar();
-        }
+        // Strg+F und F3 laufen jetzt im Capture-Handler von ui/find-bar.ts,
+        // damit sie auch im Editor-Fokus (vor Monaco) greifen.
         // F1 ist Monaco's Command-Palette im Editor-Fokus. Cheat-Sheet
         // bleibt ueber den Toolbar-Button erreichbar.
         else if (e.altKey && e.key === 'ArrowLeft') {

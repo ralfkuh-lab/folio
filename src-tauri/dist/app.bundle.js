@@ -563,6 +563,18 @@
     }
     caseChk.addEventListener("change", syncOptions);
     wordChk.addEventListener("change", syncOptions);
+    document.addEventListener("keydown", function(e) {
+      if ((e.ctrlKey || e.metaKey) && (e.key === "f" || e.key === "F")) {
+        e.preventDefault();
+        e.stopPropagation();
+        openEditorFind("");
+      } else if (e.key === "F3") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.shiftKey) findPrev();
+        else findNext();
+      }
+    }, { capture: true });
     window.addEventListener("folio-find-state", function(e) {
       const s = e.detail || {};
       if (!s.term && !input2.value) {
@@ -2087,14 +2099,6 @@
       } else if (ctrl && e.key === "2") {
         e.preventDefault();
         $3("tb-mode-edit").click();
-      } else if (ctrl && (e.key === "f" || e.key === "F")) {
-        e.preventDefault();
-        invoke2("open_find").catch(function() {
-        });
-      } else if (e.key === "F3") {
-        e.preventDefault();
-        if (e.shiftKey) findPrev();
-        else findNext();
       } else if (e.altKey && e.key === "ArrowLeft") {
         e.preventDefault();
         requestSaveIfDirty().then(function(ok) {

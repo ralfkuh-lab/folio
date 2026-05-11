@@ -186,6 +186,21 @@ export function initFindBar(deps: { ensureEditorMounted: (initial?: string) => P
     caseChk.addEventListener('change', syncOptions);
     wordChk.addEventListener('change', syncOptions);
 
+    // Strg+F und F3 muessen vor Monaco greifen, sonst schluckt Monacos
+    // eingebauter Find-Widget die Tasten im Editor-Fokus. capture:true +
+    // stopPropagation deckt sowohl Editor- als auch View-/Vault-Fokus ab.
+    document.addEventListener('keydown', function (e: KeyboardEvent) {
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+            e.preventDefault();
+            e.stopPropagation();
+            openEditorFind('');
+        } else if (e.key === 'F3') {
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.shiftKey) findPrev(); else findNext();
+        }
+    }, { capture: true });
+
     window.addEventListener('folio-find-state', function (e: CustomEvent) {
         const s = e.detail || {};
         if (!s.term && !input.value) { counter.textContent = ''; return; }
