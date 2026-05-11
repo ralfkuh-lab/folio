@@ -1941,8 +1941,9 @@
       window.addEventListener("wheel", function(e) {
         if (!e.ctrlKey && !e.metaKey) return;
         e.preventDefault();
+        e.stopPropagation();
         adjustZoom(e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP);
-      }, { passive: false });
+      }, { capture: true, passive: false });
       document.addEventListener("keydown", function(e) {
         if (!e.ctrlKey && !e.metaKey) return;
         if (e.key === "0") {

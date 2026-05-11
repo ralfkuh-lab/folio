@@ -1886,12 +1886,14 @@
         function resetZoom() { return applyZoom(1.0); }
         // Beim Boot persistierten Zoom anwenden — ohne Indikator-Flash
         applyZoom(loadStoredZoom(), { indicator: false });
-        // Ctrl+Mausrad → Zoom in/out
+        // Ctrl+Mausrad → Zoom in/out. capture:true greift, bevor Monaco im
+        // Editor-Fokus das Wheel-Event mit stopPropagation verschluckt.
         window.addEventListener('wheel', function (e) {
             if (!e.ctrlKey && !e.metaKey) return;
             e.preventDefault();
+            e.stopPropagation();
             adjustZoom(e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP);
-        }, { passive: false });
+        }, { capture: true, passive: false });
         // Ctrl+0 reset, Ctrl++ / Ctrl+- als Bonus
         document.addEventListener('keydown', function (e) {
             if (!e.ctrlKey && !e.metaKey) return;
