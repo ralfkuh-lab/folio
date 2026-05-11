@@ -21,6 +21,11 @@ import {
 import { showUnsavedDialog } from './ui/dialogs';
 import { initExportDialog } from './ui/export-dialog';
 import { initRails, setRailVisibility, setTocWidth, setVaultWidth } from './ui/rails';
+import {
+    initContextMenu,
+    openContextMenu,
+    startInlineRename,
+} from './vault/context-menu';
 
 // === IIFE #1 (TOC/View bridge, Editor bridge, ViewFinder, Cheatsheet, Vault setters) ===
 
@@ -870,91 +875,7 @@ import { initRails, setRailVisibility, setTocWidth, setVaultWidth } from './ui/r
        Endung. Enter/Blur committen, Escape bricht ab. Nach erfolgreichem
        rename_file emittiert das Backend vault:refresh, das den Baum neu
        baut — das Input verschwindet damit automatisch. */
-    function startInlineRename(path) {
-        if (!path) return;
-        var nodes = document.querySelectorAll('#vault-tree li.node[data-path]');
-        var nodeEl = null;
-        for (var i = 0; i < nodes.length; i++) {
-            if (nodes[i].getAttribute('data-path') === path
-                && nodes[i].getAttribute('data-kind') !== 'dir') {
-                nodeEl = nodes[i];
-                break;
-            }
-        }
-        if (!nodeEl) return;
-        var labelEl = nodeEl.querySelector(':scope > .row > .label');
-        if (!labelEl || labelEl.dataset.editing === '1') return;
-        var originalText = labelEl.textContent || '';
-        var basename = originalText;
-        labelEl.dataset.editing = '1';
-        labelEl.classList.add('editing');
-        labelEl.textContent = '';
-
-        var input = document.createElement('input');
-        input.type = 'text';
-        input.className = 'vault-rename-input';
-        input.value = basename;
-        input.spellcheck = false;
-        input.autocomplete = 'off';
-        input.setAttribute('data-rename-input', '1');
-        labelEl.appendChild(input);
-
-        function stop(e) { e.stopPropagation(); }
-        input.addEventListener('click', stop);
-        input.addEventListener('mousedown', stop);
-        input.addEventListener('dblclick', stop);
-        input.addEventListener('contextmenu', stop);
-
-        var finished = false;
-        function cleanup() {
-            input.removeEventListener('keydown', onKey);
-            input.removeEventListener('blur', onBlur);
-            labelEl.classList.remove('editing');
-            delete labelEl.dataset.editing;
-        }
-        function restore() {
-            cleanup();
-            labelEl.textContent = originalText;
-        }
-        function commit() {
-            if (finished) return;
-            finished = true;
-            var newName = (input.value || '').trim();
-            if (!newName || newName === originalText) {
-                restore();
-                return;
-            }
-            cleanup();
-            labelEl.textContent = newName; // optimistisch bis vault:refresh kommt
-            var normalized = path.replace(/\\/g, '/');
-            var lastSlash = normalized.lastIndexOf('/');
-            var parent = lastSlash >= 0 ? path.slice(0, lastSlash + 1) : '';
-            var newPath = parent + newName;
-            invoke('rename_file', { oldPath: path, newPath: newPath }).catch(function (err) {
-                showStatus(typeof err === 'string' ? err : 'Umbenennen fehlgeschlagen');
-                refreshVault();
-            });
-        }
-        function cancel() {
-            if (finished) return;
-            finished = true;
-            restore();
-        }
-        function onKey(e) {
-            if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); commit(); }
-            else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancel(); }
-            else { e.stopPropagation(); }
-        }
-        function onBlur() { commit(); }
-        input.addEventListener('keydown', onKey);
-        input.addEventListener('blur', onBlur);
-
-        input.focus();
-        var dot = basename.lastIndexOf('.');
-        if (dot > 0) input.setSelectionRange(0, dot);
-        else input.select();
-    }
-    window.startInlineRename = startInlineRename;
+    // startInlineRename lebt jetzt in vault/context-menu.ts (importiert oben).
 
     // showUnsavedDialog lebt jetzt in ui/dialogs.ts (importiert oben).
     function renderDocumentPayload(data) {
@@ -1417,71 +1338,12 @@ import { initRails, setRailVisibility, setTocWidth, setVaultWidth } from './ui/r
     /* Vault-Header-Buttons (Datei/Ordner öffnen) werden vom REGION-Click-Handler
        in der Vault-IIFE behandelt — dort mit Dirty-Check via window.openDocument. */
 
-    /* ----- Kontextmenü ----- */
-    var ctxMenu = $('context-menu');
-    var ctxTarget = null;
-    function openContextMenu(x, y, path, isDir, inPinned, inRecent) {
-        if (!ctxMenu) return;
-        ctxTarget = { path: path, isDirectory: isDir };
-        var parts = [];
-        if (!isDir) parts.push('<div class="ctx-item" data-act="open">Öffnen</div>');
-        var actionsBefore = parts.length;
-        var actions = [];
-        if (!isDir) actions.push('<div class="ctx-item" data-act="rename">Umbenennen</div>');
-        if (!inPinned) actions.push('<div class="ctx-item" data-act="pin">Anpinnen</div>');
-        if (inPinned) actions.push('<div class="ctx-item" data-act="unpin">Vom Pin lösen</div>');
-        if (inRecent) actions.push('<div class="ctx-item" data-act="remove-recent">Aus „Zuletzt" entfernen</div>');
-        if (actions.length && actionsBefore) parts.push('<div class="ctx-sep"></div>');
-        parts = parts.concat(actions);
-        var tail = [
-            '<div class="ctx-item" data-act="show">Im Explorer zeigen</div>',
-            '<div class="ctx-item" data-act="terminal">Terminal hier öffnen</div>',
-            '<div class="ctx-item" data-act="copy">Pfad kopieren</div>',
-        ];
-        if (parts.length) parts.push('<div class="ctx-sep"></div>');
-        parts = parts.concat(tail);
-        ctxMenu.innerHTML = parts.join('');
-        ctxMenu.style.left = x + 'px';
-        ctxMenu.style.top = y + 'px';
-        ctxMenu.classList.add('open');
-    }
-    function closeContextMenu() {
-        if (ctxMenu) ctxMenu.classList.remove('open');
-        ctxTarget = null;
-    }
-    if (ctxMenu) {
-        ctxMenu.addEventListener('click', function (e) {
-            var item = e.target.closest('.ctx-item');
-            if (!item || item.classList.contains('disabled') || !ctxTarget) return;
-            var act = item.getAttribute('data-act');
-            var path = ctxTarget.path;
-            var isDir = ctxTarget.isDirectory;
-            closeContextMenu();
-            if (act === 'open' && !isDir) {
-                openDocument(path);
-            } else if (act === 'pin') {
-                invoke('workspace_pin', { path: path, isDirectory: isDir }).catch(function(){});
-            } else if (act === 'unpin') {
-                invoke('workspace_unpin', { path: path }).catch(function(){});
-            } else if (act === 'remove-recent') {
-                invoke('workspace_remove_recent', { path: path }).catch(function(){});
-            } else if (act === 'rename') {
-                startInlineRename(path);
-            } else if (act === 'show') {
-                invoke('show_in_file_manager', { path: path }).catch(function(){});
-            } else if (act === 'terminal') {
-                invoke('open_terminal_at', { path: path }).catch(function(){});
-            } else if (act === 'copy') {
-                if (navigator.clipboard) navigator.clipboard.writeText(path).catch(function(){});
-            }
-        });
-        document.addEventListener('click', function (e) {
-            if (!ctxMenu.contains(e.target)) closeContextMenu();
-        });
-        document.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape') closeContextMenu();
-        });
-    }
+    /* ----- Kontextmenue (Modul) ----- */
+    initContextMenu({
+        openDocument: openDocument,
+        refreshVault: refreshVault,
+        showStatus: showStatus,
+    });
 
     /* ----- Drag & Drop ----- */
     listen('tauri://drag-enter', function () {

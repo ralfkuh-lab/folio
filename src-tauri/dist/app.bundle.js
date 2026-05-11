@@ -505,8 +505,8 @@
       }
     }, 0);
   }
-  function initFindBar(deps2) {
-    ensureEditorMountedDep = deps2.ensureEditorMounted;
+  function initFindBar(deps3) {
+    ensureEditorMountedDep = deps3.ensureEditorMounted;
     bar = document.getElementById("find-bar");
     input2 = document.getElementById("find-input");
     counter = document.getElementById("find-counter");
@@ -858,6 +858,177 @@
   function initRails() {
     initRightSplitter();
     initLeftSplitter();
+  }
+
+  // app/vault/context-menu.ts
+  var deps2 = null;
+  var ctxMenu = null;
+  var ctxTarget = null;
+  function invoke2(cmd, args) {
+    return window.__TAURI__.core.invoke(cmd, args);
+  }
+  function openContextMenu(x, y, path, isDir, inPinned, inRecent) {
+    if (!ctxMenu) return;
+    ctxTarget = { path, isDirectory: isDir };
+    const parts = [];
+    if (!isDir) parts.push('<div class="ctx-item" data-act="open">\xD6ffnen</div>');
+    const actionsBefore = parts.length;
+    const actions = [];
+    if (!isDir) actions.push('<div class="ctx-item" data-act="rename">Umbenennen</div>');
+    if (!inPinned) actions.push('<div class="ctx-item" data-act="pin">Anpinnen</div>');
+    if (inPinned) actions.push('<div class="ctx-item" data-act="unpin">Vom Pin l\xF6sen</div>');
+    if (inRecent) actions.push('<div class="ctx-item" data-act="remove-recent">Aus \u201EZuletzt" entfernen</div>');
+    if (actions.length && actionsBefore) parts.push('<div class="ctx-sep"></div>');
+    parts.push(...actions);
+    const tail = [
+      '<div class="ctx-item" data-act="show">Im Explorer zeigen</div>',
+      '<div class="ctx-item" data-act="terminal">Terminal hier \xF6ffnen</div>',
+      '<div class="ctx-item" data-act="copy">Pfad kopieren</div>'
+    ];
+    if (parts.length) parts.push('<div class="ctx-sep"></div>');
+    parts.push(...tail);
+    ctxMenu.innerHTML = parts.join("");
+    ctxMenu.style.left = x + "px";
+    ctxMenu.style.top = y + "px";
+    ctxMenu.classList.add("open");
+  }
+  function closeContextMenu() {
+    if (ctxMenu) ctxMenu.classList.remove("open");
+    ctxTarget = null;
+  }
+  function startInlineRename(path) {
+    if (!path) return;
+    const nodes = document.querySelectorAll("#vault-tree li.node[data-path]");
+    let nodeEl = null;
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      if (n.getAttribute("data-path") === path && n.getAttribute("data-kind") !== "dir") {
+        nodeEl = n;
+        break;
+      }
+    }
+    if (!nodeEl) return;
+    const labelEl = nodeEl.querySelector(":scope > .row > .label");
+    if (!labelEl || labelEl.dataset.editing === "1") return;
+    const originalText = labelEl.textContent || "";
+    const basename = originalText;
+    labelEl.dataset.editing = "1";
+    labelEl.classList.add("editing");
+    labelEl.textContent = "";
+    const input3 = document.createElement("input");
+    input3.type = "text";
+    input3.className = "vault-rename-input";
+    input3.value = basename;
+    input3.spellcheck = false;
+    input3.autocomplete = "off";
+    input3.setAttribute("data-rename-input", "1");
+    labelEl.appendChild(input3);
+    function stop(e) {
+      e.stopPropagation();
+    }
+    input3.addEventListener("click", stop);
+    input3.addEventListener("mousedown", stop);
+    input3.addEventListener("dblclick", stop);
+    input3.addEventListener("contextmenu", stop);
+    let finished = false;
+    function cleanup() {
+      input3.removeEventListener("keydown", onKey);
+      input3.removeEventListener("blur", onBlur);
+      labelEl.classList.remove("editing");
+      delete labelEl.dataset.editing;
+    }
+    function restore() {
+      cleanup();
+      labelEl.textContent = originalText;
+    }
+    function commit() {
+      if (finished) return;
+      finished = true;
+      const newName = (input3.value || "").trim();
+      if (!newName || newName === originalText) {
+        restore();
+        return;
+      }
+      cleanup();
+      labelEl.textContent = newName;
+      const normalized = path.replace(/\\/g, "/");
+      const lastSlash = normalized.lastIndexOf("/");
+      const parent = lastSlash >= 0 ? path.slice(0, lastSlash + 1) : "";
+      const newPath = parent + newName;
+      invoke2("rename_file", { oldPath: path, newPath }).catch(function(err) {
+        deps2.showStatus(typeof err === "string" ? err : "Umbenennen fehlgeschlagen");
+        deps2.refreshVault();
+      });
+    }
+    function cancel() {
+      if (finished) return;
+      finished = true;
+      restore();
+    }
+    function onKey(e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        e.stopPropagation();
+        commit();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        cancel();
+      } else {
+        e.stopPropagation();
+      }
+    }
+    function onBlur() {
+      commit();
+    }
+    input3.addEventListener("keydown", onKey);
+    input3.addEventListener("blur", onBlur);
+    input3.focus();
+    const dot = basename.lastIndexOf(".");
+    if (dot > 0) input3.setSelectionRange(0, dot);
+    else input3.select();
+  }
+  function initContextMenu(d) {
+    deps2 = d;
+    ctxMenu = document.getElementById("context-menu");
+    if (!ctxMenu) return;
+    ctxMenu.addEventListener("click", function(e) {
+      const item = e.target.closest(".ctx-item");
+      if (!item || item.classList.contains("disabled") || !ctxTarget) return;
+      const act = item.getAttribute("data-act");
+      const path = ctxTarget.path;
+      const isDir = ctxTarget.isDirectory;
+      closeContextMenu();
+      if (act === "open" && !isDir) {
+        deps2.openDocument(path);
+      } else if (act === "pin") {
+        invoke2("workspace_pin", { path, isDirectory: isDir }).catch(function() {
+        });
+      } else if (act === "unpin") {
+        invoke2("workspace_unpin", { path }).catch(function() {
+        });
+      } else if (act === "remove-recent") {
+        invoke2("workspace_remove_recent", { path }).catch(function() {
+        });
+      } else if (act === "rename") {
+        startInlineRename(path);
+      } else if (act === "show") {
+        invoke2("show_in_file_manager", { path }).catch(function() {
+        });
+      } else if (act === "terminal") {
+        invoke2("open_terminal_at", { path }).catch(function() {
+        });
+      } else if (act === "copy") {
+        if (navigator.clipboard) navigator.clipboard.writeText(path).catch(function() {
+        });
+      }
+    });
+    document.addEventListener("click", function(e) {
+      if (!ctxMenu.contains(e.target)) closeContextMenu();
+    });
+    document.addEventListener("keydown", function(e) {
+      if (e.key === "Escape") closeContextMenu();
+    });
   }
 
   // app/main.ts
@@ -1609,11 +1780,11 @@
   })();
   (function() {
     if (!window.__TAURI__) return;
-    var invoke2 = window.__TAURI__.core && window.__TAURI__.core.invoke;
-    window.__folioInvoke = invoke2;
+    var invoke3 = window.__TAURI__.core && window.__TAURI__.core.invoke;
+    window.__folioInvoke = invoke3;
     var emit = window.__TAURI__.event && window.__TAURI__.event.emit;
     var listen = window.__TAURI__.event && window.__TAURI__.event.listen;
-    if (!invoke2 || !emit || !listen) return;
+    if (!invoke3 || !emit || !listen) return;
     function $3(id) {
       return document.getElementById(id);
     }
@@ -1630,7 +1801,7 @@
       if (el) el.classList.toggle("dirty", isDirty);
       var btn2 = $3("tb-save");
       if (btn2) btn2.disabled = !isDirty;
-      invoke2("menu_set_enabled", { id: "file.save", enabled: isDirty }).catch(function() {
+      invoke3("menu_set_enabled", { id: "file.save", enabled: isDirty }).catch(function() {
       });
       applyWindowTitle();
     }
@@ -1642,7 +1813,7 @@
       var name = fileFullName(currentPath);
       var title = name ? (isDirty ? "* " + name : name) + " \u2014 Folio" : "Folio";
       document.title = title;
-      invoke2("set_window_title", { title }).catch(function() {
+      invoke3("set_window_title", { title }).catch(function() {
       });
     }
     function editorText() {
@@ -1658,101 +1829,9 @@
     }
     function syncEditorTextToStore() {
       if (!currentPath) return Promise.resolve();
-      return invoke2("editor_text_changed", { text: editorText() }).catch(function() {
+      return invoke3("editor_text_changed", { text: editorText() }).catch(function() {
       });
     }
-    function startInlineRename(path) {
-      if (!path) return;
-      var nodes = document.querySelectorAll("#vault-tree li.node[data-path]");
-      var nodeEl = null;
-      for (var i = 0; i < nodes.length; i++) {
-        if (nodes[i].getAttribute("data-path") === path && nodes[i].getAttribute("data-kind") !== "dir") {
-          nodeEl = nodes[i];
-          break;
-        }
-      }
-      if (!nodeEl) return;
-      var labelEl = nodeEl.querySelector(":scope > .row > .label");
-      if (!labelEl || labelEl.dataset.editing === "1") return;
-      var originalText = labelEl.textContent || "";
-      var basename = originalText;
-      labelEl.dataset.editing = "1";
-      labelEl.classList.add("editing");
-      labelEl.textContent = "";
-      var input3 = document.createElement("input");
-      input3.type = "text";
-      input3.className = "vault-rename-input";
-      input3.value = basename;
-      input3.spellcheck = false;
-      input3.autocomplete = "off";
-      input3.setAttribute("data-rename-input", "1");
-      labelEl.appendChild(input3);
-      function stop(e) {
-        e.stopPropagation();
-      }
-      input3.addEventListener("click", stop);
-      input3.addEventListener("mousedown", stop);
-      input3.addEventListener("dblclick", stop);
-      input3.addEventListener("contextmenu", stop);
-      var finished = false;
-      function cleanup() {
-        input3.removeEventListener("keydown", onKey);
-        input3.removeEventListener("blur", onBlur);
-        labelEl.classList.remove("editing");
-        delete labelEl.dataset.editing;
-      }
-      function restore() {
-        cleanup();
-        labelEl.textContent = originalText;
-      }
-      function commit() {
-        if (finished) return;
-        finished = true;
-        var newName = (input3.value || "").trim();
-        if (!newName || newName === originalText) {
-          restore();
-          return;
-        }
-        cleanup();
-        labelEl.textContent = newName;
-        var normalized = path.replace(/\\/g, "/");
-        var lastSlash = normalized.lastIndexOf("/");
-        var parent = lastSlash >= 0 ? path.slice(0, lastSlash + 1) : "";
-        var newPath = parent + newName;
-        invoke2("rename_file", { oldPath: path, newPath }).catch(function(err) {
-          showStatus(typeof err === "string" ? err : "Umbenennen fehlgeschlagen");
-          refreshVault();
-        });
-      }
-      function cancel() {
-        if (finished) return;
-        finished = true;
-        restore();
-      }
-      function onKey(e) {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          e.stopPropagation();
-          commit();
-        } else if (e.key === "Escape") {
-          e.preventDefault();
-          e.stopPropagation();
-          cancel();
-        } else {
-          e.stopPropagation();
-        }
-      }
-      function onBlur() {
-        commit();
-      }
-      input3.addEventListener("keydown", onKey);
-      input3.addEventListener("blur", onBlur);
-      input3.focus();
-      var dot = basename.lastIndexOf(".");
-      if (dot > 0) input3.setSelectionRange(0, dot);
-      else input3.select();
-    }
-    window.startInlineRename = startInlineRename;
     function renderDocumentPayload(data) {
       if (!data || typeof data !== "object") return;
       if (typeof window.setTocList === "function") {
@@ -1792,7 +1871,7 @@
     window.rewriteRelativeAssets = rewriteRelativeAssets;
     function saveCurrent() {
       return syncEditorTextToStore().then(function() {
-        return invoke2("editor_save_requested");
+        return invoke3("editor_save_requested");
       }).then(function(saved) {
         if (saved) {
           cleanText2 = editorText();
@@ -1809,7 +1888,7 @@
       return syncEditorTextToStore().then(showUnsavedDialog).then(function(decision) {
         if (decision === "cancel") return false;
         if (decision === "discard") {
-          return invoke2("discard_editor_changes").then(function() {
+          return invoke3("discard_editor_changes").then(function() {
             cleanText2 = editorText();
             markDirty(false);
             return true;
@@ -1817,7 +1896,7 @@
             return false;
           });
         }
-        return invoke2("editor_save_requested").then(function(saved) {
+        return invoke3("editor_save_requested").then(function(saved) {
           if (saved) {
             cleanText2 = editorText();
             markDirty(false);
@@ -1853,15 +1932,15 @@
         btnExport.disabled = !md;
         btnExport.title = md ? "Exportieren\u2026" : "Export nur f\xFCr Markdown verf\xFCgbar";
       }
-      invoke2("menu_set_enabled", { id: "view.mode.view", enabled: md }).catch(function() {
+      invoke3("menu_set_enabled", { id: "view.mode.view", enabled: md }).catch(function() {
       });
-      invoke2("menu_set_enabled", { id: "view.mode.edit", enabled: hasDoc }).catch(function() {
+      invoke3("menu_set_enabled", { id: "view.mode.edit", enabled: hasDoc }).catch(function() {
       });
-      invoke2("menu_set_enabled", { id: "file.save_as", enabled: hasDoc }).catch(function() {
+      invoke3("menu_set_enabled", { id: "file.save_as", enabled: hasDoc }).catch(function() {
       });
-      invoke2("menu_set_enabled", { id: "file.rename", enabled: hasDoc }).catch(function() {
+      invoke3("menu_set_enabled", { id: "file.rename", enabled: hasDoc }).catch(function() {
       });
-      invoke2("menu_set_enabled", { id: "file.close", enabled: hasDoc }).catch(function() {
+      invoke3("menu_set_enabled", { id: "file.close", enabled: hasDoc }).catch(function() {
       });
       syncCheatsheetMenu();
       syncViewModeMenuChecks();
@@ -1870,11 +1949,11 @@
       var body2 = document.body;
       var hasDoc = !body2.classList.contains("kind-unknown") && !body2.classList.contains("kind-binary");
       var mode = !hasDoc ? null : body2.classList.contains("edit-mode") ? "edit" : body2.classList.contains("split-mode") ? "split" : "view";
-      invoke2("menu_set_checked", { id: "view.mode.view", checked: mode === "view" }).catch(function() {
+      invoke3("menu_set_checked", { id: "view.mode.view", checked: mode === "view" }).catch(function() {
       });
-      invoke2("menu_set_checked", { id: "view.mode.edit", checked: mode === "edit" }).catch(function() {
+      invoke3("menu_set_checked", { id: "view.mode.edit", checked: mode === "edit" }).catch(function() {
       });
-      invoke2("menu_set_checked", { id: "view.mode.split", checked: mode === "split" }).catch(function() {
+      invoke3("menu_set_checked", { id: "view.mode.split", checked: mode === "split" }).catch(function() {
       });
     }
     applyDocKind("unknown");
@@ -1885,12 +1964,12 @@
     function openDocument(path) {
       return requestSaveIfDirty().then(function(ok) {
         if (!ok) return false;
-        return invoke2("read_file", { path }).then(function(data) {
-          invoke2("workspace_add_recent", { path }).catch(function() {
+        return invoke3("read_file", { path }).then(function(data) {
+          invoke3("workspace_add_recent", { path }).catch(function() {
           });
           var kind = data && data.kind;
           if (kind && kind !== "markdown" && !document.body.classList.contains("edit-mode")) {
-            invoke2("set_view_mode", { mode: "edit" }).then(function() {
+            invoke3("set_view_mode", { mode: "edit" }).then(function() {
               setActiveMode("edit");
             }).catch(function() {
             });
@@ -1907,7 +1986,7 @@
     function setMode(mode) {
       return requestSaveIfDirty().then(function(ok) {
         if (!ok) return false;
-        return invoke2("set_view_mode", { mode }).then(function() {
+        return invoke3("set_view_mode", { mode }).then(function() {
           setActiveMode(mode);
           return true;
         });
@@ -1919,11 +1998,11 @@
       var sm = $3("status-mode");
       if (sm) sm.textContent = mode === "edit" ? "Edit" : "View";
       cheatsheetSyncMode(mode === "edit");
-      invoke2("menu_set_checked", { id: "view.mode.view", checked: mode === "view" }).catch(function() {
+      invoke3("menu_set_checked", { id: "view.mode.view", checked: mode === "view" }).catch(function() {
       });
-      invoke2("menu_set_checked", { id: "view.mode.edit", checked: mode === "edit" }).catch(function() {
+      invoke3("menu_set_checked", { id: "view.mode.edit", checked: mode === "edit" }).catch(function() {
       });
-      invoke2("menu_set_checked", { id: "view.mode.split", checked: mode === "split" }).catch(function() {
+      invoke3("menu_set_checked", { id: "view.mode.split", checked: mode === "split" }).catch(function() {
       });
     }
     function setRailButton(side, visible) {
@@ -1975,29 +2054,29 @@
       var btn2 = $3("tb-rail-left");
       var on = !btn2.classList.contains("active");
       btn2.classList.toggle("active", on);
-      invoke2("set_rail_visible", { side: "left", visible: on }).catch(function() {
+      invoke3("set_rail_visible", { side: "left", visible: on }).catch(function() {
       });
     });
     bind("tb-rail-right", function() {
       var btn2 = $3("tb-rail-right");
       var on = !btn2.classList.contains("active");
       btn2.classList.toggle("active", on);
-      invoke2("set_rail_visible", { side: "right", visible: on }).catch(function() {
+      invoke3("set_rail_visible", { side: "right", visible: on }).catch(function() {
       });
     });
     bind("tb-find", function() {
-      invoke2("open_find").catch(function() {
+      invoke3("open_find").catch(function() {
       });
     });
     bind("tb-back", function() {
       requestSaveIfDirty().then(function(ok) {
-        if (ok) invoke2("go_back_and_emit").catch(function() {
+        if (ok) invoke3("go_back_and_emit").catch(function() {
         });
       });
     });
     bind("tb-forward", function() {
       requestSaveIfDirty().then(function(ok) {
-        if (ok) invoke2("go_forward_and_emit").catch(function() {
+        if (ok) invoke3("go_forward_and_emit").catch(function() {
         });
       });
     });
@@ -2005,7 +2084,7 @@
       if (!window.FolioEditor || typeof window.FolioEditor.getText !== "function") return;
       var text = window.FolioEditor.getText();
       var sel = window.FolioEditor.getSelection() || { start: 0, length: 0 };
-      invoke2("apply_editor_command", {
+      invoke3("apply_editor_command", {
         command: name,
         text,
         start: sel.start || 0,
@@ -2087,7 +2166,7 @@
       el.textContent = words + " W\xF6rter \xB7 " + chars + " Zeichen \xB7 " + lines + " Zeilen";
     }
     bind("status-theme-toggle", function() {
-      invoke2("theme_set", { mode: "toggle" }).catch(function() {
+      invoke3("theme_set", { mode: "toggle" }).catch(function() {
       });
     });
     initZoom();
@@ -2102,13 +2181,13 @@
       } else if (e.altKey && e.key === "ArrowLeft") {
         e.preventDefault();
         requestSaveIfDirty().then(function(ok) {
-          if (ok) invoke2("go_back_and_emit").catch(function() {
+          if (ok) invoke3("go_back_and_emit").catch(function() {
           });
         });
       } else if (e.altKey && e.key === "ArrowRight") {
         e.preventDefault();
         requestSaveIfDirty().then(function(ok) {
-          if (ok) invoke2("go_forward_and_emit").catch(function() {
+          if (ok) invoke3("go_forward_and_emit").catch(function() {
           });
         });
       } else if (ctrl && (e.key === "s" || e.key === "S")) {
@@ -2116,14 +2195,14 @@
         saveCurrent();
       }
     });
-    invoke2("theme_get").then(function(mode) {
+    invoke3("theme_get").then(function(mode) {
       var html = document.documentElement;
       html.classList.toggle("theme-dark", mode === "dark");
       html.classList.toggle("theme-light", mode === "light");
       if (typeof window.setEditorTheme === "function") window.setEditorTheme(mode);
-      invoke2("menu_set_checked", { id: "view.theme.light", checked: mode === "light" }).catch(function() {
+      invoke3("menu_set_checked", { id: "view.theme.light", checked: mode === "light" }).catch(function() {
       });
-      invoke2("menu_set_checked", { id: "view.theme.dark", checked: mode === "dark" }).catch(function() {
+      invoke3("menu_set_checked", { id: "view.theme.dark", checked: mode === "dark" }).catch(function() {
       });
     }).catch(function() {
     });
@@ -2135,7 +2214,7 @@
         return Promise.resolve(fileIconCache[ext]);
       }
       if (fileIconPending[ext]) return fileIconPending[ext];
-      var p = invoke2("file_icon_data_uri", { ext }).then(function(uri) {
+      var p = invoke3("file_icon_data_uri", { ext }).then(function(uri) {
         fileIconCache[ext] = uri || "";
         delete fileIconPending[ext];
         return fileIconCache[ext];
@@ -2190,12 +2269,12 @@
       if (typeof window.reapplyVaultActive === "function") window.reapplyVaultActive();
     }
     function refreshVault() {
-      invoke2("vault_build_tree").then(renderVault).catch(function(err) {
+      invoke3("vault_build_tree").then(renderVault).catch(function(err) {
         console.warn("vault_build_tree failed:", err);
       });
     }
     refreshVault();
-    invoke2("cli_pending_open").then(function(path) {
+    invoke3("cli_pending_open").then(function(path) {
       if (typeof path === "string" && path.length > 0) {
         openDocument(path);
       }
@@ -2216,7 +2295,7 @@
         var isDir = item.getAttribute("data-directory") === "true";
         if (!path) return;
         if (isDir) {
-          invoke2("vault_expand_dir", { path }).catch(function() {
+          invoke3("vault_expand_dir", { path }).catch(function() {
           });
         } else {
           openDocument(path);
@@ -2239,76 +2318,11 @@
       var sectionLi = parentUl.parentElement;
       return !!(sectionLi && sectionLi.classList && sectionLi.classList.contains("section") && sectionLi.getAttribute("data-section") === sectionKey);
     }
-    var ctxMenu = $3("context-menu");
-    var ctxTarget = null;
-    function openContextMenu(x, y, path, isDir, inPinned, inRecent) {
-      if (!ctxMenu) return;
-      ctxTarget = { path, isDirectory: isDir };
-      var parts = [];
-      if (!isDir) parts.push('<div class="ctx-item" data-act="open">\xD6ffnen</div>');
-      var actionsBefore = parts.length;
-      var actions = [];
-      if (!isDir) actions.push('<div class="ctx-item" data-act="rename">Umbenennen</div>');
-      if (!inPinned) actions.push('<div class="ctx-item" data-act="pin">Anpinnen</div>');
-      if (inPinned) actions.push('<div class="ctx-item" data-act="unpin">Vom Pin l\xF6sen</div>');
-      if (inRecent) actions.push('<div class="ctx-item" data-act="remove-recent">Aus \u201EZuletzt" entfernen</div>');
-      if (actions.length && actionsBefore) parts.push('<div class="ctx-sep"></div>');
-      parts = parts.concat(actions);
-      var tail = [
-        '<div class="ctx-item" data-act="show">Im Explorer zeigen</div>',
-        '<div class="ctx-item" data-act="terminal">Terminal hier \xF6ffnen</div>',
-        '<div class="ctx-item" data-act="copy">Pfad kopieren</div>'
-      ];
-      if (parts.length) parts.push('<div class="ctx-sep"></div>');
-      parts = parts.concat(tail);
-      ctxMenu.innerHTML = parts.join("");
-      ctxMenu.style.left = x + "px";
-      ctxMenu.style.top = y + "px";
-      ctxMenu.classList.add("open");
-    }
-    function closeContextMenu() {
-      if (ctxMenu) ctxMenu.classList.remove("open");
-      ctxTarget = null;
-    }
-    if (ctxMenu) {
-      ctxMenu.addEventListener("click", function(e) {
-        var item = e.target.closest(".ctx-item");
-        if (!item || item.classList.contains("disabled") || !ctxTarget) return;
-        var act = item.getAttribute("data-act");
-        var path = ctxTarget.path;
-        var isDir = ctxTarget.isDirectory;
-        closeContextMenu();
-        if (act === "open" && !isDir) {
-          openDocument(path);
-        } else if (act === "pin") {
-          invoke2("workspace_pin", { path, isDirectory: isDir }).catch(function() {
-          });
-        } else if (act === "unpin") {
-          invoke2("workspace_unpin", { path }).catch(function() {
-          });
-        } else if (act === "remove-recent") {
-          invoke2("workspace_remove_recent", { path }).catch(function() {
-          });
-        } else if (act === "rename") {
-          startInlineRename(path);
-        } else if (act === "show") {
-          invoke2("show_in_file_manager", { path }).catch(function() {
-          });
-        } else if (act === "terminal") {
-          invoke2("open_terminal_at", { path }).catch(function() {
-          });
-        } else if (act === "copy") {
-          if (navigator.clipboard) navigator.clipboard.writeText(path).catch(function() {
-          });
-        }
-      });
-      document.addEventListener("click", function(e) {
-        if (!ctxMenu.contains(e.target)) closeContextMenu();
-      });
-      document.addEventListener("keydown", function(e) {
-        if (e.key === "Escape") closeContextMenu();
-      });
-    }
+    initContextMenu({
+      openDocument,
+      refreshVault,
+      showStatus
+    });
     listen("tauri://drag-enter", function() {
       document.body.classList.add("dnd-active");
     });
@@ -2333,7 +2347,7 @@
       setStatusPath(data.path || "Bereit", false);
       updateWordCount(data.text || "");
       applyDocKind(data.kind || "unknown");
-      invoke2("workspace_add_recent", { path: data.path }).catch(function() {
+      invoke3("workspace_add_recent", { path: data.path }).catch(function() {
       });
       var bar2 = document.getElementById("find-bar");
       if (bar2 && bar2.classList.contains("open") && !document.body.classList.contains("edit-mode")) {
@@ -2418,7 +2432,7 @@
       var text = e.detail || "";
       updateWordCount(text);
       if (currentPath) markDirty(text !== cleanText2);
-      invoke2("editor_text_changed", { text }).catch(function() {
+      invoke3("editor_text_changed", { text }).catch(function() {
       });
     });
     initLanguagePicker();
@@ -2426,7 +2440,7 @@
       var ev = window.__TAURI__ && window.__TAURI__.event;
       if (!ev || typeof ev.listen !== "function") return;
       ev.listen("menu:file_open", function() {
-        invoke2("pick_file").then(function(path) {
+        invoke3("pick_file").then(function(path) {
           if (path && typeof window.openDocument === "function") {
             window.openDocument(path);
           }
@@ -2446,7 +2460,7 @@
         if (!currentPath) return;
         requestSaveIfDirty().then(function(ok) {
           if (!ok) return;
-          invoke2("close_document").catch(function() {
+          invoke3("close_document").catch(function() {
           });
         });
       });
@@ -2477,23 +2491,23 @@
         setMode("split");
       });
       ev.listen("menu:view_theme_light", function() {
-        invoke2("theme_set", { mode: "light" }).catch(function() {
+        invoke3("theme_set", { mode: "light" }).catch(function() {
         });
       });
       ev.listen("menu:view_theme_dark", function() {
-        invoke2("theme_set", { mode: "dark" }).catch(function() {
+        invoke3("theme_set", { mode: "dark" }).catch(function() {
         });
       });
       ev.listen("menu:view_rail_left", function() {
         var visible = !document.body.classList.contains("vault-hidden");
         applyRailVisibility("left", !visible);
-        invoke2("set_rail_visible", { side: "left", visible: !visible }).catch(function() {
+        invoke3("set_rail_visible", { side: "left", visible: !visible }).catch(function() {
         });
       });
       ev.listen("menu:view_rail_right", function() {
         var visible = !document.body.classList.contains("toc-hidden");
         applyRailVisibility("right", !visible);
-        invoke2("set_rail_visible", { side: "right", visible: !visible }).catch(function() {
+        invoke3("set_rail_visible", { side: "right", visible: !visible }).catch(function() {
         });
       });
       ev.listen("menu:about", function(event) {
