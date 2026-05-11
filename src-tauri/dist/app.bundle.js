@@ -769,6 +769,9 @@
   function getFinder() {
     return isEditMode() ? window.FolioEditor : ViewFinder;
   }
+  function isOpen() {
+    return bar.classList.contains("open");
+  }
   function doOpen(initial) {
     bar.classList.add("open");
     if (typeof initial === "string" && initial.length > 0) {
@@ -805,6 +808,14 @@
   }
   function openEditorFind(initialTerm) {
     open2(initialTerm);
+  }
+  function setEditorFindTerm(term) {
+    input2.value = term || "";
+    if (!isOpen()) open2(term || "");
+    else {
+      const f = getFinder();
+      if (f) f.setFindTerm(term || "");
+    }
   }
   function pickSeed(arg) {
     if (typeof arg === "string" && arg) return arg;
@@ -871,8 +882,8 @@
       }
     }, 0);
   }
-  function initFindBar(deps5) {
-    ensureEditorMountedDep = deps5.ensureEditorMounted;
+  function initFindBar(deps6) {
+    ensureEditorMountedDep = deps6.ensureEditorMounted;
     bar = document.getElementById("find-bar");
     input2 = document.getElementById("find-input");
     counter = document.getElementById("find-counter");
@@ -1934,6 +1945,155 @@
     applyDocKind("unknown");
   }
 
+  // app/editor/shell.ts
+  var deps5 = null;
+  var editorMounted = false;
+  function invoke5(cmd, args) {
+    return window.__TAURI__.core.invoke(cmd, args);
+  }
+  function $4(id) {
+    return document.getElementById(id);
+  }
+  function ensureEditorMounted(initial) {
+    if (editorMounted) return Promise.resolve(true);
+    if (!window.FolioEditor || typeof window.FolioEditor.mount !== "function") {
+      console.error("[folio] FolioEditor bundle not available");
+      return Promise.resolve(false);
+    }
+    return window.FolioEditor.mount("editor-mount", initial || "").then(function() {
+      editorMounted = true;
+      return true;
+    }).catch(function(err) {
+      console.error("[folio] Editor mount failed:", err);
+      return false;
+    });
+  }
+  function loadEditorText(text, language) {
+    ensureEditorMounted(text || "").then(function(ok) {
+      if (!ok) return;
+      window.FolioEditor.setText(text || "", language || "plaintext");
+      if (document.body.classList.contains("edit-mode")) {
+        layoutEditor();
+      }
+    });
+  }
+  function focusEditor() {
+    const initial = deps5 && deps5.getCleanText ? deps5.getCleanText() : "";
+    ensureEditorMounted(initial).then(function(ok) {
+      if (!ok) return;
+      layoutEditor();
+      window.FolioEditor.focus();
+    });
+  }
+  function layoutEditor() {
+    if (!window.FolioEditor || !editorMounted || typeof window.FolioEditor.layout !== "function") return;
+    requestAnimationFrame(function() {
+      window.FolioEditor.layout();
+      requestAnimationFrame(function() {
+        window.FolioEditor.layout();
+      });
+    });
+  }
+  function setEditorTheme(mode) {
+    if (window.FolioEditor) window.FolioEditor.setTheme(mode);
+  }
+  function applyEditorReplace(fullText, selectionStart, selectionLength) {
+    if (!window.FolioEditor) return;
+    window.FolioEditor.applyReplace({
+      fullText: fullText || "",
+      selectionStart: selectionStart || 0,
+      selectionLength: selectionLength || 0
+    });
+  }
+  function setActiveMode(mode) {
+    $4("tb-mode-view").classList.toggle("active", mode === "view");
+    $4("tb-mode-edit").classList.toggle("active", mode === "edit");
+    const sm = $4("status-mode");
+    if (sm) sm.textContent = mode === "edit" ? "Edit" : "View";
+    cheatsheetSyncMode(mode === "edit");
+    invoke5("menu_set_checked", { id: "view.mode.view", checked: mode === "view" }).catch(function() {
+    });
+    invoke5("menu_set_checked", { id: "view.mode.edit", checked: mode === "edit" }).catch(function() {
+    });
+    invoke5("menu_set_checked", { id: "view.mode.split", checked: mode === "split" }).catch(function() {
+    });
+  }
+  function setMode(mode) {
+    return deps5.requestSaveIfDirty().then(function(ok) {
+      if (!ok) return false;
+      return invoke5("set_view_mode", { mode }).then(function() {
+        setActiveMode(mode);
+        return true;
+      });
+    });
+  }
+  function initEditorShell(d) {
+    deps5 = d;
+    const listen = window.__TAURI__.event.listen;
+    listen("shell:command", function(event) {
+      const data = event && event.payload;
+      if (!data || typeof data !== "object") return;
+      switch (data.type) {
+        case "loadEditorText":
+          loadEditorText(data.text || "");
+          break;
+        case "applyEditorReplace":
+          applyEditorReplace(
+            data.fullText || "",
+            data.selectionStart || 0,
+            data.selectionLength || 0
+          );
+          break;
+        default:
+          break;
+      }
+    });
+    listen("editor:load_text", function(event) {
+      const data = event && event.payload || {};
+      loadEditorText(data.text || "", data.language || "");
+    });
+    listen("editor:apply_replace", function(event) {
+      const data = event && event.payload || {};
+      applyEditorReplace(data.fullText || "", data.start || 0, data.length || 0);
+    });
+    listen("editor:open_find", function() {
+      openEditorFind("");
+    });
+    listen("editor:set_find_term", function(event) {
+      const data = event && event.payload || {};
+      setEditorFindTerm(data.term || "");
+    });
+    listen("app:set_mode", function(event) {
+      const data = event && event.payload;
+      const mode = data && data.mode || "view";
+      document.body.classList.toggle("edit-mode", mode === "edit");
+      document.body.classList.toggle("split-mode", mode === "split");
+      setActiveMode(mode);
+      if (mode === "edit") focusEditor();
+      syncCheatsheetMenu();
+      invoke5("menu_set_enabled", { id: "edit.undo", enabled: mode === "edit" }).catch(function() {
+      });
+      invoke5("menu_set_enabled", { id: "edit.redo", enabled: mode === "edit" }).catch(function() {
+      });
+      afterModeSwitch();
+    });
+    listen("app:set_theme", function(event) {
+      const data = event && event.payload;
+      let mode = data && data.mode || "light";
+      const html = document.documentElement;
+      if (mode === "toggle") {
+        mode = html.classList.contains("theme-dark") ? "light" : "dark";
+      }
+      html.classList.toggle("theme-dark", mode === "dark");
+      html.classList.toggle("theme-light", mode === "light");
+      setEditorTheme(mode);
+      invoke5("menu_set_checked", { id: "view.theme.light", checked: mode === "light" }).catch(function() {
+      });
+      invoke5("menu_set_checked", { id: "view.theme.dark", checked: mode === "dark" }).catch(function() {
+      });
+    });
+  }
+
   // app/main.ts
   (function() {
     var post5 = function(msg) {
@@ -1943,34 +2103,12 @@
     };
     initMarkdownView();
     var contentEl2 = document.getElementById("view-region");
-    window.setEditMode = function(on) {
-      document.body.classList.toggle("edit-mode", !!on);
-      if (on && typeof window.layoutEditor === "function") window.layoutEditor();
-    };
     if (window.__TAURI__ && window.__TAURI__.event && typeof window.__TAURI__.event.listen === "function") {
       window.__TAURI__.event.listen("shell:command", function(event) {
         var data = event && event.payload;
         if (!data || typeof data !== "object") return;
-        switch (data.type) {
-          case "loadEditorText":
-            if (typeof window.loadEditorText === "function") {
-              window.loadEditorText(data.text || "");
-            }
-            break;
-          case "applyEditorReplace":
-            if (typeof window.applyEditorReplace === "function") {
-              window.applyEditorReplace(
-                data.fullText || "",
-                data.selectionStart || 0,
-                data.selectionLength || 0
-              );
-            }
-            break;
-          case "insertVaultChildren":
-            insertVaultChildren(data.path || "", data.html || "");
-            break;
-          default:
-            break;
+        if (data.type === "insertVaultChildren") {
+          insertVaultChildren(data.path || "", data.html || "");
         }
       });
       window.__TAURI__.event.listen("navigation:changed", function(event) {
@@ -1997,51 +2135,6 @@
           }
         });
       });
-      window.__TAURI__.event.listen("editor:load_text", function(event) {
-        var data = event && event.payload;
-        var text = data && typeof data === "object" ? data.text || "" : "";
-        if (typeof window.loadEditorText === "function") window.loadEditorText(text);
-      });
-      window.__TAURI__.event.listen("editor:apply_replace", function(event) {
-        var data = event && event.payload;
-        if (!data || typeof data !== "object") return;
-        if (typeof window.applyEditorReplace === "function") {
-          window.applyEditorReplace(data.fullText || "", data.start || 0, data.length || 0);
-        }
-      });
-      window.__TAURI__.event.listen("app:set_mode", function(event) {
-        var data = event && event.payload;
-        var mode = data && data.mode || "view";
-        document.body.classList.toggle("edit-mode", mode === "edit");
-        document.body.classList.toggle("split-mode", mode === "split");
-        if (mode === "edit" && typeof window.focusEditor === "function") {
-          window.focusEditor();
-        }
-        syncCheatsheetMenu();
-        var core = window.__TAURI__.core;
-        core.invoke("menu_set_enabled", { id: "edit.undo", enabled: mode === "edit" }).catch(function() {
-        });
-        core.invoke("menu_set_enabled", { id: "edit.redo", enabled: mode === "edit" }).catch(function() {
-        });
-      });
-      window.__TAURI__.event.listen("app:set_theme", function(event) {
-        var data = event && event.payload;
-        var mode = data && data.mode || "light";
-        var html = document.documentElement;
-        if (mode === "toggle") {
-          mode = html.classList.contains("theme-dark") ? "light" : "dark";
-        }
-        html.classList.toggle("theme-dark", mode === "dark");
-        html.classList.toggle("theme-light", mode === "light");
-        if (typeof window.setEditorTheme === "function") {
-          window.setEditorTheme(mode);
-        }
-        var core = window.__TAURI__.core;
-        core.invoke("menu_set_checked", { id: "view.theme.light", checked: mode === "light" }).catch(function() {
-        });
-        core.invoke("menu_set_checked", { id: "view.theme.dark", checked: mode === "dark" }).catch(function() {
-        });
-      });
       window.__TAURI__.event.listen("panel:rail_changed", function(event) {
         var data = event && event.payload;
         if (!data) return;
@@ -2052,24 +2145,6 @@
           setRailVisibility("right", data.rightRailVisible);
         }
       });
-      window.__TAURI__.event.listen("editor:open_find", function() {
-        var bar2 = document.getElementById("find-bar");
-        if (bar2) bar2.classList.add("open");
-        var input3 = document.getElementById("find-input");
-        if (input3) {
-          input3.focus();
-          input3.select();
-        }
-      });
-      window.__TAURI__.event.listen("editor:set_find_term", function(event) {
-        var data = event && event.payload;
-        var term = data && data.term || "";
-        var input3 = document.getElementById("find-input");
-        if (input3) {
-          input3.value = term;
-          input3.dispatchEvent(new Event("input", { bubbles: true }));
-        }
-      });
       window.__TAURI__.event.listen("navigation:toc_click", function(event) {
         var data = event && event.payload;
         var anchor = data && (data.anchor || data.slug);
@@ -2077,62 +2152,7 @@
         setTocActive(anchor || "");
       });
     }
-    var editorMounted = false;
-    function ensureEditorMounted(initial) {
-      if (editorMounted) return Promise.resolve(true);
-      if (!window.FolioEditor || typeof window.FolioEditor.mount !== "function") {
-        console.error("[folio] FolioEditor bundle not available");
-        return Promise.resolve(false);
-      }
-      return window.FolioEditor.mount("editor-mount", initial || "").then(function() {
-        editorMounted = true;
-        return true;
-      }).catch(function(err) {
-        console.error("[folio] Editor mount failed:", err);
-        return false;
-      });
-    }
-    window.loadEditorText = function(text, language) {
-      ensureEditorMounted(text || "").then(function(ok) {
-        if (!ok) return;
-        window.FolioEditor.setText(text || "", language || "plaintext");
-        if (document.body.classList.contains("edit-mode")) {
-          window.layoutEditor();
-        }
-      });
-    };
-    window.focusEditor = function() {
-      var initial = getCleanText() || "";
-      ensureEditorMounted(initial).then(function(ok) {
-        if (!ok) return;
-        window.layoutEditor();
-        window.FolioEditor.focus();
-      });
-    };
-    window.layoutEditor = function() {
-      if (!window.FolioEditor || !editorMounted || typeof window.FolioEditor.layout !== "function") return;
-      requestAnimationFrame(function() {
-        window.FolioEditor.layout();
-        requestAnimationFrame(function() {
-          window.FolioEditor.layout();
-        });
-      });
-    };
-    window.setEditorTheme = function(mode) {
-      if (window.FolioEditor) window.FolioEditor.setTheme(mode);
-    };
-    window.requestEditorSelection = function() {
-      if (!window.FolioEditor) return null;
-      return window.FolioEditor.getSelection();
-    };
-    window.applyEditorReplace = function(fullText, selectionStart, selectionLength) {
-      if (!window.FolioEditor) return;
-      window.FolioEditor.applyReplace({
-        fullText: fullText || "",
-        selectionStart: selectionStart || 0,
-        selectionLength: selectionLength || 0
-      });
-    };
+    initEditorShell({ getCleanText, requestSaveIfDirty });
     initFindBar({ ensureEditorMounted });
     initRails();
     initVaultTree({
@@ -2150,43 +2170,21 @@
   })();
   (function() {
     if (!window.__TAURI__) return;
-    var invoke5 = window.__TAURI__.core && window.__TAURI__.core.invoke;
-    window.__folioInvoke = invoke5;
+    var invoke6 = window.__TAURI__.core && window.__TAURI__.core.invoke;
+    window.__folioInvoke = invoke6;
     var emit = window.__TAURI__.event && window.__TAURI__.event.emit;
     var listen = window.__TAURI__.event && window.__TAURI__.event.listen;
-    if (!invoke5 || !emit || !listen) return;
-    function $4(id) {
+    if (!invoke6 || !emit || !listen) return;
+    function $5(id) {
       return document.getElementById(id);
     }
     function bind(id, fn) {
-      var el = $4(id);
+      var el = $5(id);
       if (el) el.addEventListener("click", fn);
     }
     window.openDocument = openDocument;
-    function setMode(mode) {
-      return requestSaveIfDirty().then(function(ok) {
-        if (!ok) return false;
-        return invoke5("set_view_mode", { mode }).then(function() {
-          setActiveMode(mode);
-          return true;
-        });
-      });
-    }
-    function setActiveMode(mode) {
-      $4("tb-mode-view").classList.toggle("active", mode === "view");
-      $4("tb-mode-edit").classList.toggle("active", mode === "edit");
-      var sm = $4("status-mode");
-      if (sm) sm.textContent = mode === "edit" ? "Edit" : "View";
-      cheatsheetSyncMode(mode === "edit");
-      invoke5("menu_set_checked", { id: "view.mode.view", checked: mode === "view" }).catch(function() {
-      });
-      invoke5("menu_set_checked", { id: "view.mode.edit", checked: mode === "edit" }).catch(function() {
-      });
-      invoke5("menu_set_checked", { id: "view.mode.split", checked: mode === "split" }).catch(function() {
-      });
-    }
     function setRailButton(side, visible) {
-      var btn2 = side === "left" ? $4("tb-rail-left") : $4("tb-rail-right");
+      var btn2 = $5(side === "left" ? "tb-rail-left" : "tb-rail-right");
       if (btn2) btn2.classList.toggle("active", !!visible);
     }
     function applyRailVisibility(side, visible) {
@@ -2199,20 +2197,16 @@
       document.body.classList.toggle("edit-mode", mode === "edit");
       document.body.classList.toggle("split-mode", mode === "split");
       setActiveMode(mode);
-      if (mode === "edit" && typeof window.layoutEditor === "function") window.layoutEditor();
+      if (mode === "edit") layoutEditor();
       var theme = state.theme || "light";
       document.documentElement.classList.toggle("theme-dark", theme === "dark");
       document.documentElement.classList.toggle("theme-light", theme === "light");
-      if (typeof window.setEditorTheme === "function") window.setEditorTheme(theme);
+      setEditorTheme(theme);
       if (typeof state.leftRailVisible === "boolean") applyRailVisibility("left", state.leftRailVisible);
       if (typeof state.rightRailVisible === "boolean") applyRailVisibility("right", state.rightRailVisible);
       var editor = state.editor || {};
-      if (typeof editor.leftRailWidth === "number") {
-        setVaultWidth(editor.leftRailWidth);
-      }
-      if (typeof editor.rightRailWidth === "number") {
-        setTocWidth(editor.rightRailWidth);
-      }
+      if (typeof editor.leftRailWidth === "number") setVaultWidth(editor.leftRailWidth);
+      if (typeof editor.rightRailWidth === "number") setTocWidth(editor.rightRailWidth);
     }
     bind("tb-mode-view", function() {
       setMode("view");
@@ -2229,32 +2223,32 @@
       showStatus
     });
     bind("tb-rail-left", function() {
-      var btn2 = $4("tb-rail-left");
+      var btn2 = $5("tb-rail-left");
       var on = !btn2.classList.contains("active");
       btn2.classList.toggle("active", on);
-      invoke5("set_rail_visible", { side: "left", visible: on }).catch(function() {
+      invoke6("set_rail_visible", { side: "left", visible: on }).catch(function() {
       });
     });
     bind("tb-rail-right", function() {
-      var btn2 = $4("tb-rail-right");
+      var btn2 = $5("tb-rail-right");
       var on = !btn2.classList.contains("active");
       btn2.classList.toggle("active", on);
-      invoke5("set_rail_visible", { side: "right", visible: on }).catch(function() {
+      invoke6("set_rail_visible", { side: "right", visible: on }).catch(function() {
       });
     });
     bind("tb-find", function() {
-      invoke5("open_find").catch(function() {
+      invoke6("open_find").catch(function() {
       });
     });
     bind("tb-back", function() {
       requestSaveIfDirty().then(function(ok) {
-        if (ok) invoke5("go_back_and_emit").catch(function() {
+        if (ok) invoke6("go_back_and_emit").catch(function() {
         });
       });
     });
     bind("tb-forward", function() {
       requestSaveIfDirty().then(function(ok) {
-        if (ok) invoke5("go_forward_and_emit").catch(function() {
+        if (ok) invoke6("go_forward_and_emit").catch(function() {
         });
       });
     });
@@ -2262,7 +2256,7 @@
       if (!window.FolioEditor || typeof window.FolioEditor.getText !== "function") return;
       var text = window.FolioEditor.getText();
       var sel = window.FolioEditor.getSelection() || { start: 0, length: 0 };
-      invoke5("apply_editor_command", {
+      invoke6("apply_editor_command", {
         command: name,
         text,
         start: sel.start || 0,
@@ -2313,7 +2307,7 @@
     });
     bind("tb-cheatsheet", function() {
       if (!document.body.classList.contains("edit-mode")) return;
-      var ov = $4("cheatsheet-overlay");
+      var ov = $5("cheatsheet-overlay");
       if (!ov) return;
       if (ov.hidden) {
         showCheatSheet(JSON.stringify(cheatSheetRows.map(function(r) {
@@ -2324,7 +2318,7 @@
       }
     });
     bind("status-theme-toggle", function() {
-      invoke5("theme_set", { mode: "toggle" }).catch(function() {
+      invoke6("theme_set", { mode: "toggle" }).catch(function() {
       });
     });
     initZoom();
@@ -2332,20 +2326,20 @@
       var ctrl = e.ctrlKey || e.metaKey;
       if (ctrl && e.key === "1") {
         e.preventDefault();
-        $4("tb-mode-view").click();
+        $5("tb-mode-view").click();
       } else if (ctrl && e.key === "2") {
         e.preventDefault();
-        $4("tb-mode-edit").click();
+        $5("tb-mode-edit").click();
       } else if (e.altKey && e.key === "ArrowLeft") {
         e.preventDefault();
         requestSaveIfDirty().then(function(ok) {
-          if (ok) invoke5("go_back_and_emit").catch(function() {
+          if (ok) invoke6("go_back_and_emit").catch(function() {
           });
         });
       } else if (e.altKey && e.key === "ArrowRight") {
         e.preventDefault();
         requestSaveIfDirty().then(function(ok) {
-          if (ok) invoke5("go_forward_and_emit").catch(function() {
+          if (ok) invoke6("go_forward_and_emit").catch(function() {
           });
         });
       } else if (ctrl && (e.key === "s" || e.key === "S")) {
@@ -2353,18 +2347,18 @@
         saveCurrent();
       }
     });
-    invoke5("theme_get").then(function(mode) {
+    invoke6("theme_get").then(function(mode) {
       var html = document.documentElement;
       html.classList.toggle("theme-dark", mode === "dark");
       html.classList.toggle("theme-light", mode === "light");
       if (typeof window.setEditorTheme === "function") window.setEditorTheme(mode);
-      invoke5("menu_set_checked", { id: "view.theme.light", checked: mode === "light" }).catch(function() {
+      invoke6("menu_set_checked", { id: "view.theme.light", checked: mode === "light" }).catch(function() {
       });
-      invoke5("menu_set_checked", { id: "view.theme.dark", checked: mode === "dark" }).catch(function() {
+      invoke6("menu_set_checked", { id: "view.theme.dark", checked: mode === "dark" }).catch(function() {
       });
     }).catch(function() {
     });
-    invoke5("cli_pending_open").then(function(path) {
+    invoke6("cli_pending_open").then(function(path) {
       if (typeof path === "string" && path.length > 0) {
         openDocument(path);
       }
@@ -2399,11 +2393,6 @@
       openDocument(first);
     });
     initDocumentState({ setActiveMode });
-    listen("app:set_mode", function(event) {
-      var mode = event && event.payload && event.payload.mode || "view";
-      setActiveMode(mode);
-      afterModeSwitch();
-    });
     listen("panel:rail_changed", function(event) {
       var data = event && event.payload || {};
       if (typeof data.leftRailVisible === "boolean") setRailButton("left", data.leftRailVisible);
@@ -2442,7 +2431,7 @@
       var text = e.detail || "";
       updateWordCount(text);
       if (getCurrentPath()) markDirty(text !== getCleanText());
-      invoke5("editor_text_changed", { text }).catch(function() {
+      invoke6("editor_text_changed", { text }).catch(function() {
       });
     });
     initLanguagePicker();
@@ -2450,7 +2439,7 @@
       var ev = window.__TAURI__ && window.__TAURI__.event;
       if (!ev || typeof ev.listen !== "function") return;
       ev.listen("menu:file_open", function() {
-        invoke5("pick_file").then(function(path) {
+        invoke6("pick_file").then(function(path) {
           if (path && typeof window.openDocument === "function") {
             window.openDocument(path);
           }
@@ -2470,7 +2459,7 @@
         if (!getCurrentPath()) return;
         requestSaveIfDirty().then(function(ok) {
           if (!ok) return;
-          invoke5("close_document").catch(function() {
+          invoke6("close_document").catch(function() {
           });
         });
       });
@@ -2488,7 +2477,7 @@
         openEditorFind("");
       });
       ev.listen("menu:help_cheatsheet", function() {
-        var b = $4("tb-cheatsheet");
+        var b = $5("tb-cheatsheet");
         if (b) b.click();
       });
       ev.listen("menu:view_mode_view", function() {
@@ -2501,23 +2490,23 @@
         setMode("split");
       });
       ev.listen("menu:view_theme_light", function() {
-        invoke5("theme_set", { mode: "light" }).catch(function() {
+        invoke6("theme_set", { mode: "light" }).catch(function() {
         });
       });
       ev.listen("menu:view_theme_dark", function() {
-        invoke5("theme_set", { mode: "dark" }).catch(function() {
+        invoke6("theme_set", { mode: "dark" }).catch(function() {
         });
       });
       ev.listen("menu:view_rail_left", function() {
         var visible = !document.body.classList.contains("vault-hidden");
         applyRailVisibility("left", !visible);
-        invoke5("set_rail_visible", { side: "left", visible: !visible }).catch(function() {
+        invoke6("set_rail_visible", { side: "left", visible: !visible }).catch(function() {
         });
       });
       ev.listen("menu:view_rail_right", function() {
         var visible = !document.body.classList.contains("toc-hidden");
         applyRailVisibility("right", !visible);
-        invoke5("set_rail_visible", { side: "right", visible: !visible }).catch(function() {
+        invoke6("set_rail_visible", { side: "right", visible: !visible }).catch(function() {
         });
       });
       ev.listen("menu:about", function(event) {

@@ -58,6 +58,18 @@ import {
     updateWordCount,
     showStatus,
 } from './state/document';
+import {
+    initEditorShell,
+    ensureEditorMounted,
+    setActiveMode,
+    setMode,
+    setEditMode,
+    loadEditorText,
+    focusEditor,
+    layoutEditor,
+    setEditorTheme,
+    applyEditorReplace,
+} from './editor/shell';
 
 // === IIFE #1 (TOC/View bridge, Editor bridge, ViewFinder, Cheatsheet, Vault setters) ===
 
@@ -75,48 +87,22 @@ import {
     // Rail-Visibility / Width: setRailVisibility, setTocWidth, setVaultWidth
     // leben jetzt in ui/rails.ts (importiert oben).
 
-    // ----- Edit-Modus: tauscht View-Region gegen Editor-Region in derselben
-    //       Grid-Spalte. Monaco Editor lebt im DOM, kein zweites HWnd, kein
-    //       Airspace-Konflikt mit dem Cheat-Sheet-Overlay.
-    window.setEditMode = function (on) {
-        document.body.classList.toggle('edit-mode', !!on);
-        if (on && typeof window.layoutEditor === 'function') window.layoutEditor();
-    };
+    // Edit-Modus, app:set_mode-Listener, app:set_theme-Listener und die
+    // Editor-Bridge (loadEditorText/focusEditor/layoutEditor/applyEditorReplace
+    // /setEditorTheme/requestEditorSelection/setEditMode) leben jetzt in
+    // editor/shell.ts. shell:command/editor:load_text/editor:apply_replace/
+    // editor:open_find/editor:set_find_term ebenfalls dort registriert.
 
-    // ----- Inbound-Channel: chrome.webview.message-Events fuer C#→JS-
-    //       Payloads, die zu gross fuer ExecuteScriptAsync waeren (Editor-
-    //       Volltext, applyReplace mit komplettem Doc). C# postet via
-    //       CoreWebView2.PostWebMessageAsJson, JS routet hier auf die
-    //       bestehenden window-Funktionen.
+    // insertVaultChildren-Event-Routing aus shell:command bleibt in main.ts,
+    // weil insertVaultChildren ein Vault-Setter ist.
     if (window.__TAURI__ && window.__TAURI__.event && typeof window.__TAURI__.event.listen === 'function') {
         window.__TAURI__.event.listen("shell:command", function (event) {
             var data = event && event.payload;
             if (!data || typeof data !== 'object') return;
-            switch (data.type) {
-                case 'loadEditorText':
-                    if (typeof window.loadEditorText === 'function') {
-                        window.loadEditorText(data.text || '');
-                    }
-                    break;
-                case 'applyEditorReplace':
-                    if (typeof window.applyEditorReplace === 'function') {
-                        window.applyEditorReplace(
-                            data.fullText || '',
-                            data.selectionStart || 0,
-                            data.selectionLength || 0
-                        );
-                    }
-                    break;
-                case 'insertVaultChildren':
-                    insertVaultChildren(data.path || '', data.html || '');
-                    break;
-                default:
-                    /* ignored */
-                    break;
+            if (data.type === 'insertVaultChildren') {
+                insertVaultChildren(data.path || '', data.html || '');
             }
         });
-        // document:loaded-Listener lebt jetzt in state/document.ts
-        // (Listener-Fusion — siehe Plan-Phase 4.5).
         window.__TAURI__.event.listen("navigation:changed", function (event) {
             var data = event && event.payload;
             if (!data || typeof data !== 'object') return;
@@ -143,54 +129,10 @@ import {
                 }
             });
         });
-        window.__TAURI__.event.listen("editor:load_text", function (event) {
-            var data = event && event.payload;
-            var text = (data && typeof data === 'object') ? (data.text || '') : '';
-            if (typeof window.loadEditorText === 'function') window.loadEditorText(text);
-        });
-        window.__TAURI__.event.listen("editor:apply_replace", function (event) {
-            var data = event && event.payload;
-            if (!data || typeof data !== 'object') return;
-            if (typeof window.applyEditorReplace === 'function') {
-                window.applyEditorReplace(data.fullText || '', data.start || 0, data.length || 0);
-            }
-        });
-        // vault:refresh-Listener lebt jetzt in vault/tree.ts (Listener-
-        // Fusion mit dem IIFE-#2-Pendant — siehe Plan-Phase 4.4).
-        window.__TAURI__.event.listen("app:set_mode", function (event) {
-            var data = event && event.payload;
-            var mode = (data && data.mode) || 'view';
-            document.body.classList.toggle('edit-mode', mode === 'edit');
-            document.body.classList.toggle('split-mode', mode === 'split');
-            if (mode === 'edit' && typeof window.focusEditor === 'function') {
-                window.focusEditor();
-            }
-            syncCheatsheetMenu();
-            // Rückgängig/Wiederholen leben in Monaco — nur im Edit-Mode
-            // sinnvoll. Im View-Mode (statisches HTML) gibt es nichts
-            // rückgängig zu machen.
-            var core = window.__TAURI__.core;
-            core.invoke('menu_set_enabled', { id: 'edit.undo', enabled: mode === 'edit' }).catch(function(){});
-            core.invoke('menu_set_enabled', { id: 'edit.redo', enabled: mode === 'edit' }).catch(function(){});
-        });
-        window.__TAURI__.event.listen("app:set_theme", function (event) {
-            var data = event && event.payload;
-            var mode = (data && data.mode) || 'light';
-            var html = document.documentElement;
-            if (mode === 'toggle') {
-                mode = html.classList.contains('theme-dark') ? 'light' : 'dark';
-            }
-            html.classList.toggle('theme-dark', mode === 'dark');
-            html.classList.toggle('theme-light', mode === 'light');
-            if (typeof window.setEditorTheme === 'function') {
-                window.setEditorTheme(mode);
-            }
-            // Theme-Submenü-Häkchen synchron halten — egal über welchen
-            // Pfad der Wechsel kam (Menü, Statusbar-Button, Init).
-            var core = window.__TAURI__.core;
-            core.invoke('menu_set_checked', { id: 'view.theme.light', checked: mode === 'light' }).catch(function(){});
-            core.invoke('menu_set_checked', { id: 'view.theme.dark', checked: mode === 'dark' }).catch(function(){});
-        });
+        // editor:load_text, editor:apply_replace, app:set_mode (fusioniert),
+        // app:set_theme und die editor:open_find/editor:set_find_term-Listener
+        // leben jetzt in editor/shell.ts (Plan-Phase 4.5).
+        // vault:refresh-Listener lebt in vault/tree.ts (Plan-Phase 4.4).
         window.__TAURI__.event.listen("panel:rail_changed", function (event) {
             var data = event && event.payload;
             if (!data) return;
@@ -201,21 +143,8 @@ import {
                 setRailVisibility('right', data.rightRailVisible);
             }
         });
-        window.__TAURI__.event.listen("editor:open_find", function () {
-            var bar = document.getElementById('find-bar');
-            if (bar) bar.classList.add('open');
-            var input = document.getElementById('find-input');
-            if (input) { input.focus(); input.select(); }
-        });
-        window.__TAURI__.event.listen("editor:set_find_term", function (event) {
-            var data = event && event.payload;
-            var term = (data && data.term) || '';
-            var input = document.getElementById('find-input');
-            if (input) {
-                input.value = term;
-                input.dispatchEvent(new Event('input', { bubbles: true }));
-            }
-        });
+        // editor:open_find + editor:set_find_term leben in editor/shell.ts
+        // (Plan-Phase 4.5).
         window.__TAURI__.event.listen("navigation:toc_click", function (event) {
             var data = event && event.payload;
             var anchor = data && (data.anchor || data.slug);
@@ -224,63 +153,8 @@ import {
         });
     }
 
-    // ----- Editor-API (Monaco Editor via FolioEditor-Bundle) -----
-    var editorMounted = false;
-    function ensureEditorMounted(initial) {
-        if (editorMounted) return Promise.resolve(true);
-        if (!window.FolioEditor || typeof window.FolioEditor.mount !== 'function') {
-            console.error('[folio] FolioEditor bundle not available');
-            return Promise.resolve(false);
-        }
-        return window.FolioEditor.mount('editor-mount', initial || '').then(function () {
-            editorMounted = true;
-            return true;
-        }).catch(function (err) {
-            console.error('[folio] Editor mount failed:', err);
-            return false;
-        });
-    }
-    window.loadEditorText = function (text, language) {
-        ensureEditorMounted(text || '').then(function (ok) {
-            if (!ok) return;
-            window.FolioEditor.setText(text || '', language || 'plaintext');
-            if (document.body.classList.contains('edit-mode')) {
-                window.layoutEditor();
-            }
-        });
-    };
-    window.focusEditor = function () {
-        var initial = getCleanText() || '';
-        ensureEditorMounted(initial).then(function (ok) {
-            if (!ok) return;
-            window.layoutEditor();
-            window.FolioEditor.focus();
-        });
-    };
-    window.layoutEditor = function () {
-        if (!window.FolioEditor || !editorMounted || typeof window.FolioEditor.layout !== 'function') return;
-        requestAnimationFrame(function () {
-            window.FolioEditor.layout();
-            requestAnimationFrame(function () {
-                window.FolioEditor.layout();
-            });
-        });
-    };
-    window.setEditorTheme = function (mode) {
-        if (window.FolioEditor) window.FolioEditor.setTheme(mode);
-    };
-    window.requestEditorSelection = function () {
-        if (!window.FolioEditor) return null;
-        return window.FolioEditor.getSelection();
-    };
-    window.applyEditorReplace = function (fullText, selectionStart, selectionLength) {
-        if (!window.FolioEditor) return;
-        window.FolioEditor.applyReplace({
-            fullText: fullText || '',
-            selectionStart: selectionStart || 0,
-            selectionLength: selectionLength || 0,
-        });
-    };
+    // ----- Editor-Shell (Modul) — siehe editor/shell.ts -----
+    initEditorShell({ getCleanText, requestSaveIfDirty });
 
     // ----- ViewFinder lebt jetzt in view/markdown.ts (importiert oben). -----
 
@@ -333,30 +207,9 @@ import {
        initDocumentState wird unten gerufen, sobald setActiveMode hier
        deklariert ist. */
     window.openDocument = openDocument;
-    function setMode(mode) {
-        return requestSaveIfDirty().then(function (ok) {
-            if (!ok) return false;
-            return invoke('set_view_mode', { mode: mode }).then(function () {
-                setActiveMode(mode);
-                return true;
-            });
-        });
-    }
-
-    /* ----- Toolbar: Mode / Rails / Find / Navigation ----- */
-    function setActiveMode(mode) {
-        $('tb-mode-view').classList.toggle('active', mode === 'view');
-        $('tb-mode-edit').classList.toggle('active', mode === 'edit');
-        var sm = $('status-mode'); if (sm) sm.textContent = mode === 'edit' ? 'Edit' : 'View';
-        cheatsheetSyncMode(mode === 'edit');
-        // View-Mode-Häkchen im Menü synchron halten (alle Pfade laufen
-        // hier durch: setMode(), applyShellState, navigation:changed).
-        invoke('menu_set_checked', { id: 'view.mode.view', checked: mode === 'view' }).catch(function(){});
-        invoke('menu_set_checked', { id: 'view.mode.edit', checked: mode === 'edit' }).catch(function(){});
-        invoke('menu_set_checked', { id: 'view.mode.split', checked: mode === 'split' }).catch(function(){});
-    }
+    /* setMode + setActiveMode leben jetzt in editor/shell.ts (importiert oben). */
     function setRailButton(side, visible) {
-        var btn = side === 'left' ? $('tb-rail-left') : $('tb-rail-right');
+        var btn = $(side === 'left' ? 'tb-rail-left' : 'tb-rail-right');
         if (btn) btn.classList.toggle('active', !!visible);
     }
     function applyRailVisibility(side, visible) {
@@ -369,20 +222,16 @@ import {
         document.body.classList.toggle('edit-mode', mode === 'edit');
         document.body.classList.toggle('split-mode', mode === 'split');
         setActiveMode(mode);
-        if (mode === 'edit' && typeof window.layoutEditor === 'function') window.layoutEditor();
+        if (mode === 'edit') layoutEditor();
         var theme = state.theme || 'light';
         document.documentElement.classList.toggle('theme-dark', theme === 'dark');
         document.documentElement.classList.toggle('theme-light', theme === 'light');
-        if (typeof window.setEditorTheme === 'function') window.setEditorTheme(theme);
+        setEditorTheme(theme);
         if (typeof state.leftRailVisible === 'boolean') applyRailVisibility('left', state.leftRailVisible);
         if (typeof state.rightRailVisible === 'boolean') applyRailVisibility('right', state.rightRailVisible);
         var editor = state.editor || {};
-        if (typeof editor.leftRailWidth === 'number') {
-            setVaultWidth(editor.leftRailWidth);
-        }
-        if (typeof editor.rightRailWidth === 'number') {
-            setTocWidth(editor.rightRailWidth);
-        }
+        if (typeof editor.leftRailWidth === 'number') setVaultWidth(editor.leftRailWidth);
+        if (typeof editor.rightRailWidth === 'number') setTocWidth(editor.rightRailWidth);
     }
     bind('tb-mode-view', function () { setMode('view'); });
     bind('tb-mode-edit', function () { setMode('edit'); });
@@ -557,11 +406,8 @@ import {
     initDocumentState({ setActiveMode });
     // vault:refresh-Listener lebt jetzt in vault/tree.ts (Listener-Fusion
     // mit dem IIFE-#1-Pendant — Plan-Phase 4.4).
-    listen('app:set_mode', function (event) {
-        var mode = (event && event.payload && event.payload.mode) || 'view';
-        setActiveMode(mode);
-        findBarAfterModeSwitch();
-    });
+    // app:set_mode-Listener lebt in editor/shell.ts (Listener-Fusion mit
+    // dem IIFE-#1-Pendant — Plan-Phase 4.5).
     listen('panel:rail_changed', function (event) {
         var data = event && event.payload || {};
         if (typeof data.leftRailVisible === 'boolean') setRailButton('left', data.leftRailVisible);
