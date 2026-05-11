@@ -12,6 +12,7 @@ import {
     cheatSheetRows,
 } from './ui/cheatsheet';
 import { initZoom } from './ui/zoom';
+import { initLanguagePicker, setEditorLanguageDisplay } from './ui/language-picker';
 
 // === IIFE #1 (TOC/View bridge, Editor bridge, ViewFinder, Cheatsheet, Vault setters) ===
 
@@ -184,9 +185,7 @@ import { initZoom } from './ui/zoom';
             if (typeof window.loadEditorText === 'function') {
                 window.loadEditorText(data.text || '', data.language || '');
             }
-            if (typeof window.setEditorLanguageDisplay === 'function') {
-                window.setEditorLanguageDisplay(data.language || 'plaintext');
-            }
+            setEditorLanguageDisplay(data.language || 'plaintext');
             if (typeof window.setTocList === 'function') {
                 window.setTocList(data.tocHtml || data.toc_html || '');
             }
@@ -2028,140 +2027,8 @@ import { initZoom } from './ui/zoom';
         invoke('editor_text_changed', { text: text }).catch(function(){});
     });
 
-    /* ----- Editor-Sprach-Picker (Status-Cell + Quick-Pick-Popup) -----
-       Override gilt bis zum nächsten Document-Wechsel — dann setzt
-       document:loaded die Anzeige (und Monaco's Model-Sprache) wieder
-       auf die Auto-Erkennung aus der Pfad-Endung. */
-    (function () {
-        var btn = document.getElementById('status-language');
-        var picker = document.getElementById('lang-picker');
-        var input = document.getElementById('lang-picker-input');
-        var list = document.getElementById('lang-picker-list');
-        if (!btn || !picker || !input || !list) return;
-
-        var allLanguages = [];
-        var currentId = 'plaintext';
-        var visibleItems = [];
-        var activeIdx = -1;
-
-        function ensureLoaded() {
-            if (allLanguages.length > 0) return true;
-            var f = window.FolioEditor;
-            if (!f || typeof f.listLanguages !== 'function') return false;
-            allLanguages = f.listLanguages();
-            allLanguages.sort(function (a, b) { return a.label.localeCompare(b.label); });
-            return allLanguages.length > 0;
-        }
-
-        function labelFor(id) {
-            for (var i = 0; i < allLanguages.length; i++) {
-                if (allLanguages[i].id === id) return allLanguages[i].label;
-            }
-            return id ? id.charAt(0).toUpperCase() + id.slice(1) : 'Plain Text';
-        }
-
-        function applyDisplay(id) {
-            currentId = id || 'plaintext';
-            ensureLoaded();
-            btn.textContent = labelFor(currentId);
-            btn.hidden = false;
-        }
-        window.setEditorLanguageDisplay = applyDisplay;
-
-        function highlightActive() {
-            for (var i = 0; i < visibleItems.length; i++) {
-                visibleItems[i].classList.toggle('active', i === activeIdx);
-            }
-            if (activeIdx >= 0 && visibleItems[activeIdx]) {
-                visibleItems[activeIdx].scrollIntoView({ block: 'nearest' });
-            }
-        }
-
-        function renderList(filter) {
-            list.innerHTML = '';
-            visibleItems = [];
-            var f = (filter || '').trim().toLowerCase();
-            for (var i = 0; i < allLanguages.length; i++) {
-                var l = allLanguages[i];
-                if (f) {
-                    var hay = (l.label + ' ' + l.id + ' ' + l.aliases.join(' ')).toLowerCase();
-                    if (hay.indexOf(f) === -1) continue;
-                }
-                var li = document.createElement('li');
-                li.setAttribute('role', 'option');
-                li.dataset.langId = l.id;
-                if (l.id === currentId) li.classList.add('current');
-                var labelEl = document.createElement('span');
-                labelEl.textContent = l.label;
-                var idEl = document.createElement('span');
-                idEl.className = 'lang-id';
-                idEl.textContent = l.id;
-                li.appendChild(labelEl);
-                li.appendChild(idEl);
-                list.appendChild(li);
-                visibleItems.push(li);
-            }
-            // Initial Highlight: aktuelle Sprache, sonst erstes Item
-            activeIdx = -1;
-            for (var j = 0; j < visibleItems.length; j++) {
-                if (visibleItems[j].dataset.langId === currentId) { activeIdx = j; break; }
-            }
-            if (activeIdx === -1 && visibleItems.length > 0) activeIdx = 0;
-            highlightActive();
-        }
-
-        function open() {
-            if (!ensureLoaded()) return;
-            picker.hidden = false;
-            input.value = '';
-            renderList('');
-            input.focus();
-        }
-        function close() { picker.hidden = true; }
-        function select(langId) {
-            if (!langId) return;
-            var f = window.FolioEditor;
-            if (f && typeof f.setLanguage === 'function') f.setLanguage(langId);
-            applyDisplay(langId);
-            close();
-        }
-
-        btn.addEventListener('click', function (e) {
-            e.stopPropagation();
-            if (picker.hidden) open(); else close();
-        });
-        input.addEventListener('input', function () { renderList(input.value); });
-        input.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape') { e.preventDefault(); close(); }
-            else if (e.key === 'Enter') {
-                e.preventDefault();
-                if (activeIdx >= 0 && visibleItems[activeIdx]) {
-                    select(visibleItems[activeIdx].dataset.langId);
-                }
-            }
-            else if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                if (visibleItems.length === 0) return;
-                activeIdx = (activeIdx + 1) % visibleItems.length;
-                highlightActive();
-            }
-            else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                if (visibleItems.length === 0) return;
-                activeIdx = (activeIdx - 1 + visibleItems.length) % visibleItems.length;
-                highlightActive();
-            }
-        });
-        list.addEventListener('click', function (e) {
-            var li = e.target.closest('li');
-            if (li && li.dataset.langId) select(li.dataset.langId);
-        });
-        document.addEventListener('mousedown', function (e) {
-            if (picker.hidden) return;
-            if (e.target === btn || picker.contains(e.target)) return;
-            close();
-        });
-    })();
+    /* ----- Editor-Sprach-Picker (Modul) ----- */
+    initLanguagePicker();
 
     /* ----- Anwendungs-Menü: menu:*-Events auf bestehende Funktionen routen.
        Backend-Aktionen (Save-As, Beenden) laufen direkt in Rust; alles

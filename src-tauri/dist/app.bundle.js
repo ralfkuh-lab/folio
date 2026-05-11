@@ -245,6 +245,143 @@
     });
   }
 
+  // app/ui/language-picker.ts
+  var btn = null;
+  var picker = null;
+  var input = null;
+  var list = null;
+  var allLanguages = [];
+  var currentId = "plaintext";
+  var visibleItems = [];
+  var activeIdx = -1;
+  function ensureLoaded() {
+    if (allLanguages.length > 0) return true;
+    const f = window.FolioEditor;
+    if (!f || typeof f.listLanguages !== "function") return false;
+    allLanguages = f.listLanguages();
+    allLanguages.sort(function(a, b) {
+      return a.label.localeCompare(b.label);
+    });
+    return allLanguages.length > 0;
+  }
+  function labelFor(id) {
+    for (let i = 0; i < allLanguages.length; i++) {
+      if (allLanguages[i].id === id) return allLanguages[i].label;
+    }
+    return id ? id.charAt(0).toUpperCase() + id.slice(1) : "Plain Text";
+  }
+  function highlightActive() {
+    for (let i = 0; i < visibleItems.length; i++) {
+      visibleItems[i].classList.toggle("active", i === activeIdx);
+    }
+    if (activeIdx >= 0 && visibleItems[activeIdx]) {
+      visibleItems[activeIdx].scrollIntoView({ block: "nearest" });
+    }
+  }
+  function renderList(filter) {
+    list.innerHTML = "";
+    visibleItems = [];
+    const f = (filter || "").trim().toLowerCase();
+    for (let i = 0; i < allLanguages.length; i++) {
+      const l = allLanguages[i];
+      if (f) {
+        const hay = (l.label + " " + l.id + " " + l.aliases.join(" ")).toLowerCase();
+        if (hay.indexOf(f) === -1) continue;
+      }
+      const li = document.createElement("li");
+      li.setAttribute("role", "option");
+      li.dataset.langId = l.id;
+      if (l.id === currentId) li.classList.add("current");
+      const labelEl = document.createElement("span");
+      labelEl.textContent = l.label;
+      const idEl = document.createElement("span");
+      idEl.className = "lang-id";
+      idEl.textContent = l.id;
+      li.appendChild(labelEl);
+      li.appendChild(idEl);
+      list.appendChild(li);
+      visibleItems.push(li);
+    }
+    activeIdx = -1;
+    for (let j = 0; j < visibleItems.length; j++) {
+      if (visibleItems[j].dataset.langId === currentId) {
+        activeIdx = j;
+        break;
+      }
+    }
+    if (activeIdx === -1 && visibleItems.length > 0) activeIdx = 0;
+    highlightActive();
+  }
+  function open() {
+    if (!ensureLoaded()) return;
+    picker.hidden = false;
+    input.value = "";
+    renderList("");
+    input.focus();
+  }
+  function close() {
+    picker.hidden = true;
+  }
+  function select(langId) {
+    if (!langId) return;
+    const f = window.FolioEditor;
+    if (f && typeof f.setLanguage === "function") f.setLanguage(langId);
+    setEditorLanguageDisplay(langId);
+    close();
+  }
+  function setEditorLanguageDisplay(id) {
+    if (!btn) return;
+    currentId = id || "plaintext";
+    ensureLoaded();
+    btn.textContent = labelFor(currentId);
+    btn.hidden = false;
+  }
+  function initLanguagePicker() {
+    btn = document.getElementById("status-language");
+    picker = document.getElementById("lang-picker");
+    input = document.getElementById("lang-picker-input");
+    list = document.getElementById("lang-picker-list");
+    if (!btn || !picker || !input || !list) return;
+    btn.addEventListener("click", function(e) {
+      e.stopPropagation();
+      if (picker.hidden) open();
+      else close();
+    });
+    input.addEventListener("input", function() {
+      renderList(input.value);
+    });
+    input.addEventListener("keydown", function(e) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close();
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        if (activeIdx >= 0 && visibleItems[activeIdx]) {
+          select(visibleItems[activeIdx].dataset.langId);
+        }
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (visibleItems.length === 0) return;
+        activeIdx = (activeIdx + 1) % visibleItems.length;
+        highlightActive();
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (visibleItems.length === 0) return;
+        activeIdx = (activeIdx - 1 + visibleItems.length) % visibleItems.length;
+        highlightActive();
+      }
+    });
+    list.addEventListener("click", function(e) {
+      const li = e.target.closest("li");
+      if (li && li.dataset.langId) select(li.dataset.langId);
+    });
+    document.addEventListener("mousedown", function(e) {
+      if (picker.hidden) return;
+      if (e.target === btn || picker.contains(e.target)) return;
+      close();
+    });
+  }
+
   // app/main.ts
   (function() {
     var post2 = function(msg) {
@@ -393,9 +530,7 @@
         if (typeof window.loadEditorText === "function") {
           window.loadEditorText(data.text || "", data.language || "");
         }
-        if (typeof window.setEditorLanguageDisplay === "function") {
-          window.setEditorLanguageDisplay(data.language || "plaintext");
-        }
+        setEditorLanguageDisplay(data.language || "plaintext");
         if (typeof window.setTocList === "function") {
           window.setTocList(data.tocHtml || data.toc_html || "");
         }
@@ -504,19 +639,19 @@
       window.__TAURI__.event.listen("editor:open_find", function() {
         var bar = document.getElementById("find-bar");
         if (bar) bar.classList.add("open");
-        var input = document.getElementById("find-input");
-        if (input) {
-          input.focus();
-          input.select();
+        var input2 = document.getElementById("find-input");
+        if (input2) {
+          input2.focus();
+          input2.select();
         }
       });
       window.__TAURI__.event.listen("editor:set_find_term", function(event) {
         var data = event && event.payload;
         var term = data && data.term || "";
-        var input = document.getElementById("find-input");
-        if (input) {
-          input.value = term;
-          input.dispatchEvent(new Event("input", { bubbles: true }));
+        var input2 = document.getElementById("find-input");
+        if (input2) {
+          input2.value = term;
+          input2.dispatchEvent(new Event("input", { bubbles: true }));
         }
       });
       window.__TAURI__.event.listen("navigation:toc_click", function(event) {
@@ -601,7 +736,7 @@
         }
       }
       var rangesArr = [];
-      var activeIdx = -1;
+      var activeIdx2 = -1;
       var currentTerm = "";
       var opts = { caseSensitive: false, wholeWord: false };
       var searchToken = 0;
@@ -637,7 +772,7 @@
           var rect = rangesArr[i].getBoundingClientRect();
           var pos = scrollTop + (rect.top - contentTop);
           var px = Math.max(0, Math.min(laneH - 1, Math.round(pos / totalH * laneH)));
-          if (i === activeIdx) activePixel = px;
+          if (i === activeIdx2) activePixel = px;
           if (!seen[px]) {
             seen[px] = 1;
             pixels.push(px);
@@ -657,7 +792,7 @@
         if (matchHL) matchHL.clear();
         if (activeHL) activeHL.clear();
         rangesArr = [];
-        activeIdx = -1;
+        activeIdx2 = -1;
         clearLane();
       }
       function escapeRegExp(s) {
@@ -720,7 +855,7 @@
         step();
       }
       function dispatchState() {
-        var detail = { term: currentTerm, total: rangesArr.length, active: activeIdx };
+        var detail = { term: currentTerm, total: rangesArr.length, active: activeIdx2 };
         try {
           window.dispatchEvent(new CustomEvent("folio-find-state", { detail }));
         } catch (e) {
@@ -740,7 +875,7 @@
       }
       function setActive(idx) {
         if (rangesArr.length === 0) {
-          activeIdx = -1;
+          activeIdx2 = -1;
           if (activeHL) activeHL.clear();
           updateMarkers();
           dispatchState();
@@ -748,12 +883,12 @@
         }
         if (idx < 0) idx = (idx % rangesArr.length + rangesArr.length) % rangesArr.length;
         if (idx >= rangesArr.length) idx = idx % rangesArr.length;
-        activeIdx = idx;
+        activeIdx2 = idx;
         if (activeHL) {
           activeHL.clear();
-          activeHL.add(rangesArr[activeIdx]);
+          activeHL.add(rangesArr[activeIdx2]);
         }
-        var r = rangesArr[activeIdx];
+        var r = rangesArr[activeIdx2];
         var anchor = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
         if (anchor) {
           try {
@@ -817,16 +952,16 @@
           research();
         },
         findNext: function() {
-          if (rangesArr.length > 0) setActive((activeIdx + 1) % rangesArr.length);
+          if (rangesArr.length > 0) setActive((activeIdx2 + 1) % rangesArr.length);
         },
         findPrev: function() {
-          if (rangesArr.length > 0) setActive((activeIdx - 1 + rangesArr.length) % rangesArr.length);
+          if (rangesArr.length > 0) setActive((activeIdx2 - 1 + rangesArr.length) % rangesArr.length);
         }
       };
     })();
     (function() {
       var bar = document.getElementById("find-bar");
-      var input = document.getElementById("find-input");
+      var input2 = document.getElementById("find-input");
       var counter = document.getElementById("find-counter");
       var prevBtn = document.getElementById("find-prev");
       var nextBtn = document.getElementById("find-next");
@@ -847,7 +982,7 @@
       function doOpen(initial) {
         bar.classList.add("open");
         if (typeof initial === "string" && initial.length > 0) {
-          input.value = initial;
+          input2.value = initial;
         }
         var f = getFinder();
         if (f) {
@@ -855,12 +990,12 @@
             caseSensitive: caseChk.checked,
             wholeWord: wordChk.checked
           });
-          f.openFind(input.value);
+          f.openFind(input2.value);
         }
-        input.focus();
-        input.select();
+        input2.focus();
+        input2.select();
       }
-      function open(initial) {
+      function open2(initial) {
         if (isEditMode()) {
           ensureEditorMounted("").then(function(ok) {
             if (!ok) return;
@@ -870,7 +1005,7 @@
           doOpen(initial);
         }
       }
-      function close() {
+      function close2() {
         bar.classList.remove("open");
         optsPanel.classList.remove("open");
         optsBtn.classList.remove("active");
@@ -879,14 +1014,14 @@
         if (isEditMode() && window.focusEditor) window.focusEditor();
       }
       window.openEditorFind = function(initialTerm) {
-        open(initialTerm);
+        open2(initialTerm);
       };
       window.closeEditorFind = function() {
-        close();
+        close2();
       };
       window.setEditorFindTerm = function(term) {
-        input.value = term || "";
-        if (!isOpen()) open(term || "");
+        input2.value = term || "";
+        if (!isOpen()) open2(term || "");
         else {
           var f = getFinder();
           if (f) f.setFindTerm(term || "");
@@ -894,16 +1029,16 @@
       };
       var inputDebounce = null;
       var INPUT_DEBOUNCE_MS = 150;
-      input.addEventListener("input", function() {
-        if (input.value) lastTermMemo = input.value;
+      input2.addEventListener("input", function() {
+        if (input2.value) lastTermMemo = input2.value;
         if (inputDebounce) clearTimeout(inputDebounce);
         inputDebounce = setTimeout(function() {
           inputDebounce = null;
           var f = getFinder();
-          if (f) f.setFindTerm(input.value);
+          if (f) f.setFindTerm(input2.value);
         }, INPUT_DEBOUNCE_MS);
       });
-      input.addEventListener("keydown", function(e) {
+      input2.addEventListener("keydown", function(e) {
         if (e.key === "Enter") {
           e.preventDefault();
           var f = getFinder();
@@ -912,7 +1047,7 @@
           else f.findNext();
         } else if (e.key === "Escape") {
           e.preventDefault();
-          close();
+          close2();
         }
       });
       prevBtn.addEventListener("click", function() {
@@ -923,7 +1058,7 @@
         var f = getFinder();
         if (f) f.findNext();
       });
-      closeBtn.addEventListener("click", close);
+      closeBtn.addEventListener("click", close2);
       optsBtn.addEventListener("click", function() {
         var on = !optsPanel.classList.contains("open");
         optsPanel.classList.toggle("open", on);
@@ -943,23 +1078,23 @@
       var lastTermMemo = "";
       function pickSeed(arg) {
         if (typeof arg === "string" && arg) return arg;
-        if (input.value) return input.value;
+        if (input2.value) return input2.value;
         return lastTermMemo;
       }
       window.findNext = function(lastTerm) {
         var seed = pickSeed(lastTerm);
         if (!bar.classList.contains("open")) {
-          open(seed);
+          open2(seed);
           return;
         }
-        if (!input.value) {
+        if (!input2.value) {
           if (seed) {
-            input.value = seed;
+            input2.value = seed;
             var f0 = getFinder();
             if (f0) f0.openFind(seed);
           } else {
-            input.focus();
-            input.select();
+            input2.focus();
+            input2.select();
             return;
           }
         }
@@ -969,17 +1104,17 @@
       window.findPrev = function(lastTerm) {
         var seed = pickSeed(lastTerm);
         if (!bar.classList.contains("open")) {
-          open(seed);
+          open2(seed);
           return;
         }
-        if (!input.value) {
+        if (!input2.value) {
           if (seed) {
-            input.value = seed;
+            input2.value = seed;
             var f0 = getFinder();
             if (f0) f0.openFind(seed);
           } else {
-            input.focus();
-            input.select();
+            input2.focus();
+            input2.select();
             return;
           }
         }
@@ -997,10 +1132,10 @@
                 caseSensitive: caseChk.checked,
                 wholeWord: wordChk.checked
               });
-              f.openFind(input.value);
+              f.openFind(input2.value);
             }
-            input.focus();
-            input.select();
+            input2.focus();
+            input2.select();
           } else if (isEditMode() && window.focusEditor) {
             window.focusEditor();
           }
@@ -1008,12 +1143,12 @@
       };
       window.addEventListener("folio-find-state", function(e) {
         var s = e.detail || {};
-        if (!s.term && !input.value) {
+        if (!s.term && !input2.value) {
           counter.textContent = "";
           return;
         }
         if (typeof s.total !== "number" || s.total === 0) {
-          counter.textContent = input.value || s.term ? "0/0" : "";
+          counter.textContent = input2.value || s.term ? "0/0" : "";
         } else if (s.scanning || s.active < 0) {
           counter.textContent = "\u2026/" + s.total;
         } else {
@@ -1176,8 +1311,8 @@
         var iconEl = node.querySelector(":scope > .row > .icon");
         var path = node.getAttribute("data-path");
         var loaded = node.getAttribute("data-loaded") === "1";
-        var open = caret && caret.classList.contains("open");
-        if (open) {
+        var open2 = caret && caret.classList.contains("open");
+        if (open2) {
           if (caret) caret.classList.remove("open");
           if (ul) ul.classList.add("collapsed");
           if (iconEl) iconEl.textContent = "\u{1F4C1}";
@@ -1295,8 +1430,8 @@
       isDirty = !!dirty;
       var el = $("status-path");
       if (el) el.classList.toggle("dirty", isDirty);
-      var btn = $("tb-save");
-      if (btn) btn.disabled = !isDirty;
+      var btn2 = $("tb-save");
+      if (btn2) btn2.disabled = !isDirty;
       invoke("menu_set_enabled", { id: "file.save", enabled: isDirty }).catch(function() {
       });
       applyWindowTitle();
@@ -1331,31 +1466,31 @@
     function showRenameDialog(initialName, subtitle) {
       return new Promise(function(resolve) {
         var dialog = $("rename-dialog");
-        var input = $("rename-input");
+        var input2 = $("rename-input");
         var ok = $("rename-ok");
         var cancel = $("rename-cancel");
         var sub = $("rename-subtitle");
-        if (!dialog || !input || !ok || !cancel) {
+        if (!dialog || !input2 || !ok || !cancel) {
           resolve(null);
           return;
         }
         if (sub) sub.textContent = subtitle || "Neuen Dateinamen eingeben:";
-        input.value = initialName || "";
+        input2.value = initialName || "";
         dialog.hidden = false;
-        var dot = input.value.lastIndexOf(".");
-        input.focus();
-        if (dot > 0) input.setSelectionRange(0, dot);
-        else input.select();
+        var dot = input2.value.lastIndexOf(".");
+        input2.focus();
+        if (dot > 0) input2.setSelectionRange(0, dot);
+        else input2.select();
         function done(result) {
           dialog.hidden = true;
           ok.removeEventListener("click", onOk);
           cancel.removeEventListener("click", onCancel);
-          input.removeEventListener("keydown", onKey);
+          input2.removeEventListener("keydown", onKey);
           document.removeEventListener("keydown", onEsc);
           resolve(result);
         }
         function onOk() {
-          var v = (input.value || "").trim();
+          var v = (input2.value || "").trim();
           done(v.length ? v : null);
         }
         function onCancel() {
@@ -1375,7 +1510,7 @@
         }
         ok.addEventListener("click", onOk);
         cancel.addEventListener("click", onCancel);
-        input.addEventListener("keydown", onKey);
+        input2.addEventListener("keydown", onKey);
         document.addEventListener("keydown", onEsc);
       });
     }
@@ -1398,25 +1533,25 @@
       labelEl.dataset.editing = "1";
       labelEl.classList.add("editing");
       labelEl.textContent = "";
-      var input = document.createElement("input");
-      input.type = "text";
-      input.className = "vault-rename-input";
-      input.value = basename;
-      input.spellcheck = false;
-      input.autocomplete = "off";
-      input.setAttribute("data-rename-input", "1");
-      labelEl.appendChild(input);
+      var input2 = document.createElement("input");
+      input2.type = "text";
+      input2.className = "vault-rename-input";
+      input2.value = basename;
+      input2.spellcheck = false;
+      input2.autocomplete = "off";
+      input2.setAttribute("data-rename-input", "1");
+      labelEl.appendChild(input2);
       function stop(e) {
         e.stopPropagation();
       }
-      input.addEventListener("click", stop);
-      input.addEventListener("mousedown", stop);
-      input.addEventListener("dblclick", stop);
-      input.addEventListener("contextmenu", stop);
+      input2.addEventListener("click", stop);
+      input2.addEventListener("mousedown", stop);
+      input2.addEventListener("dblclick", stop);
+      input2.addEventListener("contextmenu", stop);
       var finished = false;
       function cleanup() {
-        input.removeEventListener("keydown", onKey);
-        input.removeEventListener("blur", onBlur);
+        input2.removeEventListener("keydown", onKey);
+        input2.removeEventListener("blur", onBlur);
         labelEl.classList.remove("editing");
         delete labelEl.dataset.editing;
       }
@@ -1427,7 +1562,7 @@
       function commit() {
         if (finished) return;
         finished = true;
-        var newName = (input.value || "").trim();
+        var newName = (input2.value || "").trim();
         if (!newName || newName === originalText) {
           restore();
           return;
@@ -1464,12 +1599,12 @@
       function onBlur() {
         commit();
       }
-      input.addEventListener("keydown", onKey);
-      input.addEventListener("blur", onBlur);
-      input.focus();
+      input2.addEventListener("keydown", onKey);
+      input2.addEventListener("blur", onBlur);
+      input2.focus();
       var dot = basename.lastIndexOf(".");
-      if (dot > 0) input.setSelectionRange(0, dot);
-      else input.select();
+      if (dot > 0) input2.setSelectionRange(0, dot);
+      else input2.select();
     }
     window.startInlineRename = startInlineRename;
     function showUnsavedDialog() {
@@ -1505,8 +1640,8 @@
         $("unsaved-cancel").addEventListener("click", cancel);
         document.addEventListener("keydown", onKey);
         setTimeout(function() {
-          var btn = $("unsaved-save");
-          if (btn) btn.focus();
+          var btn2 = $("unsaved-save");
+          if (btn2) btn2.focus();
         }, 0);
       });
     }
@@ -1684,8 +1819,8 @@
       });
     }
     function setRailButton(side, visible) {
-      var btn = side === "left" ? $("tb-rail-left") : $("tb-rail-right");
-      if (btn) btn.classList.toggle("active", !!visible);
+      var btn2 = side === "left" ? $("tb-rail-left") : $("tb-rail-right");
+      if (btn2) btn2.classList.toggle("active", !!visible);
     }
     function applyRailVisibility(side, visible) {
       if (typeof window.setRailVisibility === "function") {
@@ -1835,22 +1970,22 @@
     var exportFormats = document.getElementById("export-formats");
     if (exportFormats) {
       exportFormats.addEventListener("click", function(e) {
-        var btn = e.target.closest("button[data-format]");
-        if (!btn || btn.disabled) return;
-        setExportFormat(btn.getAttribute("data-format"));
+        var btn2 = e.target.closest("button[data-format]");
+        if (!btn2 || btn2.disabled) return;
+        setExportFormat(btn2.getAttribute("data-format"));
       });
     }
     bind("tb-rail-left", function() {
-      var btn = $("tb-rail-left");
-      var on = !btn.classList.contains("active");
-      btn.classList.toggle("active", on);
+      var btn2 = $("tb-rail-left");
+      var on = !btn2.classList.contains("active");
+      btn2.classList.toggle("active", on);
       invoke("set_rail_visible", { side: "left", visible: on }).catch(function() {
       });
     });
     bind("tb-rail-right", function() {
-      var btn = $("tb-rail-right");
-      var on = !btn.classList.contains("active");
-      btn.classList.toggle("active", on);
+      var btn2 = $("tb-rail-right");
+      var on = !btn2.classList.contains("active");
+      btn2.classList.toggle("active", on);
       invoke("set_rail_visible", { side: "right", visible: on }).catch(function() {
       });
     });
@@ -2214,10 +2349,10 @@
       });
       var bar = document.getElementById("find-bar");
       if (bar && bar.classList.contains("open") && !document.body.classList.contains("edit-mode")) {
-        var input = document.getElementById("find-input");
-        if (input && input.value && window.ViewFinder) {
+        var input2 = document.getElementById("find-input");
+        if (input2 && input2.value && window.ViewFinder) {
           setTimeout(function() {
-            window.ViewFinder.setFindTerm(input.value);
+            window.ViewFinder.setFindTerm(input2.value);
           }, 0);
         }
       }
@@ -2298,137 +2433,7 @@
       invoke("editor_text_changed", { text }).catch(function() {
       });
     });
-    (function() {
-      var btn = document.getElementById("status-language");
-      var picker = document.getElementById("lang-picker");
-      var input = document.getElementById("lang-picker-input");
-      var list = document.getElementById("lang-picker-list");
-      if (!btn || !picker || !input || !list) return;
-      var allLanguages = [];
-      var currentId = "plaintext";
-      var visibleItems = [];
-      var activeIdx = -1;
-      function ensureLoaded() {
-        if (allLanguages.length > 0) return true;
-        var f = window.FolioEditor;
-        if (!f || typeof f.listLanguages !== "function") return false;
-        allLanguages = f.listLanguages();
-        allLanguages.sort(function(a, b) {
-          return a.label.localeCompare(b.label);
-        });
-        return allLanguages.length > 0;
-      }
-      function labelFor(id) {
-        for (var i = 0; i < allLanguages.length; i++) {
-          if (allLanguages[i].id === id) return allLanguages[i].label;
-        }
-        return id ? id.charAt(0).toUpperCase() + id.slice(1) : "Plain Text";
-      }
-      function applyDisplay(id) {
-        currentId = id || "plaintext";
-        ensureLoaded();
-        btn.textContent = labelFor(currentId);
-        btn.hidden = false;
-      }
-      window.setEditorLanguageDisplay = applyDisplay;
-      function highlightActive() {
-        for (var i = 0; i < visibleItems.length; i++) {
-          visibleItems[i].classList.toggle("active", i === activeIdx);
-        }
-        if (activeIdx >= 0 && visibleItems[activeIdx]) {
-          visibleItems[activeIdx].scrollIntoView({ block: "nearest" });
-        }
-      }
-      function renderList(filter) {
-        list.innerHTML = "";
-        visibleItems = [];
-        var f = (filter || "").trim().toLowerCase();
-        for (var i = 0; i < allLanguages.length; i++) {
-          var l = allLanguages[i];
-          if (f) {
-            var hay = (l.label + " " + l.id + " " + l.aliases.join(" ")).toLowerCase();
-            if (hay.indexOf(f) === -1) continue;
-          }
-          var li = document.createElement("li");
-          li.setAttribute("role", "option");
-          li.dataset.langId = l.id;
-          if (l.id === currentId) li.classList.add("current");
-          var labelEl = document.createElement("span");
-          labelEl.textContent = l.label;
-          var idEl = document.createElement("span");
-          idEl.className = "lang-id";
-          idEl.textContent = l.id;
-          li.appendChild(labelEl);
-          li.appendChild(idEl);
-          list.appendChild(li);
-          visibleItems.push(li);
-        }
-        activeIdx = -1;
-        for (var j = 0; j < visibleItems.length; j++) {
-          if (visibleItems[j].dataset.langId === currentId) {
-            activeIdx = j;
-            break;
-          }
-        }
-        if (activeIdx === -1 && visibleItems.length > 0) activeIdx = 0;
-        highlightActive();
-      }
-      function open() {
-        if (!ensureLoaded()) return;
-        picker.hidden = false;
-        input.value = "";
-        renderList("");
-        input.focus();
-      }
-      function close() {
-        picker.hidden = true;
-      }
-      function select(langId) {
-        if (!langId) return;
-        var f = window.FolioEditor;
-        if (f && typeof f.setLanguage === "function") f.setLanguage(langId);
-        applyDisplay(langId);
-        close();
-      }
-      btn.addEventListener("click", function(e) {
-        e.stopPropagation();
-        if (picker.hidden) open();
-        else close();
-      });
-      input.addEventListener("input", function() {
-        renderList(input.value);
-      });
-      input.addEventListener("keydown", function(e) {
-        if (e.key === "Escape") {
-          e.preventDefault();
-          close();
-        } else if (e.key === "Enter") {
-          e.preventDefault();
-          if (activeIdx >= 0 && visibleItems[activeIdx]) {
-            select(visibleItems[activeIdx].dataset.langId);
-          }
-        } else if (e.key === "ArrowDown") {
-          e.preventDefault();
-          if (visibleItems.length === 0) return;
-          activeIdx = (activeIdx + 1) % visibleItems.length;
-          highlightActive();
-        } else if (e.key === "ArrowUp") {
-          e.preventDefault();
-          if (visibleItems.length === 0) return;
-          activeIdx = (activeIdx - 1 + visibleItems.length) % visibleItems.length;
-          highlightActive();
-        }
-      });
-      list.addEventListener("click", function(e) {
-        var li = e.target.closest("li");
-        if (li && li.dataset.langId) select(li.dataset.langId);
-      });
-      document.addEventListener("mousedown", function(e) {
-        if (picker.hidden) return;
-        if (e.target === btn || picker.contains(e.target)) return;
-        close();
-      });
-    })();
+    initLanguagePicker();
     (function() {
       var ev = window.__TAURI__ && window.__TAURI__.event;
       if (!ev || typeof ev.listen !== "function") return;
