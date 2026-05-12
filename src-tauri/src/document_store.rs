@@ -65,17 +65,7 @@ impl DocumentStore {
     }
 
     pub fn load(&mut self, path: &str) -> io::Result<LoadedDocument> {
-        let bytes = fs::read(path)?;
-        let had_bom = bytes.starts_with(&[0xEF, 0xBB, 0xBF]);
-        let content = if had_bom { &bytes[3..] } else { &bytes };
-        let raw = String::from_utf8(content.to_vec())
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-        let line_ending = if raw.contains("\r\n") {
-            LineEnding::Crlf
-        } else {
-            LineEnding::Lf
-        };
-        let text = raw.replace("\r\n", "\n");
+        let (text, line_ending, had_bom) = read_and_decode(path)?;
 
         self.path = Some(path.to_string());
         self.text = text.clone();
@@ -107,17 +97,7 @@ impl DocumentStore {
         let Some(path) = self.path.clone() else {
             return Ok(false);
         };
-        let bytes = fs::read(&path)?;
-        let had_bom = bytes.starts_with(&[0xEF, 0xBB, 0xBF]);
-        let content = if had_bom { &bytes[3..] } else { &bytes };
-        let raw = String::from_utf8(content.to_vec())
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-        let line_ending = if raw.contains("\r\n") {
-            LineEnding::Crlf
-        } else {
-            LineEnding::Lf
-        };
-        let text = raw.replace("\r\n", "\n");
+        let (text, line_ending, had_bom) = read_and_decode(&path)?;
         if text == self.text {
             // Inhalt unveraendert. Falls extern ausschliesslich BOM oder
             // Line-Ending umgestellt wurde, hier die Metadaten nachziehen —
@@ -311,6 +291,25 @@ fn is_write_event(event: &Event) -> bool {
 
 fn same_path(a: &Path, b: &Path) -> bool {
     a == b || fs::canonicalize(a).ok() == fs::canonicalize(b).ok()
+}
+
+/// Liest `path` und liefert (LF-normalisierter Text, originales
+/// Line-Ending, BOM-Vorhandensein). Wird von `load` und
+/// `reload_if_changed` genutzt — beide brauchen exakt diese
+/// BOM-/CRLF-/UTF-8-Decode-Logik.
+fn read_and_decode(path: &str) -> io::Result<(String, LineEnding, bool)> {
+    let bytes = fs::read(path)?;
+    let had_bom = bytes.starts_with(&[0xEF, 0xBB, 0xBF]);
+    let content = if had_bom { &bytes[3..] } else { &bytes };
+    let raw = String::from_utf8(content.to_vec())
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    let line_ending = if raw.contains("\r\n") {
+        LineEnding::Crlf
+    } else {
+        LineEnding::Lf
+    };
+    let text = raw.replace("\r\n", "\n");
+    Ok((text, line_ending, had_bom))
 }
 
 #[cfg(test)]
