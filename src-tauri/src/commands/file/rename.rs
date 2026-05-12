@@ -111,27 +111,48 @@ fn perform_rename(
         }
     };
 
-    let was_in_recent = if let Ok(workspace) = state.workspace.lock() {
-        workspace.recent().iter().any(|r| r.path == old_path)
-    } else {
-        false
-    };
-    if let Ok(mut workspace) = state.workspace.lock() {
-        let _ = workspace.remove_recent(old_path);
+    // Recent-Liste in einem einzigen Lock-Take aktualisieren: was_in_recent
+    // lesen → remove_recent → optional add_recent. Vorher hingen die drei
+    // Schritte als separate `if let Ok(...)`-Blocks, was bei Lock-Poisoning
+    // zwischen den Schritten Halb-Updates produziert haette.
+    {
+        let mut workspace = state
+            .workspace
+            .lock()
+            .map_err(|_| "workspace lock poisoned".to_string())?;
+        let was_in_recent = workspace.recent().iter().any(|r| r.path == old_path);
+        workspace
+            .remove_recent(old_path)
+            .map_err(|error| error.to_string())?;
         if was_in_recent || is_current {
-            let _ = workspace.add_recent(new_path.to_string());
+            workspace
+                .add_recent(new_path.to_string())
+                .map_err(|error| error.to_string())?;
         }
     }
     crate::menu::refresh_recent_from_workspace(handle);
 
     if is_current {
-        if let Ok(mut vault) = state.vault.lock() {
-            vault.set_active(Some(new_path.to_string()));
-        }
+        state
+            .vault
+            .lock()
+            .map_err(|_| "vault lock poisoned".to_string())?
+            .set_active(Some(new_path.to_string()));
     }
 
-    if let (Ok(workspace), Ok(vault)) = (state.workspace.lock(), state.vault.lock()) {
-        let _ = handle.emit("vault:refresh", vault.compute_refresh_delta(&workspace));
+    // Finaler Sync: vault:refresh-Event mit aktualisiertem Pinned/Recent-Delta.
+    {
+        let workspace = state
+            .workspace
+            .lock()
+            .map_err(|_| "workspace lock poisoned".to_string())?;
+        let vault = state
+            .vault
+            .lock()
+            .map_err(|_| "vault lock poisoned".to_string())?;
+        handle
+            .emit("vault:refresh", vault.compute_refresh_delta(&workspace))
+            .map_err(|error| error.to_string())?;
     }
     Ok(())
 }

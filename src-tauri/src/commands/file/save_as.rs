@@ -82,22 +82,29 @@ pub fn run_save_as(
         .map_err(|error| error.to_string())?;
     drop(store);
 
-    // 4) Workspace + Vault + Navigation nachziehen — alle Werte sind
-    //    klein, also kein Bedarf an Cross-Lock-Choreografie.
-    if let Ok(mut workspace) = state.workspace.lock() {
-        let _ = workspace.add_recent(target_path.clone());
-    }
+    // 4) Workspace + Vault + Navigation nachziehen — Lock-Fehler werden
+    //    propagiert, sonst driften die vier State-Komponenten bei
+    //    Mutex-Poisoning unsichtbar auseinander.
+    state
+        .workspace
+        .lock()
+        .map_err(|_| "workspace lock poisoned".to_string())?
+        .add_recent(target_path.clone())
+        .map_err(|error| error.to_string())?;
     crate::menu::refresh_recent_from_workspace(handle);
-    if let Ok(mut vault) = state.vault.lock() {
-        vault.set_active(Some(target_path.clone()));
-    }
-    if let Ok(mut nav) = state.navigation.lock() {
-        nav.navigate(target_path.clone(), None);
-    }
+    state
+        .vault
+        .lock()
+        .map_err(|_| "vault lock poisoned".to_string())?
+        .set_active(Some(target_path.clone()));
+    state
+        .navigation
+        .lock()
+        .map_err(|_| "navigation lock poisoned".to_string())?
+        .navigate(target_path.clone(), None);
 
     // document:loaded wird bereits vom DocumentStore::save_as-Callback
     // emittiert (verdrahtet in state.rs); kein zusätzlicher emit nötig.
-    let _ = handle;
     Ok(Some(target_path))
 }
 
