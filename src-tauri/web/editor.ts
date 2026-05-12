@@ -10,17 +10,7 @@
 //                           closeFind, setFindOptions, findNext, findPrev,
 //                           setFindTerm
 
-declare global {
-    interface Window {
-        require?: any;
-        monaco?: any;
-        __TAURI__?: {
-            event?: {
-                emit(event: string, payload?: unknown): Promise<void>;
-            };
-        };
-    }
-}
+// Window-Surface ist zentral in `globals.d.ts` deklariert.
 
 // ----- Bridge -----------------------------------------------------------
 
