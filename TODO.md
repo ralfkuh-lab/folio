@@ -1,5 +1,40 @@
 # TODO
 
+## Hohe Priorität
+
+- **Automation-API für E2E-Tests vervollständigen** — Voraussetzung für eine
+  vollautomatische Hermes-Test-Routine. Nach Codex-Synthese (2026-05-12)
+  fehlen primär Test-Blocker:
+  - **`POST /key`** — Tastatur-Events. Payload `{ key, modifiers?: {ctrl,shift,alt,meta}, target?: 'document'|'editor' }`.
+    Pattern wie `automation:click`: Backend emittet `automation:key`, Frontend
+    dispatcht synthetischen `KeyboardEvent` aufs Ziel. `preventDefault`-Listener
+    (Strg+S, F3, Strg+F, Alt+←/→, Strg+1/2) sind damit testbar. Monaco-eigene
+    Shortcuts (Strg+Z, Tab-Indent) später über separaten `POST /editor/command {command}`,
+    der `editor.trigger('keyboard', cmdId)` ruft — synthetische Events sind dafür
+    fragil.
+  - **`GET /editor/text`** — kompletter Editor-Inhalt. Nicht in `/state` aufnehmen
+    (Markdown kann groß sein, `/state` ist Polling-Snapshot).
+  - **`POST /editor/selection {start, length}`** — Selection setzen, damit
+    Formatierungs-Commands (Bold-Wrap etc.) deterministisch getestet werden können.
+  - **`POST /wait`** — `{ event: 'editor.ready'|'document.loaded'|..., timeoutMs }`.
+    Eliminiert Polling-Flakes. Backend hält die Verbindung, bis das Event feuert
+    oder Timeout.
+  - **Ack-Semantik für Event-Aktionen** (`/click`, `/key`, `/toc/activate`) —
+    aktuell bestätigt der Endpoint nur "Event emittiert", nicht "Handler durch".
+    Lösung: Frontend acked nach Handler-Ende über ein eigenes Event; Backend
+    wartet drauf (z. B. via oneshot-Channel) bis zum Timeout.
+  - Mittlerer Hebel: **`GET /dom?selector=...`** (Status-Text + View-Body ohne
+    Screenshot/OCR), **Console-Error-Capture** (Frontend abfangen + an Backend
+    streamen), **Scroll-State in `/state`** (Werte bereits im NavEntry).
+  - Niedriger Hebel: Right-Click/Context-Menu, Workspace-Inspektion
+    (pinned/recent/expanded dirs).
+- **E2E-Test-Routine + Baseline-Screenshots** — Skript, das die App in Xvfb
+  startet, eine Aktions-Sequenz fährt und über `/screenshot` + Pixelmatch
+  gegen Baseline-PNGs verifiziert. Voraussetzung sind die Automation-API-
+  Ergänzungen oben. Setup: Linux-Build (`cargo tauri build --bundles deb`)
+  + Xvfb-Display, Python/Bash-Treiber, `compare -metric AE` o. ä.
+  Hermes-Agent kann die Routine dann eigenständig fahren.
+
 ## Mittlere Priorität
 
 - **Config-/Einstellungen-Bereich**: Eigener Settings-Dialog/-Panel für
