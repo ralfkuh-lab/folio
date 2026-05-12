@@ -16,22 +16,16 @@ pub(in crate::automation) async fn post_open(
 ) -> ApiResult<Json<OkResponse>> {
     let Json(payload) = json_payload(payload)?;
     let state = context.app_handle.state::<AppState>();
-    state
-        .document_store
-        .lock()
-        .map_err(|_| ApiError::internal("document store lock poisoned"))?
-        .load(&payload.path)
-        .map_err(|error| ApiError::internal(error.to_string()))?;
-    state
-        .navigation
-        .lock()
-        .map_err(|_| ApiError::internal("navigation lock poisoned"))?
-        .navigate(payload.path.clone(), None);
-    state
-        .vault
-        .lock()
-        .map_err(|_| ApiError::internal("vault lock poisoned"))?
-        .set_active(Some(payload.path));
+    crate::document_service::open(
+        &state,
+        payload.path,
+        crate::document_service::OpenDocumentOptions {
+            anchor: None,
+            reload: crate::document_service::ReloadPolicy::Always,
+            dirty: crate::document_service::DirtyPolicy::Discard,
+        },
+    )
+    .map_err(|error| ApiError::internal(error.to_string()))?;
     ok()
 }
 

@@ -1,3 +1,4 @@
+use crate::document_service::{self, DirtyPolicy, OpenDocumentOptions, ReloadPolicy};
 use crate::file_kind::{classify, editor_language, FileKind};
 use crate::state::AppState;
 use std::{fs, path::Path};
@@ -17,22 +18,19 @@ pub async fn read_file(path: String, state: State<'_, AppState>) -> Result<FileD
                 .unwrap_or(&path)
         ));
     }
-    let loaded = state
-        .document_store
-        .lock()
-        .map_err(|_| "document store lock poisoned".to_string())?
-        .load(&path)
-        .map_err(|error| error.to_string())?;
-    state
-        .navigation
-        .lock()
-        .map_err(|_| "navigation lock poisoned".to_string())?
-        .navigate(path.clone(), None);
-    state
-        .vault
-        .lock()
-        .map_err(|_| "vault lock poisoned".to_string())?
-        .set_active(Some(path));
+    let outcome = document_service::open(
+        &state,
+        path,
+        OpenDocumentOptions {
+            anchor: None,
+            reload: ReloadPolicy::Always,
+            dirty: DirtyPolicy::Discard,
+        },
+    )
+    .map_err(|error| error.to_string())?;
+    let loaded = outcome
+        .loaded
+        .expect("ReloadPolicy::Always always produces a loaded document");
     let language = editor_language(&loaded.path).to_string();
     Ok(FileData {
         path: loaded.path,

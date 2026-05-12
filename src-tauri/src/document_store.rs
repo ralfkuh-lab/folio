@@ -33,7 +33,6 @@ pub struct DocumentStore {
     pub path: Option<String>,
     pub text: String,
     pub is_dirty: bool,
-    pub has_external_changes: bool,
     pub line_ending: LineEnding,
     pub had_bom: bool,
     watcher: Option<RecommendedWatcher>,
@@ -47,7 +46,6 @@ impl Default for DocumentStore {
             path: None,
             text: String::new(),
             is_dirty: false,
-            has_external_changes: false,
             line_ending: LineEnding::Lf,
             had_bom: false,
             watcher: None,
@@ -82,7 +80,6 @@ impl DocumentStore {
         self.path = Some(path.to_string());
         self.text = text.clone();
         self.is_dirty = false;
-        self.has_external_changes = false;
         self.line_ending = line_ending;
         self.had_bom = had_bom;
         self.watch(path)?;
@@ -129,12 +126,10 @@ impl DocumentStore {
             // die UI rendert nichts Format-Spezifisches.
             self.had_bom = had_bom;
             self.line_ending = line_ending;
-            self.has_external_changes = false;
             return Ok(false);
         }
         self.text = text.clone();
         self.is_dirty = false;
-        self.has_external_changes = false;
         self.line_ending = line_ending;
         self.had_bom = had_bom;
         let loaded = LoadedDocument {
@@ -158,7 +153,6 @@ impl DocumentStore {
         self.path = None;
         self.text = String::new();
         self.is_dirty = false;
-        self.has_external_changes = false;
         self.line_ending = LineEnding::Lf;
         self.had_bom = false;
         self.watcher = None;
@@ -195,7 +189,6 @@ impl DocumentStore {
         }
         bytes.extend_from_slice(disk_text.as_bytes());
         fs::write(&path, bytes)?;
-        self.has_external_changes = false;
         self.set_dirty(false);
         if let Some(callback) = &self.events.saved {
             callback(path, self.text.clone());
@@ -221,7 +214,6 @@ impl DocumentStore {
         fs::write(new_path, bytes)?;
 
         self.path = Some(new_path.to_string());
-        self.has_external_changes = false;
         self.set_dirty(false);
         self.watch(new_path)?;
 
@@ -243,7 +235,6 @@ impl DocumentStore {
     /// Editor-Inhalt wandert mit der Datei mit.
     pub fn rename_to(&mut self, new_path: &str) -> io::Result<LoadedDocument> {
         self.path = Some(new_path.to_string());
-        self.has_external_changes = false;
         self.watch(new_path)?;
 
         let loaded = LoadedDocument {
@@ -254,16 +245,6 @@ impl DocumentStore {
             callback(loaded.clone());
         }
         Ok(loaded)
-    }
-
-    pub fn mark_external_changed(&mut self, path: String) {
-        if self.path.as_deref() != Some(path.as_str()) {
-            return;
-        }
-        self.has_external_changes = true;
-        if let Some(callback) = &self.events.external_changed {
-            callback(path);
-        }
     }
 
     pub(crate) fn set_dirty(&mut self, dirty: bool) {

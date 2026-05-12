@@ -271,9 +271,15 @@ mod tests {
         fs::create_dir(&sibling).unwrap();
 
         let mut vault = Vault::new();
-        vault.on_expand(outer.to_string_lossy().into_owned()).unwrap();
-        vault.on_expand(inner.to_string_lossy().into_owned()).unwrap();
-        vault.on_expand(sibling.to_string_lossy().into_owned()).unwrap();
+        vault
+            .on_expand(outer.to_string_lossy().into_owned())
+            .unwrap();
+        vault
+            .on_expand(inner.to_string_lossy().into_owned())
+            .unwrap();
+        vault
+            .on_expand(sibling.to_string_lossy().into_owned())
+            .unwrap();
 
         vault.on_collapse(outer.to_str().unwrap());
 

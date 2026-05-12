@@ -177,26 +177,32 @@ unbedingt eigene Tasks — sie informieren die Splits.
 Restbefunde aus dem zweiten Review (2026-05-12). Niedriges bis mittleres
 Risiko; jeder Punkt ist ein eigener Commit-Kandidat.
 
-#### 5.1 — Backend: Dokument-Öffnen konsolidieren
+#### 5.1 — Backend: Dokument-Öffnen konsolidieren ✅ abgeschlossen
 
-`document_store.load + navigation.navigate + vault.set_active` werden
-an vier Stellen separat choreografiert — das ist die Ursache, warum
-Link-Klick-Bugs mehrfach landen.
+`document_store.load + navigation.navigate + vault.set_active` waren
+an vier Stellen separat choreografiert — Ursache wiederkehrender Link-Klick-Bugs.
 
-- [ ] **Neue Service-Funktion** `src/document_service.rs::open(path, anchor, options) -> Result<…>`
-  - Kapselt die Choreografie an einer Stelle
-  - Callsites umstellen: `commands/file/read::read_file`,
-    `commands/events/vault::open_document`,
-    `commands/events/navigation::link_click`,
-    `automation/handlers/document::*`
-  - Tests: dirty-Prompt-Pfad (Backend ist agnostisch; Frontend entscheidet)
-- [ ] **Dead Code raus**: `commands/nav.rs::link_click` (Tauri-Command,
-      nie invoked — Event-Pfad ist der echte). Aus `lib.rs::generate_handler!`
-      austragen.
-- [ ] **Dead Code raus**: `DocumentStore::mark_external_changed` +
-      `has_external_changes`-Feld. Der Watcher feuert direkt den
-      `external_changed`-Callback; das Flag wird gesetzt-zurückgesetzt,
-      aber nie auf `true`. Stille Komplikation der API.
+- [x] **Service-Funktion** `src/document_service.rs::open(state, path, options)` ✓ Commit
+  - `OpenDocumentOptions { anchor, reload: Always | IfPathChanged, dirty: Reject | Discard }`
+  - Reihenfolge: Load → Navigate → Vault (vorher in `link_click`: Navigate-vor-Load → bei
+    IO-Fehler History auf nie geladenem Ziel).
+  - `OpenDocumentOutcome { loaded: Option<LoadedDocument>, nav_entry: Entry }` —
+    `loaded` ist `None` beim Anker-only-Sprung (`IfPathChanged` mit gleichem Pfad).
+  - Callsites umgestellt: `commands/file/read::read_file` (Always/Discard),
+    `commands/events/vault::open_document` (Always/Discard),
+    `commands/events/navigation::link_click` (IfPathChanged/Discard),
+    `automation/handlers/document::post_open` (Always/Discard).
+  - 5 Unit-Tests (open_loads…, open_skips_load…, open_reloads…, open_rejects_dirty…,
+    open_discards_dirty…) + alle Smoke-Tests grün.
+  - **Architektur-Konsultation Codex** (Synthese der zweiten Meinung) lieferte zwei latente
+    Befunde: (a) `link_click`-Reihenfolge-Bug (Navigate vor Load) — strukturell behoben,
+    (b) `DocumentStore::load` setzt `is_dirty=false` ohne Schutz → bei `read_file` und
+    `/open` heute silenter Datenverlust möglich. **Nicht** in diesem Commit gefixt
+    (Scope-Konservativ: alle vier Callsites bleiben `DirtyPolicy::Discard` =
+    heutiges Verhalten). `DirtyPolicy::Reject` ist bereits da; Aktivierung für
+    Automation/`read_file` ist separater Folgecommit.
+- [x] **Dead Code raus**: `commands/nav.rs::link_click` (Tauri-Command, nie invoked) ✓ Commit
+- [x] **Dead Code raus**: `DocumentStore::mark_external_changed` + `has_external_changes`-Feld ✓ Commit
 
 #### 5.2 — Frontend-Type-Safety
 
@@ -293,4 +299,4 @@ Monaco-Adapter.
 | 2: mittlere Rust-Splits | ✅ abgeschlossen | `automation`-Split, `menu`-Split |
 | 3: State-Refactor + Splits | ✅ abgeschlossen | Rename-Konsolidierung, `commands/file`-Split, `commands/shell` → `commands/events`-Split |
 | 4: Frontend-Build-Umbau | ✅ abgeschlossen | CSS-Extraktion, JS-Verbatim-Move, Global-Contract-Audit, 7 Leaf-Module, Vault-Module + `vault:refresh`-Fusion, Core-Module + `document:loaded`/`app:set_mode`-Fusion, Bridge-Reduktion + Minify |
-| 5: Konsolidierung & Type-Safety | 🚧 in Arbeit | siehe Sub-Tasks 5.1-5.5 oben |
+| 5: Konsolidierung & Type-Safety | 🚧 in Arbeit | 5.1 ✓ (`document_service::open` + Dead-Code); 5.2-5.5 offen |

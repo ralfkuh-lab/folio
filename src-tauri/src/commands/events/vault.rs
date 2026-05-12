@@ -51,23 +51,17 @@ pub(super) fn collapse_dir(path: String, state: &AppState) -> Result<(), String>
 }
 
 pub(super) fn open_document(path: String, state: &AppState) -> Result<(), String> {
-    state
-        .document_store
-        .lock()
-        .map_err(|_| "document store lock poisoned".to_string())?
-        .load(&path)
-        .map_err(|error| error.to_string())?;
-    state
-        .navigation
-        .lock()
-        .map_err(|_| "navigation lock poisoned".to_string())?
-        .navigate(path.clone(), None);
-    state
-        .vault
-        .lock()
-        .map_err(|_| "vault lock poisoned".to_string())?
-        .set_active(Some(path));
-    Ok(())
+    crate::document_service::open(
+        state,
+        path,
+        crate::document_service::OpenDocumentOptions {
+            anchor: None,
+            reload: crate::document_service::ReloadPolicy::Always,
+            dirty: crate::document_service::DirtyPolicy::Discard,
+        },
+    )
+    .map(|_| ())
+    .map_err(|error| error.to_string())
 }
 
 pub(super) fn context(payload: &Value, handle: &AppHandle) -> Result<(), String> {

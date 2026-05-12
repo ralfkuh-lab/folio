@@ -1,12 +1,10 @@
 use crate::{
     file_kind::{classify, FileKind},
-    link_interceptor::LinkAction,
     navigation::Entry,
     state::AppState,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
-use tauri_plugin_shell::ShellExt;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct NavEntry {
@@ -167,67 +165,6 @@ fn move_history(
     }
 
     Ok(Some(entry))
-}
-
-#[tauri::command]
-pub async fn link_click(
-    href: String,
-    handle: AppHandle,
-    state: State<'_, AppState>,
-) -> Result<Option<NavEntry>, String> {
-    let current_file = state
-        .document_store
-        .lock()
-        .map_err(|_| "document store lock poisoned".to_string())?
-        .path
-        .clone();
-    match state
-        .link_interceptor
-        .handle(&href, current_file.as_deref())
-    {
-        LinkAction::OpenExternal(target) => {
-            #[allow(deprecated)]
-            handle
-                .shell()
-                .open(target, None)
-                .map_err(|error| error.to_string())?;
-            Ok(None)
-        }
-        LinkAction::Navigate { path, anchor } => {
-            let entry = {
-                let mut navigation = state
-                    .navigation
-                    .lock()
-                    .map_err(|_| "navigation lock poisoned".to_string())?;
-                NavEntry::from(navigation.navigate(path, anchor))
-            };
-            let needs_load = {
-                let store = state
-                    .document_store
-                    .lock()
-                    .map_err(|_| "document store lock poisoned".to_string())?;
-                store.path.as_deref() != Some(entry.path.as_str())
-            };
-            if needs_load {
-                state
-                    .document_store
-                    .lock()
-                    .map_err(|_| "document store lock poisoned".to_string())?
-                    .load(&entry.path)
-                    .map_err(|error| error.to_string())?;
-                state
-                    .vault
-                    .lock()
-                    .map_err(|_| "vault lock poisoned".to_string())?
-                    .set_active(Some(entry.path.clone()));
-            }
-            handle
-                .emit("navigation:changed", &entry)
-                .map_err(|error| error.to_string())?;
-            Ok(Some(entry))
-        }
-        LinkAction::Missing => Ok(None),
-    }
 }
 
 #[tauri::command]

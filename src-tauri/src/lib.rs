@@ -1,5 +1,6 @@
 pub mod automation;
 pub mod commands;
+pub mod document_service;
 pub mod document_store;
 pub mod editor_commands;
 pub mod export;
@@ -240,7 +241,6 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::nav::update_history_view_mode,
             commands::nav::update_history_editor_scroll,
             commands::nav::update_history_editor_cursor,
-            commands::nav::link_click,
             commands::nav::visible_heading,
             commands::nav::scroll_position,
             commands::nav::toc_click,
