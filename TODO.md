@@ -16,7 +16,7 @@
     (Markdown kann groß sein, `/state` ist Polling-Snapshot).
   - ✅ **`POST /editor/selection {start, length}`** (Commit `cb8a0d1`) — Selection setzen, damit
     Formatierungs-Commands (Bold-Wrap etc.) deterministisch getestet werden können.
-  - ✅ **`POST /wait`** (Commit folgt) — `{ event, timeoutMs }`.
+  - ✅ **`POST /wait`** (Commit `0b4abda`) — `{ event, timeoutMs }`.
     Allowlist `editor.ready` (Latch) + `document.loaded` (Future-Event).
     Backend hält Verbindung bis Event feuert oder Timeout. Trigger-Punkte:
     `editor_ready`-Command + `DocumentEvents.loaded`-Callback. Default-
