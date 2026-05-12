@@ -24,7 +24,93 @@ let tauri: TauriMockHandles;
 beforeEach(() => {
     tauri = installTauriMock();
     document.body.innerHTML = '';
+    // happy-dom liefert rAF nicht zuverlaessig — stuben, damit ackHandler
+    // den Frame deterministisch durchlaeuft (sonst Microtask-Fallback).
+    (window as any).requestAnimationFrame = (cb: FrameRequestCallback) => {
+        setTimeout(() => cb(0), 0);
+        return 0;
+    };
     vi.resetModules();
+});
+
+async function flushAck(): Promise<void> {
+    // ackHandler awaitet: work → Promise.resolve() → rAF (setTimeout 0)
+    // → invoke. Wir geben ihm drei Ticks plus einen Real-Sleep.
+    await new Promise((r) => setTimeout(r, 5));
+    await Promise.resolve();
+    await Promise.resolve();
+}
+
+describe('automation/events — ackHandler', () => {
+    it('ruft invoke("automation_ack",{id}) nach work() + Microtask + rAF', async () => {
+        const events = await import('../../app/automation/events');
+        events.initAutomationEvents();
+
+        const order: string[] = [];
+        tauri.invoke.mockImplementation((cmd: string, args: any) => {
+            order.push('invoke:' + cmd + ':' + args.id);
+            return Promise.resolve();
+        });
+
+        tauri.emitEvent('automation:click', {
+            name: '#nonexistent-id',
+            requestId: 42,
+        });
+        order.push('after-emit');
+
+        await flushAck();
+
+        expect(order).toContain('after-emit');
+        expect(tauri.invoke).toHaveBeenCalledWith('automation_ack', { id: 42 });
+    });
+
+    it('emittiert KEIN invoke wenn requestId fehlt (Backward-Compat)', async () => {
+        const events = await import('../../app/automation/events');
+        events.initAutomationEvents();
+
+        tauri.emitEvent('automation:click', { name: '#nonexistent-id' });
+        await flushAck();
+
+        expect(tauri.invoke).not.toHaveBeenCalledWith(
+            'automation_ack',
+            expect.anything(),
+        );
+    });
+
+    it('schluckt work-Fehler und schickt trotzdem ACK', async () => {
+        // Element mit werfendem .click() — ackHandler darf nicht durchlassen,
+        // sonst bliebe das Backend im Timeout. Wir verifizieren: invoke
+        // wird trotz Exception aufgerufen.
+        const target = document.createElement('button');
+        target.id = 'throwing-target';
+        target.click = () => { throw new Error('boom'); };
+        document.body.appendChild(target);
+
+        const events = await import('../../app/automation/events');
+        events.initAutomationEvents();
+
+        tauri.emitEvent('automation:click', {
+            name: 'throwing-target',
+            requestId: 99,
+        });
+
+        await flushAck();
+        expect(tauri.invoke).toHaveBeenCalledWith('automation_ack', { id: 99 });
+    });
+
+    it('ackt automation:key mit requestId', async () => {
+        const events = await import('../../app/automation/events');
+        events.initAutomationEvents();
+
+        tauri.emitEvent('automation:key', {
+            key: 'F3',
+            modifiers: {},
+            requestId: 7,
+        });
+
+        await flushAck();
+        expect(tauri.invoke).toHaveBeenCalledWith('automation_ack', { id: 7 });
+    });
 });
 
 describe('automation/events — automation:set_editor_selection', () => {

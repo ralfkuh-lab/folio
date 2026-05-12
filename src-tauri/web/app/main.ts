@@ -39,7 +39,7 @@ import {
 import { initMenuRouter } from './ui/menu-router';
 import { initDragDrop } from './ui/drag-drop';
 import { initToolbarActions } from './ui/toolbar-actions';
-import { initAutomationEvents } from './automation/events';
+import { ackHandler, initAutomationEvents } from './automation/events';
 
 const core = window.__TAURI__ && window.__TAURI__.core;
 const ev = window.__TAURI__ && window.__TAURI__.event;
@@ -129,10 +129,14 @@ if (ev && typeof ev.listen === 'function' && invoke) {
     });
 
     ev.listen('navigation:toc_click', function (event: any) {
-        var data = event && event.payload;
-        var anchor = data && (data.anchor || data.slug);
-        if (anchor) scrollViewToAnchor(anchor);
-        setTocActive(anchor || '');
+        var data = (event && event.payload) || {};
+        // Automation-Pfad liefert requestId; interner Frontend-Emit aus
+        // markdown.ts laesst das Feld weg → ackHandler wird zum No-Op.
+        ackHandler(invoke!, data, function () {
+            var anchor = data.anchor || data.slug;
+            if (anchor) scrollViewToAnchor(anchor);
+            setTocActive(anchor || '');
+        });
     });
 
     // panel:rail_changed feuert sowohl bei Backend-Push (z. B. nach

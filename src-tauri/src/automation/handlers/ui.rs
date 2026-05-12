@@ -1,14 +1,17 @@
-use axum::extract::{rejection::JsonRejection, Json, State as AxumState};
+use axum::extract::{rejection::JsonRejection, Json, Query, State as AxumState};
 use tauri::{LogicalSize, Manager, Size};
 
+use crate::automation::ack;
 use crate::automation::context::AutomationContext;
 use crate::automation::error::{json_payload, ok, ApiError, ApiResult};
 use crate::automation::helpers::{emit, main_window};
 use crate::automation::types::{
-    ClickRequest, FindTextRequest, KeyRequest, ModeRequest, OkResponse, RailRequest, ResizeRequest,
-    ThemeRequest, TocActivateRequest,
+    AckOptions, AckedResponse, ClickRequest, FindTextRequest, KeyRequest, ModeRequest, OkResponse,
+    RailRequest, ResizeRequest, ThemeRequest, TocActivateRequest,
 };
 use crate::state::AppState;
+
+const DEFAULT_ACK_TIMEOUT_MS: u64 = 1000;
 
 pub(in crate::automation) async fn post_mode(
     AxumState(context): AxumState<AutomationContext>,
@@ -110,21 +113,31 @@ pub(in crate::automation) async fn post_rail(
 
 pub(in crate::automation) async fn post_click(
     AxumState(context): AxumState<AutomationContext>,
+    Query(options): Query<AckOptions>,
     payload: Result<Json<ClickRequest>, JsonRejection>,
-) -> ApiResult<Json<OkResponse>> {
+) -> ApiResult<Json<AckedResponse>> {
     let Json(payload) = json_payload(payload)?;
+    let state = context.app_handle.state::<AppState>();
+    let (request_id, receiver) = ack::register(state.inner()).map_err(ApiError::internal)?;
     emit(
         &context,
         "automation:click",
-        serde_json::json!({ "name": payload.name }),
+        serde_json::json!({ "name": payload.name, "requestId": request_id }),
     )?;
-    ok()
+    let timeout_ms = options.ack_timeout_ms.unwrap_or(DEFAULT_ACK_TIMEOUT_MS);
+    let acked = ack::wait_for_ack(state.inner(), request_id, receiver, timeout_ms).await;
+    Ok(Json(AckedResponse {
+        ok: true,
+        acked,
+        request_id,
+    }))
 }
 
 pub(in crate::automation) async fn post_key(
     AxumState(context): AxumState<AutomationContext>,
+    Query(options): Query<AckOptions>,
     payload: Result<Json<KeyRequest>, JsonRejection>,
-) -> ApiResult<Json<OkResponse>> {
+) -> ApiResult<Json<AckedResponse>> {
     let Json(payload) = json_payload(payload)?;
     if payload.key.is_empty() {
         return Err(ApiError::bad_request("key must not be empty"));
@@ -133,6 +146,8 @@ pub(in crate::automation) async fn post_key(
     if !matches!(target, "document" | "editor") {
         return Err(ApiError::bad_request(format!("unknown target '{target}'")));
     }
+    let state = context.app_handle.state::<AppState>();
+    let (request_id, receiver) = ack::register(state.inner()).map_err(ApiError::internal)?;
     emit(
         &context,
         "automation:key",
@@ -145,22 +160,42 @@ pub(in crate::automation) async fn post_key(
                 "meta": payload.modifiers.meta,
             },
             "target": target,
+            "requestId": request_id,
         }),
     )?;
-    ok()
+    let timeout_ms = options.ack_timeout_ms.unwrap_or(DEFAULT_ACK_TIMEOUT_MS);
+    let acked = ack::wait_for_ack(state.inner(), request_id, receiver, timeout_ms).await;
+    Ok(Json(AckedResponse {
+        ok: true,
+        acked,
+        request_id,
+    }))
 }
 
 pub(in crate::automation) async fn post_toc_activate(
     AxumState(context): AxumState<AutomationContext>,
+    Query(options): Query<AckOptions>,
     payload: Result<Json<TocActivateRequest>, JsonRejection>,
-) -> ApiResult<Json<OkResponse>> {
+) -> ApiResult<Json<AckedResponse>> {
     let Json(payload) = json_payload(payload)?;
+    let state = context.app_handle.state::<AppState>();
+    let (request_id, receiver) = ack::register(state.inner()).map_err(ApiError::internal)?;
     emit(
         &context,
         "navigation:toc_click",
-        serde_json::json!({ "anchor": payload.slug, "slug": payload.slug }),
+        serde_json::json!({
+            "anchor": payload.slug,
+            "slug": payload.slug,
+            "requestId": request_id,
+        }),
     )?;
-    ok()
+    let timeout_ms = options.ack_timeout_ms.unwrap_or(DEFAULT_ACK_TIMEOUT_MS);
+    let acked = ack::wait_for_ack(state.inner(), request_id, receiver, timeout_ms).await;
+    Ok(Json(AckedResponse {
+        ok: true,
+        acked,
+        request_id,
+    }))
 }
 
 pub(in crate::automation) async fn post_focus(

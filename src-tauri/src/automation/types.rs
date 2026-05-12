@@ -39,6 +39,20 @@ pub(super) struct OkResponse {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct AckedResponse {
+    pub(super) ok: bool,
+    pub(super) acked: bool,
+    pub(super) request_id: u64,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct AckOptions {
+    #[serde(rename = "ackTimeoutMs", default)]
+    pub(super) ack_timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, Serialize)]
 pub(super) struct ErrorResponse {
     pub(super) error: String,
 }

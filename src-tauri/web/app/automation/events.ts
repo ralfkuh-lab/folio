@@ -14,7 +14,16 @@
    sind ueber synthetische Events fragil und sollen spaeter ueber einen
    separaten `POST /editor/command` mit `editor.trigger('keyboard', ...)`
    laufen — dieser Listener bedient nur DOM-Listener, die auf `keydown`
-   reagieren (Find-Bar, Toolbar-Actions, Zoom, Dialogs). */
+   reagieren (Find-Bar, Toolbar-Actions, Zoom, Dialogs).
+
+   Ack-Semantik (Design in TODO.md / Codex-Synthese): Events mit
+   `requestId` triggern nach Handler-Ende einen `invoke('automation_ack',
+   {id})`-Call ueber den `ackHandler`-Wrapper. Wichtig: vor dem ACK ein
+   Microtask-Flush + ein requestAnimationFrame abwarten, weil DOM-
+   Mutationen + Listener-Kaskaden + Render sonst nicht durch sind. Das
+   Backend wartet via tokio::oneshot bis zum Timeout (Default 1000 ms,
+   per Query `?ackTimeoutMs` ueberschreibbar) und liefert
+   `{ ok, acked, requestId }`. */
 
 import {
     getCleanText,
@@ -83,6 +92,38 @@ function dispatchAutomationKey(data: any): void {
     } catch (_) {}
 }
 
+function nextFrame(): Promise<void> {
+    return new Promise(function (resolve) {
+        if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(function () { resolve(); });
+        } else {
+            // happy-dom/jsdom in Vitest haben evtl. kein rAF — Microtask
+            // ist dann das Beste, was geht.
+            Promise.resolve().then(resolve);
+        }
+    });
+}
+
+// Wrapper fuer ack-faehige Listener: fuehrt `work` aus, wartet einen
+// Microtask + ein Frame ab und meldet danach ueber `automation_ack`
+// zurueck. requestId fehlt → kein ACK (Backward-Compat). Fehler in `work`
+// werden geschluckt — der Backend-Handler laeuft sonst nur ins Timeout.
+export async function ackHandler(
+    invoke: (cmd: string, args?: any) => Promise<any>,
+    payload: any,
+    work: () => unknown | Promise<unknown>,
+): Promise<void> {
+    try {
+        await work();
+    } catch (_) {}
+    await Promise.resolve();
+    await nextFrame();
+    var id = payload && payload.requestId;
+    if (typeof id === 'number') {
+        try { await invoke('automation_ack', { id: id }); } catch (_) {}
+    }
+}
+
 export function initAutomationEvents(): void {
     const ev = window.__TAURI__ && window.__TAURI__.event;
     const core = window.__TAURI__ && window.__TAURI__.core;
@@ -90,16 +131,19 @@ export function initAutomationEvents(): void {
     const invoke = core.invoke;
 
     ev.listen('automation:click', function (event: any) {
-        var name = event && event.payload && event.payload.name;
-        if (!name) return;
-        var el: HTMLElement | null = document.getElementById(name);
-        if (!el) {
-            try { el = document.querySelector('[data-name="' + CSS.escape(name) + '"]'); } catch (_) {}
-        }
-        if (!el) {
-            try { el = document.querySelector(name); } catch (_) {}
-        }
-        if (el && typeof (el as HTMLElement).click === 'function') (el as HTMLElement).click();
+        var payload = (event && event.payload) || {};
+        ackHandler(invoke, payload, function () {
+            var name = payload.name;
+            if (!name) return;
+            var el: HTMLElement | null = document.getElementById(name);
+            if (!el) {
+                try { el = document.querySelector('[data-name="' + CSS.escape(name) + '"]'); } catch (_) {}
+            }
+            if (!el) {
+                try { el = document.querySelector(name); } catch (_) {}
+            }
+            if (el && typeof (el as HTMLElement).click === 'function') (el as HTMLElement).click();
+        });
     });
     ev.listen('automation:set_editor_text', function (event: any) {
         var data = event && event.payload || {};
@@ -126,7 +170,7 @@ export function initAutomationEvents(): void {
     });
     ev.listen('automation:key', function (event: any) {
         var data = (event && event.payload) || {};
-        dispatchAutomationKey(data);
+        ackHandler(invoke, data, function () { dispatchAutomationKey(data); });
     });
 
     // Editor-Text-Tracking fuer Wordcount im Edit-Modus. CustomEvent wird

@@ -9,8 +9,11 @@ use crate::{
     vault::Vault,
     workspace::Workspace,
 };
+use std::collections::HashMap;
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
+use tokio::sync::oneshot;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AutomationUiState {
@@ -43,6 +46,12 @@ pub struct AppState {
     pub link_interceptor: LinkInterceptor,
     pub automation: Mutex<AutomationUiState>,
     pub cli_open_path: Mutex<Option<String>>,
+    /// Korrelations-Map fuer die Automation-API-Ack-Semantik: Backend
+    /// erzeugt pro ack-faehigem Request eine ID + oneshot-Sender, das
+    /// Frontend signalisiert nach Handler-Ende ueber `automation_ack`.
+    /// Cleanup: Timeout-Pfad entfernt die ID; spaete ACKs ignorieren.
+    pub pending_acks: Mutex<HashMap<u64, oneshot::Sender<()>>>,
+    pub next_ack_id: AtomicU64,
 }
 
 impl Default for AppState {
@@ -68,6 +77,8 @@ impl AppState {
                 ..AutomationUiState::default()
             }),
             cli_open_path: Mutex::new(None),
+            pending_acks: Mutex::new(HashMap::new()),
+            next_ack_id: AtomicU64::new(1),
         }
     }
 

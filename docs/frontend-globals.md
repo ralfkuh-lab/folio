@@ -103,6 +103,17 @@ belassen, weil als Debug-Surface in DevTools nützlich.
 
 Backend dispatcht beide über `commands/events/router.rs`.
 
+### Frontend → Backend (Frontend ruft via `invoke`)
+
+Tauri-Commands. Auswahl, vollstaendig in `commands/mod.rs` bzw.
+`lib.rs::invoke_handler`:
+
+- `automation_ack({ id })` — Frontend-Bridge bestaetigt nach Handler-Ende
+  (Microtask + rAF), dass der Listener fuer `automation:click` /
+  `automation:key` / `navigation:toc_click` durch ist. Backend nimmt den
+  passenden oneshot-Sender aus `AppState.pending_acks` und gibt seinem
+  HTTP-Endpoint frei. Siehe Abschnitt 5.
+
 ## 4. Automation-API-DOM-Vertrag
 
 Backend-Code in `src-tauri/src/automation/` greift nicht direkt auf

@@ -251,7 +251,8 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::workspace_cmd::workspace_unpin,
             commands::workspace_cmd::workspace_add_recent,
             commands::workspace_cmd::workspace_remove_recent,
-            commands::workspace_cmd::workspace_get
+            commands::workspace_cmd::workspace_get,
+            commands::automation::automation_ack
         ])
 }
 
