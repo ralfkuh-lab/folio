@@ -1,6 +1,6 @@
 # Refactoring-Plan: Modularisierung & Aufräumen
 
-Status: **Phase 5 in Arbeit** · Letzte Aktualisierung: 2026-05-12
+Status: **Phase 5 fast fertig** (5.3c `editor.ts`-Split zurückgestellt) · Letzte Aktualisierung: 2026-05-12
 
 Architektur-/Strukturreview vom 2026-05-11 (Claude + Codex als 2. Meinung)
 ergab klare Splitting-Kandidaten und Smells. Plan ist in vier Phasen
@@ -303,21 +303,29 @@ Monaco-Adapter.
     `closeEditorFind` schliesst beide Finder (Race-Schutz).
   - `package.json::test` (`vitest run`) + `test:watch` Scripts.
 
-#### 5.5 — Polish (niedriges Risiko, kleine Diffs)
+#### 5.5 — Polish ✅ abgeschlossen
 
-- [ ] **`Vault::on_section_toggle`-Stub** (vault.rs:93) ist No-Op. Entweder
-      Pin/Recent-Section-State im Vault persistieren oder Stub entfernen
-      (DOM-classList reicht).
-- [ ] **`data-loaded`-Attribut** in `Vault::item_html` (vault.rs:101): seit
-      Auto-Refresh im Frontend ignoriert. Aus dem HTML-Output entfernen.
-- [ ] **`commands/events/router.rs` Unknown-Event-Type**: `_ => Ok(())`
-      schluckt Frontend-Typos silent. Mindestens `eprintln!`-Log oder
-      Comment-Block mit kanonischen Event-Namen.
-- [ ] **`window.openDocument` / `window.__folioInvoke`** als DevTools-Surface
-      bewusst dokumentieren (eigenes `debug-bridge.ts` mit Kommentar) oder
-      entfernen, wenn niemand sie konsumiert.
-- [ ] **`Cargo.toml` CRLF-Phantom-Diff** nach `.gitattributes`-Einführung:
-      `git add --renormalize src-tauri/Cargo.toml && git commit`.
+- [x] **`Vault::on_section_toggle`-Stub + `data-loaded`-Attribut raus** ✓ Commit
+  - No-Op-Methode entfernt; die zwei Caller in
+    `commands/events/vault::toggle_section` und
+    `commands/vault_cmd::vault_toggle_section` machen jetzt nur noch
+    `panel_state.set_section_expanded(...)` (die eigentliche Persistierung).
+  - `data-loaded` aus `Vault::item_html` (Backend) und
+    `app/vault/tree.ts::insertVaultChildren` (Frontend) entfernt — wurde
+    seit Phase-~4.4-Auto-Refresh von niemandem mehr gelesen. Vitest-
+    Assertion entsprechend angepasst.
+- [x] **`commands/events/router.rs` Unknown-Event-Type loggen** ✓ Commit
+  - `_ => Ok(())` durch `other => { eprintln!(...); Ok(()) }` ersetzt
+    (für beide Channels). Modul-Doc um die kanonischen Event-Namen
+    ergänzt — dient als Referenz beim Hinzufügen neuer Events.
+- [x] **DevTools-Bridge dokumentieren** ✓ Commit
+  - `window.__folioInvoke` und `window.openDocument` haben jetzt einen
+    ausführlichen Kommentar in `main.ts` (Beispiel-Aufrufe für den
+    Inspector + Hinweis "nicht versehentlich als unused entfernen").
+    Eigenes `debug-bridge.ts`-Modul ist Overkill bei zwei Zuweisungen.
+- [x] **`Cargo.toml` CRLF-Phantom-Diff** — bereits durch `2fc0ff1`
+      (`.gitattributes` mit LF-Default) erledigt. `git ls-files --eol`
+      zeigt alle Text-Files mit `i/lf w/lf`; kein Renormalize nötig.
 
 ## Was NICHT angefasst werden soll
 
@@ -336,4 +344,4 @@ Monaco-Adapter.
 | 2: mittlere Rust-Splits | ✅ abgeschlossen | `automation`-Split, `menu`-Split |
 | 3: State-Refactor + Splits | ✅ abgeschlossen | Rename-Konsolidierung, `commands/file`-Split, `commands/shell` → `commands/events`-Split |
 | 4: Frontend-Build-Umbau | ✅ abgeschlossen | CSS-Extraktion, JS-Verbatim-Move, Global-Contract-Audit, 7 Leaf-Module, Vault-Module + `vault:refresh`-Fusion, Core-Module + `document:loaded`/`app:set_mode`-Fusion, Bridge-Reduktion + Minify |
-| 5: Konsolidierung & Type-Safety | 🚧 in Arbeit | 5.1 ✓ + 5.1+ ✓, 5.2 ✓, 5.3a+5.3b ✓ (5.3c editor.ts offen), 5.4 ✓; 5.5 offen |
+| 5: Konsolidierung & Type-Safety | 🚧 fast fertig | 5.1 ✓ + 5.1+ ✓, 5.2 ✓, 5.3a + 5.3b ✓ (5.3c editor.ts bewusst zurückgestellt), 5.4 ✓, 5.5 ✓ |
