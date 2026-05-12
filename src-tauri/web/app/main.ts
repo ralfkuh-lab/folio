@@ -45,7 +45,13 @@ const core = window.__TAURI__ && window.__TAURI__.core;
 const ev = window.__TAURI__ && window.__TAURI__.event;
 const invoke = core ? core.invoke : null;
 
-// Defensive DevTools-Surface (siehe docs/frontend-globals.md).
+// Defensive DevTools-Surface. Kein Production-Pfad liest diese
+// Properties; sie existieren nur, damit man im WebView-Inspector
+// schnell `await window.__folioInvoke('cli_pending_open')` oder
+// `window.openDocument('/abs/path')` tippen kann, ohne durch das
+// minifizierte Bundle nach dem richtigen Symbol zu suchen.
+// Bei Modul-Splits in zukuenftigen Phasen nicht versehentlich
+// entfernen — siehe `docs/frontend-globals.md` Abschnitt 2.
 if (invoke) window.__folioInvoke = invoke;
 window.openDocument = openDocument;
 
