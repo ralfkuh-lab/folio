@@ -111,6 +111,46 @@ describe('automation/events — ackHandler', () => {
         await flushAck();
         expect(tauri.invoke).toHaveBeenCalledWith('automation_ack', { id: 7 });
     });
+
+    it('ackt automation:set_editor_selection mit requestId', async () => {
+        (window as any).FolioEditor = { setSelection: vi.fn() };
+        const events = await import('../../app/automation/events');
+        events.initAutomationEvents();
+
+        tauri.emitEvent('automation:set_editor_selection', {
+            start: 1,
+            length: 2,
+            requestId: 13,
+        });
+
+        await flushAck();
+        expect(tauri.invoke).toHaveBeenCalledWith('automation_ack', { id: 13 });
+    });
+
+    it('ackt automation:open_document erst nach openDocument-Promise', async () => {
+        let resolveOpen: (v?: any) => void = () => {};
+        const docMod = await import('../../app/state/document');
+        (docMod.openDocument as any).mockImplementation(() => new Promise((r) => { resolveOpen = r; }));
+
+        const events = await import('../../app/automation/events');
+        events.initAutomationEvents();
+
+        tauri.emitEvent('automation:open_document', {
+            path: '/x',
+            requestId: 50,
+        });
+
+        // Vor Resolve: kein ACK.
+        await flushAck();
+        expect(tauri.invoke).not.toHaveBeenCalledWith(
+            'automation_ack',
+            { id: 50 },
+        );
+
+        resolveOpen();
+        await flushAck();
+        expect(tauri.invoke).toHaveBeenCalledWith('automation_ack', { id: 50 });
+    });
 });
 
 describe('automation/events — automation:dom_query', () => {

@@ -216,16 +216,23 @@ export function initAutomationEvents(): void {
     });
     ev.listen('automation:set_editor_selection', function (event: any) {
         var data = (event && event.payload) || {};
-        var start = typeof data.start === 'number' ? data.start : 0;
-        var length = typeof data.length === 'number' ? data.length : 0;
-        var editor = (window as any).FolioEditor;
-        if (editor && typeof editor.setSelection === 'function') {
-            editor.setSelection(start, length);
-        }
+        ackHandler(invoke, data, function () {
+            var start = typeof data.start === 'number' ? data.start : 0;
+            var length = typeof data.length === 'number' ? data.length : 0;
+            var editor = (window as any).FolioEditor;
+            if (editor && typeof editor.setSelection === 'function') {
+                editor.setSelection(start, length);
+            }
+        });
     });
     ev.listen('automation:open_document', function (event: any) {
-        var data = event && event.payload || {};
-        if (data.path) openDocument(data.path);
+        var data = (event && event.payload) || {};
+        // openDocument ist async (Dirty-Prompt + Tauri-IPC). ackHandler
+        // awaitet das Promise vor dem ACK, sodass Hermes weiß: Datei
+        // ist tatsaechlich geladen.
+        ackHandler(invoke, data, function () {
+            if (data.path) return openDocument(data.path);
+        });
     });
     ev.listen('automation:key', function (event: any) {
         var data = (event && event.payload) || {};

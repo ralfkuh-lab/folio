@@ -9,6 +9,7 @@
    Cheatsheet-/Menue-Sync, Undo/Redo-Enable) und IIFE #2 (setActiveMode
    + findBarAfterModeSwitch). Beide jetzt in einem Listener. */
 
+import { ackHandler } from '../automation/events';
 import { cheatsheetSyncMode, syncCheatsheetMenu } from '../ui/cheatsheet';
 import { afterModeSwitch as findBarAfterModeSwitch, openEditorFind, setEditorFindTerm } from '../ui/find-bar';
 
@@ -171,26 +172,30 @@ export function initEditorShell(d: Deps): void {
     // Undo/Redo-Enable.
     // Vorher IIFE #2: setActiveMode + findBarAfterModeSwitch.
     listen('app:set_mode', function (event: any) {
-        const data = event && event.payload;
-        const mode = (data && data.mode) || 'view';
+        const data = (event && event.payload) || {};
+        const mode = data.mode || 'view';
 
-        // 1. DOM-Class-Toggle (war IIFE #1)
-        document.body.classList.toggle('edit-mode', mode === 'edit');
-        document.body.classList.toggle('split-mode', mode === 'split');
+        // ackHandler ist No-Op fuer Toolbar/Menue-Pfade ohne requestId;
+        // bei POST /mode bestaetigt er nach Render-Kaskade (Microtask + rAF).
+        ackHandler(invoke, data, function () {
+            // 1. DOM-Class-Toggle (war IIFE #1)
+            document.body.classList.toggle('edit-mode', mode === 'edit');
+            document.body.classList.toggle('split-mode', mode === 'split');
 
-        // 2. Toolbar/Statusbar + Menue-Haekchen (war IIFE #2)
-        setActiveMode(mode);
+            // 2. Toolbar/Statusbar + Menue-Haekchen (war IIFE #2)
+            setActiveMode(mode);
 
-        // 3. Editor-Fokus + Cheatsheet-Mode (war IIFE #1)
-        if (mode === 'edit') focusEditor();
-        syncCheatsheetMenu();
+            // 3. Editor-Fokus + Cheatsheet-Mode (war IIFE #1)
+            if (mode === 'edit') focusEditor();
+            syncCheatsheetMenu();
 
-        // 4. Undo/Redo nur im Edit-Mode sinnvoll (war IIFE #1).
-        invoke('menu_set_enabled', { id: 'edit.undo', enabled: mode === 'edit' }).catch(function () {});
-        invoke('menu_set_enabled', { id: 'edit.redo', enabled: mode === 'edit' }).catch(function () {});
+            // 4. Undo/Redo nur im Edit-Mode sinnvoll (war IIFE #1).
+            invoke('menu_set_enabled', { id: 'edit.undo', enabled: mode === 'edit' }).catch(function () {});
+            invoke('menu_set_enabled', { id: 'edit.redo', enabled: mode === 'edit' }).catch(function () {});
 
-        // 5. Find-Bar re-attach an den jetzt aktiven Finder (war IIFE #2).
-        findBarAfterModeSwitch();
+            // 5. Find-Bar re-attach an den jetzt aktiven Finder (war IIFE #2).
+            findBarAfterModeSwitch();
+        });
     });
 
     // ----- app:set_theme (Theme-Switch) -----

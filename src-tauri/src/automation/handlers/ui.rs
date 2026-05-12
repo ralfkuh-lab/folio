@@ -15,26 +15,33 @@ const DEFAULT_ACK_TIMEOUT_MS: u64 = 1000;
 
 pub(in crate::automation) async fn post_mode(
     AxumState(context): AxumState<AutomationContext>,
+    Query(options): Query<AckOptions>,
     payload: Result<Json<ModeRequest>, JsonRejection>,
-) -> ApiResult<Json<OkResponse>> {
+) -> ApiResult<Json<AckedResponse>> {
     let Json(payload) = json_payload(payload)?;
     let mode = payload.mode.to_ascii_lowercase();
     if !matches!(mode.as_str(), "view" | "edit" | "split") {
         return Err(ApiError::bad_request(format!("unknown mode '{mode}'")));
     }
-    context
-        .app_handle
-        .state::<AppState>()
+    let state = context.app_handle.state::<AppState>();
+    state
         .automation
         .lock()
         .map_err(|_| ApiError::internal("automation state lock poisoned"))?
         .view_mode = mode.clone();
+    let (request_id, receiver) = ack::register(state.inner()).map_err(ApiError::internal)?;
     emit(
         &context,
         "app:set_mode",
-        serde_json::json!({ "mode": mode }),
+        serde_json::json!({ "mode": mode, "requestId": request_id }),
     )?;
-    ok()
+    let timeout_ms = options.ack_timeout_ms.unwrap_or(DEFAULT_ACK_TIMEOUT_MS);
+    let acked = ack::wait_for_ack(state.inner(), request_id, receiver, timeout_ms).await;
+    Ok(Json(AckedResponse {
+        ok: true,
+        acked,
+        request_id,
+    }))
 }
 
 pub(in crate::automation) async fn post_theme(
