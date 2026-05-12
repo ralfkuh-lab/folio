@@ -2,6 +2,19 @@
 //! `shell:event` (Toolbar/Vault/Navigation) und `editor:event` (Monaco-
 //! Editor-Status). Beide Channels schicken `serde_json::Value`-Payloads
 //! mit einem `type`-Feld; pro Typ wird hier ein Handler aufgerufen.
+//!
+//! Kanonische `shell:event`-Typen: `linkClick`, `visibleHeading`,
+//! `scrollPosition`, `tocClick`, `railResize`, `toggle-section`,
+//! `expand-dir`, `collapse-dir`, `open`, `context`, `addFile`,
+//! `addFolder`, `editorFindState`, `cheatsheetClosed`.
+//!
+//! Kanonische `editor:event`-Typen: `editorReady`, `editorTextChanged`,
+//! `editorSelection`, `editorScroll`, `editorSaveRequested`,
+//! `editorFindState`.
+//!
+//! Unbekannte Typen werden auf stderr geloggt statt silent geschluckt —
+//! sonst fallen Frontend-Typos beim Hinzufuegen neuer Events erst beim
+//! manuellen Testen auf.
 
 use crate::state::AppState;
 use serde_json::Value;
@@ -52,7 +65,10 @@ pub fn route_shell_event(
         "cheatsheetClosed" => handle
             .emit("cheatsheet:closed", payload.clone())
             .map_err(|error| error.to_string()),
-        _ => Ok(()),
+        other => {
+            eprintln!("shell:event: unknown type '{other}'");
+            Ok(())
+        }
     }
 }
 
@@ -126,6 +142,9 @@ pub fn route_editor_event(
         "editorFindState" => handle
             .emit("editor:find_state", payload.clone())
             .map_err(|error| error.to_string()),
-        _ => Ok(()),
+        other => {
+            eprintln!("editor:event: unknown type '{other}'");
+            Ok(())
+        }
     }
 }
