@@ -21,8 +21,29 @@
     oder Timeout.
   - **Ack-Semantik für Event-Aktionen** (`/click`, `/key`, `/toc/activate`) —
     aktuell bestätigt der Endpoint nur "Event emittiert", nicht "Handler durch".
-    Lösung: Frontend acked nach Handler-Ende über ein eigenes Event; Backend
-    wartet drauf (z. B. via oneshot-Channel) bis zum Timeout.
+    Lösung-Design (mit Codex synthetisiert, 2026-05-12):
+    - Backend: `AppState.pending_acks: Mutex<HashMap<u64, oneshot::Sender<()>>>`
+      + `AtomicU64 next_ack_id`. Handler legt Sender ab, emittet
+      `automation:click` (etc.) mit zusätzlichem `requestId`, wartet via
+      `tokio::time::timeout` auf Receiver (Default 1000 ms, per Query
+      `ackTimeoutMs` override), liefert `{ ok, acked: bool }`. Bei Timeout
+      `remove(&id)` aus der Map. Spätes ACK → Sender weg → ignoriert.
+    - Frontend: Helper `ackHandler(payload, work)` macht
+      `await work(); await Promise.resolve(); await new Promise(r =>
+      requestAnimationFrame(r)); invoke('automation_ack', { id })`. Microtask
+      + RAF sind nötig, weil DOM-Mutationen + Listener-Kaskaden + Render
+      sonst nicht durch sind. Neuer Tauri-Command `automation_ack` ruft
+      `map.remove(&id)?.send(())`.
+    - Datenstruktur-Wahl: `std::sync::Mutex<HashMap>` (kein Lock-Hold über
+      await), kein `Notify` (kein Payload/ID, signal loss), kein
+      `broadcast/watch` (Streams/State, nicht single-correlated-requests),
+      kein `DashMap` (Loopback hat wenig Parallelität).
+    - Frontend-ACK über `invoke` statt `emit`: gerichteter RPC, typisiert,
+      validierbar — Event-Router-Pfad wäre semantisch Pub/Sub und indirekter.
+    - Versions-Counter im `/state` als simpler Fallback verworfen: bewiesen
+      nicht, dass *dieser* Request fertig ist; oneshot ist kausal sauberer.
+    - Scope erste Runde: `/click`, `/key`, `/toc/activate`. Andere ACK-fähige
+      Endpoints (`/editor/selection`, `/mode`, `/open-ui`) später.
   - Mittlerer Hebel: **`GET /dom?selector=...`** (Status-Text + View-Body ohne
     Screenshot/OCR), **Console-Error-Capture** (Frontend abfangen + an Backend
     streamen), **Scroll-State in `/state`** (Werte bereits im NavEntry).
