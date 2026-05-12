@@ -358,6 +358,41 @@ async fn post_wait_rejects_unknown_event() {
 }
 
 #[tokio::test]
+async fn get_console_errors_returns_buffer_and_clears() {
+    use folio::state::ConsoleErrorRecord;
+    use std::collections::VecDeque;
+
+    let mut buf = VecDeque::new();
+    buf.push_back(ConsoleErrorRecord {
+        kind: "error".into(),
+        message: "boom".into(),
+        stack: Some("at foo".into()),
+        source: None,
+        timestamp_ms: 1234,
+    });
+    let state = Arc::new(Mutex::new(MockAutomationState {
+        console_errors: buf,
+        ..MockAutomationState::default()
+    }));
+
+    let response = request(
+        build_mock_router(state.clone()),
+        "GET",
+        "/console/errors?clear=true",
+        None,
+        loopback(),
+    )
+    .await;
+
+    assert_eq!(StatusCode::OK, response.status);
+    assert_eq!(1, response.json["count"]);
+    assert_eq!("boom", response.json["errors"][0]["message"]);
+    assert_eq!("at foo", response.json["errors"][0]["stack"]);
+    // Nach clear=true ist der Buffer leer.
+    assert!(state.lock().unwrap().console_errors.is_empty());
+}
+
+#[tokio::test]
 async fn rejects_non_loopback_requests() {
     let state = Arc::new(Mutex::new(MockAutomationState::default()));
     let response = request(

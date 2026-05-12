@@ -9,11 +9,23 @@ use crate::{
     vault::Vault,
     workspace::Workspace,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::oneshot;
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsoleErrorRecord {
+    pub kind: String,
+    pub message: String,
+    pub stack: Option<String>,
+    pub source: Option<String>,
+    pub timestamp_ms: i64,
+}
+
+pub const CONSOLE_ERROR_BUFFER_MAX: usize = 200;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AutomationUiState {
@@ -61,6 +73,10 @@ pub struct AppState {
     /// `automation_dom_response` liefert.
     pub pending_dom_queries:
         Mutex<HashMap<u64, oneshot::Sender<crate::automation::dom::DomSnapshot>>>,
+    /// Ringbuffer fuer Frontend-Console-Errors (Hook auf console.error,
+    /// window.onerror, unhandledrejection). Max [`CONSOLE_ERROR_BUFFER_MAX`]
+    /// Eintraege; ueberlaufende werden vorne abgeschnitten.
+    pub console_errors: Mutex<VecDeque<ConsoleErrorRecord>>,
 }
 
 impl Default for AppState {
@@ -90,6 +106,7 @@ impl AppState {
             next_ack_id: AtomicU64::new(1),
             pending_waits: Mutex::new(HashMap::new()),
             pending_dom_queries: Mutex::new(HashMap::new()),
+            console_errors: Mutex::new(VecDeque::with_capacity(CONSOLE_ERROR_BUFFER_MAX)),
         }
     }
 

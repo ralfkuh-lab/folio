@@ -116,6 +116,11 @@ Tauri-Commands. Auswahl, vollstaendig in `commands/mod.rs` bzw.
 - `automation_dom_response({ id, payload })` — Frontend liefert das
   DOM-Snapshot-Payload fuer `GET /dom`. Backend matched die ID gegen
   `AppState.pending_dom_queries` und sendet die HTTP-Response.
+- `automation_console_error({ payload })` — Frontend-Hook auf
+  `console.error` / `window.onerror` / `unhandledrejection` streamt
+  Fehler an `AppState.console_errors` (Ringbuffer max 200). `/state`
+  zeigt nur Count, `GET /console/errors?clear=true` liefert die volle
+  Liste.
 
 ## 4. Automation-API-DOM-Vertrag
 

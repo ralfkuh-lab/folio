@@ -6,7 +6,7 @@ use axum::{
 use std::sync::{Arc, Mutex};
 
 use super::context::AutomationContext;
-use super::handlers::{document, dom, screenshot, state, ui, wait};
+use super::handlers::{console, document, dom, screenshot, state, ui, wait};
 use super::middleware as mw;
 use super::mock::MockAutomationState;
 
@@ -15,6 +15,7 @@ pub(super) fn build_router(context: AutomationContext) -> Router {
         .route("/state", get(state::get_state))
         .route("/screenshot", get(screenshot::get_screenshot))
         .route("/dom", get(dom::get_dom))
+        .route("/console/errors", get(console::get_console_errors))
         .route("/open", post(document::post_open))
         .route("/open-ui", post(document::post_open_ui))
         .route("/mode", post(ui::post_mode))
@@ -53,6 +54,7 @@ pub fn build_mock_router(state: Arc<Mutex<MockAutomationState>>) -> Router {
         )
         .route("/save", post(document::mock_post_save))
         .route("/wait", post(wait::mock_post_wait))
+        .route("/console/errors", get(console::mock_get_console_errors))
         .route("/quit", post(document::mock_post_quit))
         .route("/{*path}", options(mw::preflight))
         .fallback(mw::not_found)

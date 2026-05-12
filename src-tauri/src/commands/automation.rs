@@ -10,7 +10,19 @@ use tauri::State;
 
 use crate::automation;
 use crate::automation::dom::DomSnapshot;
-use crate::state::AppState;
+use crate::state::{AppState, ConsoleErrorRecord, CONSOLE_ERROR_BUFFER_MAX};
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsoleErrorPayload {
+    pub kind: String,
+    pub message: String,
+    #[serde(default)]
+    pub stack: Option<String>,
+    #[serde(default)]
+    pub source: Option<String>,
+    pub timestamp_ms: i64,
+}
 
 #[tauri::command]
 pub fn automation_ack(id: u64, state: State<'_, AppState>) -> Result<(), String> {
@@ -24,4 +36,26 @@ pub fn automation_dom_response(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     automation::dom::deliver(state.inner(), id, payload)
+}
+
+#[tauri::command]
+pub fn automation_console_error(
+    payload: ConsoleErrorPayload,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let mut buf = state
+        .console_errors
+        .lock()
+        .map_err(|_| "console errors lock poisoned".to_string())?;
+    if buf.len() >= CONSOLE_ERROR_BUFFER_MAX {
+        buf.pop_front();
+    }
+    buf.push_back(ConsoleErrorRecord {
+        kind: payload.kind,
+        message: payload.message,
+        stack: payload.stack,
+        source: payload.source,
+        timestamp_ms: payload.timestamp_ms,
+    });
+    Ok(())
 }

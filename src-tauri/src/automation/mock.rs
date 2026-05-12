@@ -16,6 +16,7 @@ pub struct MockAutomationState {
     pub pinned: Vec<MockPinned>,
     pub recent: Vec<MockRecent>,
     pub expanded_dirs: Vec<String>,
+    pub console_errors: std::collections::VecDeque<crate::state::ConsoleErrorRecord>,
     pub quit_requested: bool,
 }
 
@@ -50,6 +51,7 @@ impl Default for MockAutomationState {
             pinned: Vec::new(),
             recent: Vec::new(),
             expanded_dirs: Vec::new(),
+            console_errors: std::collections::VecDeque::new(),
             quit_requested: false,
         }
     }

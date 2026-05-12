@@ -158,6 +158,67 @@ function countAutomationMatches(name: string): number {
     }
 }
 
+// Console-Error-Capture: hookt console.error + window.onerror +
+// unhandledrejection und streamt an Backend ueber automation_console_error.
+// Idempotent (Property-Marker), damit Hot-Reload / Doppel-Init nicht
+// staffelt. Original-console.error wird weiter aufgerufen, damit der
+// WebView-Inspector unveraendert sieht.
+function installConsoleHook(
+    invoke: (cmd: string, args?: any) => Promise<any>,
+): void {
+    var marker = '__folioConsoleHookInstalled';
+    if ((window as any)[marker]) return;
+    (window as any)[marker] = true;
+    var origError = console.error.bind(console);
+    function send(kind: string, message: string, stack?: string, source?: string) {
+        invoke('automation_console_error', {
+            payload: {
+                kind: kind,
+                message: message,
+                stack: stack,
+                source: source,
+                timestampMs: Date.now(),
+            },
+        }).catch(function(){});
+    }
+    console.error = function (...args: any[]) {
+        try {
+            var message = args.map(function (a) {
+                if (a instanceof Error) return a.message;
+                if (typeof a === 'string') return a;
+                try { return JSON.stringify(a); } catch (_) { return String(a); }
+            }).join(' ');
+            var stack: string | undefined;
+            for (var i = 0; i < args.length; i++) {
+                if (args[i] instanceof Error && (args[i] as Error).stack) {
+                    stack = (args[i] as Error).stack;
+                    break;
+                }
+            }
+            send('error', message, stack);
+        } catch (_) {}
+        origError.apply(console, args);
+    };
+    window.addEventListener('error', function (e: ErrorEvent) {
+        var src = e.filename ? e.filename + ':' + e.lineno + ':' + e.colno : undefined;
+        send('unhandled', e.message || 'window error', e.error && e.error.stack, src);
+    });
+    window.addEventListener('unhandledrejection', function (e: PromiseRejectionEvent) {
+        var reason = e.reason;
+        var message: string;
+        var stack: string | undefined;
+        if (reason instanceof Error) {
+            message = reason.message;
+            stack = reason.stack;
+        } else if (typeof reason === 'string') {
+            message = reason;
+        } else {
+            try { message = JSON.stringify(reason); } catch (_) { message = String(reason); }
+        }
+        send('rejection', message, stack);
+    });
+}
+
 function elementAttributes(el: Element): Record<string, string> {
     var out: Record<string, string> = {};
     for (var i = 0; i < el.attributes.length; i++) {
@@ -172,6 +233,8 @@ export function initAutomationEvents(): void {
     const core = window.__TAURI__ && window.__TAURI__.core;
     if (!ev || typeof ev.listen !== 'function' || !core) return;
     const invoke = core.invoke;
+
+    installConsoleHook(invoke);
 
     ev.listen('automation:click', function (event: any) {
         var payload = (event && event.payload) || {};

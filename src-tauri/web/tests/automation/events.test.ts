@@ -24,6 +24,9 @@ let tauri: TauriMockHandles;
 beforeEach(() => {
     tauri = installTauriMock();
     document.body.innerHTML = '';
+    // Console-Hook ist idempotent (Property-Marker); zwischen Tests
+    // resetten, damit jeder Test wieder neu installieren kann.
+    delete (window as any).__folioConsoleHookInstalled;
     // happy-dom liefert rAF nicht zuverlaessig — stuben, damit ackHandler
     // den Frame deterministisch durchlaeuft (sonst Microtask-Fallback).
     (window as any).requestAnimationFrame = (cb: FrameRequestCallback) => {
@@ -150,6 +153,50 @@ describe('automation/events — ackHandler', () => {
         resolveOpen();
         await flushAck();
         expect(tauri.invoke).toHaveBeenCalledWith('automation_ack', { id: 50 });
+    });
+});
+
+describe('automation/events — Console-Error-Capture', () => {
+    it('hookt console.error und streamt an automation_console_error', async () => {
+        const events = await import('../../app/automation/events');
+        events.initAutomationEvents();
+
+        console.error('boom', new Error('explained'));
+
+        const calls = tauri.invoke.mock.calls.filter(
+            (c: any[]) => c[0] === 'automation_console_error',
+        );
+        expect(calls.length).toBe(1);
+        const payload = calls[0][1].payload;
+        expect(payload.kind).toBe('error');
+        expect(payload.message).toContain('boom');
+        expect(payload.message).toContain('explained');
+        expect(typeof payload.timestampMs).toBe('number');
+    });
+
+    it('faengt unhandledrejection ab', async () => {
+        const events = await import('../../app/automation/events');
+        events.initAutomationEvents();
+
+        const ev = new Event('unhandledrejection') as any;
+        ev.reason = new Error('async fail');
+        window.dispatchEvent(ev);
+
+        const calls = tauri.invoke.mock.calls.filter(
+            (c: any[]) => c[0] === 'automation_console_error',
+        );
+        expect(calls.length).toBe(1);
+        expect(calls[0][1].payload.kind).toBe('rejection');
+        expect(calls[0][1].payload.message).toBe('async fail');
+    });
+
+    it('installiert nur einmal (idempotent)', async () => {
+        const events = await import('../../app/automation/events');
+        events.initAutomationEvents();
+        const first = console.error;
+        events.initAutomationEvents();
+        const second = console.error;
+        expect(first).toBe(second);
     });
 });
 

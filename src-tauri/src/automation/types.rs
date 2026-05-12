@@ -14,6 +14,7 @@ pub(super) struct AutomationState {
     pub(super) editor: EditorAutomationState,
     pub(super) view: ViewAutomationState,
     pub(super) workspace: WorkspaceAutomationState,
+    pub(super) console_error_count: usize,
 }
 
 #[derive(Debug, Serialize)]

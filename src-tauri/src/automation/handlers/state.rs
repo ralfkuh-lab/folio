@@ -77,6 +77,11 @@ pub(in crate::automation) async fn get_state(
         .lock()
         .map_err(|_| ApiError::internal("vault lock poisoned"))?
         .expanded_paths();
+    let console_error_count = state
+        .console_errors
+        .lock()
+        .map_err(|_| ApiError::internal("console errors lock poisoned"))?
+        .len();
     let toc = toc::extract(&document.text)
         .into_iter()
         .map(|entry| TocEntry {
@@ -114,6 +119,7 @@ pub(in crate::automation) async fn get_state(
             recent: workspace.1,
             expanded_dirs,
         },
+        console_error_count,
     }))
 }
 
@@ -174,5 +180,6 @@ pub(in crate::automation) async fn mock_get_state(
                 .collect(),
             expanded_dirs: state.expanded_dirs.clone(),
         },
+        console_error_count: state.console_errors.len(),
     }))
 }
