@@ -4,38 +4,64 @@ Direkt in den Chat reinpasten:
 
 ---
 
-Wir setzen Phase 5 aus `docs/refactoring-plan.md` fort. Stand: Bugfixes aus
-dem zweiten Review sind durch (Commit unmittelbar vor Phase-5-Start),
-Phase-5-Plan ist geschrieben, noch nichts davon umgesetzt.
+Wir bauen die Automation-API auf E2E-Test-Tauglichkeit aus. Ziel: Hermes-
+Agent kann die App komplett durchtesten (Keybindings, Editor-Commands,
+Visual-Diff über `/screenshot`).
+
+Stand zum Start:
+
+- **Phase 5 ist durch** (bis auf 5.3c `editor.ts`-Split, bewusst
+  zurückgestellt). Siehe `docs/refactoring-plan.md` Fortschritts-Table.
+- **`/screenshot`-Endpoint** läuft seit Commit `caf9805` über
+  `tauri-plugin-screenshots` (Monitor-Capture, fängt auch Monaco in Xvfb).
+  Details in `docs/headless-monaco-test-results.md` Option 3.
+- **Vitest-Setup** steht (`src-tauri/web/tests/`, 19 Tests, jsdom). Neue
+  Frontend-Logik dort testen.
+- **TODO.md** Sektion "Hohe Priorität" listet die offenen API-
+  Ergänzungen mit Codex-Synthese.
 
 Lies bitte zuerst:
 
-1. `CLAUDE.md` (Projekt-Konventionen + Phase-5-Hinweis)
-2. `docs/refactoring-plan.md`, Abschnitt **Phase 5** (Sub-Tasks 5.1–5.5)
+1. `CLAUDE.md` (Projekt-Konventionen).
+2. `TODO.md` — die zwei Items unter **Hohe Priorität**:
+   "Automation-API für E2E-Tests vervollständigen" + "E2E-Test-Routine".
 3. Memory `feedback_codex_consultant.md` — Codex als zweite Meinung
-   einsetzen, Sichten synthetisieren
+   einsetzen, Sichten synthetisieren.
+4. `src-tauri/src/automation/{router.rs, types.rs, handlers/}` als
+   Architektur-Übersicht der aktuellen API.
+5. `src-tauri/web/app/automation/events.ts` — Frontend-Side der
+   Bridge (`automation:click`/`set_editor_text`/`open_document`).
 
-Empfohlene Reihenfolge:
+Empfohlene Reihenfolge (aus Codex-Synthese 2026-05-12):
 
-- **5.1 zuerst** — Backend-Konsolidierung Dokument-Öffnen + Dead-Code-Removal.
-  Höchster Hebel: eine Service-Funktion ersetzt vier Hand-Choreografien,
-  der heutige Link-Klick-Dirty-Bug wäre damit strukturell nicht mehr möglich.
-  Dead Code (`nav.rs::link_click`, `mark_external_changed`/`has_external_changes`)
-  fällt nebenbei mit raus.
-- **dann 5.2** — `@ts-nocheck` schrittweise raus + `tsc --noEmit` in
-  `package.json::build`. Fängt Klasse-1-Bugs (wie der `main.ts:418`-
-  ReferenceError dieser Session) zukünftig im Build statt zur Laufzeit ab.
-  Kann parallel zu 5.1 laufen, ist aber niedrigeres Risiko + kürzere
-  Diffs — gute Aufwärmübung.
-- **5.3** Splits danach in kleinen Häppchen pro Modul.
-- **5.4 / 5.5** zum Schluss; 5.4 (Frontend-Tests) ist eigenständig und
-  könnte vorgezogen werden, wenn Lust auf Test-Setup vor Code-Bewegung.
+1. **`POST /key`** — Tastatur-Events. Payload `{ key, modifiers?:
+   {ctrl,shift,alt,meta}, target?: 'document'|'editor' }`. Pattern wie
+   `automation:click`: Backend emittet `automation:key`, Frontend
+   dispatcht synthetischen `KeyboardEvent` aufs Ziel. Test-fähig über
+   Mock-Router + smoke_automation. Monaco-eigene Shortcuts (Strg+Z,
+   Tab-Indent) **nicht** über `/key`, sondern später über
+   `POST /editor/command {command}` mit `editor.trigger('keyboard', cmdId)`
+   — synthetische Events sind dafür fragil.
+2. **`GET /editor/text` + `POST /editor/selection {start, length}`** —
+   Inhalt + Selektion lesen/setzen. Notwendig für deterministische
+   Tests von `apply_editor_command` (Bold-Wrap etc.).
+3. **Ack-Semantik** (Codex-Fund) für `/click`, `/key`, `/toc/activate` —
+   aktuell bestätigt der Endpoint nur "Event emittiert", nicht "Handler
+   fertig". CI wird sonst flaky. Frontend acked nach Handler-Ende über
+   ein Event, Backend wartet via oneshot-Channel (mit Timeout) drauf.
+4. **`POST /wait`** — `{ event: 'editor.ready'|'document.loaded'|...,
+   timeoutMs }`. Eliminiert Polling-Flakes.
+5. **`GET /dom?selector=...`**, Console-Error-Capture, Scroll-State
+   in `/state` — mittlerer Hebel, kommen danach.
 
-Pro Schritt: `cargo test --lib && cargo clippy --all-targets -- -D warnings`
-+ `cd src-tauri/web && npm run build` grün, dann committen. Commit-Stil
-analog vorhandener Phase-4-Commits (`refactor(scope): ..., Plan-Phase 5.x`).
+Empfehlung: mit (1) `/key` anfangen — kleinster Scope, ~80 LOC + Tests,
+sofort spürbarer Test-Nutzen (Strg+S/F3/Alt+←/→ etc. werden testbar).
 
-Wenn du bei 5.1 anfängst: Codex parallel zur Architektur-Frage befragen
-("Wie würdest du `document::open(path, anchor, options)` schneiden — auch
-Frontend-Pfad über requestSaveIfDirty oder Backend dirty-aware?"). Sichten
-synthetisieren, dann implementieren.
+Pro Schritt: `cargo test --lib && cargo clippy --all-targets -- -D warnings
+&& cargo test --test smoke_automation && cd src-tauri/web && npm run build
+&& npm run test` grün, dann committen. Commit-Stil:
+`feat(automation): ..., Plan-TODO: API-Erweiterung`.
+
+Bei größeren Design-Fragen (z. B. Ack-Semantik-Mechanismus, oneshot-Channel
+vs. Promise-Bridge) Codex parallel als zweite Meinung einsetzen
+(siehe Memory) und Sichten synthetisieren.
