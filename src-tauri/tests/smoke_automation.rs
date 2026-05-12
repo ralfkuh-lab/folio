@@ -153,6 +153,59 @@ async fn post_quit_marks_mock_state_without_exiting() {
 }
 
 #[tokio::test]
+async fn get_editor_text_returns_current_text() {
+    let state = Arc::new(Mutex::new(MockAutomationState {
+        text: "# Doc\n\nbody\n".into(),
+        ..MockAutomationState::default()
+    }));
+    let response = request(
+        build_mock_router(state),
+        "GET",
+        "/editor/text",
+        None,
+        loopback(),
+    )
+    .await;
+
+    assert_eq!(StatusCode::OK, response.status);
+    assert_eq!("# Doc\n\nbody\n", response.json["text"]);
+}
+
+#[tokio::test]
+async fn post_editor_selection_updates_mock_state() {
+    let state = Arc::new(Mutex::new(MockAutomationState::default()));
+    let response = request(
+        build_mock_router(state.clone()),
+        "POST",
+        "/editor/selection",
+        Some(json!({ "start": 7, "length": 4 })),
+        loopback(),
+    )
+    .await;
+
+    assert_eq!(StatusCode::OK, response.status);
+    assert_eq!(true, response.json["ok"]);
+    let state = state.lock().unwrap();
+    assert_eq!(7, state.selection_start);
+    assert_eq!(4, state.selection_length);
+}
+
+#[tokio::test]
+async fn post_editor_selection_rejects_missing_fields() {
+    let state = Arc::new(Mutex::new(MockAutomationState::default()));
+    let response = request(
+        build_mock_router(state),
+        "POST",
+        "/editor/selection",
+        Some(json!({ "start": 3 })),
+        loopback(),
+    )
+    .await;
+
+    assert_eq!(StatusCode::BAD_REQUEST, response.status);
+}
+
+#[tokio::test]
 async fn rejects_non_loopback_requests() {
     let state = Arc::new(Mutex::new(MockAutomationState::default()));
     let response = request(

@@ -27,6 +27,46 @@ beforeEach(() => {
     vi.resetModules();
 });
 
+describe('automation/events — automation:set_editor_selection', () => {
+    it('ruft FolioEditor.setSelection mit start/length', async () => {
+        const setSelection = vi.fn();
+        (window as any).FolioEditor = { setSelection };
+
+        const events = await import('../../app/automation/events');
+        events.initAutomationEvents();
+
+        tauri.emitEvent('automation:set_editor_selection', {
+            start: 5,
+            length: 3,
+        });
+
+        expect(setSelection).toHaveBeenCalledWith(5, 3);
+    });
+
+    it('defaultet auf 0/0 wenn Felder fehlen', async () => {
+        const setSelection = vi.fn();
+        (window as any).FolioEditor = { setSelection };
+
+        const events = await import('../../app/automation/events');
+        events.initAutomationEvents();
+
+        tauri.emitEvent('automation:set_editor_selection', {});
+
+        expect(setSelection).toHaveBeenCalledWith(0, 0);
+    });
+
+    it('ignoriert das Event wenn FolioEditor fehlt', async () => {
+        delete (window as any).FolioEditor;
+        const events = await import('../../app/automation/events');
+        events.initAutomationEvents();
+
+        // Kein Throw bei fehlender FolioEditor-Surface.
+        expect(() =>
+            tauri.emitEvent('automation:set_editor_selection', { start: 1, length: 1 }),
+        ).not.toThrow();
+    });
+});
+
 describe('automation/events — automation:key', () => {
     it('dispatcht KeyboardEvent mit key/code/Modifier auf document', async () => {
         const events = await import('../../app/automation/events');

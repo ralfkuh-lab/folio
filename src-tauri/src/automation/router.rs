@@ -25,7 +25,11 @@ pub(super) fn build_router(context: AutomationContext) -> Router {
         .route("/focus", post(ui::post_focus))
         .route("/find", post(ui::post_find))
         .route("/find/text", post(ui::post_find_text))
-        .route("/editor/text", post(document::post_editor_text))
+        .route(
+            "/editor/text",
+            get(document::get_editor_text).post(document::post_editor_text),
+        )
+        .route("/editor/selection", post(document::post_editor_selection))
         .route("/resize", post(ui::post_resize))
         .route("/save", post(document::post_save))
         .route("/quit", post(document::post_quit))
@@ -40,6 +44,11 @@ pub fn build_mock_router(state: Arc<Mutex<MockAutomationState>>) -> Router {
     Router::new()
         .route("/state", get(state::mock_get_state))
         .route("/open", post(document::mock_post_open))
+        .route("/editor/text", get(document::mock_get_editor_text))
+        .route(
+            "/editor/selection",
+            post(document::mock_post_editor_selection),
+        )
         .route("/save", post(document::mock_post_save))
         .route("/quit", post(document::mock_post_quit))
         .route("/{*path}", options(mw::preflight))

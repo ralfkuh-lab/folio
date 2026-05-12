@@ -84,6 +84,17 @@ pub(super) struct EditorTextRequest {
     pub(super) text: String,
 }
 
+#[derive(Debug, Serialize)]
+pub(super) struct EditorTextResponse {
+    pub(super) text: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct EditorSelectionRequest {
+    pub(super) start: usize,
+    pub(super) length: usize,
+}
+
 #[derive(Debug, Deserialize)]
 pub(super) struct ResizeRequest {
     pub(super) width: f64,

@@ -1,6 +1,7 @@
 /* Automation-API-Bridge fuer das Frontend. Listener:
    - `automation:click` (DOM-Lookup nach id / data-name / CSS-Selektor, dann `.click()`),
    - `automation:set_editor_text` (Editor-Text setzen + Dirty/Wordcount nachziehen),
+   - `automation:set_editor_selection` (Selection im Monaco-Model setzen),
    - `automation:open_document` (Document-Open mit Frontend-Prompt-Pfad),
    - `automation:key` (synthetischer KeyboardEvent aufs Ziel, fuer
      preventDefault-Listener wie Strg+S/F3/Alt+Pfeil).
@@ -109,6 +110,15 @@ export function initAutomationEvents(): void {
         // hier nicht mehr im Scope. Ueber die Getter holen, sonst
         // ReferenceError beim ersten automation:set_editor_text.
         if (getCurrentPath()) markDirty(text !== getCleanText());
+    });
+    ev.listen('automation:set_editor_selection', function (event: any) {
+        var data = (event && event.payload) || {};
+        var start = typeof data.start === 'number' ? data.start : 0;
+        var length = typeof data.length === 'number' ? data.length : 0;
+        var editor = (window as any).FolioEditor;
+        if (editor && typeof editor.setSelection === 'function') {
+            editor.setSelection(start, length);
+        }
     });
     ev.listen('automation:open_document', function (event: any) {
         var data = event && event.payload || {};

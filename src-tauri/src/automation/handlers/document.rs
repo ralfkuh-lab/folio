@@ -7,7 +7,9 @@ use crate::automation::context::AutomationContext;
 use crate::automation::error::{json_payload, ok, ApiError, ApiResult};
 use crate::automation::helpers::emit;
 use crate::automation::mock::MockAutomationState;
-use crate::automation::types::{EditorTextRequest, OkResponse, OpenRequest};
+use crate::automation::types::{
+    EditorSelectionRequest, EditorTextRequest, EditorTextResponse, OkResponse, OpenRequest,
+};
 use crate::state::AppState;
 
 pub(in crate::automation) async fn post_open(
@@ -75,6 +77,69 @@ pub(in crate::automation) async fn mock_post_open(
     state.file = Some(payload.path);
     state.text = text.replace("\r\n", "\n");
     state.dirty = false;
+    ok()
+}
+
+pub(in crate::automation) async fn get_editor_text(
+    AxumState(context): AxumState<AutomationContext>,
+) -> ApiResult<Json<EditorTextResponse>> {
+    let text = context
+        .app_handle
+        .state::<AppState>()
+        .document_store
+        .lock()
+        .map_err(|_| ApiError::internal("document store lock poisoned"))?
+        .text
+        .clone();
+    Ok(Json(EditorTextResponse { text }))
+}
+
+pub(in crate::automation) async fn mock_get_editor_text(
+    AxumState(state): AxumState<Arc<Mutex<MockAutomationState>>>,
+) -> ApiResult<Json<EditorTextResponse>> {
+    let text = state
+        .lock()
+        .map_err(|_| ApiError::internal("mock automation state lock poisoned"))?
+        .text
+        .clone();
+    Ok(Json(EditorTextResponse { text }))
+}
+
+pub(in crate::automation) async fn post_editor_selection(
+    AxumState(context): AxumState<AutomationContext>,
+    payload: Result<Json<EditorSelectionRequest>, JsonRejection>,
+) -> ApiResult<Json<OkResponse>> {
+    let Json(payload) = json_payload(payload)?;
+    {
+        let state = context.app_handle.state::<AppState>();
+        let mut automation = state
+            .automation
+            .lock()
+            .map_err(|_| ApiError::internal("automation state lock poisoned"))?;
+        automation.selection_start = payload.start;
+        automation.selection_length = payload.length;
+    }
+    emit(
+        &context,
+        "automation:set_editor_selection",
+        serde_json::json!({
+            "start": payload.start,
+            "length": payload.length,
+        }),
+    )?;
+    ok()
+}
+
+pub(in crate::automation) async fn mock_post_editor_selection(
+    AxumState(state): AxumState<Arc<Mutex<MockAutomationState>>>,
+    payload: Result<Json<EditorSelectionRequest>, JsonRejection>,
+) -> ApiResult<Json<OkResponse>> {
+    let Json(payload) = json_payload(payload)?;
+    let mut state = state
+        .lock()
+        .map_err(|_| ApiError::internal("mock automation state lock poisoned"))?;
+    state.selection_start = payload.start;
+    state.selection_length = payload.length;
     ok()
 }
 
