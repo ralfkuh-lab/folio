@@ -156,6 +156,71 @@ describe('automation/events — ackHandler', () => {
     });
 });
 
+describe('automation/events — automation:rightclick', () => {
+    it('dispatcht contextmenu-Event auf das Ziel mit Coords', async () => {
+        const target = document.createElement('div');
+        target.id = 'rc-target';
+        document.body.appendChild(target);
+        Object.defineProperty(target, 'getBoundingClientRect', {
+            value: () => ({
+                left: 10, top: 20, width: 100, height: 40,
+                right: 110, bottom: 60, x: 10, y: 20, toJSON: () => ({}),
+            }),
+            configurable: true,
+        });
+
+        const captured: MouseEvent[] = [];
+        target.addEventListener('contextmenu', (e) => {
+            captured.push(e);
+            e.preventDefault();
+        });
+
+        const events = await import('../../app/automation/events');
+        events.initAutomationEvents();
+
+        tauri.emitEvent('automation:rightclick', {
+            name: 'rc-target',
+            requestId: 77,
+        });
+        // ackHandler ist async — work() laeuft sync nach dem ersten
+        // Promise-Tick, dispatch passiert dann. Mehr Microtask-Flushes,
+        // weil jsdom + Promise-Chain manchmal mehrere Ticks brauchen.
+        for (let i = 0; i < 5; i++) await Promise.resolve();
+        await new Promise((r) => setTimeout(r, 10));
+
+        expect(captured).toHaveLength(1);
+        expect(captured[0].clientX).toBe(60);
+        expect(captured[0].clientY).toBe(40);
+    });
+
+    it('uebernimmt explizite Coords', async () => {
+        const target = document.createElement('div');
+        target.id = 'rc-explicit';
+        document.body.appendChild(target);
+
+        const captured: MouseEvent[] = [];
+        document.addEventListener('contextmenu', (e) => {
+            captured.push(e);
+            e.preventDefault();
+        });
+
+        const events = await import('../../app/automation/events');
+        events.initAutomationEvents();
+
+        tauri.emitEvent('automation:rightclick', {
+            name: 'rc-explicit',
+            coords: { x: 200, y: 150 },
+            requestId: 78,
+        });
+        await flushAck();
+        await flushAck();
+
+        expect(captured).toHaveLength(1);
+        expect(captured[0].clientX).toBe(200);
+        expect(captured[0].clientY).toBe(150);
+    });
+});
+
 describe('automation/events — Console-Error-Capture', () => {
     it('hookt console.error und streamt an automation_console_error', async () => {
         const events = await import('../../app/automation/events');

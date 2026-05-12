@@ -2,9 +2,13 @@
 
 ## Hohe Priorität
 
-- **Automation-API für E2E-Tests vervollständigen** — Voraussetzung für eine
-  vollautomatische Hermes-Test-Routine. Schritte 1-5 der Codex-Synthese
-  (2026-05-12) sind implementiert:
+- **Automation-API für E2E-Tests vervollständigen** ✅ — Kern + alle
+  offenen Hebel implementiert (Stand 2026-05-12). Hermes-Agent hat
+  jetzt das vollständige API-Inventar (POST /key, GET /editor/text,
+  POST /editor/selection, POST /wait, ACK-Semantik auf /click + /key +
+  /toc/activate + /mode + /open-ui + /editor/selection, GET /dom,
+  Console-Error-Capture, Scroll-/Workspace-State in /state,
+  POST /rightclick). Schritte 1-5 der Codex-Synthese (2026-05-12):
   - ✅ **`POST /key`** (Commit `3e9bf18`) — Tastatur-Events. Payload `{ key, modifiers?: {ctrl,shift,alt,meta}, target?: 'document'|'editor' }`.
     Pattern wie `automation:click`: Backend emittet `automation:key`, Frontend
     dispatcht synthetischen `KeyboardEvent` aufs Ziel. `preventDefault`-Listener
@@ -50,15 +54,15 @@
     - Scope erste Runde: `/click`, `/key`, `/toc/activate`. Andere ACK-fähige
       Endpoints (`/editor/selection`, `/mode`, `/open-ui`) später.
 
-  Offene Hebel (mittel/niedrig, Folge-Runden):
-  - **`GET /dom?selector=...`** (Status-Text + View-Body ohne
-    Screenshot/OCR), **Console-Error-Capture** (Frontend abfangen + an Backend
-    streamen), **Scroll-State in `/state`** (Werte bereits im NavEntry).
-  - Right-Click/Context-Menu, Workspace-Inspektion (pinned/recent/expanded dirs).
-  - ACK-Wrapper auf weitere Endpoints ausweiten (`/editor/selection`, `/mode`,
-    `/open-ui`) — Trigger ist Frontend-seitiger Handler-Pfad, dort jeweils
-    `ackHandler` einbauen.
-  - `/wait`-Allowlist erweitern (`document.saved`, `document.dirty_clean`).
+  Alle Folge-Hebel erledigt:
+  - ✅ Scroll-/Cursor-State in `/state` (Commit `3ad2101`)
+  - ✅ `/wait`-Allowlist (`document.saved`, `document.dirty_clean`) (`3ad2101`)
+  - ✅ Workspace-Inspektion in `/state` (`3ad2101`)
+  - ✅ `GET /dom?selector=...` (`2d1521d`)
+  - ✅ ACK-Wrapper auf `/mode`, `/open-ui`, `/editor/selection` (`9cb4116`)
+  - ✅ Console-Error-Capture + `/state.consoleErrorCount` +
+    `GET /console/errors?clear=true` (`400d41d`)
+  - ✅ `POST /rightclick {name, coords?}` (`<pending commit>`)
 - **E2E-Test-Routine + Baseline-Screenshots** — Skript, das die App in Xvfb
   startet, eine Aktions-Sequenz fährt und über `/screenshot` + Pixelmatch
   gegen Baseline-PNGs verifiziert. Voraussetzung sind die Automation-API-

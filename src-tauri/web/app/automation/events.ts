@@ -243,6 +243,33 @@ export function initAutomationEvents(): void {
             if (el && typeof (el as HTMLElement).click === 'function') (el as HTMLElement).click();
         });
     });
+    ev.listen('automation:rightclick', function (event: any) {
+        var payload = (event && event.payload) || {};
+        ackHandler(invoke, payload, function () {
+            var el = resolveAutomationTarget(payload.name);
+            if (!el) return;
+            var x: number;
+            var y: number;
+            if (payload.coords && typeof payload.coords.x === 'number') {
+                x = payload.coords.x;
+                y = payload.coords.y;
+            } else {
+                var rect = (el as HTMLElement).getBoundingClientRect();
+                x = rect.left + rect.width / 2;
+                y = rect.top + rect.height / 2;
+            }
+            try {
+                el.dispatchEvent(new MouseEvent('contextmenu', {
+                    bubbles: true,
+                    cancelable: true,
+                    button: 2,
+                    buttons: 2,
+                    clientX: x,
+                    clientY: y,
+                }));
+            } catch (_) {}
+        });
+    });
     ev.listen('automation:dom_query', function (event: any) {
         var payload = (event && event.payload) || {};
         var id = payload.requestId;

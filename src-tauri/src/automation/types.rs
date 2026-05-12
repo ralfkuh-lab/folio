@@ -149,6 +149,19 @@ pub(super) struct ClickRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub(super) struct RightClickRequest {
+    pub(super) name: String,
+    #[serde(default)]
+    pub(super) coords: Option<ClickCoords>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct ClickCoords {
+    pub(super) x: f64,
+    pub(super) y: f64,
+}
+
+#[derive(Debug, Deserialize)]
 pub(super) struct TocActivateRequest {
     pub(super) slug: String,
 }

@@ -7,7 +7,7 @@ use crate::automation::error::{json_payload, ok, ApiError, ApiResult};
 use crate::automation::helpers::{emit, main_window};
 use crate::automation::types::{
     AckOptions, AckedResponse, ClickRequest, FindTextRequest, KeyRequest, ModeRequest, OkResponse,
-    RailRequest, ResizeRequest, ThemeRequest, TocActivateRequest,
+    RailRequest, ResizeRequest, RightClickRequest, ThemeRequest, TocActivateRequest,
 };
 use crate::state::AppState;
 
@@ -131,6 +131,28 @@ pub(in crate::automation) async fn post_click(
         "automation:click",
         serde_json::json!({ "name": payload.name, "requestId": request_id }),
     )?;
+    let timeout_ms = options.ack_timeout_ms.unwrap_or(DEFAULT_ACK_TIMEOUT_MS);
+    let acked = ack::wait_for_ack(state.inner(), request_id, receiver, timeout_ms).await;
+    Ok(Json(AckedResponse {
+        ok: true,
+        acked,
+        request_id,
+    }))
+}
+
+pub(in crate::automation) async fn post_rightclick(
+    AxumState(context): AxumState<AutomationContext>,
+    Query(options): Query<AckOptions>,
+    payload: Result<Json<RightClickRequest>, JsonRejection>,
+) -> ApiResult<Json<AckedResponse>> {
+    let Json(payload) = json_payload(payload)?;
+    let state = context.app_handle.state::<AppState>();
+    let (request_id, receiver) = ack::register(state.inner()).map_err(ApiError::internal)?;
+    let mut event_payload = serde_json::json!({ "name": payload.name, "requestId": request_id });
+    if let Some(coords) = payload.coords {
+        event_payload["coords"] = serde_json::json!({ "x": coords.x, "y": coords.y });
+    }
+    emit(&context, "automation:rightclick", event_payload)?;
     let timeout_ms = options.ack_timeout_ms.unwrap_or(DEFAULT_ACK_TIMEOUT_MS);
     let acked = ack::wait_for_ack(state.inner(), request_id, receiver, timeout_ms).await;
     Ok(Json(AckedResponse {
