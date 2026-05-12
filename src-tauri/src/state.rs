@@ -12,7 +12,7 @@ use crate::{
 use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::oneshot;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,6 +52,10 @@ pub struct AppState {
     /// Cleanup: Timeout-Pfad entfernt die ID; spaete ACKs ignorieren.
     pub pending_acks: Mutex<HashMap<u64, oneshot::Sender<()>>>,
     pub next_ack_id: AtomicU64,
+    /// Pro Event-Name eine Map von Wartenden (siehe
+    /// `automation::wait`). `POST /wait` registriert hier, die Trigger-
+    /// Punkte (`editor_ready`, DocumentEvents.loaded) drainen den Bucket.
+    pub pending_waits: Mutex<HashMap<String, HashMap<u64, oneshot::Sender<()>>>>,
 }
 
 impl Default for AppState {
@@ -79,6 +83,7 @@ impl AppState {
             cli_open_path: Mutex::new(None),
             pending_acks: Mutex::new(HashMap::new()),
             next_ack_id: AtomicU64::new(1),
+            pending_waits: Mutex::new(HashMap::new()),
         }
     }
 
@@ -97,6 +102,10 @@ impl AppState {
                             "content": renderer::render_body(&payload.text),
                             "tocHtml": toc::render_html(&toc::extract(&payload.text)),
                         }),
+                    );
+                    // Wartende `POST /wait { event: "document.loaded" }` aufwecken.
+                    crate::automation::wait::signal_document_loaded(
+                        app.state::<AppState>().inner(),
                     );
                 }
             })),

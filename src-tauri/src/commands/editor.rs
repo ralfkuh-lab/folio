@@ -93,6 +93,8 @@ pub async fn editor_ready(handle: AppHandle, state: State<'_, AppState>) -> Resu
         .lock()
         .map_err(|_| "automation state lock poisoned".to_string())?
         .editor_ready = true;
+    // Loesen aller `POST /wait { event: "editor.ready" }`-Wartenden.
+    crate::automation::wait::signal_editor_ready(state.inner());
     handle
         .emit("editor:ready", serde_json::json!({}))
         .map_err(|error| error.to_string())

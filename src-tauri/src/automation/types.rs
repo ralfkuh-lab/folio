@@ -52,6 +52,20 @@ pub(super) struct AckOptions {
     pub(super) ack_timeout_ms: Option<u64>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct WaitRequest {
+    pub(super) event: String,
+    pub(super) timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct WaitResponse {
+    pub(super) ok: bool,
+    pub(super) fired: bool,
+    pub(super) event: String,
+}
+
 #[derive(Debug, Serialize)]
 pub(super) struct ErrorResponse {
     pub(super) error: String,

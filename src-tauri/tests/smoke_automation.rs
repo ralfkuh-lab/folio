@@ -206,6 +206,60 @@ async fn post_editor_selection_rejects_missing_fields() {
 }
 
 #[tokio::test]
+async fn post_wait_returns_immediately_when_editor_ready_latch_set() {
+    let state = Arc::new(Mutex::new(MockAutomationState {
+        editor_ready: true,
+        ..MockAutomationState::default()
+    }));
+    let response = request(
+        build_mock_router(state),
+        "POST",
+        "/wait",
+        Some(json!({ "event": "editor.ready", "timeoutMs": 50 })),
+        loopback(),
+    )
+    .await;
+
+    assert_eq!(StatusCode::OK, response.status);
+    assert_eq!(true, response.json["fired"]);
+    assert_eq!("editor.ready", response.json["event"]);
+}
+
+#[tokio::test]
+async fn post_wait_times_out_for_transient_event_without_trigger() {
+    let state = Arc::new(Mutex::new(MockAutomationState::default()));
+    let response = request(
+        build_mock_router(state),
+        "POST",
+        "/wait",
+        Some(json!({ "event": "document.loaded", "timeoutMs": 30 })),
+        loopback(),
+    )
+    .await;
+
+    assert_eq!(StatusCode::OK, response.status);
+    assert_eq!(false, response.json["fired"]);
+}
+
+#[tokio::test]
+async fn post_wait_rejects_unknown_event() {
+    let state = Arc::new(Mutex::new(MockAutomationState::default()));
+    let response = request(
+        build_mock_router(state),
+        "POST",
+        "/wait",
+        Some(json!({ "event": "garbage", "timeoutMs": 10 })),
+        loopback(),
+    )
+    .await;
+
+    assert_eq!(StatusCode::BAD_REQUEST, response.status);
+    let err = response.json["error"].as_str().unwrap_or("");
+    assert!(err.contains("garbage"));
+    assert!(err.contains("editor.ready"));
+}
+
+#[tokio::test]
 async fn rejects_non_loopback_requests() {
     let state = Arc::new(Mutex::new(MockAutomationState::default()));
     let response = request(

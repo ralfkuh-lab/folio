@@ -3,24 +3,29 @@
 ## Hohe Priorität
 
 - **Automation-API für E2E-Tests vervollständigen** — Voraussetzung für eine
-  vollautomatische Hermes-Test-Routine. Nach Codex-Synthese (2026-05-12)
-  fehlen primär Test-Blocker:
-  - **`POST /key`** — Tastatur-Events. Payload `{ key, modifiers?: {ctrl,shift,alt,meta}, target?: 'document'|'editor' }`.
+  vollautomatische Hermes-Test-Routine. Schritte 1-5 der Codex-Synthese
+  (2026-05-12) sind implementiert:
+  - ✅ **`POST /key`** (Commit `3e9bf18`) — Tastatur-Events. Payload `{ key, modifiers?: {ctrl,shift,alt,meta}, target?: 'document'|'editor' }`.
     Pattern wie `automation:click`: Backend emittet `automation:key`, Frontend
     dispatcht synthetischen `KeyboardEvent` aufs Ziel. `preventDefault`-Listener
     (Strg+S, F3, Strg+F, Alt+←/→, Strg+1/2) sind damit testbar. Monaco-eigene
     Shortcuts (Strg+Z, Tab-Indent) später über separaten `POST /editor/command {command}`,
     der `editor.trigger('keyboard', cmdId)` ruft — synthetische Events sind dafür
     fragil.
-  - **`GET /editor/text`** — kompletter Editor-Inhalt. Nicht in `/state` aufnehmen
+  - ✅ **`GET /editor/text`** (Commit `cb8a0d1`) — kompletter Editor-Inhalt. Nicht in `/state` aufnehmen
     (Markdown kann groß sein, `/state` ist Polling-Snapshot).
-  - **`POST /editor/selection {start, length}`** — Selection setzen, damit
+  - ✅ **`POST /editor/selection {start, length}`** (Commit `cb8a0d1`) — Selection setzen, damit
     Formatierungs-Commands (Bold-Wrap etc.) deterministisch getestet werden können.
-  - **`POST /wait`** — `{ event: 'editor.ready'|'document.loaded'|..., timeoutMs }`.
-    Eliminiert Polling-Flakes. Backend hält die Verbindung, bis das Event feuert
-    oder Timeout.
-  - **Ack-Semantik für Event-Aktionen** (`/click`, `/key`, `/toc/activate`) —
-    aktuell bestätigt der Endpoint nur "Event emittiert", nicht "Handler durch".
+  - ✅ **`POST /wait`** (Commit folgt) — `{ event, timeoutMs }`.
+    Allowlist `editor.ready` (Latch) + `document.loaded` (Future-Event).
+    Backend hält Verbindung bis Event feuert oder Timeout. Trigger-Punkte:
+    `editor_ready`-Command + `DocumentEvents.loaded`-Callback. Default-
+    Timeout 5000 ms.
+  - ✅ **Ack-Semantik für Event-Aktionen** (`/click`, `/key`, `/toc/activate`) —
+    Commit `f3225e0`. Endpoints warten via oneshot bis Frontend-Handler
+    durch ist (Default 1000 ms, per Query `?ackTimeoutMs` überschreibbar),
+    Response `{ ok, acked, requestId }`. Frontend ackt nach Microtask + rAF
+    via `invoke('automation_ack', {id})`.
     Lösung-Design (mit Codex synthetisiert, 2026-05-12):
     - Backend: `AppState.pending_acks: Mutex<HashMap<u64, oneshot::Sender<()>>>`
       + `AtomicU64 next_ack_id`. Handler legt Sender ab, emittet
@@ -44,11 +49,16 @@
       nicht, dass *dieser* Request fertig ist; oneshot ist kausal sauberer.
     - Scope erste Runde: `/click`, `/key`, `/toc/activate`. Andere ACK-fähige
       Endpoints (`/editor/selection`, `/mode`, `/open-ui`) später.
-  - Mittlerer Hebel: **`GET /dom?selector=...`** (Status-Text + View-Body ohne
+
+  Offene Hebel (mittel/niedrig, Folge-Runden):
+  - **`GET /dom?selector=...`** (Status-Text + View-Body ohne
     Screenshot/OCR), **Console-Error-Capture** (Frontend abfangen + an Backend
     streamen), **Scroll-State in `/state`** (Werte bereits im NavEntry).
-  - Niedriger Hebel: Right-Click/Context-Menu, Workspace-Inspektion
-    (pinned/recent/expanded dirs).
+  - Right-Click/Context-Menu, Workspace-Inspektion (pinned/recent/expanded dirs).
+  - ACK-Wrapper auf weitere Endpoints ausweiten (`/editor/selection`, `/mode`,
+    `/open-ui`) — Trigger ist Frontend-seitiger Handler-Pfad, dort jeweils
+    `ackHandler` einbauen.
+  - `/wait`-Allowlist erweitern (`document.saved`, `document.dirty_clean`).
 - **E2E-Test-Routine + Baseline-Screenshots** — Skript, das die App in Xvfb
   startet, eine Aktions-Sequenz fährt und über `/screenshot` + Pixelmatch
   gegen Baseline-PNGs verifiziert. Voraussetzung sind die Automation-API-

@@ -21,6 +21,7 @@ mod middleware;
 mod mock;
 mod router;
 mod types;
+pub mod wait;
 
 pub use mock::MockAutomationState;
 pub use router::build_mock_router;
