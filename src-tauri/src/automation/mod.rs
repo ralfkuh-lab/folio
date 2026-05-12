@@ -14,6 +14,7 @@ use crate::state::AppState;
 
 pub mod ack;
 mod context;
+pub mod dom;
 mod error;
 mod handlers;
 mod helpers;

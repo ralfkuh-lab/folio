@@ -92,6 +92,23 @@ pub(super) struct WaitRequest {
     pub(super) timeout_ms: Option<u64>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct DomQuery {
+    pub(super) selector: String,
+    #[serde(default)]
+    pub(super) timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct DomResponse {
+    pub(super) ok: bool,
+    pub(super) timed_out: bool,
+    #[serde(flatten)]
+    pub(super) snapshot: crate::automation::dom::DomSnapshot,
+}
+
 #[derive(Debug, Serialize)]
 pub(super) struct WaitResponse {
     pub(super) ok: bool,

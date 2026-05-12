@@ -6,7 +6,7 @@ use axum::{
 use std::sync::{Arc, Mutex};
 
 use super::context::AutomationContext;
-use super::handlers::{document, screenshot, state, ui, wait};
+use super::handlers::{document, dom, screenshot, state, ui, wait};
 use super::middleware as mw;
 use super::mock::MockAutomationState;
 
@@ -14,6 +14,7 @@ pub(super) fn build_router(context: AutomationContext) -> Router {
     Router::new()
         .route("/state", get(state::get_state))
         .route("/screenshot", get(screenshot::get_screenshot))
+        .route("/dom", get(dom::get_dom))
         .route("/open", post(document::post_open))
         .route("/open-ui", post(document::post_open_ui))
         .route("/mode", post(ui::post_mode))

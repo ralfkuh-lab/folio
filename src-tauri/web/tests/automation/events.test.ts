@@ -113,6 +113,74 @@ describe('automation/events — ackHandler', () => {
     });
 });
 
+describe('automation/events — automation:dom_query', () => {
+    it('liefert Snapshot via automation_dom_response (id + payload)', async () => {
+        const btn = document.createElement('button');
+        btn.id = 'snap-target';
+        btn.setAttribute('data-name', 'snap');
+        btn.textContent = 'hello';
+        document.body.appendChild(btn);
+
+        const events = await import('../../app/automation/events');
+        events.initAutomationEvents();
+
+        tauri.emitEvent('automation:dom_query', {
+            selector: 'snap-target',
+            requestId: 21,
+        });
+
+        // invoke ist async via .then chain — kurze Tick-Pause.
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(tauri.invoke).toHaveBeenCalledWith(
+            'automation_dom_response',
+            expect.objectContaining({
+                id: 21,
+                payload: expect.objectContaining({
+                    exists: true,
+                    textContent: 'hello',
+                    tagName: 'button',
+                    matchCount: 1,
+                }),
+            }),
+        );
+    });
+
+    it('liefert exists=false fuer unbekannten Selektor', async () => {
+        const events = await import('../../app/automation/events');
+        events.initAutomationEvents();
+
+        tauri.emitEvent('automation:dom_query', {
+            selector: '#really-not-there',
+            requestId: 9,
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(tauri.invoke).toHaveBeenCalledWith(
+            'automation_dom_response',
+            expect.objectContaining({
+                id: 9,
+                payload: expect.objectContaining({ exists: false, matchCount: 0 }),
+            }),
+        );
+    });
+
+    it('ignoriert Events ohne requestId', async () => {
+        const events = await import('../../app/automation/events');
+        events.initAutomationEvents();
+
+        tauri.emitEvent('automation:dom_query', { selector: 'foo' });
+        await Promise.resolve();
+
+        expect(tauri.invoke).not.toHaveBeenCalledWith(
+            'automation_dom_response',
+            expect.anything(),
+        );
+    });
+});
+
 describe('automation/events — automation:set_editor_selection', () => {
     it('ruft FolioEditor.setSelection mit start/length', async () => {
         const setSelection = vi.fn();

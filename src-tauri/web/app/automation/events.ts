@@ -4,7 +4,9 @@
    - `automation:set_editor_selection` (Selection im Monaco-Model setzen),
    - `automation:open_document` (Document-Open mit Frontend-Prompt-Pfad),
    - `automation:key` (synthetischer KeyboardEvent aufs Ziel, fuer
-     preventDefault-Listener wie Strg+S/F3/Alt+Pfeil).
+     preventDefault-Listener wie Strg+S/F3/Alt+Pfeil),
+   - `automation:dom_query` (querySelector + Snapshot via
+     `automation_dom_response`).
 
    Selektor-Fallback-Reihenfolge in `automation:click` ist Teil des
    Automation-Vertrags — siehe `docs/frontend-globals.md` Abschnitt 4.
@@ -124,6 +126,47 @@ export async function ackHandler(
     }
 }
 
+// Selektor-Aufloesung fuer `automation:click` UND `automation:dom_query`:
+// (1) getElementById, (2) data-name, (3) CSS-Selektor. Bewusst gleicher
+// Vertrag wie /click.
+function resolveAutomationTarget(name: string): Element | null {
+    if (!name) return null;
+    var el: Element | null = document.getElementById(name);
+    if (!el) {
+        try { el = document.querySelector('[data-name="' + CSS.escape(name) + '"]'); } catch (_) {}
+    }
+    if (!el) {
+        try { el = document.querySelector(name); } catch (_) {}
+    }
+    return el;
+}
+
+// Wie viele Treffer hat der Selektor? Liefert 1 fuer id/data-name-Lookups
+// (eindeutig), sonst querySelectorAll.length. Hilft Hermes, broad vs.
+// narrow Selektoren zu erkennen.
+function countAutomationMatches(name: string): number {
+    if (!name) return 0;
+    if (document.getElementById(name)) return 1;
+    try {
+        var byName = document.querySelectorAll('[data-name="' + CSS.escape(name) + '"]');
+        if (byName.length > 0) return byName.length;
+    } catch (_) {}
+    try {
+        return document.querySelectorAll(name).length;
+    } catch (_) {
+        return 0;
+    }
+}
+
+function elementAttributes(el: Element): Record<string, string> {
+    var out: Record<string, string> = {};
+    for (var i = 0; i < el.attributes.length; i++) {
+        var attr = el.attributes.item(i);
+        if (attr) out[attr.name] = attr.value;
+    }
+    return out;
+}
+
 export function initAutomationEvents(): void {
     const ev = window.__TAURI__ && window.__TAURI__.event;
     const core = window.__TAURI__ && window.__TAURI__.core;
@@ -133,17 +176,33 @@ export function initAutomationEvents(): void {
     ev.listen('automation:click', function (event: any) {
         var payload = (event && event.payload) || {};
         ackHandler(invoke, payload, function () {
-            var name = payload.name;
-            if (!name) return;
-            var el: HTMLElement | null = document.getElementById(name);
-            if (!el) {
-                try { el = document.querySelector('[data-name="' + CSS.escape(name) + '"]'); } catch (_) {}
-            }
-            if (!el) {
-                try { el = document.querySelector(name); } catch (_) {}
-            }
+            var el = resolveAutomationTarget(payload.name);
             if (el && typeof (el as HTMLElement).click === 'function') (el as HTMLElement).click();
         });
+    });
+    ev.listen('automation:dom_query', function (event: any) {
+        var payload = (event && event.payload) || {};
+        var id = payload.requestId;
+        if (typeof id !== 'number') return;
+        var el = resolveAutomationTarget(payload.selector);
+        var snap = el
+            ? {
+                exists: true,
+                textContent: el.textContent || '',
+                innerHtml: el.innerHTML || '',
+                tagName: el.tagName.toLowerCase(),
+                attributes: elementAttributes(el),
+                matchCount: countAutomationMatches(payload.selector),
+            }
+            : {
+                exists: false,
+                textContent: null,
+                innerHtml: null,
+                tagName: null,
+                attributes: {},
+                matchCount: 0,
+            };
+        invoke('automation_dom_response', { id: id, payload: snap }).catch(function(){});
     });
     ev.listen('automation:set_editor_text', function (event: any) {
         var data = event && event.payload || {};

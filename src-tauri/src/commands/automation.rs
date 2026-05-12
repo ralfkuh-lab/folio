@@ -9,9 +9,19 @@
 use tauri::State;
 
 use crate::automation;
+use crate::automation::dom::DomSnapshot;
 use crate::state::AppState;
 
 #[tauri::command]
 pub fn automation_ack(id: u64, state: State<'_, AppState>) -> Result<(), String> {
     automation::ack::signal_ack(state.inner(), id)
+}
+
+#[tauri::command]
+pub fn automation_dom_response(
+    id: u64,
+    payload: DomSnapshot,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    automation::dom::deliver(state.inner(), id, payload)
 }

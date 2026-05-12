@@ -56,6 +56,11 @@ pub struct AppState {
     /// `automation::wait`). `POST /wait` registriert hier, die Trigger-
     /// Punkte (`editor_ready`, DocumentEvents.loaded) drainen den Bucket.
     pub pending_waits: Mutex<HashMap<String, HashMap<u64, oneshot::Sender<()>>>>,
+    /// Map fuer `GET /dom` (siehe `automation::dom`). Backend wartet auf
+    /// das DOM-Snapshot-Payload, das das Frontend per
+    /// `automation_dom_response` liefert.
+    pub pending_dom_queries:
+        Mutex<HashMap<u64, oneshot::Sender<crate::automation::dom::DomSnapshot>>>,
 }
 
 impl Default for AppState {
@@ -84,6 +89,7 @@ impl AppState {
             pending_acks: Mutex::new(HashMap::new()),
             next_ack_id: AtomicU64::new(1),
             pending_waits: Mutex::new(HashMap::new()),
+            pending_dom_queries: Mutex::new(HashMap::new()),
         }
     }
 

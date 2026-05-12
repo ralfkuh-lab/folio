@@ -85,7 +85,7 @@ belassen, weil als Debug-Surface in DevTools nützlich.
 - `panel:rail_changed`
 - `automation:click`, `automation:set_editor_text`,
   `automation:set_editor_selection`, `automation:open_document`,
-  `automation:key`
+  `automation:key`, `automation:dom_query`
 - `cli:open`
 - `menu:file_open`, `menu:file_save`, `menu:file_recent`, `menu:file_close`,
   `menu:edit_undo`, `menu:edit_redo`, `menu:edit_find`,
@@ -113,6 +113,9 @@ Tauri-Commands. Auswahl, vollstaendig in `commands/mod.rs` bzw.
   `automation:key` / `navigation:toc_click` durch ist. Backend nimmt den
   passenden oneshot-Sender aus `AppState.pending_acks` und gibt seinem
   HTTP-Endpoint frei. Siehe Abschnitt 5.
+- `automation_dom_response({ id, payload })` — Frontend liefert das
+  DOM-Snapshot-Payload fuer `GET /dom`. Backend matched die ID gegen
+  `AppState.pending_dom_queries` und sendet die HTTP-Response.
 
 ## 4. Automation-API-DOM-Vertrag
 
