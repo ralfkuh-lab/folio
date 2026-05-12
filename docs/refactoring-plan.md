@@ -249,14 +249,13 @@ am Build vorbei. Build-Script hatte keinen Typecheck-Schritt.
 zwei IIFEs, vielen inline-Listenern. `editor.ts` ist ~550 LOC monolitischer
 Monaco-Adapter.
 
-- [ ] **`main.ts` aufteilen** in Leaf-Module:
-  - `ui/toolbar-actions.ts` — `bind('tb-*')` + `applyCmd` aus IIFE #2
-  - `ui/menu-router.ts` — `menu:*`-Listener (file_open, file_save,
-    file_recent, view_mode_*, view_theme_*, view_rail_*, edit_*, help_*, about)
-  - `ui/drag-drop.ts` — `tauri://drag-*`-Listener
-  - `automation/events.ts` — `automation:click`, `automation:set_editor_text`,
-    `automation:open_document`
-  - `main.ts` wird reiner Init-Router (~100 LOC Ziel)
+- [x] **`main.ts` aufteilen** ✓ Commit — vier neue Leaf-Module + Init-Router:
+  - `ui/toolbar-actions.ts` (135 LOC) — `bind('tb-*')` + `applyCmd` + Tastatur-Shortcuts (Strg+1/2/S, Alt+←/→) + Statusbar-Theme-Toggle.
+  - `ui/menu-router.ts` (87 LOC) — alle 14 `menu:*`-Listener (file_open/save/recent/close, edit_undo/redo/find, view_mode_*, view_theme_*, view_rail_*, help_cheatsheet, about). Nimmt `applyRailVisibility` als Dep.
+  - `ui/drag-drop.ts` (25 LOC) — `tauri://drag-enter/over/leave/drop`.
+  - `automation/events.ts` (61 LOC) — `automation:click`/`set_editor_text`/`open_document` + `folio-editor-text-updated`-CustomEvent (Editor-Text-Tracking, war im selben IIFE).
+  - `main.ts` (175 LOC) ist jetzt Init-Router: Modul-Init in fester Reihenfolge + cross-modulare Backend-Event-Listener (shell:command/insertVaultChildren, navigation:changed-Restore, navigation:toc_click, panel:rail_changed-Sync, cli_pending_open/cli:open, Theme-Boot).
+  - Beifang: `applyShellState` als Dead Code entfernt (war im alten main.ts definiert, nie aufgerufen). Bundle 46.9 → 46.2 KB.
 - [ ] **`editor.ts` splitten** in `web/editor/`:
   - `editor/mount.ts` — Monaco-Init, `mount`, `setText`, `setTheme`, `layout`
   - `editor/find.ts` — Find-State (Decorations, openFind/closeFind/setFindTerm)
