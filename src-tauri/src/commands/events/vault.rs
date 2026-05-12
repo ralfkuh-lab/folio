@@ -17,13 +17,7 @@ pub(super) fn toggle_section(
         .lock()
         .map_err(|_| "panel state lock poisoned".to_string())?
         .set_section_expanded(&section, expanded)
-        .map_err(|error| error.to_string())?;
-    state
-        .vault
-        .lock()
-        .map_err(|_| "vault lock poisoned".to_string())?
-        .on_section_toggle(&section, expanded);
-    Ok(())
+        .map_err(|error| error.to_string())
 }
 
 pub(super) fn expand_dir(path: String, state: &AppState, handle: &AppHandle) -> Result<(), String> {

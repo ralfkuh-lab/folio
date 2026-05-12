@@ -97,7 +97,6 @@ export function insertVaultChildren(path: string, html: string): void {
         if (!ul) continue;
         ul.innerHTML = html || '';
         ul.classList.remove('collapsed');
-        li.setAttribute('data-loaded', '1');
         const caret = li.querySelector(':scope > .row > .caret');
         if (caret) caret.classList.add('open');
         const iconEl = li.querySelector(':scope > .row > .icon');

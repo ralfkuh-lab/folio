@@ -127,7 +127,6 @@ describe('vault/tree — insertVaultChildren', () => {
         );
 
         const dirNode = document.querySelector('.node[data-path="/foo"]') as HTMLElement;
-        expect(dirNode.getAttribute('data-loaded')).toBe('1');
         expect(dirNode.querySelector('.caret')!.classList.contains('open')).toBe(true);
         expect(dirNode.querySelector('.icon')!.textContent).toBe('📂');
         expect(dirNode.querySelector('ul.children')!.querySelector('.node[data-path="/foo/x.md"]')).not.toBeNull();

@@ -90,8 +90,6 @@ impl Vault {
             .retain(|entry| !Path::new(entry).starts_with(target));
     }
 
-    pub fn on_section_toggle(&self, _section: &str, _expanded: bool) {}
-
     pub fn set_active(&mut self, path: Option<String>) {
         self.active_path = path;
     }
@@ -105,7 +103,6 @@ impl Vault {
         let active = self.active_path.as_deref() == Some(path);
         let class = if active { "node active" } else { "node" };
         let kind = if is_directory { "dir" } else { "file" };
-        let loaded = if expanded { "1" } else { "0" };
         let caret_class = if is_directory {
             if expanded {
                 "caret open"
@@ -140,7 +137,7 @@ impl Vault {
             String::new()
         };
         format!(
-            r#"<li class="{class}" data-kind="{kind}" data-path="{path}" data-loaded="{loaded}"><div class="row"><span class="{caret_class}">▾</span>{icon_html}<span class="label">{name}</span></div><ul class="{children_class}">{children}</ul></li>"#,
+            r#"<li class="{class}" data-kind="{kind}" data-path="{path}"><div class="row"><span class="{caret_class}">▾</span>{icon_html}<span class="label">{name}</span></div><ul class="{children_class}">{children}</ul></li>"#,
             path = escape_attr(path),
             name = escape_html(&display_name(Path::new(path))),
         )
