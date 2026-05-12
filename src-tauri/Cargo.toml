@@ -20,14 +20,14 @@ notify = "7.0"
 axum = "0.8"
 tokio = { version = "1.42", features = ["rt-multi-thread", "macros", "net", "sync"] }
 
-# Phase 5: Screenshot
-xcap = "0.4"
-
 # Phase 4: Tauri
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-single-instance = "2"
+# Screenshot via Plugin (Monitor-Framebuffer). Notwendig fuer Monaco
+# in Xvfb/Headless — siehe docs/headless-monaco-test-results.md.
+tauri-plugin-screenshots = "2.2.0"
 
 # File-type icons
 image = { version = "0.25", default-features = false, features = ["png"] }
