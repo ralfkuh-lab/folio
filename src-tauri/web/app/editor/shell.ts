@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* Editor-Shell: Bridge zu window.FolioEditor + Mode-Verwaltung
    (View/Edit/Split) + Theme-Anwendung im Editor + zugehoerige
    Lifecycle-Listener (app:set_mode fusioniert, app:set_theme,

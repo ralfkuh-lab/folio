@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* Modale Dialoge: Rename-Modal und Unsaved-Changes-Modal. Beide
    Promise-basiert, mit eigener Event-Listener-Registrierung pro Aufruf
    (kein dauerhafter Wiring-State). DOM-Lookup ist lazy — die HTML-Shell

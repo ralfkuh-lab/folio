@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* Export-Dialog: HTML/PDF-Format-Wahl + Layout-Karten mit Iframe-Preview.
    Aufruf via Toolbar (tb-export). Abhaengig vom Document-State
    (currentPath, syncEditorTextToStore) und Statusbar (showStatus), die

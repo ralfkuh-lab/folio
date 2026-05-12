@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* folio app bundle. Plan-Phase 4.3+: leaf modules out of main.ts. Cross-
    bundle bridge bleibt window.FolioEditor + Tauri-Runtime; alles andere
    wird inkrementell in app/{ui,vault,view,editor,state}/ modularisiert. */
@@ -426,8 +425,8 @@ import {
     });
 
     /* ----- Editor-Text-Tracking für Wordcount im Edit-Modus ----- */
-    window.addEventListener('folio-editor-text-updated', function (e) {
-        var text = e.detail || '';
+    window.addEventListener('folio-editor-text-updated', function (e: Event) {
+        var text = (e as CustomEvent).detail || '';
         updateWordCount(text);
         if (getCurrentPath()) markDirty(text !== getCleanText());
         invoke('editor_text_changed', { text: text }).catch(function(){});

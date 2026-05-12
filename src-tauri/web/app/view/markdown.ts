@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* View-Mode-Markdown-Rendering: TOC-Setter, Anker-Scroll, Asset-Rewrite,
    sichtbare-Heading-Tracking + ViewFinder (DOM-Sucher via CSS Custom
    Highlight API). Der ViewFinder ist die View-Mode-Variante des

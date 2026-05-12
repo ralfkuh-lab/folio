@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* WebView-Zoom-Steuerung: Strg+Mausrad, Strg+0, Strg+± (auch Strg+'-').
    Persistiert in localStorage, wird beim Boot ohne Indicator-Flash
    reaktiviert. capture:true + stopPropagation greift, bevor Monaco das

@@ -4,23 +4,32 @@
 // Tauri-Runtime und Monaco-AMD-Loader sind drittseitig. `__folioInvoke`
 // und `openDocument` sind defensive DevTools-Hooks aus Phase 4.6.
 
+// Spiegelt die in `editor.ts::window.FolioEditor = {...}` exportierte
+// API. Index-Signature deckt selten genutzte Methoden ab; haeufige
+// werden konkret typisiert, damit Aufrufer ueberraschungsfrei sind.
 interface FolioEditorSurface {
-    mount(node: HTMLElement, text: string, theme?: string, language?: string): void;
-    setText(text: string): void;
+    mount(elementId: string, initialText: string): Promise<void>;
+    setText(text: string, language?: string): void;
+    getText(): string;
     setSelection(start: number, length: number): void;
+    getSelection(): { start: number; length: number };
     setScroll(y: number): void;
-    setTheme(theme: string): void;
+    getScroll(): number;
+    setTheme(mode: string): void;
     layout(): void;
     focus(): void;
-    getSelection(): { start: number; length: number };
-    applyReplace(start: number, length: number, text: string): void;
+    applyReplace(args: { fullText: string; selectionStart: number; selectionLength: number }): void;
     openFind(initialTerm?: string): void;
     closeFind(): void;
+    setFindOptions(opts: Record<string, unknown>): void;
     setFindTerm(term: string): void;
     findNext(): void;
     findPrev(): void;
-    isMounted?: () => boolean;
-    setLanguage?: (language: string) => void;
+    undo(): void;
+    redo(): void;
+    setLanguage(language: string): void;
+    getLanguage(): string;
+    listLanguages(): Array<{ id: string; label: string; aliases: string[] }>;
     [key: string]: any;
 }
 

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* Find-Bar (HTML in der Shell, FolioEditor / ViewFinder liefern Logik).
    Im Edit-Mode bedient sie Monaco (via window.FolioEditor); im View-Mode
    den DOM-Sucher (ViewFinder aus view/markdown.ts).

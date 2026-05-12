@@ -211,23 +211,37 @@ an vier Stellen separat choreografiert — Ursache wiederkehrender Link-Klick-Bu
 - [x] **Dead Code raus**: `commands/nav.rs::link_click` (Tauri-Command, nie invoked) ✓ Commit
 - [x] **Dead Code raus**: `DocumentStore::mark_external_changed` + `has_external_changes`-Feld ✓ Commit
 
-#### 5.2 — Frontend-Type-Safety
+#### 5.2 — Frontend-Type-Safety ✅ abgeschlossen
 
-`@ts-nocheck` ist flächendeckend in `src-tauri/web/app/**.ts`; dadurch
+`@ts-nocheck` war flächendeckend in `src-tauri/web/app/**.ts`; dadurch
 rutschte `main.ts:418` (ReferenceError auf `currentPath`/`cleanText`)
-am Build vorbei. Build-Script hat keinen Typecheck-Schritt.
+am Build vorbei. Build-Script hatte keinen Typecheck-Schritt.
 
-- [ ] **`@ts-nocheck` schrittweise raus**, Reihenfolge nach Hebel:
-  - `state/document.ts` (zentraler State, viele Importer)
-  - `main.ts` (Orchestrator, viele Cross-Modul-Aufrufe)
-  - `editor/shell.ts`, `vault/tree.ts`, `ui/find-bar.ts`
-  - Rest folgt automatisch
-- [ ] **`tsc --noEmit` in `package.json::build` ergänzen** — vor esbuild,
-      Build bricht bei Typfehlern ab.
-- [ ] **`window.*`-Surface typisieren** über eigene `.d.ts` oder
-      `declare global` in `globals.d.ts`. Aktueller Stand: `window.FolioEditor`,
-      `window.__folioInvoke`, `window.openDocument`, `window.setVaultPinned`/
-      `setVaultRecent` etc. — siehe `docs/frontend-globals.md`.
+- [x] **TS-Setup** ✓ Commit
+  - `typescript@^5.6.3` als devDep, `tsconfig.json` mit lockerem Mode
+    (target ES2018, module ESNext, kein `strict`/`noImplicitAny`).
+    Ziel: "Cannot find name"-Fehler abfangen, nicht volle Strict-Migration.
+  - `globals.d.ts` deklariert die `window.*`-Surface zentral
+    (`FolioEditor`, `__TAURI__`, `__folioInvoke`, `openDocument`,
+    `monaco`, `require`). Quelle: `docs/frontend-globals.md`.
+  - `tsc --noEmit` läuft vor esbuild in `package.json::build` —
+    Typfehler brechen den Build sofort ab. Zusätzliches `typecheck`-Script.
+  - `editor.ts`s lokaler `declare global { interface Window {...} }`-Block
+    raus (sonst Konflikt mit `globals.d.ts` durch inkompatible
+    `__TAURI__`-Type-Literale).
+- [x] **`@ts-nocheck` schrittweise raus** ✓ Commit — alle 13 Dateien:
+    `state/document.ts`, `main.ts`, `editor/shell.ts`, `vault/tree.ts`,
+    `ui/find-bar.ts`, `view/markdown.ts`, `vault/context-menu.ts`,
+    `ui/rails.ts`, `ui/export-dialog.ts`, `ui/dialogs.ts`,
+    `ui/language-picker.ts`, `ui/zoom.ts`, `ui/cheatsheet.ts`.
+  - 4 echte Type-Bugs/Inkonsistenzen gefunden + gefixt:
+    `FolioEditor.setText`-Signatur (Language-Argument fehlte),
+    `applyReplace`-Object-Shape (`{fullText, selectionStart, selectionLength}`
+    statt erfundenem `{start, length, text}`), `listLanguages`-Return-Typ
+    (`Array<{id,label,aliases}>` statt `string[]`),
+    `main.ts:429` CustomEvent-Cast statt `Event.detail`.
+  - 8 weitere Dateien gingen trivial durch (war nur prophylaktisch
+    nocheck-markiert).
 
 #### 5.3 — Frontend-Splits
 
@@ -306,4 +320,4 @@ Monaco-Adapter.
 | 2: mittlere Rust-Splits | ✅ abgeschlossen | `automation`-Split, `menu`-Split |
 | 3: State-Refactor + Splits | ✅ abgeschlossen | Rename-Konsolidierung, `commands/file`-Split, `commands/shell` → `commands/events`-Split |
 | 4: Frontend-Build-Umbau | ✅ abgeschlossen | CSS-Extraktion, JS-Verbatim-Move, Global-Contract-Audit, 7 Leaf-Module, Vault-Module + `vault:refresh`-Fusion, Core-Module + `document:loaded`/`app:set_mode`-Fusion, Bridge-Reduktion + Minify |
-| 5: Konsolidierung & Type-Safety | 🚧 in Arbeit | 5.1 ✓ (`document_service::open` + Dead-Code); 5.2-5.5 offen |
+| 5: Konsolidierung & Type-Safety | 🚧 in Arbeit | 5.1 ✓ (`document_service::open` + Dead-Code) + 5.1+ (Automation Reject/409), 5.2 ✓ (Type-Safety); 5.3-5.5 offen |

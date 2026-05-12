@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* Markdown-Cheat-Sheet als drag- und persistierbares Overlay. Sichtbar nur
    im Edit-Mode bei Markdown-Dokumenten (CSS-gegated in styles/overlays.css).
    Modul kapselt: Position-/Visibility-Persistenz, Drag-Choreografie,

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* Editor-Sprach-Picker: Status-Cell oeffnet Quick-Pick mit Suchfeld +
    scrollbarer Liste. Override gilt bis zum naechsten Document-Wechsel;
    danach setzt document:loaded die Anzeige (und Monacos Model-Sprache)

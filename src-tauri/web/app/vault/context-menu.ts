@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* Vault-Kontextmenue + Inline-Rename. Das #context-menu-Element wird per
    openContextMenu() positioniert und mit Items befuellt; item-Click
    dispatcht die jeweilige Aktion (open / pin / unpin / remove-recent /

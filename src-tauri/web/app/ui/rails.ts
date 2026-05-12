@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* Rail-Visibility (Vault links / TOC rechts) + Width-Persistenz via
    CSS-Custom-Properties --vault-w / --toc-w. Splitter-Drag emittiert
    railResize zum Backend (workspace-persistierter Wert).

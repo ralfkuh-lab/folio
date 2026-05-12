@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* Vault-Tree-Rendering + Interaktion. Kapselt:
    - Tree-DOM (#vault-tree, vault-region), Node-Lookup, Active-Marker,
    - Lazy-Children (insertVaultChildren), Pinned/Recent-Setter,

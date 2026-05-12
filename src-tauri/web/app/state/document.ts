@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* Dokument-State + Lifecycle-Events. Kapselt:
    - currentPath / cleanText / isDirty,
    - markDirty, applyWindowTitle, setStatusPath, updateWordCount, showStatus,
