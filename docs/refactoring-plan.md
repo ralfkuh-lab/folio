@@ -270,23 +270,38 @@ Monaco-Adapter.
   - `lib.rs::generate_handler!` nutzt jetzt explizite Submodul-Pfade (`commands::app::dialog::pick_file`, `commands::app::shell_opener::open_terminal_at`) — analog Phase-3-Stolperstein, `pub use` findet die `__cmd__*`-Companions nicht.
   - Beifang: trivialer No-Op-Test (`assert_eq!("open_folder", "open_folder")`) aus altem app.rs weggelassen.
 
-#### 5.4 — Robustheit & Tests
+#### 5.4 — Robustheit & Tests ✅ abgeschlossen
 
-- [ ] **`commands/file/save_as.rs:87` und `commands/file/rename.rs:119`**:
-      Lock-Fehler werden mit `if let Ok(...)` geschluckt, Command meldet
-      trotzdem `Ok`. Bei Mutex-Poisoning driften Store/Workspace/Vault/
-      Navigation auseinander. → Fehler propagieren oder als bewusste
-      best-effort markieren + vollständigen Refresh emittieren.
-- [ ] **`DocumentStore::load` + `reload_if_changed` DRY**: BOM-/CRLF-/
-      Decode-Logik ist zweimal vorhanden. Private
-      `fn read_and_decode(path) -> io::Result<(String, LineEnding, bool)>`
-      extrahieren, beide Methoden nutzen sie.
-- [ ] **Frontend-Tests einführen** — Vitest minimal-Setup (kein Playwright).
-      Lohnendste Kandidaten:
-  - `state/document.ts` Listener-Logik (document:loaded / dirty_changed /
-    external_changed-Pfade mit mock Tauri-API)
-  - `vault/tree.ts::toggleDir` + Recursive-Collapse
-  - `ui/find-bar.ts` Mode-Wechsel (View↔Edit) + Term-Persistenz
+- [x] **`commands/file/save_as.rs` und `commands/file/rename.rs`**: ✓ Commit
+      Lock-Fehler werden jetzt propagiert statt mit `if let Ok(...)`
+      geschluckt. rename.rs zieht die drei separaten workspace-Lock-Blocks
+      (was_in_recent → remove_recent → add_recent) in einen einzigen Take
+      zusammen — vorher konnte ein Halb-Update entstehen, wenn der Lock
+      zwischen den Blocks gepoisoned wurde. Auch die io::Result-Fehler
+      aus `add_recent`/`remove_recent` (Persist auf Disk) werden
+      propagiert statt via `let _ = …` geschluckt.
+- [x] **`DocumentStore::load` + `reload_if_changed` DRY** ✓ Commit
+      Privater Helper `fn read_and_decode(path) -> io::Result<(String, LineEnding, bool)>`
+      extrahiert. BOM-/CRLF-/UTF-8-Decode-Logik liegt jetzt an einer Stelle.
+- [x] **Frontend-Tests eingeführt** ✓ Commit — Vitest-Setup + 19 Tests:
+  - Tooling: `vitest@2.1` als devDep, `jsdom@25` als DOM-Backend (happy-dom
+    fiel raus, weil es `:scope >`-Selektoren nicht unterstützt, die in
+    `vault/tree.ts` flächendeckend benutzt werden).
+  - `vitest.config.ts` + `tests/setup.ts` (Default-`__TAURI__`-Mock pro
+    Test) + `tests/helpers.ts` (`installTauriMock` mit Listener-Map +
+    `emitEvent()`).
+  - `state/document.test.ts` (7 Tests): `markDirty`/`updateWordCount`/
+    `setStatusPath` Setter-Verhalten, fusionierter `document:loaded`-
+    Handler, `document:closed`-Reset, `document:dirty_changed`-Forward,
+    `document:external_changed` (reload bei clean, Warnung bei dirty).
+  - `vault/tree.test.ts` (5 Tests): `setVaultActive`-Marker mit Cleanup,
+    `toggleDir`-Expand/Collapse via Click + emitted `shell:event`,
+    `insertVaultChildren`-DOM-Patch (caret, icon, data-loaded).
+  - `ui/find-bar.test.ts` (5 Tests): `openEditorFind` View vs. Edit
+    (FolioEditor vs. ViewFinder), `setEditorFindTerm` Term-Persistenz
+    (input + setFindTerm bei offener Bar, open() bei geschlossener),
+    `closeEditorFind` schliesst beide Finder (Race-Schutz).
+  - `package.json::test` (`vitest run`) + `test:watch` Scripts.
 
 #### 5.5 — Polish (niedriges Risiko, kleine Diffs)
 
@@ -321,4 +336,4 @@ Monaco-Adapter.
 | 2: mittlere Rust-Splits | ✅ abgeschlossen | `automation`-Split, `menu`-Split |
 | 3: State-Refactor + Splits | ✅ abgeschlossen | Rename-Konsolidierung, `commands/file`-Split, `commands/shell` → `commands/events`-Split |
 | 4: Frontend-Build-Umbau | ✅ abgeschlossen | CSS-Extraktion, JS-Verbatim-Move, Global-Contract-Audit, 7 Leaf-Module, Vault-Module + `vault:refresh`-Fusion, Core-Module + `document:loaded`/`app:set_mode`-Fusion, Bridge-Reduktion + Minify |
-| 5: Konsolidierung & Type-Safety | 🚧 in Arbeit | 5.1 ✓ (`document_service::open` + Dead-Code) + 5.1+ (Automation Reject/409), 5.2 ✓ (Type-Safety); 5.3-5.5 offen |
+| 5: Konsolidierung & Type-Safety | 🚧 in Arbeit | 5.1 ✓ + 5.1+ ✓, 5.2 ✓, 5.3a+5.3b ✓ (5.3c editor.ts offen), 5.4 ✓; 5.5 offen |
