@@ -20,6 +20,7 @@ pub(super) fn build_router(context: AutomationContext) -> Router {
         .route("/theme", post(ui::post_theme))
         .route("/rail", post(ui::post_rail))
         .route("/click", post(ui::post_click))
+        .route("/key", post(ui::post_key))
         .route("/toc/activate", post(ui::post_toc_activate))
         .route("/focus", post(ui::post_focus))
         .route("/find", post(ui::post_find))

@@ -83,7 +83,8 @@ belassen, weil als Debug-Surface in DevTools nützlich.
 - `editor:load_text`, `editor:apply_replace`, `editor:open_find`, `editor:set_find_term`
 - `shell:command`
 - `panel:rail_changed`
-- `automation:click`, `automation:set_editor_text`, `automation:open_document`
+- `automation:click`, `automation:set_editor_text`, `automation:open_document`,
+  `automation:key`
 - `cli:open`
 - `menu:file_open`, `menu:file_save`, `menu:file_recent`, `menu:file_close`,
   `menu:edit_undo`, `menu:edit_redo`, `menu:edit_find`,

@@ -5,7 +5,7 @@ use crate::automation::context::AutomationContext;
 use crate::automation::error::{json_payload, ok, ApiError, ApiResult};
 use crate::automation::helpers::{emit, main_window};
 use crate::automation::types::{
-    ClickRequest, FindTextRequest, ModeRequest, OkResponse, RailRequest, ResizeRequest,
+    ClickRequest, FindTextRequest, KeyRequest, ModeRequest, OkResponse, RailRequest, ResizeRequest,
     ThemeRequest, TocActivateRequest,
 };
 use crate::state::AppState;
@@ -117,6 +117,35 @@ pub(in crate::automation) async fn post_click(
         &context,
         "automation:click",
         serde_json::json!({ "name": payload.name }),
+    )?;
+    ok()
+}
+
+pub(in crate::automation) async fn post_key(
+    AxumState(context): AxumState<AutomationContext>,
+    payload: Result<Json<KeyRequest>, JsonRejection>,
+) -> ApiResult<Json<OkResponse>> {
+    let Json(payload) = json_payload(payload)?;
+    if payload.key.is_empty() {
+        return Err(ApiError::bad_request("key must not be empty"));
+    }
+    let target = payload.target.as_deref().unwrap_or("document");
+    if !matches!(target, "document" | "editor") {
+        return Err(ApiError::bad_request(format!("unknown target '{target}'")));
+    }
+    emit(
+        &context,
+        "automation:key",
+        serde_json::json!({
+            "key": payload.key,
+            "modifiers": {
+                "ctrl": payload.modifiers.ctrl,
+                "shift": payload.modifiers.shift,
+                "alt": payload.modifiers.alt,
+                "meta": payload.modifiers.meta,
+            },
+            "target": target,
+        }),
     )?;
     ok()
 }

@@ -1,11 +1,19 @@
-/* Automation-API-Bridge fuer das Frontend. Drei Listener: `automation:click`
-   (DOM-Lookup nach id / data-name / CSS-Selektor, dann `.click()`),
-   `automation:set_editor_text` (Editor-Text setzen + Dirty/Wordcount
-   nachziehen), `automation:open_document` (Document-Open mit Frontend-
-   Prompt-Pfad).
+/* Automation-API-Bridge fuer das Frontend. Listener:
+   - `automation:click` (DOM-Lookup nach id / data-name / CSS-Selektor, dann `.click()`),
+   - `automation:set_editor_text` (Editor-Text setzen + Dirty/Wordcount nachziehen),
+   - `automation:open_document` (Document-Open mit Frontend-Prompt-Pfad),
+   - `automation:key` (synthetischer KeyboardEvent aufs Ziel, fuer
+     preventDefault-Listener wie Strg+S/F3/Alt+Pfeil).
 
    Selektor-Fallback-Reihenfolge in `automation:click` ist Teil des
-   Automation-Vertrags — siehe `docs/frontend-globals.md` Abschnitt 4. */
+   Automation-Vertrags — siehe `docs/frontend-globals.md` Abschnitt 4.
+
+   `automation:key` dispatcht keydown+keyup an `document` (Default) oder
+   ans Editor-Wrapper-Element. Monaco-eigene Shortcuts (Strg+Z, Tab-Indent)
+   sind ueber synthetische Events fragil und sollen spaeter ueber einen
+   separaten `POST /editor/command` mit `editor.trigger('keyboard', ...)`
+   laufen — dieser Listener bedient nur DOM-Listener, die auf `keydown`
+   reagieren (Find-Bar, Toolbar-Actions, Zoom, Dialogs). */
 
 import {
     getCleanText,
@@ -15,6 +23,64 @@ import {
     updateWordCount,
 } from '../state/document';
 import { loadEditorText } from '../editor/shell';
+
+function keyToCode(key: string): string {
+    if (key.length === 1) {
+        var upper = key.toUpperCase();
+        if (upper >= 'A' && upper <= 'Z') return 'Key' + upper;
+        if (upper >= '0' && upper <= '9') return 'Digit' + upper;
+        if (upper === ' ') return 'Space';
+    }
+    return key;
+}
+
+function keyToKeyCode(key: string): number {
+    if (key.length === 1) {
+        var upper = key.toUpperCase();
+        if (upper >= 'A' && upper <= 'Z') return upper.charCodeAt(0);
+        if (upper >= '0' && upper <= '9') return upper.charCodeAt(0);
+        if (upper === ' ') return 32;
+    }
+    var named: Record<string, number> = {
+        Enter: 13, Escape: 27, Tab: 9, Backspace: 8, Delete: 46,
+        ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40,
+        Home: 36, End: 35, PageUp: 33, PageDown: 34,
+        F1: 112, F2: 113, F3: 114, F4: 115, F5: 116, F6: 117,
+        F7: 118, F8: 119, F9: 120, F10: 121, F11: 122, F12: 123,
+    };
+    return named[key] || 0;
+}
+
+function dispatchAutomationKey(data: any): void {
+    var key = data && data.key;
+    if (typeof key !== 'string' || key.length === 0) return;
+    var mods = (data && data.modifiers) || {};
+    var target = data && data.target;
+    var init: KeyboardEventInit = {
+        key: key,
+        code: keyToCode(key),
+        keyCode: keyToKeyCode(key),
+        which: keyToKeyCode(key),
+        ctrlKey: !!mods.ctrl,
+        shiftKey: !!mods.shift,
+        altKey: !!mods.alt,
+        metaKey: !!mods.meta,
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+    } as KeyboardEventInit;
+    var element: Element | Document = document;
+    if (target === 'editor') {
+        var host = document.getElementById('editor-mount')
+            || document.querySelector('.monaco-editor')
+            || document.body;
+        element = host;
+    }
+    try {
+        element.dispatchEvent(new KeyboardEvent('keydown', init));
+        element.dispatchEvent(new KeyboardEvent('keyup', init));
+    } catch (_) {}
+}
 
 export function initAutomationEvents(): void {
     const ev = window.__TAURI__ && window.__TAURI__.event;
@@ -47,6 +113,10 @@ export function initAutomationEvents(): void {
     ev.listen('automation:open_document', function (event: any) {
         var data = event && event.payload || {};
         if (data.path) openDocument(data.path);
+    });
+    ev.listen('automation:key', function (event: any) {
+        var data = (event && event.payload) || {};
+        dispatchAutomationKey(data);
     });
 
     // Editor-Text-Tracking fuer Wordcount im Edit-Modus. CustomEvent wird

@@ -89,3 +89,24 @@ pub(super) struct ResizeRequest {
     pub(super) width: f64,
     pub(super) height: f64,
 }
+
+#[derive(Debug, Default, Deserialize)]
+pub(super) struct KeyModifiers {
+    #[serde(default)]
+    pub(super) ctrl: bool,
+    #[serde(default)]
+    pub(super) shift: bool,
+    #[serde(default)]
+    pub(super) alt: bool,
+    #[serde(default)]
+    pub(super) meta: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct KeyRequest {
+    pub(super) key: String,
+    #[serde(default)]
+    pub(super) modifiers: KeyModifiers,
+    #[serde(default)]
+    pub(super) target: Option<String>,
+}
