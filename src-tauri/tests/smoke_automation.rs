@@ -58,6 +58,32 @@ async fn post_open_loads_temp_file_and_updates_state() {
 }
 
 #[tokio::test]
+async fn post_open_rejects_with_conflict_when_state_dirty() {
+    let temp = TempDir::new().unwrap();
+    let path = temp.path().join("doc.md");
+    std::fs::write(&path, "# Opened\n").unwrap();
+    let state = Arc::new(Mutex::new(MockAutomationState {
+        dirty: true,
+        ..MockAutomationState::default()
+    }));
+
+    let response = request(
+        build_mock_router(state.clone()),
+        "POST",
+        "/open",
+        Some(json!({ "path": path.to_str().unwrap() })),
+        loopback(),
+    )
+    .await;
+
+    assert_eq!(StatusCode::CONFLICT, response.status);
+    // Mock-State unangetastet: kein Datei-Open, dirty bleibt
+    let state = state.lock().unwrap();
+    assert!(state.dirty);
+    assert_eq!(None, state.file);
+}
+
+#[tokio::test]
 async fn preflight_allows_json_posts_from_webview() {
     let state = Arc::new(Mutex::new(MockAutomationState::default()));
     let mut request = Request::builder()

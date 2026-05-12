@@ -197,10 +197,17 @@ an vier Stellen separat choreografiert — Ursache wiederkehrender Link-Klick-Bu
   - **Architektur-Konsultation Codex** (Synthese der zweiten Meinung) lieferte zwei latente
     Befunde: (a) `link_click`-Reihenfolge-Bug (Navigate vor Load) — strukturell behoben,
     (b) `DocumentStore::load` setzt `is_dirty=false` ohne Schutz → bei `read_file` und
-    `/open` heute silenter Datenverlust möglich. **Nicht** in diesem Commit gefixt
-    (Scope-Konservativ: alle vier Callsites bleiben `DirtyPolicy::Discard` =
-    heutiges Verhalten). `DirtyPolicy::Reject` ist bereits da; Aktivierung für
-    Automation/`read_file` ist separater Folgecommit.
+    `/open` heute silenter Datenverlust möglich.
+- [x] **Automation-Reject-Folgecommit** ✓ Commit
+  - `automation::post_open` nutzt jetzt `DirtyPolicy::Reject` — Loopback-API hat keinen
+    User-Prompt, ungespeicherte Aenderungen dürfen nicht silent verworfen werden.
+  - `ApiError::conflict` (HTTP 409) ergänzt; `OpenDocumentError::DirtyRejected` mappt
+    darauf, andere Service-Fehler bleiben 500. Automation-Clients können den
+    Dirty-Konflikt damit vom internen Fehler unterscheiden.
+  - Mock-Pfad (`mock_post_open`) spiegelt das Verhalten; neuer Smoke-Test
+    `post_open_rejects_with_conflict_when_state_dirty` (8/8 grün).
+  - Frontend-Pfade (`read_file`, `link_click`, `vault::open_document`) bleiben auf
+    `Discard`, weil dort `requestSaveIfDirty` im Frontend vorher greift.
 - [x] **Dead Code raus**: `commands/nav.rs::link_click` (Tauri-Command, nie invoked) ✓ Commit
 - [x] **Dead Code raus**: `DocumentStore::mark_external_changed` + `has_external_changes`-Feld ✓ Commit
 

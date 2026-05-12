@@ -22,10 +22,20 @@ pub(in crate::automation) async fn post_open(
         crate::document_service::OpenDocumentOptions {
             anchor: None,
             reload: crate::document_service::ReloadPolicy::Always,
-            dirty: crate::document_service::DirtyPolicy::Discard,
+            // Loopback-API ohne User-Prompt: ungespeicherte Aenderungen
+            // duerfen nicht still verworfen werden. Frontend-Pfade
+            // (read_file, link_click, vault::open_document) prompten
+            // ueber requestSaveIfDirty vorher und bleiben deshalb auf
+            // Discard.
+            dirty: crate::document_service::DirtyPolicy::Reject,
         },
     )
-    .map_err(|error| ApiError::internal(error.to_string()))?;
+    .map_err(|error| match error {
+        crate::document_service::OpenDocumentError::DirtyRejected => {
+            ApiError::conflict(error.to_string())
+        }
+        other => ApiError::internal(other.to_string()),
+    })?;
     ok()
 }
 
@@ -47,6 +57,16 @@ pub(in crate::automation) async fn mock_post_open(
     payload: Result<Json<OpenRequest>, JsonRejection>,
 ) -> ApiResult<Json<OkResponse>> {
     let Json(payload) = json_payload(payload)?;
+    {
+        let state = state
+            .lock()
+            .map_err(|_| ApiError::internal("mock automation state lock poisoned"))?;
+        if state.dirty {
+            return Err(ApiError::conflict(
+                "unsaved changes; dirty policy rejects open",
+            ));
+        }
+    }
     let text =
         fs::read_to_string(&payload.path).map_err(|error| ApiError::internal(error.to_string()))?;
     let mut state = state
