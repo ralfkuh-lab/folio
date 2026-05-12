@@ -5,7 +5,10 @@ use tauri::Manager;
 use crate::automation::context::AutomationContext;
 use crate::automation::error::{ApiError, ApiResult};
 use crate::automation::mock::MockAutomationState;
-use crate::automation::types::{AutomationState, EditorAutomationState, TocEntry};
+use crate::automation::types::{
+    AutomationState, EditorAutomationState, PinnedAutomationEntry, RecentAutomationEntry, TocEntry,
+    ViewAutomationState, WorkspaceAutomationState,
+};
 use crate::state::AppState;
 use crate::toc;
 
@@ -32,6 +35,48 @@ pub(in crate::automation) async fn get_state(
         .lock()
         .map_err(|_| ApiError::internal("automation state lock poisoned"))?
         .clone();
+    let (view_scroll_y, view_anchor, editor_scroll_y, editor_cursor) = state
+        .navigation
+        .lock()
+        .map_err(|_| ApiError::internal("navigation lock poisoned"))?
+        .current()
+        .map(|entry| {
+            (
+                entry.scroll_y,
+                entry.anchor.clone(),
+                entry.editor_scroll_y,
+                entry.editor_cursor,
+            )
+        })
+        .unwrap_or((0.0, None, 0.0, 0));
+    let workspace = {
+        let ws = state
+            .workspace
+            .lock()
+            .map_err(|_| ApiError::internal("workspace lock poisoned"))?;
+        let pinned = ws
+            .pinned()
+            .iter()
+            .map(|p| PinnedAutomationEntry {
+                path: p.path.clone(),
+                is_directory: p.is_directory,
+            })
+            .collect();
+        let recent = ws
+            .recent()
+            .iter()
+            .map(|r| RecentAutomationEntry {
+                path: r.path.clone(),
+                last_opened: r.last_opened,
+            })
+            .collect();
+        (pinned, recent)
+    };
+    let expanded_dirs = state
+        .vault
+        .lock()
+        .map_err(|_| ApiError::internal("vault lock poisoned"))?
+        .expanded_paths();
     let toc = toc::extract(&document.text)
         .into_iter()
         .map(|entry| TocEntry {
@@ -57,6 +102,17 @@ pub(in crate::automation) async fn get_state(
             selection_length: automation.selection_length,
             left_rail_width: panel.left_rail_width,
             right_rail_width: panel.right_rail_width,
+            scroll_y: editor_scroll_y,
+            cursor_offset: editor_cursor,
+        },
+        view: ViewAutomationState {
+            scroll_y: view_scroll_y,
+            anchor: view_anchor,
+        },
+        workspace: WorkspaceAutomationState {
+            pinned: workspace.0,
+            recent: workspace.1,
+            expanded_dirs,
         },
     }))
 }
@@ -92,6 +148,31 @@ pub(in crate::automation) async fn mock_get_state(
             selection_length: state.selection_length,
             left_rail_width: 260.0,
             right_rail_width: 300.0,
+            scroll_y: state.editor_scroll_y,
+            cursor_offset: state.editor_cursor,
+        },
+        view: ViewAutomationState {
+            scroll_y: state.view_scroll_y,
+            anchor: state.view_anchor.clone(),
+        },
+        workspace: WorkspaceAutomationState {
+            pinned: state
+                .pinned
+                .iter()
+                .map(|p| PinnedAutomationEntry {
+                    path: p.path.clone(),
+                    is_directory: p.is_directory,
+                })
+                .collect(),
+            recent: state
+                .recent
+                .iter()
+                .map(|r| RecentAutomationEntry {
+                    path: r.path.clone(),
+                    last_opened: r.last_opened,
+                })
+                .collect(),
+            expanded_dirs: state.expanded_dirs.clone(),
         },
     }))
 }

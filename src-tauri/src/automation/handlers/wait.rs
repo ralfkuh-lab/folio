@@ -59,18 +59,24 @@ pub(in crate::automation) async fn mock_post_wait(
             wait::KNOWN_EVENTS.join(", ")
         )));
     }
-    if payload.event == "editor.ready" {
-        let ready = state
+    // Latch-Events: editor.ready (Mock.editor_ready), document.dirty_clean
+    // (Mock.dirty=false).
+    let latched = {
+        let snapshot = state
             .lock()
-            .map_err(|_| ApiError::internal("mock automation state lock poisoned"))?
-            .editor_ready;
-        if ready {
-            return Ok(Json(WaitResponse {
-                ok: true,
-                fired: true,
-                event: payload.event,
-            }));
+            .map_err(|_| ApiError::internal("mock automation state lock poisoned"))?;
+        match payload.event.as_str() {
+            "editor.ready" => snapshot.editor_ready,
+            "document.dirty_clean" => !snapshot.dirty,
+            _ => false,
         }
+    };
+    if latched {
+        return Ok(Json(WaitResponse {
+            ok: true,
+            fired: true,
+            event: payload.event,
+        }));
     }
     sleep(Duration::from_millis(
         payload.timeout_ms.unwrap_or(DEFAULT_WAIT_TIMEOUT_MS),

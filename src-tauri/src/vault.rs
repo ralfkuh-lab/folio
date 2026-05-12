@@ -98,6 +98,10 @@ impl Vault {
         self.expanded_dirs.contains(path)
     }
 
+    pub fn expanded_paths(&self) -> Vec<String> {
+        self.expanded_dirs.iter().cloned().collect()
+    }
+
     fn item_html(&self, path: &str, is_directory: bool) -> String {
         let expanded = is_directory && self.is_expanded(path);
         let active = self.active_path.as_deref() == Some(path);

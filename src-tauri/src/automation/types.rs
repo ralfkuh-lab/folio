@@ -12,6 +12,8 @@ pub(super) struct AutomationState {
     pub(super) right_rail_visible: bool,
     pub(super) toc: Vec<TocEntry>,
     pub(super) editor: EditorAutomationState,
+    pub(super) view: ViewAutomationState,
+    pub(super) workspace: WorkspaceAutomationState,
 }
 
 #[derive(Debug, Serialize)]
@@ -31,6 +33,37 @@ pub(super) struct EditorAutomationState {
     pub(super) selection_length: usize,
     pub(super) left_rail_width: f64,
     pub(super) right_rail_width: f64,
+    pub(super) scroll_y: f64,
+    pub(super) cursor_offset: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct ViewAutomationState {
+    pub(super) scroll_y: f64,
+    pub(super) anchor: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct WorkspaceAutomationState {
+    pub(super) pinned: Vec<PinnedAutomationEntry>,
+    pub(super) recent: Vec<RecentAutomationEntry>,
+    pub(super) expanded_dirs: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct PinnedAutomationEntry {
+    pub(super) path: String,
+    pub(super) is_directory: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct RecentAutomationEntry {
+    pub(super) path: String,
+    pub(super) last_opened: u64,
 }
 
 #[derive(Debug, Serialize)]

@@ -5,15 +5,21 @@
 //! eliminiert der E2E-Treiber Polling-Schleifen wie "alle 50 ms /state
 //! pruefen, ob editor.ready true ist".
 //!
-//! Allowlist (Erstausbau):
+//! Allowlist:
 //! - `editor.ready` — Latch: liefert sofort, wenn der Editor schon
 //!   ready ist, sonst Warten bis [`signal_editor_ready`] gerufen wird.
 //! - `document.loaded` — Future-Event: wartet auf das naechste
 //!   `document:loaded`-Emit aus dem DocumentStore-Callback.
+//! - `document.saved` — Future-Event: wartet auf das naechste
+//!   `document:saved`-Emit (z. B. nach Strg+S oder POST /save).
+//! - `document.dirty_clean` — Latch: liefert sofort, wenn das aktuelle
+//!   Dokument nicht dirty ist (Zustand `is_dirty=false`); sonst warten
+//!   bis das naechste `dirty_changed(false)` triggert.
 //!
 //! Trigger werden in [`signal_editor_ready`] (aus
-//! `commands::editor::editor_ready`) und [`signal_document_loaded`]
-//! (aus `AppState::install_document_events`) gerufen.
+//! `commands::editor::editor_ready`) und [`signal_document_loaded`],
+//! [`signal_document_saved`], [`signal_document_dirty_clean`] (aus
+//! `AppState::install_document_events`) gerufen.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -25,23 +31,33 @@ use crate::state::AppState;
 /// Erlaubte Event-Namen fuer `POST /wait`. Liegt im Modul, damit die
 /// Liste eine einzige Quelle hat und vom Handler + Trigger-Seite geteilt
 /// werden kann.
-pub const KNOWN_EVENTS: &[&str] = &["editor.ready", "document.loaded"];
+pub const KNOWN_EVENTS: &[&str] = &[
+    "editor.ready",
+    "document.loaded",
+    "document.saved",
+    "document.dirty_clean",
+];
 
 pub fn is_known(event: &str) -> bool {
     KNOWN_EVENTS.contains(&event)
 }
 
-/// Latch-Check: ist das Event "schon erfuellt"? Nur fuer
-/// editor.ready relevant; transiente Events liefern immer false.
+/// Latch-Check: ist das Event "schon erfuellt"? Nur fuer Latch-Events
+/// relevant; transiente Events liefern immer false.
 pub fn already_satisfied(state: &AppState, event: &str) -> bool {
-    if event == "editor.ready" {
-        return state
+    match event {
+        "editor.ready" => state
             .automation
             .lock()
             .map(|s| s.editor_ready)
-            .unwrap_or(false);
+            .unwrap_or(false),
+        "document.dirty_clean" => state
+            .document_store
+            .lock()
+            .map(|s| !s.is_dirty)
+            .unwrap_or(false),
+        _ => false,
     }
-    false
 }
 
 /// Registriert einen Receiver fuer das Event und gibt die ID + Receiver
@@ -105,6 +121,18 @@ pub fn signal_document_loaded(state: &AppState) {
     signal(state, "document.loaded");
 }
 
+/// Convenience-Funktion fuer den `document:saved`-Callback.
+pub fn signal_document_saved(state: &AppState) {
+    signal(state, "document.saved");
+}
+
+/// Wird aus dem `dirty_changed`-Callback gerufen — feuert nur, wenn
+/// dirty=false, weil dirty_clean nur den Uebergang in den sauberen
+/// Zustand signalisiert. Latch-Pfad geht ueber `already_satisfied`.
+pub fn signal_document_dirty_clean(state: &AppState) {
+    signal(state, "document.dirty_clean");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,9 +190,27 @@ mod tests {
     }
 
     #[test]
-    fn known_events_lists_both() {
+    fn known_events_lists_all_four() {
         assert!(is_known("editor.ready"));
         assert!(is_known("document.loaded"));
+        assert!(is_known("document.saved"));
+        assert!(is_known("document.dirty_clean"));
         assert!(!is_known("garbage"));
+    }
+
+    #[tokio::test]
+    async fn dirty_clean_latch_true_when_doc_not_dirty() {
+        let state = AppState::new();
+        // Frisch erzeugter Store hat is_dirty=false.
+        assert!(already_satisfied(&state, "document.dirty_clean"));
+    }
+
+    #[tokio::test]
+    async fn document_saved_signal_resolves_pending_wait() {
+        let state = AppState::new();
+        let (id, receiver) = register(&state, "document.saved").unwrap();
+        signal_document_saved(&state);
+        let fired = wait_for(&state, "document.saved", id, receiver, 50).await;
+        assert!(fired);
     }
 }

@@ -18,7 +18,7 @@ mod error;
 mod handlers;
 mod helpers;
 mod middleware;
-mod mock;
+pub mod mock;
 mod router;
 mod types;
 pub mod wait;

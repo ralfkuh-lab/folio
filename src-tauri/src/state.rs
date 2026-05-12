@@ -116,6 +116,11 @@ impl AppState {
                         "document:dirty_changed",
                         serde_json::json!({ "is_dirty": is_dirty }),
                     );
+                    if !is_dirty {
+                        crate::automation::wait::signal_document_dirty_clean(
+                            app.state::<AppState>().inner(),
+                        );
+                    }
                 }
             })),
             saved: Some(Arc::new({
@@ -130,6 +135,7 @@ impl AppState {
                             "tocHtml": toc::render_html(&toc::extract(&text)),
                         }),
                     );
+                    crate::automation::wait::signal_document_saved(app.state::<AppState>().inner());
                 }
             })),
             text_changed: None,

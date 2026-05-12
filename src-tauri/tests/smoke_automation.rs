@@ -4,6 +4,7 @@ use axum::{
     http::{header, Request, StatusCode},
     Router,
 };
+use folio::automation::mock::{MockPinned, MockRecent};
 use folio::automation::{build_mock_router, MockAutomationState};
 use serde_json::{json, Value};
 use std::{
@@ -20,6 +21,10 @@ async fn get_state_returns_expected_json_shape() {
         editor_ready: true,
         selection_start: 2,
         selection_length: 5,
+        editor_scroll_y: 120.0,
+        editor_cursor: 42,
+        view_scroll_y: 60.0,
+        view_anchor: Some("child".into()),
         ..MockAutomationState::default()
     }));
     let response = request(build_mock_router(state), "GET", "/state", None, loopback()).await;
@@ -30,7 +35,48 @@ async fn get_state_returns_expected_json_shape() {
     assert_eq!("view", response.json["viewMode"]);
     assert_eq!(true, response.json["editor"]["ready"]);
     assert_eq!(2, response.json["editor"]["selectionStart"]);
+    assert_eq!(120.0, response.json["editor"]["scrollY"]);
+    assert_eq!(42, response.json["editor"]["cursorOffset"]);
+    assert_eq!(60.0, response.json["view"]["scrollY"]);
+    assert_eq!("child", response.json["view"]["anchor"]);
     assert_eq!("Title", response.json["toc"][0]["text"]);
+}
+
+#[tokio::test]
+async fn get_state_includes_workspace_pinned_recent_expanded() {
+    let state = Arc::new(Mutex::new(MockAutomationState {
+        pinned: vec![MockPinned {
+            path: "/p/one.md".into(),
+            is_directory: false,
+        }],
+        recent: vec![MockRecent {
+            path: "/p/two.md".into(),
+            last_opened: 1_700_000_000,
+        }],
+        expanded_dirs: vec!["/p/sub".into(), "/p".into()],
+        ..MockAutomationState::default()
+    }));
+    let response = request(build_mock_router(state), "GET", "/state", None, loopback()).await;
+
+    assert_eq!(StatusCode::OK, response.status);
+    assert_eq!("/p/one.md", response.json["workspace"]["pinned"][0]["path"]);
+    assert_eq!(
+        false,
+        response.json["workspace"]["pinned"][0]["isDirectory"]
+    );
+    assert_eq!("/p/two.md", response.json["workspace"]["recent"][0]["path"]);
+    assert_eq!(
+        1_700_000_000,
+        response.json["workspace"]["recent"][0]["lastOpened"]
+    );
+    assert_eq!("/p/sub", response.json["workspace"]["expandedDirs"][0]);
+    assert_eq!(
+        2,
+        response.json["workspace"]["expandedDirs"]
+            .as_array()
+            .unwrap()
+            .len()
+    );
 }
 
 #[tokio::test]
@@ -237,6 +283,58 @@ async fn post_wait_times_out_for_transient_event_without_trigger() {
     )
     .await;
 
+    assert_eq!(StatusCode::OK, response.status);
+    assert_eq!(false, response.json["fired"]);
+}
+
+#[tokio::test]
+async fn post_wait_dirty_clean_latch_fires_when_not_dirty() {
+    let state = Arc::new(Mutex::new(MockAutomationState {
+        dirty: false,
+        ..MockAutomationState::default()
+    }));
+    let response = request(
+        build_mock_router(state),
+        "POST",
+        "/wait",
+        Some(json!({ "event": "document.dirty_clean", "timeoutMs": 50 })),
+        loopback(),
+    )
+    .await;
+    assert_eq!(StatusCode::OK, response.status);
+    assert_eq!(true, response.json["fired"]);
+}
+
+#[tokio::test]
+async fn post_wait_dirty_clean_times_out_when_dirty() {
+    let state = Arc::new(Mutex::new(MockAutomationState {
+        dirty: true,
+        ..MockAutomationState::default()
+    }));
+    let response = request(
+        build_mock_router(state),
+        "POST",
+        "/wait",
+        Some(json!({ "event": "document.dirty_clean", "timeoutMs": 30 })),
+        loopback(),
+    )
+    .await;
+    assert_eq!(StatusCode::OK, response.status);
+    assert_eq!(false, response.json["fired"]);
+}
+
+#[tokio::test]
+async fn post_wait_document_saved_is_known_event() {
+    let state = Arc::new(Mutex::new(MockAutomationState::default()));
+    let response = request(
+        build_mock_router(state),
+        "POST",
+        "/wait",
+        Some(json!({ "event": "document.saved", "timeoutMs": 20 })),
+        loopback(),
+    )
+    .await;
+    // Ohne Trigger → Timeout, aber Event ist allowlisted (kein 400).
     assert_eq!(StatusCode::OK, response.status);
     assert_eq!(false, response.json["fired"]);
 }
