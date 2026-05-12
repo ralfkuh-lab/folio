@@ -192,9 +192,9 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            commands::app::open_folder,
-            commands::app::pick_folder,
-            commands::app::pick_file,
+            commands::app::dialog::open_folder,
+            commands::app::dialog::pick_folder,
+            commands::app::dialog::pick_file,
             commands::app::theme_get,
             commands::app::theme_set,
             commands::app::set_view_mode,
@@ -203,8 +203,8 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::app::cli_pending_open,
             commands::app::set_window_title,
             commands::app::set_webview_zoom,
-            commands::app::show_in_file_manager,
-            commands::app::open_terminal_at,
+            commands::app::shell_opener::show_in_file_manager,
+            commands::app::shell_opener::open_terminal_at,
             commands::file::read::read_file,
             commands::file::read::reload_document,
             commands::file::read::write_file,

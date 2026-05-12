@@ -1,117 +1,17 @@
+//! App-Lifecycle-Commands: View-Mode/Theme/Rail/Window/Zoom (Core-State),
+//! `open_find`, `cli_pending_open`. Datei-/Ordner-Picker liegen in
+//! `dialog`, OS-Integration (File-Manager, Terminal) in `shell_opener`.
+//!
+//! Tauri-Commands aus den Submodulen werden in `lib.rs::generate_handler!`
+//! ueber explizite Pfade (`commands::app::dialog::pick_file` etc.)
+//! registriert — `pub use` reicht hier nicht, weil das Macro die
+//! `__cmd__*`-Companion-Funktionen ueber den Original-Modulpfad sucht.
+
+pub mod dialog;
+pub mod shell_opener;
+
 use crate::state::AppState;
-use std::path::Path;
 use tauri::{AppHandle, Emitter, Manager, State};
-use tauri_plugin_dialog::{DialogExt, FilePath};
-use tauri_plugin_shell::ShellExt;
-
-#[tauri::command]
-pub async fn open_folder(handle: AppHandle) -> Result<Option<String>, String> {
-    pick_folder(handle).await
-}
-
-#[tauri::command]
-pub async fn pick_folder(handle: AppHandle) -> Result<Option<String>, String> {
-    Ok(handle
-        .dialog()
-        .file()
-        .blocking_pick_folder()
-        .map(file_path_to_string))
-}
-
-#[tauri::command]
-pub async fn pick_file(handle: AppHandle) -> Result<Option<String>, String> {
-    Ok(handle
-        .dialog()
-        .file()
-        .blocking_pick_file()
-        .map(file_path_to_string))
-}
-
-#[tauri::command]
-pub async fn show_in_file_manager(path: String, handle: AppHandle) -> Result<(), String> {
-    let p = Path::new(&path);
-    let target = if p.is_file() {
-        p.parent().unwrap_or(p).to_path_buf()
-    } else {
-        p.to_path_buf()
-    };
-    #[allow(deprecated)]
-    handle
-        .shell()
-        .open(target.to_string_lossy().to_string(), None)
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-pub async fn open_terminal_at(path: String) -> Result<(), String> {
-    let p = Path::new(&path);
-    let target = if p.is_file() {
-        p.parent().unwrap_or(p).to_path_buf()
-    } else {
-        p.to_path_buf()
-    };
-
-    #[cfg(target_os = "linux")]
-    {
-        let mut candidates: Vec<String> = Vec::new();
-        if let Ok(t) = std::env::var("TERMINAL") {
-            if !t.is_empty() {
-                candidates.push(t);
-            }
-        }
-        for name in [
-            "x-terminal-emulator",
-            "gnome-terminal",
-            "konsole",
-            "xfce4-terminal",
-            "tilix",
-            "mate-terminal",
-            "lxterminal",
-            "alacritty",
-            "kitty",
-            "foot",
-            "terminator",
-            "xterm",
-        ] {
-            candidates.push(name.to_string());
-        }
-        let mut last_err: Option<String> = None;
-        for cmd in candidates {
-            match std::process::Command::new(&cmd)
-                .current_dir(&target)
-                .spawn()
-            {
-                Ok(_) => return Ok(()),
-                Err(error) => last_err = Some(format!("{cmd}: {error}")),
-            }
-        }
-        return Err(last_err.unwrap_or_else(|| "kein Terminal-Emulator gefunden".into()));
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .arg("-a")
-            .arg("Terminal")
-            .arg(&target)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-        return Ok(());
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "wt", "-d"])
-            .arg(&target)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-        return Ok(());
-    }
-
-    #[allow(unreachable_code)]
-    Ok(())
-}
 
 #[tauri::command]
 pub async fn set_view_mode(
@@ -245,35 +145,4 @@ pub async fn cli_pending_open(state: State<'_, AppState>) -> Result<Option<Strin
         .lock()
         .map_err(|_| "cli open path lock poisoned".to_string())?
         .take())
-}
-
-fn file_path_to_string(path: FilePath) -> String {
-    path.into_path()
-        .map(|path| path.to_string_lossy().into_owned())
-        .unwrap_or_default()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::PathBuf;
-
-    #[test]
-    fn path_file_path_converts_to_string() {
-        assert_eq!(
-            "/tmp/a",
-            file_path_to_string(FilePath::Path(PathBuf::from("/tmp/a")))
-        );
-    }
-
-    #[test]
-    fn open_folder_and_pick_folder_share_shape() {
-        let fn_name = "open_folder";
-        assert_eq!("open_folder", fn_name);
-    }
-
-    #[test]
-    fn empty_pathbuf_converts_without_error() {
-        assert_eq!("", file_path_to_string(FilePath::Path(PathBuf::new())));
-    }
 }

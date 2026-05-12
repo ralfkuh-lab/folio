@@ -264,10 +264,12 @@ Monaco-Adapter.
   - `editor/index.ts` — `window.FolioEditor`-Assembly
   - **`suppressTextEvent` durch Promise-Queue ersetzen** — globaler Boolean
     ist race-anfällig zwischen `mount` und `setText`
-- [ ] **`commands/app.rs` splitten** (~270 LOC, 13 Verantwortungen):
-  - `commands/app/dialog.rs` — `pick_file`, `pick_folder`, `open_folder`
-  - `commands/app/shell_opener.rs` — `show_in_file_manager`, `open_terminal_at`
-  - `commands/app/mod.rs` — Theme/Rail/View-Mode/Window/Zoom (Core-State)
+- [x] **`commands/app.rs` splitten** ✓ Commit
+  - `commands/app/dialog.rs` — `pick_file`, `pick_folder`, `open_folder` + `file_path_to_string`-Helper + zwei Unit-Tests.
+  - `commands/app/shell_opener.rs` — `show_in_file_manager`, `open_terminal_at` (Linux-Kandidatenliste, macOS `open -a Terminal`, Windows `wt`).
+  - `commands/app/mod.rs` — Core-State-Commands: `set_view_mode`, `theme_get`/`theme_set`, `set_rail_visible`, `set_window_title`, `set_webview_zoom`, `open_find`, `cli_pending_open`.
+  - `lib.rs::generate_handler!` nutzt jetzt explizite Submodul-Pfade (`commands::app::dialog::pick_file`, `commands::app::shell_opener::open_terminal_at`) — analog Phase-3-Stolperstein, `pub use` findet die `__cmd__*`-Companions nicht.
+  - Beifang: trivialer No-Op-Test (`assert_eq!("open_folder", "open_folder")`) aus altem app.rs weggelassen.
 
 #### 5.4 — Robustheit & Tests
 
