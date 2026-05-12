@@ -110,7 +110,11 @@ function isWholeWordHit(text: string, from: number, to: number): boolean {
     return true;
 }
 
-function recomputeMatches(): void {
+// `revealActive` steuert, ob nach dem Neuberechnen der Cursor auf den
+// aktiven Match springt. Bei Find-Bar-Term-Eingabe + explizitem Next/Prev
+// wollen wir das (Default true); bei reinem Text-Change-Trigger (User
+// editiert an einer Fundstelle) NICHT, sonst springt der Cursor weg.
+function recomputeMatches(revealActive: boolean = true): void {
     const editor = editorInstance;
     const monaco = monacoInstance;
     if (!editor || !monaco) return;
@@ -154,7 +158,7 @@ function recomputeMatches(): void {
 
     findState = { term, total: matches.length, active, matches };
     applyDecorations();
-    if (active >= 0) scrollMatchIntoView(matches[active]);
+    if (revealActive && active >= 0) scrollMatchIntoView(matches[active]);
     publishFindState();
 }
 
@@ -310,7 +314,9 @@ function mount(elementId: string, initialText: string): Promise<void> {
             if (!suppressTextEvent) {
                 const text = editorInstance.getValue();
                 post({ type: "editorTextChanged", text });
-                if (findState.term) recomputeMatches();
+                // Decorations aktualisieren, aber NICHT zur naechsten
+                // Fundstelle springen — der User schreibt gerade.
+                if (findState.term) recomputeMatches(false);
             }
         });
 
@@ -483,7 +489,10 @@ function applyReplace(args: {
         suppressTextEvent = false;
     }
     post({ type: "editorTextChanged", text: editorInstance.getValue() });
-    if (findState.term) recomputeMatches();
+    // Nach apply_editor_command (Bold-Wrap etc.) Decorations refreshen,
+    // aber den eben gesetzten Selektions-Cursor NICHT durch Sprung zur
+    // naechsten Fundstelle ueberschreiben.
+    if (findState.term) recomputeMatches(false);
 }
 
 function focus(): void {

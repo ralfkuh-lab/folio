@@ -6,6 +6,7 @@ import {
     getCleanText,
     getCurrentPath,
     getIsDirty,
+    openDocument,
     requestSaveIfDirty,
     saveCurrent,
     syncEditorTextToStore,
@@ -109,7 +110,10 @@ export function initToolbarActions(): void {
 
     /* ----- Tastatur-Shortcuts -----
        Strg+F/F3 laufen im Capture-Handler von ui/find-bar.ts, damit sie
-       auch im Editor-Fokus greifen. F1 ist Monaco's Command-Palette. */
+       auch im Editor-Fokus greifen. F1 ist Monaco's Command-Palette.
+       Strg+O ist als Menue-Accelerator registriert (menu/build.rs), aber
+       WebView2/Monaco verschluckt den Tasten-Event bevor er das Tauri-
+       Menue erreicht — daher zusaetzlich hier im DOM-Listener. */
     document.addEventListener('keydown', function (e) {
         var ctrl = e.ctrlKey || e.metaKey;
         if (ctrl && e.key === '1') { e.preventDefault(); $('tb-mode-view')?.click(); }
@@ -129,6 +133,12 @@ export function initToolbarActions(): void {
         else if (ctrl && (e.key === 's' || e.key === 'S')) {
             e.preventDefault();
             saveCurrent();
+        }
+        else if (ctrl && (e.key === 'o' || e.key === 'O')) {
+            e.preventDefault();
+            invoke('pick_file').then(function (path: any) {
+                if (path) openDocument(path);
+            }).catch(function () {});
         }
     });
 
