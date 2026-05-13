@@ -1,5 +1,7 @@
 use std::fmt::Write;
 
+use saphyr::{LoadableYamlNode, Yaml};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
     pub key: String,
@@ -12,48 +14,31 @@ pub struct ExtractResult {
     pub body: String,
 }
 
-/// Simple YAML-subset parser for Folio frontmatter.
+/// Frontmatter aus einem Markdown-Dokument lösen.
 ///
-/// Supports only flat key:value pairs, quoted strings, and inline arrays.
-/// Does NOT support nested objects, multiline strings (| >), or YAML anchors.
-/// For Folio's use case this is sufficient; if complex frontmatter is needed,
-/// migrate to `serde_yaml`.
+/// Die Delimiter-Detektion (öffnendes/schliessendes `---`) ist bewusst
+/// **eigene Logik** — sie ist deterministisch und liefert den Body auch
+/// dann sauber zurück, wenn der innere YAML-Block kaputt ist.
+///
+/// Den inneren Block parst `saphyr` (YAML 1.2). Bei Parse-Fehlern oder
+/// Strukturen, die wir nicht flach darstellen können (z. B. ein Top-
+/// Level-Scalar statt einer Mapping), fällt die Anzeige auf einen
+/// einzelnen Fallback-Eintrag mit dem Rohblock zurück — der Renderer
+/// (`white-space: pre-line` im CSS) zeigt ihn lesbar an.
+///
+/// Multi-Line-Werte (Block-Scalars `|`/`>`, Block-Sequenzen) kommen mit
+/// `\n` zwischen den Segmenten zurück und werden im CSS umgebrochen.
 pub fn extract(markdown: &str) -> ExtractResult {
-    if markdown.is_empty() {
-        return empty_result(markdown);
-    }
-
-    let Some(first_line_end) = markdown.find('\n') else {
-        return empty_result(markdown);
+    let Some((yaml_block, body)) = split_frontmatter(markdown) else {
+        return ExtractResult {
+            entries: Vec::new(),
+            body: markdown.to_string(),
+        };
     };
-
-    if markdown[..first_line_end].trim_end_matches('\r') != "---" {
-        return empty_result(markdown);
-    }
-
-    let rest = &markdown[first_line_end + 1..];
-    let lines: Vec<&str> = rest.split('\n').collect();
-    let Some(close_idx) = lines
-        .iter()
-        .position(|line| line.trim_end_matches('\r') == "---")
-    else {
-        return empty_result(markdown);
-    };
-
-    let entries = lines[..close_idx]
-        .iter()
-        .filter_map(|line| parse_entry(line.trim_end_matches('\r')))
-        .collect();
-
-    let mut consumed = 0;
-    for line in &lines[..=close_idx] {
-        consumed += line.len() + 1;
-    }
-    consumed = consumed.min(rest.len());
-
+    let entries = parse_yaml(yaml_block).unwrap_or_else(|| fallback_entries(yaml_block));
     ExtractResult {
         entries,
-        body: rest[consumed..].to_string(),
+        body: body.to_string(),
     }
 }
 
@@ -74,64 +59,134 @@ pub fn render_html(entries: &[Entry]) -> String {
     html
 }
 
-fn empty_result(markdown: &str) -> ExtractResult {
-    ExtractResult {
-        entries: Vec::new(),
-        body: markdown.to_string(),
-    }
-}
-
-fn parse_entry(line: &str) -> Option<Entry> {
-    if line.trim().is_empty() {
+fn split_frontmatter(markdown: &str) -> Option<(&str, &str)> {
+    let first_nl = markdown.find('\n')?;
+    if markdown[..first_nl].trim_end_matches('\r') != "---" {
         return None;
     }
+    let rest = &markdown[first_nl + 1..];
 
-    let first = line.chars().next()?;
-    if first.is_whitespace() || line.trim_start().starts_with('#') {
-        return None;
-    }
-
-    let colon = line.find(':')?;
-    if colon == 0 {
-        return None;
-    }
-
-    Some(Entry {
-        key: line[..colon].trim().to_string(),
-        value: normalize_value(line[colon + 1..].trim()),
-    })
-}
-
-fn normalize_value(raw: &str) -> String {
-    if raw.len() >= 2 {
-        if is_quoted(raw) {
-            return raw[1..raw.len() - 1].to_string();
+    let mut offset = 0;
+    let close_start;
+    let close_end;
+    loop {
+        let line_end = rest[offset..]
+            .find('\n')
+            .map(|n| offset + n)
+            .unwrap_or(rest.len());
+        let line = &rest[offset..line_end];
+        if line.trim_end_matches('\r') == "---" {
+            close_start = offset;
+            close_end = line_end;
+            break;
         }
+        if line_end >= rest.len() {
+            return None;
+        }
+        offset = line_end + 1;
+    }
 
-        if raw.starts_with('[') && raw.ends_with(']') {
-            return raw[1..raw.len() - 1]
-                .split(',')
-                .filter_map(|part| {
-                    let part = part.trim();
-                    if part.is_empty() {
-                        None
-                    } else if is_quoted(part) {
-                        Some(part[1..part.len() - 1].to_string())
+    let yaml_block = rest[..close_start].trim_end_matches(['\r', '\n']);
+    let body_start = (close_end + 1).min(rest.len());
+    Some((yaml_block, &rest[body_start..]))
+}
+
+/// `None` signalisiert: nicht als Mapping darstellbar — Fallback nutzen.
+/// `Some(Vec::new())` bedeutet: leere Frontmatter, kein Fallback nötig.
+fn parse_yaml(yaml: &str) -> Option<Vec<Entry>> {
+    if yaml.trim().is_empty() {
+        return Some(Vec::new());
+    }
+    let docs = Yaml::load_from_str(yaml).ok()?;
+    let doc = docs.into_iter().next()?;
+    if doc.is_null() {
+        return Some(Vec::new());
+    }
+    let mapping = doc.as_mapping()?;
+    Some(
+        mapping
+            .iter()
+            .filter_map(|(k, v)| {
+                yaml_to_key(k).map(|key| Entry {
+                    key,
+                    value: yaml_to_value(v),
+                })
+            })
+            .collect(),
+    )
+}
+
+fn fallback_entries(yaml: &str) -> Vec<Entry> {
+    if yaml.trim().is_empty() {
+        return Vec::new();
+    }
+    vec![Entry {
+        key: "frontmatter".to_string(),
+        value: yaml.to_string(),
+    }]
+}
+
+fn yaml_to_key(node: &Yaml<'_>) -> Option<String> {
+    if let Some(s) = node.as_str() {
+        return Some(s.to_string());
+    }
+    if let Some(i) = node.as_integer() {
+        return Some(i.to_string());
+    }
+    if let Some(b) = node.as_bool() {
+        return Some(b.to_string());
+    }
+    match node {
+        Yaml::Tagged(_, inner) => yaml_to_key(inner),
+        Yaml::Representation(text, _, _) => Some(text.to_string()),
+        _ => None,
+    }
+}
+
+fn yaml_to_value(node: &Yaml<'_>) -> String {
+    if node.is_null() {
+        return String::new();
+    }
+    if let Some(s) = node.as_str() {
+        // YAML clip indicator (`|` / `>` ohne `-`) lässt einen Trailing-
+        // Newline stehen — für die <dd>-Anzeige stört der.
+        return s.trim_end_matches('\n').to_string();
+    }
+    if let Some(i) = node.as_integer() {
+        return i.to_string();
+    }
+    if let Some(b) = node.as_bool() {
+        return b.to_string();
+    }
+    if let Some(seq) = node.as_vec() {
+        return seq.iter().map(yaml_to_value).collect::<Vec<_>>().join("\n");
+    }
+    if let Some(map) = node.as_mapping() {
+        return map
+            .iter()
+            .filter_map(|(k, v)| {
+                yaml_to_key(k).map(|kk| {
+                    let val = yaml_to_value(v);
+                    if val.contains('\n') {
+                        let indented = val
+                            .lines()
+                            .map(|l| format!("  {l}"))
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        format!("{kk}:\n{indented}")
                     } else {
-                        Some(part.to_string())
+                        format!("{kk}: {val}")
                     }
                 })
-                .collect::<Vec<_>>()
-                .join(", ");
-        }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
     }
-
-    raw.to_string()
-}
-
-fn is_quoted(value: &str) -> bool {
-    (value.starts_with('"') && value.ends_with('"'))
-        || (value.starts_with('\'') && value.ends_with('\''))
+    match node {
+        Yaml::Tagged(_, inner) => yaml_to_value(inner),
+        Yaml::Representation(text, _, _) => text.to_string(),
+        _ => String::new(),
+    }
 }
 
 fn escape_html(output: &mut String, value: &str) {
@@ -151,17 +206,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_no_frontmatter() {
+    fn no_frontmatter_returns_body_unchanged() {
         let result = extract("# Hello");
-
         assert!(result.entries.is_empty());
         assert_eq!("# Hello", result.body);
     }
 
     #[test]
-    fn test_simple_frontmatter() {
+    fn simple_key_value() {
         let result = extract("---\ntitle: Foo\n---\n# Hello");
-
         assert_eq!(
             vec![Entry {
                 key: "title".to_string(),
@@ -173,32 +226,128 @@ mod tests {
     }
 
     #[test]
-    fn test_quoted_value() {
+    fn quoted_value() {
         let result = extract("---\nfoo: \"bar\"\n---\nbody");
-
         assert_eq!("bar", result.entries[0].value);
     }
 
     #[test]
-    fn test_array_value() {
+    fn inline_array_joined_with_newline() {
         let result = extract("---\ntags: [\"a\", \"b\"]\n---\nbody");
-
-        assert_eq!("a, b", result.entries[0].value);
+        assert_eq!("a\nb", result.entries[0].value);
     }
 
     #[test]
-    fn test_render_html_empty() {
+    fn block_literal_scalar_preserves_newlines() {
+        let input = "---\ndescription: |\n  line one\n  line two\n  line three\nname: x\n---\nbody";
+        let result = extract(input);
+        let desc = result
+            .entries
+            .iter()
+            .find(|e| e.key == "description")
+            .unwrap();
+        assert_eq!("line one\nline two\nline three", desc.value);
+        let name = result.entries.iter().find(|e| e.key == "name").unwrap();
+        assert_eq!("x", name.value);
+    }
+
+    #[test]
+    fn block_folded_scalar_collapses_newlines() {
+        let input = "---\ndescription: >\n  line one\n  line two\n\n  paragraph two\n---\nbody";
+        let result = extract(input);
+        assert_eq!("line one line two\nparagraph two", result.entries[0].value);
+    }
+
+    #[test]
+    fn block_sequence_joined_with_newline() {
+        let input =
+            "---\ntriggers:\n  - first item\n  - second item\n  - third item\nname: x\n---\nbody";
+        let result = extract(input);
+        let triggers = result.entries.iter().find(|e| e.key == "triggers").unwrap();
+        assert_eq!("first item\nsecond item\nthird item", triggers.value);
+    }
+
+    #[test]
+    fn order_is_preserved() {
+        let input = "---\nzeta: 1\nalpha: 2\nmiddle: 3\n---\nbody";
+        let result = extract(input);
+        let keys: Vec<_> = result.entries.iter().map(|e| e.key.as_str()).collect();
+        assert_eq!(vec!["zeta", "alpha", "middle"], keys);
+    }
+
+    #[test]
+    fn body_preserved_with_crlf() {
+        let input = "---\r\nfoo: bar\r\n---\r\nbody\r\nmore";
+        let result = extract(input);
+        assert_eq!("bar", result.entries[0].value);
+        assert_eq!("body\r\nmore", result.body);
+    }
+
+    #[test]
+    fn invalid_yaml_falls_back_to_raw_block() {
+        // Tab als Indent ist im YAML-Spec verboten — saphyr lehnt ab.
+        let input = "---\nfoo:\n\tbar: baz\n---\nbody";
+        let result = extract(input);
+        assert_eq!(1, result.entries.len());
+        assert_eq!("frontmatter", result.entries[0].key);
+        assert!(result.entries[0].value.contains("foo:"));
+        assert_eq!("body", result.body);
+    }
+
+    #[test]
+    fn top_level_scalar_falls_back_to_raw_block() {
+        let input = "---\njust a string\n---\nbody";
+        let result = extract(input);
+        assert_eq!("frontmatter", result.entries[0].key);
+        assert!(result.entries[0].value.contains("just a string"));
+        assert_eq!("body", result.body);
+    }
+
+    #[test]
+    fn empty_frontmatter_is_empty_entries() {
+        let result = extract("---\n---\nbody");
+        assert!(result.entries.is_empty());
+        assert_eq!("body", result.body);
+    }
+
+    #[test]
+    fn unterminated_frontmatter_keeps_full_markdown_as_body() {
+        let input = "---\nfoo: bar\n# Heading";
+        let result = extract(input);
+        assert!(result.entries.is_empty());
+        assert_eq!(input, result.body);
+    }
+
+    #[test]
+    fn nested_mapping_value_renders_indented() {
+        let input = "---\nauthor:\n  name: Foo\n  email: foo@bar\n---\nbody";
+        let result = extract(input);
+        let value = &result.entries[0].value;
+        assert!(value.contains("name: Foo"));
+        assert!(value.contains("email: foo@bar"));
+    }
+
+    #[test]
+    fn render_html_empty() {
         assert_eq!("", render_html(&[]));
     }
 
     #[test]
-    fn test_render_html_escapes() {
+    fn render_html_escapes() {
         let html = render_html(&[Entry {
             key: "<script>".to_string(),
             value: "\"x\" & y".to_string(),
         }]);
-
         assert!(html.contains("&lt;script&gt;"));
         assert!(html.contains("&quot;x&quot; &amp; y"));
+    }
+
+    #[test]
+    fn render_html_preserves_newlines() {
+        let html = render_html(&[Entry {
+            key: "triggers".to_string(),
+            value: "a\nb".to_string(),
+        }]);
+        assert!(html.contains("<dd>a\nb</dd>"));
     }
 }

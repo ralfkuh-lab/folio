@@ -8,6 +8,10 @@ rust-version = "1.80"
 # Phase 1: Markdown-Pipeline
 comrak = { version = "0.35", default-features = false, features = ["shortcodes"] }
 regex = "1.11"
+# YAML 1.2 fuer Frontmatter-Anzeige. Wird ausschliesslich im Display-Pfad
+# benutzt; die Delimiter-Detektion bleibt eigen, damit ein Parse-Fehler
+# nie den Body verschluckt (saphyr-Fehler -> Roh-Block-Fallback).
+saphyr = "0.0.6"
 
 # Phase 2-3: Serde + Persistenz
 serde = { version = "1.0", features = ["derive"] }

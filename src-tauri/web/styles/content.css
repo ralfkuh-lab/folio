@@ -142,6 +142,10 @@ aside.frontmatter dt {
 aside.frontmatter dd {
   margin: 0;
   word-break: break-word;
+  /* Multi-Line-Werte (Block-Scalars `|`/`>`, Block-Sequenzen `- item`)
+     liefert der Parser \n-getrennt — pre-line erhält Umbrueche, lässt
+     Wörter aber weiter normal umbrechen. */
+  white-space: pre-line;
 }
 /* Anchor scroll offset when the title bar is visible */
 :target { scroll-margin-top: 20px; }
