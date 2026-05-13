@@ -131,6 +131,28 @@ body.vault-hidden .vault-region { display: none; }
   object-fit: contain;
   image-rendering: -webkit-optimize-contrast;
 }
+/* Link-Badge auf Verknüpfungen (Symlinks, Junctions, .lnk-Shortcuts).
+   Kleiner Pfeil unten links, analog Windows-Explorer. */
+.vault-region .node.link > .row > .icon {
+  position: relative;
+}
+.vault-region .node.link > .row > .icon::after {
+  content: "↗";
+  position: absolute;
+  left: -3px;
+  bottom: -3px;
+  width: 10px;
+  height: 10px;
+  font-size: 10px;
+  line-height: 10px;
+  text-align: center;
+  color: var(--rail-bg);
+  background: var(--rail-accent);
+  border-radius: 2px;
+  font-family: "Segoe UI Symbol", "Segoe UI", system-ui, sans-serif;
+  font-weight: 700;
+  pointer-events: none;
+}
 .vault-region .label {
   flex: 1 1 auto;
   white-space: nowrap;
