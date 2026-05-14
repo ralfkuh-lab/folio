@@ -4,5 +4,30 @@
 <dict>
     <key>NSScreenCaptureUsageDescription</key>
     <string>Folio benötigt Bildschirmaufnahme-Zugriff für die Automation-API (GET /screenshot).</string>
+
+    <!-- Überschreibt Tauris auto-generiertes CFBundleDocumentTypes um
+         CFBundleTypeIconFile zu ergänzen, das Tauri nicht serialisiert. -->
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>md</string>
+                <string>markdown</string>
+            </array>
+            <key>CFBundleTypeIconFile</key>
+            <string>icon</string>
+            <key>CFBundleTypeName</key>
+            <string>Markdown Document</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSHandlerRank</key>
+            <string>Owner</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>net.daringfireball.markdown</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>
