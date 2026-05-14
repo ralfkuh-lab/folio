@@ -24,7 +24,11 @@
         "description": "Markdown Document",
         "role": "Editor"
       }
-    ]
+    ],
+    "macOS": {
+      "signingIdentity": "-",
+      "hardenedRuntime": false
+    }
   },
   "app": {
     "withGlobalTauri": true,
