@@ -5,8 +5,10 @@
     <key>NSScreenCaptureUsageDescription</key>
     <string>Folio benötigt Bildschirmaufnahme-Zugriff für die Automation-API (GET /screenshot).</string>
 
-    <!-- Überschreibt Tauris auto-generiertes CFBundleDocumentTypes um
-         CFBundleTypeIconFile zu ergänzen, das Tauri nicht serialisiert. -->
+    <!-- Überschreibt Tauris CFBundleDocumentTypes, das kein
+         CFBundleTypeIconFile serialisiert. Nur Extensions, kein
+         LSItemContentTypes (undeklarierte UTIs wie net.daringfireball.markdown
+         lassen macOS den ganzen Eintrag ignorieren). -->
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>
@@ -22,11 +24,7 @@
             <key>CFBundleTypeRole</key>
             <string>Editor</string>
             <key>LSHandlerRank</key>
-            <string>Owner</string>
-            <key>LSItemContentTypes</key>
-            <array>
-                <string>net.daringfireball.markdown</string>
-            </array>
+            <string>Default</string>
         </dict>
     </array>
 </dict>
