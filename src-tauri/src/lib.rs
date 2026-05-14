@@ -227,6 +227,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::export::export_pdf,
             commands::export::pick_export_target,
             commands::icon::file_icon_data_uri,
+            commands::icon::file_icons_batch,
             commands::vault_cmd::vault_expand_dir,
             commands::vault_cmd::vault_collapse_dir,
             commands::vault_cmd::vault_toggle_section,

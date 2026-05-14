@@ -176,15 +176,57 @@ function applyIconsToNode(rootNode: Element): void {
     } else {
         return;
     }
+
+    // Alle noch nicht aufgelösten Extensions sammeln und in einem Batch-Call
+    // holen, statt pro Extension einen eigenen IPC-Roundtrip zu machen.
+    const pending: { img: HTMLImageElement; ext: string }[] = [];
+    const batchExts: string[] = [];
     for (let i = 0; i < imgs.length; i++) {
         const img = imgs[i] as HTMLImageElement;
         if (img.src) continue;
         const ext = img.getAttribute('data-ext') || '';
-        (function (target, e) {
-            resolveFileIcon(e).then(function (uri) {
-                if (uri) target.src = uri;
-            });
-        })(img, ext);
+        if (fileIconCache[ext] !== undefined) {
+            if (fileIconCache[ext]) img.src = fileIconCache[ext];
+        } else {
+            pending.push({ img, ext });
+            if (!fileIconPending[ext] && batchExts.indexOf(ext) === -1) {
+                batchExts.push(ext);
+            }
+        }
+    }
+
+    if (pending.length === 0) return;
+
+    if (batchExts.length > 0) {
+        // Einzelne Promise für den gesamten Batch anlegen, damit parallele
+        // MutationObserver-Aufrufe nicht doppelt feuern.
+        const batchPromise = invoke('file_icons_batch', { exts: batchExts }).then(
+            function (result: Record<string, string>) {
+                for (const ext of batchExts) {
+                    fileIconCache[ext] = result[ext] || '';
+                    delete fileIconPending[ext];
+                }
+                return result;
+            }
+        ).catch(function () {
+            for (const ext of batchExts) {
+                fileIconCache[ext] = '';
+                delete fileIconPending[ext];
+            }
+            return {} as Record<string, string>;
+        });
+        for (const ext of batchExts) {
+            fileIconPending[ext] = batchPromise.then(function (r) { return r[ext] || ''; });
+        }
+    }
+
+    // Jedes img wartet auf seinen Eintrag im Cache (via pending-Promise oder
+    // direkt, falls ein anderer Batch gerade schon läuft).
+    for (const { img, ext } of pending) {
+        const p: Promise<string> = fileIconPending[ext]
+            ? fileIconPending[ext]
+            : Promise.resolve(fileIconCache[ext] || '');
+        p.then(function (uri) { if (uri) img.src = uri; });
     }
 }
 
