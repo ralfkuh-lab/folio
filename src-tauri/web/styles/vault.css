@@ -129,7 +129,7 @@ body.vault-hidden .vault-region { display: none; }
   height: 16px;
   display: block;
   object-fit: contain;
-  image-rendering: -webkit-optimize-contrast;
+  image-rendering: auto;
 }
 /* Link-Badge auf Verknüpfungen (Symlinks, Junctions, .lnk-Shortcuts).
    Kleiner Pfeil unten links, analog Windows-Explorer. */
