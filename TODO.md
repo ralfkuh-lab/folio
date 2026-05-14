@@ -76,6 +76,11 @@
   Anwendungs-Einstellungen (Theme, Font/Schriftgröße, Editor-Optionen,
   Vault-Pfade, Automation-Port, …). Persistenz analog zur Window-State-
   Speicherung; Aufruf über Menü oder Statusbar.
+  - **macOS: Terminal-Wahl im Settings-Panel** — `open_terminal_at` öffnet
+    auf macOS aktuell immer `Terminal.app`. Sobald der Settings-Bereich
+    existiert, dort eine Auswahl anbieten (Terminal.app, iTerm2, Warp, …
+    oder freies Eingabefeld für den App-Namen). Bis dahin funktioniert
+    der Default zuverlässig.
 - **HTML im View-Mode rendern**: `.html`/`.htm` als Datei-Klasse "richtig" anzeigen,
   Skripte/inline-Event-Handler beim Render rauspatchen (Sandbox-iframe oder
   serverseitige Sanitization). Aktuell öffnet der Edit-Mode den Source.
