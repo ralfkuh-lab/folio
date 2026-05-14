@@ -20,9 +20,14 @@ mod windows;
 #[cfg(target_os = "windows")]
 use windows::compute_icon;
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(target_os = "macos")]
+mod mac;
+#[cfg(target_os = "macos")]
+use mac::compute_icon;
+
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
 mod fallback;
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
 use fallback::compute_icon;
 
 #[derive(Clone)]
