@@ -2,6 +2,20 @@
 
 ## Hohe Priorität
 
+- **Edit-Toolbar-Commands zerstören den Undo-Stack** (entdeckt 2026-05-18
+  beim Bauen von `09_undo_redo.py`). `FolioEditor.applyReplace` (in
+  `src-tauri/web/editor/text.ts`) ruft `editor.setValue(args.fullText)` —
+  das ist Monacos „Hard-Reset", der den gesamten Undo-Stack leert.
+  Konsequenz: Jeder Klick auf Bold/Italic/Heading/Bullet/Numbered/Link/
+  Image/Table/Code/Codeblock/Strike löscht die komplette Edit-Historie.
+  Nach einem solchen Klick kann der User nichts mehr undoen, was davor
+  passierte. Fix: `applyReplace` soll `editor.executeEdits(...)` mit
+  einer berechneten Range-Replacement-Operation verwenden statt
+  `setValue` — das landet als regulärer Edit im Stack und ist reversibel.
+  Tests in `09_undo_redo.py` umgehen das aktuell, indem sie `insertText`
+  benutzen statt Toolbar-Commands; ein dedizierter Regression-Test
+  "Bold-Wrap ist undo-bar" sollte nach dem Fix dazu.
+
 - **E2E-Test-Suite zu vollständiger UI-Coverage ausbauen** (Plan 2026-05-18).
   Aktuelle Hermes-Suite ist API-driven Smoke (7 Szenarien) — testet Backend-
   State, aber keinen einzigen echten Menü-Klick, keinen Keybinding-Trigger,
