@@ -146,6 +146,21 @@ export function undo(): void {
     editor.trigger('menu', 'undo', null);
 }
 
+// Realistische Texteingabe ueber Monacos eigenen Keyboard-Type-Trigger.
+// Anders als `applyReplace` (das via setValue() den Undo-Stack clearet)
+// landet das Insert hier korrekt als Edit-Operation im Stack — dadurch
+// werden `undo`/`redo` von oben testbar und Synthetic-KeyboardEvents
+// (die in Monaco fragil sind) vermieden.
+export function insertText(text: string): void {
+    const editor = getEditor();
+    if (!editor) {
+        whenReady().then(() => insertText(text));
+        return;
+    }
+    editor.focus();
+    editor.trigger('automation', 'type', { text: text || '' });
+}
+
 export function redo(): void {
     const editor = getEditor();
     if (!editor) return;

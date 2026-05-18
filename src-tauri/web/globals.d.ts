@@ -27,6 +27,7 @@ interface FolioEditorSurface {
     findPrev(): void;
     undo(): void;
     redo(): void;
+    insertText(text: string): void;
     setLanguage(language: string): void;
     getLanguage(): string;
     listLanguages(): Array<{ id: string; label: string; aliases: string[] }>;
