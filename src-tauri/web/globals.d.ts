@@ -16,6 +16,7 @@ interface FolioEditorSurface {
     setScroll(y: number): void;
     getScroll(): number;
     setTheme(mode: string): void;
+    setMinimap(enabled: boolean): void;
     layout(): void;
     focus(): void;
     applyReplace(args: { fullText: string; selectionStart: number; selectionLength: number }): void;

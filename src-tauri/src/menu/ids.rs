@@ -22,5 +22,6 @@ pub(super) const VIEW_THEME_LIGHT: &str = "view.theme.light";
 pub(super) const VIEW_THEME_DARK: &str = "view.theme.dark";
 pub(super) const VIEW_RAIL_LEFT: &str = "view.rail_left";
 pub(super) const VIEW_RAIL_RIGHT: &str = "view.rail_right";
+pub(super) const VIEW_MINIMAP: &str = "view.minimap";
 pub(super) const HELP_CHEATSHEET: &str = "help.cheatsheet";
 pub(super) const HELP_ABOUT: &str = "help.about";

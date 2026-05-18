@@ -18,6 +18,15 @@ import {
 let monacoReady: Promise<void> | null = null;
 let mountReady: Promise<void> = Promise.resolve();
 
+// Pre-Mount-Wunschzustand fuer optionale Editor-Optionen, die schon
+// beim Boot gesetzt werden (z. B. Minimap aus persistentem Panel-State).
+// Wenn `mount()` noch nicht lief, gibt es keinen Editor zum
+// updateOptions(), und ein Defer auf `mountReady` waere eine
+// Endlos-Microtask-Schleife (mountReady ist bis zum ersten mount()
+// `Promise.resolve()`-vorbelegt). Stattdessen merken wir uns hier den
+// Wunsch und applien ihn im mount()-Callback.
+let pendingMinimapEnabled: boolean | null = null;
+
 function loadMonaco(): Promise<void> {
     if (monacoReady) return monacoReady;
     monacoReady = new Promise<void>((resolve, reject) => {
@@ -71,12 +80,17 @@ export function mount(elementId: string, initialText: string): Promise<void> {
         const monaco = getMonaco();
         const isDark = document.documentElement.classList.contains('theme-dark');
 
+        // Pre-Mount-Wunschzustand (siehe oben) sofort in die initialen
+        // create-Options ziehen — kein nachgelagertes updateOptions noetig.
+        const minimapEnabled =
+            pendingMinimapEnabled === null ? false : pendingMinimapEnabled;
+        pendingMinimapEnabled = null;
         const editor = monaco.editor.create(el, {
             value: initialText || '',
             language: 'markdown',
             theme: isDark ? 'vs-dark' : 'vs',
             automaticLayout: true,
-            minimap: { enabled: false },
+            minimap: { enabled: minimapEnabled },
             lineNumbers: 'on',
             wordWrap: 'on',
             folding: true,
@@ -142,6 +156,23 @@ export function setTheme(mode: 'light' | 'dark'): void {
     const monaco = getMonaco();
     if (!monaco || !getEditor()) return;
     monaco.editor.setTheme(mode === 'dark' ? 'vs-dark' : 'vs');
+}
+
+export function setMinimap(enabled: boolean): void {
+    const editor = getEditor();
+    if (!editor) {
+        // Pre-Mount: Wunsch in `pendingMinimapEnabled` merken — der
+        // `mount()`-Callback zieht ihn in die initialen Create-Options.
+        // Kein `mountReady.then(setMinimap)`-Defer: `mountReady` ist bis
+        // zum ersten Mount `Promise.resolve()` (already-resolved), ein
+        // Defer waere damit eine Endlos-Microtask-Schleife, die die
+        // Event-Loop blockt und das gesamte Frontend-Init kaputtmacht.
+        // Genau das war der Bug, der bei Folio-Start ohne offene Datei
+        // zu "nichts funktioniert mehr" fuehrte (2026-05-19).
+        pendingMinimapEnabled = !!enabled;
+        return;
+    }
+    editor.updateOptions({ minimap: { enabled: !!enabled } });
 }
 
 export function layout(): void {

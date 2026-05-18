@@ -50,6 +50,16 @@ export function initToolbarActions(): void {
         btn.classList.toggle('active', on);
         invoke('set_rail_visible', { side: 'right', visible: on }).catch(function(){});
     });
+    bind('tb-minimap', function () {
+        var btn = $('tb-minimap'); if (!btn) return;
+        var on = !btn.classList.contains('active');
+        btn.classList.toggle('active', on);
+        // Monaco-Option direkt setzen, damit der Toggle visuell sofort
+        // greift. Backend persistiert + emittiert panel:minimap_changed
+        // (fuer Automation- und Multi-Window-Sync).
+        if (window.FolioEditor) window.FolioEditor.setMinimap(on);
+        invoke('set_editor_minimap_visible', { visible: on }).catch(function(){});
+    });
     bind('tb-find', function () { invoke('open_find').catch(function(){}); });
     bind('tb-back', function () {
         requestSaveIfDirty().then(function (ok) {

@@ -200,6 +200,8 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::app::theme_set,
             commands::app::set_view_mode,
             commands::app::set_rail_visible,
+            commands::app::editor_minimap_get,
+            commands::app::set_editor_minimap_visible,
             commands::app::open_find,
             commands::app::cli_pending_open,
             commands::app::set_window_title,

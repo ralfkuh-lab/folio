@@ -23,7 +23,7 @@ import {
     setFindOptions,
     setFindTerm,
 } from './find';
-import { layout, mount, setTheme, setText } from './mount';
+import { layout, mount, setMinimap, setTheme, setText } from './mount';
 import {
     applyReplace,
     focus,
@@ -54,6 +54,7 @@ import {
     undo,
     redo,
     setTheme,
+    setMinimap,
     openFind,
     closeFind,
     setFindOptions,
