@@ -373,6 +373,72 @@ describe('automation/events — automation:set_editor_selection', () => {
     });
 });
 
+describe('automation/events — automation:editor_command', () => {
+    it('ruft FolioEditor[command]() bei bekanntem Command auf', async () => {
+        const undo = vi.fn();
+        (window as any).FolioEditor = { undo };
+
+        const events = await import('../../app/automation/events');
+        events.initAutomationEvents();
+
+        tauri.emitEvent('automation:editor_command', {
+            command: 'undo',
+            args: null,
+            requestId: 31,
+        });
+
+        await flushAck();
+        expect(undo).toHaveBeenCalledTimes(1);
+        expect(tauri.invoke).toHaveBeenCalledWith('automation_ack', { id: 31 });
+    });
+
+    it('uebergibt args als einzelnes Argument', async () => {
+        const setLanguage = vi.fn();
+        (window as any).FolioEditor = { setLanguage };
+
+        const events = await import('../../app/automation/events');
+        events.initAutomationEvents();
+
+        tauri.emitEvent('automation:editor_command', {
+            command: 'setLanguage',
+            args: 'markdown',
+            requestId: 32,
+        });
+
+        await flushAck();
+        expect(setLanguage).toHaveBeenCalledWith('markdown');
+    });
+
+    it('macht no-op bei unbekanntem Command, ackt aber trotzdem', async () => {
+        (window as any).FolioEditor = { undo: vi.fn() };
+
+        const events = await import('../../app/automation/events');
+        events.initAutomationEvents();
+
+        tauri.emitEvent('automation:editor_command', {
+            command: 'doesNotExist',
+            requestId: 33,
+        });
+
+        await flushAck();
+        // ack muss kommen, sonst laeuft das Backend ins Timeout.
+        expect(tauri.invoke).toHaveBeenCalledWith('automation_ack', { id: 33 });
+    });
+
+    it('ignoriert Event wenn FolioEditor fehlt', async () => {
+        delete (window as any).FolioEditor;
+        const events = await import('../../app/automation/events');
+        events.initAutomationEvents();
+
+        expect(() =>
+            tauri.emitEvent('automation:editor_command', {
+                command: 'undo',
+                requestId: 34,
+            }),
+        ).not.toThrow();
+    });
+});
+
 describe('automation/events — automation:key', () => {
     it('dispatcht KeyboardEvent mit key/code/Modifier auf document', async () => {
         const events = await import('../../app/automation/events');

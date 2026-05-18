@@ -328,6 +328,33 @@ export function initAutomationEvents(): void {
         var data = (event && event.payload) || {};
         ackHandler(invoke, data, function () { dispatchAutomationKey(data); });
     });
+    // POST /editor/command: ruft eine Methode am FolioEditor-Surface auf.
+    // Pragmatik wie in editor/index.ts dokumentiert: alles, was als
+    // Funktion am `window.FolioEditor` haengt (undo, redo, focus,
+    // setSelection, applyReplace, ...), ist via diesem Endpoint
+    // triggerbar. Args werden als einzelnes Argument durchgereicht
+    // (null wenn nicht gesetzt). Monaco-action-trigger (z. B.
+    // editor.action.formatDocument) wird in einem Folge-Schritt
+    // ergaenzt; fuer Phase 0 reichen die direkten FolioEditor-Methoden,
+    // weil sie die wichtigen E2E-Mutationen (Undo/Redo, Selection,
+    // Replace) abdecken.
+    ev.listen('automation:editor_command', function (event: any) {
+        var data = (event && event.payload) || {};
+        ackHandler(invoke, data, function () {
+            var editor = (window as any).FolioEditor;
+            var cmd = data && data.command;
+            if (!editor || typeof cmd !== 'string') return;
+            var fn = (editor as any)[cmd];
+            if (typeof fn !== 'function') return;
+            try {
+                if (data.args === null || data.args === undefined) {
+                    fn.call(editor);
+                } else {
+                    fn.call(editor, data.args);
+                }
+            } catch (_) {}
+        });
+    });
 
     // Editor-Text-Tracking fuer Wordcount im Edit-Modus. CustomEvent wird
     // von editor.ts bei jeder Text-Aenderung dispatched (nicht nur durch
