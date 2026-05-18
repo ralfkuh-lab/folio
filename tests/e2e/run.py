@@ -41,9 +41,17 @@ from lib.todo import append_e2e_failure_entry  # noqa: E402
 from lib.visual import VisualSuite  # noqa: E402
 
 
-def discover_scenarios(scenarios_dir: Path) -> list[tuple[str, Callable]]:
+def discover_scenarios(
+    scenarios_dir: Path,
+    include_desktop_only: bool = False,
+) -> list[tuple[str, Callable]]:
     """Importiert alle nummerierten `NN_name.py`-Module und gibt
     (Name, run)-Paare in lexikografischer Reihenfolge zurueck.
+
+    Szenarien, die eine Modul-Konstante `DESKTOP_ONLY = True` exportieren,
+    werden standardmaessig uebersprungen (Xvfb-untauglich — z. B. OS-
+    Dialoge oder Multi-Monitor-Capture). `include_desktop_only=True`
+    nimmt sie mit. Siehe `docs/e2e-headless-caveats.md`.
     """
     found: list[tuple[str, Callable]] = []
     for path in sorted(scenarios_dir.glob("[0-9][0-9]_*.py")):
@@ -55,6 +63,9 @@ def discover_scenarios(scenarios_dir: Path) -> list[tuple[str, Callable]]:
         run_fn = getattr(module, "run", None)
         if not callable(run_fn):
             print(f"[WARN] scenarios/{path.name}: missing run() function — skipped")
+            continue
+        if getattr(module, "DESKTOP_ONLY", False) and not include_desktop_only:
+            print(f"[SKIP] scenarios/{path.name}: DESKTOP_ONLY (use --include-desktop-only)")
             continue
         found.append((path.stem, run_fn))
     return found
@@ -81,6 +92,10 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "--no-auto-todo", action="store_true",
         help="Bei Fehlern KEINEN Eintrag in TODO.md ergaenzen.",
+    )
+    parser.add_argument(
+        "--include-desktop-only", action="store_true",
+        help="Szenarien mit `DESKTOP_ONLY = True` mitnehmen (sonst geskippt).",
     )
     args = parser.parse_args(argv)
 
@@ -122,7 +137,10 @@ def main(argv: list[str]) -> int:
         update_baselines=args.update_baselines,
     )
 
-    scenarios = discover_scenarios(Path(args.scenarios_dir))
+    scenarios = discover_scenarios(
+        Path(args.scenarios_dir),
+        include_desktop_only=args.include_desktop_only,
+    )
     print(f"[i] {len(scenarios)} Szenario(s) entdeckt: "
           f"{', '.join(n for n, _ in scenarios)}")
 

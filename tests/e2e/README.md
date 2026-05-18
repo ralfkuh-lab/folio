@@ -11,10 +11,17 @@ gegen committed Baselines und protokolliert Ergebnisse in Markdown.
   nur eine eingeschränkte Variante gegen ein bereits gestartetes
   Folio (sichtbar, kein Lifecycle-Management) — gedacht für lokales
   Debuggen einzelner Szenarien, nicht für komplette Läufe.
-- **Python 3.10+** (Standard-Lib + Pillow).
+- **Python 3.10+** mit `venv`. Auf einer frischen Ubuntu-Installation
+  (24.04+ liefert `pip`/`venv` nicht out-of-the-box):
   ```sh
-  pip install Pillow
+  sudo apt install -y python3 python3-pip python3-venv xvfb curl
   ```
+  Die Suite-Abhängigkeiten:
+  ```sh
+  python3 -m venv tests/e2e/.venv
+  tests/e2e/.venv/bin/pip install -r tests/e2e/requirements.txt
+  ```
+  Pillow ist die einzige Drittpartei-Abhängigkeit.
 - **Folio-Release-Build** bereitgestellt unter
   `src-tauri/target/release/folio` (Linux) oder
   `src-tauri/target/release/folio.exe` (Windows). Wird vom Wrapper
@@ -59,6 +66,14 @@ Baselines sind in `baselines/` eingecheckt. Neue Aufnahme via:
 ```sh
 bash scripts/run-e2e.sh --update-baselines
 ```
+
+Wenn ein **neues Szenario** seinen ersten Screenshot macht und noch
+keine Baseline existiert, wird sie automatisch beim ersten Run angelegt
+(der Step zählt als PASS mit dem Hinweis "baseline created (first run)").
+Erst der **zweite** Run gegen diese Baseline kann fehlschlagen. So muss
+nicht für jedes neue Szenario erst ein separater `--update-baselines`-
+Lauf gemacht werden. Achtung: dadurch landen versehentliche Screenshots
+genauso eingefroren wie absichtliche — vor dem Commit visuell prüfen.
 
 ## Architektur
 
@@ -127,3 +142,25 @@ er nicht dupliziert.
   (default 1 % der Pixel dürfen abweichen), pro Szenario tunbar.
 - **Sequentielle Ausführung**: kein Parallelismus, weil Folio-State
   geteilt ist.
+- **Xvfb/WebKitGTK-Eigenheiten**: Scroll-State-Sync, Monaco-Canvas-
+  Capture, synthetic-keyboard, native-Menüs etc. sind in
+  [`docs/e2e-headless-caveats.md`](../../docs/e2e-headless-caveats.md)
+  zusammengefasst — Pflichtlektüre vor dem Schreiben neuer Szenarien.
+
+## Marker für desktop-spezifische Szenarien
+
+Szenarien, die unter Xvfb nicht oder nicht zuverlässig laufen (echte
+OS-Dialoge, Multi-Monitor, GPU-spezifisches Rendering) können sich als
+Modul-Konstante markieren:
+
+```python
+DESKTOP_ONLY = True
+
+def run(ctx):
+    ...
+```
+
+Der Orchestrator skipt diese standardmäßig; mit `--include-desktop-only`
+werden sie mitgenommen. Heute trägt kein Szenario den Marker (alle
+laufen unter Xvfb), die Infrastruktur ist Vorhaltung für zukünftige
+Dialog-/OS-Eingang-Tests.
