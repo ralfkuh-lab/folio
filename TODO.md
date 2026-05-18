@@ -63,12 +63,12 @@
   - ✅ Console-Error-Capture + `/state.consoleErrorCount` +
     `GET /console/errors?clear=true` (`400d41d`)
   - ✅ `POST /rightclick {name, coords?}` (`<pending commit>`)
-- **E2E-Test-Routine + Baseline-Screenshots** — Skript, das die App in Xvfb
-  startet, eine Aktions-Sequenz fährt und über `/screenshot` + Pixelmatch
-  gegen Baseline-PNGs verifiziert. Voraussetzung sind die Automation-API-
-  Ergänzungen oben. Setup: Linux-Build (`cargo tauri build --bundles deb`)
-  + Xvfb-Display, Python/Bash-Treiber, `compare -metric AE` o. ä.
-  Hermes-Agent kann die Routine dann eigenständig fahren.
+- **E2E-Test-Routine + Baseline-Screenshots** ✅ — `tests/e2e/`
+  (Python + Pillow, 7 Szenarien) + Wrapper `scripts/run-e2e.sh`
+  (startet Xvfb + Folio + Suite + Cleanup). Agent-Einstieg:
+  [`docs/e2e-testing.md`](docs/e2e-testing.md) — eine Anweisung
+  (`bash scripts/run-e2e.sh`) genügt. Fehler werden in `errors.md`
+  protokolliert und automatisch als TODO-Eintrag oben hier ergänzt.
 
 ## Mittlere Priorität
 
