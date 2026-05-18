@@ -12,7 +12,61 @@
   Menü-Accelerator entweder einen DOM-Capture-Listener am Frontend nachziehen
   ODER prüfen, ob WebView2-spezifische Config (`accelerator_handler`) die
   OS-Bar früher dranlassen kann. Tracking: nach dem Settings-Panel
-  systematisch durchgehen.
+  systematisch durchgehen. 
+  - **Windows-E2E-Run 2026-05-18 (`tests/e2e/scenarios/15_keybindings.py`)**:
+    Im DOM-Capture-Pfad sind **Ctrl+1, Ctrl+2, Ctrl+F grün** (isolierter
+    Sub-Run alle drei Steps in 0.27 s). **Ctrl+S triggert Save tatsächlich**
+    (sample.md hatte nach dem Run `ctrl-s-test\n` angehängt) — das
+    `document.saved`-Event wird vom `/wait`-API aber nicht eingefangen.
+    Das ist ein anderer Befund als „Keybinding greift nicht" und gehört
+    zum getrennten `document.saved`-Event-Race-Eintrag weiter unten.
+    Native Tauri-Menübar (z. B. echter Strg+W aus dem Menü) wurde nicht
+    getestet, weil aus dem WebView nicht erreichbar.
+  - **User-Test 2026-05-18 (Windows, manuell)**: konkret bestätigt als
+    nicht greifend:
+    - **Ctrl+Shift+S** (Speichern unter) — kein DOM-Capture-Handler
+      vorhanden, Accelerator hängt rein an der nativen Menübar.
+    - **Ctrl+W** (Datei schließen) — dito, nur Menübar.
+    - **Ctrl+Q** (Beenden) — dito, nur Menübar.
+    Alle drei haben heute **keinen** Frontend-DOM-Listener als Backup,
+    während Ctrl+1/2/F/S das schon haben. Erster Patch-Schritt wäre,
+    in `toolbar-actions.ts` die DOM-Capture-Liste um diese drei zu
+    erweitern und auf die jeweiligen Menu-IDs zu routen, bis die
+    saubere WebView2-/Accelerator-Lösung steht.
+
+- **`document.saved`-Event greift Wait-Poll nicht**: Sowohl
+  `tests/e2e/scenarios/08_save_roundtrip.py` (über `/save`) als auch
+  `15_keybindings.py` (über DOM-Ctrl+S) bekommen nach erfolgreichem
+  Speichern einen 5-s-Timeout auf `expect_event("document.saved")`. Auf
+  Disk ist die Mutation da, das Event scheint also vor der Wait-
+  Registrierung gefeuert worden zu sein (Race im `/wait`-Mechanismus
+  oder im Event-Re-Broadcast). Auf Linux+Xvfb lief die Suite zuletzt
+  grün — möglicherweise nur unter WebView2/Windows-Timing fragil.
+  Prüfen: `automation/events.rs` (oder wo die Event-Subscription
+  sitzt) — ein „last-emitted"-Buffer pro Event-Topic mit kurzer TTL
+  würde solche Late-Subscribers entkoppeln.
+
+- **Undo-Stack wird in `09_undo_redo` gecleared**: Szenario schreibt
+  zuerst „X" in den Editor, dann „**hallo**" als zweites Edit, danach
+  Undo → erwartet wird, dass „**hallo**" verschwindet und „X" stehen
+  bleibt. Beobachtet (Windows 2026-05-18): nach Undo steht da
+  `'hallo welt\n'` — der gesamte vorherige Edit ist weg, der Undo-Stack
+  wurde irgendwo zwischen den beiden Edits geclearet. Riecht stark nach
+  einer Regression der CLAUDE.md-Konvention „`applyReplace` muss
+  `editor.executeEdits` nutzen, nicht `setValue`". Verdächtige Stellen:
+  `editor/text.ts`-`applyReplace`/`setText`-Pfade und alles, was beim
+  Edit-Mode-Wechsel das Model neu setzt. Auf Linux+Xvfb war 09 zuletzt
+  grün, also entweder OS-spezifisch oder Timing-bedingt.
+
+- **Pin → Vault-Tree-Eintrag erscheint nicht im DOM (Windows)**:
+  Sowohl `16_vault_tree` als auch `19_context_menus` failen nach
+  `/workspace/pin` mit „`#vault-tree li.node[data-path=...]`
+  exists=false, matchCount=0". Auf Linux+Xvfb grün. Datei wird unter
+  `%TEMP%\folio-e2e-vault-*\…` angelegt und gepinnt — vermutlich
+  triggert der `notify`-Watcher den Tree-Refresh nicht (anderer
+  Volume? Pfad-Casing? CRLF-Path-Normalisierung?). Reproduktion ohne
+  Test: manuell eine Datei außerhalb der aktuell expandierten Vault-
+  Roots pinnen und schauen, ob sie im Tree auftaucht.
 
 - **Config-/Einstellungen-Bereich**: Eigener Settings-Dialog/-Panel für
   Anwendungs-Einstellungen (Theme, Font/Schriftgröße, Editor-Optionen,
@@ -66,6 +120,23 @@
   Klick, nicht beim Boot.
 
 ## Niedrige Priorität
+
+- **E2E-Suite auf Windows lauffähig machen**: Aus dem Windows-Run 2026-05-18
+  zwei Stolpersteine, die die Suite dort heute praktisch unbrauchbar machen,
+  obwohl die Library `--attach` explizit unterstützt:
+  1. **Visual-Baselines an Linux 1280×800 gebunden** — 6 Szenarien (01–06)
+     liefern auf einem 1920×1080-Monitor `size mismatch` und brechen am
+     ersten Screenshot ab, obwohl ihre funktionalen Asserts grün waren.
+     Optionen: vor dem Capture per `/resize` auf eine feste Größe, oder
+     ein zweites Baseline-Set pro Plattform, oder Visual-Tests im
+     `--attach`-Mode standardmäßig skippen.
+  2. **`/open` blockt mit HTTP 409, solange Folio aus der letzten Session
+     eine dirty Recent-Datei restauriert hat** (`document_service.rs:64`
+     `DirtyRejected`). Heute nur lösbar, indem man
+     `%APPDATA%\Folio\workspace.json` wegmoved. Wünschenswert: optionaler
+     `force`/`discard`-Flag im `/open`-Body oder ein eigener
+     `/document/discard`-Endpoint, den die Test-Suite vor jedem Run
+     aufruft.
 
 - **KI-Funktionen (Ideen sammeln)**: Sinnvolle Integrationen prüfen, z. B.
   Zusammenfassung des aktuellen Dokuments, Übersetzung, Rechtschreib-/
