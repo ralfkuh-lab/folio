@@ -144,6 +144,18 @@ export function setTheme(mode: 'light' | 'dark'): void {
     monaco.editor.setTheme(mode === 'dark' ? 'vs-dark' : 'vs');
 }
 
+export function setMinimap(enabled: boolean): void {
+    const editor = getEditor();
+    if (!editor) {
+        // Pre-Mount: beim Booten wird `setMinimap` ggf. gerufen, bevor
+        // mount() durch ist. Defer auf den Ready-State, damit das nicht
+        // silent verlorengeht.
+        mountReady.then(() => setMinimap(enabled));
+        return;
+    }
+    editor.updateOptions({ minimap: { enabled: !!enabled } });
+}
+
 export function layout(): void {
     const editor = getEditor();
     if (editor) editor.layout();

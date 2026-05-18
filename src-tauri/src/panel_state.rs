@@ -24,6 +24,11 @@ pub struct PanelStateData {
     pub window_maximized: bool,
     pub cheat_sheet_offset_x: f64,
     pub cheat_sheet_offset_y: f64,
+    // Monaco-Minimap-Toggle (Edit-Mode-Only). Default aus: Folio ist
+    // schmal-fokussiert auf Markdown, fuer typische Dokumentenlaengen
+    // bringt die Minimap wenig und nimmt Platz.
+    #[serde(default)]
+    pub editor_minimap_visible: bool,
 }
 
 impl Default for PanelStateData {
@@ -42,6 +47,7 @@ impl Default for PanelStateData {
             window_maximized: false,
             cheat_sheet_offset_x: 0.0,
             cheat_sheet_offset_y: 0.0,
+            editor_minimap_visible: false,
         }
     }
 }
@@ -97,6 +103,11 @@ impl PanelState {
             "right" => self.data.right_rail_visible = visible,
             _ => {}
         }
+        self.save()
+    }
+
+    pub fn set_editor_minimap_visible(&mut self, visible: bool) -> io::Result<()> {
+        self.data.editor_minimap_visible = visible;
         self.save()
     }
 
@@ -222,5 +233,15 @@ mod tests {
         state.set_section_expanded("recent", false).unwrap();
         assert!(!state.data().recent_expanded);
         assert!(state.data().pinned_expanded);
+    }
+
+    #[test]
+    fn editor_minimap_default_is_off_and_toggle_persists() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("panel.json");
+        let mut state = PanelState::load_from(path.clone());
+        assert!(!state.data().editor_minimap_visible);
+        state.set_editor_minimap_visible(true).unwrap();
+        assert!(PanelState::load_from(path).data().editor_minimap_visible);
     }
 }

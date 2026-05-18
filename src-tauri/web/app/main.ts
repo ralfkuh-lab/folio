@@ -155,6 +155,16 @@ if (ev && typeof ev.listen === 'function' && invoke) {
         }
     });
 
+    // panel:minimap_changed analog: Automation oder Multi-Window-Sync
+    // schreibt den State im Backend; das Frontend zieht hier nach.
+    ev.listen('panel:minimap_changed', function (event: any) {
+        var data = event && event.payload;
+        if (!data || typeof data.visible !== 'boolean') return;
+        var btn = $('tb-minimap');
+        if (btn) btn.classList.toggle('active', data.visible);
+        if (window.FolioEditor) window.FolioEditor.setMinimap(data.visible);
+    });
+
     // CLI/External-Open: argv-Pfad beim Boot + cli:open bei
     // Single-Instance-Reinvoke.
     invoke('cli_pending_open').then(function (path: any) {
@@ -180,6 +190,16 @@ if (invoke) {
         setEditorTheme(mode);
         invoke('menu_set_checked', { id: 'view.theme.light', checked: mode === 'light' }).catch(function(){});
         invoke('menu_set_checked', { id: 'view.theme.dark', checked: mode === 'dark' }).catch(function(){});
+    }).catch(function(){});
+
+    // Minimap-Toggle aus dem persistierten Panel-State beim Boot
+    // wiederherstellen. setMinimap deferred selbstaendig auf mountReady,
+    // falls Monaco noch nicht mounted ist.
+    invoke('editor_minimap_get').then(function (enabled: any) {
+        var on = !!enabled;
+        var btn = $('tb-minimap');
+        if (btn) btn.classList.toggle('active', on);
+        if (window.FolioEditor) window.FolioEditor.setMinimap(on);
     }).catch(function(){});
 }
 

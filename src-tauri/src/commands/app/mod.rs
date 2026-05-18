@@ -116,6 +116,36 @@ pub async fn set_rail_visible(
 }
 
 #[tauri::command]
+pub async fn editor_minimap_get(state: State<'_, AppState>) -> Result<bool, String> {
+    Ok(state
+        .panel_state
+        .lock()
+        .map_err(|_| "panel state lock poisoned".to_string())?
+        .data()
+        .editor_minimap_visible)
+}
+
+#[tauri::command]
+pub async fn set_editor_minimap_visible(
+    visible: bool,
+    handle: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state
+        .panel_state
+        .lock()
+        .map_err(|_| "panel state lock poisoned".to_string())?
+        .set_editor_minimap_visible(visible)
+        .map_err(|error| error.to_string())?;
+    handle
+        .emit(
+            "panel:minimap_changed",
+            serde_json::json!({ "visible": visible }),
+        )
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub async fn set_window_title(title: String, handle: AppHandle) -> Result<(), String> {
     let window = handle
         .get_webview_window("main")
