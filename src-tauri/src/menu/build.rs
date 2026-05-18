@@ -120,11 +120,18 @@ pub fn build(handle: &AppHandle, lang: &str) -> tauri::Result<Menu<Wry>> {
         .item(&item_theme_light)
         .item(&item_theme_dark)
         .build()?;
+    // Rail- und Minimap-Toggles haben bewusst keinen Accelerator —
+    // Toggle-Optionen sind schneller per Toolbar erreichbar als per
+    // Shortcut-Muskelgedaechtnis, und freie Shortcuts (Strg+B/Strg+/)
+    // kollidieren mit Markdown-Edits (Bold) bzw. wirken unintuitiv.
     let item_rail_left = MenuItemBuilder::with_id(ids::VIEW_RAIL_LEFT, l.view_rail_left)
-        .accelerator("CmdOrCtrl+B")
         .build(handle)?;
     let item_rail_right = MenuItemBuilder::with_id(ids::VIEW_RAIL_RIGHT, l.view_rail_right)
-        .accelerator("CmdOrCtrl+Slash")
+        .build(handle)?;
+    // view.minimap: nur im Edit-Mode bei Markdown aktiv — Frontend toggelt
+    // via app:set_mode + applyDocKind, analog zu help.cheatsheet.
+    let item_minimap = MenuItemBuilder::with_id(ids::VIEW_MINIMAP, l.view_minimap)
+        .enabled(false)
         .build(handle)?;
     let view_menu = SubmenuBuilder::new(handle, l.view)
         .item(&item_mode_view)
@@ -134,6 +141,7 @@ pub fn build(handle: &AppHandle, lang: &str) -> tauri::Result<Menu<Wry>> {
         .item(&theme_submenu)
         .item(&PredefinedMenuItem::separator(handle)?)
         .item(&item_rail_left)
+        .item(&item_minimap)
         .item(&item_rail_right)
         .build()?;
 

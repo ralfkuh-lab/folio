@@ -137,12 +137,18 @@ export function cheatsheetWantsVisible(): boolean {
     return wantsVisible;
 }
 
-// Tauri-Menue-Item help.cheatsheet enable/disable je nach Mode + Dateityp.
+// Tauri-Menue-Items, die nur im Edit-Mode bei Markdown-Dokumenten Sinn
+// ergeben (help.cheatsheet, view.minimap), enable/disable in einem Rutsch.
+// Name historisch — beide Items teilen sich die Aktivierungs-Bedingung,
+// daher hier zentral.
 export function syncCheatsheetMenu(): void {
     if (!window.__TAURI__ || !window.__TAURI__.core) return;
     const enabled = document.body.classList.contains('edit-mode')
         && document.body.classList.contains('kind-markdown');
-    window.__TAURI__.core.invoke('menu_set_enabled', { id: 'help.cheatsheet', enabled })
+    const invoke = window.__TAURI__.core.invoke;
+    invoke('menu_set_enabled', { id: 'help.cheatsheet', enabled })
+        .catch(function () { /* ignore */ });
+    invoke('menu_set_enabled', { id: 'view.minimap', enabled })
         .catch(function () { /* ignore */ });
 }
 
