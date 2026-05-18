@@ -2,6 +2,18 @@
 
 ## Mittlere Priorität
 
+- **Menu-Keybindings (Accelerators) greifen oft nicht**: Viele der nativen
+  Tauri-Menü-Accelerators (Ctrl+S Speichern, Ctrl+Z Undo, Ctrl+W Schließen,
+  Ctrl+1/2/3 Mode, …) feuern nicht zuverlässig — User-Bericht 2026-05-19.
+  Ursache liegt vermutlich darin, dass WebView2 die Tasten verschluckt,
+  bevor sie das Tauri-Menü erreichen (das Frontend hat heute für Ctrl+1/2/
+  S/O eigene DOM-keydown-Capture-Handler in `toolbar-actions.ts:117`, der
+  Workaround dort bestätigt das Pattern). Saubere Lösung: für jeden
+  Menü-Accelerator entweder einen DOM-Capture-Listener am Frontend nachziehen
+  ODER prüfen, ob WebView2-spezifische Config (`accelerator_handler`) die
+  OS-Bar früher dranlassen kann. Tracking: nach dem Settings-Panel
+  systematisch durchgehen.
+
 - **Config-/Einstellungen-Bereich**: Eigener Settings-Dialog/-Panel für
   Anwendungs-Einstellungen (Theme, Font/Schriftgröße, Editor-Optionen,
   Vault-Pfade, Automation-Port, …). Persistenz analog zur Window-State-
@@ -27,6 +39,21 @@
   zeigen. Reproduzierbare Lösung im `.deb`-Build wäre schöner —
   Hintergrund, bisherige Erkenntnisse und mögliche Wege in
   [`docs/linux-md-icon.md`](docs/linux-md-icon.md).
+
+- **Strukturiertes Logging mit Log-Levels**: Heute schreibt Folio nur
+  `eprintln!`/`println!` auf stdout/stderr (gemischt mit `cargo run`-
+  Cargo-Output, hart filterbar; bei einer `bundle`-Variante landet das
+  in einer .log-Datei je nach OS). Für Diagnose-Sessions wie
+  „Frontend startet nicht durch" wäre ein echtes Logging-Setup nützlich.
+  Rust-seitig naheliegend: das `tracing`-Crate mit `tracing-subscriber`
+  (Konfiguration via `RUST_LOG=folio=debug` o. ä.). Frontend-seitig:
+  `console.error`/`console.warn` werden schon vom Automation-Hook
+  durchgereicht, aber das fängt nur Errors — `console.log`/`debug` per
+  Log-Level filterbar an Tauri zu spiegeln wäre ein zusätzliches
+  Diagnose-Werkzeug. Persistenz: Rotierende Logfiles im
+  app-config-Verzeichnis (`~/.config/folio/logs/` auf Linux, analog
+  Win/macOS). NLog ist .NET-spezifisch — in Rust hat `tracing` die
+  gleiche Rolle.
 
 - **Rail-Toggle-Button-State beim Boot synchronisieren**: Aktuell starten
   `tb-rail-left` und `tb-rail-right` immer mit `class="active"` (hartcodiert
