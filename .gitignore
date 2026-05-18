@@ -15,3 +15,4 @@ folio-release
 *.lnk
 .playwright-mcp/
 .claude/
+tests/e2e/.venv/
