@@ -16,18 +16,16 @@ pub(super) fn compute_icon(ext: &str) -> Option<IconBytes> {
         // Multi-Res-Icon-Set (icns enthält 16/32/64/128/256/512 px).
         let mut proposed = NSRect {
             origin: NSPoint { x: 0.0, y: 0.0 },
-            size: NSSize { width: 64.0, height: 64.0 },
+            size: NSSize {
+                width: 64.0,
+                height: 64.0,
+            },
         };
-        let cg_image =
-            image.CGImageForProposedRect_context_hints(&mut proposed, None, None)?;
+        let cg_image = image.CGImageForProposedRect_context_hints(&mut proposed, None, None)?;
 
-        let rep = NSBitmapImageRep::initWithCGImage(
-            objc2::AllocAnyThread::alloc(),
-            &cg_image,
-        );
+        let rep = NSBitmapImageRep::initWithCGImage(objc2::AllocAnyThread::alloc(), &cg_image);
         let dict = NSDictionary::new();
-        let png_data =
-            rep.representationUsingType_properties(NSBitmapImageFileType::PNG, &dict)?;
+        let png_data = rep.representationUsingType_properties(NSBitmapImageFileType::PNG, &dict)?;
 
         Some(IconBytes {
             bytes: png_data.to_vec(),

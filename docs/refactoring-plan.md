@@ -1,6 +1,6 @@
 # Refactoring-Plan: Modularisierung & Aufräumen
 
-Status: **Phase 5 fast fertig** (5.3c `editor.ts`-Split zurückgestellt) · Letzte Aktualisierung: 2026-05-12
+Status: **abgeschlossen** (alle Phasen durch, inkl. 5.3c `editor.ts`-Split) · Letzte Aktualisierung: 2026-05-18
 
 Architektur-/Strukturreview vom 2026-05-11 (Claude + Codex als 2. Meinung)
 ergab klare Splitting-Kandidaten und Smells. Plan ist in vier Phasen
@@ -256,13 +256,24 @@ Monaco-Adapter.
   - `automation/events.ts` (61 LOC) — `automation:click`/`set_editor_text`/`open_document` + `folio-editor-text-updated`-CustomEvent (Editor-Text-Tracking, war im selben IIFE).
   - `main.ts` (175 LOC) ist jetzt Init-Router: Modul-Init in fester Reihenfolge + cross-modulare Backend-Event-Listener (shell:command/insertVaultChildren, navigation:changed-Restore, navigation:toc_click, panel:rail_changed-Sync, cli_pending_open/cli:open, Theme-Boot).
   - Beifang: `applyShellState` als Dead Code entfernt (war im alten main.ts definiert, nie aufgerufen). Bundle 46.9 → 46.2 KB.
-- [ ] **`editor.ts` splitten** in `web/editor/`:
-  - `editor/mount.ts` — Monaco-Init, `mount`, `setText`, `setTheme`, `layout`
-  - `editor/find.ts` — Find-State (Decorations, openFind/closeFind/setFindTerm)
-  - `editor/events.ts` — Selection-/Scroll-Capture, `editorReady`-Post
-  - `editor/index.ts` — `window.FolioEditor`-Assembly
-  - **`suppressTextEvent` durch Promise-Queue ersetzen** — globaler Boolean
-    ist race-anfällig zwischen `mount` und `setText`
+- [x] **`editor.ts` splitten** in `web/editor/` ✓ Commit
+  - `editor/state.ts` — Shared editor-/monaco-Instances + Suppression-Counter (`withProgrammaticWrite`, `isProgrammaticWrite`).
+  - `editor/bridge.ts` — `post()` (Tauri-Event-Emit + synthetisches `folio-editor-text-updated`-CustomEvent).
+  - `editor/find.ts` — Find-Subsystem: `findState`, `findOptions`, `matchDecorations`, `recomputeMatches`, `applyDecorations`/`clearDecorations`, `publishFindState`, `openFind`/`closeFind`/`setFindOptions`/`setFindTerm`/`findNext`/`findPrev`, `hasActiveTerm`.
+  - `editor/events.ts` — `attachEditorListeners(editor, monaco)`: Find-Shortcuts (Ctrl+F/F3/Shift+F3), Save-Shortcut (Ctrl+S), `onDidChangeModelContent`, `onDidChangeCursorSelection`, RAF-debounced `onDidScrollChange`.
+  - `editor/mount.ts` — Monaco-AMD-Load, `mount()`, `setText()`, `setTheme()`, `layout()`, `whenReady()`.
+  - `editor/text.ts` — `getText`, `getLanguage`/`setLanguage`/`listLanguages`, `getSelection`/`setSelection`, `getScroll`/`setScroll`, `applyReplace`, `focus`, `undo`/`redo`.
+  - `editor/index.ts` — Entry: assembliert `window.FolioEditor`.
+  - **`suppressTextEvent`-Race aufgelöst**: Boolean ersetzt durch
+    `programmaticWriteDepth`-Counter (nested-safe) in `state.ts`. Race
+    zwischen `mount` und Programmatic Writes (`setText`, `setSelection`,
+    `setScroll`, `setLanguage`, `applyReplace`) ist abgefangen — Pre-Mount-
+    Calls deferren intern via `whenReady().then(...)` statt silent verloren
+    zu gehen.
+  - Build: `package.json::build` zeigt jetzt auf `editor/index.ts`; `tsconfig.json::include`
+    auf `editor/**/*.ts`. Cargo-Smoke-Test (`smoke_frontend_assets.rs`) findet
+    `window.FolioEditor=` im minified Bundle unverändert (Bundle-Size 7.6 KB,
+    vorher ~ähnlich). 42 Vitest + alle Cargo-Tests grün, Clippy + Fmt sauber.
 - [x] **`commands/app.rs` splitten** ✓ Commit
   - `commands/app/dialog.rs` — `pick_file`, `pick_folder`, `open_folder` + `file_path_to_string`-Helper + zwei Unit-Tests.
   - `commands/app/shell_opener.rs` — `show_in_file_manager`, `open_terminal_at` (Linux-Kandidatenliste, macOS `open -a Terminal`, Windows `wt`).
@@ -344,4 +355,4 @@ Monaco-Adapter.
 | 2: mittlere Rust-Splits | ✅ abgeschlossen | `automation`-Split, `menu`-Split |
 | 3: State-Refactor + Splits | ✅ abgeschlossen | Rename-Konsolidierung, `commands/file`-Split, `commands/shell` → `commands/events`-Split |
 | 4: Frontend-Build-Umbau | ✅ abgeschlossen | CSS-Extraktion, JS-Verbatim-Move, Global-Contract-Audit, 7 Leaf-Module, Vault-Module + `vault:refresh`-Fusion, Core-Module + `document:loaded`/`app:set_mode`-Fusion, Bridge-Reduktion + Minify |
-| 5: Konsolidierung & Type-Safety | 🚧 fast fertig | 5.1 ✓ + 5.1+ ✓, 5.2 ✓, 5.3a + 5.3b ✓ (5.3c editor.ts bewusst zurückgestellt), 5.4 ✓, 5.5 ✓ |
+| 5: Konsolidierung & Type-Safety | ✅ abgeschlossen | 5.1 ✓ + 5.1+ ✓, 5.2 ✓, 5.3a ✓ + 5.3b ✓ + 5.3c ✓ (`editor.ts`-Split + Suppression-Counter), 5.4 ✓, 5.5 ✓ |

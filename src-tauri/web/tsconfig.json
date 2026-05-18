@@ -15,5 +15,5 @@
     "isolatedModules": true,
     "useDefineForClassFields": false
   },
-  "include": ["app/**/*.ts", "editor.ts", "globals.d.ts"]
+  "include": ["app/**/*.ts", "editor/**/*.ts", "globals.d.ts"]
 }

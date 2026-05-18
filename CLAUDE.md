@@ -9,13 +9,12 @@ Offene Aufgaben werden in [`TODO.md`](TODO.md) gepflegt (priorisiert: hoch /
 mittel / niedrig). Vor Vorschlägen, was als nächstes ansteht, dort nachsehen.
 
 Refactoring-Plan in [`docs/refactoring-plan.md`](docs/refactoring-plan.md):
-Phasen 1–4 sind durch (Modul-Splits Rust + Tauri-Command-/Events-Splits +
-Frontend in TS-Module + esbuild). **Phase 5 ist aktiv** — Konsolidierung
-(Dokument-Open-Service, Dead-Code-Removal), Type-Safety (`@ts-nocheck` raus,
-`tsc --noEmit` im Build), Frontend-Splits (`main.ts`, `editor.ts`,
-`commands/app.rs`), Robustheit (Lock-Errors propagieren), Frontend-Tests
-(Vitest-Setup). Vor neuen Vorschlägen dort die Sub-Tasks 5.1–5.5 prüfen
-und priorisieren.
+**alle Phasen abgeschlossen** (1–5) — Rust-Modul-Splits, Tauri-Command-/
+Events-Splits, Frontend in TS-Module + esbuild, Dokument-Open-Service,
+Type-Safety (`tsc --noEmit` im Build), Frontend-Splits (`main.ts`,
+`editor.ts` → `web/editor/`, `commands/app.rs`), Lock-Error-Propagation,
+Vitest-Setup. Plan dient ab jetzt nur noch als Referenz; neue Arbeit
+läuft über [`TODO.md`](TODO.md).
 
 ## Tech-Stack
 
