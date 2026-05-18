@@ -12,19 +12,27 @@ Diese Notiz sammelt Wege, *trotzdem* visuelles Feedback auf einem VPS
 oder in CI zu bekommen — relevant für jeden Agenten, der eine
 Tauri-App ohne echten Bildschirm entwickelt oder testet.
 
+## Status in folio
+
+**Option 3 (`tauri-plugin-screenshots`) ist seit Commit `b6a0996`
+integriert und in [`docs/headless-monaco-test-results.md`](headless-monaco-test-results.md)
+empirisch als einzige Headless-Option mit sichtbarem Monaco bestätigt.**
+`GET /screenshot` macht intern einen Monitor-Capture; die anderen
+Optionen sind nur für Hintergrund/Alternativen dokumentiert.
+
 ## TL;DR
 
 | Option | Aufwand | Zuverlässigkeit | Wo? |
 |---|---|---|---|
-| 1. Compositor-Env-Vars | 1 Zeile | mittel — abhängig von WebKit-Build | sofort |
-| 2. Xvfb + Mesa-Software-GL | Setup einmal | hoch | VPS / CI |
-| 3. WebView-eigener Snapshot | Tauri-Plugin | sehr hoch | Code-Eingriff |
-| 4. xpra / TurboVNC | Setup einmal | sehr hoch | wie echtes Display |
-| 5. View-Mode-Screenshot | trivial | nur HTML | Folio-spezifisch |
+| 1. Compositor-Env-Vars | 1 Zeile | **getestet: Monaco bleibt leer** | — |
+| 2. Xvfb + Mesa-Software-GL | Setup einmal | **getestet: Monaco bleibt leer** | — |
+| 3. WebView-/Monitor-Snapshot | Tauri-Plugin | **getestet: ✅ Monaco sichtbar** | **integriert** |
+| 4. xpra / TurboVNC | Setup einmal | **getestet: Monaco init schlägt fehl** | — |
+| 5. View-Mode-Screenshot | trivial | nur HTML, zuverlässig | Folio-spezifisch |
 
-Pragma: erst **(1)** probieren — falls ja, ist das Thema One-Liner.
-Sonst **(2)**. **(3)** ist die langfristig sauberste Lösung,
-weil display-unabhängig.
+Pragma: **(3)** ist gewählt und im Code. Optionen (1)/(2)/(4) bleiben
+hier als Referenz; (5) bleibt für Theme-/Layout-Tests sinnvoll, weil
+kein Editor nötig.
 
 ## Hintergrund: warum Canvas in Headless wegfällt
 
@@ -175,13 +183,23 @@ oberen Wege.
 
 ## Empfehlung pro Use-Case
 
-- **CI-Run für PR-Check**: Option 2 (Xvfb + Mesa-Software-GL).
-  Reproducible, keine Plugin-Pflege, läuft in jedem Container.
-- **Agent auf VPS, schnelle Iteration**: Option 1 zuerst probieren,
-  bei Bedarf Option 4 für visuelle Co-Inspektion.
-- **Langfristig display-unabhängig**: Option 3 als Tauri-Plugin
-  pflegen — einmal Setup, gilt für alle Plattformen und Targets.
-- **Folio-spezifische Layouts/Themes**: Option 5 reicht, ist trivial.
+Veraltet — die Empfehlungen unten stammen aus der theoretischen
+Vorab-Analyse. Empirisch hat sich (siehe
+[`docs/headless-monaco-test-results.md`](headless-monaco-test-results.md))
+gezeigt, dass Option 1, 2 und 4 für Monaco *nicht* funktionieren: der
+Canvas landet nicht im X11-Pixmap, den die genannten Pfade lesen würden.
+Nur Option 3 (Monitor-Capture via `tauri-plugin-screenshots`) liefert
+sichtbares Monaco. Das ist deshalb auch für CI/PR-Checks der richtige
+Weg; Option 5 (View-Mode) bleibt eine trivial-billige Alternative,
+wo der Editor irrelevant ist.
+
+- **CI-Run für PR-Check**: **Option 3** über `GET /screenshot` der
+  Automation-API.
+- **Agent auf VPS, schnelle Iteration**: **Option 3**, ggf. ergänzt
+  durch Option 4 (xpra) für live-Co-Inspektion (nicht für Monaco-
+  Screenshots — dafür weiterhin Option 3).
+- **Folio-spezifische Layouts/Themes ohne Editor**: Option 5 reicht,
+  ist trivial.
 
 ## Beobachtetes Verhalten Folio (Stand 2026-05)
 

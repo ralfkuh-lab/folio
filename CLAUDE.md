@@ -92,19 +92,18 @@ sonst lehnt Tauri den Build ab.
   `openDocument`-Pfade (Vault-Klick, Datei-Dialog, Recent, Pin) erzeugen
   frische Entries und laden ohne Sprung.
 
-## Bekannte Einschränkungen
+## Headless-Screenshots
 
-- **Monaco rendert nur auf echtem Display**: Monaco ist Canvas-basiert
-  und kommt **in Xvfb/Headless-WebKitGTK-Sessions** (CI, VPS ohne X)
-  visuell nicht durch — Screenshot zeigt dann leeren Editor-Bereich.
-  Funktional bleibt alles intakt (Automation-API kann Text setzen/lesen,
-  `editor.ready=true` etc.). Auf einer echten X11/Wayland-Sitzung
-  (`DISPLAY=:0` o. ä.) rendert Monaco normal — Screenshots via
-  `GET /screenshot` der Automation-API zeigen den Editor inklusive
-  Syntax-Highlighting und Zeilennummern. Workarounds für VPS/CI
-  (Compositor-Env-Vars, Xvfb+Mesa, WebView-Snapshot via Plugin,
-  xpra, View-Mode-Fallback) gesammelt in
-  [`docs/headless-monaco-screenshots.md`](docs/headless-monaco-screenshots.md).
+- **Monaco in Xvfb via Monitor-Capture**: `tauri-plugin-screenshots`
+  v2.2.0 ist eingebunden (`Cargo.toml`, `lib.rs`, `automation/handlers/
+  screenshot.rs`). `GET /screenshot` macht damit einen Monitor- (nicht
+  Window-)Capture; das ist der einzige in Xvfb funktionierende Weg,
+  Monacos Canvas-Output sichtbar zu erfassen. Window-basierte
+  Screenshot-Libs (xcap o. ä.) lesen nur das Window-Pixmap und sehen
+  den Canvas dort nicht. Test-Belege + Methodik in
+  [`docs/headless-monaco-test-results.md`](docs/headless-monaco-test-results.md)
+  (Option 3, Commit `b6a0996`); Hintergrund/Alternativen für andere
+  Setups in [`docs/headless-monaco-screenshots.md`](docs/headless-monaco-screenshots.md).
 
 ## GitHub
 
