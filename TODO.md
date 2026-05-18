@@ -114,20 +114,9 @@
   Edit-Toolbar oder Statusbar, Persistenz analog zu Theme/RailVisibility.
   Suchtreffer landen schon in der Minimap-Position-Inline.
 
-## E2E-Test Ergebnisse (2026-05-18)
+## E2E-Test Ergebnisse
 
-- **E2E-Run 2026-05-18 12:38: Alle Szenarien PASS (7/7)** — Details in
-  [`tests/e2e/artifacts/20260518-123827/report.md`](tests/e2e/artifacts/20260518-123827/report.md).
-  Keine Fehler, Exit-Code 0.
-
-- **E2E-Run 2026-05-18 12:37: 1 Fehler** — Details in
-  [`tests/e2e/artifacts/20260518-123705/errors.md`](tests/e2e/artifacts/20260518-123705/errors.md). Run-Report:
-  [`tests/e2e/artifacts/20260518-123705/report.md`](tests/e2e/artifacts/20260518-123705/report.md).
-
-- **E2E-Run 2026-05-18 11:38: 6 Fehler** — Details in
-  [`tests/e2e/artifacts/20260518-113816/errors.md`](tests/e2e/artifacts/20260518-113816/errors.md). Run-Report:
-  [`tests/e2e/artifacts/20260518-113816/report.md`](tests/e2e/artifacts/20260518-113816/report.md).
-
-- **E2E-Run 2026-05-18 11:37: 1 Fehler** — Details in
-  [`tests/e2e/artifacts/20260518-113727/errors.md`](tests/e2e/artifacts/20260518-113727/errors.md). Run-Report:
-  [`tests/e2e/artifacts/20260518-113727/report.md`](tests/e2e/artifacts/20260518-113727/report.md).
+E2E-Suite am 2026-05-18 grün (7/7 Szenarien, 8/8 visuelle Vergleiche)
+nach Baseline-Refresh und `toc_activate(slug)`-Fix. Run-Artefakte werden
+nicht ins Repo committet (`tests/e2e/artifacts/` ist gitignored);
+Historie in der PR-Beschreibung.

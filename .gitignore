@@ -16,3 +16,4 @@ folio-release
 .playwright-mcp/
 .claude/
 tests/e2e/.venv/
+tests/e2e/artifacts/
