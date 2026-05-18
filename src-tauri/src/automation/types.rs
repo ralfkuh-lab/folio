@@ -213,3 +213,131 @@ pub(super) struct KeyRequest {
     #[serde(default)]
     pub(super) target: Option<String>,
 }
+
+#[derive(Debug, Deserialize)]
+pub(super) struct MenuClickRequest {
+    pub(super) id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct EditorCommandRequest {
+    pub(super) command: String,
+    #[serde(default)]
+    pub(super) args: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct WorkspacePinRequest {
+    pub(super) path: String,
+    #[serde(default)]
+    pub(super) is_directory: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct WorkspaceUnpinRequest {
+    pub(super) path: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct HistoryMoveResponse {
+    pub(super) ok: bool,
+    pub(super) moved: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) entry: Option<HistoryEntryResponse>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct HistoryEntryResponse {
+    pub(super) path: String,
+    pub(super) anchor: Option<String>,
+    pub(super) scroll_y: f64,
+    pub(super) view_mode: String,
+    pub(super) editor_scroll_y: f64,
+    pub(super) editor_cursor: usize,
+}
+
+#[cfg(test)]
+mod phase0_request_tests {
+    use super::*;
+
+    #[test]
+    fn menu_click_request_deserializes() {
+        let req: MenuClickRequest = serde_json::from_str(r#"{"id":"file.save"}"#).unwrap();
+        assert_eq!("file.save", req.id);
+    }
+
+    #[test]
+    fn editor_command_request_camel_case_args() {
+        let req: EditorCommandRequest =
+            serde_json::from_str(r#"{"command":"setLanguage","args":"markdown"}"#).unwrap();
+        assert_eq!("setLanguage", req.command);
+        assert_eq!(Some(serde_json::json!("markdown")), req.args);
+    }
+
+    #[test]
+    fn editor_command_request_args_optional() {
+        let req: EditorCommandRequest = serde_json::from_str(r#"{"command":"undo"}"#).unwrap();
+        assert_eq!("undo", req.command);
+        assert!(req.args.is_none());
+    }
+
+    #[test]
+    fn workspace_pin_request_uses_camel_case_is_directory() {
+        let req: WorkspacePinRequest =
+            serde_json::from_str(r#"{"path":"/p","isDirectory":true}"#).unwrap();
+        assert_eq!("/p", req.path);
+        assert!(req.is_directory);
+    }
+
+    #[test]
+    fn workspace_pin_request_defaults_is_directory_false() {
+        let req: WorkspacePinRequest = serde_json::from_str(r#"{"path":"/p"}"#).unwrap();
+        assert!(!req.is_directory);
+    }
+
+    #[test]
+    fn workspace_unpin_request_deserializes() {
+        let req: WorkspaceUnpinRequest = serde_json::from_str(r#"{"path":"/p"}"#).unwrap();
+        assert_eq!("/p", req.path);
+    }
+
+    #[test]
+    fn history_move_response_serializes_with_camel_case() {
+        let resp = HistoryMoveResponse {
+            ok: true,
+            moved: true,
+            entry: Some(HistoryEntryResponse {
+                path: "/p.md".into(),
+                anchor: Some("h2".into()),
+                scroll_y: 1.0,
+                view_mode: "view".into(),
+                editor_scroll_y: 2.0,
+                editor_cursor: 3,
+            }),
+        };
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(true, json["ok"]);
+        assert_eq!(true, json["moved"]);
+        assert_eq!("/p.md", json["entry"]["path"]);
+        assert_eq!("h2", json["entry"]["anchor"]);
+        assert_eq!(1.0, json["entry"]["scrollY"]);
+        assert_eq!("view", json["entry"]["viewMode"]);
+        assert_eq!(2.0, json["entry"]["editorScrollY"]);
+        assert_eq!(3, json["entry"]["editorCursor"]);
+    }
+
+    #[test]
+    fn history_move_response_omits_entry_when_at_end() {
+        let resp = HistoryMoveResponse {
+            ok: true,
+            moved: false,
+            entry: None,
+        };
+        let json = serde_json::to_value(&resp).unwrap();
+        assert!(json.get("entry").is_none(), "entry should be skipped");
+    }
+}

@@ -2,6 +2,44 @@
 
 ## Hohe Priorität
 
+- **E2E-Test-Suite zu vollständiger UI-Coverage ausbauen** (Plan 2026-05-18).
+  Aktuelle Hermes-Suite ist API-driven Smoke (7 Szenarien) — testet Backend-
+  State, aber keinen einzigen echten Menü-Klick, keinen Keybinding-Trigger,
+  keine Save-/Undo-/Encoding-Mutation. Ziel: jede User-Facing-Funktion
+  systematisch durch Buttons/Menüs/Keybindings prüfen, damit nach größeren
+  Updates Regressionen schneller auffallen. Headless-Pfad bleibt der
+  Default (Linux+Xvfb); was dort nicht überlebt, läuft sichtbar auf dem
+  Desktop. Phasen:
+
+  - **Phase 0 — Automation-API-Erweiterungen** (Foundation, blockt alles weitere):
+    - `POST /menu/click {id}` — synthetischer Menü-Event-Dispatch über
+      `dispatch_menu_action`, weil native Tauri-Menüs vom WebView aus nicht
+      klickbar sind. Testet den kompletten Routing-Pfad (Rust-Aktion +
+      Frontend-Handler) ohne OS-Eingabe.
+    - `POST /editor/command {command, args?}` — Monaco-Command-Trigger
+      (`FolioEditor[command]()`), weil synthetische KeyboardEvents für
+      Monaco-Shortcuts nachweislich fragil sind (siehe Frontend-Kommentar).
+    - `POST /workspace/pin`, `POST /workspace/unpin` — Pin/Unpin ist heute
+      nur Tauri-Command.
+    - `POST /history/back`, `POST /history/forward` — Navigation-Restore-
+      Tests.
+
+  - **Phase 1 — Mutation/Encoding** (höchste Priorität, schließt aktiven
+    BOM-Bug): `08_save_roundtrip.py`, `09_undo_redo.py`,
+    `10_editor_commands.py`.
+
+  - **Phase 2 — Menü- und Keybinding-Coverage**: je ein Szenario pro
+    Menü-Top-Level (File/Edit/View/Help) plus `15_keybindings.py` für
+    alle 13 Accelerators.
+
+  - **Phase 3 — Restliche UI-Pfade**: Vault-Tree-Klicks, Pin/Unpin,
+    History Back/Forward, Rechtsklick-Kontextmenüs, echter TOC-DOM-Klick,
+    Split-Mode (Cmd+3).
+
+  - **Phase 4 — Polish**: `docs/e2e-headless-caveats.md`, Setup-Doku
+    (`python3-venv`), "Erster-Lauf"-Mode bei fehlenden Baselines,
+    `@desktop_only`-Marker für Xvfb-untaugliche Szenarien.
+
 - **Automation-API für E2E-Tests vervollständigen** ✅ — Kern + alle
   offenen Hebel implementiert (Stand 2026-05-12). Hermes-Agent hat
   jetzt das vollständige API-Inventar (POST /key, GET /editor/text,

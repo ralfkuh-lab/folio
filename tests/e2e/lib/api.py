@@ -158,6 +158,40 @@ class AutomationApi:
     def save(self) -> dict:
         return self._request("POST", "/save", {})
 
+    def menu_click(self, menu_id: str) -> dict:
+        # Synthetischer Menue-Klick: gleicher Routing-Pfad wie ein nativer
+        # Klick, ohne OS-Eingabe. Tests warten danach ueber /wait oder
+        # /state-Polling auf das Resultat (kein Ack-Mechanismus, weil
+        # die Frontend-`menu:*`-Handler keinen requestId durchreichen).
+        return self._request("POST", "/menu/click", {"id": menu_id})
+
+    def editor_command(self, command: str, args: Any = None,
+                       ack_timeout_ms: int = 1000) -> dict:
+        # Ruft eine Methode am window.FolioEditor-Surface auf
+        # (undo, redo, setSelection, ...). Args werden als einzelnes
+        # Argument durchgereicht.
+        body: dict = {"command": command}
+        if args is not None:
+            body["args"] = args
+        return self._request(
+            "POST", f"/editor/command?ackTimeoutMs={ack_timeout_ms}", body
+        )
+
+    def workspace_pin(self, path: str, is_directory: bool = False) -> dict:
+        return self._request(
+            "POST", "/workspace/pin",
+            {"path": path, "isDirectory": is_directory},
+        )
+
+    def workspace_unpin(self, path: str) -> dict:
+        return self._request("POST", "/workspace/unpin", {"path": path})
+
+    def history_back(self) -> dict:
+        return self._request("POST", "/history/back", {})
+
+    def history_forward(self) -> dict:
+        return self._request("POST", "/history/forward", {})
+
     def wait(self, event: str, timeout_ms: int = 5000) -> dict:
         # /wait blocks server-side; bump client timeout to event timeout + slack.
         return self._request(

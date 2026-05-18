@@ -11,7 +11,14 @@ use super::ids;
 use crate::commands;
 
 pub fn on_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
-    let id = event.id().0.as_str();
+    dispatch_menu_action(app, event.id().0.as_str());
+}
+
+/// Führt die Aktion zu einer Menü-ID aus — gleicher Pfad wie ein echter
+/// Menü-Klick, nur ohne `MenuEvent`. Damit kann die Automation-API
+/// (`POST /menu/click`) Menü-Items synthetisch triggern, ohne dass eine
+/// native OS-Eingabe simuliert werden muss.
+pub fn dispatch_menu_action(app: &AppHandle, id: &str) {
     // Recent-Items: dynamische IDs, daher Prefix-Match. Index → Pfad aus
     // workspace.recent, Frontend bekommt den Pfad direkt im Payload und
     // ruft seinen üblichen openDocument-Pfad (mit Dirty-Prompt) auf.

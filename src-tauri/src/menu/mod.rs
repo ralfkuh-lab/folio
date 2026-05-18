@@ -17,7 +17,7 @@ mod recent;
 pub mod strings;
 
 pub use build::build;
-pub use events::on_menu_event;
+pub use events::{dispatch_menu_action, on_menu_event};
 pub use recent::{rebuild_recent_submenu, refresh_recent_from_workspace};
 
 use tauri::AppHandle;
