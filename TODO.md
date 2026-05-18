@@ -28,6 +28,16 @@
   Hintergrund, bisherige Erkenntnisse und mögliche Wege in
   [`docs/linux-md-icon.md`](docs/linux-md-icon.md).
 
+- **Rail-Toggle-Button-State beim Boot synchronisieren**: Aktuell starten
+  `tb-rail-left` und `tb-rail-right` immer mit `class="active"` (hartcodiert
+  im HTML). Wenn der User vorher per Toolbar eine Rail versteckt hat,
+  bleibt das im `panel-state.json` persistiert (Body bekommt
+  `vault-hidden`/`toc-hidden`) — der Button zeigt aber visuell „aktiv".
+  Frontend braucht beim Boot ein `invoke('panel_state_get')` o. ä., das
+  die initialen Rail-Werte liefert, dann `setRailVisibility` + `setRailButton`
+  rufen. Der `panel:rail_changed`-Listener feuert heute nur auf User-
+  Klick, nicht beim Boot.
+
 ## Niedrige Priorität
 
 - **KI-Funktionen (Ideen sammeln)**: Sinnvolle Integrationen prüfen, z. B.
