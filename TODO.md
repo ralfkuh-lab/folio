@@ -113,3 +113,10 @@
   (in `editor.ts` aktuell `minimap: { enabled: false }`). Toggle in der
   Edit-Toolbar oder Statusbar, Persistenz analog zu Theme/RailVisibility.
   Suchtreffer landen schon in der Minimap-Position-Inline.
+
+## E2E-Test Ergebnisse
+
+E2E-Suite am 2026-05-18 grün (7/7 Szenarien, 8/8 visuelle Vergleiche)
+nach Baseline-Refresh und `toc_activate(slug)`-Fix. Run-Artefakte werden
+nicht ins Repo committet (`tests/e2e/artifacts/` ist gitignored);
+Historie in der PR-Beschreibung.

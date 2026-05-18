@@ -124,8 +124,8 @@ class AutomationApi:
             "POST", f"/key?ackTimeoutMs={ack_timeout_ms}", body
         )
 
-    def toc_activate(self, anchor: str) -> dict:
-        return self._request("POST", "/toc/activate", {"anchor": anchor})
+    def toc_activate(self, slug: str) -> dict:
+        return self._request("POST", "/toc/activate", {"slug": slug})
 
     def focus(self, target: str) -> dict:
         return self._request("POST", "/focus", {"target": target})
