@@ -105,6 +105,19 @@ sonst lehnt Tauri den Build ab.
   (Option 3, Commit `b6a0996`); Hintergrund/Alternativen für andere
   Setups in [`docs/headless-monaco-screenshots.md`](docs/headless-monaco-screenshots.md).
 
+- **Hintergrund-Test-Strategie**: "Unsichtbares" Ausführen für
+  Automation-Tests ist **nur unter Linux via Xvfb** vorgesehen — die
+  App läuft auf `DISPLAY=:99`, der interaktive User auf `:0`, kein
+  Fenster auf seinem Schirm, `/screenshot` liefert sichtbares Monaco
+  über Monitor-Capture im Xvfb-Framebuffer. Ein `--headless`-Flag für
+  Windows ist **nicht gebaut** (Stand 2026-05-18): `xcap` filtert in
+  `is_valid_window` Fenster des **eigenen Prozesses** raus
+  (Deadlock-Vermeidung bei `GetWindowText*`) und blockiert damit jeden
+  Window-Capture-Pfad von Folio auf sich selbst — egal ob `visible:
+  false`, `set_skip_taskbar`, off-screen. Echtes Hidden-Headless auf
+  Windows bräuchte einen direkten Win32-`PrintWindow`-Bypass; der
+  Aufwand ist gegenüber dem Linux+Xvfb-Pfad nicht gerechtfertigt.
+
 ## GitHub
 
 Remote: `ralfkuh-lab/folio`.
