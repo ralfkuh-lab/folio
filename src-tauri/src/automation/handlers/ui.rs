@@ -398,7 +398,17 @@ async fn history_move(
             .navigation
             .lock()
             .map_err(|_| ApiError::internal("navigation lock poisoned"))?;
-        if forward {
+        // can_go_*-Vorschaltung (siehe commands::nav::move_history fuer
+        // die Begruendung): am Stack-Edge geben wir None zurueck und
+        // ueberlassen dem Caller die moved=false-Antwort.
+        let can_move = if forward {
+            navigation.can_go_forward()
+        } else {
+            navigation.can_go_back()
+        };
+        if !can_move {
+            None
+        } else if forward {
             navigation.go_forward().cloned()
         } else {
             navigation.go_back().cloned()

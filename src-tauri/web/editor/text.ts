@@ -110,7 +110,17 @@ export function applyReplace(args: {
     const monaco = getMonaco();
 
     withProgrammaticWrite(() => {
-        editor.setValue(args.fullText || '');
+        // executeEdits statt setValue: ein Voll-Range-Replace landet
+        // als EIN Edit im Monaco-Undo-Stack, undo-bar wie ein regulaerer
+        // User-Edit. `setValue` ist Monacos Hard-Reset und clearet den
+        // Stack — Toolbar-Befehle (Bold-Wrap, Heading-Toggle, ...) waeren
+        // sonst destruktiv fuer die Edit-Historie. Siehe
+        // docs/e2e-headless-caveats.md Abschnitt 7 fuer die Diagnose.
+        const fullRange = model.getFullModelRange();
+        editor.executeEdits('applyReplace', [{
+            range: fullRange,
+            text: args.fullText || '',
+        }]);
         const startPos = model.getPositionAt(args.selectionStart || 0);
         const endPos = model.getPositionAt(
             (args.selectionStart || 0) + (args.selectionLength || 0),

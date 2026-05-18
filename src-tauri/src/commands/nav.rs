@@ -135,7 +135,18 @@ fn move_history(
             .navigation
             .lock()
             .map_err(|_| "navigation lock poisoned".to_string())?;
-        if forward {
+        // can_go_*-Vorschaltung: NavigationController::go_back/go_forward
+        // liefert per Konvention auch am Stack-Edge `current()`. Hier ist
+        // das aber irrefuehrend — wir wuerden das aktive Dokument
+        // unnoetig neu laden und ein navigation:changed-Event emittieren.
+        let can_move = if forward {
+            navigation.can_go_forward()
+        } else {
+            navigation.can_go_back()
+        };
+        if !can_move {
+            None
+        } else if forward {
             navigation.go_forward().map(NavEntry::from)
         } else {
             navigation.go_back().map(NavEntry::from)

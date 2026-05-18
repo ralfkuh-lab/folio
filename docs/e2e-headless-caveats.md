@@ -96,29 +96,37 @@ einfrieren, bis der User händisch wegklickt.
 `14_menu_help.py`. Wenn About-Dialog mal zu echtem Tauri-Dialog wird,
 können wir den Pfad reaktivieren.
 
-## 7. `applyReplace` zerstört den Undo-Stack
+## 7. `applyReplace` und der Undo-Stack (Historie)
 
-`FolioEditor.applyReplace` (in `editor/text.ts`) ruft
+Bis 2026-05-19 rief `FolioEditor.applyReplace` (in `editor/text.ts`)
 `editor.setValue(fullText)`. Monaco interpretiert das als Hard-Reset
-und leert den gesamten Undo-Stack. Das ist eine echte UX-Regression
-(siehe TODO.md), aber für die Test-Suite hat es Konsequenzen:
+und leerte damit den gesamten Undo-Stack — jeder Klick auf
+Bold/Italic/Heading/… machte die Edit-Historie davor unwiederbringlich
+weg.
 
-**Workaround in Tests:** Wenn Undo/Redo geprüft werden soll, die
-Mutation **nicht** über die Edit-Toolbar (Bold/Italic/Heading…)
-machen, sondern über `FolioEditor.insertText` — das landet als
-regulärer Edit im Stack. Beispiele: `09_undo_redo.py`, `12_menu_edit.py`.
+**Aktueller Stand:** Fix im Commit, der `applyReplace` auf
+`editor.executeEdits('applyReplace', [{range: fullRange, text}])`
+umgestellt hat. Voll-Range-Replace landet als ein Edit im Stack und
+ist regulär undo-bar. Regression-Sperre: `09_undo_redo.py` macht jetzt
+nach dem `insertText`-Pfad zusätzlich einen Bold-Wrap und prüft, dass
+der per `undo` zurückgenommen wird.
 
-## 8. `/history/back` und `/history/forward` am Stack-Ende
+## 8. `/history/back` und `/history/forward` am Stack-Ende (Historie)
 
-`commands::nav::move_history` (und damit auch der Phase-0-Endpoint
-`/history/back` bzw. `/history/forward`) prüft **nicht**, ob ein
-Back/Forward überhaupt möglich ist. Bei `current_index = 0` und
-`/history/back` wird die `current()`-Entry trotzdem zurückgegeben —
-`moved=true` ist also nicht aussagekräftig für „echte Bewegung".
+Bis 2026-05-19 hat `commands::nav::move_history` (und der Phase-0-
+Pendant in `automation/handlers/ui.rs`) nicht geprüft, ob ein
+Back/Forward überhaupt möglich ist. `NavigationController::go_back/
+go_forward` liefert per Konvention auch am Edge `current()` zurück —
+die Move-Wrapper haben das als „echte Bewegung" interpretiert und
+unnötig `document_store.load` + `navigation:changed` ausgelöst.
 
-**Workaround in Tests:** Edge-Case „moved=false am Anfang/Ende"
-nicht prüfen (siehe Hinweis in `18_history.py`). Ein präziser Fix
-in `move_history` würde `can_go_back` / `can_go_forward` vorschalten.
+**Aktueller Stand:** Beide Move-Wrapper haben jetzt einen
+`can_go_back`/`can_go_forward`-Check vorgeschaltet. Am Edge liefern sie
+`Ok(None)` bzw. `{moved: false, entry: null}` ohne Side-Effects. Der
+Edge-Case ist als zusätzlicher Step in `18_history.py` abgesichert.
+Die `NavigationController`-API selbst bleibt unverändert — der
+`stay_at_edges`-Test in `navigation.rs` dokumentiert die low-level-
+Semantik weiterhin.
 
 ## 9. Async-Pfade ohne deterministisches Sync-Signal
 
