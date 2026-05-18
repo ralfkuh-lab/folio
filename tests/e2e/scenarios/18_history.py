@@ -4,12 +4,14 @@ Verifiziert die Phase-0-Endpoints /history/back und /history/forward
 durch echten Navigations-Roundtrip:
 
   open A → open B → back → state.file=A → forward → state.file=B
+                 → second back at edge → moved=false
+                 → second forward at edge → moved=false
 
-Was hier NICHT geprueft wird (pre-existing in commands::nav::move_history):
-Am Ende der History (current_index=0) liefert go_back() trotzdem das
-aktuelle Entry — ein "moved=false am Anfang"-Check waere also brittle
-zum aktuellen Verhalten. Wenn das mal sauber `can_go_back`-gegated wird,
-gehoert hier ein Edge-Case-Step zu.
+Der moved=false-Edge-Step war vor dem 2026-05-19-Fix unbrauchbar:
+move_history hat go_back/go_forward immer rufen lassen, die per
+Konvention auch am Edge `current()` zurueckgeben. Mit der
+can_go_*-Vorschaltung liefert der Endpoint jetzt sauber
+{moved: false, entry: null}.
 """
 
 import tempfile
@@ -73,3 +75,38 @@ def run(ctx):
     with ctx.step("nach forward: state.file == B"):
         f = _wait_for_file(ctx, "history-b.md")
         ctx.expect(f and "history-b.md" in f, f"state.file nach forward: {f!r}")
+
+    # ----- Edge-Case: zweimal in die gleiche Richtung am Stack-Ende ---
+    with ctx.step("/history/forward am vorderen Ende → moved=false"):
+        result = ctx.api.history_forward()
+        ctx.expect(
+            result.get("moved") is False,
+            f"forward at edge: moved={result.get('moved')!r}, erwartet False",
+        )
+        ctx.expect(
+            result.get("entry") is None,
+            f"forward at edge: entry={result.get('entry')!r}, erwartet None",
+        )
+
+    with ctx.step("state.file weiterhin B (kein unnoetiges Reload)"):
+        f = ctx.api.state().get("file")
+        ctx.expect(
+            f and "history-b.md" in f,
+            f"state.file nach forward-no-op: {f!r}",
+        )
+
+    with ctx.step("/history/back → A; /history/back am hinteren Ende → moved=false"):
+        # Zurueck zu A
+        result = ctx.api.history_back()
+        ctx.expect(result.get("moved") is True, f"back to A: {result!r}")
+        _wait_for_file(ctx, "history-a.md")
+        # Weiter zurueck — am Anfang.
+        result = ctx.api.history_back()
+        ctx.expect(
+            result.get("moved") is False,
+            f"back at edge: moved={result.get('moved')!r}, erwartet False",
+        )
+        ctx.expect(
+            result.get("entry") is None,
+            f"back at edge: entry={result.get('entry')!r}, erwartet None",
+        )
