@@ -217,6 +217,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::file::rename::rename_file,
             menu::menu_set_enabled,
             menu::menu_set_checked,
+            menu::menu_dispatch,
             commands::editor::editor_text_changed,
             commands::editor::editor_save_requested,
             commands::editor::discard_editor_changes,

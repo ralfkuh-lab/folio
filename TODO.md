@@ -7,12 +7,21 @@
   Ctrl+1/2/3 Mode, …) feuern nicht zuverlässig — User-Bericht 2026-05-19.
   Ursache liegt vermutlich darin, dass WebView2 die Tasten verschluckt,
   bevor sie das Tauri-Menü erreichen (das Frontend hat heute für Ctrl+1/2/
-  S/O eigene DOM-keydown-Capture-Handler in `toolbar-actions.ts:117`, der
-  Workaround dort bestätigt das Pattern). Saubere Lösung: für jeden
-  Menü-Accelerator entweder einen DOM-Capture-Listener am Frontend nachziehen
-  ODER prüfen, ob WebView2-spezifische Config (`accelerator_handler`) die
-  OS-Bar früher dranlassen kann. Tracking: nach dem Settings-Panel
-  systematisch durchgehen. 
+  S/O/Shift+S/W/Q/B/I/K eigene DOM-Capture-Handler in
+  `toolbar-actions.ts`, der Workaround dort bestätigt das Pattern).
+  Saubere Lösung: prüfen, ob WebView2-spezifische Config
+  (`accelerator_handler`) die OS-Bar früher dranlassen kann — bis dahin
+  bleiben die DOM-Capture-Handler die Wahrheit.
+  - **Update 2026-05-19**: DOM-Capture-Handler ergänzt um
+    **Ctrl+Shift+S** (Speichern unter), **Ctrl+W** (Schließen),
+    **Ctrl+Q** (Beenden) sowie die MD-Editor-Shortcuts **Ctrl+B**
+    (Bold), **Ctrl+I** (Italic), **Ctrl+K** (Link). Die Menü-Pfade
+    laufen über einen neuen `menu_dispatch`-Tauri-Command, der
+    `dispatch_menu_action` wiederverwendet — gleicher Code wie nativer
+    Menü-Klick / Automation-API (`POST /menu/click`). Bold/Italic/Link
+    rufen `applyCmd` nur wenn `body.edit-mode` UND `body.kind-markdown`
+    aktiv sind. Der gesamte Listener läuft jetzt mit `capture:true`,
+    weil Monaco u. a. Strg+K als Chord-Prefix bindet und sonst frisst.
   - **Windows-E2E-Run 2026-05-18 (`tests/e2e/scenarios/15_keybindings.py`)**:
     Im DOM-Capture-Pfad sind **Ctrl+1, Ctrl+2, Ctrl+F grün** (isolierter
     Sub-Run alle drei Steps in 0.27 s). **Ctrl+S triggert Save tatsächlich**
@@ -22,17 +31,10 @@
     zum getrennten `document.saved`-Event-Race-Eintrag weiter unten.
     Native Tauri-Menübar (z. B. echter Strg+W aus dem Menü) wurde nicht
     getestet, weil aus dem WebView nicht erreichbar.
-  - **User-Test 2026-05-18 (Windows, manuell)**: konkret bestätigt als
-    nicht greifend:
-    - **Ctrl+Shift+S** (Speichern unter) — kein DOM-Capture-Handler
-      vorhanden, Accelerator hängt rein an der nativen Menübar.
-    - **Ctrl+W** (Datei schließen) — dito, nur Menübar.
-    - **Ctrl+Q** (Beenden) — dito, nur Menübar.
-    Alle drei haben heute **keinen** Frontend-DOM-Listener als Backup,
-    während Ctrl+1/2/F/S das schon haben. Erster Patch-Schritt wäre,
-    in `toolbar-actions.ts` die DOM-Capture-Liste um diese drei zu
-    erweitern und auf die jeweiligen Menu-IDs zu routen, bis die
-    saubere WebView2-/Accelerator-Lösung steht.
+  - **Noch offen / nicht abgedeckt**: Strg+Z / Strg+Shift+Z (Undo/Redo)
+    sind weiterhin reiner Menü-Accelerator + Monaco-Internal. Bisher
+    keine User-Beschwerde — wenn das auch nicht greift, denselben
+    Pfad wie Strg+B/I/K nachziehen.
 
 - **`document.saved`-Event greift Wait-Poll nicht**: Sowohl
   `tests/e2e/scenarios/08_save_roundtrip.py` (über `/save`) als auch

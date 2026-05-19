@@ -121,35 +121,86 @@ export function initToolbarActions(): void {
     /* ----- Tastatur-Shortcuts -----
        Strg+F/F3 laufen im Capture-Handler von ui/find-bar.ts, damit sie
        auch im Editor-Fokus greifen. F1 ist Monaco's Command-Palette.
-       Strg+O ist als Menue-Accelerator registriert (menu/build.rs), aber
-       WebView2/Monaco verschluckt den Tasten-Event bevor er das Tauri-
-       Menue erreicht — daher zusaetzlich hier im DOM-Listener. */
+       Alle anderen Menue-Accelerators (Strg+1/2, Strg+S, Strg+Shift+S,
+       Strg+W, Strg+Q, Strg+O sowie die Edit-Toolbar-Shortcuts
+       Strg+B/I/K) sind in build.rs zwar registriert, aber WebView2
+       verschluckt die Tasten haeufig bevor sie das Tauri-Menue oder den
+       OS-Accelerator-Dispatch erreichen — daher hier alle redundant per
+       DOM-Capture-Listener. capture:true ist Pflicht, sonst frisst
+       Monaco z.B. Strg+K (eingebauter Chord-Prefix). */
     document.addEventListener('keydown', function (e) {
         var ctrl = e.ctrlKey || e.metaKey;
-        if (ctrl && e.key === '1') { e.preventDefault(); $('tb-mode-view')?.click(); }
-        else if (ctrl && e.key === '2') { e.preventDefault(); $('tb-mode-edit')?.click(); }
-        else if (e.altKey && e.key === 'ArrowLeft') {
+        if (!ctrl && !e.altKey) return;
+        var k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+        var shift = e.shiftKey;
+        var mdEdit = document.body.classList.contains('edit-mode')
+            && document.body.classList.contains('kind-markdown');
+
+        // Alt+Links/Rechts: History
+        if (e.altKey && !ctrl && !shift && k === 'ArrowLeft') {
             e.preventDefault();
             requestSaveIfDirty().then(function (ok) {
                 if (ok) invoke('go_back_and_emit').catch(function(){});
             });
+            return;
         }
-        else if (e.altKey && e.key === 'ArrowRight') {
+        if (e.altKey && !ctrl && !shift && k === 'ArrowRight') {
             e.preventDefault();
             requestSaveIfDirty().then(function (ok) {
                 if (ok) invoke('go_forward_and_emit').catch(function(){});
             });
+            return;
         }
-        else if (ctrl && (e.key === 's' || e.key === 'S')) {
+        if (!ctrl) return;
+
+        if (!shift && k === '1') { e.preventDefault(); $('tb-mode-view')?.click(); return; }
+        if (!shift && k === '2') { e.preventDefault(); $('tb-mode-edit')?.click(); return; }
+        if (!shift && k === 's') { e.preventDefault(); saveCurrent(); return; }
+        if (shift && k === 's') {
             e.preventDefault();
-            saveCurrent();
+            invoke('menu_dispatch', { id: 'file.save_as' }).catch(function(){});
+            return;
         }
-        else if (ctrl && (e.key === 'o' || e.key === 'O')) {
+        if (!shift && k === 'o') {
             e.preventDefault();
             invoke('pick_file').then(function (path: any) {
                 if (path) openDocument(path);
             }).catch(function () {});
+            return;
         }
-    });
+        if (!shift && k === 'w') {
+            e.preventDefault();
+            // Gleicher Pfad wie menu:file_close — Dirty-Prompt + close_document.
+            invoke('menu_dispatch', { id: 'file.close' }).catch(function(){});
+            return;
+        }
+        if (!shift && k === 'q') {
+            e.preventDefault();
+            invoke('menu_dispatch', { id: 'file.quit' }).catch(function(){});
+            return;
+        }
+        // Edit-Toolbar-Markdown-Shortcuts: nur greifen wenn Markdown +
+        // Edit-Mode aktiv. Sonst Browser-Default lassen (sodass z.B.
+        // Strg+B in <input>-Feldern keine Wirkung hat, anstatt eine
+        // verwirrende Markdown-Bold-Aktion zu triggern).
+        if (mdEdit && !shift && k === 'b') {
+            e.preventDefault();
+            e.stopPropagation();
+            applyCmd('bold');
+            return;
+        }
+        if (mdEdit && !shift && k === 'i') {
+            e.preventDefault();
+            e.stopPropagation();
+            applyCmd('italic');
+            return;
+        }
+        if (mdEdit && !shift && k === 'k') {
+            e.preventDefault();
+            e.stopPropagation();
+            applyCmd('link');
+            return;
+        }
+    }, { capture: true });
 
 }
