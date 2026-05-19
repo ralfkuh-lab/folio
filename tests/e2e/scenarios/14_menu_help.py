@@ -4,17 +4,16 @@ Testbar:
   help.cheatsheet — toggelt #cheatsheet-overlay (sichtbar/unsichtbar via
                     `hidden`-Attribut). Setzt edit-mode + kind-markdown
                     voraus (sonst no-op laut tb-cheatsheet-Handler).
-
-Nicht testbar via Automation-API:
-  help.about — der Frontend-Handler ruft `alert(...)`, das die WebView-
-               JavaScript-Schleife blockiert. Wir loesen es nicht aus.
+  help.about      — oeffnet den About-Dialog (#about-dialog). Frueher
+                    blockierte ein `alert(...)`-Stub die WebView; seit
+                    dem echten Dialog (ui/about-dialog.ts) testbar.
 """
 
 import time
 
 
-def _overlay_hidden(ctx) -> bool:
-    snap = ctx.api.dom("#cheatsheet-overlay")
+def _is_hidden(ctx, selector: str) -> bool:
+    snap = ctx.api.dom(selector)
     if not snap.get("exists"):
         return True
     # Tauris /dom liefert nur explizit gesetzte Attribute. `hidden` wird
@@ -23,6 +22,14 @@ def _overlay_hidden(ctx) -> bool:
     # Anwesenheits-Status im attributes-Dict.
     attrs = snap.get("attributes") or {}
     return "hidden" in attrs
+
+
+def _overlay_hidden(ctx) -> bool:
+    return _is_hidden(ctx, "#cheatsheet-overlay")
+
+
+def _about_hidden(ctx) -> bool:
+    return _is_hidden(ctx, "#about-dialog")
 
 
 def run(ctx):
@@ -69,4 +76,37 @@ def run(ctx):
         ctx.expect(
             hidden_again,
             "cheatsheet-overlay wurde nach zweitem help.cheatsheet nicht hidden",
+        )
+
+    with ctx.step("/menu/click help.about → about-dialog sichtbar"):
+        ctx.expect(
+            _about_hidden(ctx),
+            "about-dialog war vor dem Klick bereits sichtbar — frueherer "
+            "Test/Run hat ihn offen gelassen",
+        )
+        ctx.api.menu_click("help.about")
+        deadline = time.monotonic() + 2.0
+        shown = False
+        while time.monotonic() < deadline:
+            if not _about_hidden(ctx):
+                shown = True
+                break
+            time.sleep(0.05)
+        ctx.expect(
+            shown,
+            "about-dialog wurde nach help.cheatsheet nicht sichtbar",
+        )
+
+    with ctx.step("Klick auf #about-close schliesst about-dialog"):
+        ctx.api.click("about-close")
+        deadline = time.monotonic() + 2.0
+        hidden_again = False
+        while time.monotonic() < deadline:
+            if _about_hidden(ctx):
+                hidden_again = True
+                break
+            time.sleep(0.05)
+        ctx.expect(
+            hidden_again,
+            "about-dialog wurde nach Klick auf about-close nicht hidden",
         )

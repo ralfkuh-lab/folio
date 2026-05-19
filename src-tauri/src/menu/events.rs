@@ -72,7 +72,11 @@ pub fn dispatch_menu_action(app: &AppHandle, id: &str) {
         ids::HELP_ABOUT => {
             let _ = app.emit(
                 "menu:about",
-                serde_json::json!({ "version": env!("CARGO_PKG_VERSION") }),
+                serde_json::json!({
+                    "version": env!("CARGO_PKG_VERSION"),
+                    "gitHash": env!("FOLIO_GIT_HASH"),
+                    "buildDate": env!("FOLIO_BUILD_DATE"),
+                }),
             );
         }
         _ => {

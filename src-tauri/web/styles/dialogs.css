@@ -191,6 +191,378 @@
   cursor: default;
 }
 
+/* About-Dialog */
+#about-dialog[hidden] { display: none; }
+#about-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.28);
+}
+/* Open-/Close-Animationen: backdrop fadet sanft ein, Panel pop-up mit
+   leichtem Scale. Cubic-bezier ist eine "smooth-ease-out"-Variante
+   (Material Design "emphasized decelerate"). Beim Schliessen das
+   Spiegelbild mit ease-in-Variante, etwas kuerzer, damit die Action
+   "schnell weg" wirkt. Trigger: about-dialog.ts setzt `.closing`-
+   Klasse vor dem Verstecken und entfernt sie nach der Animation. */
+@keyframes folio-about-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes folio-about-pop-in {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes folio-about-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes folio-about-pop-out {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.96); }
+}
+#about-dialog:not([hidden]):not(.closing) {
+  animation: folio-about-fade-in 280ms ease-out;
+}
+#about-dialog:not([hidden]):not(.closing) .about-dialog__panel {
+  animation: folio-about-pop-in 360ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+#about-dialog.closing {
+  animation: folio-about-fade-out 200ms ease-in forwards;
+  pointer-events: none;
+}
+#about-dialog.closing .about-dialog__panel {
+  animation: folio-about-pop-out 220ms cubic-bezier(0.4, 0, 0.7, 0.2) forwards;
+}
+
+.about-dialog__panel {
+  /* About-Dialog ist bewusst als "Visitenkarte" gestaltet — er ignoriert
+     das App-Theme und zeigt sich immer im Light-Layout. Begruendung:
+     der Watercolor-Avatar und das warme Branding wirken im Dark Mode
+     entweder fehl am Platz (heller Block gegen dunkel) oder verlieren
+     ihren Charakter (wenn man sie kuenstlich abdunkelt). Indem wir hier
+     die theme-abhaengigen Custom-Properties mit Light-Werten ueber-
+     schreiben, greifen alle `var(--*)`-Verweise im Dialog-Inneren auf
+     hellen Hintergrund + dunklen Text — unabhaengig davon, ob die App
+     gerade im Dark Mode laeuft. */
+  --bg: #ffffff;
+  --fg: #1f2328;
+  --fg-muted: #59636e;
+  --border: #d1d9e0;
+  --accent: #0969da;
+  --rail-bg: #f4f4f4;
+  --rail-hover-bg: #e8e8e8;
+  position: relative;
+  width: min(520px, calc(100vw - 48px));
+  /* Watercolor-Wash: vier ueberlagerte radiale Gradients als
+     Hintergrund-Schichten — greift den Aquarell-Vibe des Avatars auf.
+     Reihenfolge: warmer Apricot oben-links, gold-gedaempft oben-rechts,
+     warmer Caramel mittig-unten, leichter blauer Hauch unten-links.
+     Letzte Schicht ist die feste Hintergrundfarbe. */
+  background:
+    radial-gradient(circle at 14% 12%, rgba(230, 180, 110, 0.28) 0%, rgba(230, 180, 110, 0.10) 25%, transparent 55%),
+    radial-gradient(circle at 90% 18%, rgba(212, 175, 90, 0.22) 0%, rgba(212, 175, 90, 0.08) 22%, transparent 50%),
+    radial-gradient(circle at 60% 95%, rgba(220, 170, 120, 0.20) 0%, rgba(220, 170, 120, 0.06) 30%, transparent 60%),
+    radial-gradient(circle at 8% 80%, rgba(170, 190, 215, 0.14) 0%, transparent 45%),
+    var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.32), 0 2px 6px rgba(0, 0, 0, 0.08);
+  padding: 22px 22px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+}
+/* Gold-Akzentlinie ganz oben am Panel — zitiert den Logo-Ring und
+   den Titel-Gradient. 3px hoch, voll-bleed ueber die Panel-Breite. */
+.about-dialog__panel::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg,
+    #a87a30 0%,
+    #d4af5a 28%,
+    #f0d68a 50%,
+    #d4af5a 72%,
+    #a87a30 100%);
+  pointer-events: none;
+}
+/* Avatar ist absolut in der oberen rechten Ecke verankert — entkoppelt
+   vom Flow, sodass das Folio-Icon mit gleichem Abstand zum Top wie zum
+   Left sitzt und die Sections darunter (Hero/Meta/…) nicht durch die
+   Avatar-Hoehe nach unten geschoben werden. */
+.about-dialog__author {
+  position: absolute;
+  top: 22px;
+  right: 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+.about-dialog__hero {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 14px;
+  /* Rechts Platz fuer den absoluten Avatar (144 + 14 Sicherheits-Gap). */
+  padding-right: 158px;
+}
+.about-dialog__icon {
+  width: 96px;
+  height: 96px;
+  display: block;
+  border-radius: 12px;
+}
+.about-dialog__hero-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.about-dialog__avatar {
+  position: relative;
+  z-index: 1;
+  width: 144px;
+  height: 144px;
+  border-radius: 16px;
+  object-fit: cover;
+  /* Soft Vignette: Mitte voll opak, Raender weich auslaufend bis
+     transparent. Bildet die Aquarell-Aesthetik fort und vermeidet
+     einen harten Rahmen gegenueber dem Dialog-Hintergrund. */
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 38%, transparent 96%);
+          mask-image: radial-gradient(ellipse at center, #000 38%, transparent 96%);
+}
+/* Dark-Mode-Halo entfernt — der About-Dialog ist jetzt fest im Light-
+   Layout (siehe Custom-Property-Override oben), die Watercolor-Mask
+   greift gegen weissen Hintergrund harmonisch. */
+.about-dialog__made-with {
+  font-size: 11px;
+  color: var(--fg-muted);
+  letter-spacing: 0.01em;
+  text-align: center;
+  line-height: 1.35;
+}
+.about-dialog__heart {
+  color: #e25555;
+  font-size: 12px;
+  margin: 0 1px;
+}
+.about-dialog__title {
+  /* Serif fuer Branding-Charakter; Gold-Gradient zitiert den Ring im
+     Folio-Logo. background-clip:text laesst den Verlauf den Glyphen
+     ausfuellen statt den Hintergrund. Fallback color sichert die
+     Lesbarkeit, falls background-clip nicht greift. */
+  font-family: Georgia, Cambria, "Times New Roman", serif;
+  font-weight: 700;
+  font-size: 28px;
+  letter-spacing: 0.015em;
+  line-height: 1.1;
+  color: #b8893a;
+  background: linear-gradient(135deg, #a87a30 0%, #d4af5a 45%, #f0d68a 58%, #b8893a 100%);
+  -webkit-background-clip: text;
+          background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.about-dialog__subtitle {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  margin-top: 2px;
+}
+.about-dialog__meta {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 12px;
+  row-gap: 5px;
+  margin: 0;
+  font-size: 12.5px;
+  /* Rechts Platz fuer den absoluten Avatar — verhindert, dass der
+     Lizenz-Wert in den letzten ~50px unter den Avatar laeuft. */
+  padding-right: 158px;
+}
+.about-dialog__meta dt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg-muted);
+  font-weight: 500;
+}
+.about-dialog__meta-icon {
+  color: #b8893a;
+  flex-shrink: 0;
+}
+.about-dialog__meta dt {
+  color: var(--fg-muted);
+}
+.about-dialog__meta dd {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+}
+.about-dialog__meta dd.about-dialog__license {
+  font-family: inherit;
+  font-size: 12.5px;
+}
+.about-dialog__meta dd a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.about-dialog__meta dd a:hover { text-decoration: underline; }
+.about-dialog__blurb {
+  font-size: 12.5px;
+  color: var(--fg);
+  line-height: 1.5;
+  margin: 0;
+}
+.about-dialog__blurb a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.about-dialog__blurb a:hover { text-decoration: underline; }
+
+/* Eigenstaendige GitHub-Link-Zeile mit Octicon-Glyph. */
+.about-dialog__github-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  margin: 0;
+  color: var(--fg);
+}
+.about-dialog__github-link svg { color: var(--fg); flex-shrink: 0; }
+.about-dialog__github-link a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.about-dialog__github-link a:hover { text-decoration: underline; }
+.about-dialog__donate {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--rail-bg);
+}
+.about-dialog__donate-label {
+  font-size: 12.5px;
+  color: var(--fg);
+}
+.about-dialog__donate-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.about-dialog__donate-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: filter 0.15s;
+}
+.about-dialog__donate-btn:hover { filter: brightness(1.08); }
+.about-dialog__donate-btn--paypal {
+  background: #0070ba;
+  color: white;
+  border-color: #005ea6;
+}
+.about-dialog__donate-btn--github-star {
+  background: #1f2328;
+  color: white;
+  border-color: #1f2328;
+}
+.about-dialog__donate-btn--github-sponsors {
+  background: #db61a2;
+  color: white;
+  border-color: #c54a8c;
+}
+/* Footer-Zeile: "Built with"-Stack-Erwaehnung. Kleine Schrift mit
+   Trennzeichen, oberhalb der Schliessen-Aktion. */
+.about-dialog__footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 10.5px;
+  color: var(--fg-muted);
+  letter-spacing: 0.04em;
+}
+.about-dialog__footer-label {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 9.5px;
+  color: var(--fg-muted);
+  margin-right: 4px;
+}
+.about-dialog__footer-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--fg);
+  font-weight: 500;
+}
+.about-dialog__footer-icon {
+  color: #b8893a;
+  flex-shrink: 0;
+}
+.about-dialog__footer-sep {
+  color: var(--border);
+  font-weight: 600;
+}
+
+.about-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+.about-dialog__actions button {
+  min-width: 96px;
+  border: 1px solid var(--border);
+  background: var(--rail-bg);
+  color: var(--fg);
+  border-radius: 4px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.about-dialog__actions button:hover { background: var(--rail-hover-bg); }
+.about-dialog__actions .primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: white;
+}
+
+/* Accessibility: User mit "prefers-reduced-motion" bekommen weder Fade
+   noch Pop — der Dialog erscheint direkt sichtbar. */
+@media (prefers-reduced-motion: reduce) {
+  #about-dialog:not([hidden]),
+  #about-dialog:not([hidden]) .about-dialog__panel {
+    animation: none;
+  }
+}
+
 /* Image-Insert-Dialog */
 #image-dialog[hidden] { display: none; }
 #image-dialog {

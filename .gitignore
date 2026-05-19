@@ -17,3 +17,6 @@ folio-release
 .claude/
 tests/e2e/.venv/
 tests/e2e/artifacts/
+# Avatar-Style-Vorschlaege fuers About-Dialog-Setup — nur der gewaehlte
+# avatar.png landet im Repo, die Alternativen bleiben lokal.
+src-tauri/dist/about/avatar-options/

@@ -4,8 +4,8 @@ use axum::{
     http::{header, Request, StatusCode},
     Router,
 };
-use folio::automation::mock::{MockPinned, MockRecent};
-use folio::automation::{build_mock_router, MockAutomationState};
+use folio_lib::automation::mock::{MockPinned, MockRecent};
+use folio_lib::automation::{build_mock_router, MockAutomationState};
 use serde_json::{json, Value};
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -359,7 +359,7 @@ async fn post_wait_rejects_unknown_event() {
 
 #[tokio::test]
 async fn get_console_errors_returns_buffer_and_clears() {
-    use folio::state::ConsoleErrorRecord;
+    use folio_lib::state::ConsoleErrorRecord;
     use std::collections::VecDeque;
 
     let mut buf = VecDeque::new();

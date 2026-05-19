@@ -1,0 +1,7 @@
+# GitHub Funding-Konfiguration. Sichtbar auf der Repo-Seite als
+# "Sponsor"-Button. PayPal-Eintrag = paypal.me-Handle (ohne URL-Praefix).
+# GitHub-Sponsors-Eintrag kommt rein, sobald der Sponsors-Account fuer
+# ralfkuh-lab eingerichtet und freigeschaltet ist.
+
+paypal: ralfkuh
+# github: ralfkuh-lab
