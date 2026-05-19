@@ -53,16 +53,14 @@ function invoke<T = unknown>(cmd: string, args?: any): Promise<T> {
     return window.__TAURI__.core.invoke(cmd, args) as Promise<T>;
 }
 
-function timestampFilename(): string {
+function timestampStem(): string {
     const d = new Date();
     const pad = (n: number) => n.toString().padStart(2, '0');
-    return `image-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.png`;
+    return `image-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
 }
 
-function docBasename(docPath: string | null): string {
-    if (!docPath) return '';
-    const base = docPath.replace(/\\/g, '/').split('/').pop() || '';
-    return base.replace(/\.(md|markdown|mdown|mkd)$/i, '') || '';
+function timestampFilename(): string {
+    return `${timestampStem()}.png`;
 }
 
 function slugify(text: string): string {
@@ -454,12 +452,13 @@ export async function openImageDialog(opts: OpenImageDialogOptions = {}): Promis
             altDefault = t.slice(cursor.start, cursor.start + cursor.length);
         }
     }
-    // Wenn keine Selection: Doc-Basename als beschreibender Default —
-    // mit aktivem Link-Toggle (s. u.) ergibt das einen sinnvollen
-    // Filename wie "notes.png" fuers Dokument "notes.md", den der User
-    // beim ersten Tastendruck ohnehin ueberschreibt (Alt-Input wird
-    // selektiert geoeffnet).
-    if (!altDefault) altDefault = docBasename(docPath);
+    // Wenn keine Selection: Timestamp-Stem als Default, damit Alt-Text
+    // und Filename initial konsistent sind (Alt = "image-20260519-…",
+    // Filename = "image-20260519-….png"). Der User kann mit einem Klick
+    // auf "Einfuegen" durch oder den Alt-Text sofort drueberschreiben
+    // (Input ist selektiert) — der Linked-Toggle zieht den Filename
+    // dann mit.
+    if (!altDefault) altDefault = timestampStem();
     ctx = { docPath, docDir, cursor, altDefault };
 
     // Verzeichnis-Default: gemerkter pro-Doc → sonst docDir
@@ -471,16 +470,17 @@ export async function openImageDialog(opts: OpenImageDialogOptions = {}): Promis
     const dirInput = $i('image-dir-input');
     if (dirInput) dirInput.value = lastDir || docDir || '';
 
-    // Alt + Filename. Linked-Toggle ist beim Open AN, aber der Filename
-    // bleibt initial der Timestamp-Default (syncNow=false). Erst sobald
-    // der User den Alt-Text aendert, leitet der Linked-Sync den Filename
-    // daraus ab. Der Alt-Input ist selektiert geoeffnet, sodass der User
-    // sofort drueberschreiben kann.
+    // Alt + Filename. Linked-Toggle ist beim Open AN; syncFilenameFromAlt
+    // (ueber setLinked) leitet den Filename aus altDefault ab. Bei einem
+    // Timestamp-Stem als altDefault ergibt das exakt die Timestamp-Form
+    // im Filename — Alt und Filename sind initial konsistent. Bei einer
+    // Selection ergibt der Slug davon den Filename. Der Alt-Input ist
+    // selektiert geoeffnet, sodass der User sofort drueberschreiben kann.
     const altInput = $i('image-alt-input');
     if (altInput) altInput.value = altDefault;
     const fnInput = $i('image-filename-input');
     if (fnInput) fnInput.value = timestampFilename();
-    setLinked(true, false);
+    setLinked(true);
 
     // Clipboard versuchen
     clipboardImage = null;
