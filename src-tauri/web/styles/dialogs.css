@@ -203,6 +203,7 @@
   background: rgba(0, 0, 0, 0.28);
 }
 .about-dialog__panel {
+  position: relative;
   width: min(520px, calc(100vw - 48px));
   background: var(--bg);
   color: var(--fg);
@@ -212,13 +213,31 @@
   padding: 22px 22px 16px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
+}
+/* Avatar ist absolut in der oberen rechten Ecke verankert — entkoppelt
+   vom Flow, sodass das Folio-Icon mit gleichem Abstand zum Top wie zum
+   Left sitzt und die Sections darunter (Hero/Meta/…) nicht durch die
+   Avatar-Hoehe nach unten geschoben werden. */
+.about-dialog__author {
+  position: absolute;
+  top: 22px;
+  right: 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  z-index: 1;
+  pointer-events: none;
 }
 .about-dialog__hero {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr;
   align-items: center;
   gap: 14px;
+  /* Rechts Platz fuer den absoluten Avatar (144 + 14 Sicherheits-Gap). */
+  padding-right: 158px;
 }
 .about-dialog__icon {
   width: 96px;
@@ -232,17 +251,10 @@
   gap: 2px;
   min-width: 0;
 }
-.about-dialog__author {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  margin: 0;
-}
 .about-dialog__avatar {
-  width: 120px;
-  height: 120px;
-  border-radius: 14px;
+  width: 144px;
+  height: 144px;
+  border-radius: 16px;
   object-fit: cover;
   /* Soft Vignette: Mitte voll opak, Raender weich auslaufend bis
      transparent. Bildet die Aquarell-Aesthetik fort und vermeidet
@@ -278,6 +290,9 @@
   row-gap: 4px;
   margin: 0;
   font-size: 12.5px;
+  /* Rechts Platz fuer den absoluten Avatar — verhindert, dass der
+     Lizenz-Wert in den letzten ~50px unter den Avatar laeuft. */
+  padding-right: 158px;
 }
 .about-dialog__meta dt {
   color: var(--fg-muted);
