@@ -252,6 +252,8 @@
   min-width: 0;
 }
 .about-dialog__avatar {
+  position: relative;
+  z-index: 1;
   width: 144px;
   height: 144px;
   border-radius: 16px;
@@ -261,6 +263,28 @@
      einen harten Rahmen gegenueber dem Dialog-Hintergrund. */
   -webkit-mask-image: radial-gradient(ellipse at center, #000 38%, transparent 96%);
           mask-image: radial-gradient(ellipse at center, #000 38%, transparent 96%);
+}
+/* Im Dark Mode haben die gefadeten Watercolor-Raender einen harten
+   Kontrastsprung zum dunklen Dialog-Hintergrund — das Bild wirkt
+   "abgeschnitten". Ein dezenter warmer Halo hinter dem Avatar federt
+   den Uebergang ab und holt den Aquarell-Vibe zurueck. Im Light Mode
+   ist die Mask gegen den hellen Hintergrund harmonisch — kein Halo
+   noetig. */
+.about-dialog__author::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 144px;
+  height: 144px;
+  border-radius: 16px;
+  pointer-events: none;
+}
+html.theme-dark .about-dialog__author::before {
+  background: radial-gradient(ellipse at center,
+    rgba(255, 220, 180, 0.12) 0%,
+    rgba(255, 220, 180, 0.05) 45%,
+    transparent 80%);
 }
 .about-dialog__made-with {
   font-size: 11px;
