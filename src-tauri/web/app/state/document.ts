@@ -209,14 +209,15 @@ export function openDocument(path: string): Promise<boolean> {
         if (!ok) return false;
         return invoke('read_file', { path }).then(function (data) {
             invoke('workspace_add_recent', { path }).catch(function () {});
-            const kind = data && data.kind;
-            if (kind && kind !== 'markdown'
-                && !document.body.classList.contains('edit-mode')) {
-                invoke('set_view_mode', { mode: 'edit' }).then(function () {
-                    deps.setActiveMode('edit');
-                }).catch(function () {});
-            }
-            applyDocKind(kind);
+            // Mode-Sticky: kein automatischer Wechsel zwischen Edit und
+            // View beim Dateiwechsel. View funktioniert seit der Code-
+            // View-Einfuehrung auch fuer `kind=text` (Pretty-Print bzw.
+            // syntax-highlighted Read-Only-Monaco), also gibt es keinen
+            // Grund mehr, fuer Non-Markdown-Files in Edit zu forcen. Wer
+            // Edit will, schaltet bewusst um — bleibt dann auch beim
+            // naechsten Dateiwechsel. Per-Typ-Default-Mode kommt mit dem
+            // Settings-Panel als Folgeticket.
+            applyDocKind(data && data.kind);
             return true;
         }).catch(function (err) {
             showStatus(typeof err === 'string' ? err : 'Datei konnte nicht geöffnet werden');

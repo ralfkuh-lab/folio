@@ -83,6 +83,11 @@
     aktuell ein Platzhalter (gibt deutsche Strings zurück). Sobald die
     Sprachwahl im Settings-Panel landet, hier die englische Übersetzung
     ergänzen — der Builder zieht sie automatisch über `labels(lang)`.
+  - **Per-Typ-Default-Mode** — heute ist der View/Edit-Mode sticky beim
+    Dateiwechsel (User-Entscheidung bleibt). Settings-Panel könnte
+    pro Kind (`markdown`, `text`) einen Default-Mode anbieten, der
+    beim ersten Öffnen einer Datei dieses Typs greift („Markdown öffnet
+    in: View / Edit", „Code öffnet in: View / Edit").
 - **HTML im View-Mode rendern**: `.html`/`.htm` als Datei-Klasse "richtig" anzeigen,
   Skripte/inline-Event-Handler beim Render rauspatchen (Sandbox-iframe oder
   serverseitige Sanitization). Aktuell zeigt der View-Mode den Source mit
