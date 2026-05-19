@@ -69,7 +69,11 @@ tauri-build = { version = "2", features = [] }
 tower = "0.5"
 
 [lib]
-name = "folio"
+# Library-Name absichtlich != Binary-Name `folio`: sonst kollidieren
+# folio.pdb (bin) und folio.pdb (lib) im Target-Verzeichnis, was Cargo
+# als hard error vorbereitet (rust-lang/cargo#6313). Tests + main.rs
+# importieren entsprechend via `use folio_lib::...`.
+name = "folio_lib"
 path = "src/lib.rs"
 
 crate-type = ["staticlib", "cdylib", "rlib"]

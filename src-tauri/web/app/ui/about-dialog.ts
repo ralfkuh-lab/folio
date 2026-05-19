@@ -48,6 +48,12 @@ export function closeAboutDialog(): void {
     }
 }
 
+function postShellEvent(msg: any): void {
+    if (window.__TAURI__ && window.__TAURI__.event) {
+        window.__TAURI__.event.emit('shell:event', msg);
+    }
+}
+
 export function initAboutDialog(): void {
     const ev = window.__TAURI__ && window.__TAURI__.event;
     if (!ev || typeof ev.listen !== 'function') return;
@@ -63,6 +69,22 @@ export function initAboutDialog(): void {
     if (dlg) {
         dlg.addEventListener('click', function (e) {
             if (e.target === dlg) closeAboutDialog();
+        });
+        // Externe Links im Dialog: nicht in die WebView navigieren,
+        // sondern den OS-Default-Browser via Backend-Pfad oeffnen.
+        // Gleicher Routing-Mechanismus wie Markdown-Content-Links
+        // (siehe view/markdown.ts → shell:event linkClick → Backend
+        // link_interceptor → tauri_plugin_shell::open).
+        dlg.addEventListener('click', function (e) {
+            const target = e.target as HTMLElement | null;
+            if (!target) return;
+            const anchor = target.closest('a[href]') as HTMLAnchorElement | null;
+            if (!anchor) return;
+            const href = anchor.getAttribute('href');
+            if (!href) return;
+            if (!/^(https?:|mailto:)/.test(href)) return;
+            e.preventDefault();
+            postShellEvent({ type: 'linkClick', href });
         });
     }
 }

@@ -4,7 +4,7 @@
 //! Wenn auf dem Test-System kein Chromium-Browser gefunden wird, wird
 //! der Test übersprungen (kein Fehler) — CI ohne Chrome bleibt grün.
 
-use folio::{export, pdf_export};
+use folio_lib::{export, pdf_export};
 use std::fs;
 
 #[test]
