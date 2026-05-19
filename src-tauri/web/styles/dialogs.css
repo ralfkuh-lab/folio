@@ -256,13 +256,13 @@
   z-index: 1;
   width: 144px;
   height: 144px;
-  border-radius: 16px;
-  object-fit: cover;
-  /* Soft Vignette: Mitte voll opak, Raender weich auslaufend bis
-     transparent. Bildet die Aquarell-Aesthetik fort und vermeidet
-     einen harten Rahmen gegenueber dem Dialog-Hintergrund. */
-  -webkit-mask-image: radial-gradient(ellipse at center, #000 38%, transparent 96%);
-          mask-image: radial-gradient(ellipse at center, #000 38%, transparent 96%);
+  /* Soft Vignette ist direkt im PNG via Alpha-Channel eingebacken
+     (siehe `scripts/bake_avatar_vignette.py` / build-Notiz). Damit
+     wirkt der weiche Uebergang auch im Dark Mode korrekt — eine
+     CSS-Mask hatte das Bild zwar visuell gefadet, aber der opake
+     cremefarbene Bild-Hintergrund schimmerte im Dark Mode trotzdem
+     als heller Block durch. Kein border-radius mehr noetig: die
+     Alpha-Vignette gibt dem Bild eine weiche elliptische Form. */
 }
 /* Im Dark Mode haben die gefadeten Watercolor-Raender einen harten
    Kontrastsprung zum dunklen Dialog-Hintergrund — das Bild wirkt
