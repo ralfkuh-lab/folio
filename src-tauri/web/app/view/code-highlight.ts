@@ -16,6 +16,70 @@
 
 const SOURCE_ATTR = 'data-folio-source';
 
+// Aliasse fuer Sprach-IDs in Markdown-Fences. Monaco kennt zwar viele
+// Sprachen direkt, aber nicht jede Schreibweise — z. B. `bash` ist bei
+// Monaco kein eigener Mode, sondern muss als `shell` adressiert werden.
+// Linker Eintrag: Schreibweise im Markdown-Fence; rechter: Monaco-ID.
+// Schluessel werden vor dem Lookup auf lowercase normalisiert.
+const LANG_ALIASES: Record<string, string> = {
+    // Shells — Monaco hat nur "shell".
+    bash: 'shell',
+    sh: 'shell',
+    zsh: 'shell',
+    fish: 'shell',
+    console: 'shell',
+    'shell-session': 'shell',
+
+    // JS-Familie.
+    js: 'javascript',
+    mjs: 'javascript',
+    cjs: 'javascript',
+    jsx: 'javascript',
+    ts: 'typescript',
+    tsx: 'typescript',
+    node: 'javascript',
+
+    // Sonstige populaere Kuerzel.
+    py: 'python',
+    rb: 'ruby',
+    rs: 'rust',
+    kt: 'kotlin',
+    kts: 'kotlin',
+    cs: 'csharp',
+    'c++': 'cpp',
+    'c#': 'csharp',
+    hpp: 'cpp',
+    cc: 'cpp',
+    cxx: 'cpp',
+    h: 'c',
+    yml: 'yaml',
+    md: 'markdown',
+    mdown: 'markdown',
+    docker: 'dockerfile',
+
+    // Windows-Welt.
+    ps: 'powershell',
+    ps1: 'powershell',
+    pwsh: 'powershell',
+    cmd: 'bat',
+    bat: 'bat',
+    batch: 'bat',
+
+    // Doc-/Markup-Kram.
+    htm: 'html',
+    svg: 'xml',
+    text: 'plaintext',
+    txt: 'plaintext',
+    plain: 'plaintext',
+    none: 'plaintext',
+    gql: 'graphql',
+};
+
+function resolveLang(raw: string): string {
+    const lower = raw.toLowerCase();
+    return LANG_ALIASES[lower] || lower;
+}
+
 function extractLang(codeEl: Element): string | null {
     const match = codeEl.className.match(/(?:^|\s)language-(\S+)/);
     return match ? match[1] : null;
@@ -41,8 +105,9 @@ export function highlightCodeBlocks(root: HTMLElement | null): void {
     if (!colorize) return;
     const blocks = root.querySelectorAll('pre > code[class*="language-"]');
     blocks.forEach((block) => {
-        const lang = extractLang(block);
-        if (!lang) return;
+        const raw = extractLang(block);
+        if (!raw) return;
+        const lang = resolveLang(raw);
         let source = block.getAttribute(SOURCE_ATTR);
         if (source === null) {
             source = block.textContent || '';
