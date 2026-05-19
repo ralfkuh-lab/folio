@@ -88,6 +88,13 @@
     pro Kind (`markdown`, `text`) einen Default-Mode anbieten, der
     beim ersten Öffnen einer Datei dieses Typs greift („Markdown öffnet
     in: View / Edit", „Code öffnet in: View / Edit").
+  - **Auto-Format im View-Mode** — toggle „Dateien im View-Mode
+    automatisch formatieren". Heute macht der Code-View nur JSON
+    pretty (`JSON.parse + stringify`). Mit dem Setting könnte das auf
+    weitere Sprachen ausgedehnt werden (XML, HTML, CSS, JS/TS, YAML, …)
+    via Monaco-`editor.action.formatDocument` direkt nach dem Mount,
+    aufgrund des MonacoEnvironment-Fixes laufen die Sprach-Worker
+    jetzt. Default-Toggle: an. Per-Sprache-Granularität optional.
 - **HTML im View-Mode rendern**: `.html`/`.htm` als Datei-Klasse "richtig" anzeigen,
   Skripte/inline-Event-Handler beim Render rauspatchen (Sandbox-iframe oder
   serverseitige Sanitization). Aktuell zeigt der View-Mode den Source mit
