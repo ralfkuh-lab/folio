@@ -159,6 +159,42 @@
     </div>
   </div>
 </div>
+<div id="image-dialog" hidden>
+  <div class="image-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="image-dialog-title">
+    <div class="image-dialog__title" id="image-dialog-title">Bild einfügen</div>
+    <div class="image-dialog__sources" id="image-dialog-sources">
+      <button type="button" data-source="clipboard" id="image-src-clipboard">Aus Zwischenablage</button>
+      <button type="button" data-source="file" id="image-src-file">Datei wählen…</button>
+    </div>
+    <div class="image-dialog__preview" id="image-dialog-preview">
+      <div class="placeholder">Keine Bildquelle gewählt.</div>
+    </div>
+    <div class="image-dialog__filename-row">
+      <div class="image-dialog__row">
+        <label for="image-alt-input">Alt-Text</label>
+        <input type="text" id="image-alt-input" class="image-dialog__input" autocomplete="off" spellcheck="false" />
+      </div>
+      <button type="button" id="image-link-toggle" class="image-dialog__link-toggle" title="Dateinamen aus Alt-Text ableiten" aria-pressed="false">🔗</button>
+      <div class="image-dialog__row">
+        <label for="image-filename-input">Dateiname</label>
+        <input type="text" id="image-filename-input" class="image-dialog__input" autocomplete="off" spellcheck="false" />
+      </div>
+    </div>
+    <div class="image-dialog__row">
+      <label for="image-dir-input">Zielordner</label>
+      <div class="image-dialog__dir-row">
+        <input type="text" id="image-dir-input" class="image-dialog__input" autocomplete="off" spellcheck="false" />
+        <button type="button" id="image-dir-browse" class="image-dialog__small-btn">Durchsuchen…</button>
+      </div>
+    </div>
+    <div class="image-dialog__tag-preview" id="image-tag-preview">![](…)</div>
+    <div class="image-dialog__warning" id="image-warning" hidden></div>
+    <div class="image-dialog__actions">
+      <button type="button" id="image-cancel">Abbrechen</button>
+      <button type="button" id="image-insert" class="primary">Einfügen</button>
+    </div>
+  </div>
+</div>
 <div id="cheatsheet-overlay" hidden>
   <header class="overlay__drag">Markdown Cheat-Sheet</header>
   <div class="overlay__body" id="cheatsheet-body"></div>

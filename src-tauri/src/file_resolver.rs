@@ -38,6 +38,26 @@ pub fn resolve(current_file_path: &str, link_target: &str) -> Option<String> {
     resolve_existing_path(&candidate).map(|path| path.to_string_lossy().into_owned())
 }
 
+/// Erzeugt einen Pfad, der `target` relativ zu `from_dir` ausdrueckt. Die
+/// Rueckgabe ist immer mit POSIX-Slashes formatiert (Markdown-Konvention,
+/// rendert plattformuebergreifend gleich). Wenn `from_dir` und `target` auf
+/// unterschiedlichen Volumes liegen oder keine gemeinsame Wurzel haben,
+/// faellt die Funktion auf den absoluten `target`-Pfad zurueck.
+///
+/// Beide Pfade sollten vor dem Aufruf canonicalized sein, damit Symlinks,
+/// `.`/`..`-Segmente und Case-Mismatches (Windows) konsistent behandelt
+/// werden — der Aufrufer ist dafuer zustaendig.
+pub fn make_relative(from_dir: &Path, target: &Path) -> String {
+    match pathdiff::diff_paths(target, from_dir) {
+        Some(rel) => to_posix_string(&rel),
+        None => to_posix_string(target),
+    }
+}
+
+fn to_posix_string(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
 pub fn paths_equal(a: &str, b: &str) -> bool {
     let Ok(a) = fs::canonicalize(a) else {
         return false;
@@ -230,6 +250,30 @@ mod tests {
         assert_eq!(None, resolve(current.to_str().unwrap(), "missing.md"));
         assert_eq!(None, resolve(current.to_str().unwrap(), "bad%zz.md"));
         Ok(())
+    }
+
+    #[test]
+    fn make_relative_returns_posix_subpath() {
+        let from = Path::new("/docs/notes");
+        let target = Path::new("/docs/notes/images/foo.png");
+        assert_eq!("images/foo.png", make_relative(from, target));
+    }
+
+    #[test]
+    fn make_relative_walks_up_when_target_above_from() {
+        let from = Path::new("/docs/notes/sub");
+        let target = Path::new("/docs/notes/images/foo.png");
+        assert_eq!("../images/foo.png", make_relative(from, target));
+    }
+
+    #[test]
+    fn make_relative_falls_back_to_target_when_no_common_root() {
+        // Windows: unterschiedliche Drive-Letter haben keinen gemeinsamen Stamm.
+        // Linux/macOS: pathdiff::diff_paths gibt fuer komplett-absolut+komplett-relativ
+        // None zurueck. In beiden Faellen liefern wir den absoluten target-Pfad.
+        let from = Path::new("relative/dir");
+        let target = Path::new("/absolute/file.png");
+        assert_eq!("/absolute/file.png", make_relative(from, target));
     }
 
     #[test]

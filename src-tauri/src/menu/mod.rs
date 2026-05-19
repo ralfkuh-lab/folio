@@ -56,3 +56,14 @@ pub async fn menu_set_checked(handle: AppHandle, id: String, checked: bool) -> R
     }
     Ok(())
 }
+
+/// Triggert die Aktion zu einer Menü-ID — gleicher Pfad wie ein nativer
+/// Menü-Klick (siehe [`dispatch_menu_action`]). Frontend nutzt das für
+/// DOM-Capture-Fallbacks der Menü-Accelerators (Strg+Shift+S, Strg+W,
+/// Strg+Q), weil WebView2 die OS-Tastenkombination häufig schluckt,
+/// bevor sie die native Menüleiste erreicht.
+#[tauri::command]
+pub async fn menu_dispatch(handle: AppHandle, id: String) -> Result<(), String> {
+    dispatch_menu_action(&handle, &id);
+    Ok(())
+}

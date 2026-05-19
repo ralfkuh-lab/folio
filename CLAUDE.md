@@ -22,13 +22,15 @@ läuft über [`TODO.md`](TODO.md).
 - comrak 0.35 (GFM-Markdown)
 - axum 0.8 (Automation-API auf `127.0.0.1:9876`, Loopback-only, CORS für WebView-POSTs)
 - Frontend: TypeScript-Module in `src-tauri/web/app/` (Bootstrap +
-  `state/`, `view/`, `editor/`, `vault/`, `ui/`), CSS in
-  `src-tauri/web/styles/`, Monaco-Editor-Adapter in
-  `src-tauri/web/editor.ts`. esbuild bündelt zu `dist/app.bundle.js`,
-  `dist/app.css`, `dist/editor.bundle.js`; `dist/index.html` ist
-  HTML-Shell + 3 `<script src>`-Tags + 1 `<link>`. `dist/monaco/`
-  wird von `copy-monaco.js` aus `node_modules/monaco-editor/min/` befüllt.
-- notify 7.0 (File-Watching), xcap (Screenshots)
+  `state/`, `view/`, `editor/`, `vault/`, `ui/`, `automation/`), CSS in
+  `src-tauri/web/styles/`, Monaco-Editor-Adapter als Modul-Verzeichnis
+  `src-tauri/web/editor/` (`mount.ts`, `text.ts`, `find.ts`, `state.ts`,
+  `events.ts`, `bridge.ts`, `index.ts` als Surface-Composer). esbuild
+  bündelt zu `dist/app.bundle.js`, `dist/app.css`, `dist/editor.bundle.js`;
+  `dist/index.html` ist HTML-Shell + 3 `<script src>`-Tags + 1 `<link>`.
+  `dist/monaco/` wird von `copy-monaco.js` aus
+  `node_modules/monaco-editor/min/` befüllt.
+- notify 7.0 (File-Watching), tauri-plugin-screenshots 2.2 (Monitor-Capture)
 
 ## Build & Test
 
@@ -87,10 +89,48 @@ sonst lehnt Tauri den Build ab.
   Eintrag zusätzlich `view_mode`, `editor_scroll_y`, `editor_cursor`
   (neben `scroll_y`/`anchor`). Capture läuft automatisch über
   `set_view_mode` (Mode-Sync ins aktuelle Entry) und die
-  `editorSelection`/`editorScroll`-Events aus `editor.ts`. Restore
-  passiert ausschließlich im `navigation:changed`-Handler (Back/Forward);
-  `openDocument`-Pfade (Vault-Klick, Datei-Dialog, Recent, Pin) erzeugen
-  frische Entries und laden ohne Sprung.
+  `editorSelection`/`editorScroll`-Events aus den `editor/`-Modulen.
+  Restore passiert ausschließlich im `navigation:changed`-Handler
+  (Back/Forward); `openDocument`-Pfade (Vault-Klick, Datei-Dialog, Recent,
+  Pin) erzeugen frische Entries und laden ohne Sprung.
+  `commands::nav::move_history` und `automation/handlers/ui.rs::history_move`
+  haben jeweils ein `can_go_back`/`can_go_forward`-Gate vor dem
+  go_back/go_forward-Call — am Stack-Edge wird Ok(None) bzw.
+  `{moved: false, entry: null}` geliefert, statt unnötig current() zu
+  re-loaden.
+- **UI-Toggle-Persistenz**: alle UI-Schalter mit Memo (Vault-Rail,
+  TOC-Rail, Editor-Minimap, Cheatsheet-Position, Window-Geometrie,
+  Pinned/Recent-Section-Expansion) sitzen in
+  `panel_state.rs::PanelStateData` und werden in `panel-state.json`
+  unter dem App-Config-Verzeichnis persistiert. Neue Toggles dort
+  ergänzen, nicht eigene JSON-Files erfinden.
+- **Editor-`applyReplace`**: nutzt `editor.executeEdits(...)` (nicht
+  `setValue`!) — letzteres clearet Monacos Undo-Stack und macht
+  Bold-Wrap/Heading-Toggle/etc. destruktiv. Bei Erweiterungen rund um
+  programmatic Editor-Writes diese Konvention beibehalten.
+- **Image-Insert (Toolbar `tb-image` + Strg+V)**: Anders als die anderen
+  Inline-Editor-Commands (Bold/Italic/Link über `apply_editor_command`)
+  hat `tb-image` einen eigenen Frontend-Pfad — siehe `ui/image-dialog.ts`
+  und `ui/paste-handler.ts`. Der Dialog liefert ein Bild aus
+  Zwischenablage (Browser-Clipboard-API über `navigator.clipboard.read()`
+  oder den ClipboardEvent aus dem Capture-Paste-Handler) oder einer
+  Datei, schreibt es über `save_clipboard_image` / `save_file_image` ins
+  Doc-Verzeichnis (oder ein gemerktes Per-Doc-Verzeichnis), und der
+  Frontend baut den Markdown-Tag mit dem zurückgegebenen relativen Pfad
+  und fügt ihn via `FolioEditor.applyReplace` ein (Cursor-Position
+  eingefroren beim Dialog-Open). Per-Doc-Verzeichnis liegt in
+  `WorkspaceData.image_dirs: HashMap<DocPath, Dir>`. Relativer Pfad
+  über `file_resolver::make_relative` (Wrapper um `pathdiff::diff_paths`,
+  POSIX-Slashes für Markdown-Konvention). Clipboard-RGBA → PNG-Encoding
+  passiert im Backend mit dem `image`-Crate.
+- **Pre-Mount-Editor-Optionen**: Editor-Optionen, die schon beim Boot
+  gesetzt werden (heute nur Minimap aus dem persistierten Panel-State),
+  laufen über eine `pendingMinimapEnabled`-Variable in `editor/mount.ts`,
+  die `mount()` in die initialen `monaco.editor.create()`-Options zieht.
+  KEIN `mountReady.then(...)`-Defer für Pre-Mount-Calls: `mountReady` ist
+  bis zum ersten Mount `Promise.resolve()`, ein Defer wäre eine
+  Endlos-Microtask-Schleife (war der Bug, der bei Folio-Start ohne offene
+  Datei das gesamte Frontend killte; siehe Fix-Commit `f4ef8f1`).
 
 ## Headless-Screenshots
 
@@ -117,6 +157,32 @@ sonst lehnt Tauri den Build ab.
   false`, `set_skip_taskbar`, off-screen. Echtes Hidden-Headless auf
   Windows bräuchte einen direkten Win32-`PrintWindow`-Bypass; der
   Aufwand ist gegenüber dem Linux+Xvfb-Pfad nicht gerechtfertigt.
+
+## E2E-Test-Suite
+
+Vollständige UI-Coverage in `tests/e2e/` (21 Szenarien, Python +
+Pillow): Boot, View-/Edit-/Split-Mode, Theme, Vault, Find, Workspace,
+Save-Roundtrip durch alle BOM/EOL-Kombis, Undo/Redo, Toolbar-Commands
+(Bold/Italic/Heading), Menü-Coverage (File/Edit/View/Help), DOM-
+Keybindings, Vault-Tree-Klicks, Pin/Unpin, History-Back/Forward,
+Rechtsklick-Kontextmenüs, echter TOC-DOM-Klick.
+
+Wrapper: `bash scripts/run-e2e.sh` (Linux+Xvfb). Visual-Baselines in
+`tests/e2e/baselines/`, Artefakte (gitignored) in
+`tests/e2e/artifacts/<timestamp>/`. Bei fehlender Baseline wird sie beim
+ersten Run automatisch angelegt.
+
+Xvfb-spezifische Eigenheiten (scrollY-Sync, Monaco-Canvas-Capture,
+synthetic-keyboard-Fragilität bei Monaco-Shortcuts, native Tauri-Menüs
+aus WebView unerreichbar, `alert()`-Blockade, `applyReplace`/
+`history`-Historie der Bugfixes etc.) sind in
+[`docs/e2e-headless-caveats.md`](docs/e2e-headless-caveats.md)
+zusammengefasst — Pflichtlektüre vor dem Schreiben neuer Szenarien.
+
+Szenarien können `DESKTOP_ONLY = True` als Modul-Konstante exportieren;
+der Orchestrator skipt sie standardmäßig, `--include-desktop-only`
+schaltet sie ein. Heute hat kein Szenario den Marker — die Infrastruktur
+ist Vorhaltung für zukünftige Dialog-/OS-Eingang-Tests.
 
 ## GitHub
 

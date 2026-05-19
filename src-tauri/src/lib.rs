@@ -66,6 +66,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_screenshots::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .menu(|handle| menu::build(handle, "de"))
         .on_menu_event(menu::on_menu_event)
         .manage(AppState::new())
@@ -215,8 +216,14 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::file::save_as::save_as,
             commands::file::close::close_document,
             commands::file::rename::rename_file,
+            commands::file::image::save_clipboard_image,
+            commands::file::image::save_file_image,
+            commands::file::image::pick_image_file,
+            commands::file::image::pick_image_target_dir,
+            commands::file::image::current_document_dir,
             menu::menu_set_enabled,
             menu::menu_set_checked,
+            menu::menu_dispatch,
             commands::editor::editor_text_changed,
             commands::editor::editor_save_requested,
             commands::editor::discard_editor_changes,
@@ -255,6 +262,8 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::workspace_cmd::workspace_add_recent,
             commands::workspace_cmd::workspace_remove_recent,
             commands::workspace_cmd::workspace_get,
+            commands::workspace_cmd::workspace_get_image_dir,
+            commands::workspace_cmd::workspace_set_image_dir,
             commands::automation::automation_ack,
             commands::automation::automation_dom_response,
             commands::automation::automation_console_error

@@ -11,6 +11,8 @@ import { initZoom } from './ui/zoom';
 import { initLanguagePicker } from './ui/language-picker';
 import { initFindBar } from './ui/find-bar';
 import { initExportDialog } from './ui/export-dialog';
+import { initImageDialog, openImageDialog } from './ui/image-dialog';
+import { attachPasteHandler } from './ui/paste-handler';
 import { initRails, setRailVisibility } from './ui/rails';
 import { initContextMenu } from './vault/context-menu';
 import { initVaultTree, insertVaultChildren, refreshVault } from './vault/tree';
@@ -80,6 +82,10 @@ initExportDialog({
     getCurrentPath,
     syncEditorTextToStore,
     showStatus,
+});
+initImageDialog({ getCurrentPath, showStatus });
+attachPasteHandler(function (blob) {
+    openImageDialog({ preloadedBlob: blob }).catch(function () {});
 });
 initContextMenu({ openDocument, refreshVault, showStatus });
 initMenuRouter({ applyRailVisibility });
