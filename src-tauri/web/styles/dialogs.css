@@ -216,7 +216,7 @@
 }
 .about-dialog__hero {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr;
   align-items: center;
   gap: 14px;
 }
@@ -236,21 +236,29 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  margin: 0;
+  gap: 8px;
+  margin: 2px 0 0;
 }
 .about-dialog__avatar {
-  width: 72px;
-  height: 72px;
-  border-radius: 50%;
+  width: 144px;
+  height: 144px;
+  border-radius: 16px;
   object-fit: cover;
-  border: 1px solid var(--border);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  /* Soft Vignette: Mitte voll opak, Raender weich auslaufend. Bildet
+     die Aquarell-Aesthetik fort und vermeidet einen harten Rahmen
+     gegenueber dem Dialog-Hintergrund. */
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 62%, transparent 100%);
+          mask-image: radial-gradient(ellipse at center, #000 62%, transparent 100%);
 }
-.about-dialog__author figcaption {
-  font-size: 11px;
+.about-dialog__made-with {
+  font-size: 12.5px;
   color: var(--fg-muted);
-  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+.about-dialog__heart {
+  color: #e25555;
+  font-size: 13.5px;
+  margin: 0 1px;
 }
 .about-dialog__title {
   font-weight: 700;
