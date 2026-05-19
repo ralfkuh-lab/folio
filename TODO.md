@@ -31,22 +31,22 @@
     zum getrennten `document.saved`-Event-Race-Eintrag weiter unten.
     Native Tauri-Menübar (z. B. echter Strg+W aus dem Menü) wurde nicht
     getestet, weil aus dem WebView nicht erreichbar.
-  - **Noch offen / nicht abgedeckt**: Strg+Z / Strg+Shift+Z (Undo/Redo)
-    sind weiterhin reiner Menü-Accelerator + Monaco-Internal. Bisher
-    keine User-Beschwerde — wenn das auch nicht greift, denselben
-    Pfad wie Strg+B/I/K nachziehen.
+  - **Update 2026-05-19 (2)**: Strg+Z / Strg+Shift+Z DOM-Capture
+    nachgezogen. Anders als bei Strg+B/I/K greift der Fallback nur,
+    wenn der Fokus NICHT im `#editor-mount` liegt — Monacos
+    eingebautes Undo bleibt im Editor-Fokus unangetastet. Ohne Fokus
+    im Editor (z. B. Vault-Tree aktiv) ruft der Handler
+    `FolioEditor.undo()` / `.redo()`.
 
-- **`document.saved`-Event greift Wait-Poll nicht**: Sowohl
-  `tests/e2e/scenarios/08_save_roundtrip.py` (über `/save`) als auch
-  `15_keybindings.py` (über DOM-Ctrl+S) bekommen nach erfolgreichem
-  Speichern einen 5-s-Timeout auf `expect_event("document.saved")`. Auf
-  Disk ist die Mutation da, das Event scheint also vor der Wait-
-  Registrierung gefeuert worden zu sein (Race im `/wait`-Mechanismus
-  oder im Event-Re-Broadcast). Auf Linux+Xvfb lief die Suite zuletzt
-  grün — möglicherweise nur unter WebView2/Windows-Timing fragil.
-  Prüfen: `automation/events.rs` (oder wo die Event-Subscription
-  sitzt) — ein „last-emitted"-Buffer pro Event-Topic mit kurzer TTL
-  würde solche Late-Subscribers entkoppeln.
+- **~~`document.saved`-Event greift Wait-Poll nicht~~** — **gefixt
+  2026-05-19**: `automation::wait` hat jetzt einen last-emitted-Buffer
+  in `AppState.recent_events`. `signal()` aktualisiert den
+  Timestamp; `already_satisfied()` greift fuer `document.loaded` und
+  `document.saved` innerhalb `RECENT_EVENT_TTL_MS` (2 s) auf den
+  Buffer zu — Late-Subscribers binnen TTL bekommen das Event noch.
+  Tests in `wait.rs` decken den Fall ab (`already_satisfied_uses_recent_buffer_for_transient_events`,
+  `recently_emitted_respects_ttl`). Auf Windows verifizieren beim
+  naechsten E2E-Run.
 
 - **Undo-Stack wird in `09_undo_redo` gecleared**: Szenario schreibt
   zuerst „X" in den Editor, dann „**hallo**" als zweites Edit, danach
@@ -111,15 +111,13 @@
   Win/macOS). NLog ist .NET-spezifisch — in Rust hat `tracing` die
   gleiche Rolle.
 
-- **Rail-Toggle-Button-State beim Boot synchronisieren**: Aktuell starten
-  `tb-rail-left` und `tb-rail-right` immer mit `class="active"` (hartcodiert
-  im HTML). Wenn der User vorher per Toolbar eine Rail versteckt hat,
-  bleibt das im `panel-state.json` persistiert (Body bekommt
-  `vault-hidden`/`toc-hidden`) — der Button zeigt aber visuell „aktiv".
-  Frontend braucht beim Boot ein `invoke('panel_state_get')` o. ä., das
-  die initialen Rail-Werte liefert, dann `setRailVisibility` + `setRailButton`
-  rufen. Der `panel:rail_changed`-Listener feuert heute nur auf User-
-  Klick, nicht beim Boot.
+- **~~Rail-Toggle-Button-State beim Boot synchronisieren~~** — **gefixt
+  2026-05-19**: Neuer Tauri-Command `panel_rails_get` liefert die
+  persistierten `leftRailVisible`/`rightRailVisible`-Werte; `main.ts`
+  zieht sie beim Boot analog zu `editor_minimap_get` und ruft
+  `applyRailVisibility` fuer beide Seiten. Hartcodiertes `class="active"`
+  im HTML bleibt als Initial-Vorbeleg, wird aber spaetestens nach dem
+  Async-Boot-Call durch den persistierten State ueberschrieben.
 
 ## Niedrige Priorität
 

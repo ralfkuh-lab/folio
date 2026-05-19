@@ -12,6 +12,7 @@ use crate::{
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::oneshot;
 
@@ -77,6 +78,12 @@ pub struct AppState {
     /// window.onerror, unhandledrejection). Max [`CONSOLE_ERROR_BUFFER_MAX`]
     /// Eintraege; ueberlaufende werden vorne abgeschnitten.
     pub console_errors: Mutex<VecDeque<ConsoleErrorRecord>>,
+    /// Last-emitted-Zeitstempel pro Wait-Event-Name. Entkoppelt
+    /// transiente Events (`document.loaded`/`document.saved`) vom
+    /// Subscribe-Timing: `POST /wait` greift binnen TTL (siehe
+    /// `automation::wait::RECENT_EVENT_TTL_MS`) auch dann zu, wenn das
+    /// Event direkt vor der Registrierung gefeuert hat.
+    pub recent_events: Mutex<HashMap<String, Instant>>,
 }
 
 impl Default for AppState {
@@ -107,6 +114,7 @@ impl AppState {
             pending_waits: Mutex::new(HashMap::new()),
             pending_dom_queries: Mutex::new(HashMap::new()),
             console_errors: Mutex::new(VecDeque::with_capacity(CONSOLE_ERROR_BUFFER_MAX)),
+            recent_events: Mutex::new(HashMap::new()),
         }
     }
 

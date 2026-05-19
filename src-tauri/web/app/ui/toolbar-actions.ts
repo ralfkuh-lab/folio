@@ -27,6 +27,10 @@ export function initToolbarActions(): void {
         var el = $(id);
         if (el) el.addEventListener('click', fn as any);
     }
+    function isEditorFocused(): boolean {
+        const mount = document.getElementById('editor-mount');
+        return !!mount && mount.contains(document.activeElement);
+    }
 
     bind('tb-mode-view', function () { setMode('view'); });
     bind('tb-mode-edit', function () { setMode('edit'); });
@@ -181,6 +185,29 @@ export function initToolbarActions(): void {
         if (!shift && k === 'q') {
             e.preventDefault();
             invoke('menu_dispatch', { id: 'file.quit' }).catch(function(){});
+            return;
+        }
+        // Strg+Z / Strg+Shift+Z: Editor-Undo/Redo. Wenn Monaco selbst
+        // den Fokus hat, machen wir nichts — Monacos eingebauter
+        // Keybinding-Pfad greift dort wie gewohnt. Nur ausserhalb des
+        // Editor-Mounts springt der DOM-Fallback ein (z. B. wenn Fokus
+        // im Vault-Tree liegt und der User trotzdem ein Editor-Undo
+        // ausloesen will). Gate auf mdEdit nicht noetig: undo()/redo()
+        // sind im View-Mode No-Ops, weil getEditor() dort null ist.
+        if (!shift && k === 'z') {
+            if (isEditorFocused()) return;
+            e.preventDefault();
+            if (window.FolioEditor && typeof window.FolioEditor.undo === 'function') {
+                window.FolioEditor.undo();
+            }
+            return;
+        }
+        if (shift && k === 'z') {
+            if (isEditorFocused()) return;
+            e.preventDefault();
+            if (window.FolioEditor && typeof window.FolioEditor.redo === 'function') {
+                window.FolioEditor.redo();
+            }
             return;
         }
         // Edit-Toolbar-Markdown-Shortcuts: nur greifen wenn Markdown +

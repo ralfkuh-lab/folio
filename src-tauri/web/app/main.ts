@@ -207,5 +207,19 @@ if (invoke) {
         if (btn) btn.classList.toggle('active', on);
         if (window.FolioEditor) window.FolioEditor.setMinimap(on);
     }).catch(function(){});
+
+    // Rail-Visibility ebenfalls beim Boot syncen. `panel:rail_changed`
+    // feuert sonst nur bei User-Klick — bei reinem Restore-Pfad bleiben
+    // die Buttons sonst hartcodiert "active", waehrend der Body schon
+    // `vault-hidden`/`toc-hidden` haette.
+    invoke('panel_rails_get').then(function (state: any) {
+        if (!state || typeof state !== 'object') return;
+        if (typeof state.leftRailVisible === 'boolean') {
+            applyRailVisibility('left', state.leftRailVisible);
+        }
+        if (typeof state.rightRailVisible === 'boolean') {
+            applyRailVisibility('right', state.rightRailVisible);
+        }
+    }).catch(function(){});
 }
 

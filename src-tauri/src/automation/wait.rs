@@ -22,11 +22,18 @@
 //! `AppState::install_document_events`) gerufen.
 
 use std::collections::HashMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
 use tokio::time::timeout;
 
 use crate::state::AppState;
+
+/// TTL fuer den last-emitted-Buffer (siehe [`recently_emitted`]).
+/// Late-Subscriber innerhalb dieser Frist greifen ein zuvor gefeuertes
+/// transientes Event ab. 2 s ist grob genug fuer E2E-Wait-Registrierung
+/// nach `POST /save`, ohne dass ein vorhergehendes Event in einer
+/// spaeteren Test-Phase faelschlich matcht.
+pub const RECENT_EVENT_TTL_MS: u64 = 2000;
 
 /// Erlaubte Event-Namen fuer `POST /wait`. Liegt im Modul, damit die
 /// Liste eine einzige Quelle hat und vom Handler + Trigger-Seite geteilt
@@ -42,8 +49,12 @@ pub fn is_known(event: &str) -> bool {
     KNOWN_EVENTS.contains(&event)
 }
 
-/// Latch-Check: ist das Event "schon erfuellt"? Nur fuer Latch-Events
-/// relevant; transiente Events liefern immer false.
+/// Latch-Check: ist das Event "schon erfuellt"? Echte Latch-Events
+/// (`editor.ready`, `document.dirty_clean`) lesen direkt den State.
+/// Transiente Events (`document.loaded`, `document.saved`) greifen auf
+/// den last-emitted-Buffer zurueck — innerhalb [`RECENT_EVENT_TTL_MS`]
+/// gilt das Event als "schon passiert", auch wenn der Wait-Caller spaet
+/// dran ist.
 pub fn already_satisfied(state: &AppState, event: &str) -> bool {
     match event {
         "editor.ready" => state
@@ -56,8 +67,23 @@ pub fn already_satisfied(state: &AppState, event: &str) -> bool {
             .lock()
             .map(|s| !s.is_dirty)
             .unwrap_or(false),
+        "document.loaded" | "document.saved" => {
+            recently_emitted(state, event, RECENT_EVENT_TTL_MS)
+        }
         _ => false,
     }
+}
+
+/// Liefert `true`, wenn das Event innerhalb der letzten `ttl_ms` ueber
+/// [`signal`] gefeuert wurde. Lock-Fehler werden als `false` behandelt
+/// (Wartender geht den normalen Timeout-Pfad).
+pub fn recently_emitted(state: &AppState, event: &str, ttl_ms: u64) -> bool {
+    let Ok(map) = state.recent_events.lock() else {
+        return false;
+    };
+    map.get(event)
+        .map(|t| t.elapsed() < Duration::from_millis(ttl_ms))
+        .unwrap_or(false)
 }
 
 /// Registriert einen Receiver fuer das Event und gibt die ID + Receiver
@@ -99,9 +125,14 @@ pub async fn wait_for(
     }
 }
 
-/// Feuert alle Wartenden fuer einen Event-Namen. Spaetere Wartende
-/// fangen das Event nicht ab.
+/// Feuert alle Wartenden fuer einen Event-Namen. Hinterlegt zusaetzlich
+/// einen Timestamp im last-emitted-Buffer, damit Late-Subscribers
+/// innerhalb [`RECENT_EVENT_TTL_MS`] das Event ueber
+/// [`already_satisfied`] noch greifen koennen.
 pub fn signal(state: &AppState, event: &str) {
+    if let Ok(mut buffer) = state.recent_events.lock() {
+        buffer.insert(event.to_string(), Instant::now());
+    }
     let senders = match state.pending_waits.lock() {
         Ok(mut map) => map.remove(event).unwrap_or_default(),
         Err(_) => return,
@@ -212,5 +243,29 @@ mod tests {
         signal_document_saved(&state);
         let fired = wait_for(&state, "document.saved", id, receiver, 50).await;
         assert!(fired);
+    }
+
+    #[test]
+    fn already_satisfied_uses_recent_buffer_for_transient_events() {
+        let state = AppState::new();
+        // Vor Signal: kein Late-Subscriber-Hit.
+        assert!(!already_satisfied(&state, "document.saved"));
+        assert!(!already_satisfied(&state, "document.loaded"));
+
+        signal_document_saved(&state);
+        signal_document_loaded(&state);
+
+        // Direkt nach Signal: Late-Subscriber bekommt true zurueck.
+        assert!(already_satisfied(&state, "document.saved"));
+        assert!(already_satisfied(&state, "document.loaded"));
+    }
+
+    #[test]
+    fn recently_emitted_respects_ttl() {
+        let state = AppState::new();
+        signal_document_saved(&state);
+        assert!(recently_emitted(&state, "document.saved", 1000));
+        // Mit TTL=0 ist nichts mehr "recent" — strict less-than-Vergleich.
+        assert!(!recently_emitted(&state, "document.saved", 0));
     }
 }
