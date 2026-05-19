@@ -83,8 +83,7 @@ export function initMenuRouter(deps: Deps): void {
         deps.applyRailVisibility('right', !visible);
         invoke('set_rail_visible', { side: 'right', visible: !visible }).catch(function () {});
     });
-    ev.listen('menu:about', function (event: any) {
-        var v = (event && event.payload && event.payload.version) || '?';
-        alert('folio v' + v);
-    });
+    // menu:about wird vom about-dialog-Modul direkt abonniert (eigener
+    // Listener mit voller Payload-Anzeige). Kein Eintrag mehr hier, sonst
+    // wuerden beide Handler feuern.
 }

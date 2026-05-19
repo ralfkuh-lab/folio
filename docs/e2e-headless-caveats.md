@@ -86,15 +86,13 @@ Dialog, blockiert dann aber.
 Logik geht über die Direkt-API: `/open`, `/save` (Phase 0 nicht
 involviert — die existierten schon).
 
-## 6. `alert()` blockiert die WebView-JS-Schleife
+## 6. ~~`alert()` blockiert die WebView-JS-Schleife~~ (erledigt 2026-05-19)
 
-`help.about` ruft `alert('folio v…')`. Das blockiert die WebView und
-damit auch die Automation-API. `/menu/click help.about` würde alles
-einfrieren, bis der User händisch wegklickt.
-
-**Workaround:** Item explizit nicht testen, dokumentiert in
-`14_menu_help.py`. Wenn About-Dialog mal zu echtem Tauri-Dialog wird,
-können wir den Pfad reaktivieren.
+Frueher rief `help.about` ein `alert('folio v…')`, das die WebView
+einfror. Seit 2026-05-19 ist der About-Dialog ein eigenes HTML-Modal
+(`#about-dialog`, `ui/about-dialog.ts`) — `/menu/click help.about` ist
+damit nicht-blockierend, und `14_menu_help.py` testet den Pfad
+durchgehend (oeffnen → sichtbar pruefen → schliessen → versteckt).
 
 ## 7. `applyReplace` und der Undo-Stack (Historie)
 

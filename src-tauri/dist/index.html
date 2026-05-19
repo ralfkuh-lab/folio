@@ -162,6 +162,29 @@
     </div>
   </div>
 </div>
+<div id="about-dialog" hidden>
+  <div class="about-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="about-dialog-title">
+    <div class="about-dialog__header">
+      <div class="about-dialog__title" id="about-dialog-title">Folio</div>
+      <div class="about-dialog__subtitle">Markdown-Viewer &amp; -Editor</div>
+    </div>
+    <dl class="about-dialog__meta">
+      <dt>Version</dt><dd id="about-version">—</dd>
+      <dt>Build</dt><dd id="about-build">—</dd>
+      <dt>Commit</dt><dd id="about-commit">—</dd>
+    </dl>
+    <p class="about-dialog__blurb">
+      Tauri 2 · Rust · comrak · Monaco. Quellcode auf
+      <a href="https://github.com/ralfkuh-lab/folio" data-external="1">github.com/ralfkuh-lab/folio</a>.
+    </p>
+    <p class="about-dialog__donate" id="about-donate">
+      <em>Spendenmöglichkeit folgt — danke fürs Nutzen.</em>
+    </p>
+    <div class="about-dialog__actions">
+      <button type="button" id="about-close" class="primary">Schließen</button>
+    </div>
+  </div>
+</div>
 <div id="image-dialog" hidden>
   <div class="image-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="image-dialog-title">
     <div class="image-dialog__title" id="image-dialog-title">Bild einfügen</div>

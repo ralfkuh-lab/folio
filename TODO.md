@@ -189,9 +189,14 @@
   Grammatik-Check, Markdown-Reformatierung, Linkvorschläge im Vault,
   TOC/Heading-Vorschläge, Cheat-Sheet-„Frag mich"-Modus. Erst Ideen
   sammeln, dann eine konkrete priorisieren (Provider/Datenschutz klären).
-- **About-Dialog**: Versions-/Autor-Info anzeigen, ggf. Lizenz und Build-Hash.
-  Idee: Spendenmöglichkeit für den Autor einbinden (Plattform/Form später
-  klären). Aktuell zeigt **Hilfe → Über folio** nur ein simples
-  `alert("folio v…")` als Stub. Wenn das mal ein echter Dialog wird, kann
-  der `help.about`-Step in `tests/e2e/scenarios/14_menu_help.py` (heute
-  übersprungen, weil `alert()` die WebView blockiert) reaktiviert werden.
+- **~~About-Dialog~~** — **gefixt 2026-05-19**: Echter Modal-Dialog
+  `#about-dialog` (`ui/about-dialog.ts`) statt `alert("folio v…")`.
+  Zeigt Version, Build-Datum, Git-Hash (Hash + Datum kommen via
+  `build.rs` über `cargo:rustc-env=FOLIO_GIT_HASH/BUILD_DATE`).
+  Spendenlink ist noch Platzhalter — sobald du dich für eine Plattform
+  entschieden hast, einfach den `#about-donate`-Absatz austauschen.
+  Lizenz-Eintrag bewusst weggelassen, weil das Repo aktuell keine
+  LICENSE-Datei und keine Lizenz-Angabe in `Cargo.toml` hat — da
+  möchte ich nichts erfinden.
+  `14_menu_help.py::help.about`-Step reaktiviert (Klick → sichtbar →
+  Schließen-Button → versteckt).
