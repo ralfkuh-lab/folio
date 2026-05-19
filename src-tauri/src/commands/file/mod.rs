@@ -8,6 +8,7 @@
 //! - [`file_list`] / `list_dir` — Verzeichnis-Listing.
 
 pub mod close;
+pub mod image;
 pub mod list;
 pub mod read;
 pub mod rename;

@@ -123,6 +123,26 @@
 
 ## Niedrige Priorität
 
+- **Image-Insert Folgepunkte** (Hauptfeature 2026-05-19 implementiert,
+  siehe `commands/file/image.rs`, `ui/image-dialog.ts`,
+  `ui/paste-handler.ts`):
+  - **Drag-and-Drop** auf den Editor-Bereich als dritter Eingang neben
+    Strg+V und Toolbar-Button. Drop-Position-zu-Cursor-Mapping über
+    Monacos `editor.getTargetAtClientPoint(x,y)`.
+  - **Bild-Resize / Qualitätswahl** im Dialog (gerade wird Clipboard
+    immer als verlustfreies PNG re-encoded; größere Screenshots werden
+    dadurch unnötig groß).
+  - **JPEG/WebP-Re-Encoding** für Clipboard-Bilder als optionale Format-
+    Auswahl im Dialog (image-Crate hat die Features schon aktiv).
+  - **Auto-Anlegen von `images/`/`assets/`-Unterordnern** mit Konvention,
+    falls der User das im Settings-Panel auswählt — wartet auf das
+    Settings-Panel (Eintrag oben).
+  - **E2E-Szenario** `22_image_paste.py`: Datei-wählen-Pfad lässt sich
+    automatisieren; Clipboard-Pfad braucht echten Display, daher
+    Xvfb-Skip-Marker oder `--include-desktop-only`.
+
+
+
 - **E2E-Suite auf Windows lauffähig machen**: Aus dem Windows-Run 2026-05-18
   zwei Stolpersteine, die die Suite dort heute praktisch unbrauchbar machen,
   obwohl die Library `--attach` explizit unterstützt:

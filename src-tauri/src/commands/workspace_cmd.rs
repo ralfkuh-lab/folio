@@ -73,6 +73,38 @@ pub async fn workspace_get(state: State<'_, AppState>) -> Result<WorkspaceData, 
         .data())
 }
 
+/// Liefert das fuer `doc_path` zuletzt verwendete Image-Speicherverzeichnis,
+/// falls eines gemerkt ist. Frontend nutzt das als Default beim Oeffnen
+/// des Image-Dialogs.
+#[tauri::command]
+pub async fn workspace_get_image_dir(
+    doc_path: String,
+    state: State<'_, AppState>,
+) -> Result<Option<String>, String> {
+    Ok(state
+        .workspace
+        .lock()
+        .map_err(|_| "workspace lock poisoned".to_string())?
+        .image_dir(&doc_path)
+        .map(str::to_string))
+}
+
+/// Merkt `dir` als zuletzt fuer `doc_path` gewaehltes Image-Verzeichnis.
+/// Wird vom Image-Dialog nach erfolgreichem Einfuegen gerufen.
+#[tauri::command]
+pub async fn workspace_set_image_dir(
+    doc_path: String,
+    dir: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state
+        .workspace
+        .lock()
+        .map_err(|_| "workspace lock poisoned".to_string())?
+        .set_image_dir(doc_path, dir)
+        .map_err(|error| error.to_string())
+}
+
 fn emit_vault_refresh(state: &State<'_, AppState>, handle: &AppHandle) -> Result<(), String> {
     let workspace = state
         .workspace

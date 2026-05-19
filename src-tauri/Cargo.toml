@@ -32,9 +32,16 @@ tauri-plugin-single-instance = "2"
 # Screenshot via Plugin (Monitor-Framebuffer). Notwendig fuer Monaco
 # in Xvfb/Headless — siehe docs/headless-monaco-test-results.md.
 tauri-plugin-screenshots = "2.2.0"
+# Clipboard-Manager fuer Image-Insert-Feature (Strg+V im Editor + Toolbar
+# image-Button). Cross-platform Win/macOS/Linux.
+tauri-plugin-clipboard-manager = "2"
 
-# File-type icons
-image = { version = "0.25", default-features = false, features = ["png"] }
+# Pfad-Konvertierung absolut → relativ-zu-Dokument, fuers Bild-Insert.
+pathdiff = "0.2"
+
+# File-type icons + Image-Insert (Clipboard-RGBA → PNG, File-Picker auch
+# fuer jpg/gif/webp).
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 base64 = "0.22"
 
 [target.'cfg(target_os = "linux")'.dependencies]

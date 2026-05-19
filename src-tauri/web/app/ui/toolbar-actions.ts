@@ -14,6 +14,7 @@ import {
 } from '../state/document';
 import { setMode } from '../editor/shell';
 import { initExportDialog } from './export-dialog';
+import { openImageDialog } from './image-dialog';
 import { showCheatSheet, hideCheatSheet, cheatSheetRows } from './cheatsheet';
 
 export function initToolbarActions(): void {
@@ -98,7 +99,10 @@ export function initToolbarActions(): void {
     bind('tb-bullet',    function () { applyCmd('bullet'); });
     bind('tb-numbered',  function () { applyCmd('numbered'); });
     bind('tb-link',      function () { applyCmd('link'); });
-    bind('tb-image',     function () { applyCmd('image'); });
+    // tb-image faehrt einen eigenen Pfad: Dialog mit Clipboard-/Datei-
+    // Auswahl, dann Schreiben + relativer Tag-Insert. Anders als die
+    // anderen Inline-Commands laeuft das nicht ueber apply_editor_command.
+    bind('tb-image',     function () { openImageDialog().catch(function(){}); });
     bind('tb-table',     function () { applyCmd('table'); });
     bind('tb-code',      function () { applyCmd('code'); });
     bind('tb-codeblock', function () { applyCmd('codeblock'); });

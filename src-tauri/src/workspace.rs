@@ -1,6 +1,7 @@
 use crate::persist;
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashMap,
     io,
     path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
@@ -24,6 +25,11 @@ pub struct RecentItem {
 pub struct WorkspaceData {
     pub pinned: Vec<PinnedItem>,
     pub recent: Vec<RecentItem>,
+    /// Pro Dokument-Pfad das zuletzt verwendete Speicherverzeichnis fuers
+    /// Image-Insert-Feature. Ohne `#[serde(default)]` wuerden alte
+    /// workspace.json-Files ohne dieses Feld ablehnen.
+    #[serde(default)]
+    pub image_dirs: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -92,6 +98,19 @@ impl Workspace {
 
     pub fn is_pinned(&self, path: &str) -> bool {
         self.data.pinned.iter().any(|item| item.path == path)
+    }
+
+    /// Letztes Image-Speicherverzeichnis fuer das Dokument `doc_path`,
+    /// falls vorhanden.
+    pub fn image_dir(&self, doc_path: &str) -> Option<&str> {
+        self.data.image_dirs.get(doc_path).map(String::as_str)
+    }
+
+    /// Merkt das zuletzt fuer ein Dokument gewaehlte Image-Speicher-
+    /// verzeichnis. Persistiert sofort.
+    pub fn set_image_dir(&mut self, doc_path: String, dir: String) -> io::Result<()> {
+        self.data.image_dirs.insert(doc_path, dir);
+        self.save()
     }
 
     fn save(&self) -> io::Result<()> {

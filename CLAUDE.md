@@ -108,6 +108,21 @@ sonst lehnt Tauri den Build ab.
   `setValue`!) — letzteres clearet Monacos Undo-Stack und macht
   Bold-Wrap/Heading-Toggle/etc. destruktiv. Bei Erweiterungen rund um
   programmatic Editor-Writes diese Konvention beibehalten.
+- **Image-Insert (Toolbar `tb-image` + Strg+V)**: Anders als die anderen
+  Inline-Editor-Commands (Bold/Italic/Link über `apply_editor_command`)
+  hat `tb-image` einen eigenen Frontend-Pfad — siehe `ui/image-dialog.ts`
+  und `ui/paste-handler.ts`. Der Dialog liefert ein Bild aus
+  Zwischenablage (Browser-Clipboard-API über `navigator.clipboard.read()`
+  oder den ClipboardEvent aus dem Capture-Paste-Handler) oder einer
+  Datei, schreibt es über `save_clipboard_image` / `save_file_image` ins
+  Doc-Verzeichnis (oder ein gemerktes Per-Doc-Verzeichnis), und der
+  Frontend baut den Markdown-Tag mit dem zurückgegebenen relativen Pfad
+  und fügt ihn via `FolioEditor.applyReplace` ein (Cursor-Position
+  eingefroren beim Dialog-Open). Per-Doc-Verzeichnis liegt in
+  `WorkspaceData.image_dirs: HashMap<DocPath, Dir>`. Relativer Pfad
+  über `file_resolver::make_relative` (Wrapper um `pathdiff::diff_paths`,
+  POSIX-Slashes für Markdown-Konvention). Clipboard-RGBA → PNG-Encoding
+  passiert im Backend mit dem `image`-Crate.
 - **Pre-Mount-Editor-Optionen**: Editor-Optionen, die schon beim Boot
   gesetzt werden (heute nur Minimap aus dem persistierten Panel-State),
   laufen über eine `pendingMinimapEnabled`-Variable in `editor/mount.ts`,
