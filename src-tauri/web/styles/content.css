@@ -12,6 +12,30 @@
 }
 body.edit-mode .view-region { display: none; }
 body:not(.edit-mode) .editor-region { display: none; }
+
+/* Code-View-Region: zweite Monaco-Instanz fuer JSON/XML/Code im View-
+   Mode. Wird nur sichtbar, wenn die Datei kein Markdown ist UND der
+   View-Mode aktiv ist. Im Edit-Mode oder bei Markdown ist sie versteckt;
+   bei Markdown im View-Mode bleibt die klassische .view-region (HTML-
+   Render aus comrak). */
+body.kind-markdown .code-view-region,
+body.edit-mode .code-view-region { display: none; }
+body:not(.edit-mode):not(.kind-markdown):not(.kind-unknown):not(.kind-binary) .view-region {
+  display: none;
+}
+.code-view-region {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+}
+#code-view-mount {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
 .view-region {
   flex: 1 1 auto;
   display: flex;

@@ -85,10 +85,15 @@
     ergänzen — der Builder zieht sie automatisch über `labels(lang)`.
 - **HTML im View-Mode rendern**: `.html`/`.htm` als Datei-Klasse "richtig" anzeigen,
   Skripte/inline-Event-Handler beim Render rauspatchen (Sandbox-iframe oder
-  serverseitige Sanitization). Aktuell öffnet der Edit-Mode den Source.
-- **JSON / XML Pretty-View**: für `.json`, `.xml`, ggf. `.yaml`/`.toml` im
-  View-Mode formatiert + syntaxgehighlighted anzeigen (CodeMirror-Renderer
-  read-only oder eigener Renderer).
+  serverseitige Sanitization). Aktuell zeigt der View-Mode den Source mit
+  Monaco-Highlighting (Code-View-Pfad).
+- **~~JSON / XML Pretty-View~~** — **gefixt 2026-05-19**: Read-Only
+  Monaco-Instanz `FolioCodeView` zeigt Non-Markdown-Text-Dateien im
+  View-Mode mit Syntax-Highlighting. JSON wird via
+  `JSON.parse + stringify(_, null, 2)` pretty-geprinted. View-Mode ist
+  jetzt auch fuer `kind=text` aktivierbar (Default bleibt Edit-Mode).
+  Beim selben Zug der MonacoEnvironment-Worker-URL-Bug behoben — Format
+  Document (Shift+Alt+F) auf JSON funktioniert jetzt im Edit-Mode.
 - **Linux-Paket: `.md`-Icon im Datei-Manager**: Aktuell muss
   [`scripts/install-folio-icons.sh`](scripts/install-folio-icons.sh)
   manuell laufen, damit Nemo/Nautilus & Co. das Folio-Icon für `.md`

@@ -108,6 +108,28 @@ sonst lehnt Tauri den Build ab.
   `setValue`!) — letzteres clearet Monacos Undo-Stack und macht
   Bold-Wrap/Heading-Toggle/etc. destruktiv. Bei Erweiterungen rund um
   programmatic Editor-Writes diese Konvention beibehalten.
+- **Code-View (Read-Only Monaco im View-Mode)**: Non-Markdown-Text-
+  Dateien (JSON, XML, YAML, Code, …) bekommen im View-Mode eine
+  eigene Monaco-Instanz neben dem Edit-Editor. Surface
+  `window.FolioCodeView` (Bundle `editor/view-code.ts`,
+  `editor/index.ts`), Container `#code-view-mount`. JSON wird via
+  `JSON.parse + stringify(_, null, 2)` pretty-geprinted (bei
+  Parse-Error: roh). Andere Sprachen: roh anzeigen, Monaco liefert
+  Highlighting/Folding. Theme-Sync laeuft ueber `setEditorTheme`
+  (in `editor/shell.ts`), das beide Surfaces aktualisiert. Code-View
+  hat sein eigenes Find-Widget (Strg+F) — die Folio-Find-Bar
+  uebersetzt den Capture-Listener bei `kind=text + !edit-mode` an
+  Monaco. **Beide Monaco-Instanzen teilen einen einzigen AMD-Loader**
+  ueber `editor/mount.ts::whenMonacoLoaded` — `loadMonaco()` wird
+  exakt einmal beim Bundle-Init gerufen. Wer Monaco erweitert oder
+  Worker konfiguriert, muss beide Pfade beruecksichtigen.
+- **MonacoEnvironment.getWorkerUrl**: in `editor/mount.ts::loadMonaco`
+  wird vor `require.config(...)` ein Worker-Bootstrap via `data:`-URI
+  registriert (`origin + /monaco/vs/base/worker/workerMain.js`). Ohne
+  diesen Hook starten Monacos Sprach-Worker (JSON/TS/CSS/HTML/...) im
+  AMD-Setup nicht, weshalb fruehere Versionen z. B. „Format Document"
+  auf JSON still fehlschlugen. Bei einem Update der Monaco-Dependency
+  pruefen, ob `workerMain.js` noch unter diesem Pfad liegt.
 - **Image-Insert (Toolbar `tb-image` + Strg+V)**: Anders als die anderen
   Inline-Editor-Commands (Bold/Italic/Link über `apply_editor_command`)
   hat `tb-image` einen eigenen Frontend-Pfad — siehe `ui/image-dialog.ts`

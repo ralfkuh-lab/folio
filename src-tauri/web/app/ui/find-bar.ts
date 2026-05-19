@@ -196,12 +196,24 @@ export function initFindBar(deps: {
     // Strg+F und F3 muessen vor Monaco greifen, sonst schluckt Monacos
     // eingebauter Find-Widget die Tasten im Editor-Fokus. capture:true +
     // stopPropagation deckt sowohl Editor- als auch View-/Vault-Fokus ab.
+    //
+    // Ausnahme: Code-View (Read-Only Monaco im View-Mode bei kind=text)
+    // bekommt sein eigenes Find-Widget — wir lassen Strg+F durch, damit
+    // Monaco dort wie gewohnt sucht. Die globale Folio-Find-Bar wuerde
+    // sonst aufgehen, ohne den Code-View-Inhalt zu durchsuchen.
+    function isCodeViewActive(): boolean {
+        const body = document.body;
+        return body.classList.contains('kind-text')
+            && !body.classList.contains('edit-mode');
+    }
     document.addEventListener('keydown', function (e: KeyboardEvent) {
         if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+            if (isCodeViewActive()) return;
             e.preventDefault();
             e.stopPropagation();
             openEditorFind('');
         } else if (e.key === 'F3') {
+            if (isCodeViewActive()) return;
             e.preventDefault();
             e.stopPropagation();
             if (e.shiftKey) findPrev(); else findNext();

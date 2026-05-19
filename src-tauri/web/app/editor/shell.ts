@@ -77,6 +77,13 @@ export function layoutEditor(): void {
 
 export function setEditorTheme(mode: string): void {
     if (window.FolioEditor) window.FolioEditor.setTheme(mode);
+    // Code-View teilt sich Monacos globalen Theme-State; setTheme dort
+    // anwenden, falls die Instanz schon gemounted ist (oder ein
+    // pendingTheme merken, falls noch nicht).
+    if (window.FolioCodeView) {
+        const normalized = mode === 'dark' ? 'dark' : 'light';
+        window.FolioCodeView.setTheme(normalized);
+    }
 }
 
 export function requestEditorSelection(): { start: number; length: number } | null {

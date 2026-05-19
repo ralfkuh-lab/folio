@@ -170,10 +170,14 @@ export function applyDocKind(kind: string | null): void {
 
     const md = resolved === 'markdown';
     const hasDoc = resolved !== 'unknown' && resolved !== 'binary';
+    // View-Mode ist jetzt auch fuer Text/Code-Dateien verfuegbar: dort
+    // zeigt eine read-only Monaco-Instanz (FolioCodeView) den Inhalt
+    // mit Syntax-Highlighting an, fuer JSON zusaetzlich pretty-geprinted.
+    const hasViewMode = md || resolved === 'text';
     const btnView = $('tb-mode-view') as HTMLButtonElement;
     if (btnView) {
-        btnView.disabled = !md;
-        btnView.title = md ? 'View (Ctrl+1)' : 'View nur für Markdown verfügbar';
+        btnView.disabled = !hasViewMode;
+        btnView.title = hasViewMode ? 'View (Ctrl+1)' : 'Kein Dokument geladen';
     }
     const btnEdit = $('tb-mode-edit') as HTMLButtonElement;
     if (btnEdit) {
@@ -185,9 +189,9 @@ export function applyDocKind(kind: string | null): void {
         btnExport.disabled = !md;
         btnExport.title = md ? 'Exportieren…' : 'Export nur für Markdown verfügbar';
     }
-    // Menue-Items synchron halten: View-Mode nur bei MD, Save-As bei jedem
-    // geladenen, lesbaren Dokument (also nicht 'unknown').
-    invoke('menu_set_enabled', { id: 'view.mode.view', enabled: md }).catch(function () {});
+    // Menue-Items synchron halten: View-Mode auch fuer Text/Code,
+    // Save-As bei jedem geladenen, lesbaren Dokument (also nicht 'unknown').
+    invoke('menu_set_enabled', { id: 'view.mode.view', enabled: hasViewMode }).catch(function () {});
     invoke('menu_set_enabled', { id: 'view.mode.edit', enabled: hasDoc }).catch(function () {});
     invoke('menu_set_enabled', { id: 'file.save_as', enabled: hasDoc }).catch(function () {});
     invoke('menu_set_enabled', { id: 'file.rename', enabled: hasDoc }).catch(function () {});
@@ -265,11 +269,23 @@ export function initDocumentState(d: Deps): void {
         const body = contentEl && contentEl.querySelector('.markdown-body');
         if (body) {
             // Nur Markdown wird in der View-Region gerendert. Fuer Text/Code-
-            // Dateien wuerde sonst der Roh-Inhalt durch den MD-Renderer kurz
-            // aufflackern, bevor applyDocKind in den Edit-Mode wechselt.
+            // Dateien uebernimmt FolioCodeView die Read-Only-Anzeige in
+            // einer eigenen Monaco-Instanz (Container `#code-view-mount`).
             const isMd = data.kind === 'markdown';
             (body as HTMLElement).innerHTML = isMd ? (data.content || data.html || '') : '';
             if (isMd) rewriteRelativeAssets(body as HTMLElement, data.path || '');
+        }
+        // Code-View fuer Non-Markdown-Text-Dateien: Read-Only Monaco mit
+        // Syntax-Highlighting, JSON wird pretty-geprinted. Mount ist
+        // idempotent — re-use der Instanz beim Wechsel zwischen Dateien.
+        if (window.FolioCodeView) {
+            if (data.kind === 'text') {
+                window.FolioCodeView.mount(
+                    'code-view-mount',
+                    data.text || '',
+                    data.language || 'plaintext',
+                );
+            }
         }
         setVaultActive(data.path || '');
 
@@ -321,6 +337,10 @@ export function initDocumentState(d: Deps): void {
         const view = document.getElementById('view-region');
         const body = view && view.querySelector('.markdown-body');
         if (body) (body as HTMLElement).innerHTML = '';
+        // Code-View ebenfalls leeren — die zweite Monaco-Instanz bleibt
+        // sonst mit dem zuletzt angezeigten Inhalt sichtbar, wenn der
+        // User waehrend des Close-Vorgangs im View-Mode war.
+        if (window.FolioCodeView) window.FolioCodeView.dispose();
         setTocList('');
         applyDocKind('unknown');
         setStatusPath('Bereit', false);
