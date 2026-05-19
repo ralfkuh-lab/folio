@@ -167,14 +167,17 @@ function renderPreview(): void {
     }
 }
 
-function setLinked(on: boolean): void {
+function setLinked(on: boolean, syncNow: boolean = true): void {
     linkedFilename = on;
     const btn = $('image-link-toggle') as HTMLButtonElement | null;
     if (btn) {
         btn.classList.toggle('active', on);
         btn.setAttribute('aria-pressed', on ? 'true' : 'false');
     }
-    if (on) syncFilenameFromAlt();
+    // syncNow=false beim Initial-Open: Toggle ist aktiv, aber Filename
+    // bleibt auf dem Timestamp-Default — erst sobald der User den
+    // Alt-Text aendert, greift der Sync ueber den input-Listener.
+    if (on && syncNow) syncFilenameFromAlt();
 }
 
 function syncFilenameFromAlt(): void {
@@ -468,15 +471,16 @@ export async function openImageDialog(opts: OpenImageDialogOptions = {}): Promis
     const dirInput = $i('image-dir-input');
     if (dirInput) dirInput.value = lastDir || docDir || '';
 
-    // Alt + Filename. Linked-Toggle ist beim Open AN, damit der Filename
-    // direkt aus dem (vorbelegten) Alt-Text abgeleitet wird — der User
-    // kann mit einem einzigen Klick auf "Einfuegen" durch oder den Alt-
-    // Text sofort drueberschreiben (Input ist selektiert).
+    // Alt + Filename. Linked-Toggle ist beim Open AN, aber der Filename
+    // bleibt initial der Timestamp-Default (syncNow=false). Erst sobald
+    // der User den Alt-Text aendert, leitet der Linked-Sync den Filename
+    // daraus ab. Der Alt-Input ist selektiert geoeffnet, sodass der User
+    // sofort drueberschreiben kann.
     const altInput = $i('image-alt-input');
     if (altInput) altInput.value = altDefault;
     const fnInput = $i('image-filename-input');
     if (fnInput) fnInput.value = timestampFilename();
-    setLinked(true);
+    setLinked(true, false);
 
     // Clipboard versuchen
     clipboardImage = null;
