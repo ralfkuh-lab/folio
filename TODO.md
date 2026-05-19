@@ -95,6 +95,15 @@
     via Monaco-`editor.action.formatDocument` direkt nach dem Mount,
     aufgrund des MonacoEnvironment-Fixes laufen die Sprach-Worker
     jetzt. Default-Toggle: an. Per-Sprache-Granularität optional.
+  - **Markdown-Preview-Themes / Fonts** — Layout/Theming der View-
+    Region anpassbar machen: Body-Font, Mono-Font für Code-Blöcke,
+    Schriftgröße, ggf. Farbschema-Auswahl getrennt von App-Theme.
+    Charme der Sache: die HTML/PDF-Export-Layouts in
+    `commands/export.rs::export_layouts` haben bereits ein Theme-/
+    Layout-Konzept (per Layout eigenes CSS, gerendert ins iframe-
+    Preview). Wenn das Settings-Panel kommt, lohnt sich die
+    Vereinheitlichung — ein Theme/Layout, das sowohl die Markdown-
+    Preview im View-Mode als auch den Export steuert.
 - **HTML im View-Mode rendern**: `.html`/`.htm` als Datei-Klasse "richtig" anzeigen,
   Skripte/inline-Event-Handler beim Render rauspatchen (Sandbox-iframe oder
   serverseitige Sanitization). Aktuell zeigt der View-Mode den Source mit

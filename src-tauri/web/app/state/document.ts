@@ -15,6 +15,7 @@
    Highlight-Restore). Fusioniert: State-Setup zuerst, dann UI-Rendering. */
 
 import { setTocList, rewriteRelativeAssets, ViewFinder } from '../view/markdown';
+import { highlightCodeBlocks } from '../view/code-highlight';
 import { setVaultActive } from '../vault/tree';
 import { setEditorLanguageDisplay } from '../ui/language-picker';
 import { syncCheatsheetMenu } from '../ui/cheatsheet';
@@ -234,6 +235,7 @@ function renderDocumentPayload(data: any): void {
     if (body) {
         body.innerHTML = data.content || data.html || '';
         rewriteRelativeAssets(body as HTMLElement, data.path || currentPath);
+        highlightCodeBlocks(body as HTMLElement);
     }
 }
 
@@ -274,7 +276,10 @@ export function initDocumentState(d: Deps): void {
             // einer eigenen Monaco-Instanz (Container `#code-view-mount`).
             const isMd = data.kind === 'markdown';
             (body as HTMLElement).innerHTML = isMd ? (data.content || data.html || '') : '';
-            if (isMd) rewriteRelativeAssets(body as HTMLElement, data.path || '');
+            if (isMd) {
+                rewriteRelativeAssets(body as HTMLElement, data.path || '');
+                highlightCodeBlocks(body as HTMLElement);
+            }
         }
         // Code-View fuer Non-Markdown-Text-Dateien: Read-Only Monaco mit
         // Syntax-Highlighting, JSON wird pretty-geprinted. Mount ist
