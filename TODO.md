@@ -31,22 +31,22 @@
     zum getrennten `document.saved`-Event-Race-Eintrag weiter unten.
     Native Tauri-Menübar (z. B. echter Strg+W aus dem Menü) wurde nicht
     getestet, weil aus dem WebView nicht erreichbar.
-  - **Noch offen / nicht abgedeckt**: Strg+Z / Strg+Shift+Z (Undo/Redo)
-    sind weiterhin reiner Menü-Accelerator + Monaco-Internal. Bisher
-    keine User-Beschwerde — wenn das auch nicht greift, denselben
-    Pfad wie Strg+B/I/K nachziehen.
+  - **Update 2026-05-19 (2)**: Strg+Z / Strg+Shift+Z DOM-Capture
+    nachgezogen. Anders als bei Strg+B/I/K greift der Fallback nur,
+    wenn der Fokus NICHT im `#editor-mount` liegt — Monacos
+    eingebautes Undo bleibt im Editor-Fokus unangetastet. Ohne Fokus
+    im Editor (z. B. Vault-Tree aktiv) ruft der Handler
+    `FolioEditor.undo()` / `.redo()`.
 
-- **`document.saved`-Event greift Wait-Poll nicht**: Sowohl
-  `tests/e2e/scenarios/08_save_roundtrip.py` (über `/save`) als auch
-  `15_keybindings.py` (über DOM-Ctrl+S) bekommen nach erfolgreichem
-  Speichern einen 5-s-Timeout auf `expect_event("document.saved")`. Auf
-  Disk ist die Mutation da, das Event scheint also vor der Wait-
-  Registrierung gefeuert worden zu sein (Race im `/wait`-Mechanismus
-  oder im Event-Re-Broadcast). Auf Linux+Xvfb lief die Suite zuletzt
-  grün — möglicherweise nur unter WebView2/Windows-Timing fragil.
-  Prüfen: `automation/events.rs` (oder wo die Event-Subscription
-  sitzt) — ein „last-emitted"-Buffer pro Event-Topic mit kurzer TTL
-  würde solche Late-Subscribers entkoppeln.
+- **~~`document.saved`-Event greift Wait-Poll nicht~~** — **gefixt
+  2026-05-19**: `automation::wait` hat jetzt einen last-emitted-Buffer
+  in `AppState.recent_events`. `signal()` aktualisiert den
+  Timestamp; `already_satisfied()` greift fuer `document.loaded` und
+  `document.saved` innerhalb `RECENT_EVENT_TTL_MS` (2 s) auf den
+  Buffer zu — Late-Subscribers binnen TTL bekommen das Event noch.
+  Tests in `wait.rs` decken den Fall ab (`already_satisfied_uses_recent_buffer_for_transient_events`,
+  `recently_emitted_respects_ttl`). Auf Windows verifizieren beim
+  naechsten E2E-Run.
 
 - **Undo-Stack wird in `09_undo_redo` gecleared**: Szenario schreibt
   zuerst „X" in den Editor, dann „**hallo**" als zweites Edit, danach
@@ -83,12 +83,38 @@
     aktuell ein Platzhalter (gibt deutsche Strings zurück). Sobald die
     Sprachwahl im Settings-Panel landet, hier die englische Übersetzung
     ergänzen — der Builder zieht sie automatisch über `labels(lang)`.
+  - **Per-Typ-Default-Mode** — heute ist der View/Edit-Mode sticky beim
+    Dateiwechsel (User-Entscheidung bleibt). Settings-Panel könnte
+    pro Kind (`markdown`, `text`) einen Default-Mode anbieten, der
+    beim ersten Öffnen einer Datei dieses Typs greift („Markdown öffnet
+    in: View / Edit", „Code öffnet in: View / Edit").
+  - **Auto-Format im View-Mode** — toggle „Dateien im View-Mode
+    automatisch formatieren". Heute macht der Code-View nur JSON
+    pretty (`JSON.parse + stringify`). Mit dem Setting könnte das auf
+    weitere Sprachen ausgedehnt werden (XML, HTML, CSS, JS/TS, YAML, …)
+    via Monaco-`editor.action.formatDocument` direkt nach dem Mount,
+    aufgrund des MonacoEnvironment-Fixes laufen die Sprach-Worker
+    jetzt. Default-Toggle: an. Per-Sprache-Granularität optional.
+  - **Markdown-Preview-Themes / Fonts** — Layout/Theming der View-
+    Region anpassbar machen: Body-Font, Mono-Font für Code-Blöcke,
+    Schriftgröße, ggf. Farbschema-Auswahl getrennt von App-Theme.
+    Charme der Sache: die HTML/PDF-Export-Layouts in
+    `commands/export.rs::export_layouts` haben bereits ein Theme-/
+    Layout-Konzept (per Layout eigenes CSS, gerendert ins iframe-
+    Preview). Wenn das Settings-Panel kommt, lohnt sich die
+    Vereinheitlichung — ein Theme/Layout, das sowohl die Markdown-
+    Preview im View-Mode als auch den Export steuert.
 - **HTML im View-Mode rendern**: `.html`/`.htm` als Datei-Klasse "richtig" anzeigen,
   Skripte/inline-Event-Handler beim Render rauspatchen (Sandbox-iframe oder
-  serverseitige Sanitization). Aktuell öffnet der Edit-Mode den Source.
-- **JSON / XML Pretty-View**: für `.json`, `.xml`, ggf. `.yaml`/`.toml` im
-  View-Mode formatiert + syntaxgehighlighted anzeigen (CodeMirror-Renderer
-  read-only oder eigener Renderer).
+  serverseitige Sanitization). Aktuell zeigt der View-Mode den Source mit
+  Monaco-Highlighting (Code-View-Pfad).
+- **~~JSON / XML Pretty-View~~** — **gefixt 2026-05-19**: Read-Only
+  Monaco-Instanz `FolioCodeView` zeigt Non-Markdown-Text-Dateien im
+  View-Mode mit Syntax-Highlighting. JSON wird via
+  `JSON.parse + stringify(_, null, 2)` pretty-geprinted. View-Mode ist
+  jetzt auch fuer `kind=text` aktivierbar (Default bleibt Edit-Mode).
+  Beim selben Zug der MonacoEnvironment-Worker-URL-Bug behoben — Format
+  Document (Shift+Alt+F) auf JSON funktioniert jetzt im Edit-Mode.
 - **Linux-Paket: `.md`-Icon im Datei-Manager**: Aktuell muss
   [`scripts/install-folio-icons.sh`](scripts/install-folio-icons.sh)
   manuell laufen, damit Nemo/Nautilus & Co. das Folio-Icon für `.md`
@@ -111,15 +137,13 @@
   Win/macOS). NLog ist .NET-spezifisch — in Rust hat `tracing` die
   gleiche Rolle.
 
-- **Rail-Toggle-Button-State beim Boot synchronisieren**: Aktuell starten
-  `tb-rail-left` und `tb-rail-right` immer mit `class="active"` (hartcodiert
-  im HTML). Wenn der User vorher per Toolbar eine Rail versteckt hat,
-  bleibt das im `panel-state.json` persistiert (Body bekommt
-  `vault-hidden`/`toc-hidden`) — der Button zeigt aber visuell „aktiv".
-  Frontend braucht beim Boot ein `invoke('panel_state_get')` o. ä., das
-  die initialen Rail-Werte liefert, dann `setRailVisibility` + `setRailButton`
-  rufen. Der `panel:rail_changed`-Listener feuert heute nur auf User-
-  Klick, nicht beim Boot.
+- **~~Rail-Toggle-Button-State beim Boot synchronisieren~~** — **gefixt
+  2026-05-19**: Neuer Tauri-Command `panel_rails_get` liefert die
+  persistierten `leftRailVisible`/`rightRailVisible`-Werte; `main.ts`
+  zieht sie beim Boot analog zu `editor_minimap_get` und ruft
+  `applyRailVisibility` fuer beide Seiten. Hartcodiertes `class="active"`
+  im HTML bleibt als Initial-Vorbeleg, wird aber spaetestens nach dem
+  Async-Boot-Call durch den persistierten State ueberschrieben.
 
 ## Niedrige Priorität
 

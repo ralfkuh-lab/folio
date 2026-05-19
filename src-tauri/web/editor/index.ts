@@ -39,6 +39,7 @@ import {
     setSelection,
     undo,
 } from './text';
+import * as codeView from './view-code';
 
 (window as any).FolioEditor = {
     mount,
@@ -65,4 +66,15 @@ import {
     getLanguage,
     setLanguage,
     listLanguages,
+};
+
+// Zweiter Surface: Read-Only Code-View fuer den View-Mode von Non-Markdown-
+// Dateien. Sitzt auf derselben Monaco-AMD-Init wie FolioEditor.
+(window as any).FolioCodeView = {
+    mount: codeView.mount,
+    setText: codeView.setText,
+    setTheme: codeView.setTheme,
+    layout: codeView.layout,
+    dispose: codeView.dispose,
+    isMounted: codeView.isMounted,
 };

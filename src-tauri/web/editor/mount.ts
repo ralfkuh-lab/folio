@@ -39,6 +39,24 @@ function loadMonaco(): Promise<void> {
             reject(new Error('Monaco loader (window.require) not available'));
             return;
         }
+        // Sprach-Worker-Bootstrap: ohne diesen Hook starten Monacos
+        // JSON-/TS-/CSS-Worker im AMD-Setup nicht, weshalb z. B. "Format
+        // Document" auf JSON still fehlschlaegt. Wir liefern eine kleine
+        // Bootstrap-Worker-Datei via data: URI zurueck — der Worker setzt
+        // sein eigenes MonacoEnvironment.baseUrl auf den absoluten Origin
+        // des Frontends und delegiert via importScripts an Monacos
+        // workerMain.js. Same-origin-Aufloesung funktioniert so auch unter
+        // Tauris asset:-Protokoll, ohne dass wir den exakten Custom-
+        // Protocol-Pfad raten muessten.
+        const origin = window.location.origin;
+        const workerBootstrap = `self.MonacoEnvironment = { baseUrl: '${origin}/monaco/' };`
+            + `importScripts('${origin}/monaco/vs/base/worker/workerMain.js');`;
+        const workerUrl = `data:text/javascript;charset=utf-8,${encodeURIComponent(workerBootstrap)}`;
+        (window as any).MonacoEnvironment = {
+            getWorkerUrl: function (_workerId: string, _label: string): string {
+                return workerUrl;
+            },
+        };
         try {
             window.require.config({ paths: { vs: 'monaco/vs' } });
         } catch (e) {
@@ -67,6 +85,16 @@ function loadMonaco(): Promise<void> {
 // Monaco-Load wird zum Bundle-Init getriggert (verhalten wie früher in
 // `editor.ts`-Monolith: `const monacoPromise = loadMonaco()` am Modul-Top).
 const initialMonacoPromise = loadMonaco();
+
+/**
+ * Resolved sobald der Monaco-AMD-Loader durch ist und `window.monaco.editor`
+ * zur Verfuegung steht. Geteilt zwischen Edit-Editor (`mount()`) und Code-
+ * View (`editor/view-code.ts`), sodass beide auf einer einzigen AMD-Init
+ * sitzen.
+ */
+export function whenMonacoLoaded(): Promise<void> {
+    return initialMonacoPromise;
+}
 
 export function mount(elementId: string, initialText: string): Promise<void> {
     mountReady = initialMonacoPromise.then(() => {

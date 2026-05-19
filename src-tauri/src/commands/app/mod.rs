@@ -115,6 +115,26 @@ pub async fn set_rail_visible(
         .map_err(|error| error.to_string())
 }
 
+/// Liefert die persistierten Rail-Visibility-Werte ans Frontend. Wird
+/// beim Boot gerufen, damit die Toolbar-Buttons `tb-rail-left` /
+/// `tb-rail-right` ihren `active`-State synchron zur tatsaechlichen
+/// Body-CSS-Klasse setzen koennen. Ohne diesen Call zeigten die Buttons
+/// auch dann „aktiv", wenn `panel-state.json` `false` persistierte.
+#[tauri::command]
+pub async fn panel_rails_get(
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let data = state
+        .panel_state
+        .lock()
+        .map_err(|_| "panel state lock poisoned".to_string())?
+        .data();
+    Ok(serde_json::json!({
+        "leftRailVisible": data.left_rail_visible,
+        "rightRailVisible": data.right_rail_visible,
+    }))
+}
+
 #[tauri::command]
 pub async fn editor_minimap_get(state: State<'_, AppState>) -> Result<bool, String> {
     Ok(state

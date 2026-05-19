@@ -12,6 +12,7 @@
 import { ackHandler } from '../automation/events';
 import { cheatsheetSyncMode, syncCheatsheetMenu } from '../ui/cheatsheet';
 import { afterModeSwitch as findBarAfterModeSwitch, openEditorFind, setEditorFindTerm } from '../ui/find-bar';
+import { highlightCodeBlocks } from '../view/code-highlight';
 
 type Deps = {
     getCleanText: () => string;
@@ -77,6 +78,13 @@ export function layoutEditor(): void {
 
 export function setEditorTheme(mode: string): void {
     if (window.FolioEditor) window.FolioEditor.setTheme(mode);
+    // Code-View teilt sich Monacos globalen Theme-State; setTheme dort
+    // anwenden, falls die Instanz schon gemounted ist (oder ein
+    // pendingTheme merken, falls noch nicht).
+    if (window.FolioCodeView) {
+        const normalized = mode === 'dark' ? 'dark' : 'light';
+        window.FolioCodeView.setTheme(normalized);
+    }
 }
 
 export function requestEditorSelection(): { start: number; length: number } | null {
@@ -209,6 +217,11 @@ export function initEditorShell(d: Deps): void {
         html.classList.toggle('theme-dark', mode === 'dark');
         html.classList.toggle('theme-light', mode === 'light');
         setEditorTheme(mode);
+        // Code-Bloecke in der Markdown-Preview re-highlighten — colorize()
+        // nutzt das aktive Monaco-Theme, also muessen wir nach dem Switch
+        // einmal komplett durch (data-folio-source bewahrt den Plaintext).
+        const mdBody = document.querySelector('#view-region .markdown-body');
+        if (mdBody) highlightCodeBlocks(mdBody as HTMLElement);
         // Theme-Submenue-Haekchen synchron halten — egal ueber welchen Pfad
         // der Wechsel kam (Menue, Statusbar-Button, Init).
         invoke('menu_set_checked', { id: 'view.theme.light', checked: mode === 'light' }).catch(function () {});

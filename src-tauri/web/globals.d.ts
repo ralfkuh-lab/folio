@@ -50,8 +50,21 @@ interface TauriRuntime {
     core?: TauriCoreApi;
 }
 
+// Zweiter Monaco-Surface fuer den View-Mode von Non-Markdown-Dateien.
+// Read-only, eigener Container; nur Operationen, die fuer eine reine
+// Anzeige sinnvoll sind.
+interface FolioCodeViewSurface {
+    mount(elementId: string, text: string, language: string): Promise<void>;
+    setText(text: string, language: string): void;
+    setTheme(mode: 'light' | 'dark'): void;
+    layout(): void;
+    dispose(): void;
+    isMounted(): boolean;
+}
+
 interface Window {
     FolioEditor?: FolioEditorSurface;
+    FolioCodeView?: FolioCodeViewSurface;
     __TAURI__?: TauriRuntime;
     __folioInvoke?: TauriCoreApi['invoke'];
     openDocument?: (path: string) => Promise<boolean>;
