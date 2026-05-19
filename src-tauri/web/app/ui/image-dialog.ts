@@ -396,6 +396,13 @@ async function doInsert(): Promise<void> {
             deps.showStatus(`Bild eingefügt: ${result.finalFilename}`);
         }
         closeDialog();
+        // Fokus zurueck in den Editor — applyReplace hat den Cursor
+        // bereits hinter das eingefuegte Tag gesetzt, aber der Fokus
+        // lag bis hier im Dialog. Ohne diesen Call wuerden die naechsten
+        // Tastendruecke ins Leere gehen.
+        if (window.FolioEditor && typeof window.FolioEditor.focus === 'function') {
+            window.FolioEditor.focus();
+        }
     } catch (err) {
         const msg = typeof err === 'string' ? err : 'Bild-Insert fehlgeschlagen';
         deps.showStatus(msg);
