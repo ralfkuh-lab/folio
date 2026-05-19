@@ -3,6 +3,9 @@ name = "folio"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.80"
+license = "MIT"
+authors = ["Ralf Kuhlendahl"]
+repository = "https://github.com/ralfkuh-lab/folio"
 
 [dependencies]
 # Phase 1: Markdown-Pipeline
