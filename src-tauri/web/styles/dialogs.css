@@ -202,20 +202,40 @@
   justify-content: center;
   background: rgba(0, 0, 0, 0.28);
 }
-/* Open-Animation: backdrop fadet sanft ein, Panel pop-up mit
+/* Open-/Close-Animationen: backdrop fadet sanft ein, Panel pop-up mit
    leichtem Scale. Cubic-bezier ist eine "smooth-ease-out"-Variante
-   (Material Design "emphasized decelerate"). */
-@keyframes folio-about-fade {
+   (Material Design "emphasized decelerate"). Beim Schliessen das
+   Spiegelbild mit ease-in-Variante, etwas kuerzer, damit die Action
+   "schnell weg" wirkt. Trigger: about-dialog.ts setzt `.closing`-
+   Klasse vor dem Verstecken und entfernt sie nach der Animation. */
+@keyframes folio-about-fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
 }
-@keyframes folio-about-pop {
-  from { opacity: 0; transform: scale(0.96); }
+@keyframes folio-about-pop-in {
+  from { opacity: 0; transform: scale(0.94); }
   to { opacity: 1; transform: scale(1); }
 }
-#about-dialog:not([hidden]) { animation: folio-about-fade 180ms ease-out; }
-#about-dialog:not([hidden]) .about-dialog__panel {
-  animation: folio-about-pop 220ms cubic-bezier(0.16, 1, 0.3, 1);
+@keyframes folio-about-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes folio-about-pop-out {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.96); }
+}
+#about-dialog:not([hidden]):not(.closing) {
+  animation: folio-about-fade-in 280ms ease-out;
+}
+#about-dialog:not([hidden]):not(.closing) .about-dialog__panel {
+  animation: folio-about-pop-in 360ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+#about-dialog.closing {
+  animation: folio-about-fade-out 200ms ease-in forwards;
+  pointer-events: none;
+}
+#about-dialog.closing .about-dialog__panel {
+  animation: folio-about-pop-out 220ms cubic-bezier(0.4, 0, 0.7, 0.2) forwards;
 }
 
 .about-dialog__panel {
@@ -237,15 +257,16 @@
   --rail-hover-bg: #e8e8e8;
   position: relative;
   width: min(520px, calc(100vw - 48px));
-  /* Watercolor-Wash: drei sehr subtile radiale Gradients als
-     Hintergrund-Schichten. Greift den Aquarell-Vibe des Avatars auf,
-     ohne aufdringlich zu sein. Reihenfolge: warmer Spot oben-links,
-     kuehler Spot rechts-oben, warmer Spot mittig-unten. Letzte
-     Schicht ist die feste Hintergrundfarbe. */
+  /* Watercolor-Wash: vier ueberlagerte radiale Gradients als
+     Hintergrund-Schichten — greift den Aquarell-Vibe des Avatars auf.
+     Reihenfolge: warmer Apricot oben-links, gold-gedaempft oben-rechts,
+     warmer Caramel mittig-unten, leichter blauer Hauch unten-links.
+     Letzte Schicht ist die feste Hintergrundfarbe. */
   background:
-    radial-gradient(circle at 12% 14%, rgba(232, 200, 150, 0.10) 0%, transparent 38%),
-    radial-gradient(circle at 88% 22%, rgba(180, 195, 215, 0.06) 0%, transparent 32%),
-    radial-gradient(circle at 60% 88%, rgba(220, 180, 140, 0.07) 0%, transparent 42%),
+    radial-gradient(circle at 14% 12%, rgba(230, 180, 110, 0.28) 0%, rgba(230, 180, 110, 0.10) 25%, transparent 55%),
+    radial-gradient(circle at 90% 18%, rgba(212, 175, 90, 0.22) 0%, rgba(212, 175, 90, 0.08) 22%, transparent 50%),
+    radial-gradient(circle at 60% 95%, rgba(220, 170, 120, 0.20) 0%, rgba(220, 170, 120, 0.06) 30%, transparent 60%),
+    radial-gradient(circle at 8% 80%, rgba(170, 190, 215, 0.14) 0%, transparent 45%),
     var(--bg);
   color: var(--fg);
   border: 1px solid var(--border);
@@ -496,8 +517,15 @@
   margin-right: 4px;
 }
 .about-dialog__footer-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   color: var(--fg);
   font-weight: 500;
+}
+.about-dialog__footer-icon {
+  color: #b8893a;
+  flex-shrink: 0;
 }
 .about-dialog__footer-sep {
   color: var(--border);

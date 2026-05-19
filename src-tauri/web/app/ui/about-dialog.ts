@@ -41,7 +41,15 @@ export function openAboutDialog(payload: AboutPayload): void {
 
 export function closeAboutDialog(): void {
     const dlg = $('about-dialog');
-    if (dlg) dlg.hidden = true;
+    if (!dlg || dlg.hidden) return;
+    // Schliesse-Animation: Klasse setzen, Animation laeuft (~220ms,
+    // siehe CSS `folio-about-pop-out`), dann erst `hidden`. So bleibt
+    // der Dialog sichtbar, waehrend Pop-Out + Fade abgespielt werden.
+    dlg.classList.add('closing');
+    window.setTimeout(function () {
+        dlg.hidden = true;
+        dlg.classList.remove('closing');
+    }, 240);
     if (keydownHandler) {
         document.removeEventListener('keydown', keydownHandler);
         keydownHandler = null;
