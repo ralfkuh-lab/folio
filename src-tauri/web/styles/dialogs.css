@@ -203,7 +203,7 @@
   background: rgba(0, 0, 0, 0.28);
 }
 .about-dialog__panel {
-  width: min(440px, calc(100vw - 48px));
+  width: min(520px, calc(100vw - 48px));
   background: var(--bg);
   color: var(--fg);
   border: 1px solid var(--border);
@@ -212,20 +212,53 @@
   padding: 22px 22px 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
-.about-dialog__header {
+.about-dialog__hero {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 14px;
+}
+.about-dialog__icon {
+  width: 96px;
+  height: 96px;
+  display: block;
+  border-radius: 12px;
+}
+.about-dialog__hero-text {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
+}
+.about-dialog__author {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+}
+.about-dialog__avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+.about-dialog__author figcaption {
+  font-size: 11px;
+  color: var(--fg-muted);
+  white-space: nowrap;
 }
 .about-dialog__title {
   font-weight: 700;
-  font-size: 18px;
+  font-size: 22px;
   letter-spacing: 0.01em;
 }
 .about-dialog__subtitle {
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--fg-muted);
 }
 .about-dialog__meta {
@@ -265,9 +298,45 @@
 }
 .about-dialog__blurb a:hover { text-decoration: underline; }
 .about-dialog__donate {
-  font-size: 12px;
-  color: var(--fg-muted);
-  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--rail-bg);
+}
+.about-dialog__donate-label {
+  font-size: 12.5px;
+  color: var(--fg);
+}
+.about-dialog__donate-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.about-dialog__donate-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: filter 0.15s;
+}
+.about-dialog__donate-btn:hover { filter: brightness(1.08); }
+.about-dialog__donate-btn--paypal {
+  background: #0070ba;
+  color: white;
+  border-color: #005ea6;
+}
+.about-dialog__donate-btn--github {
+  background: #db61a2;
+  color: white;
+  border-color: #c54a8c;
 }
 .about-dialog__actions {
   display: flex;
