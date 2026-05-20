@@ -40,7 +40,7 @@ impl LinkInterceptor {
             return LinkAction::Missing;
         };
 
-        if file_resolver::is_markdown(&path) {
+        if file_resolver::is_markdown(&path) || file_resolver::is_html(&path) {
             LinkAction::Navigate {
                 path,
                 anchor: anchor.map(ToOwned::to_owned),
@@ -85,6 +85,25 @@ mod tests {
                 anchor: Some("a".into())
             },
             LinkInterceptor::new().handle("target.md#a", current.to_str())
+        );
+    }
+
+    #[test]
+    fn html_file_resolves_to_navigation() {
+        let temp = TempDir::new().unwrap();
+        let current = temp.path().join("current.html");
+        let target = temp.path().join("target.html");
+        fs::write(&current, "").unwrap();
+        fs::write(&target, "").unwrap();
+        assert_eq!(
+            LinkAction::Navigate {
+                path: fs::canonicalize(target)
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned(),
+                anchor: None
+            },
+            LinkInterceptor::new().handle("target.html", current.to_str())
         );
     }
 

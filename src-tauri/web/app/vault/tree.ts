@@ -6,7 +6,7 @@
    - File-Icon-Lookup mit Cache + MutationObserver,
    - refreshVault (kompletter Rebuild via vault_build_tree).
 
-   Listener-Fusion (Plan-Phase 4.4): vault:refresh-Handler vereinigt die
+   Listener-Fusion: vault:refresh-Handler vereinigt die
    bisher zwei komplementaeren Haelften aus IIFE #1 (pinned/recent setzen
    aus Event-Payload) und IIFE #2 (Tree-Rebuild via invoke). Reihenfolge:
    pinned/recent zuerst (sync DOM-Patches), dann refreshVault async. */
@@ -367,7 +367,7 @@ export function initVaultTree(d: Deps): void {
         iconObserver.observe(ROOT, { childList: true, subtree: true });
     }
 
-    // ----- Listener-Fusion (Plan-Phase 4.4) -----
+    // ----- Listener-Fusion -----
     // Vorher in IIFE #1: pinned/recent aus Event-Payload setzen.
     // Vorher in IIFE #2: kompletter Tree-Rebuild via invoke('vault_build_tree').
     // Fusioniert: pinned/recent sync zuerst (kurzes DOM-Update vor dem

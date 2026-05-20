@@ -1,5 +1,6 @@
 use crate::{
     file_kind::{classify, FileKind},
+    file_resolver,
     navigation::Entry,
     state::AppState,
 };
@@ -19,10 +20,13 @@ pub struct NavEntry {
 
 impl From<&Entry> for NavEntry {
     fn from(entry: &Entry) -> Self {
-        // Non-Markdown kennt keinen View-Mode: clampen, damit ein zuvor
-        // gespeicherter "view"-Wert beim Restore nicht in einen leeren
-        // Markdown-Body führt.
-        let view_mode = if classify(&entry.absolute_path) == FileKind::Markdown {
+        // Renderable Formate (Markdown + HTML) erlauben view-Mode mit
+        // echter Preview. Alle anderen Text-/Binary-Pfade clampen wir auf
+        // "edit", damit ein zuvor gespeicherter "view"-Wert beim Restore
+        // nicht in einen leeren Markdown-Body fuehrt.
+        let renderable = classify(&entry.absolute_path) == FileKind::Markdown
+            || file_resolver::is_html(&entry.absolute_path);
+        let view_mode = if renderable {
             entry.view_mode.clone()
         } else {
             "edit".to_string()
@@ -243,6 +247,19 @@ mod tests {
             editor_cursor: 0,
         };
         assert_eq!("edit", NavEntry::from(&entry).view_mode);
+    }
+
+    #[test]
+    fn nav_entry_preserves_view_mode_for_html() {
+        let entry = Entry {
+            absolute_path: "/page.html".into(),
+            anchor: None,
+            scroll_y: 0.0,
+            view_mode: "view".into(),
+            editor_scroll_y: 0.0,
+            editor_cursor: 0,
+        };
+        assert_eq!("view", NavEntry::from(&entry).view_mode);
     }
 
     #[test]

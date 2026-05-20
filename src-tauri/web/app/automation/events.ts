@@ -9,7 +9,7 @@
      `automation_dom_response`).
 
    Selektor-Fallback-Reihenfolge in `automation:click` ist Teil des
-   Automation-Vertrags — siehe `docs/frontend-globals.md` Abschnitt 4.
+   Automation-Vertrags — siehe `docs/automation-contract.md`.
 
    `automation:key` dispatcht keydown+keyup an `document` (Default) oder
    ans Editor-Wrapper-Element. Monaco-eigene Shortcuts (Strg+Z, Tab-Indent)
@@ -99,7 +99,7 @@ function nextFrame(): Promise<void> {
         if (typeof requestAnimationFrame === 'function') {
             requestAnimationFrame(function () { resolve(); });
         } else {
-            // happy-dom/jsdom in Vitest haben evtl. kein rAF — Microtask
+            // jsdom in Vitest hat evtl. kein rAF — Microtask
             // ist dann das Beste, was geht.
             Promise.resolve().then(resolve);
         }

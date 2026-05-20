@@ -1,10 +1,10 @@
-// Smoke-Test: Stellt sicher, dass das Vitest-Setup laeuft (happy-dom
+// Smoke-Test: Stellt sicher, dass das Vitest-Setup laeuft (jsdom
 // liefert `window`/`document`, der Tauri-Mock ist installiert).
 
 import { describe, expect, it } from 'vitest';
 
 describe('vitest setup', () => {
-    it('exposes happy-dom window + document', () => {
+    it('exposes jsdom window + document', () => {
         expect(typeof window).toBe('object');
         expect(typeof document.createElement).toBe('function');
     });

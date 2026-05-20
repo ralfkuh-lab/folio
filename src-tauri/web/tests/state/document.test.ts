@@ -2,9 +2,9 @@
 // Setter (markDirty/setStatusPath/updateWordCount/showStatus) und den
 // document:loaded-Listener-Pfad ueber den Tauri-Event-Mock.
 //
-// Der Listener-Test deckt den fusionierten document:loaded-Handler aus
-// Plan-Phase 4.5 ab: State zuerst (currentPath/cleanText/dirty), dann
-// UI-Rendering (Body-innerHTML/TOC). Wir verifizieren hier nur das
+// Der Listener-Test deckt den document:loaded-Handler ab:
+// State zuerst (currentPath/cleanText/dirty), dann UI-Rendering
+// (Body-innerHTML/TOC/HTML-Preview). Wir verifizieren hier nur das
 // State-Setup und die DOM-Side-Effects, nicht den Editor-Mount-Pfad.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -17,6 +17,14 @@ vi.mock('../../app/view/markdown', () => ({
     setTocList: vi.fn(),
     rewriteRelativeAssets: vi.fn(),
     ViewFinder: { setFindTerm: vi.fn() },
+}));
+vi.mock('../../app/view/html', () => ({
+    clearHtmlView: vi.fn(),
+    HtmlFinder: { setFindTerm: vi.fn() },
+    isHtmlDocument: vi.fn((kind: string, language: string, path?: string) => {
+        return kind === 'text' && ((language || '').toLowerCase() === 'html' || /\.(html|htm)$/i.test(path || ''));
+    }),
+    mountHtmlView: vi.fn(),
 }));
 vi.mock('../../app/vault/tree', () => ({
     setVaultActive: vi.fn(),
@@ -46,6 +54,8 @@ function buildDom(): void {
         <button id="tb-mode-edit"></button>
         <button id="tb-export"></button>
         <div id="view-region"><div class="markdown-body"></div></div>
+        <div id="html-view-region"><iframe id="html-view-frame"></iframe></div>
+        <div id="code-view-region"><div id="code-view-mount"></div></div>
         <div id="find-bar"></div>
         <input id="find-input" />
     `;
@@ -181,5 +191,40 @@ describe('state/document — document:loaded listener', () => {
         const reloadCalls = tauri.invoke.mock.calls.filter((c: any[]) => c[0] === 'reload_document');
         expect(reloadCalls.length).toBe(0);
         expect(document.getElementById('status-path')!.textContent).toContain('extern geändert');
+    });
+
+    it('html text files mount sandbox HTML preview instead of code view', async () => {
+        const htmlView = await import('../../app/view/html');
+        const docMod = await import('../../app/state/document');
+        const codeView = {
+            mount: vi.fn(),
+            setText: vi.fn(),
+            setTheme: vi.fn(),
+            layout: vi.fn(),
+            dispose: vi.fn(),
+            isMounted: vi.fn(),
+        };
+        (window as any).FolioCodeView = codeView;
+        docMod.initDocumentState({ setActiveMode: vi.fn() });
+
+        tauri.emitEvent('document:loaded', {
+            path: '/tmp/page.html',
+            kind: 'text',
+            language: 'html',
+            text: '<h1>Hello</h1>',
+            content: '',
+            tocHtml: '',
+        });
+
+        expect(document.body.classList.contains('kind-text')).toBe(true);
+        expect(document.body.classList.contains('html-preview-mode')).toBe(true);
+        expect(htmlView.mountHtmlView).toHaveBeenCalledWith(
+            'html-view-frame',
+            '<h1>Hello</h1>',
+            '/tmp/page.html',
+            expect.any(Function),
+        );
+        expect(codeView.mount).not.toHaveBeenCalled();
+        expect(codeView.dispose).toHaveBeenCalled();
     });
 });

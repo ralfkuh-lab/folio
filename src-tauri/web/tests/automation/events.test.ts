@@ -27,7 +27,7 @@ beforeEach(() => {
     // Console-Hook ist idempotent (Property-Marker); zwischen Tests
     // resetten, damit jeder Test wieder neu installieren kann.
     delete (window as any).__folioConsoleHookInstalled;
-    // happy-dom liefert rAF nicht zuverlaessig — stuben, damit ackHandler
+    // jsdom liefert rAF nicht zuverlaessig — stuben, damit ackHandler
     // den Frame deterministisch durchlaeuft (sonst Microtask-Fallback).
     (window as any).requestAnimationFrame = (cb: FrameRequestCallback) => {
         setTimeout(() => cb(0), 0);

@@ -4,7 +4,7 @@
    editor:load_text, editor:apply_replace, editor:open_find,
    editor:set_find_term).
 
-   Listener-Fusion (Plan-Phase 4.5): app:set_mode hatte zwei
+   Listener-Fusion: app:set_mode hatte zwei
    komplementaere Haelften — IIFE #1 (CSS-Mode-Toggle, focusEditor,
    Cheatsheet-/Menue-Sync, Undo/Redo-Enable) und IIFE #2 (setActiveMode
    + findBarAfterModeSwitch). Beide jetzt in einem Listener. */
@@ -175,7 +175,7 @@ export function initEditorShell(d: Deps): void {
         setEditorFindTerm(data.term || '');
     });
 
-    // ----- Listener-Fusion (Plan-Phase 4.5) -----
+    // ----- Listener-Fusion -----
     // Vorher IIFE #1: CSS-Mode-Toggle, focusEditor, Cheatsheet-/Menue-Sync,
     // Undo/Redo-Enable.
     // Vorher IIFE #2: setActiveMode + findBarAfterModeSwitch.

@@ -1,5 +1,11 @@
 # TODO
 
+## Hohe Priorität
+
+- **E2E-Run 2026-05-20 23:59: 18 Fehler** — Details in
+  [`tests/e2e/artifacts/20260520-235952/errors.md`](tests/e2e/artifacts/20260520-235952/errors.md). Run-Report:
+  [`tests/e2e/artifacts/20260520-235952/report.md`](tests/e2e/artifacts/20260520-235952/report.md).
+
 ## Mittlere Priorität
 
 - **Menu-Keybindings (Accelerators) greifen oft nicht**: Viele der nativen
@@ -64,10 +70,11 @@
     `theme_get`/`theme_set` (separate Persistenz). Settings-Dialog
     könnte als reine Aggregations-UI eine zusätzliche Theme-Reihe
     anzeigen, ohne den Persistenz-Ort zu verschieben.
-- **HTML im View-Mode rendern**: `.html`/`.htm` als Datei-Klasse "richtig" anzeigen,
-  Skripte/inline-Event-Handler beim Render rauspatchen (Sandbox-iframe oder
-  serverseitige Sanitization). Aktuell zeigt der View-Mode den Source mit
-  Monaco-Highlighting (Code-View-Pfad).
+- **HTML-Preview: Cursor-Pointer auf Links**: Die im Sandbox-iframe
+  injizierte Bridge entfernt `href` von `<a>`-Tags und ersetzt es durch
+  `data-folio-href`, deshalb fehlt dem Element der Browser-Default
+  `cursor: pointer`. CSS-Regel in `installPreviewDefaults` ergaenzen
+  (`a[data-folio-href]{cursor:pointer}`).
 - **Linux-Paket: `.md`-Icon im Datei-Manager**: Aktuell muss
   [`scripts/install-folio-icons.sh`](scripts/install-folio-icons.sh)
   manuell laufen, damit Nemo/Nautilus & Co. das Folio-Icon für `.md`
@@ -106,7 +113,7 @@
   - **Auto-Anlegen von `images/`/`assets/`-Unterordnern** mit Konvention,
     falls der User das im Settings-Panel auswählt — wartet auf das
     Settings-Panel (Eintrag oben).
-  - **E2E-Szenario** `22_image_paste.py`: Datei-wählen-Pfad lässt sich
+  - **E2E-Szenario** `23_image_paste.py`: Datei-wählen-Pfad lässt sich
     automatisieren; Clipboard-Pfad braucht echten Display, daher
     Xvfb-Skip-Marker oder `--include-desktop-only`.
 

@@ -1,12 +1,13 @@
 /* Find-Bar (HTML in der Shell, FolioEditor / ViewFinder liefern Logik).
    Im Edit-Mode bedient sie Monaco (via window.FolioEditor); im View-Mode
-   den DOM-Sucher (ViewFinder aus view/markdown.ts).
+   den passenden DOM-Sucher (Markdown-View oder HTML-iframe).
 
    ensureEditorMounted + focusEditor kommen aus dem Editor-Shell und
    werden per init injiziert (statt frueher window.focusEditor — die
    Bridge existiert seit Phase 4.6 nicht mehr). */
 
 import { ViewFinder } from '../view/markdown';
+import { HtmlFinder } from '../view/html';
 
 let bar: HTMLElement = null;
 let input: HTMLInputElement = null;
@@ -26,10 +27,12 @@ let inputDebounce: ReturnType<typeof setTimeout> | null = null;
 const INPUT_DEBOUNCE_MS = 150;
 
 function isEditMode(): boolean { return document.body.classList.contains('edit-mode'); }
+function isHtmlPreviewMode(): boolean { return document.body.classList.contains('html-preview-mode'); }
 
 // Liefert die aktive Backend-Implementierung: Monaco-Editor (Edit) oder DOM-Sucher (View).
 function getFinder(): any {
-    return isEditMode() ? window.FolioEditor : ViewFinder;
+    if (isEditMode()) return window.FolioEditor;
+    return isHtmlPreviewMode() ? HtmlFinder : ViewFinder;
 }
 
 function isOpen(): boolean { return bar.classList.contains('open'); }
@@ -71,6 +74,7 @@ function close(): void {
     // Finder treffen und die Edit-Highlights blieben haengen.
     if (window.FolioEditor) window.FolioEditor.closeFind();
     if (ViewFinder) ViewFinder.closeFind();
+    if (HtmlFinder) HtmlFinder.closeFind();
     if (isEditMode() && focusEditorDep) focusEditorDep();
 }
 
@@ -118,6 +122,7 @@ export function afterModeSwitch(): void {
         if (bar.classList.contains('open')) {
             if (window.FolioEditor) window.FolioEditor.closeFind();
             if (ViewFinder) ViewFinder.closeFind();
+            if (HtmlFinder) HtmlFinder.closeFind();
             const f = getFinder();
             if (f) {
                 f.setFindOptions({
@@ -204,7 +209,8 @@ export function initFindBar(deps: {
     function isCodeViewActive(): boolean {
         const body = document.body;
         return body.classList.contains('kind-text')
-            && !body.classList.contains('edit-mode');
+            && !body.classList.contains('edit-mode')
+            && !body.classList.contains('html-preview-mode');
     }
     document.addEventListener('keydown', function (e: KeyboardEvent) {
         if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
@@ -219,6 +225,13 @@ export function initFindBar(deps: {
             if (e.shiftKey) findPrev(); else findNext();
         }
     }, { capture: true });
+
+    window.addEventListener('folio-find-shortcut', function (e: CustomEvent) {
+        const command = e.detail && e.detail.command;
+        if (command === 'open') openEditorFind('');
+        else if (command === 'next') findNext();
+        else if (command === 'prev') findPrev();
+    });
 
     window.addEventListener('folio-find-state', function (e: CustomEvent) {
         const s = e.detail || {};

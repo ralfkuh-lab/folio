@@ -18,8 +18,19 @@ const viewFinder = {
     findNext: vi.fn(),
     findPrev: vi.fn(),
 };
+const htmlFinder = {
+    setFindOptions: vi.fn(),
+    openFind: vi.fn(),
+    closeFind: vi.fn(),
+    setFindTerm: vi.fn(),
+    findNext: vi.fn(),
+    findPrev: vi.fn(),
+};
 vi.mock('../../app/view/markdown', () => ({
     ViewFinder: viewFinder,
+}));
+vi.mock('../../app/view/html', () => ({
+    HtmlFinder: htmlFinder,
 }));
 
 // window.FolioEditor stellt der Test selbst — Surface-Spy fuer Edit-Mode.
@@ -61,6 +72,12 @@ beforeEach(() => {
     viewFinder.openFind.mockClear();
     viewFinder.closeFind.mockClear();
     viewFinder.setFindTerm.mockClear();
+    htmlFinder.setFindOptions.mockClear();
+    htmlFinder.openFind.mockClear();
+    htmlFinder.closeFind.mockClear();
+    htmlFinder.setFindTerm.mockClear();
+    htmlFinder.findNext.mockClear();
+    htmlFinder.findPrev.mockClear();
     vi.resetModules();
 });
 
@@ -98,6 +115,36 @@ describe('ui/find-bar — open path', () => {
         expect(ensureMounted).toHaveBeenCalledWith('');
         expect(folioSpy.openFind).toHaveBeenCalledWith('foo');
         expect(viewFinder.openFind).not.toHaveBeenCalled();
+    });
+
+    it('openEditorFind in html preview uses HtmlFinder', async () => {
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: vi.fn().mockResolvedValue(true),
+            focusEditor: vi.fn(),
+        });
+        document.body.classList.add('kind-text', 'html-preview-mode');
+
+        findBar.openEditorFind('html');
+
+        expect(htmlFinder.openFind).toHaveBeenCalledWith('html');
+        expect(viewFinder.openFind).not.toHaveBeenCalled();
+    });
+
+    it('html iframe shortcut event opens the shared find bar', async () => {
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: vi.fn().mockResolvedValue(true),
+            focusEditor: vi.fn(),
+        });
+        document.body.classList.add('kind-text', 'html-preview-mode');
+
+        window.dispatchEvent(new CustomEvent('folio-find-shortcut', {
+            detail: { command: 'open' },
+        }));
+
+        expect(document.getElementById('find-bar')!.classList.contains('open')).toBe(true);
+        expect(htmlFinder.openFind).toHaveBeenCalledWith('');
     });
 });
 
@@ -152,6 +199,7 @@ describe('ui/find-bar — close path', () => {
         expect(document.getElementById('find-bar')!.classList.contains('open')).toBe(false);
         // Beide Finder schliessen ist Race-Schutz fuer Mode-Switch.
         expect(viewFinder.closeFind).toHaveBeenCalled();
+        expect(htmlFinder.closeFind).toHaveBeenCalled();
         expect(folioSpy.closeFind).toHaveBeenCalled();
     });
 });

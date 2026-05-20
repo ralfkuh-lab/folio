@@ -59,7 +59,7 @@ nachfolgende Läufe nur Sekunden.
 
 ## Was die Suite abdeckt
 
-21 Szenarien, sequentiell:
+22 Szenarien, sequentiell:
 
 1. **`01_boot`** — App-Sanity, Console-Errors, Boot-Screenshot.
 2. **`02_view_mode`** — Markdown-View, TOC, Anchor-Sprung.
@@ -82,6 +82,7 @@ nachfolgende Läufe nur Sekunden.
 19. **`19_context_menus`** — Vault-Kontextmenü und Unpin.
 20. **`20_toc_click`** — echter DOM-Klick auf TOC-Eintrag.
 21. **`21_split_mode`** — Split-Mode-Layout und Rückwechsel.
+22. **`22_html_view`** — HTML-Datei im Sandbox-iframe.
 
 Jedes Szenario ist eine `tests/e2e/scenarios/NN_name.py`-Datei mit
 `def run(ctx)`. Weitere Szenarien einfach analog anlegen — der

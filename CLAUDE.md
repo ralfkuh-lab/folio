@@ -201,12 +201,12 @@ sonst lehnt Tauri den Build ab.
 
 ## E2E-Test-Suite
 
-Vollständige UI-Coverage in `tests/e2e/` (21 Szenarien, Python +
+Vollständige UI-Coverage in `tests/e2e/` (22 Szenarien, Python +
 Pillow): Boot, View-/Edit-/Split-Mode, Theme, Vault, Find, Workspace,
 Save-Roundtrip durch alle BOM/EOL-Kombis, Undo/Redo, Toolbar-Commands
 (Bold/Italic/Heading), Menü-Coverage (File/Edit/View/Help), DOM-
 Keybindings, Vault-Tree-Klicks, Pin/Unpin, History-Back/Forward,
-Rechtsklick-Kontextmenüs, echter TOC-DOM-Klick.
+Rechtsklick-Kontextmenüs, echter TOC-DOM-Klick, HTML-View.
 
 Wrapper: `bash scripts/run-e2e.sh` (Linux+Xvfb). Visual-Baselines in
 `tests/e2e/baselines/`, Artefakte (gitignored) in

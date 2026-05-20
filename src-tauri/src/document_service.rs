@@ -43,6 +43,13 @@ pub struct OpenDocumentOptions {
     pub anchor: Option<String>,
     pub reload: ReloadPolicy,
     pub dirty: DirtyPolicy,
+    /// Per-Typ-Default-Mode (`defaultModeMarkdown`/`defaultModeText`)
+    /// anwenden? Wahr fuer "frische Opens" (CLI, Drag-Drop, Vault-Klick,
+    /// Recents, Pin, read_file). Falsch fuer Link-Navigation aus einer
+    /// laufenden View heraus: dort soll der aktuelle Mode erhalten
+    /// bleiben (HTML-Preview-Link soll z.B. nicht in den Edit-Mode
+    /// kippen, nur weil default_mode_text=edit gesetzt ist).
+    pub apply_default_mode: bool,
 }
 
 #[derive(Debug)]
@@ -154,7 +161,7 @@ fn open_inner(
     // Per-Typ-Default-Mode aus den Settings nur auf frischem Open
     // anwenden (nicht beim Anker-Sprung mit IfPathChanged). History,
     // Reload und Save laufen ueber andere Pfade und sind unberuehrt.
-    let mode_override = if needs_load {
+    let mode_override = if needs_load && options.apply_default_mode {
         apply_default_mode(settings, automation, navigation, &path)
     } else {
         None
@@ -248,6 +255,7 @@ mod tests {
                 anchor: None,
                 reload: ReloadPolicy::Always,
                 dirty: DirtyPolicy::Discard,
+                apply_default_mode: true,
             },
         )
         .unwrap();
@@ -278,6 +286,7 @@ mod tests {
                 anchor: None,
                 reload: ReloadPolicy::IfPathChanged,
                 dirty: DirtyPolicy::Discard,
+                apply_default_mode: true,
             },
         )
         .unwrap();
@@ -294,6 +303,7 @@ mod tests {
                 anchor: Some("foo".into()),
                 reload: ReloadPolicy::IfPathChanged,
                 dirty: DirtyPolicy::Discard,
+                apply_default_mode: true,
             },
         )
         .unwrap();
@@ -322,6 +332,7 @@ mod tests {
                 anchor: None,
                 reload: ReloadPolicy::Always,
                 dirty: DirtyPolicy::Discard,
+                apply_default_mode: true,
             },
         )
         .unwrap();
@@ -338,6 +349,7 @@ mod tests {
                 anchor: None,
                 reload: ReloadPolicy::Always,
                 dirty: DirtyPolicy::Discard,
+                apply_default_mode: true,
             },
         )
         .unwrap();
@@ -371,6 +383,7 @@ mod tests {
                 anchor: None,
                 reload: ReloadPolicy::Always,
                 dirty: DirtyPolicy::Reject,
+                apply_default_mode: true,
             },
         );
 
@@ -401,6 +414,7 @@ mod tests {
                 anchor: None,
                 reload: ReloadPolicy::Always,
                 dirty: DirtyPolicy::Discard,
+                apply_default_mode: true,
             },
         )
         .unwrap();

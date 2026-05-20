@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>Folio HTML Fixture</title>
+  <link rel="stylesheet" href="html-view.css">
+</head>
+<body>
+  <main class="html-fixture">
+    <span class="html-fixture__badge">HTML Preview</span>
+    <h1>Folio HTML Fixture</h1>
+    <p>Diese Datei prueft den sandboxed HTML-View-Mode.</p>
+    <p><a href="sample.md">Markdown-Link</a></p>
+    <button onclick="document.body.dataset.scriptRan = 'yes'">Script darf nicht laufen</button>
+    <script>document.body.dataset.scriptRan = "yes";</script>
+  </main>
+</body>
+</html>

@@ -34,6 +34,7 @@ pub(in crate::automation) async fn post_open(
             // ueber requestSaveIfDirty vorher und bleiben deshalb auf
             // Discard.
             dirty: crate::document_service::DirtyPolicy::Reject,
+            apply_default_mode: true,
         },
     )
     .map_err(|error| match error {

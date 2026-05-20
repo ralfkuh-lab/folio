@@ -57,7 +57,7 @@ Wichtige stabile Selektor-Gruppen:
 - Toolbar: `tb-back`, `tb-forward`, `tb-mode-view`, `tb-mode-edit`,
   `tb-mode-split`, `tb-find`, `tb-save`, `tb-cheatsheet`, `tb-image`.
 - Layout: `view-region`, `editor-region`, `editor-mount`,
-  `code-view-mount`, `toc-region`, `vault-region`.
+  `code-view-mount`, `html-view-frame`, `toc-region`, `vault-region`.
 - Floating UI: `find-bar`, `cheatsheet-overlay`, `context-menu`,
   `rename-dialog`, `unsaved-dialog`, `export-dialog`, `image-dialog`.
 - Vault: `.section`, `.node`, `.row`, `.caret`, `ul.children`,

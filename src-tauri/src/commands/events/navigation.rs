@@ -36,6 +36,9 @@ pub(super) fn link_click(href: String, state: &AppState, handle: &AppHandle) -> 
                     anchor,
                     reload: ReloadPolicy::IfPathChanged,
                     dirty: DirtyPolicy::Discard,
+                    // Link-Navigation aus laufender View: aktuellen Mode
+                    // behalten, kein Per-Typ-Default-Switch.
+                    apply_default_mode: false,
                 },
             )
             .map_err(|error| error.to_string())?;

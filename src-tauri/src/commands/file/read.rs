@@ -29,6 +29,7 @@ pub async fn read_file(
             anchor: None,
             reload: ReloadPolicy::Always,
             dirty: DirtyPolicy::Discard,
+            apply_default_mode: true,
         },
     )
     .map_err(|error| error.to_string())?;

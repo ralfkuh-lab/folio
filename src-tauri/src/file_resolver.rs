@@ -20,6 +20,15 @@ pub fn is_markdown(path: &str) -> bool {
         })
 }
 
+pub fn is_html(path: &str) -> bool {
+    Path::new(path)
+        .extension()
+        .and_then(OsStr::to_str)
+        .is_some_and(|extension| {
+            extension.eq_ignore_ascii_case("html") || extension.eq_ignore_ascii_case("htm")
+        })
+}
+
 pub fn resolve(current_file_path: &str, link_target: &str) -> Option<String> {
     let (path_part, _) = split_anchor(link_target);
     let decoded = percent_decode(path_part)?;
@@ -176,6 +185,14 @@ mod tests {
         assert!(is_markdown("README.MarkDown"));
         assert!(!is_markdown("README.txt"));
         assert!(!is_markdown("README"));
+    }
+
+    #[test]
+    fn detects_html_extensions_case_insensitively() {
+        assert!(is_html("index.html"));
+        assert!(is_html("INDEX.HTM"));
+        assert!(!is_html("index.md"));
+        assert!(!is_html("index"));
     }
 
     #[test]

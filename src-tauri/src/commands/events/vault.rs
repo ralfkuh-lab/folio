@@ -68,6 +68,7 @@ pub(super) fn open_document(
             anchor: None,
             reload: crate::document_service::ReloadPolicy::Always,
             dirty: crate::document_service::DirtyPolicy::Discard,
+            apply_default_mode: true,
         },
     )
     .map_err(|error| error.to_string())?;

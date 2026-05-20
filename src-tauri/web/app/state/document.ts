@@ -7,15 +7,12 @@
    - fusionierter document:loaded-Handler + document:dirty_changed /
      document:closed / document:saved.
 
-   Listener-Fusion (Plan-Phase 4.5): document:loaded hatte zwei
-   komplementaere Haelften — IIFE #1 (UI-Rendering: loadEditorText,
-   setTocList, body.innerHTML, rewriteRelativeAssets, setVaultActive)
-   und IIFE #2 (State-Tracking: currentPath, cleanText, dirty-Flag,
-   Statusbar, Word-Count, applyDocKind, workspace_add_recent, Find-
-   Highlight-Restore). Fusioniert: State-Setup zuerst, dann UI-Rendering. */
+   document:loaded setzt zuerst den State und rendert danach die passende
+   View: Markdown-HTML, HTML-iframe oder read-only Code-View. */
 
 import { setTocList, rewriteRelativeAssets, ViewFinder } from '../view/markdown';
 import { highlightCodeBlocks } from '../view/code-highlight';
+import { clearHtmlView, HtmlFinder, isHtmlDocument, mountHtmlView } from '../view/html';
 import { setVaultActive } from '../vault/tree';
 import { setEditorLanguageDisplay } from '../ui/language-picker';
 import { syncCheatsheetMenu } from '../ui/cheatsheet';
@@ -239,12 +236,24 @@ export function openDocument(path: string): Promise<boolean> {
 function renderDocumentPayload(data: any): void {
     if (!data || typeof data !== 'object') return;
     setTocList(data.tocHtml || data.toc_html || '');
+    const path = data.path || currentPath || '';
+    const language = data.language || (/\.html?$/i.test(path) ? 'html' : '');
+    const isHtml = isHtmlDocument(data.kind || (document.body.classList.contains('kind-text') ? 'text' : ''), language, path);
     const view = document.getElementById('view-region');
     const body = view && view.querySelector('.markdown-body');
     if (body) {
-        body.innerHTML = data.content || data.html || '';
-        rewriteRelativeAssets(body as HTMLElement, data.path || currentPath);
-        highlightCodeBlocks(body as HTMLElement);
+        const isMd = document.body.classList.contains('kind-markdown');
+        body.innerHTML = isMd ? (data.content || data.html || '') : '';
+        if (isMd) {
+            rewriteRelativeAssets(body as HTMLElement, path);
+            highlightCodeBlocks(body as HTMLElement);
+        }
+    }
+    document.body.classList.toggle('html-preview-mode', isHtml);
+    if (isHtml) {
+        mountHtmlView('html-view-frame', data.text || '', path, requestSaveIfDirty);
+    } else {
+        clearHtmlView();
     }
 }
 
@@ -253,13 +262,7 @@ export function initDocumentState(d: Deps): void {
 
     const listen = window.__TAURI__.event.listen;
 
-    // ----- Listener-Fusion (Plan-Phase 4.5) -----
-    // Vorher IIFE #1: UI-Rendering (loadEditorText, setTocList, body.innerHTML,
-    // rewriteRelativeAssets, setVaultActive, setEditorLanguageDisplay).
-    // Vorher IIFE #2: State-Tracking (currentPath, cleanText, dirty-Flag,
-    // Statusbar, Word-Count, applyDocKind, workspace_add_recent, Find-
-    // Highlight-Restore).
-    // Reihenfolge im fusionierten Handler: State zuerst, dann UI-Rendering.
+    // Reihenfolge: State zuerst, dann UI-Rendering.
     listen('document:loaded', function (event: any) {
         const data = (event && event.payload) || {};
 
@@ -278,6 +281,8 @@ export function initDocumentState(d: Deps): void {
         loadEditorText(data.text || '', data.language || '');
         setEditorLanguageDisplay(data.language || 'plaintext');
         setTocList(data.tocHtml || data.toc_html || '');
+        const isHtml = isHtmlDocument(data.kind, data.language || '', data.path || '');
+        document.body.classList.toggle('html-preview-mode', isHtml);
         const contentEl = document.getElementById('view-region');
         const body = contentEl && contentEl.querySelector('.markdown-body');
         if (body) {
@@ -291,11 +296,17 @@ export function initDocumentState(d: Deps): void {
                 highlightCodeBlocks(body as HTMLElement);
             }
         }
+        if (isHtml) {
+            if (window.FolioCodeView) window.FolioCodeView.dispose();
+            mountHtmlView('html-view-frame', data.text || '', data.path || '', requestSaveIfDirty);
+        } else {
+            clearHtmlView();
+        }
         // Code-View fuer Non-Markdown-Text-Dateien: Read-Only Monaco mit
-        // Syntax-Highlighting, JSON wird pretty-geprinted. Mount ist
-        // idempotent — re-use der Instanz beim Wechsel zwischen Dateien.
+        // Syntax-Highlighting. Mount ist idempotent — re-use der Instanz
+        // beim Wechsel zwischen Dateien.
         if (window.FolioCodeView) {
-            if (data.kind === 'text') {
+            if (data.kind === 'text' && !isHtml) {
                 var settings = getCachedSettings();
                 var autoFormat = settings ? !!settings.viewAutoFormat : true;
                 window.FolioCodeView.mount(
@@ -304,6 +315,8 @@ export function initDocumentState(d: Deps): void {
                     data.language || 'plaintext',
                     { autoFormat: autoFormat },
                 );
+            } else {
+                window.FolioCodeView.dispose();
             }
         }
         setVaultActive(data.path || '');
@@ -315,7 +328,13 @@ export function initDocumentState(d: Deps): void {
             && !document.body.classList.contains('edit-mode')) {
             const input = document.getElementById('find-input') as HTMLInputElement;
             if (input && input.value) {
-                setTimeout(function () { ViewFinder.setFindTerm(input.value); }, 0);
+                setTimeout(function () {
+                    if (document.body.classList.contains('html-preview-mode')) {
+                        HtmlFinder.setFindTerm(input.value);
+                    } else {
+                        ViewFinder.setFindTerm(input.value);
+                    }
+                }, 0);
             }
         }
     });
@@ -367,6 +386,8 @@ export function initDocumentState(d: Deps): void {
         const view = document.getElementById('view-region');
         const body = view && view.querySelector('.markdown-body');
         if (body) (body as HTMLElement).innerHTML = '';
+        clearHtmlView();
+        document.body.classList.remove('html-preview-mode');
         // Code-View ebenfalls leeren — die zweite Monaco-Instanz bleibt
         // sonst mit dem zuletzt angezeigten Inhalt sichtbar, wenn der
         // User waehrend des Close-Vorgangs im View-Mode war.

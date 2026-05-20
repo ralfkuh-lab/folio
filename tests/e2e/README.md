@@ -91,15 +91,15 @@ tests/e2e/
 │   ├── 02_view_mode.py
 │   ├── 03_edit_mode.py
 │   ├── ...
-│   └── 21_split_mode.py
+│   └── 22_html_view.py
 ├── fixtures/              # Test-Dokumente (eingecheckt, deterministisch)
 └── baselines/             # Golden-Screenshots
 ```
 
-Aktuell gibt es 21 Szenarien: Boot, View/Edit/Split, Theme, Vault,
+Aktuell gibt es 22 Szenarien: Boot, View/Edit/Split, Theme, Vault,
 Find, Workspace/Recent, Save-Roundtrip, Undo/Redo, Toolbar-Commands,
 File/Edit/View/Help-Menüs, DOM-Keybindings, Vault-Tree, Pin/Unpin,
-History, Kontextmenüs und TOC-DOM-Klick.
+History, Kontextmenüs, TOC-DOM-Klick und HTML-View.
 
 ## Szenario-Vertrag
 

@@ -1,4 +1,4 @@
-/* folio app bundle — Init-Router. Plan-Phase 5.3: ehemalige zwei IIFEs
+/* folio app bundle — Init-Router. Die frueheren grossen Initialisierungsbloecke
    in main.ts sind in fachliche Module aufgeteilt
    (ui/{menu-router,drag-drop,toolbar-actions}, automation/events,
    plus die bereits in 4.x extrahierten state/view/vault/editor/ui-Module).
@@ -24,6 +24,7 @@ import {
     scrollViewToAnchor,
     scrollViewTo,
 } from './view/markdown';
+import { scrollHtmlViewToAnchor } from './view/html';
 import {
     initDocumentState,
     getCleanText,
@@ -55,7 +56,7 @@ const invoke = core ? core.invoke : null;
 // `window.openDocument('/abs/path')` tippen kann, ohne durch das
 // minifizierte Bundle nach dem richtigen Symbol zu suchen.
 // Bei Modul-Splits in zukuenftigen Phasen nicht versehentlich
-// entfernen — siehe `docs/frontend-globals.md` Abschnitt 2.
+// entfernen — siehe `docs/automation-contract.md`.
 if (invoke) window.__folioInvoke = invoke;
 window.openDocument = openDocument;
 
@@ -128,8 +129,15 @@ if (ev && typeof ev.listen === 'function' && invoke) {
         var editorCursor = (typeof data.editorCursor === 'number') ? data.editorCursor : 0;
         var editorScroll = (typeof data.editorScrollY === 'number') ? data.editorScrollY : 0;
         requestAnimationFrame(function () {
-            if (anchor) scrollViewToAnchor(anchor);
-            else scrollViewTo(viewScroll);
+            if (anchor) {
+                if (document.body.classList.contains('html-preview-mode')) {
+                    scrollHtmlViewToAnchor(anchor);
+                } else {
+                    scrollViewToAnchor(anchor);
+                }
+            } else {
+                scrollViewTo(viewScroll);
+            }
             if (!window.FolioEditor) return;
             if (typeof window.FolioEditor.setSelection === 'function') {
                 window.FolioEditor.setSelection(editorCursor, 0);
@@ -146,7 +154,13 @@ if (ev && typeof ev.listen === 'function' && invoke) {
         // markdown.ts laesst das Feld weg → ackHandler wird zum No-Op.
         ackHandler(invoke!, data, function () {
             var anchor = data.anchor || data.slug;
-            if (anchor) scrollViewToAnchor(anchor);
+            if (anchor) {
+                if (document.body.classList.contains('html-preview-mode')) {
+                    scrollHtmlViewToAnchor(anchor);
+                } else {
+                    scrollViewToAnchor(anchor);
+                }
+            }
             setTocActive(anchor || '');
         });
     });
@@ -228,4 +242,3 @@ if (invoke) {
         }
     }).catch(function(){});
 }
-

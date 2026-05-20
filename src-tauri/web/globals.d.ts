@@ -1,5 +1,5 @@
-// Cross-Bundle- und DevTools-Surface auf `window`. Source of Truth fuer
-// die in `docs/frontend-globals.md` inventarisierten globalen Bridges.
+// Cross-Bundle- und DevTools-Surface auf `window`. Source of Truth ist
+// `docs/automation-contract.md`.
 // Editor- und App-Bundle teilen `window.FolioEditor` (Monaco-Adapter).
 // Tauri-Runtime und Monaco-AMD-Loader sind drittseitig. `__folioInvoke`
 // und `openDocument` sind defensive DevTools-Hooks aus Phase 4.6.
