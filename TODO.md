@@ -48,27 +48,33 @@
   `recently_emitted_respects_ttl`). Auf Windows verifizieren beim
   naechsten E2E-Run.
 
-- **Undo-Stack wird in `09_undo_redo` gecleared**: Szenario schreibt
-  zuerst „X" in den Editor, dann „**hallo**" als zweites Edit, danach
-  Undo → erwartet wird, dass „**hallo**" verschwindet und „X" stehen
-  bleibt. Beobachtet (Windows 2026-05-18): nach Undo steht da
-  `'hallo welt\n'` — der gesamte vorherige Edit ist weg, der Undo-Stack
-  wurde irgendwo zwischen den beiden Edits geclearet. Riecht stark nach
-  einer Regression der CLAUDE.md-Konvention „`applyReplace` muss
-  `editor.executeEdits` nutzen, nicht `setValue`". Verdächtige Stellen:
-  `editor/text.ts`-`applyReplace`/`setText`-Pfade und alles, was beim
-  Edit-Mode-Wechsel das Model neu setzt. Auf Linux+Xvfb war 09 zuletzt
-  grün, also entweder OS-spezifisch oder Timing-bedingt.
+- **Undo-Stack wird in `09_undo_redo` gecleared (Windows)** —
+  **Hypothese-Fix 2026-05-20**: `applyReplace` in `editor/text.ts`
+  ruft jetzt `editor.pushUndoStop()` direkt vor und nach dem
+  `executeEdits`. Ohne das verschmilzt Monaco unter bestimmten Timings
+  den vorhergehenden Type-Edit (`insertText("X")` via `trigger('type')`)
+  mit dem darauf folgenden Voll-Range-Replace zu einem einzigen Undo-
+  Eintrag — Undo entfernte dann beides auf einmal. Live-Verifikation
+  auf Windows ist mit der aktuellen Dev-Setup-Lage umständlich; der
+  Fix folgt Monacos Best-Practice (Stack-Stops trennen Edits) und ist
+  defensiv. Beim nächsten Windows-E2E-Run validieren.
 
-- **Pin → Vault-Tree-Eintrag erscheint nicht im DOM (Windows)**:
-  Sowohl `16_vault_tree` als auch `19_context_menus` failen nach
-  `/workspace/pin` mit „`#vault-tree li.node[data-path=...]`
-  exists=false, matchCount=0". Auf Linux+Xvfb grün. Datei wird unter
-  `%TEMP%\folio-e2e-vault-*\…` angelegt und gepinnt — vermutlich
-  triggert der `notify`-Watcher den Tree-Refresh nicht (anderer
-  Volume? Pfad-Casing? CRLF-Path-Normalisierung?). Reproduktion ohne
-  Test: manuell eine Datei außerhalb der aktuell expandierten Vault-
-  Roots pinnen und schauen, ob sie im Tree auftaucht.
+- **~~Pin → Vault-Tree-Eintrag erscheint nicht im DOM (Windows)~~** —
+  **gefixt 2026-05-20**: Ursache war NICHT der `notify`-Watcher (wie
+  vermutet), sondern eine Pfad-Konsistenz-Frage. Auf Windows kommen
+  Pfade mit Backslashes ins Backend; der CSS-Selector
+  `[data-path="C:\Users\..."]` im E2E-Test scheitert dann, weil
+  Backslashes in CSS als Escape-Char interpretiert werden (`\U` =
+  Unicode-Sequenz). Fix: `Workspace::pin/unpin/is_pinned/add_recent/
+  remove_recent/image_dir/set_image_dir` und `Vault::set_active/
+  on_expand/is_expanded` normalisieren Pfade intern auf Forward-
+  Slashes; `Vault::item_html` rendert `data-path` ebenfalls mit
+  Forward-Slashes; `Workspace::load_from` migriert bestehende
+  Backslash-Pfade beim ersten Boot. E2E-Szenarien `16_vault_tree` und
+  `19_context_menus` bauen den Selektor jetzt aus dem normalisierten
+  Pfad. Windows-APIs akzeptieren beide Schreibweisen, daher rein
+  Frontend/DOM-relevant. Verifiziert mit Backslash-Pin →
+  Forward-Slash-Selektor matcht 1 Element.
 
 - **Config-/Einstellungen-Bereich** (Phase 1 gefixt 2026-05-20):
   Settings-Panel mit Persistenz in `settings.json` unter dem App-Config-
@@ -133,20 +139,16 @@
   Hintergrund, bisherige Erkenntnisse und mögliche Wege in
   [`docs/linux-md-icon.md`](docs/linux-md-icon.md).
 
-- **`navigation:changed` Payload-Case-Inkonsistenz**: Aus dem Tauri-
-  Command-Pfad (`commands::nav::move_history` → `app.emit(...&NavEntry)`)
-  kommt das Event mit snake_case-Feldern (`view_mode`, `scroll_y`,
-  `editor_scroll_y`, `editor_cursor`). Aus dem Automation-API-Pfad
-  (`automation::handlers::ui::history_move` → emit mit
-  `HistoryEntryResponse` `#[serde(rename_all = "camelCase")]`) kommt es
-  camelCase. Der Frontend-Handler in `web/app/main.ts:115` liest aber
-  ausschließlich snake_case (`data.view_mode`, `data.scroll_y`, …) —
-  beim API-History-Pfad greifen also Mode-Restore und Scroll-Restore
-  nicht. Fix-Optionen: Backend-Pfade harmonisieren (beide camelCase
-  oder beide snake) und Frontend-Handler entsprechend angleichen, ggf.
-  defensiv beide Cases akzeptieren. Gefunden 2026-05-20 beim Settings-
-  Live-Test, betrifft nur den Automation-API-Pfad und ist daher in der
-  Praxis nur für E2E-Szenarien relevant.
+- **~~`navigation:changed` Payload-Case-Inkonsistenz~~** — **gefixt
+  2026-05-20**: `NavEntry` in `commands/nav.rs` hat jetzt
+  `#[serde(rename_all = "camelCase")]` — sowohl der Tauri-Command-Pfad
+  (`go_back_and_emit`/`go_forward_and_emit`) als auch der Automation-
+  API-Pfad (`POST /history/back`/`/history/forward`, schon vorher
+  camelCase) schicken `navigation:changed` mit identischer Field-Case.
+  Frontend-Handler in `web/app/main.ts` auf `data.viewMode` /
+  `data.scrollY` / `data.editorCursor` / `data.editorScrollY`
+  angepasst. Tauri-Konvention ist camelCase fürs Frontend; die
+  bisherige snake_case-Variante von `NavEntry` war ein Ausreißer.
 
 - **Strukturiertes Logging mit Log-Levels**: Heute schreibt Folio nur
   `eprintln!`/`println!` auf stdout/stderr (gemischt mit `cargo run`-

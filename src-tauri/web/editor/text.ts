@@ -116,11 +116,22 @@ export function applyReplace(args: {
         // Stack — Toolbar-Befehle (Bold-Wrap, Heading-Toggle, ...) waeren
         // sonst destruktiv fuer die Edit-Historie. Siehe
         // docs/e2e-headless-caveats.md Abschnitt 7 fuer die Diagnose.
+        //
+        // pushUndoStop davor und danach: ohne den expliziten Stop
+        // verschmilzt Monaco unseren Voll-Range-Replace mit einem
+        // unmittelbar vorhergegangenen Type-Edit (z.B. ein insertText
+        // gefolgt von tb-bold) zu einem einzigen Undo-Eintrag — Undo
+        // entfernt dann beides auf einmal, der Type-Edit ist nicht
+        // separat rueckgaengig zu machen (Regression-Sperre in
+        // 09_undo_redo: Bold-Wrap muss undo-bar sein OHNE den
+        // vorherigen "X"-Insert mitzunehmen).
+        editor.pushUndoStop();
         const fullRange = model.getFullModelRange();
         editor.executeEdits('applyReplace', [{
             range: fullRange,
             text: args.fullText || '',
         }]);
+        editor.pushUndoStop();
         const startPos = model.getPositionAt(args.selectionStart || 0);
         const endPos = model.getPositionAt(
             (args.selectionStart || 0) + (args.selectionLength || 0),

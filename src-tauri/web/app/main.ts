@@ -114,17 +114,19 @@ if (ev && typeof ev.listen === 'function' && invoke) {
     // (anchor / view-scroll / editor-cursor + editor-scroll). Muss in
     // requestAnimationFrame laufen, weil document:loaded das DOM gerade
     // erst neu aufgebaut hat — scrollTo klemmt sonst auf scrollHeight 0.
+    // Payload-Felder sind camelCase (Tauri-Konvention) — sowohl aus
+    // commands::nav::move_history als auch aus automation::history_move.
     ev.listen('navigation:changed', function (event: any) {
         var data = event && event.payload;
         if (!data || typeof data !== 'object') return;
         var anchor = data.anchor || data.slug || '';
         setTocActive(anchor);
-        if (data.view_mode) {
-            invoke('set_view_mode', { mode: data.view_mode }).catch(function(){});
+        if (data.viewMode) {
+            invoke('set_view_mode', { mode: data.viewMode }).catch(function(){});
         }
-        var viewScroll = (typeof data.scroll_y === 'number') ? data.scroll_y : 0;
-        var editorCursor = (typeof data.editor_cursor === 'number') ? data.editor_cursor : 0;
-        var editorScroll = (typeof data.editor_scroll_y === 'number') ? data.editor_scroll_y : 0;
+        var viewScroll = (typeof data.scrollY === 'number') ? data.scrollY : 0;
+        var editorCursor = (typeof data.editorCursor === 'number') ? data.editorCursor : 0;
+        var editorScroll = (typeof data.editorScrollY === 'number') ? data.editorScrollY : 0;
         requestAnimationFrame(function () {
             if (anchor) scrollViewToAnchor(anchor);
             else scrollViewTo(viewScroll);

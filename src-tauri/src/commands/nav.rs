@@ -7,6 +7,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NavEntry {
     pub path: String,
     pub anchor: Option<String>,

@@ -265,6 +265,7 @@ impl Vault {
     }
 
     pub fn on_expand(&mut self, path: String) -> io::Result<String> {
+        let path = path.replace('\\', "/");
         self.expanded_dirs.insert(path.clone());
         self.build_dir_children_html(&path)
     }
@@ -275,17 +276,22 @@ impl Vault {
     /// kombiniert mit dem "expand-dir immer neu lesen"-Pfad im
     /// Frontend ist das ein konsequenter Auto-Refresh.
     pub fn on_collapse(&mut self, path: &str) {
-        let target = Path::new(path);
+        let normalized = path.replace('\\', "/");
+        let target = Path::new(&normalized);
         self.expanded_dirs
             .retain(|entry| !Path::new(entry).starts_with(target));
     }
 
     pub fn set_active(&mut self, path: Option<String>) {
-        self.active_path = path;
+        // Auf Forward-Slashes normalisieren, damit der Vergleich gegen
+        // das normalisierte data-path-Attribut im `item_html`-Render
+        // greift — sonst markiert die aktive Datei auf Windows nichts.
+        self.active_path = path.map(|p| p.replace('\\', "/"));
     }
 
     pub fn is_expanded(&self, path: &str) -> bool {
-        self.expanded_dirs.contains(path)
+        let normalized = path.replace('\\', "/");
+        self.expanded_dirs.contains(&normalized)
     }
 
     pub fn expanded_paths(&self) -> Vec<String> {
@@ -295,11 +301,18 @@ impl Vault {
     fn item_html(&self, original_path: &str, info: &EntryInfo) -> String {
         // Bei .lnk-Shortcuts navigieren wir zum aufgelösten Ziel; die
         // Beschriftung verliert die `.lnk`-Endung (analog Explorer).
-        let nav_path = info
+        // Pfade auf Forward-Slashes normalisieren — egal ob aus
+        // workspace.pinned/recent (auf Linux/Windows je nach Plattform)
+        // oder aus fs::read_dir (auf Windows Backslashes). Konsistente
+        // data-path-Attribute sind Voraussetzung dafuer, dass DOM-
+        // Vergleiche, CSS-Selektoren im E2E und workspace-Lookups das
+        // gleiche Path-Format sehen.
+        let nav_path_raw = info
             .target
             .as_ref()
             .map(|t| t.to_string_lossy().into_owned())
             .unwrap_or_else(|| original_path.to_string());
+        let nav_path = nav_path_raw.replace('\\', "/");
         let raw_name = display_name(Path::new(original_path));
         let label_name = if info.target.is_some() {
             strip_lnk_extension(&raw_name)

@@ -46,7 +46,11 @@ def run(ctx):
     tmp = Path(tempfile.mkdtemp(prefix="folio-e2e-vault-"))
     file_path = tmp / "vault-tree-test.md"
     file_path.write_text("# vault-tree-test\n")
-    file_str = str(file_path)
+    # Folio normalisiert Pfade intern auf Forward-Slashes (auch im
+    # data-path-Attribut), damit CSS-Selektoren auf Windows nicht ueber
+    # Backslash-Escapes (`\U` etc.) stolpern. Test-Selektor muss daher
+    # ebenfalls Forward-Slashes nutzen.
+    file_str = str(file_path).replace("\\", "/")
     selector = f'#vault-tree li.node[data-path="{file_str}"]'
 
     with ctx.step("baseline: keine Test-Datei im DOM"):

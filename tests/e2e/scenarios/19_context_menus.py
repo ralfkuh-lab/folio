@@ -39,7 +39,10 @@ def run(ctx):
     tmp = Path(tempfile.mkdtemp(prefix="folio-e2e-ctxmenu-"))
     file_path = tmp / "ctxmenu-test.md"
     file_path.write_text("# ctxmenu-test\n")
-    file_str = str(file_path)
+    # Folio normalisiert Pfade intern auf Forward-Slashes (siehe
+    # 16_vault_tree). Selektor muss daher auch Forward-Slashes nutzen,
+    # weil Backslashes im CSS-Selector als Escape interpretiert wuerden.
+    file_str = str(file_path).replace("\\", "/")
     item_selector = f'#vault-tree li.node[data-path="{file_str}"]'
 
     with ctx.step("/workspace/pin → Tree-Eintrag im DOM"):
