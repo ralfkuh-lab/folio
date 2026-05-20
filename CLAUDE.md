@@ -70,7 +70,26 @@ sonst lehnt Tauri den Build ab.
 - **Automation-API**: nur Loopback. Keine externen Bind-Adressen. WebView-POSTs brauchen
   CORS/OPTIONS-Preflight; `/click` akzeptiert IDs, `data-name` und CSS-Selektoren.
 - **Vault-Markup**: Frontend erwartet Baum-Markup mit `.section`, `.node`, `.row`,
-  `.caret`, `ul.children`.
+  `.caret`, `ul.children`. Jedes `.node` hat `data-path="<abs-path>"`
+  und `title="<abs-path>"` (Tooltip).
+- **Pfad-Normalisierung**: alle Pfade, die in DOM-`data-path`-Attribute,
+  workspace.json-Speicher oder `is_pinned`/`is_expanded`-Vergleiche
+  gehen, werden auf Forward-Slashes normalisiert (`\` → `/`).
+  Implementiert in `Workspace::pin/unpin/is_pinned/add_recent/
+  remove_recent/image_dir/set_image_dir`, `Vault::set_active/
+  on_expand/is_expanded` und `Vault::item_html`. Begründung: CSS-
+  Selektoren `[data-path="C:\Users\..."]` schlagen sonst fehl
+  (`\U` = Unicode-Escape). `Workspace::load_from` migriert bestehende
+  Backslash-Pfade beim Boot. Windows-APIs akzeptieren beide
+  Schreibweisen, daher bricht das keine Datei-IO.
+- **Vault-Watcher** (`vault_watcher.rs`): pro aufgeklappten Vault-
+  Ordner ein NonRecursive-`notify`-Watch. `Vault::on_expand`
+  registriert, `on_collapse` deregistriert. Bei FS-Event emit
+  `vault:dir_changed { path }` → Frontend triggert `expand-dir`-Pfad
+  nur für diesen Ordner. Steuerbar via Setting `vaultAutoRefresh`
+  (default an). Toggle live-aware: bei Re-Enable werden alle aktuell
+  expanded_dirs erneut registriert (siehe `commands::app::settings::
+  sync_vault_watcher`).
 - **Dateityp-Klassifizierung**: zentral in `file_kind.rs`
   (`FileKind::{Markdown, Text, Binary}`, `classify(path)`). `read_file` und
   `document:loaded` liefern `kind` ans Frontend; das setzt
