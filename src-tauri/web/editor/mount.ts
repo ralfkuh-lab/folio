@@ -42,16 +42,19 @@ function loadMonaco(): Promise<void> {
         // Sprach-Worker-Bootstrap: ohne diesen Hook starten Monacos
         // JSON-/TS-/CSS-Worker im AMD-Setup nicht, weshalb z. B. "Format
         // Document" auf JSON still fehlschlaegt. Wir liefern eine kleine
-        // Bootstrap-Worker-Datei via data: URI zurueck — der Worker setzt
-        // sein eigenes MonacoEnvironment.baseUrl auf den absoluten Origin
-        // des Frontends und delegiert via importScripts an Monacos
-        // workerMain.js. Same-origin-Aufloesung funktioniert so auch unter
-        // Tauris asset:-Protokoll, ohne dass wir den exakten Custom-
-        // Protocol-Pfad raten muessten.
+        // Bootstrap-Worker-Datei zurueck — der Worker setzt sein eigenes
+        // MonacoEnvironment.baseUrl auf den absoluten Origin des Frontends
+        // und delegiert via importScripts an Monacos workerMain.js.
+        // Wichtig: Blob-URL statt data:-URL. WebKit (macOS) behandelt
+        // Worker aus data:-URLs als opaque origin und blockt deren
+        // Ladevorgang ("Load failed" in editor.main.js), waehrend Blob-
+        // URLs die Document-Origin erben — funktioniert in WKWebView
+        // (macOS), WebKitGTK (Linux) und WebView2 (Windows).
         const origin = window.location.origin;
         const workerBootstrap = `self.MonacoEnvironment = { baseUrl: '${origin}/monaco/' };`
             + `importScripts('${origin}/monaco/vs/base/worker/workerMain.js');`;
-        const workerUrl = `data:text/javascript;charset=utf-8,${encodeURIComponent(workerBootstrap)}`;
+        const workerBlob = new Blob([workerBootstrap], { type: 'application/javascript' });
+        const workerUrl = URL.createObjectURL(workerBlob);
         (window as any).MonacoEnvironment = {
             getWorkerUrl: function (_workerId: string, _label: string): string {
                 return workerUrl;
