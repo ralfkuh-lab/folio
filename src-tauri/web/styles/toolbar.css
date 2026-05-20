@@ -35,6 +35,10 @@
 .toolbar button:hover:not(:disabled) { background: var(--rail-hover-bg); }
 .toolbar button.active { background: var(--rail-selected-bg); color: var(--rail-selected-fg); }
 .toolbar button:disabled { opacity: 0.4; cursor: default; }
+/* hidden-Attribut greift sonst nicht, weil `.toolbar button` weiter
+   oben `display: inline-flex` setzt — höhere Spezifität als das
+   Browser-Default `[hidden] { display: none }`. */
+.toolbar button[hidden] { display: none; }
 .toolbar button svg { display: block; }
 /* Segoe-Fluent-Icons-Glyphen (monochrom, Win11). */
 .toolbar button.ti-fluent {
