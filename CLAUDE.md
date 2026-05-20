@@ -8,13 +8,10 @@ Vault-Navigation, Workspace-Pins, HTTP-Automation-API für E2E-Tests.
 Offene Aufgaben werden in [`TODO.md`](TODO.md) gepflegt (priorisiert: hoch /
 mittel / niedrig). Vor Vorschlägen, was als nächstes ansteht, dort nachsehen.
 
-Refactoring-Plan in [`docs/refactoring-plan.md`](docs/refactoring-plan.md):
-**alle Phasen abgeschlossen** (1–5) — Rust-Modul-Splits, Tauri-Command-/
-Events-Splits, Frontend in TS-Module + esbuild, Dokument-Open-Service,
-Type-Safety (`tsc --noEmit` im Build), Frontend-Splits (`main.ts`,
-`editor.ts` → `web/editor/`, `commands/app.rs`), Lock-Error-Propagation,
-Vitest-Setup. Plan dient ab jetzt nur noch als Referenz; neue Arbeit
-läuft über [`TODO.md`](TODO.md).
+Abgeschlossene Refactoring-Pläne sind aus der laufenden Doku entfernt.
+Historie steckt im Git-Log; aktuelle Architektur- und Arbeitsregeln stehen
+hier, im README, in [`TODO.md`](TODO.md) und in den thematischen Dateien
+unter `docs/`.
 
 ## Tech-Stack
 
@@ -69,6 +66,7 @@ sonst lehnt Tauri den Build ab.
 - **IPC-Payloads**: gerendertes HTML geht über Tauri-Events, nicht über Command-Returns.
 - **Automation-API**: nur Loopback. Keine externen Bind-Adressen. WebView-POSTs brauchen
   CORS/OPTIONS-Preflight; `/click` akzeptiert IDs, `data-name` und CSS-Selektoren.
+  Stabiler Automation-/Frontend-Vertrag: [`docs/automation-contract.md`](docs/automation-contract.md).
 - **Vault-Markup**: Frontend erwartet Baum-Markup mit `.section`, `.node`, `.row`,
   `.caret`, `ul.children`. Jedes `.node` hat `data-path="<abs-path>"`
   und `title="<abs-path>"` (Tooltip).

@@ -90,13 +90,16 @@ tests/e2e/
 │   ├── 01_boot.py            stellt `def run(ctx)` bereit.
 │   ├── 02_view_mode.py
 │   ├── 03_edit_mode.py
-│   ├── 04_theme.py
-│   ├── 05_vault.py
-│   ├── 06_find.py
-│   └── 07_workspace.py
+│   ├── ...
+│   └── 21_split_mode.py
 ├── fixtures/              # Test-Dokumente (eingecheckt, deterministisch)
 └── baselines/             # Golden-Screenshots
 ```
+
+Aktuell gibt es 21 Szenarien: Boot, View/Edit/Split, Theme, Vault,
+Find, Workspace/Recent, Save-Roundtrip, Undo/Redo, Toolbar-Commands,
+File/Edit/View/Help-Menüs, DOM-Keybindings, Vault-Tree, Pin/Unpin,
+History, Kontextmenüs und TOC-DOM-Klick.
 
 ## Szenario-Vertrag
 

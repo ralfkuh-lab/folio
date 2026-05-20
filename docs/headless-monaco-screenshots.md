@@ -183,15 +183,13 @@ oberen Wege.
 
 ## Empfehlung pro Use-Case
 
-Veraltet — die Empfehlungen unten stammen aus der theoretischen
-Vorab-Analyse. Empirisch hat sich (siehe
+Empirisch hat sich (siehe
 [`docs/headless-monaco-test-results.md`](headless-monaco-test-results.md))
 gezeigt, dass Option 1, 2 und 4 für Monaco *nicht* funktionieren: der
 Canvas landet nicht im X11-Pixmap, den die genannten Pfade lesen würden.
-Nur Option 3 (Monitor-Capture via `tauri-plugin-screenshots`) liefert
-sichtbares Monaco. Das ist deshalb auch für CI/PR-Checks der richtige
-Weg; Option 5 (View-Mode) bleibt eine trivial-billige Alternative,
-wo der Editor irrelevant ist.
+Option 3 (Monitor-Capture via `tauri-plugin-screenshots`) ist der
+Standardpfad; Option 5 (View-Mode) bleibt die einfache Alternative,
+wenn der Editor irrelevant ist.
 
 - **CI-Run für PR-Check**: **Option 3** über `GET /screenshot` der
   Automation-API.
@@ -208,8 +206,7 @@ Monaco-Canvas-Output ist im `xcap`-Screenshot vollständig sichtbar
 inklusive Syntax-Highlighting — Compositor zieht sauber durch. Kein
 Workaround nötig.
 
-Auf Headless-VPS / Xvfb-CI (noch nicht systematisch getestet):
-Status offen. Wenn Tests laufen, hier ergänzen welche der Optionen
-zuverlässig war und welche WebKitGTK-Version zum Einsatz kam
-(`webkit2gtk-4.1` vs. `4.0` macht beim DMA-BUF-Renderer einen
-Unterschied).
+Auf Headless-Linux / Xvfb-CI ist `GET /screenshot` über
+`tauri-plugin-screenshots` der getestete Standardpfad. Details und
+Umgebungsdaten stehen in
+[`docs/headless-monaco-test-results.md`](headless-monaco-test-results.md).

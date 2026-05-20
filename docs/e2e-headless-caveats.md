@@ -86,7 +86,7 @@ Dialog, blockiert dann aber.
 Logik geht über die Direkt-API: `/open`, `/save` (Phase 0 nicht
 involviert — die existierten schon).
 
-## 6. ~~`alert()` blockiert die WebView-JS-Schleife~~ (erledigt 2026-05-19)
+## 6. About-Dialog blockiert die WebView-JS-Schleife nicht mehr
 
 Frueher rief `help.about` ein `alert('folio v…')`, das die WebView
 einfror. Seit 2026-05-19 ist der About-Dialog ein eigenes HTML-Modal
@@ -182,6 +182,6 @@ Der Orchestrator (`run.py`) skipt solche Szenarien standardmäßig.
 Mit `--include-desktop-only` werden sie mitgenommen — nutzbar für
 einen manuellen Lauf auf einem echten Desktop oder unter VNC-Session.
 
-Heute (Stand 2026-05-18) hat **kein** Szenario diesen Marker — alle
-laufen unter Xvfb. Die Infrastruktur ist eine reine Vorhaltung für
-spätere Tests, die OS-Eingabe oder echte Display-Hardware brauchen.
+Aktuell hat kein Szenario diesen Marker — alle laufen unter Xvfb. Die
+Infrastruktur ist eine reine Vorhaltung für spätere Tests, die OS-Eingabe
+oder echte Display-Hardware brauchen.

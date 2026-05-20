@@ -41,7 +41,7 @@ folio/
 │   │   │                        #   editor-Shell, automation-Bridge)
 │   │   ├── editor/              #   Monaco-Adapter (mount, text, find, …)
 │   │   ├── styles/              #   CSS-Quellen
-│   │   ├── tests/               #   Vitest (happy-dom)
+│   │   ├── tests/               #   Vitest (jsdom)
 │   │   ├── globals.d.ts         #   Cross-Bundle-Window-Surface
 │   │   ├── package.json
 │   │   └── copy-monaco.js       #   Monaco-Vendor-Sync nach dist/monaco/
@@ -51,8 +51,8 @@ folio/
 │   ├── Cargo.toml
 │   └── tauri.conf.json
 ├── tests/e2e/                   # Python + Pillow E2E-Suite (21 Szenarien)
-├── docs/                        # Refactoring-Plan, Headless-Caveats,
-│                                #   Linux-MD-Icon, frontend-globals
+├── docs/                        # E2E, Automation-Vertrag, Release,
+│                                #   Headless-Caveats, Linux-MD-Icon
 ├── scripts/                     # Linux-Helper (Icon-Install, run-e2e.sh)
 ├── CLAUDE.md
 └── README.md
@@ -134,7 +134,7 @@ cd src-tauri
 cargo test                                # Unit + Integration
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
-cd web && npm test                        # Vitest (happy-dom) für app/editor-Module
+cd web && npm test                        # Vitest (jsdom) für app/editor-Module
 ```
 
 ### E2E-Suite

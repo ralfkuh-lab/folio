@@ -59,19 +59,29 @@ nachfolgende Läufe nur Sekunden.
 
 ## Was die Suite abdeckt
 
-7 Szenarien, sequentiell:
+21 Szenarien, sequentiell:
 
-1. **`01_boot`** — App-Sanity: `/state` antwortet, viewMode == view,
-   keine Console-Errors, Boot-Screenshot.
-2. **`02_view_mode`** — `sample.md` öffnen, TOC-Aufbau prüfen,
-   Anchor-Sprung, zwei Screenshots.
-3. **`03_edit_mode`** — Mode-Switch, `editor.ready`, Text-Roundtrip,
-   Selection setzen, zurück.
-4. **`04_theme`** — Dark/Light/Dark-Cycle, Visual-Vergleich pro
-   Zustand.
-5. **`05_vault`** — Rail-Toggle, Screenshot des Workspace-Layouts.
+1. **`01_boot`** — App-Sanity, Console-Errors, Boot-Screenshot.
+2. **`02_view_mode`** — Markdown-View, TOC, Anchor-Sprung.
+3. **`03_edit_mode`** — Editor-Boot, Text-Roundtrip, Selection.
+4. **`04_theme`** — Hell/Dunkel-Umschaltung mit Visual-Baselines.
+5. **`05_vault`** — Rail-Toggle und Workspace-Layout.
 6. **`06_find`** — Find-Bar öffnen, Term setzen, schließen.
-7. **`07_workspace`** — `workspace.recent` nach `/open` verifizieren.
+7. **`07_workspace`** — Recent-Dateien nach `/open`.
+8. **`08_save_roundtrip`** — Save-Roundtrip mit BOM/EOL-Erhalt.
+9. **`09_undo_redo`** — Monaco-Undo/Redo und `applyReplace`.
+10. **`10_editor_commands`** — Toolbar-Commands wie Bold/Italic.
+11. **`11_menu_file`** — Datei-Menü-Pfade Save, Close, Recent.
+12. **`12_menu_edit`** — Edit-Menü Undo, Redo, Find.
+13. **`13_menu_view`** — View-Menü Mode, Theme, Rails.
+14. **`14_menu_help`** — Cheatsheet und About-Dialog.
+15. **`15_keybindings`** — DOM-Keybindings wie Ctrl+S/Ctrl+F.
+16. **`16_vault_tree`** — gepinnte Datei im Vault-Tree öffnen.
+17. **`17_workspace_pin`** — Pin/Unpin-API und Idempotenz.
+18. **`18_history`** — Back/Forward inklusive Stack-Kanten.
+19. **`19_context_menus`** — Vault-Kontextmenü und Unpin.
+20. **`20_toc_click`** — echter DOM-Klick auf TOC-Eintrag.
+21. **`21_split_mode`** — Split-Mode-Layout und Rückwechsel.
 
 Jedes Szenario ist eine `tests/e2e/scenarios/NN_name.py`-Datei mit
 `def run(ctx)`. Weitere Szenarien einfach analog anlegen — der
@@ -139,9 +149,7 @@ Disable mit `bash scripts/run-e2e.sh --no-auto-todo`.
 
 - **Nicht auf Windows headless** — siehe CLAUDE.md. Auf Windows nur
   Attach-Mode mit sichtbarem Fenster sinnvoll.
-- **Vault-Tree-Navigation ist nicht voll abgedeckt** — der Pfad zum
-  geöffneten Vault hängt vom Test-Workspace ab, was Determinismus
-  schwierig macht. Aktuell testet `05_vault` nur Rail-Toggle.
-  Erweiterung: dediziertes Test-Workspace in `fixtures/workspace/`
-  anlegen + `panel_state.json` mocken.
+- **Visual-Diffs sind plattformabhängig** — die committed Baselines
+  sind primär für Linux+Xvfb gedacht. Windows-Attach-Runs sind Debug-
+  Werkzeug, kein vollständiger Release-Gate.
 - **Sequentiell, nicht parallel** — Folio-State ist geteilt.
