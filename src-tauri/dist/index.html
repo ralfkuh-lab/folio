@@ -59,6 +59,9 @@
   </div>
   <div class="spacer"></div>
   <div class="group">
+    <button id="tb-reload" class="ti-emoji" title="Datei extern geändert — neuladen" aria-label="Neuladen" hidden>&#x1F504;</button>
+  </div>
+  <div class="group">
     <button id="tb-export" class="ti-emoji" title="Exportieren…" aria-label="Exportieren" disabled>&#x1F4E4;</button>
   </div>
   <div class="sep"></div>
@@ -289,6 +292,23 @@
           </label>
         </div>
         <p class="settings-hint">Nutzt Monacos „Format Document" für alle Sprachen mit registriertem Formatter (JSON, XML, HTML, CSS, JS/TS, …). Ohne Häkchen wird der Rohinhalt angezeigt.</p>
+      </section>
+      <section class="settings-section">
+        <h3 class="settings-section__title">Datei-Überwachung</h3>
+        <div class="settings-row settings-row--toggle">
+          <label for="settings-vault-auto-refresh">
+            <input type="checkbox" id="settings-vault-auto-refresh" />
+            Vault-Tree bei externen Änderungen aktualisieren
+          </label>
+        </div>
+        <p class="settings-hint">Aufgeklappte Ordner werden überwacht; neue, gelöschte oder umbenannte Dateien tauchen direkt im Arbeitsbereich auf.</p>
+        <div class="settings-row settings-row--toggle">
+          <label for="settings-document-auto-reload">
+            <input type="checkbox" id="settings-document-auto-reload" />
+            Geöffnete Datei bei externer Änderung neuladen
+          </label>
+        </div>
+        <p class="settings-hint">Ohne Häkchen erscheint stattdessen ein Reload-Button in der Toolbar — sinnvoll für Log-Dateien o. ä. mit ständigen Schreibvorgängen.</p>
       </section>
     </div>
     <div class="settings-dialog__actions">

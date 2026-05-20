@@ -22,6 +22,7 @@ pub mod text_statistics;
 pub mod theme;
 pub mod toc;
 pub mod vault;
+pub mod vault_watcher;
 pub mod workspace;
 
 use state::AppState;
@@ -129,6 +130,27 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
         .setup(|app| {
             let state = app.state::<AppState>();
             state.install_document_events(app.handle().clone())?;
+            // VaultWatcher-Callback registrieren + initial-State aus
+            // dem persistierten `vaultAutoRefresh`-Setting setzen.
+            // Vault-Command-Handler (expand-dir/collapse-dir) rufen
+            // danach watch/unwatch direkt auf state.vault_watcher.
+            {
+                let handle = app.handle().clone();
+                let callback: crate::vault_watcher::ChangeCallback =
+                    std::sync::Arc::new(move |path: String| {
+                        let _ =
+                            handle.emit("vault:dir_changed", serde_json::json!({ "path": path }));
+                    });
+                let enabled = state
+                    .settings
+                    .lock()
+                    .map(|s| s.data().vault_auto_refresh)
+                    .unwrap_or(true);
+                if let Ok(mut watcher) = state.vault_watcher.lock() {
+                    watcher.set_callback(callback);
+                    watcher.set_enabled(enabled);
+                }
+            }
             // Recent-Submenü beim Boot mit den aktuellen workspace.recent
             // füllen — sonst zeigt es bis zur ersten Änderung "(keine
             // Einträge)".

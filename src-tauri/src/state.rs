@@ -8,6 +8,7 @@ use crate::{
     theme::ThemeService,
     toc,
     vault::Vault,
+    vault_watcher::VaultWatcher,
     workspace::Workspace,
 };
 use std::collections::{HashMap, VecDeque};
@@ -57,6 +58,7 @@ pub struct AppState {
     pub theme: Mutex<ThemeService>,
     pub settings: Mutex<SettingsService>,
     pub vault: Mutex<Vault>,
+    pub vault_watcher: Mutex<VaultWatcher>,
     pub navigation: Mutex<NavigationController>,
     pub link_interceptor: LinkInterceptor,
     pub automation: Mutex<AutomationUiState>,
@@ -105,6 +107,7 @@ impl AppState {
             theme: Mutex::new(theme),
             settings: Mutex::new(SettingsService::load()),
             vault: Mutex::new(Vault::new()),
+            vault_watcher: Mutex::new(VaultWatcher::new()),
             navigation: Mutex::new(NavigationController::new()),
             link_interceptor: LinkInterceptor::new(),
             automation: Mutex::new(AutomationUiState {

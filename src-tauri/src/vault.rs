@@ -367,8 +367,12 @@ impl Vault {
         } else {
             String::new()
         };
+        // title-Attribut: vollstaendiger Pfad als Browser-Tooltip beim
+        // Hover. Wichtig fuer Datei-Namen, die im Tree gekuerzt werden,
+        // und damit der User auf einen Blick sieht, woher ein Pin oder
+        // Recent-Eintrag stammt.
         format!(
-            r#"<li class="{classes}" data-kind="{kind}" data-path="{path}"><div class="row"><span class="{caret_class}">▾</span>{icon_html}<span class="label">{name}</span></div><ul class="{children_class}">{children}</ul></li>"#,
+            r#"<li class="{classes}" data-kind="{kind}" data-path="{path}" title="{path}"><div class="row"><span class="{caret_class}">▾</span>{icon_html}<span class="label">{name}</span></div><ul class="{children_class}">{children}</ul></li>"#,
             path = escape_attr(&nav_path),
             name = escape_html(&label_name),
         )

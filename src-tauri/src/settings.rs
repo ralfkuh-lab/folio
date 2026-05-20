@@ -62,8 +62,19 @@ pub struct SettingsData {
     pub default_mode_markdown: DefaultViewMode,
     #[serde(default = "default_mode_text")]
     pub default_mode_text: DefaultViewMode,
-    #[serde(default = "default_view_auto_format")]
+    #[serde(default = "default_true")]
     pub view_auto_format: bool,
+    /// Steuert, ob File-System-Events fuer gepinnte/aufgeklappte
+    /// Vault-Ordner einen Tree-Refresh ausloesen. Default an; aus
+    /// wenn der User viele Ordner pinnt und FS-Watch-Limits drueckt.
+    #[serde(default = "default_true")]
+    pub vault_auto_refresh: bool,
+    /// Steuert, ob extern geaenderte geoeffnete Dateien automatisch
+    /// neugeladen werden (sofern nicht dirty). Default an; aus z.B.
+    /// fuer Log-Dateien, wo staendige Reloads die Anzeige stoeren —
+    /// stattdessen erscheint ein Reload-Button in der Toolbar.
+    #[serde(default = "default_true")]
+    pub document_auto_reload: bool,
 }
 
 fn default_mode_markdown() -> DefaultViewMode {
@@ -74,7 +85,7 @@ fn default_mode_text() -> DefaultViewMode {
     DefaultViewMode::Current
 }
 
-fn default_view_auto_format() -> bool {
+fn default_true() -> bool {
     true
 }
 
@@ -84,7 +95,9 @@ impl Default for SettingsData {
             language: Language::default(),
             default_mode_markdown: default_mode_markdown(),
             default_mode_text: default_mode_text(),
-            view_auto_format: default_view_auto_format(),
+            view_auto_format: default_true(),
+            vault_auto_refresh: default_true(),
+            document_auto_reload: default_true(),
         }
     }
 }
@@ -99,6 +112,8 @@ pub struct SettingsPatch {
     pub default_mode_markdown: Option<DefaultViewMode>,
     pub default_mode_text: Option<DefaultViewMode>,
     pub view_auto_format: Option<bool>,
+    pub vault_auto_refresh: Option<bool>,
+    pub document_auto_reload: Option<bool>,
 }
 
 impl SettingsPatch {
@@ -107,6 +122,8 @@ impl SettingsPatch {
             && self.default_mode_markdown.is_none()
             && self.default_mode_text.is_none()
             && self.view_auto_format.is_none()
+            && self.vault_auto_refresh.is_none()
+            && self.document_auto_reload.is_none()
     }
 }
 
@@ -167,6 +184,18 @@ impl SettingsService {
                 changed.push("viewAutoFormat");
             }
         }
+        if let Some(value) = patch.vault_auto_refresh {
+            if self.data.vault_auto_refresh != value {
+                self.data.vault_auto_refresh = value;
+                changed.push("vaultAutoRefresh");
+            }
+        }
+        if let Some(value) = patch.document_auto_reload {
+            if self.data.document_auto_reload != value {
+                self.data.document_auto_reload = value;
+                changed.push("documentAutoReload");
+            }
+        }
         if !changed.is_empty() {
             persist::save_json_atomic(&self.path, &self.data)?;
         }
@@ -186,6 +215,8 @@ mod tests {
         assert_eq!(DefaultViewMode::Current, data.default_mode_markdown);
         assert_eq!(DefaultViewMode::Current, data.default_mode_text);
         assert!(data.view_auto_format);
+        assert!(data.vault_auto_refresh);
+        assert!(data.document_auto_reload);
     }
 
     #[test]
@@ -257,9 +288,11 @@ mod tests {
                 default_mode_markdown: Some(DefaultViewMode::Edit),
                 default_mode_text: Some(DefaultViewMode::View),
                 view_auto_format: Some(false),
+                vault_auto_refresh: Some(false),
+                document_auto_reload: Some(false),
             })
             .unwrap();
-        assert_eq!(4, changed.len());
+        assert_eq!(6, changed.len());
 
         let reloaded = SettingsService::load_from(path).data();
         assert_eq!(Language::En, reloaded.language);

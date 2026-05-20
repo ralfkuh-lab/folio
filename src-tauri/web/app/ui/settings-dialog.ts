@@ -17,6 +17,8 @@ export type SettingsData = {
     defaultModeMarkdown: DefaultViewMode;
     defaultModeText: DefaultViewMode;
     viewAutoFormat: boolean;
+    vaultAutoRefresh: boolean;
+    documentAutoReload: boolean;
 };
 
 function isViewMode(v: string): v is DefaultViewMode {
@@ -49,12 +51,16 @@ function applySettingsToForm(data: SettingsData): void {
     var mdSelect = $('settings-default-md') as HTMLSelectElement | null;
     var textSelect = $('settings-default-text') as HTMLSelectElement | null;
     var autoFormat = $('settings-view-auto-format') as HTMLInputElement | null;
+    var vaultRefresh = $('settings-vault-auto-refresh') as HTMLInputElement | null;
+    var docReload = $('settings-document-auto-reload') as HTMLInputElement | null;
     var langHint = $('settings-language-hint');
 
     if (langSelect) langSelect.value = data.language;
     if (mdSelect) mdSelect.value = data.defaultModeMarkdown;
     if (textSelect) textSelect.value = data.defaultModeText;
     if (autoFormat) autoFormat.checked = !!data.viewAutoFormat;
+    if (vaultRefresh) vaultRefresh.checked = !!data.vaultAutoRefresh;
+    if (docReload) docReload.checked = !!data.documentAutoReload;
 
     if (langHint) {
         // Hinweis nur akzentuieren, wenn die aktuelle Auswahl von der
@@ -155,6 +161,18 @@ function bindInputs(): void {
     if (autoFormat) {
         autoFormat.addEventListener('change', function () {
             patchSettings({ viewAutoFormat: autoFormat!.checked });
+        });
+    }
+    var vaultRefresh = $('settings-vault-auto-refresh') as HTMLInputElement | null;
+    if (vaultRefresh) {
+        vaultRefresh.addEventListener('change', function () {
+            patchSettings({ vaultAutoRefresh: vaultRefresh!.checked });
+        });
+    }
+    var docReload = $('settings-document-auto-reload') as HTMLInputElement | null;
+    if (docReload) {
+        docReload.addEventListener('change', function () {
+            patchSettings({ documentAutoReload: docReload!.checked });
         });
     }
 }

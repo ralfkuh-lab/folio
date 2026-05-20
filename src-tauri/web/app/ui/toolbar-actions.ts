@@ -66,6 +66,12 @@ export function initToolbarActions(): void {
         invoke('set_editor_minimap_visible', { visible: on }).catch(function(){});
     });
     bind('tb-find', function () { invoke('open_find').catch(function(){}); });
+    // tb-reload: erscheint nur bei documentAutoReload=false + pending
+    // external change. Click → reload_document; das emittierte
+    // document:loaded/document:saved versteckt den Button anschliessend.
+    bind('tb-reload', function () {
+        invoke('reload_document').catch(function(){});
+    });
     bind('tb-back', function () {
         requestSaveIfDirty().then(function (ok) {
             if (ok) invoke('go_back_and_emit').catch(function () {});

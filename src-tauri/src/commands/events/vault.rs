@@ -27,6 +27,15 @@ pub(super) fn expand_dir(path: String, state: &AppState, handle: &AppHandle) -> 
         .map_err(|_| "vault lock poisoned".to_string())?
         .on_expand(path.clone())
         .map_err(|error| error.to_string())?;
+    // FS-Watch fuer den frisch aufgeklappten Ordner registrieren — bei
+    // disabled Watcher (Setting `vaultAutoRefresh`) ist das ein No-op.
+    // Fehler beim watch sollen den Expand-Pfad nicht killen; sie
+    // bedeuten lediglich "keine Live-Updates fuer diesen Ordner".
+    if let Ok(mut watcher) = state.vault_watcher.lock() {
+        if let Err(err) = watcher.watch(&path) {
+            eprintln!("vault_watcher.watch failed for {path}: {err}");
+        }
+    }
     handle
         .emit(
             "shell:command",
@@ -41,6 +50,9 @@ pub(super) fn collapse_dir(path: String, state: &AppState) -> Result<(), String>
         .lock()
         .map_err(|_| "vault lock poisoned".to_string())?
         .on_collapse(&path);
+    if let Ok(mut watcher) = state.vault_watcher.lock() {
+        watcher.unwatch(&path);
+    }
     Ok(())
 }
 

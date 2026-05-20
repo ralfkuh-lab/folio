@@ -93,6 +93,16 @@ export function showStatus(msg: string): void {
     if (el) el.textContent = msg;
 }
 
+/// tb-reload markiert den "extern geaenderte Datei wartet auf Reload"-
+/// Zustand. Wird im document:external_changed-Handler bei
+/// documentAutoReload=false gesetzt und beim erfolgreichen Reload /
+/// dem Doc-Wechsel zurueckgesetzt.
+export function setReloadButtonPending(pending: boolean): void {
+    const btn = $('tb-reload') as HTMLButtonElement | null;
+    if (!btn) return;
+    btn.hidden = !pending;
+}
+
 function editorText(): string {
     // Nur fragen, wenn der Editor wirklich gemountet ist — sonst gibt
     // FolioEditor.getText() im View-Mode "" zurueck und der Dirty-Check
@@ -257,6 +267,7 @@ export function initDocumentState(d: Deps): void {
         currentPath = data.path || null;
         cleanText = data.text || '';
         markDirty(false);
+        setReloadButtonPending(false);
         setStatusPath(data.path || 'Bereit', false);
         updateWordCount(data.text || '');
         applyDocKind(data.kind || 'unknown');
@@ -314,9 +325,12 @@ export function initDocumentState(d: Deps): void {
         markDirty(!!dirty);
     });
 
-    // Externe Datei-Aenderung (notify-Watcher im DocumentStore). Im View-
-    // Mode lautlos reloaden, im Edit-/Split-Mode nur wenn nicht dirty —
-    // sonst wuerden ungespeicherte Edits durch den Reload verworfen.
+    // Externe Datei-Aenderung (notify-Watcher im DocumentStore).
+    // Drei Faelle:
+    // 1) dirty                              → showStatus, keine Aktion
+    // 2) !dirty + documentAutoReload=true   → silent reload (alte Logik)
+    // 3) !dirty + documentAutoReload=false  → tb-reload-Button anzeigen,
+    //    User entscheidet selbst wann reloaded wird (z.B. Log-Datei).
     // reload_document selbst ist no-op, wenn Disk-Text == Store-Text
     // (z. B. unser eigener Save triggert den Watcher mit).
     listen('document:external_changed', function (event: any) {
@@ -327,7 +341,14 @@ export function initDocumentState(d: Deps): void {
             showStatus('Datei extern geändert (ungespeicherte Änderungen) — Reload via Save oder Verwerfen');
             return;
         }
-        invoke('reload_document').catch(function () {});
+        var settings = getCachedSettings();
+        var autoReload = settings ? !!settings.documentAutoReload : true;
+        if (autoReload) {
+            invoke('reload_document').catch(function () {});
+        } else {
+            setReloadButtonPending(true);
+            showStatus('Datei extern geändert — Reload-Button zum Übernehmen');
+        }
     });
 
     // document:closed wird vom close_document-Command emittiert. Wir setzen
@@ -337,6 +358,7 @@ export function initDocumentState(d: Deps): void {
         currentPath = null;
         cleanText = '';
         markDirty(false);
+        setReloadButtonPending(false);
         if (window.FolioEditor && typeof window.FolioEditor.setText === 'function') {
             window.FolioEditor.setText('', 'plaintext');
         }
@@ -360,6 +382,7 @@ export function initDocumentState(d: Deps): void {
         const data = (event && event.payload) || {};
         cleanText = data.text || editorText();
         markDirty(false);
+        setReloadButtonPending(false);
         renderDocumentPayload(data);
         updateWordCount(data.text || '');
         // Statusbar zuruecksetzen, falls vorher noch ein showStatus-Hinweis

@@ -106,6 +106,26 @@
     registrierten Formatter zeigen den Rohinhalt, ebenso wenn das
     Setting aus ist. Damit ist `MonacoEnvironment.getWorkerUrl` (siehe
     `editor/mount.ts`) Voraussetzung für Pretty-Output.
+  - **~~Vault-Tree-Auto-Refresh + Tooltip + Reload-Button~~** —
+    **gefixt 2026-05-20**: Drei zusammenhängende UX-Punkte:
+    - `Vault::item_html` rendert jetzt ein `title="<absolute_path>"`-
+      Attribut auf jedem Tree-Eintrag → Browser-Tooltip mit komplettem
+      Pfad beim Hover.
+    - Neues Modul `vault_watcher.rs` (NonRecursive `notify`-Watcher
+      pro aufgeklappten Ordner). `Vault::on_expand` registriert, das
+      `on_collapse` deregistriert. Bei FS-Event emit
+      `vault:dir_changed { path }` → Frontend triggert `expand-dir`-
+      Pfad nur für den betroffenen Ordner (kein Full-Tree-Rebuild).
+    - Setting `vaultAutoRefresh` (default an): Toggle schaltet den
+      Watcher live ein/aus + re-watcht beim Enable alle aktuell
+      aufgeklappten Ordner.
+    - Setting `documentAutoReload` (default an): bei `false` wird die
+      geöffnete Datei nicht mehr automatisch nachgeladen, stattdessen
+      erscheint `tb-reload` in der Toolbar. Sinnvoll für Log-Dateien
+      o. ä. mit ständigen Schreibvorgängen.
+    Verifiziert: Tooltip-Anzeige, beta.md erscheint nach extern Create
+    im aufgeklappten Tree, tb-reload visible/hidden korreliert mit
+    Setting + pending external change.
   - **macOS: Terminal-Wahl im Settings-Panel** — `open_terminal_at`
     öffnet auf macOS aktuell immer `Terminal.app`. Settings-Panel
     bietet noch keine Auswahl an; Default funktioniert zuverlässig.

@@ -379,6 +379,35 @@ export function initVaultTree(d: Deps): void {
         refreshVault();
     });
 
+    // vault:dir_changed feuert aus dem VaultWatcher (Backend) bei
+    // Create/Delete/Modify/Rename im aktuell aufgeklappten Ordner.
+    // Wir ruefen den expand-dir-Pfad genau fuer diesen Ordner neu —
+    // damit landet der frische Inhalt sofort im Tree.
+    // Bei Bursts (z.B. mehrere File-Saves) reicht ein Re-Build aus,
+    // der VaultWatcher debounct schon im Worker-Thread.
+    var ev = window.__TAURI__.event;
+    if (ev && typeof ev.listen === 'function') {
+        ev.listen('vault:dir_changed', function (event: any) {
+            var data = (event && event.payload) || {};
+            var path = data.path;
+            if (!path || typeof path !== 'string') return;
+            // Pfad-Normalisierung wie im Vault-Render: Backend liefert
+            // aus notify-Events u.U. Backslash-Pfade.
+            var normalized = path.replace(/\\/g, '/');
+            // Nur refreshen, wenn der Ordner aktuell im DOM aufgeklappt
+            // ist — der Watcher wird beim collapse zwar entfernt, aber
+            // ein laufendes Event kann noch in der Queue stehen.
+            var node = findAllNodesByPath(normalized)[0];
+            if (!node) return;
+            var ul = node.querySelector(':scope > ul.children') as HTMLElement | null;
+            if (!ul || ul.classList.contains('collapsed')) return;
+            window.__TAURI__.event.emit('shell:event', {
+                type: 'expand-dir',
+                path: normalized,
+            });
+        });
+    }
+
     // Initial-Load
     refreshVault();
 }
