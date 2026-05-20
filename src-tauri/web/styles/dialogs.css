@@ -563,6 +563,121 @@
   }
 }
 
+/* Settings-Dialog */
+#settings-dialog[hidden] { display: none; }
+#settings-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.28);
+}
+.settings-dialog__panel {
+  width: min(560px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.28);
+  padding: 18px;
+  gap: 12px;
+}
+.settings-dialog__title {
+  font-weight: 700;
+  font-size: 14px;
+}
+.settings-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  overflow: auto;
+}
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.settings-section__title {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-muted);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+}
+.settings-row {
+  display: grid;
+  grid-template-columns: 1fr 200px;
+  align-items: center;
+  gap: 12px;
+}
+.settings-row label {
+  font-size: 12.5px;
+  color: var(--fg);
+}
+.settings-row--toggle {
+  grid-template-columns: 1fr;
+}
+.settings-row--toggle label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.settings-row--toggle input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+.settings-input {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 12.5px;
+}
+.settings-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  border-color: var(--accent);
+}
+.settings-hint {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--fg-muted);
+  line-height: 1.4;
+}
+.settings-hint--alert {
+  color: var(--accent);
+}
+.settings-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.settings-dialog__actions button {
+  min-width: 96px;
+  border: 1px solid var(--border);
+  background: var(--rail-bg);
+  color: var(--fg);
+  border-radius: 4px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.settings-dialog__actions button:hover { background: var(--rail-hover-bg); }
+.settings-dialog__actions .primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: white;
+}
+
 /* Image-Insert-Dialog */
 #image-dialog[hidden] { display: none; }
 #image-dialog {

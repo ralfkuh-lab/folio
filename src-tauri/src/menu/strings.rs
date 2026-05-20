@@ -1,10 +1,9 @@
 //! Beschriftungen für die Anwendungs-Menüleiste.
 //!
-//! v1: nur Deutsch (`de()`). `en()` ist als Platzhalter angelegt und
-//! liefert aktuell die deutschen Strings — wird ersetzt, sobald die
-//! Mehrsprachigkeit in den Settings-Bereich einzieht. Konsumenten rufen
-//! ausschließlich [`labels`] und bekommen je nach `lang`-Code das
-//! passende Set zurück.
+//! Beide Sprachen (de/en) sind heute echte Übersetzungen. Welche aktiv
+//! ist, entscheidet das Settings-Panel ([`crate::settings::SettingsData`]
+//! `language`-Feld); der gewählte Sprachcode geht in [`labels`] und
+//! kommt als statisches `MenuLabels` zurück.
 
 #[derive(Debug, Clone, Copy)]
 pub struct MenuLabels {
@@ -21,6 +20,7 @@ pub struct MenuLabels {
     pub edit_undo: &'static str,
     pub edit_redo: &'static str,
     pub edit_find: &'static str,
+    pub edit_settings: &'static str,
     pub view: &'static str,
     pub view_mode_view: &'static str,
     pub view_mode_edit: &'static str,
@@ -61,6 +61,7 @@ const fn de() -> MenuLabels {
         edit_undo: "Rückgängig",
         edit_redo: "Wiederholen",
         edit_find: "Suchen…",
+        edit_settings: "Einstellungen…",
         view: "Ansicht",
         view_mode_view: "View-Mode",
         view_mode_edit: "Edit-Mode",
@@ -81,5 +82,36 @@ const fn de() -> MenuLabels {
 }
 
 const fn en() -> MenuLabels {
-    de()
+    MenuLabels {
+        file: "File",
+        file_open: "Open…",
+        file_save: "Save",
+        file_save_as: "Save As…",
+        file_recent: "Recent",
+        file_recent_empty: "(no entries)",
+        file_rename: "Rename…",
+        file_close: "Close",
+        file_quit: "Quit",
+        edit: "Edit",
+        edit_undo: "Undo",
+        edit_redo: "Redo",
+        edit_find: "Find…",
+        edit_settings: "Settings…",
+        view: "View",
+        view_mode_view: "View Mode",
+        view_mode_edit: "Edit Mode",
+        view_mode_split: "Split Mode",
+        view_theme: "Theme",
+        view_theme_light: "Light",
+        view_theme_dark: "Dark",
+        view_rail_left: "Toggle Vault",
+        view_rail_right: "Toggle Outline",
+        view_minimap: "Toggle Minimap",
+        help: "Help",
+        help_cheatsheet: "Cheat Sheet",
+        help_about: "About Folio",
+        save_as_filter_markdown: "Markdown",
+        save_as_filter_text: "Text File",
+        save_as_filter_all: "All Files",
+    }
 }

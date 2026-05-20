@@ -16,6 +16,7 @@ pub mod panel_state;
 pub mod pdf_export;
 mod persist;
 pub mod renderer;
+pub mod settings;
 pub mod state;
 pub mod text_statistics;
 pub mod theme;
@@ -67,7 +68,17 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_screenshots::init())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .menu(|handle| menu::build(handle, "de"))
+        .menu(|handle| {
+            // Sprache aus den persistierten Settings ziehen — Live-Switch
+            // gibt es bewusst nicht (Codex-Review: Menue-Rebuild verliert
+            // den vom Frontend nachgepflegten checked/enabled-State).
+            // Stattdessen wirkt die Sprachwahl beim naechsten Start.
+            let lang = crate::settings::SettingsService::load()
+                .data()
+                .language
+                .code();
+            menu::build(handle, lang)
+        })
         .on_menu_event(menu::on_menu_event)
         .manage(AppState::new())
         .on_window_event(|window, event| {
@@ -210,6 +221,8 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::app::set_webview_zoom,
             commands::app::shell_opener::show_in_file_manager,
             commands::app::shell_opener::open_terminal_at,
+            commands::app::settings::settings_get,
+            commands::app::settings::settings_update,
             commands::file::read::read_file,
             commands::file::read::reload_document,
             commands::file::read::write_file,

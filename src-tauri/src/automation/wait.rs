@@ -67,9 +67,7 @@ pub fn already_satisfied(state: &AppState, event: &str) -> bool {
             .lock()
             .map(|s| !s.is_dirty)
             .unwrap_or(false),
-        "document.loaded" | "document.saved" => {
-            recently_emitted(state, event, RECENT_EVENT_TTL_MS)
-        }
+        "document.loaded" | "document.saved" => recently_emitted(state, event, RECENT_EVENT_TTL_MS),
         _ => false,
     }
 }

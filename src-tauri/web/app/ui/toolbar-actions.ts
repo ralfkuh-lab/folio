@@ -187,6 +187,13 @@ export function initToolbarActions(): void {
             invoke('menu_dispatch', { id: 'file.quit' }).catch(function(){});
             return;
         }
+        // Strg+, → Einstellungen. WebView2 schluckt den Accelerator
+        // genau wie die anderen, deshalb hier ueber menu_dispatch.
+        if (!shift && k === ',') {
+            e.preventDefault();
+            invoke('menu_dispatch', { id: 'edit.settings' }).catch(function(){});
+            return;
+        }
         // Strg+Z / Strg+Shift+Z: Editor-Undo/Redo. Wenn Monaco selbst
         // den Fokus hat, machen wir nichts — Monacos eingebauter
         // Keybinding-Pfad greift dort wie gewohnt. Nur ausserhalb des

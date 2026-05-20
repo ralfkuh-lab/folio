@@ -13,8 +13,10 @@
 use std::sync::Mutex;
 
 use crate::document_store::{DocumentStore, LoadedDocument};
+use crate::file_kind::{classify, FileKind};
 use crate::navigation::{Entry as NavigationEntry, NavigationController};
-use crate::state::AppState;
+use crate::settings::{DefaultViewMode, SettingsService};
+use crate::state::{AppState, AutomationUiState};
 use crate::vault::Vault;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,6 +51,16 @@ pub struct OpenDocumentOutcome {
     /// Anker-only-Sprung (gleicher Pfad bei `ReloadPolicy::IfPathChanged`).
     pub loaded: Option<LoadedDocument>,
     pub nav_entry: NavigationEntry,
+    /// `Some(mode)` wenn der Per-Typ-Default-Mode aus den Settings
+    /// (`defaultModeMarkdown` / `defaultModeText`) einen View-/Edit-
+    /// Switch bewirkt hat. Der Aufrufer ist dafuer zustaendig,
+    /// `app:set_mode` mit diesem Mode ans Frontend zu emittieren —
+    /// State.automation/navigation sind hier bereits aktualisiert.
+    ///
+    /// `None` bedeutet entweder: Setting steht auf `current` (default),
+    /// oder Mode war schon korrekt, oder Kind ist nicht switching-faehig
+    /// (Binary/Unknown), oder es wurde gar nichts geladen (Anker-Sprung).
+    pub mode_override: Option<String>,
 }
 
 #[derive(Debug)]
@@ -85,6 +97,8 @@ pub fn open(
         &state.document_store,
         &state.navigation,
         &state.vault,
+        Some(&state.settings),
+        Some(&state.automation),
         path,
         options,
     )
@@ -94,6 +108,8 @@ fn open_inner(
     document_store: &Mutex<DocumentStore>,
     navigation: &Mutex<NavigationController>,
     vault: &Mutex<Vault>,
+    settings: Option<&Mutex<SettingsService>>,
+    automation: Option<&Mutex<AutomationUiState>>,
     path: String,
     options: OpenDocumentOptions,
 ) -> Result<OpenDocumentOutcome, OpenDocumentError> {
@@ -132,10 +148,63 @@ fn open_inner(
         vault
             .lock()
             .map_err(|_| OpenDocumentError::LockPoisoned("vault"))?
-            .set_active(Some(path));
+            .set_active(Some(path.clone()));
     }
 
-    Ok(OpenDocumentOutcome { loaded, nav_entry })
+    // Per-Typ-Default-Mode aus den Settings nur auf frischem Open
+    // anwenden (nicht beim Anker-Sprung mit IfPathChanged). History,
+    // Reload und Save laufen ueber andere Pfade und sind unberuehrt.
+    let mode_override = if needs_load {
+        apply_default_mode(settings, automation, navigation, &path)
+    } else {
+        None
+    };
+
+    Ok(OpenDocumentOutcome {
+        loaded,
+        nav_entry,
+        mode_override,
+    })
+}
+
+/// Liest das Per-Typ-Setting fuer den Kind der frisch geladenen Datei
+/// und wechselt den View-/Edit-Mode, wenn das Setting ein konkretes
+/// Target (`view`/`edit`) fordert und der aktuelle Mode davon abweicht.
+/// `current` ist No-op. Bei fehlenden Mutex-Argumenten (Tests, die ohne
+/// AppState arbeiten) ebenfalls No-op.
+fn apply_default_mode(
+    settings: Option<&Mutex<SettingsService>>,
+    automation: Option<&Mutex<AutomationUiState>>,
+    navigation: &Mutex<NavigationController>,
+    path: &str,
+) -> Option<String> {
+    let kind = classify(path);
+    if !matches!(kind, FileKind::Markdown | FileKind::Text) {
+        return None;
+    }
+    let settings = settings?;
+    let automation = automation?;
+    let data = settings.lock().ok()?.data();
+    let target = match kind {
+        FileKind::Markdown => data.default_mode_markdown,
+        FileKind::Text => data.default_mode_text,
+        _ => return None,
+    };
+    let target_mode = match target {
+        DefaultViewMode::View => "view",
+        DefaultViewMode::Edit => "edit",
+        DefaultViewMode::Current => return None,
+    };
+    let mut auto = automation.lock().ok()?;
+    if auto.view_mode == target_mode {
+        return None;
+    }
+    auto.view_mode = target_mode.to_string();
+    drop(auto);
+    if let Ok(mut nav) = navigation.lock() {
+        nav.update_view_mode(target_mode.to_string());
+    }
+    Some(target_mode.to_string())
 }
 
 #[cfg(test)]
@@ -172,6 +241,8 @@ mod tests {
             &store,
             &nav,
             &vault,
+            None,
+            None,
             path.clone(),
             OpenDocumentOptions {
                 anchor: None,
@@ -200,6 +271,8 @@ mod tests {
             &store,
             &nav,
             &vault,
+            None,
+            None,
             path.clone(),
             OpenDocumentOptions {
                 anchor: None,
@@ -214,6 +287,8 @@ mod tests {
             &store,
             &nav,
             &vault,
+            None,
+            None,
             path.clone(),
             OpenDocumentOptions {
                 anchor: Some("foo".into()),
@@ -240,6 +315,8 @@ mod tests {
             &store,
             &nav,
             &vault,
+            None,
+            None,
             path.clone(),
             OpenDocumentOptions {
                 anchor: None,
@@ -254,6 +331,8 @@ mod tests {
             &store,
             &nav,
             &vault,
+            None,
+            None,
             path.clone(),
             OpenDocumentOptions {
                 anchor: None,
@@ -285,6 +364,8 @@ mod tests {
             &store,
             &nav,
             &vault,
+            None,
+            None,
             path_b.clone(),
             OpenDocumentOptions {
                 anchor: None,
@@ -313,6 +394,8 @@ mod tests {
             &store,
             &nav,
             &vault,
+            None,
+            None,
             path_b.clone(),
             OpenDocumentOptions {
                 anchor: None,

@@ -8,6 +8,7 @@
 //! `__cmd__*`-Companion-Funktionen ueber den Original-Modulpfad sucht.
 
 pub mod dialog;
+pub mod settings;
 pub mod shell_opener;
 
 use crate::state::AppState;
@@ -121,9 +122,7 @@ pub async fn set_rail_visible(
 /// Body-CSS-Klasse setzen koennen. Ohne diesen Call zeigten die Buttons
 /// auch dann „aktiv", wenn `panel-state.json` `false` persistierte.
 #[tauri::command]
-pub async fn panel_rails_get(
-    state: State<'_, AppState>,
-) -> Result<serde_json::Value, String> {
+pub async fn panel_rails_get(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
     let data = state
         .panel_state
         .lock()

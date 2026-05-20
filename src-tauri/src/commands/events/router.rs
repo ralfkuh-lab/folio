@@ -55,7 +55,7 @@ pub fn route_shell_event(
         ),
         "expand-dir" => vault::expand_dir(string_field(payload, "path")?, state, handle),
         "collapse-dir" => vault::collapse_dir(string_field(payload, "path")?, state),
-        "open" => vault::open_document(string_field(payload, "path")?, state),
+        "open" => vault::open_document(string_field(payload, "path")?, state, handle),
         "context" => vault::context(payload, handle),
         "addFile" => vault::add_file(state, handle),
         "addFolder" => vault::add_folder(state, handle),

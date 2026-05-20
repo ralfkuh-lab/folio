@@ -80,11 +80,19 @@ pub fn build(handle: &AppHandle, lang: &str) -> tauri::Result<Menu<Wry>> {
     let item_find = MenuItemBuilder::with_id(ids::EDIT_FIND, l.edit_find)
         .accelerator("CmdOrCtrl+F")
         .build(handle)?;
+    // edit.settings: Cross-Platform-Konvention. macOS-User erwarten den
+    // Eintrag spaeter im App-Menue (Folio → Einstellungen) — wenn das
+    // einzieht, hier neu verdrahten.
+    let item_settings = MenuItemBuilder::with_id(ids::EDIT_SETTINGS, l.edit_settings)
+        .accelerator("CmdOrCtrl+,")
+        .build(handle)?;
     let edit_menu = SubmenuBuilder::new(handle, l.edit)
         .item(&item_undo)
         .item(&item_redo)
         .item(&PredefinedMenuItem::separator(handle)?)
         .item(&item_find)
+        .item(&PredefinedMenuItem::separator(handle)?)
+        .item(&item_settings)
         .build()?;
 
     // Ansicht
@@ -124,10 +132,10 @@ pub fn build(handle: &AppHandle, lang: &str) -> tauri::Result<Menu<Wry>> {
     // Toggle-Optionen sind schneller per Toolbar erreichbar als per
     // Shortcut-Muskelgedaechtnis, und freie Shortcuts (Strg+B/Strg+/)
     // kollidieren mit Markdown-Edits (Bold) bzw. wirken unintuitiv.
-    let item_rail_left = MenuItemBuilder::with_id(ids::VIEW_RAIL_LEFT, l.view_rail_left)
-        .build(handle)?;
-    let item_rail_right = MenuItemBuilder::with_id(ids::VIEW_RAIL_RIGHT, l.view_rail_right)
-        .build(handle)?;
+    let item_rail_left =
+        MenuItemBuilder::with_id(ids::VIEW_RAIL_LEFT, l.view_rail_left).build(handle)?;
+    let item_rail_right =
+        MenuItemBuilder::with_id(ids::VIEW_RAIL_RIGHT, l.view_rail_right).build(handle)?;
     // view.minimap: nur im Edit-Mode bei Markdown aktiv — Frontend toggelt
     // via app:set_mode + applyDocKind, analog zu help.cheatsheet.
     let item_minimap = MenuItemBuilder::with_id(ids::VIEW_MINIMAP, l.view_minimap)

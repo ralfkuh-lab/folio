@@ -15,6 +15,7 @@ pub(super) const FILE_QUIT: &str = "file.quit";
 pub(super) const EDIT_UNDO: &str = "edit.undo";
 pub(super) const EDIT_REDO: &str = "edit.redo";
 pub(super) const EDIT_FIND: &str = "edit.find";
+pub(super) const EDIT_SETTINGS: &str = "edit.settings";
 pub(super) const VIEW_MODE_VIEW: &str = "view.mode.view";
 pub(super) const VIEW_MODE_EDIT: &str = "view.mode.edit";
 pub(super) const VIEW_MODE_SPLIT: &str = "view.mode.split";

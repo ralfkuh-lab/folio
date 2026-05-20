@@ -39,6 +39,9 @@ pub(super) fn link_click(href: String, state: &AppState, handle: &AppHandle) -> 
                 },
             )
             .map_err(|error| error.to_string())?;
+            if let Some(mode) = outcome.mode_override.as_deref() {
+                let _ = handle.emit("app:set_mode", serde_json::json!({ "mode": mode }));
+            }
             let entry = crate::commands::nav::NavEntry::from(&outcome.nav_entry);
             handle
                 .emit("navigation:changed", &entry)

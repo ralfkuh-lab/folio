@@ -70,40 +70,51 @@
   Test: manuell eine Datei außerhalb der aktuell expandierten Vault-
   Roots pinnen und schauen, ob sie im Tree auftaucht.
 
-- **Config-/Einstellungen-Bereich**: Eigener Settings-Dialog/-Panel für
-  Anwendungs-Einstellungen (Theme, Font/Schriftgröße, Editor-Optionen,
-  Vault-Pfade, Automation-Port, …). Persistenz analog zur Window-State-
-  Speicherung; Aufruf über Menü oder Statusbar.
-  - **macOS: Terminal-Wahl im Settings-Panel** — `open_terminal_at` öffnet
-    auf macOS aktuell immer `Terminal.app`. Sobald der Settings-Bereich
-    existiert, dort eine Auswahl anbieten (Terminal.app, iTerm2, Warp, …
-    oder freies Eingabefeld für den App-Namen). Bis dahin funktioniert
-    der Default zuverlässig.
-  - **Englisches Menü-Set** — `src-tauri/src/menu/strings.rs::en()` ist
-    aktuell ein Platzhalter (gibt deutsche Strings zurück). Sobald die
-    Sprachwahl im Settings-Panel landet, hier die englische Übersetzung
-    ergänzen — der Builder zieht sie automatisch über `labels(lang)`.
-  - **Per-Typ-Default-Mode** — heute ist der View/Edit-Mode sticky beim
-    Dateiwechsel (User-Entscheidung bleibt). Settings-Panel könnte
-    pro Kind (`markdown`, `text`) einen Default-Mode anbieten, der
-    beim ersten Öffnen einer Datei dieses Typs greift („Markdown öffnet
-    in: View / Edit", „Code öffnet in: View / Edit").
-  - **Auto-Format im View-Mode** — toggle „Dateien im View-Mode
-    automatisch formatieren". Heute macht der Code-View nur JSON
-    pretty (`JSON.parse + stringify`). Mit dem Setting könnte das auf
-    weitere Sprachen ausgedehnt werden (XML, HTML, CSS, JS/TS, YAML, …)
-    via Monaco-`editor.action.formatDocument` direkt nach dem Mount,
-    aufgrund des MonacoEnvironment-Fixes laufen die Sprach-Worker
-    jetzt. Default-Toggle: an. Per-Sprache-Granularität optional.
+- **Config-/Einstellungen-Bereich** (Phase 1 gefixt 2026-05-20):
+  Settings-Panel mit Persistenz in `settings.json` unter dem App-Config-
+  Dir, Aufruf über `Bearbeiten → Einstellungen…` (Strg+,). Architektur:
+  Rust `settings::SettingsService` analog `theme.rs`/`panel_state.rs`,
+  Patch-Command `settings_update` mit typisierten Optional-Feldern,
+  Event `settings:changed { settings, changed: [...] }`. Codex-Review
+  hat den ursprünglichen Plan an mehreren Stellen korrigiert
+  (typisierter Patch statt generischem set, Menü unter Bearbeiten statt
+  Datei, konservativer Sprach-Switch). Offene Punkte als Phase 2:
+  - **~~Englisches Menü-Set~~** — **gefixt 2026-05-20**:
+    `menu/strings.rs::en()` hat echte Übersetzungen. Sprachwahl wirkt
+    bewusst erst beim nächsten Start (Codex-Review: Live-Menü-Rebuild
+    verliert den vom Frontend nachgepflegten checked/enabled-State).
+    Sobald Frontend-i18n eingezogen ist, wäre ein gezielter
+    `menu_rebuild`-Pfad mit Wiederherstellung der dynamischen States
+    machbar.
+  - **~~Per-Typ-Default-Mode~~** — **gefixt 2026-05-20**:
+    `defaultModeMarkdown` / `defaultModeText` in den Settings mit drei
+    Werten: `view` (immer Anzeige), `edit` (immer Bearbeiten), `current`
+    (Default — der aktuelle Body-Mode bleibt; entspricht dem Verhalten
+    vor dem Settings-Panel). Greift nur auf frischem `openDocument`-
+    Pfad — History-Restore (`navigation:changed`) gewinnt immer, Reload
+    und Save defaulten nicht.
+  - **~~Auto-Format im View-Mode~~** — **gefixt 2026-05-20**: Toggle
+    `viewAutoFormat` (default an). Bei Aktivierung läuft für **alle**
+    Sprachen (inkl. JSON) Monacos `editor.action.formatDocument` best-
+    effort nach dem Mount — keine Sonderpfade. Sprachen ohne
+    registrierten Formatter zeigen den Rohinhalt, ebenso wenn das
+    Setting aus ist. Damit ist `MonacoEnvironment.getWorkerUrl` (siehe
+    `editor/mount.ts`) Voraussetzung für Pretty-Output.
+  - **macOS: Terminal-Wahl im Settings-Panel** — `open_terminal_at`
+    öffnet auf macOS aktuell immer `Terminal.app`. Settings-Panel
+    bietet noch keine Auswahl an; Default funktioniert zuverlässig.
   - **Markdown-Preview-Themes / Fonts** — Layout/Theming der View-
     Region anpassbar machen: Body-Font, Mono-Font für Code-Blöcke,
     Schriftgröße, ggf. Farbschema-Auswahl getrennt von App-Theme.
     Charme der Sache: die HTML/PDF-Export-Layouts in
     `commands/export.rs::export_layouts` haben bereits ein Theme-/
     Layout-Konzept (per Layout eigenes CSS, gerendert ins iframe-
-    Preview). Wenn das Settings-Panel kommt, lohnt sich die
-    Vereinheitlichung — ein Theme/Layout, das sowohl die Markdown-
-    Preview im View-Mode als auch den Export steuert.
+    Preview). Vereinheitlichung wäre ein Theme/Layout, das sowohl die
+    Markdown-Preview im View-Mode als auch den Export steuert.
+  - **Theme im Settings-Panel** — Theme bleibt in `theme.rs` /
+    `theme_get`/`theme_set` (separate Persistenz). Settings-Dialog
+    könnte als reine Aggregations-UI eine zusätzliche Theme-Reihe
+    anzeigen, ohne den Persistenz-Ort zu verschieben.
 - **HTML im View-Mode rendern**: `.html`/`.htm` als Datei-Klasse "richtig" anzeigen,
   Skripte/inline-Event-Handler beim Render rauspatchen (Sandbox-iframe oder
   serverseitige Sanitization). Aktuell zeigt der View-Mode den Source mit
@@ -121,6 +132,21 @@
   zeigen. Reproduzierbare Lösung im `.deb`-Build wäre schöner —
   Hintergrund, bisherige Erkenntnisse und mögliche Wege in
   [`docs/linux-md-icon.md`](docs/linux-md-icon.md).
+
+- **`navigation:changed` Payload-Case-Inkonsistenz**: Aus dem Tauri-
+  Command-Pfad (`commands::nav::move_history` → `app.emit(...&NavEntry)`)
+  kommt das Event mit snake_case-Feldern (`view_mode`, `scroll_y`,
+  `editor_scroll_y`, `editor_cursor`). Aus dem Automation-API-Pfad
+  (`automation::handlers::ui::history_move` → emit mit
+  `HistoryEntryResponse` `#[serde(rename_all = "camelCase")]`) kommt es
+  camelCase. Der Frontend-Handler in `web/app/main.ts:115` liest aber
+  ausschließlich snake_case (`data.view_mode`, `data.scroll_y`, …) —
+  beim API-History-Pfad greifen also Mode-Restore und Scroll-Restore
+  nicht. Fix-Optionen: Backend-Pfade harmonisieren (beide camelCase
+  oder beide snake) und Frontend-Handler entsprechend angleichen, ggf.
+  defensiv beide Cases akzeptieren. Gefunden 2026-05-20 beim Settings-
+  Live-Test, betrifft nur den Automation-API-Pfad und ist daher in der
+  Praxis nur für E2E-Szenarien relevant.
 
 - **Strukturiertes Logging mit Log-Levels**: Heute schreibt Folio nur
   `eprintln!`/`println!` auf stdout/stderr (gemischt mit `cargo run`-

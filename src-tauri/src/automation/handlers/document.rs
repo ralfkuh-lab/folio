@@ -22,7 +22,7 @@ pub(in crate::automation) async fn post_open(
 ) -> ApiResult<Json<OkResponse>> {
     let Json(payload) = json_payload(payload)?;
     let state = context.app_handle.state::<AppState>();
-    crate::document_service::open(
+    let outcome = crate::document_service::open(
         &state,
         payload.path,
         crate::document_service::OpenDocumentOptions {
@@ -42,6 +42,13 @@ pub(in crate::automation) async fn post_open(
         }
         other => ApiError::internal(other.to_string()),
     })?;
+    if let Some(mode) = outcome.mode_override.as_deref() {
+        emit(
+            &context,
+            "app:set_mode",
+            serde_json::json!({ "mode": mode }),
+        )?;
+    }
     ok()
 }
 

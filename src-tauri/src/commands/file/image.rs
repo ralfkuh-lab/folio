@@ -247,20 +247,14 @@ fn compute_relative(final_path: &Path, doc_path: Option<&str>) -> (String, Optio
     let Some(doc) = doc_path.filter(|p| !p.is_empty()) else {
         return (
             absolute.to_string_lossy().replace('\\', "/"),
-            Some(
-                "Kein Dokument geoeffnet — absoluter Pfad eingefuegt."
-                    .to_string(),
-            ),
+            Some("Kein Dokument geoeffnet — absoluter Pfad eingefuegt.".to_string()),
         );
     };
     let doc_path = Path::new(doc);
     let Some(doc_dir) = doc_path.parent() else {
         return (
             absolute.to_string_lossy().replace('\\', "/"),
-            Some(
-                "Dokumentpfad ohne Verzeichnis — absoluter Pfad eingefuegt."
-                    .to_string(),
-            ),
+            Some("Dokumentpfad ohne Verzeichnis — absoluter Pfad eingefuegt.".to_string()),
         );
     };
     let doc_dir_canon = fs::canonicalize(doc_dir).unwrap_or_else(|_| doc_dir.to_path_buf());
@@ -269,8 +263,7 @@ fn compute_relative(final_path: &Path, doc_path: Option<&str>) -> (String, Optio
         (
             rel,
             Some(
-                "Bild liegt ausserhalb des Dokumentbaums — absoluter Pfad eingefuegt."
-                    .to_string(),
+                "Bild liegt ausserhalb des Dokumentbaums — absoluter Pfad eingefuegt.".to_string(),
             ),
         )
     } else {
@@ -287,7 +280,10 @@ mod tests {
     fn resolve_unique_appends_default_extension() {
         let temp = TempDir::new().unwrap();
         let path = resolve_unique(temp.path(), "screenshot", "png");
-        assert_eq!("screenshot.png", path.file_name().unwrap().to_str().unwrap());
+        assert_eq!(
+            "screenshot.png",
+            path.file_name().unwrap().to_str().unwrap()
+        );
     }
 
     #[test]

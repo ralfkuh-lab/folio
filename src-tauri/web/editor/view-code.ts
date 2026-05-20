@@ -3,12 +3,10 @@
 // Mode-Instanz aus `mount.ts`, teilt aber denselben AMD-Loader
 // (`whenMonacoLoaded`), sodass Monaco genau einmal geladen wird.
 //
-// Pretty-Print:
-//   - JSON: `JSON.parse + stringify(_, null, 2)`. Bei Parse-Error wird der
-//     Roh-Inhalt angezeigt (Highlighting + Read-Only sind trotzdem ein
-//     Mehrwert ggue. Plain-Pre).
-//   - Andere Sprachen: roh anzeigen — Monaco liefert Highlighting, Folding,
-//     Find-Widget out-of-the-box.
+// Auto-Format: einheitlich ueber Monacos eingebauten `formatDocument`-
+// Pfad fuer alle Sprachen (inkl. JSON). Keine Sonderbehandlung — wenn
+// fuer eine Sprache kein Formatter registriert ist, wird der rohe Inhalt
+// gezeigt (Highlighting/Folding/Find sind trotzdem da).
 
 import { whenMonacoLoaded } from './mount';
 import { getMonaco, setMonaco } from './state';
@@ -31,19 +29,49 @@ function ensureMonaco(): Promise<any> {
     });
 }
 
-function prettyPrint(text: string, language: string): string {
-    if (language !== 'json') return text;
-    const trimmed = (text || '').trim();
-    if (!trimmed) return text || '';
-    try {
-        const parsed = JSON.parse(trimmed);
-        return JSON.stringify(parsed, null, 2);
-    } catch {
-        return text || '';
-    }
+// Best-Effort-Autoformat: Monacos eingebauter Formatter wird asynchron
+// getriggert — fuer alle Sprachen, fuer die ein Formatter registriert
+// ist (JSON, XML, HTML, CSS, JS/TS, …). Fehler/fehlender Formatter
+// werden still verschluckt — der Rohinhalt bleibt sichtbar. Plaintext
+// wird ausgespart, weil dort sowieso nichts zu formatieren ist.
+//
+// WARUM einheitlich Monaco statt eigenem JSON-Pretty: Konsistenz zwischen
+// Edit- und View-Mode. Wenn der User im Edit-Mode mit Strg+Shift+F
+// (Monacos formatDocument) formatiert und dann in den View-Mode wechselt,
+// muss die Ansicht IDENTISCH aussehen — sonst gibt es Diskrepanzen bei
+// Indents, Trailing-Newline, Key-Order etc.
+//
+// readOnly umgehen: Monacos `editor.action.formatDocument` will Edits
+// gegen das Editor-Model ausfuehren und sieht `readOnly: true` als Stop.
+// Wir heben das fuer den Formatter-Aufruf kurz auf und setzen es danach
+// zurueck. User-Input ist trotzdem geblockt, weil `domReadOnly: true`
+// bleibt — der DOM-Layer akzeptiert keine Tastatur-Edits.
+function runAutoFormat(language: string): void {
+    if (!editor) return;
+    if (language === 'plaintext') return;
+    setTimeout(function () {
+        if (!editor) return;
+        var action = editor.getAction && editor.getAction('editor.action.formatDocument');
+        if (!action) return;
+        editor.updateOptions({ readOnly: false });
+        try {
+            Promise.resolve(action.run())
+                .catch(function () { /* ignore */ })
+                .finally(function () {
+                    if (editor) editor.updateOptions({ readOnly: true });
+                });
+        } catch {
+            // Sprach-Worker noch nicht hoch, Formatter nicht registriert,
+            // o.ae. — best effort, nicht eskalieren.
+            if (editor) editor.updateOptions({ readOnly: true });
+        }
+    }, 50);
 }
 
-export function mount(elementId: string, text: string, language: string): Promise<void> {
+type MountOptions = { autoFormat?: boolean };
+
+export function mount(elementId: string, text: string, language: string, options?: MountOptions): Promise<void> {
+    const autoFormat = !!(options && options.autoFormat);
     return ensureMonaco().then((monaco) => {
         if (!monaco) return;
         const el = document.getElementById(elementId);
@@ -54,12 +82,13 @@ export function mount(elementId: string, text: string, language: string): Promis
         if (editor && mountedElementId === elementId) {
             // Re-Use: vorhandene Instanz auf neuen Text/Lang updaten.
             applyContent(text, language);
+            if (autoFormat) runAutoFormat(language || 'plaintext');
             return;
         }
         if (editor) {
             disposeInternal();
         }
-        const content = prettyPrint(text || '', language || 'plaintext');
+        const content = text || '';
         const isDark = document.documentElement.classList.contains('theme-dark')
             || pendingTheme === 'dark';
         model = monaco.editor.createModel(content, language || 'plaintext');
@@ -87,6 +116,7 @@ export function mount(elementId: string, text: string, language: string): Promis
             monaco.editor.setTheme(pendingTheme === 'dark' ? 'vs-dark' : 'vs');
             pendingTheme = null;
         }
+        if (autoFormat) runAutoFormat(language || 'plaintext');
     });
 }
 
@@ -95,7 +125,7 @@ function applyContent(text: string, language: string): void {
     const monaco = getMonaco();
     if (!monaco) return;
     const lang = language || 'plaintext';
-    const content = prettyPrint(text || '', lang);
+    const content = text || '';
     if (model.getLanguageId() !== lang) {
         // Sprache aendert sich → frisches Model. setModelLanguage wuerde
         // den Tokenizer-State des alten Models nicht resetten.
@@ -111,12 +141,14 @@ function applyContent(text: string, language: string): void {
     editor.setScrollTop(0);
 }
 
-export function setText(text: string, language: string): void {
+export function setText(text: string, language: string, options?: MountOptions): void {
     if (!editor) {
         // Pre-Mount: Aufrufer ist verantwortlich, mount() zu rufen.
         return;
     }
+    const autoFormat = !!(options && options.autoFormat);
     applyContent(text, language);
+    if (autoFormat) runAutoFormat(language || 'plaintext');
 }
 
 export function setTheme(mode: 'light' | 'dark'): void {

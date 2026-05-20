@@ -54,8 +54,8 @@ interface TauriRuntime {
 // Read-only, eigener Container; nur Operationen, die fuer eine reine
 // Anzeige sinnvoll sind.
 interface FolioCodeViewSurface {
-    mount(elementId: string, text: string, language: string): Promise<void>;
-    setText(text: string, language: string): void;
+    mount(elementId: string, text: string, language: string, options?: { autoFormat?: boolean }): Promise<void>;
+    setText(text: string, language: string, options?: { autoFormat?: boolean }): void;
     setTheme(mode: 'light' | 'dark'): void;
     layout(): void;
     dispose(): void;

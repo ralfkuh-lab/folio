@@ -21,6 +21,11 @@ import { setEditorLanguageDisplay } from '../ui/language-picker';
 import { syncCheatsheetMenu } from '../ui/cheatsheet';
 import { showUnsavedDialog } from '../ui/dialogs';
 import { isEditorMounted, loadEditorText } from '../editor/shell';
+import { getCachedSettings } from '../ui/settings-dialog';
+// getCachedSettings wird im FolioCodeView-Mount-Pfad weiter genutzt
+// (autoFormat-Flag); der Default-Mode-Switch laeuft jetzt im Backend
+// (document_service::open). Frontend-Resolver entfernt — sonst doppelter
+// set_view_mode-Aufruf neben dem backendseitigen app:set_mode-Emit.
 
 type Deps = {
     setActiveMode: (mode: string) => void;
@@ -210,15 +215,9 @@ export function openDocument(path: string): Promise<boolean> {
         if (!ok) return false;
         return invoke('read_file', { path }).then(function (data) {
             invoke('workspace_add_recent', { path }).catch(function () {});
-            // Mode-Sticky: kein automatischer Wechsel zwischen Edit und
-            // View beim Dateiwechsel. View funktioniert seit der Code-
-            // View-Einfuehrung auch fuer `kind=text` (Pretty-Print bzw.
-            // syntax-highlighted Read-Only-Monaco), also gibt es keinen
-            // Grund mehr, fuer Non-Markdown-Files in Edit zu forcen. Wer
-            // Edit will, schaltet bewusst um — bleibt dann auch beim
-            // naechsten Dateiwechsel. Per-Typ-Default-Mode kommt mit dem
-            // Settings-Panel als Folgeticket.
             applyDocKind(data && data.kind);
+            // Per-Typ-Default-Mode greift im Backend (document_service::open)
+            // und emittiert dort `app:set_mode` — Frontend muss nichts tun.
             return true;
         }).catch(function (err) {
             showStatus(typeof err === 'string' ? err : 'Datei konnte nicht geöffnet werden');
@@ -286,10 +285,13 @@ export function initDocumentState(d: Deps): void {
         // idempotent — re-use der Instanz beim Wechsel zwischen Dateien.
         if (window.FolioCodeView) {
             if (data.kind === 'text') {
+                var settings = getCachedSettings();
+                var autoFormat = settings ? !!settings.viewAutoFormat : true;
                 window.FolioCodeView.mount(
                     'code-view-mount',
                     data.text || '',
                     data.language || 'plaintext',
+                    { autoFormat: autoFormat },
                 );
             }
         }

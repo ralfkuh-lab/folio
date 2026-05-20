@@ -13,6 +13,7 @@ import { initFindBar } from './ui/find-bar';
 import { initExportDialog } from './ui/export-dialog';
 import { initImageDialog, openImageDialog } from './ui/image-dialog';
 import { initAboutDialog } from './ui/about-dialog';
+import { initSettingsDialog } from './ui/settings-dialog';
 import { attachPasteHandler } from './ui/paste-handler';
 import { initRails, setRailVisibility } from './ui/rails';
 import { initContextMenu } from './vault/context-menu';
@@ -86,6 +87,7 @@ initExportDialog({
 });
 initImageDialog({ getCurrentPath, showStatus });
 initAboutDialog();
+initSettingsDialog();
 attachPasteHandler(function (blob) {
     openImageDialog({ preloadedBlob: blob }).catch(function () {});
 });

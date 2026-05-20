@@ -248,6 +248,54 @@
     </div>
   </div>
 </div>
+<div id="settings-dialog" hidden>
+  <div class="settings-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="settings-dialog-title">
+    <div class="settings-dialog__title" id="settings-dialog-title">Einstellungen</div>
+    <div class="settings-dialog__body">
+      <section class="settings-section">
+        <h3 class="settings-section__title">Allgemein</h3>
+        <div class="settings-row">
+          <label for="settings-language">Sprache</label>
+          <select id="settings-language" class="settings-input">
+            <option value="de">Deutsch</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+        <p class="settings-hint" id="settings-language-hint">Sprachänderung wird beim nächsten Start aktiv.</p>
+      </section>
+      <section class="settings-section">
+        <h3 class="settings-section__title">View-/Edit-Mode</h3>
+        <div class="settings-row">
+          <label for="settings-default-md">Markdown-Dateien öffnen in</label>
+          <select id="settings-default-md" class="settings-input">
+            <option value="view">Anzeige</option>
+            <option value="edit">Bearbeiten</option>
+            <option value="current">Aktueller Modus</option>
+          </select>
+        </div>
+        <div class="settings-row">
+          <label for="settings-default-text">Text-/Code-Dateien öffnen in</label>
+          <select id="settings-default-text" class="settings-input">
+            <option value="view">Anzeige</option>
+            <option value="edit">Bearbeiten</option>
+            <option value="current">Aktueller Modus</option>
+          </select>
+        </div>
+        <p class="settings-hint">„Aktueller Modus" behält den aktuell aktiven View/Edit-Status beim Öffnen einer neuen Datei. Zurück/Vorwärts stellt unabhängig davon den ursprünglichen Modus wieder her.</p>
+        <div class="settings-row settings-row--toggle">
+          <label for="settings-view-auto-format">
+            <input type="checkbox" id="settings-view-auto-format" />
+            Im View-Mode automatisch formatieren
+          </label>
+        </div>
+        <p class="settings-hint">Nutzt Monacos „Format Document" für alle Sprachen mit registriertem Formatter (JSON, XML, HTML, CSS, JS/TS, …). Ohne Häkchen wird der Rohinhalt angezeigt.</p>
+      </section>
+    </div>
+    <div class="settings-dialog__actions">
+      <button type="button" id="settings-close" class="primary">Schließen</button>
+    </div>
+  </div>
+</div>
 <div id="image-dialog" hidden>
   <div class="image-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="image-dialog-title">
     <div class="image-dialog__title" id="image-dialog-title">Bild einfügen</div>

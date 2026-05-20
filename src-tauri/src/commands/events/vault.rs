@@ -44,8 +44,12 @@ pub(super) fn collapse_dir(path: String, state: &AppState) -> Result<(), String>
     Ok(())
 }
 
-pub(super) fn open_document(path: String, state: &AppState) -> Result<(), String> {
-    crate::document_service::open(
+pub(super) fn open_document(
+    path: String,
+    state: &AppState,
+    handle: &AppHandle,
+) -> Result<(), String> {
+    let outcome = crate::document_service::open(
         state,
         path,
         crate::document_service::OpenDocumentOptions {
@@ -54,8 +58,11 @@ pub(super) fn open_document(path: String, state: &AppState) -> Result<(), String
             dirty: crate::document_service::DirtyPolicy::Discard,
         },
     )
-    .map(|_| ())
-    .map_err(|error| error.to_string())
+    .map_err(|error| error.to_string())?;
+    if let Some(mode) = outcome.mode_override.as_deref() {
+        let _ = handle.emit("app:set_mode", serde_json::json!({ "mode": mode }));
+    }
+    Ok(())
 }
 
 pub(super) fn context(payload: &Value, handle: &AppHandle) -> Result<(), String> {
@@ -83,7 +90,7 @@ pub(super) fn add_file(state: &AppState, handle: &AppHandle) -> Result<(), Strin
     else {
         return Ok(());
     };
-    open_document(path.to_string_lossy().into_owned(), state)
+    open_document(path.to_string_lossy().into_owned(), state, handle)
 }
 
 pub(super) fn add_folder(state: &AppState, handle: &AppHandle) -> Result<(), String> {

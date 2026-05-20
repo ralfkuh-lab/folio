@@ -112,10 +112,12 @@ sonst lehnt Tauri den Build ab.
   Dateien (JSON, XML, YAML, Code, …) bekommen im View-Mode eine
   eigene Monaco-Instanz neben dem Edit-Editor. Surface
   `window.FolioCodeView` (Bundle `editor/view-code.ts`,
-  `editor/index.ts`), Container `#code-view-mount`. JSON wird via
-  `JSON.parse + stringify(_, null, 2)` pretty-geprinted (bei
-  Parse-Error: roh). Andere Sprachen: roh anzeigen, Monaco liefert
-  Highlighting/Folding. Theme-Sync laeuft ueber `setEditorTheme`
+  `editor/index.ts`), Container `#code-view-mount`. Auto-Format laeuft
+  fuer ALLE Sprachen einheitlich ueber Monacos
+  `editor.action.formatDocument` (gesteuert vom Setting
+  `viewAutoFormat`, default an) — keine JSON-Sonderbehandlung.
+  Sprachen ohne registrierten Formatter zeigen den Rohinhalt; ebenso
+  wenn das Setting aus ist. Theme-Sync laeuft ueber `setEditorTheme`
   (in `editor/shell.ts`), das beide Surfaces aktualisiert. Code-View
   hat sein eigenes Find-Widget (Strg+F) — die Folio-Find-Bar
   uebersetzt den Capture-Listener bei `kind=text + !edit-mode` an

@@ -2,12 +2,16 @@ use crate::document_service::{self, DirtyPolicy, OpenDocumentOptions, ReloadPoli
 use crate::file_kind::{classify, editor_language, FileKind};
 use crate::state::AppState;
 use std::{fs, path::Path};
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 
 use super::types::FileData;
 
 #[tauri::command]
-pub async fn read_file(path: String, state: State<'_, AppState>) -> Result<FileData, String> {
+pub async fn read_file(
+    path: String,
+    handle: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<FileData, String> {
     let kind = classify(&path);
     if kind == FileKind::Binary {
         return Err(format!(
@@ -28,6 +32,9 @@ pub async fn read_file(path: String, state: State<'_, AppState>) -> Result<FileD
         },
     )
     .map_err(|error| error.to_string())?;
+    if let Some(mode) = outcome.mode_override.as_deref() {
+        let _ = handle.emit("app:set_mode", serde_json::json!({ "mode": mode }));
+    }
     let loaded = outcome
         .loaded
         .expect("ReloadPolicy::Always always produces a loaded document");
