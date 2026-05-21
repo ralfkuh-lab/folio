@@ -29,3 +29,8 @@ src-tauri/dist/about/avatar-options/
 
 # E2E temporary home folder
 /tests/e2e/.temp_home/
+
+# Lokaler Symlink auf das gebaute .deb-Bundle fuer schnelle
+# Install-Iterationen. Pro Maschine separat anlegen:
+# `ln -s src-tauri/target/release/bundle/deb/Folio_<ver>_amd64.deb folio.deb`
+/folio.deb
