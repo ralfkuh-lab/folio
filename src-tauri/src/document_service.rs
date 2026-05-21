@@ -135,12 +135,20 @@ fn open_inner(
         if options.dirty == DirtyPolicy::Reject && is_dirty {
             return Err(OpenDocumentError::DirtyRejected);
         }
-        let loaded = document_store
+        let kind = classify(&path);
+        let mut store = document_store
             .lock()
-            .map_err(|_| OpenDocumentError::LockPoisoned("document store"))?
-            .load(&path)
-            .map_err(OpenDocumentError::Load)?;
-        Some(loaded)
+            .map_err(|_| OpenDocumentError::LockPoisoned("document store"))?;
+        let loaded = if matches!(kind, FileKind::Image) {
+            // Bilder werden nicht als Text geladen — das Frontend rendert
+            // sie ueber `convertFileSrc` direkt von Disk. Wir setzen nur
+            // den Pfad im Store, damit Vault-Active, History und das
+            // `document:loaded`-Event mit dem richtigen Pfad feuern.
+            store.load_opaque(&path)
+        } else {
+            store.load(&path)
+        };
+        Some(loaded.map_err(OpenDocumentError::Load)?)
     } else {
         None
     };
@@ -186,8 +194,25 @@ fn apply_default_mode(
     path: &str,
 ) -> Option<String> {
     let kind = classify(path);
-    if !matches!(kind, FileKind::Markdown | FileKind::Text) {
+    if !matches!(kind, FileKind::Markdown | FileKind::Text | FileKind::Image) {
         return None;
+    }
+    // Bilder kennen keinen Edit-Mode (`document_store.load_opaque` legt
+    // keinen Text ab) — beim Open immer auf View zwingen, ohne ueber
+    // ein Setting zu gehen. Damit landet der User auch dann auf der
+    // Bild-Vorschau, wenn er vorher im Edit-Mode auf einer .md-Datei war.
+    if matches!(kind, FileKind::Image) {
+        let automation = automation?;
+        let mut auto = automation.lock().ok()?;
+        if auto.view_mode == "view" {
+            return None;
+        }
+        auto.view_mode = "view".to_string();
+        drop(auto);
+        if let Ok(mut nav) = navigation.lock() {
+            nav.update_view_mode("view".to_string());
+        }
+        return Some("view".to_string());
     }
     let settings = settings?;
     let automation = automation?;

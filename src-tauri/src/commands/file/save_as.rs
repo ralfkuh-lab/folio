@@ -59,7 +59,11 @@ pub fn run_save_as(
                 builder = builder.add_filter(labels.save_as_filter_text, &[ext_lower.as_str()]);
             }
         }
-        FileKind::Binary => {}
+        // Bild: kein eigener "Save As"-Filter — Image-View ist read-only.
+        // Wir verhindern den Aufruf zwar schon im Frontend (kein
+        // Edit-Mode), aber wenn er trotzdem hier ankommt, kein Filter
+        // statt Crash.
+        FileKind::Image | FileKind::Binary => {}
     }
     builder = builder.add_filter(labels.save_as_filter_all, &["*"]);
 

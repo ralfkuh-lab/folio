@@ -89,12 +89,25 @@ sonst lehnt Tauri den Build ab.
   expanded_dirs erneut registriert (siehe `commands::app::settings::
   sync_vault_watcher`).
 - **Dateityp-Klassifizierung**: zentral in `file_kind.rs`
-  (`FileKind::{Markdown, Text, Binary}`, `classify(path)`). `read_file` und
-  `document:loaded` liefern `kind` ans Frontend; das setzt
-  `body.kind-<value>` als Single Source of Truth. UI, die nur für
-  Markdown gilt (Edit-Toolbar-Markdown-Gruppen, TOC-Rail,
+  (`FileKind::{Markdown, Text, Image, Binary}`, `classify(path)`).
+  `read_file` und `document:loaded` liefern `kind` ans Frontend; das
+  setzt `body.kind-<value>` als Single Source of Truth. UI, die nur
+  für Markdown gilt (Edit-Toolbar-Markdown-Gruppen, TOC-Rail,
   Rail-Right-Toggle), wird ausschließlich über CSS auf `.kind-markdown`
   beschränkt — keine eigene Endungs-Heuristik im Frontend.
+- **Image-View** (`view/image.ts`, Surface `#image-view-mount` in
+  `dist/index.html`): `FileKind::Image` (png/jpg/jpeg/gif/webp/svg/
+  bmp/ico/avif) wird read-only über `<img src={convertFileSrc(path)}>`
+  gerendert. CSS in `content.css` zentriert das Bild und skaliert
+  größere Bilder via `max-width/height: 100%` proportional runter;
+  kleinere Bilder bleiben in Originalgröße. Edit-Mode ist für Image
+  **gesperrt** (`applyDocKind` setzt `tb-mode-edit.disabled = true`,
+  `menu_set_enabled view.mode.edit/file.save_as = false`); Backend
+  zwingt beim Open via `document_service::apply_default_mode` auf
+  View-Mode. `document_store::load_opaque(path)` setzt nur den Pfad,
+  ohne die Datei zu lesen — keine MB-großen Bytes ins Memory, keine
+  Encoding-Detection. Image-Watcher ist heute nicht angeschlossen;
+  externe Änderungen erfordern einen Re-Open.
 - **Editor-Sprache (Monaco)**: zweite, unabhängige Klassifikation neben
   `FileKind` — `editor_language(path)` in `file_kind.rs` liefert eine
   Monaco-Sprach-ID (`markdown`, `json`, `typescript`, …, Default

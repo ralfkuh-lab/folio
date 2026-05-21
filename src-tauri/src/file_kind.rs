@@ -6,10 +6,19 @@ use std::path::Path;
 pub enum FileKind {
     Markdown,
     Text,
+    Image,
     Binary,
 }
 
 const MARKDOWN_EXT: &[&str] = &["md", "markdown", "mdown", "mkd"];
+
+// Browser-/WebView-rendering-faehige Bildformate. SVG ist hier dabei,
+// weil das XML-Routing als Text trotzdem unkomfortabel ist — als
+// Vorschau klassifizieren wir es als Bild, eine Edit-Sicht ist via
+// Picker-Override weiterhin moeglich (TODO Editor-Sprache-Override).
+const IMAGE_EXT: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "avif",
+];
 
 const TEXT_EXT: &[&str] = &[
     "txt",
@@ -165,6 +174,9 @@ pub fn classify(path: &str) -> FileKind {
         if MARKDOWN_EXT.contains(&ext) {
             return FileKind::Markdown;
         }
+        if IMAGE_EXT.contains(&ext) {
+            return FileKind::Image;
+        }
         if TEXT_EXT.contains(&ext) {
             return FileKind::Text;
         }
@@ -221,8 +233,19 @@ mod tests {
 
     #[test]
     fn classifies_binary() {
-        assert_eq!(FileKind::Binary, classify("photo.png"));
         assert_eq!(FileKind::Binary, classify("archive.zip"));
+        assert_eq!(FileKind::Binary, classify("doc.docx"));
         assert_eq!(FileKind::Binary, classify("noext"));
+    }
+
+    #[test]
+    fn classifies_image() {
+        assert_eq!(FileKind::Image, classify("photo.png"));
+        assert_eq!(FileKind::Image, classify("logo.SVG"));
+        assert_eq!(FileKind::Image, classify("/abs/path/sprite.webp"));
+        assert_eq!(FileKind::Image, classify("favicon.ico"));
+        assert_eq!(FileKind::Image, classify("animated.gif"));
+        assert_eq!(FileKind::Image, classify("photo.jpeg"));
+        assert_eq!(FileKind::Image, classify("photo.jpg"));
     }
 }

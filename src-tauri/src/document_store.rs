@@ -87,6 +87,30 @@ impl DocumentStore {
         Ok(loaded)
     }
 
+    /// "Open" fuer nicht-textuelle Dateien (Bilder o.ae.). Setzt den
+    /// Store auf den Pfad, ohne den Inhalt zu lesen — das Frontend
+    /// rendert das Bild ueber `convertFileSrc` direkt von Disk.
+    /// Aequivalent zu `load`, aber ohne `read_and_decode` und ohne
+    /// `watch` (Bild-Reloads sind aktuell nicht implementiert; bei
+    /// externer Aenderung muss der User die Datei neu oeffnen).
+    pub fn load_opaque(&mut self, path: &str) -> io::Result<LoadedDocument> {
+        self.path = Some(path.to_string());
+        self.text = String::new();
+        self.is_dirty = false;
+        // line_ending/had_bom unveraendert — sie betreffen nur Text-Saves.
+        let loaded = LoadedDocument {
+            path: path.to_string(),
+            text: String::new(),
+        };
+        if let Some(callback) = &self.events.loaded {
+            callback(loaded.clone());
+        }
+        if let Some(callback) = &self.events.dirty_changed {
+            callback(false);
+        }
+        Ok(loaded)
+    }
+
     /// Lädt den aktuell offenen Pfad neu von Disk, wenn sich der Inhalt
     /// gegenüber `self.text` geändert hat. Ohne offene Datei oder bei
     /// identischem Inhalt ein No-Op (`Ok(false)`) — letzteres unterdrückt

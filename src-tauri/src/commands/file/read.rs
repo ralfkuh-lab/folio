@@ -13,7 +13,7 @@ pub async fn read_file(
     state: State<'_, AppState>,
 ) -> Result<FileData, String> {
     let kind = classify(&path);
-    if kind == FileKind::Binary {
+    if matches!(kind, FileKind::Binary) {
         return Err(format!(
             "Dateityp wird nicht unterstützt: {}",
             Path::new(&path)

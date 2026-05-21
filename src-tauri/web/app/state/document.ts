@@ -13,6 +13,7 @@
 import { setTocList, rewriteRelativeAssets, ViewFinder } from '../view/markdown';
 import { highlightCodeBlocks } from '../view/code-highlight';
 import { clearHtmlView, HtmlFinder, isHtmlDocument, mountHtmlView } from '../view/html';
+import { clearImageView, isImageDocument, mountImageView } from '../view/image';
 import { setVaultActive } from '../vault/tree';
 import { setEditorLanguageDisplay } from '../ui/language-picker';
 import { syncCheatsheetMenu } from '../ui/cheatsheet';
@@ -165,7 +166,7 @@ export function requestSaveIfDirty(): Promise<boolean> {
     });
 }
 
-const DOC_KIND_CLASSES = ['kind-markdown', 'kind-text', 'kind-binary', 'kind-unknown'];
+const DOC_KIND_CLASSES = ['kind-markdown', 'kind-text', 'kind-image', 'kind-binary', 'kind-unknown'];
 
 // Liest den aktuellen Mode aus body.classList und setzt die Haekchen im
 // Ansicht-Menue. Kein State neben dem DOM — gleiche Strategie wie
@@ -192,11 +193,14 @@ export function applyDocKind(kind: string | null): void {
     body.classList.add('kind-' + resolved);
 
     const md = resolved === 'markdown';
+    const isImage = resolved === 'image';
     const hasDoc = resolved !== 'unknown' && resolved !== 'binary';
-    // View-Mode ist jetzt auch fuer Text/Code-Dateien verfuegbar: dort
-    // zeigt eine read-only Monaco-Instanz (FolioCodeView) den Inhalt
-    // mit Syntax-Highlighting an, fuer JSON zusaetzlich pretty-geprinted.
-    const hasViewMode = md || resolved === 'text';
+    // View-Mode: Markdown (HTML-Render), Text (read-only Monaco) und
+    // Image (`<img>`-Preview). Edit-Mode dagegen nur fuer Markdown/Text
+    // — Bilder sind heute nicht editierbar (`document_store.load_opaque`
+    // legt keinen Text ab; ein Edit-Switch waere ein "leerer Editor").
+    const hasViewMode = md || resolved === 'text' || isImage;
+    const canEdit = md || resolved === 'text';
     const btnView = $('tb-mode-view') as HTMLButtonElement;
     if (btnView) {
         btnView.disabled = !hasViewMode;
@@ -204,19 +208,23 @@ export function applyDocKind(kind: string | null): void {
     }
     const btnEdit = $('tb-mode-edit') as HTMLButtonElement;
     if (btnEdit) {
-        btnEdit.disabled = !hasDoc;
-        btnEdit.title = hasDoc ? 'Edit (Ctrl+2)' : 'Kein Dokument geladen';
+        btnEdit.disabled = !canEdit;
+        btnEdit.title = canEdit
+            ? 'Edit (Ctrl+2)'
+            : (isImage ? 'Bilder sind read-only' : 'Kein Dokument geladen');
     }
     const btnExport = $('tb-export') as HTMLButtonElement;
     if (btnExport) {
         btnExport.disabled = !md;
         btnExport.title = md ? 'Exportieren…' : 'Export nur für Markdown verfügbar';
     }
-    // Menue-Items synchron halten: View-Mode auch fuer Text/Code,
-    // Save-As bei jedem geladenen, lesbaren Dokument (also nicht 'unknown').
+    // Menue-Items synchron halten: View-Mode auch fuer Text/Code/Image,
+    // Edit-Mode nur fuer editierbare Kinds, Save-As/Rename/Close fuer
+    // alle geladenen Dokumente (Rename + Close arbeiten auf FS-Ebene,
+    // sind also auch fuer Bilder sinnvoll).
     safeInvoke('menu_set_enabled', { id: 'view.mode.view', enabled: hasViewMode }, 'menu_set_enabled view.mode.view', 'debug');
-    safeInvoke('menu_set_enabled', { id: 'view.mode.edit', enabled: hasDoc }, 'menu_set_enabled view.mode.edit', 'debug');
-    safeInvoke('menu_set_enabled', { id: 'file.save_as', enabled: hasDoc }, 'menu_set_enabled file.save_as', 'debug');
+    safeInvoke('menu_set_enabled', { id: 'view.mode.edit', enabled: canEdit }, 'menu_set_enabled view.mode.edit', 'debug');
+    safeInvoke('menu_set_enabled', { id: 'file.save_as', enabled: canEdit }, 'menu_set_enabled file.save_as', 'debug');
     safeInvoke('menu_set_enabled', { id: 'file.rename', enabled: hasDoc }, 'menu_set_enabled file.rename', 'debug');
     safeInvoke('menu_set_enabled', { id: 'file.close', enabled: hasDoc }, 'menu_set_enabled file.close', 'debug');
     syncCheatsheetMenu();
@@ -316,6 +324,7 @@ export function initDocumentState(d: Deps): void {
         // Code-View fuer Non-Markdown-Text-Dateien: Read-Only Monaco mit
         // Syntax-Highlighting. Mount ist idempotent — re-use der Instanz
         // beim Wechsel zwischen Dateien.
+        const isImage = isImageDocument(data.kind);
         if (window.FolioCodeView) {
             if (data.kind === 'text' && !isHtml) {
                 var settings = getCachedSettings();
@@ -329,6 +338,14 @@ export function initDocumentState(d: Deps): void {
             } else {
                 window.FolioCodeView.dispose();
             }
+        }
+        // Image-View: nur sichtbar wenn kind=image. Bei Wechsel auf ein
+        // anderes Kind wird der Container geleert, damit das vorherige
+        // Bild nicht durchscheint.
+        if (isImage) {
+            mountImageView(data.path || '');
+        } else {
+            clearImageView();
         }
         setVaultActive(data.path || '');
 
@@ -398,6 +415,7 @@ export function initDocumentState(d: Deps): void {
         const body = view && view.querySelector('.markdown-body');
         if (body) (body as HTMLElement).innerHTML = '';
         clearHtmlView();
+        clearImageView();
         document.body.classList.remove('html-preview-mode');
         // Code-View ebenfalls leeren — die zweite Monaco-Instanz bleibt
         // sonst mit dem zuletzt angezeigten Inhalt sichtbar, wenn der
