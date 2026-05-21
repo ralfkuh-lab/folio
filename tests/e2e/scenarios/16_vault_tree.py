@@ -77,7 +77,7 @@ def run(ctx):
         # Klick-Listener in vault/tree.ts greift entweder ueber den
         # Hauptbaum-Handler (ROW-Walk) oder ueber den
         # .vault-item-Listener — beide enden in deps.openDocument(path).
-        ctx.api.click(selector)
+        ctx.api.click(f"{selector} .row")
         f = _wait_file_state(ctx, "vault-tree-test.md")
         ctx.expect(
             f and "vault-tree-test.md" in f,

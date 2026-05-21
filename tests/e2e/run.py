@@ -128,6 +128,17 @@ def main(argv: list[str]) -> int:
             encoding="utf-8",
         )
 
+    print("[i] Warte auf Webview-Bereitschaft (body)...")
+    try:
+        res = api.dom("body", timeout_ms=25000)
+        if res.get("timed_out"):
+            print("[WARN] Webview wurde nicht innerhalb von 25 s bereit.")
+        else:
+            print("[i] Webview ist bereit.")
+            time.sleep(0.5)  # Kurze Stabilisierung fuer Xvfb Rendering-Flush
+    except Exception as e:
+        print(f"[WARN] Fehler beim Warten auf Webview: {e}")
+
     fixtures_dir = SCRIPT_DIR / "fixtures"
     baselines_dir = SCRIPT_DIR / "baselines"
 

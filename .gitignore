@@ -26,3 +26,6 @@ src-tauri/dist/about/avatar-options/
 # eingecheckt — auf jeder Maschine separat per
 # `mklink /J logs "%LOCALAPPDATA%\Folio\logs"` anlegen.
 /logs
+
+# E2E temporary home folder
+/tests/e2e/.temp_home/

@@ -22,18 +22,22 @@ pub(in crate::automation) async fn post_open(
 ) -> ApiResult<Json<OkResponse>> {
     let Json(payload) = json_payload(payload)?;
     let state = context.app_handle.state::<AppState>();
+    let dirty_policy = if payload.discard {
+        crate::document_service::DirtyPolicy::Discard
+    } else {
+        crate::document_service::DirtyPolicy::Reject
+    };
     let outcome = crate::document_service::open(
         &state,
         payload.path,
         crate::document_service::OpenDocumentOptions {
             anchor: None,
             reload: crate::document_service::ReloadPolicy::Always,
-            // Loopback-API ohne User-Prompt: ungespeicherte Aenderungen
-            // duerfen nicht still verworfen werden. Frontend-Pfade
-            // (read_file, link_click, vault::open_document) prompten
-            // ueber requestSaveIfDirty vorher und bleiben deshalb auf
-            // Discard.
-            dirty: crate::document_service::DirtyPolicy::Reject,
+            // Loopback-API ohne User-Prompt: Standardmaessig ungespeicherte Aenderungen
+            // nicht still verwerfen (Reject), um Datenverlust zu vermeiden.
+            // Fuer E2E-Tests / Automation-Isolierung kann ueber `payload.discard`
+            // explizit opt-in ein Discard erzwungen werden.
+            dirty: dirty_policy,
             apply_default_mode: true,
         },
     )
@@ -86,7 +90,7 @@ pub(in crate::automation) async fn mock_post_open(
         let state = state
             .lock()
             .map_err(|_| ApiError::internal("mock automation state lock poisoned"))?;
-        if state.dirty {
+        if state.dirty && !payload.discard {
             return Err(ApiError::conflict(
                 "unsaved changes; dirty policy rejects open",
             ));

@@ -88,6 +88,7 @@ pub fn route_editor_event(
                     .lock()
                     .map_err(|_| "automation state lock poisoned".to_string())?
                     .editor_ready = true;
+                crate::automation::wait::signal_editor_ready(state);
                 Ok(())
             }),
         "editorTextChanged" => {

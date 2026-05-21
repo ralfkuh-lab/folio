@@ -32,6 +32,13 @@ def _wait_for_file(ctx, expected_basename: str, timeout_s: float = 2.0) -> str:
 
 
 def run(ctx):
+    # Ganz nach links in der Historie navigieren, um den Stack davor zu minimieren.
+    # Dadurch bleibt genau 1 Element an Index 0 uebrig, wenn wir neu oeffnen.
+    while True:
+        res = ctx.api.history_back()
+        if not res.get("moved"):
+            break
+
     # Zwei eigene Dateien — sample.md fixture ist als A nutzbar, aber
     # ein zweites File brauchen wir extra. tempfile haelt's hermetisch.
     tmp = Path(tempfile.mkdtemp(prefix="folio-e2e-history-"))
@@ -95,12 +102,15 @@ def run(ctx):
             f"state.file nach forward-no-op: {f!r}",
         )
 
-    with ctx.step("/history/back → A; /history/back am hinteren Ende → moved=false"):
+    with ctx.step("/history/back → A; dann zu Index 0; /history/back am hinteren Ende → moved=false"):
         # Zurueck zu A
         result = ctx.api.history_back()
         ctx.expect(result.get("moved") is True, f"back to A: {result!r}")
         _wait_for_file(ctx, "history-a.md")
-        # Weiter zurueck — am Anfang.
+        # Zurueck zu Index 0
+        result = ctx.api.history_back()
+        ctx.expect(result.get("moved") is True, f"back to index 0: {result!r}")
+        # Weiter zurueck — am echten Anfang (Index 0).
         result = ctx.api.history_back()
         ctx.expect(
             result.get("moved") is False,

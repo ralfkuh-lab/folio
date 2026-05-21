@@ -52,6 +52,10 @@ cleanup() {
         log "stopping Xvfb (pid ${XVFB_PID})..."
         kill "${XVFB_PID}" 2>/dev/null || true
     fi
+    if [[ -d "${TEMP_HOME:-}" ]]; then
+        log "cleaning up temporary config directory ${TEMP_HOME} ..."
+        rm -rf "${TEMP_HOME}"
+    fi
     exit "$code"
 }
 trap cleanup EXIT INT TERM
@@ -81,6 +85,12 @@ if ! kill -0 "${XVFB_PID}" 2>/dev/null; then
 fi
 export DISPLAY="${DISPLAY_ARG}"
 
+# WebKitGTK unter Xvfb: GPU-Compositing/DMA-BUF deaktivieren, sonst hängt
+# der erste Render unter Umständen mehrere Sekunden in DRI-Initialisierung.
+# Documented: docs/e2e-headless-caveats.md (2026-05-22 Stabilisierung).
+export WEBKIT_DISABLE_COMPOSITING_MODE=1
+export WEBKIT_DISABLE_DMABUF_RENDERER=1
+
 # 2) Folio-Release-Binary sicherstellen
 BIN="src-tauri/target/release/folio"
 if [[ ! -x "$BIN" ]]; then
@@ -92,7 +102,18 @@ if [[ ! -x "$BIN" ]]; then
     exit 1
 fi
 
-# 3) Folio starten
+# 3) XDG-Isolation: Folios Config/State/Data-Verzeichnisse vom User-Profil
+# entkoppeln, damit Tests reproduzierbar laufen und nicht das Recent/
+# Workspace/Panel-State des Devs verändern. $HOME bleibt absichtlich
+# intakt — WebKitGTK- und fontconfig-Caches werden gemeinsam genutzt
+# (sonst friert der erste Boot ein).
+TEMP_HOME="${REPO_ROOT}/tests/e2e/.temp_home"
+rm -rf "$TEMP_HOME"
+mkdir -p "$TEMP_HOME"
+export XDG_CONFIG_HOME="${TEMP_HOME}/.config"
+export XDG_DATA_HOME="${TEMP_HOME}/.local/share"
+export XDG_STATE_HOME="${TEMP_HOME}/.local/state"
+
 log "starte Folio (${BIN}) ..."
 "$BIN" >/tmp/folio-stdout.log 2>&1 &
 FOLIO_PID=$!

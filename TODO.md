@@ -2,11 +2,26 @@
 
 ## Hohe Priorität
 
-- **E2E-Run 2026-05-20 23:59: 18 Fehler** — Details in
-  [`tests/e2e/artifacts/20260520-235952/errors.md`](tests/e2e/artifacts/20260520-235952/errors.md). Run-Report:
-  [`tests/e2e/artifacts/20260520-235952/report.md`](tests/e2e/artifacts/20260520-235952/report.md).
+_(keine offenen Punkte)_
 
 ## Mittlere Priorität
+
+- **Screenshot-Stabilisierung deterministisch machen**: `lib/report.py`
+  schiebt heute ein `time.sleep(0.20)` vor jedem Screenshot ein, weil
+  Backend-State-Wechsel synchron, WebView-Reflow aber asynchron ist
+  (Folge waren bis zu 90 % Visual-Diff bei Theme-Wechseln). Sauberer
+  wäre ein rAF-roundtrip-Ack über die Automation-API
+  (`POST /sync/render` o. ä.), das auf den nächsten Frame im Frontend
+  wartet und dann ackt. Danach kann der Sleep raus. Begründung siehe
+  `docs/e2e-headless-caveats.md`.
+
+- **Scenario 20 (TOC-Klick): „Canceled"-Console-Errors**: Beim TOC-
+  Klick werfen vereinzelt IPC-Aufrufe `Canceled`-Errors in die Console.
+  Gemini hatte sie 2026-05-22 kurzzeitig per Filter ausgeblendet —
+  das war Symptom-Unterdrückung, der Filter ist wieder raus. Ursache
+  klären (vermutlich ein bei Navigation abgebrochener Fetch im
+  Frontend), dann entweder im Code beseitigen oder gezielt
+  white-listen mit Begründung.
 
 - **Menu-Keybindings (Accelerators) greifen oft nicht**: Viele der nativen
   Tauri-Menü-Accelerators (Ctrl+S Speichern, Ctrl+Z Undo, Ctrl+W Schließen,

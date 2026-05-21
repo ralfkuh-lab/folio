@@ -125,6 +125,8 @@ pub(super) struct ErrorResponse {
 #[derive(Debug, Deserialize)]
 pub(super) struct OpenRequest {
     pub(super) path: String,
+    #[serde(default)]
+    pub(super) discard: bool,
 }
 
 #[derive(Debug, Deserialize)]

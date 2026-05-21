@@ -52,11 +52,19 @@ def run(ctx):
         ctx.expect_event("document.saved", timeout_ms=5000)
 
     with ctx.step("nach save: state.dirty=false, file gesetzt"):
-        state = ctx.api.state()
+        deadline = time.monotonic() + 2.0
+        saved = False
+        while time.monotonic() < deadline:
+            state = ctx.api.state()
+            if state.get("dirty") is False:
+                saved = True
+                break
+            time.sleep(0.05)
         ctx.expect(
-            state.get("dirty") is False,
-            f"state.dirty=false erwartet nach save, ist {state.get('dirty')!r}",
+            saved,
+            f"state.dirty=false erwartet nach save, ist {ctx.api.state().get('dirty')!r}",
         )
+        state = ctx.api.state()
         ctx.expect(
             state.get("file") and "sample.md" in state["file"],
             f"state.file fehlt/falsch nach save: {state.get('file')!r}",

@@ -130,6 +130,34 @@ async fn post_open_rejects_with_conflict_when_state_dirty() {
 }
 
 #[tokio::test]
+async fn post_open_accepts_when_state_dirty_if_discard_true() {
+    let temp = TempDir::new().unwrap();
+    let path = temp.path().join("doc.md");
+    std::fs::write(&path, "# Opened\n").unwrap();
+    let state = Arc::new(Mutex::new(MockAutomationState {
+        dirty: true,
+        ..MockAutomationState::default()
+    }));
+
+    let response = request(
+        build_mock_router(state.clone()),
+        "POST",
+        "/open",
+        Some(json!({
+            "path": path.to_str().unwrap(),
+            "discard": true
+        })),
+        loopback(),
+    )
+    .await;
+
+    assert_eq!(StatusCode::OK, response.status);
+    let state = state.lock().unwrap();
+    assert!(!state.dirty);
+    assert_eq!(Some(path.to_string_lossy().into_owned()), state.file);
+}
+
+#[tokio::test]
 async fn preflight_allows_json_posts_from_webview() {
     let state = Arc::new(Mutex::new(MockAutomationState::default()));
     let mut request = Request::builder()

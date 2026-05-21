@@ -86,8 +86,8 @@ class AutomationApi:
         qs = urlencode({"clear": "true" if clear else "false"})
         return self._request("GET", f"/console/errors?{qs}")
 
-    def open(self, path: str, anchor: Optional[str] = None) -> dict:
-        body: dict = {"path": path}
+    def open(self, path: str, anchor: Optional[str] = None, discard: bool = True) -> dict:
+        body: dict = {"path": path, "discard": discard}
         if anchor:
             body["anchor"] = anchor
         return self._request("POST", "/open", body)

@@ -185,3 +185,34 @@ einen manuellen Lauf auf einem echten Desktop oder unter VNC-Session.
 Aktuell hat kein Szenario diesen Marker — alle laufen unter Xvfb. Die
 Infrastruktur ist eine reine Vorhaltung für spätere Tests, die OS-Eingabe
 oder echte Display-Hardware brauchen.
+
+## WebKitGTK-Render-Hänger unter Xvfb (2026-05-22)
+
+`scripts/run-e2e.sh` exportiert vor dem Folio-Start zwei Env-Vars:
+
+```bash
+export WEBKIT_DISABLE_COMPOSITING_MODE=1
+export WEBKIT_DISABLE_DMABUF_RENDERER=1
+```
+
+Hintergrund: ohne diese Schalter versucht WebKitGTK im Xvfb-
+Framebuffer DRI-/DMA-BUF-Pfade zu initialisieren, die unter Xvfb
+nicht vorhanden sind. Resultat war ein mehrsekündiger Boot-Hang,
+der bis hoch in den `editor.ready`-IPC-Pfad reichte und dort als
+künstliches 25-s-Timeout in `/wait` sichtbar wurde. Mit beiden
+Schaltern startet die Webview unter Xvfb in <1 s.
+
+Auf einem echten Display sind beide Env-Vars unnötig — nicht
+global setzen.
+
+## Screenshot-Timing (2026-05-22)
+
+`tests/e2e/lib/report.py` legt vor jedem `screenshot()`-Call ein
+`time.sleep(0.20)` ein. Hintergrund: Backend-State-Wechsel
+(Theme, Rail-Toggle, Mode) sind synchron, das WebView-Reflow läuft
+aber asynchron — direkte Screenshots erwischten Layout-Transitions
+mittendrin (bis ~90 % visual diff bei Theme-Wechseln).
+
+Pragmatischer Fix, kein deterministisches Render-Stable-Signal.
+**TODO:** rAF-roundtrip-Ack über IPC einführen, dann den Sleep
+entfernen.
