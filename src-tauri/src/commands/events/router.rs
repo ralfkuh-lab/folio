@@ -66,7 +66,7 @@ pub fn route_shell_event(
             .emit("cheatsheet:closed", payload.clone())
             .map_err(|error| error.to_string()),
         other => {
-            eprintln!("shell:event: unknown type '{other}'");
+            tracing::warn!(target: "folio::ipc", event_type = %other, "shell:event: unknown type");
             Ok(())
         }
     }
@@ -143,7 +143,7 @@ pub fn route_editor_event(
             .emit("editor:find_state", payload.clone())
             .map_err(|error| error.to_string()),
         other => {
-            eprintln!("editor:event: unknown type '{other}'");
+            tracing::warn!(target: "folio::ipc", event_type = %other, "editor:event: unknown type");
             Ok(())
         }
     }

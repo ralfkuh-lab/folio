@@ -14,6 +14,33 @@ pub(crate) fn config_file(name: &str) -> PathBuf {
     dir.join(name)
 }
 
+/// Liefert das OS-spezifische Log-Verzeichnis fuer Folio.
+///
+/// - Linux/BSD: `$XDG_STATE_HOME/folio/logs` (Fallback
+///   `~/.local/state/folio/logs`)
+/// - macOS: `~/Library/Logs/Folio`
+/// - Windows: `%LOCALAPPDATA%\Folio\logs`
+///
+/// `dirs::state_dir()` ist auf Linux der XDG-State-Pfad und liefert auf
+/// anderen Plattformen `None`; dort fallen wir auf `data_local_dir()`
+/// (Windows: LocalAppData, macOS: `~/Library/Application Support`) bzw.
+/// `~/Library/Logs` auf macOS zurueck.
+pub fn log_dir() -> PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(home) = dirs::home_dir() {
+            return home.join("Library").join("Logs").join("Folio");
+        }
+    }
+    if let Some(state) = dirs::state_dir() {
+        return state.join("folio").join("logs");
+    }
+    if let Some(local) = dirs::data_local_dir() {
+        return local.join("folio").join("logs");
+    }
+    PathBuf::from(".").join("folio-logs")
+}
+
 pub(crate) fn load_json<T: DeserializeOwned + Default>(path: &Path) -> T {
     fs::read_to_string(path)
         .ok()

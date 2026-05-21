@@ -33,7 +33,7 @@ pub(super) fn expand_dir(path: String, state: &AppState, handle: &AppHandle) -> 
     // bedeuten lediglich "keine Live-Updates fuer diesen Ordner".
     if let Ok(mut watcher) = state.vault_watcher.lock() {
         if let Err(err) = watcher.watch(&path) {
-            eprintln!("vault_watcher.watch failed for {path}: {err}");
+            tracing::warn!(target: "folio::vault", path = %path, error = %err, "vault_watcher.watch failed");
         }
     }
     handle

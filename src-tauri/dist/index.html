@@ -313,6 +313,20 @@
         </div>
         <p class="settings-hint">Ohne Häkchen erscheint stattdessen ein Reload-Button in der Toolbar — sinnvoll für Log-Dateien o. ä. mit ständigen Schreibvorgängen.</p>
       </section>
+      <section class="settings-section">
+        <h3 class="settings-section__title">Diagnose</h3>
+        <div class="settings-row">
+          <label for="settings-log-level">Log-Level</label>
+          <select id="settings-log-level">
+            <option value="off">Aus (keine Logdateien)</option>
+            <option value="error">Nur Fehler</option>
+            <option value="warn">Warnungen + Fehler</option>
+            <option value="info">Normal (empfohlen)</option>
+            <option value="debug">Debug (ausführlich)</option>
+          </select>
+        </div>
+        <p class="settings-hint">Logs landen rotierend (täglich, max. 7 Tage) im OS-Log-Verzeichnis (Windows: <code>%LOCALAPPDATA%\Folio\logs</code>). Änderung greift sofort. Während der Entwicklung überschreibt <code>RUST_LOG</code> und der Debug-Build immer auf <code>debug</code>.</p>
+      </section>
     </div>
     <div class="settings-dialog__actions">
       <button type="button" id="settings-close" class="primary">Schließen</button>

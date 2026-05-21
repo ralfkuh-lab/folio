@@ -49,6 +49,9 @@ pub async fn settings_update(
     if changed.contains(&"vaultAutoRefresh") {
         sync_vault_watcher(&state, data.vault_auto_refresh);
     }
+    if changed.contains(&"logLevel") {
+        crate::logging::set_level(data.log_level);
+    }
     if !changed.is_empty() {
         handle
             .emit(
@@ -71,7 +74,7 @@ fn sync_vault_watcher(state: &State<'_, AppState>, enabled: bool) {
         if enabled {
             for path in &expanded {
                 if let Err(err) = watcher.watch(path) {
-                    eprintln!("vault_watcher.watch on re-enable failed for {path}: {err}");
+                    tracing::warn!(target: "folio::vault", path = %path, error = %err, "vault_watcher.watch on re-enable failed");
                 }
             }
         }

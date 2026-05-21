@@ -136,6 +136,7 @@ function installPreviewDefaults(doc: Document): void {
     style.textContent = [
         ':root{color-scheme:light;background:#fff;}',
         'body{background:#fff;}',
+        'a[data-folio-href]{cursor:pointer;}',
         '::highlight(folio-find){background:#ffe066;color:inherit;}',
         '::highlight(folio-find-active){background:#ff9f1c;color:inherit;}',
     ].join('');

@@ -70,11 +70,6 @@
     `theme_get`/`theme_set` (separate Persistenz). Settings-Dialog
     könnte als reine Aggregations-UI eine zusätzliche Theme-Reihe
     anzeigen, ohne den Persistenz-Ort zu verschieben.
-- **HTML-Preview: Cursor-Pointer auf Links**: Die im Sandbox-iframe
-  injizierte Bridge entfernt `href` von `<a>`-Tags und ersetzt es durch
-  `data-folio-href`, deshalb fehlt dem Element der Browser-Default
-  `cursor: pointer`. CSS-Regel in `installPreviewDefaults` ergaenzen
-  (`a[data-folio-href]{cursor:pointer}`).
 - **Linux-Paket: `.md`-Icon im Datei-Manager**: Aktuell muss
   [`scripts/install-folio-icons.sh`](scripts/install-folio-icons.sh)
   manuell laufen, damit Nemo/Nautilus & Co. das Folio-Icon für `.md`
@@ -82,20 +77,13 @@
   Hintergrund, bisherige Erkenntnisse und mögliche Wege in
   [`docs/linux-md-icon.md`](docs/linux-md-icon.md).
 
-- **Strukturiertes Logging mit Log-Levels**: Heute schreibt Folio nur
-  `eprintln!`/`println!` auf stdout/stderr (gemischt mit `cargo run`-
-  Cargo-Output, hart filterbar; bei einer `bundle`-Variante landet das
-  in einer .log-Datei je nach OS). Für Diagnose-Sessions wie
-  „Frontend startet nicht durch" wäre ein echtes Logging-Setup nützlich.
-  Rust-seitig naheliegend: das `tracing`-Crate mit `tracing-subscriber`
-  (Konfiguration via `RUST_LOG=folio=debug` o. ä.). Frontend-seitig:
-  `console.error`/`console.warn` werden schon vom Automation-Hook
-  durchgereicht, aber das fängt nur Errors — `console.log`/`debug` per
-  Log-Level filterbar an Tauri zu spiegeln wäre ein zusätzliches
-  Diagnose-Werkzeug. Persistenz: Rotierende Logfiles im
-  app-config-Verzeichnis (`~/.config/folio/logs/` auf Linux, analog
-  Win/macOS). NLog ist .NET-spezifisch — in Rust hat `tracing` die
-  gleiche Rolle.
+- **Frontend-Logs ans Backend-Logfile spiegeln**: Aktuell streamt
+  `automation/events.ts` nur `console.error`/`warn` an die Automation-
+  API (für Tests). `console.log`/`debug` landen nur in DevTools.
+  Sinnvoll wäre ein kleiner `folioLog`-Wrapper, der per Tauri-Command
+  ins `tracing`-Subscriber-Logfile schreibt (Target `folio::frontend`).
+  Dann hat man **eine** korrelierte Quelle für Diagnose statt
+  DevTools-Hopping.
 
 ## Niedrige Priorität
 

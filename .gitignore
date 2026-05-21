@@ -20,3 +20,9 @@ tests/e2e/artifacts/
 # Avatar-Style-Vorschlaege fuers About-Dialog-Setup — nur der gewaehlte
 # avatar.png landet im Repo, die Alternativen bleiben lokal.
 src-tauri/dist/about/avatar-options/
+
+# Lokale Dev-Junction auf %LOCALAPPDATA%\Folio\logs fuer schnellen
+# Zugriff aus dem Projekt-Root waehrend Logging-Diagnose. Nicht
+# eingecheckt — auf jeder Maschine separat per
+# `mklink /J logs "%LOCALAPPDATA%\Folio\logs"` anlegen.
+/logs

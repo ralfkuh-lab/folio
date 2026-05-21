@@ -10,6 +10,7 @@ pub mod file_resolver;
 pub mod frontmatter;
 pub mod heading_anchor;
 pub mod link_interceptor;
+pub mod logging;
 pub mod menu;
 pub mod navigation;
 pub mod panel_state;
@@ -198,7 +199,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
                     let payload = match serde_json::from_str(event.payload()) {
                         Ok(payload) => payload,
                         Err(error) => {
-                            eprintln!("invalid shell:event payload: {error}");
+                            tracing::warn!(target: "folio::ipc", %error, "invalid shell:event payload");
                             return;
                         }
                     };
@@ -206,7 +207,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
                     if let Err(error) =
                         commands::events::route_shell_event(&payload, &state, &handle)
                     {
-                        eprintln!("shell:event failed: {error}");
+                        tracing::error!(target: "folio::ipc", %error, "shell:event failed");
                     }
                 }
             });
@@ -214,14 +215,14 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
                 let payload = match serde_json::from_str(event.payload()) {
                     Ok(payload) => payload,
                     Err(error) => {
-                        eprintln!("invalid editor:event payload: {error}");
+                        tracing::warn!(target: "folio::ipc", %error, "invalid editor:event payload");
                         return;
                     }
                 };
                 let state = handle.state::<AppState>();
                 if let Err(error) = commands::events::route_editor_event(&payload, &state, &handle)
                 {
-                    eprintln!("editor:event failed: {error}");
+                    tracing::error!(target: "folio::ipc", %error, "editor:event failed");
                 }
             });
             Ok(())
@@ -307,6 +308,13 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
 }
 
 pub fn run() {
+    // Logging zuerst hochziehen — alle nachfolgenden Module (inkl.
+    // `builder().setup(...)`) sollen schon einen Subscriber haben.
+    // Level: persistiert in `settings.json`; `RUST_LOG` und
+    // `cfg(debug_assertions)` haben Vorrang (siehe `logging::init`).
+    let level = crate::settings::SettingsService::load().data().log_level;
+    crate::logging::init(level, &crate::persist::log_dir());
+
     builder()
         .run(tauri::generate_context!())
         .expect("failed to run Tauri application");

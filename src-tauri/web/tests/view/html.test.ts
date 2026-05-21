@@ -61,6 +61,7 @@ describe('view/html', () => {
         const defaults = doc.querySelector('style[data-folio-html-preview-defaults]')!;
 
         expect(defaults.textContent).toContain('background:#fff');
+        expect(defaults.textContent).toContain('a[data-folio-href]{cursor:pointer;}');
         expect(doc.head.firstElementChild).toBe(defaults);
     });
 

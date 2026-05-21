@@ -172,6 +172,26 @@ sonst lehnt Tauri den Build ab.
   bis zum ersten Mount `Promise.resolve()`, ein Defer wäre eine
   Endlos-Microtask-Schleife (war der Bug, der bei Folio-Start ohne offene
   Datei das gesamte Frontend killte; siehe Fix-Commit `f4ef8f1`).
+- **Logging** (`logging.rs`): `tracing` + `tracing-subscriber` mit
+  Stderr- und täglich rotierendem File-Sink. Logverzeichnis pro OS via
+  `persist::log_dir()` (Windows: `%LOCALAPPDATA%\Folio\logs`, macOS:
+  `~/Library/Logs/Folio`, Linux: `$XDG_STATE_HOME/folio/logs`). Init
+  läuft in `lib.rs::run` **vor** dem Tauri-Builder, damit Setup-Fehler
+  ebenfalls landen. Level-Hierarchie beim Boot: `RUST_LOG` >
+  `cfg(debug_assertions)` (→ `debug`) > Setting `logLevel`
+  (Default `info`). Live-Reload via
+  `tracing_subscriber::reload::Handle` — `settings_update`-Side-Effect
+  ruft `logging::set_level`, ohne App-Restart. **Keine** `eprintln!`/
+  `println!` in Production-Code (Tests dürfen); stattdessen
+  `tracing::{error,warn,info,debug}!` mit explizitem `target: "folio::*"`-
+  Namespace (z. B. `folio::ipc`, `folio::vault`, `folio::automation`,
+  `folio::menu`, `folio::settings`). Externe Crates (axum/tokio/notify)
+  werden im `env_filter()` der `LogLevel`-Stufen bei `warn` gehalten, um
+  Request-Spam zu vermeiden. Rotation: tägliche Dateinamen
+  `YYYY-MM-DD.log` (kein Prefix — Folio-Kontext steckt im
+  Verzeichnis, dafuer chronologisch sortierbar und von Folio selbst
+  als `Text` klassifiziert/oeffenbar). Retention 7 Tage,
+  Best-Effort-Prune beim Boot.
 
 ## Headless-Screenshots
 

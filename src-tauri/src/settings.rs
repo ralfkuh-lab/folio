@@ -53,6 +53,50 @@ impl DefaultViewMode {
     }
 }
 
+/// Log-Level fuer das `tracing`-Subscriber-Setup. `Off` deaktiviert das
+/// Logging vollstaendig (kein Subscriber, keine Sinks, keine Logfiles).
+/// Default ist `Info` — sparsam, aber Lifecycle- und Error-Ereignisse
+/// werden mitgeschrieben. Override via `RUST_LOG`-ENV; im Debug-Build
+/// ist der Default `Debug`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LogLevel {
+    Off,
+    Error,
+    Warn,
+    #[default]
+    Info,
+    Debug,
+}
+
+impl LogLevel {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Error => "error",
+            Self::Warn => "warn",
+            Self::Info => "info",
+            Self::Debug => "debug",
+        }
+    }
+
+    /// EnvFilter-Ausdruck, der nur Folio-eigene Targets beruecksichtigt
+    /// (`folio`/`folio_lib`). Externe Crates (axum, tokio, notify ...)
+    /// loggen nur ab `warn` mit — sonst wuerde z. B. axum jede
+    /// Automation-Request mitlogen. Wird nur fuer `Off` nicht
+    /// aufgerufen.
+    pub fn env_filter(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Error => "folio=error,folio_lib=error,warn",
+            Self::Warn => "folio=warn,folio_lib=warn,warn",
+            Self::Info => "folio=info,folio_lib=info,warn",
+            Self::Debug => "folio=debug,folio_lib=debug,warn",
+        }
+    }
+}
+
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SettingsData {
@@ -75,6 +119,11 @@ pub struct SettingsData {
     /// stattdessen erscheint ein Reload-Button in der Toolbar.
     #[serde(default = "default_true")]
     pub document_auto_reload: bool,
+    /// Log-Level fuer den `tracing`-Subscriber. `Off` deaktiviert das
+    /// Logging komplett (keine Sinks). `RUST_LOG`-ENV uebersteuert dies;
+    /// Debug-Builds ignorieren die Einstellung und loggen immer `debug`.
+    #[serde(default)]
+    pub log_level: LogLevel,
 }
 
 fn default_mode_markdown() -> DefaultViewMode {
@@ -98,6 +147,7 @@ impl Default for SettingsData {
             view_auto_format: default_true(),
             vault_auto_refresh: default_true(),
             document_auto_reload: default_true(),
+            log_level: LogLevel::default(),
         }
     }
 }
@@ -114,6 +164,7 @@ pub struct SettingsPatch {
     pub view_auto_format: Option<bool>,
     pub vault_auto_refresh: Option<bool>,
     pub document_auto_reload: Option<bool>,
+    pub log_level: Option<LogLevel>,
 }
 
 impl SettingsPatch {
@@ -124,6 +175,7 @@ impl SettingsPatch {
             && self.view_auto_format.is_none()
             && self.vault_auto_refresh.is_none()
             && self.document_auto_reload.is_none()
+            && self.log_level.is_none()
     }
 }
 
@@ -196,6 +248,12 @@ impl SettingsService {
                 changed.push("documentAutoReload");
             }
         }
+        if let Some(value) = patch.log_level {
+            if self.data.log_level != value {
+                self.data.log_level = value;
+                changed.push("logLevel");
+            }
+        }
         if !changed.is_empty() {
             persist::save_json_atomic(&self.path, &self.data)?;
         }
@@ -217,6 +275,23 @@ mod tests {
         assert!(data.view_auto_format);
         assert!(data.vault_auto_refresh);
         assert!(data.document_auto_reload);
+        assert_eq!(LogLevel::Info, data.log_level);
+    }
+
+    #[test]
+    fn log_level_round_trips() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("settings.json");
+        let mut svc = SettingsService::load_from(path.clone());
+        let changed = svc
+            .apply_patch(SettingsPatch {
+                log_level: Some(LogLevel::Debug),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(vec!["logLevel"], changed);
+        let reloaded = SettingsService::load_from(path).data();
+        assert_eq!(LogLevel::Debug, reloaded.log_level);
     }
 
     #[test]
@@ -290,9 +365,10 @@ mod tests {
                 view_auto_format: Some(false),
                 vault_auto_refresh: Some(false),
                 document_auto_reload: Some(false),
+                log_level: Some(LogLevel::Debug),
             })
             .unwrap();
-        assert_eq!(6, changed.len());
+        assert_eq!(7, changed.len());
 
         let reloaded = SettingsService::load_from(path).data();
         assert_eq!(Language::En, reloaded.language);

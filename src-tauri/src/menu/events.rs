@@ -52,7 +52,7 @@ pub fn dispatch_menu_action(app: &AppHandle, id: &str) {
             std::thread::spawn(move || {
                 let state = handle.state::<crate::state::AppState>();
                 if let Err(error) = commands::file::run_save_as(&state, &handle) {
-                    eprintln!("save_as failed: {error}");
+                    tracing::error!(target: "folio::menu", %error, "save_as failed");
                 }
             });
         }
@@ -61,7 +61,7 @@ pub fn dispatch_menu_action(app: &AppHandle, id: &str) {
             std::thread::spawn(move || {
                 let state = handle.state::<crate::state::AppState>();
                 if let Err(error) = commands::file::run_rename_dialog(&state, &handle) {
-                    eprintln!("rename failed: {error}");
+                    tracing::error!(target: "folio::menu", %error, "rename failed");
                     let _ = handle.emit("status:error", serde_json::json!({ "message": error }));
                 }
             });

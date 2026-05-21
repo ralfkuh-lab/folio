@@ -66,7 +66,7 @@ impl<'a> AutomationServer<'a> {
             let addr = SocketAddr::from(([127, 0, 0, 1], port));
             match TcpListener::bind(addr).await {
                 Ok(listener) => {
-                    eprintln!("Automation listening on http://127.0.0.1:{port}");
+                    tracing::info!(target: "folio::automation", port, "automation server listening");
                     if let Err(error) = axum::serve(
                         listener,
                         app.into_make_service_with_connect_info::<SocketAddr>(),
@@ -76,10 +76,12 @@ impl<'a> AutomationServer<'a> {
                     })
                     .await
                     {
-                        eprintln!("automation server failed: {error}");
+                        tracing::error!(target: "folio::automation", %error, "automation server failed");
                     }
                 }
-                Err(error) => eprintln!("automation server bind failed: {error}"),
+                Err(error) => {
+                    tracing::error!(target: "folio::automation", port, %error, "automation server bind failed");
+                }
             }
         });
 
