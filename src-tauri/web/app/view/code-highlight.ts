@@ -14,10 +14,12 @@
 // bereits HTML-tokenisierte Markup ein zweites Mal tokenisieren und
 // alles zerstoeren.
 //
-// Logging: pro Block ein `folioLog.trace` (sichtbar bei `logLevel=debug`
-// via `RUST_LOG=folio=trace`), bei colorize-Fehler ein `folioLog.warn`.
-// Damit ist der "warum ist Block X nicht koloriert?"-Pfad in einer
-// Diagnose-Session sofort sichtbar.
+// Logging: pro Block ein `folioLog.trace` (nur sichtbar wenn
+// `RUST_LOG=folio=trace` startet UND `window.__folioSetLogLevel('trace')`
+// in DevTools aktiviert wird — das Settings-UI bietet `trace` bewusst
+// nicht an), bei colorize-Fehler ein `folioLog.warn`. Damit ist der
+// "warum ist Block X nicht koloriert?"-Pfad in einer Diagnose-Session
+// sofort sichtbar.
 
 import { folioLog } from '../util/log';
 

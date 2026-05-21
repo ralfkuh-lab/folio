@@ -179,26 +179,42 @@ sonst lehnt Tauri den Build ab.
   läuft in `lib.rs::run` **vor** dem Tauri-Builder, damit Setup-Fehler
   ebenfalls landen. Level-Hierarchie beim Boot: `RUST_LOG` >
   `cfg(debug_assertions)` (→ `debug`) > Setting `logLevel`
-  (Default `info`). Live-Reload via
-  `tracing_subscriber::reload::Handle` — `settings_update`-Side-Effect
-  ruft `logging::set_level`, ohne App-Restart. **Keine** `eprintln!`/
-  `println!` in Production-Code (Tests dürfen); stattdessen
-  `tracing::{error,warn,info,debug}!` mit explizitem `target: "folio::*"`-
-  Namespace (z. B. `folio::ipc`, `folio::vault`, `folio::automation`,
-  `folio::menu`, `folio::settings`). Externe Crates (axum/tokio/notify)
-  werden im `env_filter()` der `LogLevel`-Stufen bei `warn` gehalten, um
-  Request-Spam zu vermeiden. Rotation: tägliche Dateinamen
-  `YYYY-MM-DD.log` (kein Prefix — Folio-Kontext steckt im
-  Verzeichnis, dafuer chronologisch sortierbar und von Folio selbst
-  als `Text` klassifiziert/oeffenbar). Retention 7 Tage,
-  Best-Effort-Prune beim Boot.
+  (Default `info`). **Wenn `RUST_LOG` beim Boot gesetzt war, ist der
+  Live-Reload aus dem Settings-UI gesperrt** (`set_level` wird
+  No-op + warn-Log) — sonst könnte ein versehentlicher UI-Wechsel den
+  Diagnose-Override aufheben. Live-Reload sonst via
+  `tracing_subscriber::reload::Handle`; `settings_update`-Side-Effect
+  ruft `logging::set_level`, ohne App-Restart.
+  Robustheit: `set_global_default`-Fehler werden in `init` mit
+  `eprintln!` sichtbar gemacht und `RELOAD_HANDLE`/`FILE_GUARD`
+  bleiben in dem Fall leer (kein dangling Handle). Ein ungültiger
+  `RUST_LOG`-Ausdruck wird vor dem Subscriber-Setup mit `eprintln!`
+  geflaggt und auf `info` zurückgefallen.
+  **Keine** `eprintln!`/`println!` in Production-Code mit Ausnahme
+  von `logging.rs::init` (vor der Subscriber-Installation) — Tests
+  dürfen. Sonst `tracing::{error,warn,info,debug}!` mit explizitem
+  `target: "folio::*"`-Namespace (z. B. `folio::ipc`, `folio::vault`,
+  `folio::automation`, `folio::menu`, `folio::settings`). Externe
+  Crates (axum/tokio/notify) werden im `env_filter()` der
+  `LogLevel`-Stufen bei `warn` gehalten, um Request-Spam zu vermeiden.
+  Rotation: tägliche Dateinamen `YYYY-MM-DD.log` (kein Prefix —
+  Folio-Kontext steckt im Verzeichnis, dafuer chronologisch
+  sortierbar und von Folio selbst als `Text` klassifiziert/oeffenbar).
+  Retention 7 Tage, Best-Effort-Prune beim Boot.
 - **Frontend-Logging** (`util/log.ts` + `commands/app/log_bridge.rs`):
   `folioLog.{error,warn,info,debug,trace}(source, message, fields?)`
   ruft den Tauri-Command `frontend_log`, der mit `tracing::*!` ins
   selbe Logfile schreibt (Target `folio::frontend`, fixer Wert —
   `tracing` verlangt `'static str`, deshalb steckt der konkrete
-  Sub-Bereich im `source`-Feld statt im Target-Pfad). Filterung
-  passiert serverseitig im EnvFilter; Frontend filtert nicht vor.
+  Sub-Bereich im `source`-Feld statt im Target-Pfad). Frontend
+  **filtert vor**: `log.ts` cached den `logLevel` aus den Settings
+  (`settings:changed`-Listener + `applyLogLevelFromSettings` aus dem
+  Boot-`settings_get`) und verwirft Events unterhalb dieses Levels,
+  bevor sie zum IPC-Roundtrip werden. Caveat: weil der Cache nur das
+  **Setting** kennt, sind Frontend-Traces unter `RUST_LOG=folio=trace`
+  trotzdem stumm — Devs müssen in DevTools
+  `window.__folioSetLogLevel('trace')` ausführen, um sie sichtbar zu
+  machen. Das Settings-UI bietet `trace` bewusst nicht an.
   Statt stillem `invoke(...).catch(()=>{})` benutzen Aufrufer
   `safeInvoke(cmd, args, op, level?)` aus `util/log.ts` — der
   Wrapper schluckt Fehler nicht, sondern loggt sie standardisiert

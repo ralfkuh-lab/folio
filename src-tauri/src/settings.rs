@@ -53,11 +53,17 @@ impl DefaultViewMode {
     }
 }
 
-/// Log-Level fuer das `tracing`-Subscriber-Setup. `Off` deaktiviert das
-/// Logging vollstaendig (kein Subscriber, keine Sinks, keine Logfiles).
+/// Log-Level fuer das `tracing`-Subscriber-Setup. `Off` schaltet die
+/// Ausgabe stumm (Filter auf `"off"`) — der Subscriber und der
+/// File-Appender bleiben registriert, sodass ein Live-Wechsel zurueck
+/// nach `Info`/`Debug` ohne App-Restart funktioniert.
+/// `tracing-appender` legt das Tagesfile erst beim ersten Schreiben
+/// an, also entstehen bei `Off` keine leeren Logdateien.
+///
 /// Default ist `Info` — sparsam, aber Lifecycle- und Error-Ereignisse
-/// werden mitgeschrieben. Override via `RUST_LOG`-ENV; im Debug-Build
-/// ist der Default `Debug`.
+/// werden mitgeschrieben. Override via `RUST_LOG`-ENV (sperrt dann
+/// auch den Live-Reload aus dem Settings-UI, siehe `logging.rs`); im
+/// Debug-Build ist der Default `Debug`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel {
@@ -119,9 +125,11 @@ pub struct SettingsData {
     /// stattdessen erscheint ein Reload-Button in der Toolbar.
     #[serde(default = "default_true")]
     pub document_auto_reload: bool,
-    /// Log-Level fuer den `tracing`-Subscriber. `Off` deaktiviert das
-    /// Logging komplett (keine Sinks). `RUST_LOG`-ENV uebersteuert dies;
-    /// Debug-Builds ignorieren die Einstellung und loggen immer `debug`.
+    /// Log-Level fuer den `tracing`-Subscriber. `Off` schaltet die
+    /// Ausgabe stumm (Subscriber bleibt registriert, Filter auf
+    /// `"off"`). `RUST_LOG`-ENV uebersteuert dies beim Boot und sperrt
+    /// den Live-Reload aus dem Settings-UI; Debug-Builds ignorieren
+    /// die Einstellung und loggen immer `debug`.
     #[serde(default)]
     pub log_level: LogLevel,
 }
@@ -292,6 +300,57 @@ mod tests {
         assert_eq!(vec!["logLevel"], changed);
         let reloaded = SettingsService::load_from(path).data();
         assert_eq!(LogLevel::Debug, reloaded.log_level);
+    }
+
+    #[test]
+    fn all_log_levels_round_trip_through_json() {
+        // Jede Variante muss persistierbar + reloadbar sein.
+        for level in [
+            LogLevel::Off,
+            LogLevel::Error,
+            LogLevel::Warn,
+            LogLevel::Info,
+            LogLevel::Debug,
+        ] {
+            let temp = TempDir::new().unwrap();
+            let path = temp.path().join("settings.json");
+            let mut svc = SettingsService::load_from(path.clone());
+            svc.apply_patch(SettingsPatch {
+                log_level: Some(level),
+                ..Default::default()
+            })
+            .unwrap();
+            let reloaded = SettingsService::load_from(path).data();
+            assert_eq!(level, reloaded.log_level, "Roundtrip {level:?}");
+        }
+    }
+
+    #[test]
+    fn unknown_log_level_falls_back_to_default() {
+        // Wenn `settings.json` einen unbekannten Wert enthaelt (manuelle
+        // Edits, alter Build), soll das Laden die Defaults benutzen und
+        // nicht crashen.
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("settings.json");
+        std::fs::write(&path, r#"{"logLevel":"silly"}"#).unwrap();
+        let svc = SettingsService::load_from(path);
+        assert_eq!(LogLevel::Info, svc.data().log_level);
+    }
+
+    #[test]
+    fn log_levels_serialize_lowercase() {
+        // Frontend erwartet lowercase-Strings ('off', 'error', ...);
+        // der TS-Type-Guard `isLogLevel` matcht nur dagegen.
+        for (level, expected) in [
+            (LogLevel::Off, "off"),
+            (LogLevel::Error, "error"),
+            (LogLevel::Warn, "warn"),
+            (LogLevel::Info, "info"),
+            (LogLevel::Debug, "debug"),
+        ] {
+            let json = serde_json::to_string(&level).unwrap();
+            assert_eq!(format!("\"{expected}\""), json);
+        }
     }
 
     #[test]

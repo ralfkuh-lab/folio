@@ -9,7 +9,7 @@
    Enabled etc.) verliert. Konservativer Phase-1-Schnitt: persistieren
    und beim Boot via menu::build anwenden. */
 
-import { folioLog } from '../util/log';
+import { applyLogLevelFromSettings, folioLog } from '../util/log';
 
 type SettingsLanguage = 'de' | 'en';
 export type DefaultViewMode = 'view' | 'edit' | 'current';
@@ -93,6 +93,7 @@ async function patchSettings(patch: Partial<SettingsData>): Promise<void> {
         if (data && typeof data === 'object') {
             currentSettings = data as SettingsData;
             applySettingsToForm(currentSettings);
+            applyLogLevelFromSettings(currentSettings.logLevel);
         }
     } catch (err) {
         console.error('settings_update failed', err);
@@ -113,6 +114,7 @@ export function openSettingsDialog(): void {
         currentSettings = data as SettingsData;
         if (bootLanguage === null) bootLanguage = currentSettings.language;
         applySettingsToForm(currentSettings);
+        applyLogLevelFromSettings(currentSettings.logLevel);
         dlg.hidden = false;
         setTimeout(function () {
             var btn = $('settings-close') as HTMLButtonElement | null;
@@ -234,6 +236,7 @@ export function initSettingsDialog(): void {
             if (data && typeof data === 'object') {
                 currentSettings = data as SettingsData;
                 if (bootLanguage === null) bootLanguage = currentSettings.language;
+                applyLogLevelFromSettings(currentSettings.logLevel);
             }
         }).catch(function (err) {
             folioLog.warn('settings', 'settings_get on boot failed', { error: String(err) });
