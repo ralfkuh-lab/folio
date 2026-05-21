@@ -9,6 +9,10 @@ Plattformübergreifender Markdown-Viewer und -Editor auf **Tauri 2 + Rust**.
 - **Vault-Navigation** mit Ordnerbaum, Workspace-Pins und Recent-Dateien
 - **Dateityp-bewusste Toolbar**: Markdown-spezifische Buttons und TOC-Rail
   blenden sich für Nicht-Markdown-Dateien automatisch aus
+- **Mehrere Vorschau-Pfade**: Markdown (HTML-Render), Code/Text
+  (Read-Only-Monaco mit Syntax-Highlighting), HTML (Sandbox-iframe mit
+  Link-Routing) und Bilder (PNG/JPG/GIF/WebP/SVG/BMP/ICO/AVIF,
+  zentriert und proportional skaliert)
 - **Browser-artige History** mit Zurück/Vorwärts: stellt View/Edit-Mode,
   Scroll-Position und Cursor pro Eintrag wieder her
 - **Toggle-Bare Editor-Minimap** (Monaco-Übersicht am rechten Editor-Rand),

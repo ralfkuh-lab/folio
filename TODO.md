@@ -116,6 +116,23 @@
      `/document/discard`-Endpoint, den die Test-Suite vor jedem Run
      aufruft.
 
+- **Image-View Folgepunkte** (Hauptfeature 2026-05-21 implementiert,
+  siehe `view/image.ts`, `file_kind.rs::FileKind::Image`,
+  `document_store.rs::load_opaque`):
+  - **Image-Watcher**: heute keine Live-Reaktion auf externe Änderungen
+    am offenen Bild. Analog zu `DocumentStore::watch` einen
+    File-Watcher für den Image-Pfad, der bei FS-Change das `<img>` neu
+    lädt (Cache-Buster `?v=<mtime>` an die `convertFileSrc`-URL).
+  - **Zoom / Pan** für große Bilder. Heute wird via `max-width/max-height`
+    proportional runterskaliert; ein Mausrad-Zoom + Drag-Pan wäre
+    sinnvoll. Achtung: muss mit `<img>` und CSS-Transform laufen, da
+    der `#image-view-mount` keinen Editor mitbringt.
+  - **PDF-View**: WebView2 (Windows) hat einen eingebauten PDF-Viewer;
+    WebKitGTK (Linux) **nicht** — bräuchte PDF.js (~2 MB extra Bundle).
+    Plattform-Split ist unschön; abwägen ob lohnt.
+  - **Audio/Video-View**: `<audio>`/`<video>` läuft cross-platform out
+    of the box, analog zum Image-Pfad. Sinnvoll, wenn Bedarf entsteht.
+
 - **KI-Funktionen (Ideen sammeln)**: Sinnvolle Integrationen prüfen, z. B.
   Zusammenfassung des aktuellen Dokuments, Übersetzung, Rechtschreib-/
   Grammatik-Check, Markdown-Reformatierung, Linkvorschläge im Vault,
