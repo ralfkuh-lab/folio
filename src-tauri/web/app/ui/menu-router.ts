@@ -14,6 +14,7 @@ import {
 } from '../state/document';
 import { setMode } from '../editor/shell';
 import { openEditorFind } from './find-bar';
+import { folioLog, safeInvoke } from '../util/log';
 
 type Deps = {
     applyRailVisibility: (side: 'left' | 'right', visible: boolean) => void;
@@ -29,7 +30,9 @@ export function initMenuRouter(deps: Deps): void {
     ev.listen('menu:file_open', function () {
         invoke('pick_file').then(function (path: any) {
             if (path) openDocument(path);
-        }).catch(function () {});
+        }).catch(function (err) {
+            folioLog.warn('menu', 'pick_file failed', { error: String(err) });
+        });
     });
     ev.listen('menu:file_save', function () {
         if (getIsDirty()) saveCurrent();
@@ -42,7 +45,7 @@ export function initMenuRouter(deps: Deps): void {
         if (!getCurrentPath()) return;
         requestSaveIfDirty().then(function (ok) {
             if (!ok) return;
-            invoke('close_document').catch(function(){});
+            safeInvoke('close_document', undefined, 'close_document');
         });
     });
     ev.listen('menu:edit_undo', function () {
@@ -68,20 +71,20 @@ export function initMenuRouter(deps: Deps): void {
     ev.listen('menu:view_mode_edit', function () { setMode('edit'); });
     ev.listen('menu:view_mode_split', function () { setMode('split'); });
     ev.listen('menu:view_theme_light', function () {
-        invoke('theme_set', { mode: 'light' }).catch(function(){});
+        safeInvoke('theme_set', { mode: 'light' }, 'theme_set light');
     });
     ev.listen('menu:view_theme_dark', function () {
-        invoke('theme_set', { mode: 'dark' }).catch(function(){});
+        safeInvoke('theme_set', { mode: 'dark' }, 'theme_set dark');
     });
     ev.listen('menu:view_rail_left', function () {
         var visible = !document.body.classList.contains('vault-hidden');
         deps.applyRailVisibility('left', !visible);
-        invoke('set_rail_visible', { side: 'left', visible: !visible }).catch(function () {});
+        safeInvoke('set_rail_visible', { side: 'left', visible: !visible }, 'set_rail_visible left');
     });
     ev.listen('menu:view_rail_right', function () {
         var visible = !document.body.classList.contains('toc-hidden');
         deps.applyRailVisibility('right', !visible);
-        invoke('set_rail_visible', { side: 'right', visible: !visible }).catch(function () {});
+        safeInvoke('set_rail_visible', { side: 'right', visible: !visible }, 'set_rail_visible right');
     });
     // menu:about wird vom about-dialog-Modul direkt abonniert (eigener
     // Listener mit voller Payload-Anzeige). Kein Eintrag mehr hier, sonst

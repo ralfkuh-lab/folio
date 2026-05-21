@@ -9,6 +9,8 @@
    Enabled etc.) verliert. Konservativer Phase-1-Schnitt: persistieren
    und beim Boot via menu::build anwenden. */
 
+import { folioLog } from '../util/log';
+
 type SettingsLanguage = 'de' | 'en';
 export type DefaultViewMode = 'view' | 'edit' | 'current';
 export type LogLevel = 'off' | 'error' | 'warn' | 'info' | 'debug';
@@ -94,6 +96,7 @@ async function patchSettings(patch: Partial<SettingsData>): Promise<void> {
         }
     } catch (err) {
         console.error('settings_update failed', err);
+        folioLog.error('settings', 'settings_update failed', { error: String(err) });
     }
 }
 
@@ -117,6 +120,7 @@ export function openSettingsDialog(): void {
         }, 0);
     }).catch(function (err) {
         console.error('settings_get failed', err);
+        folioLog.error('settings', 'settings_get failed', { error: String(err) });
     });
 
     if (!keydownHandler) {
@@ -231,6 +235,8 @@ export function initSettingsDialog(): void {
                 currentSettings = data as SettingsData;
                 if (bootLanguage === null) bootLanguage = currentSettings.language;
             }
-        }).catch(function () {});
+        }).catch(function (err) {
+            folioLog.warn('settings', 'settings_get on boot failed', { error: String(err) });
+        });
     }
 }

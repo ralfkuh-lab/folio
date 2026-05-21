@@ -4,6 +4,8 @@
    Mode-Sync, Menue-Enabled-Sync. Init wird aus main.ts gerufen, damit die
    Reihenfolge der DOM-Zugriffe erhalten bleibt. */
 
+import { safeInvoke } from '../util/log';
+
 const STORAGE_KEY = 'folio.cheatsheet';
 
 export const cheatSheetRows: Array<[string, string]> = [
@@ -145,11 +147,8 @@ export function syncCheatsheetMenu(): void {
     if (!window.__TAURI__ || !window.__TAURI__.core) return;
     const enabled = document.body.classList.contains('edit-mode')
         && document.body.classList.contains('kind-markdown');
-    const invoke = window.__TAURI__.core.invoke;
-    invoke('menu_set_enabled', { id: 'help.cheatsheet', enabled })
-        .catch(function () { /* ignore */ });
-    invoke('menu_set_enabled', { id: 'view.minimap', enabled })
-        .catch(function () { /* ignore */ });
+    safeInvoke('menu_set_enabled', { id: 'help.cheatsheet', enabled }, 'menu_set_enabled help.cheatsheet', 'debug');
+    safeInvoke('menu_set_enabled', { id: 'view.minimap', enabled }, 'menu_set_enabled view.minimap', 'debug');
 }
 
 export function initCheatsheet(): void {

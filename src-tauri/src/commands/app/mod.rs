@@ -8,6 +8,7 @@
 //! `__cmd__*`-Companion-Funktionen ueber den Original-Modulpfad sucht.
 
 pub mod dialog;
+pub mod log_bridge;
 pub mod settings;
 pub mod shell_opener;
 

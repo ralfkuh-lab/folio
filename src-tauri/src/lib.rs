@@ -246,6 +246,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::app::shell_opener::open_terminal_at,
             commands::app::settings::settings_get,
             commands::app::settings::settings_update,
+            commands::app::log_bridge::frontend_log,
             commands::file::read::read_file,
             commands::file::read::reload_document,
             commands::file::read::write_file,

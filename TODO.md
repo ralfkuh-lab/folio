@@ -77,14 +77,6 @@
   Hintergrund, bisherige Erkenntnisse und mögliche Wege in
   [`docs/linux-md-icon.md`](docs/linux-md-icon.md).
 
-- **Frontend-Logs ans Backend-Logfile spiegeln**: Aktuell streamt
-  `automation/events.ts` nur `console.error`/`warn` an die Automation-
-  API (für Tests). `console.log`/`debug` landen nur in DevTools.
-  Sinnvoll wäre ein kleiner `folioLog`-Wrapper, der per Tauri-Command
-  ins `tracing`-Subscriber-Logfile schreibt (Target `folio::frontend`).
-  Dann hat man **eine** korrelierte Quelle für Diagnose statt
-  DevTools-Hopping.
-
 ## Niedrige Priorität
 
 - **Image-Insert Folgepunkte** (Hauptfeature 2026-05-19 implementiert,

@@ -192,6 +192,23 @@ sonst lehnt Tauri den Build ab.
   Verzeichnis, dafuer chronologisch sortierbar und von Folio selbst
   als `Text` klassifiziert/oeffenbar). Retention 7 Tage,
   Best-Effort-Prune beim Boot.
+- **Frontend-Logging** (`util/log.ts` + `commands/app/log_bridge.rs`):
+  `folioLog.{error,warn,info,debug,trace}(source, message, fields?)`
+  ruft den Tauri-Command `frontend_log`, der mit `tracing::*!` ins
+  selbe Logfile schreibt (Target `folio::frontend`, fixer Wert —
+  `tracing` verlangt `'static str`, deshalb steckt der konkrete
+  Sub-Bereich im `source`-Feld statt im Target-Pfad). Filterung
+  passiert serverseitig im EnvFilter; Frontend filtert nicht vor.
+  Statt stillem `invoke(...).catch(()=>{})` benutzen Aufrufer
+  `safeInvoke(cmd, args, op, level?)` aus `util/log.ts` — der
+  Wrapper schluckt Fehler nicht, sondern loggt sie standardisiert
+  unter `source=ipc`. Level-Konvention: `warn` für User-sichtbare
+  Operationen (set_view_mode, save, open), `debug` für hochfrequente
+  State-Sync-Calls (menu_set_*, set_window_title, …), `trace` für
+  rein diagnostische Sichtbarkeit (z. B. ein Eintrag pro Code-Block
+  in `code-highlight.ts`). In Tests (jsdom) ist die Bridge ein
+  No-op, weil `__TAURI__` nicht installiert ist; Aufrufer bleiben
+  framework-frei.
 
 ## Headless-Screenshots
 

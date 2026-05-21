@@ -19,6 +19,7 @@ import { syncCheatsheetMenu } from '../ui/cheatsheet';
 import { showUnsavedDialog } from '../ui/dialogs';
 import { isEditorMounted, loadEditorText } from '../editor/shell';
 import { getCachedSettings } from '../ui/settings-dialog';
+import { folioLog, safeInvoke } from '../util/log';
 // getCachedSettings wird im FolioCodeView-Mount-Pfad weiter genutzt
 // (autoFormat-Flag); der Default-Mode-Switch laeuft jetzt im Backend
 // (document_service::open). Frontend-Resolver entfernt — sonst doppelter
@@ -54,7 +55,7 @@ export function applyWindowTitle(): void {
         ? (isDirty ? '* ' + name : name) + ' — Folio'
         : 'Folio';
     document.title = title;
-    invoke('set_window_title', { title }).catch(function () { /* ignore */ });
+    safeInvoke('set_window_title', { title }, 'set_window_title', 'debug');
 }
 
 export function markDirty(dirty: boolean): void {
@@ -63,7 +64,7 @@ export function markDirty(dirty: boolean): void {
     if (el) el.classList.toggle('dirty', isDirty);
     const btn = $('tb-save') as HTMLButtonElement;
     if (btn) btn.disabled = !isDirty;
-    invoke('menu_set_enabled', { id: 'file.save', enabled: isDirty }).catch(function () {});
+    safeInvoke('menu_set_enabled', { id: 'file.save', enabled: isDirty }, 'menu_set_enabled file.save', 'debug');
     applyWindowTitle();
 }
 
@@ -118,7 +119,7 @@ function refreshDirtyFromEditor(): boolean {
 
 export function syncEditorTextToStore(): Promise<unknown> {
     if (!currentPath) return Promise.resolve();
-    return invoke('editor_text_changed', { text: editorText() }).catch(function () {});
+    return safeInvoke('editor_text_changed', { text: editorText() }, 'editor_text_changed', 'debug');
 }
 
 export function saveCurrent(): Promise<boolean> {
@@ -130,7 +131,10 @@ export function saveCurrent(): Promise<boolean> {
             markDirty(false);
         }
         return !!saved;
-    }).catch(function () { return false; });
+    }).catch(function (err) {
+        folioLog.warn('document', 'saveCurrent failed', { error: String(err) });
+        return false;
+    });
 }
 
 export function requestSaveIfDirty(): Promise<boolean> {
@@ -143,7 +147,10 @@ export function requestSaveIfDirty(): Promise<boolean> {
                 cleanText = editorText();
                 markDirty(false);
                 return true;
-            }).catch(function () { return false; });
+            }).catch(function (err) {
+                folioLog.warn('document', 'discard_editor_changes failed', { error: String(err) });
+                return false;
+            });
         }
         return invoke('editor_save_requested').then(function (saved) {
             if (saved) {
@@ -151,7 +158,10 @@ export function requestSaveIfDirty(): Promise<boolean> {
                 markDirty(false);
             }
             return !!saved;
-        }).catch(function () { return false; });
+        }).catch(function (err) {
+            folioLog.warn('document', 'editor_save_requested failed', { error: String(err) });
+            return false;
+        });
     });
 }
 
@@ -170,9 +180,9 @@ function syncViewModeMenuChecks(): void {
               : body.classList.contains('edit-mode') ? 'edit'
               : body.classList.contains('split-mode') ? 'split'
               : 'view';
-    invoke('menu_set_checked', { id: 'view.mode.view', checked: mode === 'view' }).catch(function () {});
-    invoke('menu_set_checked', { id: 'view.mode.edit', checked: mode === 'edit' }).catch(function () {});
-    invoke('menu_set_checked', { id: 'view.mode.split', checked: mode === 'split' }).catch(function () {});
+    safeInvoke('menu_set_checked', { id: 'view.mode.view', checked: mode === 'view' }, 'menu_set_checked view.mode.view', 'debug');
+    safeInvoke('menu_set_checked', { id: 'view.mode.edit', checked: mode === 'edit' }, 'menu_set_checked view.mode.edit', 'debug');
+    safeInvoke('menu_set_checked', { id: 'view.mode.split', checked: mode === 'split' }, 'menu_set_checked view.mode.split', 'debug');
 }
 
 export function applyDocKind(kind: string | null): void {
@@ -204,11 +214,11 @@ export function applyDocKind(kind: string | null): void {
     }
     // Menue-Items synchron halten: View-Mode auch fuer Text/Code,
     // Save-As bei jedem geladenen, lesbaren Dokument (also nicht 'unknown').
-    invoke('menu_set_enabled', { id: 'view.mode.view', enabled: hasViewMode }).catch(function () {});
-    invoke('menu_set_enabled', { id: 'view.mode.edit', enabled: hasDoc }).catch(function () {});
-    invoke('menu_set_enabled', { id: 'file.save_as', enabled: hasDoc }).catch(function () {});
-    invoke('menu_set_enabled', { id: 'file.rename', enabled: hasDoc }).catch(function () {});
-    invoke('menu_set_enabled', { id: 'file.close', enabled: hasDoc }).catch(function () {});
+    safeInvoke('menu_set_enabled', { id: 'view.mode.view', enabled: hasViewMode }, 'menu_set_enabled view.mode.view', 'debug');
+    safeInvoke('menu_set_enabled', { id: 'view.mode.edit', enabled: hasDoc }, 'menu_set_enabled view.mode.edit', 'debug');
+    safeInvoke('menu_set_enabled', { id: 'file.save_as', enabled: hasDoc }, 'menu_set_enabled file.save_as', 'debug');
+    safeInvoke('menu_set_enabled', { id: 'file.rename', enabled: hasDoc }, 'menu_set_enabled file.rename', 'debug');
+    safeInvoke('menu_set_enabled', { id: 'file.close', enabled: hasDoc }, 'menu_set_enabled file.close', 'debug');
     syncCheatsheetMenu();
     // Haekchen nach dem Enable-Wechsel erneut anwenden — Tauri scheint
     // set_checked auf disabled Items zu verwerfen, sodass beim ersten
@@ -221,12 +231,13 @@ export function openDocument(path: string): Promise<boolean> {
     return requestSaveIfDirty().then(function (ok) {
         if (!ok) return false;
         return invoke('read_file', { path }).then(function (data) {
-            invoke('workspace_add_recent', { path }).catch(function () {});
+            safeInvoke('workspace_add_recent', { path }, 'workspace_add_recent', 'debug');
             applyDocKind(data && data.kind);
             // Per-Typ-Default-Mode greift im Backend (document_service::open)
             // und emittiert dort `app:set_mode` — Frontend muss nichts tun.
             return true;
         }).catch(function (err) {
+            folioLog.warn('document', 'read_file failed', { path, error: String(err) });
             showStatus(typeof err === 'string' ? err : 'Datei konnte nicht geöffnet werden');
             return false;
         });
@@ -274,7 +285,7 @@ export function initDocumentState(d: Deps): void {
         setStatusPath(data.path || 'Bereit', false);
         updateWordCount(data.text || '');
         applyDocKind(data.kind || 'unknown');
-        invoke('workspace_add_recent', { path: data.path }).catch(function () {});
+        safeInvoke('workspace_add_recent', { path: data.path }, 'workspace_add_recent', 'debug');
 
         // 2. UI-Rendering. loadEditorText kuemmert sich um den
         // ensureEditorMounted-Pfad (mount-on-demand bei erstem Edit-Switch).
@@ -363,7 +374,7 @@ export function initDocumentState(d: Deps): void {
         var settings = getCachedSettings();
         var autoReload = settings ? !!settings.documentAutoReload : true;
         if (autoReload) {
-            invoke('reload_document').catch(function () {});
+            safeInvoke('reload_document', undefined, 'reload_document', 'warn');
         } else {
             setReloadButtonPending(true);
             showStatus('Datei extern geändert — Reload-Button zum Übernehmen');

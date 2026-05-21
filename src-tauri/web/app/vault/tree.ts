@@ -12,6 +12,7 @@
    pinned/recent zuerst (sync DOM-Patches), dann refreshVault async. */
 
 import { openContextMenu, closeContextMenu } from './context-menu';
+import { folioLog, safeInvoke } from '../util/log';
 
 type Deps = {
     openDocument: (path: string) => void;
@@ -280,11 +281,15 @@ export function initVaultTree(d: Deps): void {
             if (cmd === 'addFile') {
                 invoke('pick_file').then(function (path) {
                     if (path) deps.openDocument(path);
-                }).catch(function () {});
+                }).catch(function (err) {
+                    folioLog.warn('vault', 'pick_file failed', { error: String(err) });
+                });
             } else if (cmd === 'addFolder') {
                 invoke('pick_folder').then(function (path) {
-                    if (path) invoke('workspace_pin', { path, isDirectory: true }).catch(function () {});
-                }).catch(function () {});
+                    if (path) safeInvoke('workspace_pin', { path, isDirectory: true }, 'workspace_pin');
+                }).catch(function (err) {
+                    folioLog.warn('vault', 'pick_folder failed', { error: String(err) });
+                });
             }
             return;
         }
@@ -338,7 +343,7 @@ export function initVaultTree(d: Deps): void {
         const isDir = item.getAttribute('data-directory') === 'true';
         if (!path) return;
         if (isDir) {
-            invoke('vault_expand_dir', { path }).catch(function () {});
+            safeInvoke('vault_expand_dir', { path }, 'vault_expand_dir');
         } else {
             deps.openDocument(path);
         }

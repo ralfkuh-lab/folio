@@ -13,6 +13,13 @@
 // im `data-source`-Attribut bewahrt — sonst wuerde der zweite Pass das
 // bereits HTML-tokenisierte Markup ein zweites Mal tokenisieren und
 // alles zerstoeren.
+//
+// Logging: pro Block ein `folioLog.trace` (sichtbar bei `logLevel=debug`
+// via `RUST_LOG=folio=trace`), bei colorize-Fehler ein `folioLog.warn`.
+// Damit ist der "warum ist Block X nicht koloriert?"-Pfad in einer
+// Diagnose-Session sofort sichtbar.
+
+import { folioLog } from '../util/log';
 
 const SOURCE_ATTR = 'data-folio-source';
 
@@ -102,9 +109,13 @@ function getMonacoColorize(): ((text: string, lang: string, opts?: any) => Promi
 export function highlightCodeBlocks(root: HTMLElement | null): void {
     if (!root) return;
     const colorize = getMonacoColorize();
-    if (!colorize) return;
+    if (!colorize) {
+        folioLog.warn('view', 'highlightCodeBlocks: monaco.editor.colorize nicht verfuegbar');
+        return;
+    }
     const blocks = root.querySelectorAll('pre > code[class*="language-"]');
-    blocks.forEach((block) => {
+    folioLog.trace('view', 'highlightCodeBlocks start', { blocks: blocks.length });
+    blocks.forEach((block, index) => {
         const raw = extractLang(block);
         if (!raw) return;
         const lang = resolveLang(raw);
@@ -113,6 +124,7 @@ export function highlightCodeBlocks(root: HTMLElement | null): void {
             source = block.textContent || '';
             block.setAttribute(SOURCE_ATTR, source);
         }
+        const chars = source.length;
         colorize(source, lang, { tabSize: 4 })
             .then((html) => {
                 // colorize() trennt Zeilen mit <br/> — in einem <pre> wuerde
@@ -120,10 +132,20 @@ export function highlightCodeBlocks(root: HTMLElement | null): void {
                 // Whitespace respektiert. Also <br>-Varianten durch \n
                 // ersetzen.
                 block.innerHTML = html.replace(/<br\s*\/?>/g, '\n');
+                folioLog.trace('view', 'code block colorized', { index, lang, chars });
             })
-            .catch(() => {
-                /* Unbekannte Sprache oder Tokenizer-Fehler — Block bleibt
-                   unkoloriert. Default-CSS rendert ihn trotzdem als <pre>. */
+            .catch((err) => {
+                // Unbekannte Sprache oder Tokenizer-Fehler — Block bleibt
+                // unkoloriert. Default-CSS rendert ihn trotzdem als <pre>.
+                // Den Fail loggen wir auf `warn`, weil "json failed" oft
+                // ein echter Bug ist (Race-Condition, Worker-Setup).
+                folioLog.warn('view', 'code block colorize failed', {
+                    index,
+                    rawLang: raw,
+                    resolvedLang: lang,
+                    chars,
+                    error: String(err),
+                });
             });
     });
 }

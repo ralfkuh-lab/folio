@@ -13,6 +13,7 @@ import { ackHandler } from '../automation/events';
 import { cheatsheetSyncMode, syncCheatsheetMenu } from '../ui/cheatsheet';
 import { afterModeSwitch as findBarAfterModeSwitch, openEditorFind, setEditorFindTerm } from '../ui/find-bar';
 import { highlightCodeBlocks } from '../view/code-highlight';
+import { folioLog, safeInvoke } from '../util/log';
 
 type Deps = {
     getCleanText: () => string;
@@ -45,6 +46,7 @@ export function ensureEditorMounted(initial?: string): Promise<boolean> {
     }).catch(function (err) {
         // eslint-disable-next-line no-console
         console.error('[folio] Editor mount failed:', err);
+        folioLog.error('editor', 'Monaco mount failed', { error: String(err) });
         return false;
     });
 }
@@ -116,9 +118,9 @@ export function setActiveMode(mode: string): void {
     cheatsheetSyncMode(mode === 'edit');
     // View-Mode-Haekchen im Menue synchron halten (alle Pfade laufen hier
     // durch: setMode(), applyShellState, navigation:changed).
-    invoke('menu_set_checked', { id: 'view.mode.view', checked: mode === 'view' }).catch(function () {});
-    invoke('menu_set_checked', { id: 'view.mode.edit', checked: mode === 'edit' }).catch(function () {});
-    invoke('menu_set_checked', { id: 'view.mode.split', checked: mode === 'split' }).catch(function () {});
+    safeInvoke('menu_set_checked', { id: 'view.mode.view', checked: mode === 'view' }, 'menu_set_checked view.mode.view', 'debug');
+    safeInvoke('menu_set_checked', { id: 'view.mode.edit', checked: mode === 'edit' }, 'menu_set_checked view.mode.edit', 'debug');
+    safeInvoke('menu_set_checked', { id: 'view.mode.split', checked: mode === 'split' }, 'menu_set_checked view.mode.split', 'debug');
 }
 
 export function setMode(mode: string): Promise<boolean> {
@@ -198,8 +200,8 @@ export function initEditorShell(d: Deps): void {
             syncCheatsheetMenu();
 
             // 4. Undo/Redo nur im Edit-Mode sinnvoll (war IIFE #1).
-            invoke('menu_set_enabled', { id: 'edit.undo', enabled: mode === 'edit' }).catch(function () {});
-            invoke('menu_set_enabled', { id: 'edit.redo', enabled: mode === 'edit' }).catch(function () {});
+            safeInvoke('menu_set_enabled', { id: 'edit.undo', enabled: mode === 'edit' }, 'menu_set_enabled edit.undo', 'debug');
+            safeInvoke('menu_set_enabled', { id: 'edit.redo', enabled: mode === 'edit' }, 'menu_set_enabled edit.redo', 'debug');
 
             // 5. Find-Bar re-attach an den jetzt aktiven Finder (war IIFE #2).
             findBarAfterModeSwitch();
@@ -224,7 +226,7 @@ export function initEditorShell(d: Deps): void {
         if (mdBody) highlightCodeBlocks(mdBody as HTMLElement);
         // Theme-Submenue-Haekchen synchron halten — egal ueber welchen Pfad
         // der Wechsel kam (Menue, Statusbar-Button, Init).
-        invoke('menu_set_checked', { id: 'view.theme.light', checked: mode === 'light' }).catch(function () {});
-        invoke('menu_set_checked', { id: 'view.theme.dark', checked: mode === 'dark' }).catch(function () {});
+        safeInvoke('menu_set_checked', { id: 'view.theme.light', checked: mode === 'light' }, 'menu_set_checked view.theme.light', 'debug');
+        safeInvoke('menu_set_checked', { id: 'view.theme.dark', checked: mode === 'dark' }, 'menu_set_checked view.theme.dark', 'debug');
     });
 }

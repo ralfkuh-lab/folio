@@ -45,6 +45,7 @@ import { initMenuRouter } from './ui/menu-router';
 import { initDragDrop } from './ui/drag-drop';
 import { initToolbarActions } from './ui/toolbar-actions';
 import { ackHandler, initAutomationEvents } from './automation/events';
+import { folioLog, safeInvoke } from './util/log';
 
 const core = window.__TAURI__ && window.__TAURI__.core;
 const ev = window.__TAURI__ && window.__TAURI__.event;
@@ -90,7 +91,9 @@ initImageDialog({ getCurrentPath, showStatus });
 initAboutDialog();
 initSettingsDialog();
 attachPasteHandler(function (blob) {
-    openImageDialog({ preloadedBlob: blob }).catch(function () {});
+    openImageDialog({ preloadedBlob: blob }).catch(function (err) {
+        folioLog.warn('paste', 'openImageDialog failed', { error: String(err) });
+    });
 });
 initContextMenu({ openDocument, refreshVault, showStatus });
 initMenuRouter({ applyRailVisibility });
@@ -123,7 +126,7 @@ if (ev && typeof ev.listen === 'function' && invoke) {
         var anchor = data.anchor || data.slug || '';
         setTocActive(anchor);
         if (data.viewMode) {
-            invoke('set_view_mode', { mode: data.viewMode }).catch(function(){});
+            safeInvoke('set_view_mode', { mode: data.viewMode }, 'set_view_mode', 'warn');
         }
         var viewScroll = (typeof data.scrollY === 'number') ? data.scrollY : 0;
         var editorCursor = (typeof data.editorCursor === 'number') ? data.editorCursor : 0;
@@ -197,7 +200,9 @@ if (ev && typeof ev.listen === 'function' && invoke) {
         if (typeof path === 'string' && path.length > 0) {
             openDocument(path);
         }
-    }).catch(function () {});
+    }).catch(function (err) {
+        folioLog.warn('boot', 'cli_pending_open failed', { error: String(err) });
+    });
     ev.listen('cli:open', function (event: any) {
         var data = event && event.payload;
         var path = (data && typeof data === 'object') ? data.path : null;
@@ -214,9 +219,11 @@ if (invoke) {
         html.classList.toggle('theme-dark', mode === 'dark');
         html.classList.toggle('theme-light', mode === 'light');
         setEditorTheme(mode);
-        invoke('menu_set_checked', { id: 'view.theme.light', checked: mode === 'light' }).catch(function(){});
-        invoke('menu_set_checked', { id: 'view.theme.dark', checked: mode === 'dark' }).catch(function(){});
-    }).catch(function(){});
+        safeInvoke('menu_set_checked', { id: 'view.theme.light', checked: mode === 'light' }, 'menu_set_checked view.theme.light', 'debug');
+        safeInvoke('menu_set_checked', { id: 'view.theme.dark', checked: mode === 'dark' }, 'menu_set_checked view.theme.dark', 'debug');
+    }).catch(function (err) {
+        folioLog.warn('boot', 'theme_get failed', { error: String(err) });
+    });
 
     // Minimap-Toggle aus dem persistierten Panel-State beim Boot
     // wiederherstellen. setMinimap deferred selbstaendig auf mountReady,
@@ -226,7 +233,9 @@ if (invoke) {
         var btn = $('tb-minimap');
         if (btn) btn.classList.toggle('active', on);
         if (window.FolioEditor) window.FolioEditor.setMinimap(on);
-    }).catch(function(){});
+    }).catch(function (err) {
+        folioLog.warn('boot', 'editor_minimap_get failed', { error: String(err) });
+    });
 
     // Rail-Visibility ebenfalls beim Boot syncen. `panel:rail_changed`
     // feuert sonst nur bei User-Klick — bei reinem Restore-Pfad bleiben
@@ -240,5 +249,7 @@ if (invoke) {
         if (typeof state.rightRailVisible === 'boolean') {
             applyRailVisibility('right', state.rightRailVisible);
         }
-    }).catch(function(){});
+    }).catch(function (err) {
+        folioLog.warn('boot', 'panel_rails_get failed', { error: String(err) });
+    });
 }

@@ -10,6 +10,8 @@ type Deps = {
     showStatus: (msg: string) => void;
 };
 
+import { safeInvoke } from '../util/log';
+
 let deps: Deps = null;
 let ctxMenu: HTMLElement | null = null;
 let ctxTarget: { path: string; isDirectory: boolean } | null = null;
@@ -161,19 +163,19 @@ export function initContextMenu(d: Deps): void {
         if (act === 'open' && !isDir) {
             deps.openDocument(path);
         } else if (act === 'pin') {
-            invoke('workspace_pin', { path, isDirectory: isDir }).catch(function () {});
+            safeInvoke('workspace_pin', { path, isDirectory: isDir }, 'workspace_pin');
         } else if (act === 'unpin') {
-            invoke('workspace_unpin', { path }).catch(function () {});
+            safeInvoke('workspace_unpin', { path }, 'workspace_unpin');
         } else if (act === 'remove-recent') {
-            invoke('workspace_remove_recent', { path }).catch(function () {});
+            safeInvoke('workspace_remove_recent', { path }, 'workspace_remove_recent');
         } else if (act === 'rename') {
             startInlineRename(path);
         } else if (act === 'show') {
-            invoke('show_in_file_manager', { path }).catch(function () {});
+            safeInvoke('show_in_file_manager', { path }, 'show_in_file_manager');
         } else if (act === 'terminal') {
-            invoke('open_terminal_at', { path }).catch(function () {});
+            safeInvoke('open_terminal_at', { path }, 'open_terminal_at');
         } else if (act === 'copy') {
-            if (navigator.clipboard) navigator.clipboard.writeText(path).catch(function () {});
+            if (navigator.clipboard) navigator.clipboard.writeText(path).catch(function () { /* clipboard write may reject silently */ });
         }
     });
     document.addEventListener('click', function (e) {

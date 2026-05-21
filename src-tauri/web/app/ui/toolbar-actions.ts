@@ -16,6 +16,7 @@ import { setMode } from '../editor/shell';
 import { initExportDialog } from './export-dialog';
 import { openImageDialog } from './image-dialog';
 import { showCheatSheet, hideCheatSheet, cheatSheetRows } from './cheatsheet';
+import { folioLog, safeInvoke } from '../util/log';
 
 export function initToolbarActions(): void {
     const core = window.__TAURI__ && window.__TAURI__.core;
@@ -47,13 +48,13 @@ export function initToolbarActions(): void {
         var btn = $('tb-rail-left'); if (!btn) return;
         var on = !btn.classList.contains('active');
         btn.classList.toggle('active', on);
-        invoke('set_rail_visible', { side: 'left', visible: on }).catch(function(){});
+        safeInvoke('set_rail_visible', { side: 'left', visible: on }, 'set_rail_visible left');
     });
     bind('tb-rail-right', function () {
         var btn = $('tb-rail-right'); if (!btn) return;
         var on = !btn.classList.contains('active');
         btn.classList.toggle('active', on);
-        invoke('set_rail_visible', { side: 'right', visible: on }).catch(function(){});
+        safeInvoke('set_rail_visible', { side: 'right', visible: on }, 'set_rail_visible right');
     });
     bind('tb-minimap', function () {
         var btn = $('tb-minimap'); if (!btn) return;
@@ -63,23 +64,23 @@ export function initToolbarActions(): void {
         // greift. Backend persistiert + emittiert panel:minimap_changed
         // (fuer Automation- und Multi-Window-Sync).
         if (window.FolioEditor) window.FolioEditor.setMinimap(on);
-        invoke('set_editor_minimap_visible', { visible: on }).catch(function(){});
+        safeInvoke('set_editor_minimap_visible', { visible: on }, 'set_editor_minimap_visible');
     });
-    bind('tb-find', function () { invoke('open_find').catch(function(){}); });
+    bind('tb-find', function () { safeInvoke('open_find', undefined, 'open_find'); });
     // tb-reload: erscheint nur bei documentAutoReload=false + pending
     // external change. Click → reload_document; das emittierte
     // document:loaded/document:saved versteckt den Button anschliessend.
     bind('tb-reload', function () {
-        invoke('reload_document').catch(function(){});
+        safeInvoke('reload_document', undefined, 'reload_document');
     });
     bind('tb-back', function () {
         requestSaveIfDirty().then(function (ok) {
-            if (ok) invoke('go_back_and_emit').catch(function () {});
+            if (ok) safeInvoke('go_back_and_emit', undefined, 'go_back_and_emit');
         });
     });
     bind('tb-forward', function () {
         requestSaveIfDirty().then(function (ok) {
-            if (ok) invoke('go_forward_and_emit').catch(function () {});
+            if (ok) safeInvoke('go_forward_and_emit', undefined, 'go_forward_and_emit');
         });
     });
 
@@ -101,7 +102,10 @@ export function initToolbarActions(): void {
                 selectionStart: res.new_selection_start,
                 selectionLength: res.new_selection_length,
             });
-        }).catch(function (err: any) { console.warn('apply_editor_command failed:', err); });
+        }).catch(function (err: any) {
+            console.warn('apply_editor_command failed:', err);
+            folioLog.warn('editor', 'apply_editor_command failed', { command: name, error: String(err) });
+        });
     }
     bind('tb-bold',      function () { applyCmd('bold'); });
     bind('tb-italic',    function () { applyCmd('italic'); });
@@ -112,7 +116,11 @@ export function initToolbarActions(): void {
     // tb-image faehrt einen eigenen Pfad: Dialog mit Clipboard-/Datei-
     // Auswahl, dann Schreiben + relativer Tag-Insert. Anders als die
     // anderen Inline-Commands laeuft das nicht ueber apply_editor_command.
-    bind('tb-image',     function () { openImageDialog().catch(function(){}); });
+    bind('tb-image',     function () {
+        openImageDialog().catch(function (err) {
+            folioLog.debug('image', 'openImageDialog rejected', { error: String(err) });
+        });
+    });
     bind('tb-table',     function () { applyCmd('table'); });
     bind('tb-code',      function () { applyCmd('code'); });
     bind('tb-codeblock', function () { applyCmd('codeblock'); });
@@ -129,7 +137,7 @@ export function initToolbarActions(): void {
     });
 
     bind('status-theme-toggle', function () {
-        invoke('theme_set', { mode: 'toggle' }).catch(function(){});
+        safeInvoke('theme_set', { mode: 'toggle' }, 'theme_set');
     });
 
     /* ----- Tastatur-Shortcuts -----
@@ -154,14 +162,14 @@ export function initToolbarActions(): void {
         if (e.altKey && !ctrl && !shift && k === 'ArrowLeft') {
             e.preventDefault();
             requestSaveIfDirty().then(function (ok) {
-                if (ok) invoke('go_back_and_emit').catch(function(){});
+                if (ok) safeInvoke('go_back_and_emit', undefined, 'go_back_and_emit');
             });
             return;
         }
         if (e.altKey && !ctrl && !shift && k === 'ArrowRight') {
             e.preventDefault();
             requestSaveIfDirty().then(function (ok) {
-                if (ok) invoke('go_forward_and_emit').catch(function(){});
+                if (ok) safeInvoke('go_forward_and_emit', undefined, 'go_forward_and_emit');
             });
             return;
         }
@@ -172,32 +180,34 @@ export function initToolbarActions(): void {
         if (!shift && k === 's') { e.preventDefault(); saveCurrent(); return; }
         if (shift && k === 's') {
             e.preventDefault();
-            invoke('menu_dispatch', { id: 'file.save_as' }).catch(function(){});
+            safeInvoke('menu_dispatch', { id: 'file.save_as' }, 'menu_dispatch file.save_as');
             return;
         }
         if (!shift && k === 'o') {
             e.preventDefault();
             invoke('pick_file').then(function (path: any) {
                 if (path) openDocument(path);
-            }).catch(function () {});
+            }).catch(function (err) {
+                folioLog.warn('toolbar', 'pick_file failed', { error: String(err) });
+            });
             return;
         }
         if (!shift && k === 'w') {
             e.preventDefault();
             // Gleicher Pfad wie menu:file_close — Dirty-Prompt + close_document.
-            invoke('menu_dispatch', { id: 'file.close' }).catch(function(){});
+            safeInvoke('menu_dispatch', { id: 'file.close' }, 'menu_dispatch file.close');
             return;
         }
         if (!shift && k === 'q') {
             e.preventDefault();
-            invoke('menu_dispatch', { id: 'file.quit' }).catch(function(){});
+            safeInvoke('menu_dispatch', { id: 'file.quit' }, 'menu_dispatch file.quit');
             return;
         }
         // Strg+, → Einstellungen. WebView2 schluckt den Accelerator
         // genau wie die anderen, deshalb hier ueber menu_dispatch.
         if (!shift && k === ',') {
             e.preventDefault();
-            invoke('menu_dispatch', { id: 'edit.settings' }).catch(function(){});
+            safeInvoke('menu_dispatch', { id: 'edit.settings' }, 'menu_dispatch edit.settings');
             return;
         }
         // Strg+Z / Strg+Shift+Z: Editor-Undo/Redo. Wenn Monaco selbst
