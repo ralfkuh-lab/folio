@@ -101,6 +101,55 @@ function getMonacoColorize(): ((text: string, lang: string, opts?: any) => Promi
     return monaco.editor.colorize.bind(monaco.editor);
 }
 
+// Monaco liefert JSON-Highlighting nur ueber seinen sprachspezifischen
+// Worker (`vs/language/json/jsonWorker.js`). `monaco.editor.colorize()`
+// laeuft aber synchron im Hauptthread und kennt nur die einfachen
+// Monarch-Tokenizer aus `vs/basic-languages/` — und JSON fehlt dort.
+// Folge: alle Tokens fallen auf `mtk1` (Standard-Vordergrund) zurueck,
+// der Block sieht ungefaerbt aus, obwohl `colorize` resolved.
+// Loesung: eine kompakte Monarch-Definition fuer JSON einmalig
+// registrieren. Token-Stems passen zu Monacos vs-/vs-dark-Theme
+// (string/number/keyword/delimiter), sodass die `mtk*`-Klassen
+// dieselben Farben kriegen wie z.B. shell oder yaml. Andere
+// Worker-only-Sprachen (HTML/CSS/TS) haben in `basic-languages/`
+// einen Monarch-Fallback und sind nicht betroffen.
+let monarchJsonRegistered = false;
+function ensureMonarchJson(): void {
+    if (monarchJsonRegistered) return;
+    const monaco = (window as any).monaco;
+    if (!monaco || !monaco.languages || typeof monaco.languages.setMonarchTokensProvider !== 'function') {
+        folioLog.warn('view', 'ensureMonarchJson: monaco.languages.setMonarchTokensProvider fehlt');
+        return;
+    }
+    try {
+        monaco.languages.setMonarchTokensProvider('json', {
+            defaultToken: '',
+            tokenPostfix: '.json',
+            tokenizer: {
+                root: [
+                    [/[{}\[\],]/, 'delimiter.bracket.json'],
+                    [/:/, 'delimiter'],
+                    // Property-Key: String unmittelbar gefolgt von `:`
+                    // (mit optionalem Whitespace). Monaco's Monarch
+                    // erlaubt Lookahead via `(?=…)`.
+                    [/"(?:[^"\\]|\\.)*"(?=\s*:)/, 'type'],
+                    [/"(?:[^"\\]|\\.)*"/, 'string'],
+                    [/-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/, 'number'],
+                    [/\b(?:true|false|null)\b/, 'keyword'],
+                    [/\/\/.*$/, 'comment'],
+                    [/\s+/, 'white'],
+                ],
+            },
+        });
+        monarchJsonRegistered = true;
+        folioLog.debug('view', 'Monarch-Tokenizer fuer json registriert');
+    } catch (err) {
+        folioLog.warn('view', 'Monarch-Registrierung fuer json fehlgeschlagen', {
+            error: String(err),
+        });
+    }
+}
+
 /**
  * Highlightet alle `pre > code[class*="language-…"]`-Bloecke unterhalb von
  * `root`. Bei Re-Aufrufen (z. B. nach Theme-Wechsel) wird der bewahrte
@@ -114,6 +163,7 @@ export function highlightCodeBlocks(root: HTMLElement | null): void {
         folioLog.warn('view', 'highlightCodeBlocks: monaco.editor.colorize nicht verfuegbar');
         return;
     }
+    ensureMonarchJson();
     const blocks = root.querySelectorAll('pre > code[class*="language-"]');
     folioLog.debug('view', 'highlightCodeBlocks start', { blocks: blocks.length });
     blocks.forEach((block, index) => {
@@ -133,7 +183,14 @@ export function highlightCodeBlocks(root: HTMLElement | null): void {
                 // Whitespace respektiert. Also <br>-Varianten durch \n
                 // ersetzen.
                 block.innerHTML = html.replace(/<br\s*\/?>/g, '\n');
-                folioLog.debug('view', 'code block colorized', { index, lang, chars });
+                // Diagnose-Indikator: ein echt tokenisierter Output enthaelt
+                // Monacos `mtk*`-Klassen-Spans. Wenn `colorize()` bei kaltem
+                // Tokenizer mit Plain-Text-HTML resolved, fehlen die Spans
+                // — dann sehen wir das hier statt am Doc-Render-Pfad.
+                const tokenSpans = (html.match(/class="mtk/g) || []).length;
+                folioLog.debug('view', 'code block colorized', {
+                    index, lang, chars, htmlBytes: html.length, tokenSpans,
+                });
             })
             .catch((err) => {
                 // Unbekannte Sprache oder Tokenizer-Fehler — Block bleibt
