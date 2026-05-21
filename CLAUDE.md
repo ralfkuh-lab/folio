@@ -220,11 +220,14 @@ sonst lehnt Tauri den Build ab.
   Wrapper schluckt Fehler nicht, sondern loggt sie standardisiert
   unter `source=ipc`. Level-Konvention: `warn` für User-sichtbare
   Operationen (set_view_mode, save, open), `debug` für hochfrequente
-  State-Sync-Calls (menu_set_*, set_window_title, …), `trace` für
-  rein diagnostische Sichtbarkeit (z. B. ein Eintrag pro Code-Block
-  in `code-highlight.ts`). In Tests (jsdom) ist die Bridge ein
-  No-op, weil `__TAURI__` nicht installiert ist; Aufrufer bleiben
-  framework-frei.
+  State-Sync-Calls (menu_set_*, set_window_title, …) **und für
+  per-Operation-Diagnose mit überschaubarer Frequenz** (z. B. ein
+  Eintrag pro Code-Block in `code-highlight.ts` — selten >50 pro
+  Dokument), `trace` ist für DevTools-Sessions reserviert
+  (Release-Build hat DevTools standardmäßig aus, daher ohne
+  Custom-Build nicht erreichbar). In Tests (jsdom) ist die Bridge
+  ein No-op, weil `__TAURI__` nicht installiert ist; Aufrufer
+  bleiben framework-frei.
 
 ## Headless-Screenshots
 

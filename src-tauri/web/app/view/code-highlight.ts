@@ -14,12 +14,11 @@
 // bereits HTML-tokenisierte Markup ein zweites Mal tokenisieren und
 // alles zerstoeren.
 //
-// Logging: pro Block ein `folioLog.trace` (nur sichtbar wenn
-// `RUST_LOG=folio=trace` startet UND `window.__folioSetLogLevel('trace')`
-// in DevTools aktiviert wird — das Settings-UI bietet `trace` bewusst
-// nicht an), bei colorize-Fehler ein `folioLog.warn`. Damit ist der
-// "warum ist Block X nicht koloriert?"-Pfad in einer Diagnose-Session
-// sofort sichtbar.
+// Logging: pro Block ein `folioLog.debug` (sichtbar ab logLevel=debug),
+// bei colorize-Fehler ein `folioLog.warn`. Per-Block-Granularitaet ist
+// fuer typische Markdown-Dateien (<50 Code-Bloecke) unkritisch und der
+// Pfad "warum ist Block X nicht koloriert?" wird damit ohne Trace-/
+// DevTools-Setup sichtbar.
 
 import { folioLog } from '../util/log';
 
@@ -116,7 +115,7 @@ export function highlightCodeBlocks(root: HTMLElement | null): void {
         return;
     }
     const blocks = root.querySelectorAll('pre > code[class*="language-"]');
-    folioLog.trace('view', 'highlightCodeBlocks start', { blocks: blocks.length });
+    folioLog.debug('view', 'highlightCodeBlocks start', { blocks: blocks.length });
     blocks.forEach((block, index) => {
         const raw = extractLang(block);
         if (!raw) return;
@@ -134,7 +133,7 @@ export function highlightCodeBlocks(root: HTMLElement | null): void {
                 // Whitespace respektiert. Also <br>-Varianten durch \n
                 // ersetzen.
                 block.innerHTML = html.replace(/<br\s*\/?>/g, '\n');
-                folioLog.trace('view', 'code block colorized', { index, lang, chars });
+                folioLog.debug('view', 'code block colorized', { index, lang, chars });
             })
             .catch((err) => {
                 // Unbekannte Sprache oder Tokenizer-Fehler — Block bleibt
