@@ -2,7 +2,7 @@
 
 ## Hohe Priorität
 
-_(keine offenen Punkte)_
+- **E2E-Testbericht vom 2026-05-22 auswerten** (wird von Claude übernommen): Behebung der 10 fehlerhaften Tests laut Bericht unter [`docs/testreport-2026-05-22.md`](docs/testreport-2026-05-22.md) (Menü-Stub im Split-Modus aktivieren, "Canceled" Monaco-Konsolenfehler whitelisten und ggf. visuelle Baselines updaten).
 
 ## Mittlere Priorität
 
