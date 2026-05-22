@@ -13,6 +13,7 @@ import { ackHandler } from '../automation/events';
 import { cheatsheetSyncMode, syncCheatsheetMenu } from '../ui/cheatsheet';
 import { afterModeSwitch as findBarAfterModeSwitch, openEditorFind, setEditorFindTerm } from '../ui/find-bar';
 import { highlightCodeBlocks } from '../view/code-highlight';
+import { flushPreviewRender } from '../view/preview';
 import { folioLog, safeInvoke } from '../util/log';
 
 type Deps = {
@@ -212,6 +213,18 @@ export function initEditorShell(d: Deps): void {
 
             // 5. Find-Bar re-attach an den jetzt aktiven Finder (war IIFE #2).
             findBarAfterModeSwitch();
+
+            // 6. Live-Preview-Flush: wenn der User aus edit nach view/split
+            // wechselt und der Editor dirty ist, sofort rendern (ohne den
+            // 150 ms-Debounce). Sonst sieht der User kurz die alte
+            // gespeicherte Version, bevor das naechste editorTextChanged
+            // den Render anstoesst. flushPreviewRender ist gated auf
+            // kind-markdown + dirty — fuer andere Pfade No-Op.
+            if (mode === 'view' || mode === 'split') {
+                flushPreviewRender().catch(function (err) {
+                    folioLog.warn('preview', 'flush on mode-switch failed', { error: String(err) });
+                });
+            }
         });
     });
 

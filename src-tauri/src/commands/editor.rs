@@ -1,4 +1,4 @@
-use crate::{editor_commands, state::AppState};
+use crate::{editor_commands, renderer, state::AppState, toc};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
@@ -83,6 +83,32 @@ pub fn apply_command_utf16(
             result.new_selection_start + result.new_selection_length,
         ),
         ..result
+    })
+}
+
+/// Live-Preview: rendert reinen Markdown-Text zu HTML + TOC, ohne
+/// State zu mutieren. Wird vom Frontend im Split-/View-Mode mit dem
+/// aktuellen Editor-Text aufgerufen, um die Vorschau ohne Save zu
+/// aktualisieren.
+///
+/// **Bewusste Abweichung von der CLAUDE.md-Konvention "gerendertes HTML
+/// geht ueber Events, nicht ueber Command-Returns"**: fuer den Preview-
+/// Pfad ist Request/Response sauberer als Push, weil das Frontend den
+/// Roundtrip aktiv treibt (Debounce + Generation-Token-Invalidation).
+/// Die kanonischen `document:loaded`/`document:saved`-Renders laufen
+/// weiterhin ueber Events.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RenderPreview {
+    pub content: String,
+    pub toc_html: String,
+}
+
+#[tauri::command]
+pub async fn render_markdown_preview(text: String) -> Result<RenderPreview, String> {
+    Ok(RenderPreview {
+        content: renderer::render_body(&text),
+        toc_html: toc::render_html(&toc::extract(&text)),
     })
 }
 
@@ -223,5 +249,37 @@ mod tests {
         assert_eq!("😀**x**", result.new_text);
         assert_eq!(4, result.new_selection_start);
         assert_eq!(1, result.new_selection_length);
+    }
+
+    #[test]
+    fn render_preview_produces_content_and_toc() {
+        let preview = RenderPreview {
+            content: renderer::render_body("# Title\n\nBody"),
+            toc_html: toc::render_html(&toc::extract("# Title\n\nBody")),
+        };
+        assert!(preview.content.contains("<h1"));
+        assert!(preview.content.contains("Title"));
+        assert!(preview.toc_html.contains("Title"));
+    }
+
+    #[test]
+    fn render_preview_empty_text() {
+        let preview = RenderPreview {
+            content: renderer::render_body(""),
+            toc_html: toc::render_html(&toc::extract("")),
+        };
+        // Render fuer leeren Text darf nicht panicken — kein <h*>-Anchor noetig.
+        assert!(!preview.content.contains("<h1"));
+    }
+
+    #[test]
+    fn render_preview_serializes_to_camel_case() {
+        let preview = RenderPreview {
+            content: "<p>x</p>".to_string(),
+            toc_html: "<ul></ul>".to_string(),
+        };
+        let json = serde_json::to_string(&preview).unwrap();
+        assert!(json.contains("\"tocHtml\""), "json={json}");
+        assert!(!json.contains("toc_html"), "json={json}");
     }
 }

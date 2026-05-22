@@ -101,6 +101,24 @@
     Editor. Evtl. Toggle in der Find-Bar (oder Routing nach Fokus)
     sinnvoll, falls User Verwirrung melden.
 
+- **Live-Preview Folgepunkte** (Hauptfeature 2026-05-22 implementiert,
+  siehe `view/preview.ts`, Backend-Command `render_markdown_preview`):
+  - **Scroll-Sync**: Editor-Cursorline ↔ View-Heading-Position. Backend
+    liefert beim load schon TOC mit Slugs; bräuchten Heading→Line-
+    Mapping (Comrak-Sourcepos) plus bidirektionales Sync ohne Ping-Pong-
+    Schleife (Direction-Lock + Threshold).
+  - **Adaptive Debounce für große Docs**: 150 ms ist bei >10k-Zeilen-MD
+    spürbar. render-on-idle (`requestIdleCallback`) oder messen +
+    dynamisch erhöhen.
+  - **Heading-Anchor-Restore statt scrollTop**: bei Mitten-Edits springt
+    scrollTop um. Sauberer wäre, das nächstgelegene Heading vor dem
+    Re-Render zu merken und nach dem Render dorthin scrollen.
+  - **Live-Preview für HTML-iframe** (kind=text + .html): iframe-srcdoc
+    Update bei Editor-Change, debounced wie der MD-Pfad.
+  - **Live-Preview für Code-View** (kind=text mit Monaco read-only):
+    setText auf der Code-View-Instanz bei Editor-Change.
+  - **Settings-Toggle** für Debounce-Delay (z. B. 100/150/300 ms).
+
 - **Image-Insert Folgepunkte** (Hauptfeature 2026-05-19 implementiert,
   siehe `commands/file/image.rs`, `ui/image-dialog.ts`,
   `ui/paste-handler.ts`):

@@ -24,6 +24,7 @@ import {
     scrollViewToAnchor,
     scrollViewTo,
 } from './view/markdown';
+import { initPreview } from './view/preview';
 import { scrollHtmlViewToAnchor } from './view/html';
 import {
     initDocumentState,
@@ -100,6 +101,7 @@ initMenuRouter({ applyRailVisibility });
 initDragDrop();
 initAutomationEvents();
 initDocumentState({ setActiveMode });
+initPreview({ getCurrentPath });
 
 // ----- Cross-modulare Backend-Event-Listener -----
 if (ev && typeof ev.listen === 'function' && invoke) {

@@ -64,6 +64,11 @@ sonst lehnt Tauri den Build ab.
 - **CRLF/LF/BOM**: Roundtrip ist getestet (`document_store.rs`). Beim Schreiben
   Original-Encoding/Line-Endings beibehalten.
 - **IPC-Payloads**: gerendertes HTML geht über Tauri-Events, nicht über Command-Returns.
+  *Bewusste Ausnahme*: `render_markdown_preview` (Live-Preview im
+  View-/Split-Mode) liefert HTML+TOC als Command-Return. Frontend
+  treibt den Roundtrip aktiv (Debounce + Generation-Token-
+  Invalidierung in `view/preview.ts`); das passt nicht ins
+  Push-Event-Modell der kanonischen `document:loaded`/`saved`-Pfade.
 - **Automation-API**: nur Loopback. Keine externen Bind-Adressen. WebView-POSTs brauchen
   CORS/OPTIONS-Preflight; `/click` akzeptiert IDs, `data-name` und CSS-Selektoren.
   Stabiler Automation-/Frontend-Vertrag: [`docs/automation-contract.md`](docs/automation-contract.md).
@@ -95,6 +100,35 @@ sonst lehnt Tauri den Build ab.
   für Markdown gilt (Edit-Toolbar-Markdown-Gruppen, TOC-Rail,
   Rail-Right-Toggle), wird ausschließlich über CSS auf `.kind-markdown`
   beschränkt — keine eigene Endungs-Heuristik im Frontend.
+- **Split-Mode** (`tb-mode-split`, `body.split-mode` in `content.css`):
+  drei Anzeigemodi (view/edit/split) sind sich gegenseitig ausschließende
+  Body-Klassen. Im Split-Mode ist die View-Region und die Editor-Region
+  gleichzeitig sichtbar (Editor links, View rechts via `flex-direction:
+  row-reverse`, Trennlinie an der View-Seite). Cursor-Commands
+  (`tb-bold`/`italic`/`heading`/...) sind gated auf
+  `body.editor-focused` — die Klasse togglet via `focusin`/`focusout`
+  in `ui/toolbar-actions.ts`, ein MutationObserver synct die
+  `button.disabled`-States. `mousedown`-`preventDefault` auf den
+  Cursor-Buttons verhindert Fokus-Diebstahl (Standard-Trick aus
+  CodeMirror/Slate). Ctrl+1/2/3 laufen ueber `menu_dispatch` statt
+  `button.click()` — robust gegen disabled-Buttons + gleicher Pfad wie
+  Menue/Automation.
+- **Live-Preview** (`view/preview.ts`, Backend-Command
+  `render_markdown_preview`): im Split-/View-Mode rendert das Frontend
+  den aktuellen Editor-Text debounced 150 ms ohne Save. Trigger ist das
+  in-window CustomEvent `folio-editor-text-updated` aus
+  `editor/bridge.ts` (kein Tauri-IPC-Roundtrip pro Tastendruck).
+  Race-Schutz per monoton steigender `renderGen`-Generation —
+  verspätete Antworten alter Renders werden verworfen.
+  `invalidatePreview()` wird bei `document:loaded`/`saved`/`closed`
+  aufgerufen, sodass pending Renders aus altem Dirty-Text nie den
+  kanonischen Backend-Render überschreiben. **Wichtig**: kein
+  `isDirty`-Gate — wenn der User auf cleanText zurück-revertiert (z. B.
+  Selection + Backspace), wuerde `markDirty(false)` den Re-Render
+  sperren und die View bliebe auf dem Pre-Revert-Stand. Im Timer-Fire
+  wird der aktuelle Editor-Stand live aus Monaco geholt, statt den am
+  Schedule-Zeitpunkt closure-captured Text — robust gegen
+  verlorengegangene `editorTextChanged`-Events.
 - **Image-View** (`view/image.ts`, Surface `#image-view-mount` in
   `dist/index.html`): `FileKind::Image` (png/jpg/jpeg/gif/webp/svg/
   bmp/ico/avif) wird read-only über `<img src={convertFileSrc(path)}>`

@@ -178,6 +178,12 @@ export function highlightCodeBlocks(root: HTMLElement | null): void {
         const chars = source.length;
         colorize(source, lang, { tabSize: 4 })
             .then((html) => {
+                // Stale-Schutz fuer Live-Preview: zwischen Promise-Start und
+                // -Resolve kann ein neuer Render den Code-Block ersetzt haben.
+                // Den alten Block dann nicht mehr anfassen (waere ein
+                // detached-Node-Write, harmless aber verschwendet CPU und
+                // koennte mit dem neuen Render-Pass konkurrieren).
+                if (!block.isConnected) return;
                 // colorize() trennt Zeilen mit <br/> — in einem <pre> wuerde
                 // das zu Doppel-Newlines fuehren, weil <pre> bereits den
                 // Whitespace respektiert. Also <br>-Varianten durch \n

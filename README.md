@@ -4,8 +4,11 @@ Plattformübergreifender Markdown-Viewer und -Editor auf **Tauri 2 + Rust**.
 
 ## Features
 
+- **Drei Modi** (View / Edit / Split via Ctrl+1/2/3) — im Split-Mode
+  Editor links, Live-Vorschau rechts; ungespeicherte Änderungen sind
+  sofort sichtbar, ohne Save
 - **Live-Vorschau** mit GitHub-Flavored Markdown (Tasklisten, Tabellen, Frontmatter)
-- **Split-View-Editor** mit Syntax-Highlighting und WYSIWYG-Shortcuts
+- **WYSIWYG-Toolbar** mit Bold/Italic/Heading/Listen/Link/Tabellen + Cheat-Sheet
 - **Vault-Navigation** mit Ordnerbaum, Workspace-Pins und Recent-Dateien
 - **Dateityp-bewusste Toolbar**: Markdown-spezifische Buttons und TOC-Rail
   blenden sich für Nicht-Markdown-Dateien automatisch aus

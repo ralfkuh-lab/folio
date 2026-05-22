@@ -268,6 +268,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::editor::apply_editor_command,
             commands::editor::editor_ready,
             commands::editor::editor_selection,
+            commands::editor::render_markdown_preview,
             commands::export::export_layouts,
             commands::export::export_render,
             commands::export::export_html,

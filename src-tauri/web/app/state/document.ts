@@ -14,6 +14,7 @@ import { setTocList, rewriteRelativeAssets, ViewFinder } from '../view/markdown'
 import { highlightCodeBlocks } from '../view/code-highlight';
 import { clearHtmlView, HtmlFinder, isHtmlDocument, mountHtmlView } from '../view/html';
 import { clearImageView, isImageDocument, mountImageView } from '../view/image';
+import { invalidatePreview } from '../view/preview';
 import { setVaultActive } from '../vault/tree';
 import { setEditorLanguageDisplay } from '../ui/language-picker';
 import { syncCheatsheetMenu } from '../ui/cheatsheet';
@@ -296,6 +297,11 @@ export function initDocumentState(d: Deps): void {
     listen('document:loaded', function (event: any) {
         const data = (event && event.payload) || {};
 
+        // Pending Live-Preview-Renders verwerfen — sonst koennte eine
+        // verspaetete Antwort aus dem alten Dirty-Text den frischen
+        // kanonischen Render aus dem document:loaded ueberschreiben.
+        invalidatePreview();
+
         // 1. State-Setup
         currentPath = data.path || null;
         cleanText = data.text || '';
@@ -413,6 +419,7 @@ export function initDocumentState(d: Deps): void {
     // die Frontend-Sicht analog zum Boot-Zustand zurueck: kein Pfad, leerer
     // Editor, "Bereit"-Statusbar, kein Word-Count.
     listen('document:closed', function () {
+        invalidatePreview();
         currentPath = null;
         cleanText = '';
         markDirty(false);
@@ -441,6 +448,9 @@ export function initDocumentState(d: Deps): void {
 
     listen('document:saved', function (event: any) {
         const data = (event && event.payload) || {};
+        // Kanonischer Render kommt im Payload — pending Preview-Renders aus
+        // dem Pre-Save-Dirty-Text duerfen den nicht ueberschreiben.
+        invalidatePreview();
         cleanText = data.text || editorText();
         markDirty(false);
         setReloadButtonPending(false);
