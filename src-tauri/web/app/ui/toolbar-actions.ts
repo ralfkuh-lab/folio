@@ -35,6 +35,7 @@ export function initToolbarActions(): void {
 
     bind('tb-mode-view', function () { setMode('view'); });
     bind('tb-mode-edit', function () { setMode('edit'); });
+    bind('tb-mode-split', function () { setMode('split'); });
     bind('tb-save', function () { if (getIsDirty()) saveCurrent(); });
 
     /* ----- Export-Dialog (Modul) ----- */
@@ -126,7 +127,8 @@ export function initToolbarActions(): void {
     bind('tb-codeblock', function () { applyCmd('codeblock'); });
     bind('tb-strike',    function () { applyCmd('strike'); });
     bind('tb-cheatsheet', function () {
-        if (!document.body.classList.contains('edit-mode')) return;
+        if (!document.body.classList.contains('edit-mode')
+            && !document.body.classList.contains('split-mode')) return;
         var ov = $('cheatsheet-overlay');
         if (!ov) return;
         if (ov.hidden) {
@@ -155,7 +157,13 @@ export function initToolbarActions(): void {
         if (!ctrl && !e.altKey) return;
         var k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
         var shift = e.shiftKey;
-        var mdEdit = document.body.classList.contains('edit-mode')
+        // Im Split-Mode greift Ctrl+B/I/K nur, wenn der Editor wirklich
+        // den Fokus hat — sonst aendern die Shortcuts blind Monacos Text,
+        // waehrend der User gerade in der View liest.
+        var inEdit = document.body.classList.contains('edit-mode');
+        var inSplitWithEditor = document.body.classList.contains('split-mode')
+            && document.body.classList.contains('editor-focused');
+        var mdEdit = (inEdit || inSplitWithEditor)
             && document.body.classList.contains('kind-markdown');
 
         // Alt+Links/Rechts: History
@@ -175,8 +183,24 @@ export function initToolbarActions(): void {
         }
         if (!ctrl) return;
 
-        if (!shift && k === '1') { e.preventDefault(); $('tb-mode-view')?.click(); return; }
-        if (!shift && k === '2') { e.preventDefault(); $('tb-mode-edit')?.click(); return; }
+        if (!shift && (k === '1' || k === '2' || k === '3')) {
+            // Diagnose: User-Bericht 2026-05-22 — Ctrl+1/2/3 feuert nicht,
+            // wenn der Fokus in der View liegt. Logging zeigt ob der
+            // document-Capture-Handler ueberhaupt erreicht wird.
+            folioLog.debug('toolbar', 'mode-shortcut', {
+                key: k,
+                focusId: (document.activeElement && (document.activeElement as HTMLElement).id) || '',
+                focusTag: (document.activeElement && document.activeElement.tagName) || '',
+                editorFocused: document.body.classList.contains('editor-focused'),
+            });
+            e.preventDefault();
+            var modeId = k === '1' ? 'view.mode.view' : k === '2' ? 'view.mode.edit' : 'view.mode.split';
+            // Direkt ueber menu_dispatch — gleicher Pfad wie nativer Menue-
+            // Klick und Automation-API. Robuster als button.click(), weil
+            // disabled-Buttons keine Klicks feuern.
+            safeInvoke('menu_dispatch', { id: modeId }, 'menu_dispatch ' + modeId, 'debug');
+            return;
+        }
         if (!shift && k === 's') { e.preventDefault(); saveCurrent(); return; }
         if (shift && k === 's') {
             e.preventDefault();
@@ -257,4 +281,64 @@ export function initToolbarActions(): void {
         }
     }, { capture: true });
 
+    /* ----- Editor-Focus-Tracker + Toolbar-Disable im Split-Mode -----
+       Im Split-Mode sind beide Panes sichtbar; tb-bold/i/k/heading/... wirken
+       auf Monacos Text, unabhaengig davon ob der Editor den Fokus hat. Das
+       ist verwirrend, wenn der User gerade in der View klickt. Deshalb:
+       body.editor-focused-Klasse via focusin/focusout pflegen; Cursor-
+       Commands der Edit-Toolbar disablen wenn split-mode UND !editor-focused.
+       Keyboard-Shortcuts (Ctrl+B/I/K) gaten an gleicher Stelle, siehe
+       mdEdit-Check oben. */
+    const CURSOR_CMD_IDS = [
+        'tb-bold', 'tb-italic', 'tb-strike',
+        'tb-heading', 'tb-bullet', 'tb-numbered',
+        'tb-link', 'tb-image', 'tb-table', 'tb-code', 'tb-codeblock',
+    ];
+    function updateEditorFocusClass(): void {
+        const mount = document.getElementById('editor-mount');
+        const focused = !!mount && mount.contains(document.activeElement);
+        document.body.classList.toggle('editor-focused', focused);
+    }
+    function syncCursorCmdDisabled(): void {
+        const b = document.body;
+        const disable = b.classList.contains('split-mode')
+            && !b.classList.contains('editor-focused');
+        for (let i = 0; i < CURSOR_CMD_IDS.length; i++) {
+            const el = $(CURSOR_CMD_IDS[i]) as HTMLButtonElement | null;
+            if (el) el.disabled = disable;
+        }
+    }
+    document.addEventListener('focusin', updateEditorFocusClass);
+    document.addEventListener('focusout', function () {
+        // focusout feuert bevor activeElement aktualisiert ist — ein Tick
+        // warten, damit der Folge-focusin (falls vorhanden) gewinnt.
+        setTimeout(updateEditorFocusClass, 0);
+    });
+    new MutationObserver(syncCursorCmdDisabled).observe(document.body, {
+        attributes: true, attributeFilter: ['class'],
+    });
+    // Initial-Sync — falls beim Boot bereits ein Mode aktiv ist.
+    updateEditorFocusClass();
+    syncCursorCmdDisabled();
+
+    /* mousedown-preventDefault auf Cursor-Command-Buttons: verhindert, dass
+       der Klick den Editor-Fokus stiehlt. Standardtrick in Web-Editoren
+       (CodeMirror/Slate/Lexical). Ohne das wuerde im Split-Mode der Klick
+       auf tb-bold sich selbst disablen — Fokus geht auf den Button, body.
+       editor-focused fliegt weg, MutationObserver disabled den Button,
+       click-Event feuert nicht mehr. Der mousedown-prevent laesst den
+       Editor-Fokus bestehen, Cursor + Selection bleiben sichtbar, und der
+       Command wirkt an der erwarteten Stelle. */
+    const cursorCmdSet = new Set(CURSOR_CMD_IDS);
+    const toolbar = $('toolbar');
+    if (toolbar) {
+        toolbar.addEventListener('mousedown', function (e) {
+            const t = e.target as HTMLElement | null;
+            if (!t) return;
+            const btn = t.closest('button') as HTMLButtonElement | null;
+            if (btn && cursorCmdSet.has(btn.id)) {
+                e.preventDefault();
+            }
+        });
+    }
 }

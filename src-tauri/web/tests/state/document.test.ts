@@ -52,6 +52,7 @@ function buildDom(): void {
         <button id="tb-save"></button>
         <button id="tb-mode-view"></button>
         <button id="tb-mode-edit"></button>
+        <button id="tb-mode-split"></button>
         <button id="tb-export"></button>
         <div id="view-region"><div class="markdown-body"></div></div>
         <div id="html-view-region"><iframe id="html-view-frame"></iframe></div>

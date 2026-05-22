@@ -11,7 +11,28 @@
   overflow: hidden;
 }
 body.edit-mode .view-region { display: none; }
-body:not(.edit-mode) .editor-region { display: none; }
+body:not(.edit-mode):not(.split-mode) .editor-region { display: none; }
+
+/* Split-Mode: Editor links, View-Seite (markdown/code/html) rechts,
+   50/50, mit Trennlinie. Welche View-Region aktiv ist, ergibt sich aus
+   den vorhandenen kind-* / html-preview-mode-Regeln — Split-Mode laesst
+   sie einfach sichtbar und blendet den Editor zusaetzlich ein.
+   row-reverse statt HTML-Reorder, damit View/Edit-Mode unberuehrt bleiben
+   (dort ist die jeweils andere Region eh display:none). */
+body.split-mode .content-region { flex-direction: row-reverse; }
+body.split-mode .editor-region { display: flex; }
+body.split-mode .view-region,
+body.split-mode .code-view-region,
+body.split-mode .html-view-region,
+body.split-mode .editor-region {
+  flex: 1 1 0;
+  min-width: 0;
+}
+/* Bei row-reverse liegt die View-Seite rechts und der Editor links;
+   die Trennlinie gehoert an die View-Seite (links). */
+body.split-mode .view-region,
+body.split-mode .code-view-region,
+body.split-mode .html-view-region { border-left: 1px solid var(--border); }
 
 /* Code-View-Region: zweite Monaco-Instanz fuer JSON/XML/Code im View-
    Mode. Wird nur sichtbar, wenn die Datei kein Markdown ist UND der

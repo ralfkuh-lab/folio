@@ -112,10 +112,14 @@ export function setEditMode(on: boolean): void {
 
 // Spiegelt den View/Edit/Split-State in die Toolbar + Menue-Haekchen.
 export function setActiveMode(mode: string): void {
-    $('tb-mode-view').classList.toggle('active', mode === 'view');
-    $('tb-mode-edit').classList.toggle('active', mode === 'edit');
-    const sm = $('status-mode'); if (sm) sm.textContent = mode === 'edit' ? 'Edit' : 'View';
-    cheatsheetSyncMode(mode === 'edit');
+    $('tb-mode-view')?.classList.toggle('active', mode === 'view');
+    $('tb-mode-edit')?.classList.toggle('active', mode === 'edit');
+    $('tb-mode-split')?.classList.toggle('active', mode === 'split');
+    const sm = $('status-mode');
+    if (sm) sm.textContent = mode === 'edit' ? 'Edit' : mode === 'split' ? 'Split' : 'View';
+    // Cheatsheet ist eine Edit-Hilfe — auch im Split-Mode (Editor ist
+    // sichtbar + bearbeitbar) sinnvoll.
+    cheatsheetSyncMode(mode === 'edit' || mode === 'split');
     // View-Mode-Haekchen im Menue synchron halten (alle Pfade laufen hier
     // durch: setMode(), applyShellState, navigation:changed).
     safeInvoke('menu_set_checked', { id: 'view.mode.view', checked: mode === 'view' }, 'menu_set_checked view.mode.view', 'debug');
@@ -195,13 +199,16 @@ export function initEditorShell(d: Deps): void {
             // 2. Toolbar/Statusbar + Menue-Haekchen (war IIFE #2)
             setActiveMode(mode);
 
-            // 3. Editor-Fokus + Cheatsheet-Mode (war IIFE #1)
-            if (mode === 'edit') focusEditor();
+            // 3. Editor-Fokus + Cheatsheet-Mode (war IIFE #1). Im Split-Mode
+            // ist der Editor ebenfalls aktiv und sollte den Fokus bekommen,
+            // damit Tippen sofort funktioniert.
+            const editorActive = mode === 'edit' || mode === 'split';
+            if (editorActive) focusEditor();
             syncCheatsheetMenu();
 
-            // 4. Undo/Redo nur im Edit-Mode sinnvoll (war IIFE #1).
-            safeInvoke('menu_set_enabled', { id: 'edit.undo', enabled: mode === 'edit' }, 'menu_set_enabled edit.undo', 'debug');
-            safeInvoke('menu_set_enabled', { id: 'edit.redo', enabled: mode === 'edit' }, 'menu_set_enabled edit.redo', 'debug');
+            // 4. Undo/Redo nur sinnvoll, wenn der Editor sichtbar ist (war IIFE #1).
+            safeInvoke('menu_set_enabled', { id: 'edit.undo', enabled: editorActive }, 'menu_set_enabled edit.undo', 'debug');
+            safeInvoke('menu_set_enabled', { id: 'edit.redo', enabled: editorActive }, 'menu_set_enabled edit.redo', 'debug');
 
             // 5. Find-Bar re-attach an den jetzt aktiven Finder (war IIFE #2).
             findBarAfterModeSwitch();

@@ -58,5 +58,5 @@
 }
 .vault-region .vault-cmd.ti-emoji,
 .statusbar button.ti-emoji { font-size: 14px; }
-body:not(.edit-mode) .toolbar .edit-only { display: none; }
+body:not(.edit-mode):not(.split-mode) .toolbar .edit-only { display: none; }
 body:not(.kind-markdown) .toolbar .md-only { display: none; }

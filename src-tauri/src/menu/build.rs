@@ -109,10 +109,8 @@ pub fn build(handle: &AppHandle, lang: &str) -> tauri::Result<Menu<Wry>> {
         .accelerator("CmdOrCtrl+2")
         .checked(false)
         .build(handle)?;
-    // view.mode.split: Stub — Feature noch nicht implementiert.
     let item_mode_split = CheckMenuItemBuilder::with_id(ids::VIEW_MODE_SPLIT, l.view_mode_split)
         .accelerator("CmdOrCtrl+3")
-        .enabled(false)
         .checked(false)
         .build(handle)?;
     // Theme-Submenü: Hell/Dunkel als CheckMenuItems mit Häkchen am

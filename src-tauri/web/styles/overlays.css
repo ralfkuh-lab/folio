@@ -151,6 +151,7 @@ body.dnd-active #dnd-overlay { display: flex; }
   color: var(--accent);
   white-space: pre-wrap;
 }
-/* Cheat-Sheet ist nur im Edit-Mode + Markdown sinnvoll. */
-body:not(.edit-mode) #cheatsheet-overlay,
+/* Cheat-Sheet ist im Edit- und Split-Mode bei Markdown sinnvoll
+   (Editor ist in beiden aktiv). */
+body:not(.edit-mode):not(.split-mode) #cheatsheet-overlay,
 body:not(.kind-markdown) #cheatsheet-overlay { display: none !important; }

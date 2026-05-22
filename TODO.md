@@ -1,9 +1,5 @@
 # TODO
 
-## Hohe Priorität
-
-- **E2E-Testbericht vom 2026-05-22 auswerten** (wird von Claude übernommen): Behebung der 10 fehlerhaften Tests laut Bericht unter [`docs/testreport-2026-05-22.md`](docs/testreport-2026-05-22.md) (Menü-Stub im Split-Modus aktivieren, "Canceled" Monaco-Konsolenfehler whitelisten und ggf. visuelle Baselines updaten).
-
 ## Mittlere Priorität
 
 - **Screenshot-Stabilisierung deterministisch machen**: `lib/report.py`
@@ -93,6 +89,17 @@
   [`docs/linux-md-icon.md`](docs/linux-md-icon.md).
 
 ## Niedrige Priorität
+
+- **Split-Mode Folgepunkte** (Hauptfeature 2026-05-22 implementiert,
+  siehe Toolbar-Button `tb-mode-split`, Menü `view.mode.split`,
+  CSS-Regeln `body.split-mode` in `content.css`):
+  - **Draggable Splitter** zwischen View- und Editor-Pane, analog zu
+    `splitter-left`/`splitter-right`. Position in `panel_state.json`
+    persistieren (z. B. `splitMidPercent`). Heute fix 50/50.
+  - **Find-Bar im Split-Mode**: routet aktuell an die View-Seite
+    (`ViewFinder`/`HtmlFinder`). Monacos eigene Ctrl+F läuft parallel im
+    Editor. Evtl. Toggle in der Find-Bar (oder Routing nach Fokus)
+    sinnvoll, falls User Verwirrung melden.
 
 - **Image-Insert Folgepunkte** (Hauptfeature 2026-05-19 implementiert,
   siehe `commands/file/image.rs`, `ui/image-dialog.ts`,

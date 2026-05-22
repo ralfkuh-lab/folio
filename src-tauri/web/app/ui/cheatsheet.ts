@@ -145,7 +145,9 @@ export function cheatsheetWantsVisible(): boolean {
 // daher hier zentral.
 export function syncCheatsheetMenu(): void {
     if (!window.__TAURI__ || !window.__TAURI__.core) return;
-    const enabled = document.body.classList.contains('edit-mode')
+    const editorActive = document.body.classList.contains('edit-mode')
+        || document.body.classList.contains('split-mode');
+    const enabled = editorActive
         && document.body.classList.contains('kind-markdown');
     safeInvoke('menu_set_enabled', { id: 'help.cheatsheet', enabled }, 'menu_set_enabled help.cheatsheet', 'debug');
     safeInvoke('menu_set_enabled', { id: 'view.minimap', enabled }, 'menu_set_enabled view.minimap', 'debug');

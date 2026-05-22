@@ -213,6 +213,16 @@ export function applyDocKind(kind: string | null): void {
             ? 'Edit (Ctrl+2)'
             : (isImage ? 'Bilder sind read-only' : 'Kein Dokument geladen');
     }
+    // Split braucht eine editierbare Datei (Editor-Seite) + eine
+    // anzeigbare Seite — also dieselbe Bedingung wie Edit. Bilder sind
+    // bewusst aussen vor.
+    const btnSplit = $('tb-mode-split') as HTMLButtonElement;
+    if (btnSplit) {
+        btnSplit.disabled = !canEdit;
+        btnSplit.title = canEdit
+            ? 'Split (Ctrl+3)'
+            : (isImage ? 'Bilder sind read-only' : 'Kein Dokument geladen');
+    }
     const btnExport = $('tb-export') as HTMLButtonElement;
     if (btnExport) {
         btnExport.disabled = !md;
@@ -224,6 +234,7 @@ export function applyDocKind(kind: string | null): void {
     // sind also auch fuer Bilder sinnvoll).
     safeInvoke('menu_set_enabled', { id: 'view.mode.view', enabled: hasViewMode }, 'menu_set_enabled view.mode.view', 'debug');
     safeInvoke('menu_set_enabled', { id: 'view.mode.edit', enabled: canEdit }, 'menu_set_enabled view.mode.edit', 'debug');
+    safeInvoke('menu_set_enabled', { id: 'view.mode.split', enabled: canEdit }, 'menu_set_enabled view.mode.split', 'debug');
     safeInvoke('menu_set_enabled', { id: 'file.save_as', enabled: canEdit }, 'menu_set_enabled file.save_as', 'debug');
     safeInvoke('menu_set_enabled', { id: 'file.rename', enabled: hasDoc }, 'menu_set_enabled file.rename', 'debug');
     safeInvoke('menu_set_enabled', { id: 'file.close', enabled: hasDoc }, 'menu_set_enabled file.close', 'debug');
