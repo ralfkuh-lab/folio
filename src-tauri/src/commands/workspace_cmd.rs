@@ -33,6 +33,21 @@ pub async fn workspace_unpin(
 }
 
 #[tauri::command]
+pub async fn workspace_reorder_pinned(
+    paths: Vec<String>,
+    state: State<'_, AppState>,
+    handle: AppHandle,
+) -> Result<(), String> {
+    state
+        .workspace
+        .lock()
+        .map_err(|_| "workspace lock poisoned".to_string())?
+        .reorder_pinned(paths)
+        .map_err(|error| error.to_string())?;
+    emit_vault_refresh(&state, &handle)
+}
+
+#[tauri::command]
 pub async fn workspace_add_recent(
     path: String,
     state: State<'_, AppState>,
@@ -147,5 +162,19 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let workspace = Workspace::load_from(temp.path().join("workspace.json"));
         assert!(workspace.data().pinned.is_empty());
+    }
+
+    #[test]
+    fn reorder_command_logic_is_backed_by_workspace() {
+        let temp = TempDir::new().unwrap();
+        let mut workspace = Workspace::load_from(temp.path().join("workspace.json"));
+        workspace.pin("/a".into(), true).unwrap();
+        workspace.pin("/b".into(), false).unwrap();
+        workspace
+            .reorder_pinned(vec!["/b".into(), "/a".into()])
+            .unwrap();
+        let pinned = workspace.pinned();
+        assert_eq!(pinned[0].path, "/b");
+        assert_eq!(pinned[1].path, "/a");
     }
 }

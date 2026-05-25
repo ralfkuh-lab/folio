@@ -298,6 +298,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::events::editor_event,
             commands::workspace_cmd::workspace_pin,
             commands::workspace_cmd::workspace_unpin,
+            commands::workspace_cmd::workspace_reorder_pinned,
             commands::workspace_cmd::workspace_add_recent,
             commands::workspace_cmd::workspace_remove_recent,
             commands::workspace_cmd::workspace_get,

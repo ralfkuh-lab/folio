@@ -148,6 +148,26 @@ impl Workspace {
         self.data.pinned.iter().any(|item| item.path == path)
     }
 
+    pub fn reorder_pinned(&mut self, paths: Vec<String>) -> io::Result<()> {
+        let mut new_pinned = Vec::new();
+        let mut remaining_pins = self.data.pinned.clone();
+
+        for path in paths {
+            let normalized = normalize_path(&path);
+            if let Some(pos) = remaining_pins
+                .iter()
+                .position(|item| item.path == normalized)
+            {
+                let item = remaining_pins.remove(pos);
+                new_pinned.push(item);
+            }
+        }
+
+        new_pinned.extend(remaining_pins);
+        self.data.pinned = new_pinned;
+        self.save()
+    }
+
     /// Letztes Image-Speicherverzeichnis fuer das Dokument `doc_path`,
     /// falls vorhanden.
     pub fn image_dir(&self, doc_path: &str) -> Option<&str> {
@@ -248,5 +268,32 @@ mod tests {
         // Migration persistiert: nach erneutem Load steht Forward-Slash drin.
         let reloaded = Workspace::load_from(path);
         assert_eq!("C:/Users/a.md", reloaded.pinned()[0].path);
+    }
+
+    #[test]
+    fn reorder_pinned_works() {
+        let temp = TempDir::new().unwrap();
+        let mut workspace = Workspace::load_from(temp.path().join("workspace.json"));
+        workspace.pin("/a".into(), true).unwrap();
+        workspace.pin("/b".into(), false).unwrap();
+        workspace.pin("/c".into(), true).unwrap();
+        workspace.pin("/d".into(), false).unwrap();
+
+        // Reorder sub-list: /c, then /b.
+        // /a and /d should be appended in original order because they are omitted.
+        workspace
+            .reorder_pinned(vec!["/c".into(), "/b".into(), "/unknown".into()])
+            .unwrap();
+
+        let pinned = workspace.pinned();
+        assert_eq!(pinned.len(), 4);
+        assert_eq!(pinned[0].path, "/c");
+        assert!(pinned[0].is_directory);
+        assert_eq!(pinned[1].path, "/b");
+        assert!(!pinned[1].is_directory);
+        assert_eq!(pinned[2].path, "/a");
+        assert!(pinned[2].is_directory);
+        assert_eq!(pinned[3].path, "/d");
+        assert!(!pinned[3].is_directory);
     }
 }

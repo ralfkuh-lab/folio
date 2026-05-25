@@ -188,3 +188,18 @@ html:not(.theme-dark) .vault-region .node.file > .row > .icon {
   padding: 2px 10px 4px 36px;
   cursor: default;
 }
+
+/* Drag and Drop Reordering Cues for Pinned section */
+.vault-region li.section[data-section="pinned"] > ul.children > li.node[draggable="true"] {
+  cursor: grab;
+}
+.vault-region li.section[data-section="pinned"] > ul.children > li.node.dragging {
+  opacity: 0.4;
+  cursor: grabbing;
+}
+.vault-region li.section[data-section="pinned"] > ul.children > li.node.drop-over-before > .row {
+  box-shadow: inset 0 2px 0 var(--rail-accent);
+}
+.vault-region li.section[data-section="pinned"] > ul.children > li.node.drop-over-after > .row {
+  box-shadow: inset 0 -2px 0 var(--rail-accent);
+}

@@ -25,6 +25,7 @@ let currentActivePath = '';
 
 const fileIconCache: Record<string, string> = {};
 const fileIconPending: Record<string, Promise<string>> = {};
+const PIN_DRAG_TYPE = 'application/x-folio-pin';
 
 function post(msg: any): void {
     if (window.__TAURI__ && window.__TAURI__.event) {
@@ -71,11 +72,25 @@ function reapplyActiveMarker(): void {
     for (let n = 0; n < nodes.length; n++) nodes[n].classList.add('active');
 }
 
+function makePinnedItemsDraggable(): void {
+    const section = ROOT.querySelector('li.section[data-section="pinned"]');
+    if (!section) return;
+    const ul = section.querySelector(':scope > ul.children');
+    if (!ul) return;
+    const items = Array.from(ul.children) as HTMLElement[];
+    items.forEach((item: HTMLElement) => {
+        if (item.classList.contains('node')) {
+            item.setAttribute('draggable', 'true');
+        }
+    });
+}
+
 export function setVaultPinned(html: string): void {
     const section = ROOT.querySelector('li.section[data-section="pinned"]');
     if (!section) return;
     const ul = section.querySelector(':scope > ul.children');
     if (ul) ul.innerHTML = html || '';
+    makePinnedItemsDraggable();
     reapplyActiveMarker();
 }
 
@@ -239,6 +254,7 @@ function renderVault(html: string): void {
     }
     ROOT.innerHTML = html;
     applyIconsToNode(ROOT);
+    makePinnedItemsDraggable();
     reapplyActiveMarker();
 }
 
@@ -256,6 +272,17 @@ function isDirectChildOfSection(node: HTMLElement, sectionKey: string): boolean 
             && n.getAttribute('data-section') === sectionKey) return true;
         if (n.classList && n.classList.contains('node')) return false;
         n = n.parentElement;
+    }
+    return false;
+}
+
+function hasPinDragType(dataTransfer: DataTransfer): boolean {
+    const types = dataTransfer.types as any;
+    if (!types) return false;
+    if (typeof types.includes === 'function') return types.includes(PIN_DRAG_TYPE);
+    if (typeof types.contains === 'function') return types.contains(PIN_DRAG_TYPE);
+    for (let i = 0; i < types.length; i++) {
+        if (types[i] === PIN_DRAG_TYPE) return true;
     }
     return false;
 }
@@ -371,6 +398,129 @@ export function initVaultTree(d: Deps): void {
         });
         iconObserver.observe(ROOT, { childList: true, subtree: true });
     }
+
+    // ----- Drag & Drop: Reordering of Pinned Items -----
+    function getDirectPinnedItem(target: HTMLElement): HTMLElement | null {
+        let el: HTMLElement | null = target;
+        while (el && el !== ROOT) {
+            if (el.classList && el.classList.contains('node') && isDirectChildOfSection(el, 'pinned')) {
+                return el;
+            }
+            el = el.parentElement;
+        }
+        return null;
+    }
+
+    ROOT.addEventListener('dragstart', function (e: DragEvent) {
+        if (!e.dataTransfer) return;
+        const draggedItem = getDirectPinnedItem(e.target as HTMLElement);
+        if (!draggedItem) {
+            e.preventDefault();
+            return;
+        }
+        const path = draggedItem.getAttribute('data-path') || '';
+        if (!path) {
+            e.preventDefault();
+            return;
+        }
+        e.dataTransfer.setData(PIN_DRAG_TYPE, path);
+        e.dataTransfer.effectAllowed = 'move';
+        draggedItem.classList.add('dragging');
+    });
+
+    ROOT.addEventListener('dragend', function (e: DragEvent) {
+        const draggedItem = getDirectPinnedItem(e.target as HTMLElement);
+        if (draggedItem) {
+            draggedItem.classList.remove('dragging');
+        }
+        const dropOvers = ROOT.querySelectorAll('.drop-over-before, .drop-over-after');
+        dropOvers.forEach(el => {
+            el.classList.remove('drop-over-before', 'drop-over-after');
+        });
+    });
+
+    ROOT.addEventListener('dragover', function (e: DragEvent) {
+        if (!e.dataTransfer) return;
+        if (!hasPinDragType(e.dataTransfer)) {
+            return;
+        }
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+
+        const targetItem = getDirectPinnedItem(e.target as HTMLElement);
+        if (!targetItem || targetItem.classList.contains('dragging')) return;
+
+        const rect = targetItem.getBoundingClientRect();
+        const relativeY = e.clientY - rect.top;
+        const isBefore = relativeY < rect.height / 2;
+
+        const otherItems = ROOT.querySelectorAll('li.section[data-section="pinned"] > ul.children > li.node');
+        otherItems.forEach((el: HTMLElement) => {
+            if (el !== targetItem) {
+                el.classList.remove('drop-over-before', 'drop-over-after');
+            }
+        });
+
+        if (isBefore) {
+            targetItem.classList.remove('drop-over-after');
+            targetItem.classList.add('drop-over-before');
+        } else {
+            targetItem.classList.remove('drop-over-before');
+            targetItem.classList.add('drop-over-after');
+        }
+    });
+
+    ROOT.addEventListener('dragleave', function (e: DragEvent) {
+        const targetItem = getDirectPinnedItem(e.target as HTMLElement);
+        if (targetItem) {
+            const related = e.relatedTarget as HTMLElement;
+            if (!related || !targetItem.contains(related)) {
+                targetItem.classList.remove('drop-over-before', 'drop-over-after');
+            }
+        }
+    });
+
+    ROOT.addEventListener('drop', function (e: DragEvent) {
+        if (!e.dataTransfer) return;
+        if (!hasPinDragType(e.dataTransfer)) return;
+        e.preventDefault();
+        const dragPath = e.dataTransfer.getData(PIN_DRAG_TYPE);
+        if (!dragPath) return;
+
+        const targetItem = getDirectPinnedItem(e.target as HTMLElement);
+        if (!targetItem) return;
+
+        const targetPath = targetItem.getAttribute('data-path');
+        if (!targetPath || dragPath === targetPath) return;
+
+        const ul = targetItem.parentElement;
+        if (!ul) return;
+
+        let draggedEl: HTMLElement | null = null;
+        const children = Array.from(ul.children) as HTMLElement[];
+        for (const child of children) {
+            if (child.getAttribute('data-path') === dragPath) {
+                draggedEl = child;
+                break;
+            }
+        }
+        if (!draggedEl) return;
+
+        const isBefore = targetItem.classList.contains('drop-over-before');
+        targetItem.classList.remove('drop-over-before', 'drop-over-after');
+
+        if (isBefore) {
+            ul.insertBefore(draggedEl, targetItem);
+        } else {
+            ul.insertBefore(draggedEl, targetItem.nextSibling);
+        }
+
+        const newPaths = Array.from(ul.children)
+            .map(el => el.getAttribute('data-path'))
+            .filter(Boolean) as string[];
+
+        safeInvoke('workspace_reorder_pinned', { paths: newPaths }, 'workspace_reorder_pinned');
+    });
 
     // ----- Listener-Fusion -----
     // Vorher in IIFE #1: pinned/recent aus Event-Payload setzen.
