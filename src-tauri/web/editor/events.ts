@@ -58,18 +58,36 @@ export function attachEditorListeners(editor: any, monaco: any): void {
         });
     });
 
-    // Scroll listener (RAF-debounced) → editorScroll-Event für History-Capture.
+    // Scroll listener (RAF-debounced) → editorScroll-Event für History-Capture
+    // und Scroll-Sync. Fraktionale Zeile aus Pixel-Offset (VSCode-Ansatz)
+    // statt Integer aus getVisibleRanges — ermöglicht smooth Sync.
     let scrollRafQueued = false;
     editor.onDidScrollChange(() => {
         if (scrollRafQueued) return;
         scrollRafQueued = true;
         requestAnimationFrame(() => {
             scrollRafQueued = false;
-            const ranges = typeof editor.getVisibleRanges === 'function'
-                ? editor.getVisibleRanges()
-                : [];
-            const line = ranges && ranges.length > 0 ? ranges[0].startLineNumber : 0;
-            post({ type: 'editorScroll', y: editor.getScrollTop(), line });
+            const scrollTop = editor.getScrollTop();
+            let line = 0;
+            if (typeof editor.getLineNumberAtVerticalOffset === 'function'
+                && typeof editor.getTopForLineNumber === 'function') {
+                const lineAtTop = editor.getLineNumberAtVerticalOffset(scrollTop);
+                const y1 = editor.getTopForLineNumber(lineAtTop);
+                const y2 = editor.getTopForLineNumber(lineAtTop + 1);
+                const h = y2 - y1;
+                line = lineAtTop + (h > 0 ? (scrollTop - y1) / h : 0);
+            } else {
+                const ranges = typeof editor.getVisibleRanges === 'function'
+                    ? editor.getVisibleRanges()
+                    : [];
+                line = ranges && ranges.length > 0 ? ranges[0].startLineNumber : 0;
+            }
+            post({ type: 'editorScroll', y: scrollTop, line });
+            try {
+                window.dispatchEvent(
+                    new CustomEvent('folio-editor-scroll', { detail: { y: scrollTop, line } }),
+                );
+            } catch { /* ignored */ }
         });
     });
 }

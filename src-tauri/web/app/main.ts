@@ -25,7 +25,7 @@ import {
     scrollViewTo,
 } from './view/markdown';
 import { initPreview } from './view/preview';
-import { initMarkdownScrollSync, syncViewSlugToEditor } from './view/scroll-sync';
+import { initMarkdownScrollSync, syncViewSlugToEditor, tocClickToEditor } from './view/scroll-sync';
 import { scrollHtmlViewToAnchor } from './view/html';
 import {
     initDocumentState,
@@ -157,8 +157,6 @@ if (ev && typeof ev.listen === 'function' && invoke) {
 
     ev.listen('navigation:toc_click', function (event: any) {
         var data = (event && event.payload) || {};
-        // Automation-Pfad liefert requestId; interner Frontend-Emit aus
-        // markdown.ts laesst das Feld weg → ackHandler wird zum No-Op.
         ackHandler(invoke!, data, function () {
             var anchor = data.anchor || data.slug;
             if (anchor) {
@@ -166,6 +164,9 @@ if (ev && typeof ev.listen === 'function' && invoke) {
                     scrollHtmlViewToAnchor(anchor);
                 } else {
                     scrollViewToAnchor(anchor);
+                }
+                if (document.body.classList.contains('edit-mode')) {
+                    tocClickToEditor(anchor);
                 }
             }
             setTocActive(anchor || '');

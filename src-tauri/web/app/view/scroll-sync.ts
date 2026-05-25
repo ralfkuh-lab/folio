@@ -1,3 +1,5 @@
+import { setTocActive } from './markdown';
+
 type HeadingMapEntry = {
     slug: string;
     line: number;
@@ -277,16 +279,42 @@ export function clearMarkdownHeadingMap(): void {
     lastEditorSyncAt = 0;
     lastSource = null;
     lockUntil = 0;
+    lastTocSlug = '';
 }
 
 export function syncEditorLineToView(line: number): void {
-    if (!syncEnabled() || isLocked()) return;
-    const normalized = Math.max(1, Math.floor(line || 1));
+    if (!syncEnabled()) return;
+    if (isLocked() && lastSource === 'view') return;
+    const normalized = Math.max(1, line || 1);
     lastEditorLine = normalized;
     lastEditorSyncAt = now();
     if (scrollViewToLine(normalized)) return;
-    const heading = headingForLine(normalized);
+    const heading = headingForLine(Math.floor(normalized));
     scrollViewToSlug(heading ? heading.slug : '');
+}
+
+function editModeMarkdown(): boolean {
+    const b = document.body;
+    return (b.classList.contains('edit-mode') || b.classList.contains('split-mode'))
+        && b.classList.contains('kind-markdown')
+        && !b.classList.contains('html-preview-mode');
+}
+
+let lastTocSlug = '';
+
+function syncEditorLineToToc(line: number): void {
+    if (!editModeMarkdown()) return;
+    const heading = headingForLine(Math.floor(line));
+    const slug = heading ? heading.slug : '';
+    if (slug === lastTocSlug) return;
+    lastTocSlug = slug;
+    setTocActive(slug);
+}
+
+export function tocClickToEditor(slug: string): void {
+    const line = lineForSlug(slug || '');
+    if (!line) return;
+    revealEditorLine(line);
 }
 
 export function syncViewSlugToEditor(slug: string): void {
@@ -308,22 +336,28 @@ export function afterMarkdownPreviewRender(userScrolledDuringRender: boolean): v
     syncEditorLineToView(lastEditorLine);
 }
 
+function handleEditorLine(line: number): void {
+    if (typeof line !== 'number' || !(line > 0)) return;
+    syncEditorLineToView(line);
+    syncEditorLineToToc(line);
+}
+
 export function initMarkdownScrollSync(): void {
     ensureViewScrollListener();
+
+    // Local CustomEvent from editor/events.ts — no IPC roundtrip,
+    // same RAF tick as the Monaco scroll callback.
+    window.addEventListener('folio-editor-scroll', function (e: Event) {
+        const detail = (e as CustomEvent).detail || {};
+        handleEditorLine(detail.line);
+    });
+
+    // Tauri IPC events as fallback and for selection-based sync.
     const ev = window.__TAURI__ && window.__TAURI__.event;
     if (!ev || typeof ev.listen !== 'function') return;
 
     ev.listen('editor:selection', function (event: any) {
         const data = (event && event.payload) || {};
-        if (typeof data.line === 'number' && data.line > 0) {
-            syncEditorLineToView(data.line);
-        }
-    });
-
-    ev.listen('editor:scroll', function (event: any) {
-        const data = (event && event.payload) || {};
-        if (typeof data.line === 'number' && data.line > 0) {
-            syncEditorLineToView(data.line);
-        }
+        handleEditorLine(data.line);
     });
 }

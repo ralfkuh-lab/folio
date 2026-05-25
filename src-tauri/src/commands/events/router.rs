@@ -131,9 +131,8 @@ pub fn route_editor_event(
             let y = number_field(payload, "y")?;
             let line = payload
                 .get("line")
-                .and_then(Value::as_u64)
-                .and_then(|value| usize::try_from(value).ok())
-                .unwrap_or(0);
+                .and_then(Value::as_f64)
+                .unwrap_or(0.0);
             state
                 .navigation
                 .lock()
