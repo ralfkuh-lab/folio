@@ -50,7 +50,12 @@ export function attachEditorListeners(editor: any, monaco: any): void {
         if (!model) return;
         const start = model.getOffsetAt(e.selection.getStartPosition());
         const end = model.getOffsetAt(e.selection.getEndPosition());
-        post({ type: 'editorSelection', start, length: end - start });
+        post({
+            type: 'editorSelection',
+            start,
+            length: end - start,
+            line: e.selection.getStartPosition().lineNumber,
+        });
     });
 
     // Scroll listener (RAF-debounced) → editorScroll-Event für History-Capture.
@@ -60,7 +65,11 @@ export function attachEditorListeners(editor: any, monaco: any): void {
         scrollRafQueued = true;
         requestAnimationFrame(() => {
             scrollRafQueued = false;
-            post({ type: 'editorScroll', y: editor.getScrollTop() });
+            const ranges = typeof editor.getVisibleRanges === 'function'
+                ? editor.getVisibleRanges()
+                : [];
+            const line = ranges && ranges.length > 0 ? ranges[0].startLineNumber : 0;
+            post({ type: 'editorScroll', y: editor.getScrollTop(), line });
         });
     });
 }

@@ -15,6 +15,7 @@ import { highlightCodeBlocks } from '../view/code-highlight';
 import { clearHtmlView, HtmlFinder, isHtmlDocument, mountHtmlView } from '../view/html';
 import { clearImageView, isImageDocument, mountImageView } from '../view/image';
 import { invalidatePreview } from '../view/preview';
+import { clearMarkdownHeadingMap, setMarkdownHeadingMap } from '../view/scroll-sync';
 import { setVaultActive } from '../vault/tree';
 import { setEditorLanguageDisplay } from '../ui/language-picker';
 import { syncCheatsheetMenu } from '../ui/cheatsheet';
@@ -267,6 +268,7 @@ export function openDocument(path: string): Promise<boolean> {
 function renderDocumentPayload(data: any): void {
     if (!data || typeof data !== 'object') return;
     setTocList(data.tocHtml || data.toc_html || '');
+    setMarkdownHeadingMap(data.headingMap || data.heading_map || []);
     const path = data.path || currentPath || '';
     const language = data.language || (/\.html?$/i.test(path) ? 'html' : '');
     const isHtml = isHtmlDocument(data.kind || (document.body.classList.contains('kind-text') ? 'text' : ''), language, path);
@@ -285,6 +287,9 @@ function renderDocumentPayload(data: any): void {
         mountHtmlView('html-view-frame', data.text || '', path, requestSaveIfDirty);
     } else {
         clearHtmlView();
+    }
+    if (!document.body.classList.contains('kind-markdown')) {
+        clearMarkdownHeadingMap();
     }
 }
 
@@ -317,6 +322,7 @@ export function initDocumentState(d: Deps): void {
         loadEditorText(data.text || '', data.language || '');
         setEditorLanguageDisplay(data.language || 'plaintext');
         setTocList(data.tocHtml || data.toc_html || '');
+        setMarkdownHeadingMap(data.headingMap || data.heading_map || []);
         const isHtml = isHtmlDocument(data.kind, data.language || '', data.path || '');
         document.body.classList.toggle('html-preview-mode', isHtml);
         const contentEl = document.getElementById('view-region');
@@ -337,6 +343,9 @@ export function initDocumentState(d: Deps): void {
             mountHtmlView('html-view-frame', data.text || '', data.path || '', requestSaveIfDirty);
         } else {
             clearHtmlView();
+        }
+        if (data.kind !== 'markdown') {
+            clearMarkdownHeadingMap();
         }
         // Code-View fuer Non-Markdown-Text-Dateien: Read-Only Monaco mit
         // Syntax-Highlighting. Mount ist idempotent — re-use der Instanz
@@ -434,6 +443,7 @@ export function initDocumentState(d: Deps): void {
         if (body) (body as HTMLElement).innerHTML = '';
         clearHtmlView();
         clearImageView();
+        clearMarkdownHeadingMap();
         document.body.classList.remove('html-preview-mode');
         // Code-View ebenfalls leeren — die zweite Monaco-Instanz bleibt
         // sonst mit dem zuletzt angezeigten Inhalt sichtbar, wenn der

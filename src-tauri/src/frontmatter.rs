@@ -12,6 +12,7 @@ pub struct Entry {
 pub struct ExtractResult {
     pub entries: Vec<Entry>,
     pub body: String,
+    pub body_start_line: usize,
 }
 
 /// Frontmatter aus einem Markdown-Dokument lösen.
@@ -33,12 +34,14 @@ pub fn extract(markdown: &str) -> ExtractResult {
         return ExtractResult {
             entries: Vec::new(),
             body: markdown.to_string(),
+            body_start_line: 1,
         };
     };
     let entries = parse_yaml(yaml_block).unwrap_or_else(|| fallback_entries(yaml_block));
     ExtractResult {
         entries,
         body: body.to_string(),
+        body_start_line: body_start_line(markdown, body),
     }
 }
 
@@ -89,6 +92,15 @@ fn split_frontmatter(markdown: &str) -> Option<(&str, &str)> {
     let yaml_block = rest[..close_start].trim_end_matches(['\r', '\n']);
     let body_start = (close_end + 1).min(rest.len());
     Some((yaml_block, &rest[body_start..]))
+}
+
+fn body_start_line(markdown: &str, body: &str) -> usize {
+    let body_start = markdown.len().saturating_sub(body.len());
+    markdown[..body_start]
+        .bytes()
+        .filter(|byte| *byte == b'\n')
+        .count()
+        + 1
 }
 
 /// `None` signalisiert: nicht als Mapping darstellbar — Fallback nutzen.

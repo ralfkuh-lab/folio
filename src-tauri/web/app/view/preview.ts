@@ -23,6 +23,7 @@
 
 import { setTocList, rewriteRelativeAssets, ViewFinder } from './markdown';
 import { highlightCodeBlocks } from './code-highlight';
+import { afterMarkdownPreviewRender, setMarkdownHeadingMap } from './scroll-sync';
 import { folioLog } from '../util/log';
 
 type Deps = {
@@ -63,7 +64,13 @@ function getMarkdownBody(): HTMLElement | null {
     return document.querySelector('#view-region main.markdown-body') as HTMLElement | null;
 }
 
-function invokeRender(text: string): Promise<{ content: string; tocHtml: string }> {
+type RenderPreview = {
+    content: string;
+    tocHtml: string;
+    headingMap?: Array<{ slug: string; line: number }>;
+};
+
+function invokeRender(text: string): Promise<RenderPreview> {
     const core = window.__TAURI__ && window.__TAURI__.core;
     if (!core || typeof core.invoke !== 'function') {
         return Promise.reject(new Error('Tauri core invoke not available'));
@@ -84,7 +91,7 @@ async function runRender(text: string): Promise<void> {
     const viewContent = $('view-content');
     const preInvokeScroll = viewContent ? viewContent.scrollTop : 0;
 
-    let result: { content: string; tocHtml: string };
+    let result: RenderPreview;
     try {
         result = await invokeRender(text);
     } catch (err) {
@@ -110,17 +117,17 @@ async function runRender(text: string): Promise<void> {
     // Scroll-Erhalt: wenn der User waehrend des Invoke gescrollt hat,
     // seinen aktuellen scrollTop respektieren; sonst Pre-Invoke-Position
     // restaurieren (innerHTML-Replace setzt scrollTop sonst auf 0).
-    const targetScroll = viewContent && viewContent.scrollTop !== preInvokeScroll
-        ? viewContent.scrollTop
-        : preInvokeScroll;
+    const userScrolledDuringRender = !!viewContent && viewContent.scrollTop !== preInvokeScroll;
+    const targetScroll = userScrolledDuringRender ? viewContent.scrollTop : preInvokeScroll;
 
-    applyToDom(result, targetScroll);
+    applyToDom(result, targetScroll, userScrolledDuringRender);
     folioLog.debug('preview', 'applied', { gen: myGen, textLen: text.length });
 }
 
 function applyToDom(
-    result: { content: string; tocHtml: string },
+    result: RenderPreview,
     targetScroll: number,
+    userScrolledDuringRender: boolean,
 ): void {
     const body = getMarkdownBody();
     if (!body) return;
@@ -136,11 +143,13 @@ function applyToDom(
     // aus alten Render-Passes ignoriert.
     highlightCodeBlocks(body);
     setTocList(result.tocHtml);
+    setMarkdownHeadingMap(result.headingMap || []);
 
     // Scroll restore — view-content ist der scrollende Container,
     // nicht view-region (das ist der Flex-Wrapper).
     const viewContent = $('view-content');
     if (viewContent) viewContent.scrollTop = targetScroll;
+    afterMarkdownPreviewRender(userScrolledDuringRender);
 
     // Find-Bar-Marker re-binden: nur wenn die Bar offen ist UND ein
     // Term gesetzt ist. Im Microtask getrennt vom Render, damit das

@@ -12,6 +12,7 @@ pub struct TocEntry {
     pub level: u8,
     pub slug: String,
     pub number: Option<String>,
+    pub line: usize,
 }
 
 pub fn extract(markdown: &str) -> Vec<TocEntry> {
@@ -35,6 +36,12 @@ pub fn extract(markdown: &str) -> Vec<TocEntry> {
         };
 
         let level = heading.level;
+        let source_line = node.data.borrow().sourcepos.start.line;
+        let line = if source_line == 0 {
+            frontmatter.body_start_line
+        } else {
+            frontmatter.body_start_line + source_line.saturating_sub(1)
+        };
         let raw_text = extract_text(node);
         let (text, explicit_id) =
             renderer::split_explicit_id(&raw_text).unwrap_or((raw_text, String::new()));
@@ -49,6 +56,7 @@ pub fn extract(markdown: &str) -> Vec<TocEntry> {
             level,
             slug,
             number: None,
+            line,
         });
     }
 
@@ -211,6 +219,7 @@ mod tests {
 
         assert_eq!(vec![1, 2, 3], levels(&entries));
         assert_eq!(vec!["A", "B", "C"], texts(&entries));
+        assert_eq!(vec![1, 2, 3], lines(&entries));
     }
 
     #[test]
@@ -264,11 +273,22 @@ mod tests {
         assert_eq!("first", entries[0].slug);
     }
 
+    #[test]
+    fn test_heading_lines_include_frontmatter_offset() {
+        let entries = extract("---\ntitle: x\n---\n# A\n\n## B");
+
+        assert_eq!(vec![4, 6], lines(&entries));
+    }
+
     fn levels(entries: &[TocEntry]) -> Vec<u8> {
         entries.iter().map(|entry| entry.level).collect()
     }
 
     fn texts(entries: &[TocEntry]) -> Vec<&str> {
         entries.iter().map(|entry| entry.text.as_str()).collect()
+    }
+
+    fn lines(entries: &[TocEntry]) -> Vec<usize> {
+        entries.iter().map(|entry| entry.line).collect()
     }
 }

@@ -102,6 +102,11 @@ pub fn route_editor_event(
         "editorSelection" => {
             let start = usize_field(payload, "start")?;
             let length = usize_field(payload, "length")?;
+            let line = payload
+                .get("line")
+                .and_then(Value::as_u64)
+                .and_then(|value| usize::try_from(value).ok())
+                .unwrap_or(0);
             {
                 let mut automation = state
                     .automation
@@ -118,18 +123,25 @@ pub fn route_editor_event(
             handle
                 .emit(
                     "editor:selection",
-                    serde_json::json!({ "start": start, "length": length }),
+                    serde_json::json!({ "start": start, "length": length, "line": line }),
                 )
                 .map_err(|error| error.to_string())
         }
         "editorScroll" => {
             let y = number_field(payload, "y")?;
+            let line = payload
+                .get("line")
+                .and_then(Value::as_u64)
+                .and_then(|value| usize::try_from(value).ok())
+                .unwrap_or(0);
             state
                 .navigation
                 .lock()
                 .map_err(|_| "navigation lock poisoned".to_string())?
                 .update_editor_scroll(y);
-            Ok(())
+            handle
+                .emit("editor:scroll", serde_json::json!({ "y": y, "line": line }))
+                .map_err(|error| error.to_string())
         }
         "editorSaveRequested" => {
             state

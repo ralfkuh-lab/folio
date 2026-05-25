@@ -340,7 +340,8 @@ function initVisibleHeadingTracker(): void {
 }
 
 export function initMarkdownView(deps?: { requestSaveIfDirty?: () => Promise<boolean> }): void {
-    contentEl = document.getElementById('view-region');
+    contentEl = (document.getElementById('view-content')
+        || document.getElementById('view-region')) as HTMLElement | null;
     tocEl = document.getElementById('toc-region');
     if (!contentEl || !tocEl) return;
     requestSaveIfDirtyDep = (deps && deps.requestSaveIfDirty) || null;

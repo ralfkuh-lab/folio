@@ -129,6 +129,7 @@ impl AppState {
             loaded: Some(Arc::new({
                 let app = app.clone();
                 move |payload| {
+                    let toc_entries = toc::extract(&payload.text);
                     let _ = app.emit(
                         "document:loaded",
                         serde_json::json!({
@@ -137,7 +138,8 @@ impl AppState {
                             "language": crate::file_kind::editor_language(&payload.path),
                             "text": payload.text,
                             "content": renderer::render_body(&payload.text),
-                            "tocHtml": toc::render_html(&toc::extract(&payload.text)),
+                            "tocHtml": toc::render_html(&toc_entries),
+                            "headingMap": crate::commands::editor::heading_map(&toc_entries),
                         }),
                     );
                     // Wartende `POST /wait { event: "document.loaded" }` aufwecken.
@@ -163,13 +165,15 @@ impl AppState {
             saved: Some(Arc::new({
                 let app = app.clone();
                 move |path, text| {
+                    let toc_entries = toc::extract(&text);
                     let _ = app.emit(
                         "document:saved",
                         serde_json::json!({
                             "path": path,
                             "text": text,
                             "content": renderer::render_body(&text),
-                            "tocHtml": toc::render_html(&toc::extract(&text)),
+                            "tocHtml": toc::render_html(&toc_entries),
+                            "headingMap": crate::commands::editor::heading_map(&toc_entries),
                         }),
                     );
                     crate::automation::wait::signal_document_saved(app.state::<AppState>().inner());

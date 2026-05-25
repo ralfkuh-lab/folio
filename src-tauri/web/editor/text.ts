@@ -86,6 +86,29 @@ export function getScroll(): number {
     return editor ? editor.getScrollTop() : 0;
 }
 
+export function getCursorLine(): number {
+    const editor = getEditor();
+    if (!editor) return 0;
+    const pos = editor.getPosition();
+    return pos ? pos.lineNumber : 0;
+}
+
+export function revealLineNearTop(line: number): void {
+    const editor = getEditor();
+    if (!editor) {
+        whenReady().then(() => revealLineNearTop(line));
+        return;
+    }
+    const target = Math.max(1, Math.floor(line || 1));
+    if (typeof editor.revealLineNearTop === 'function') {
+        editor.revealLineNearTop(target);
+        return;
+    }
+    if (typeof editor.getTopForLineNumber === 'function') {
+        editor.setScrollTop(Math.max(0, editor.getTopForLineNumber(target) - 80));
+    }
+}
+
 export function setScroll(y: number): void {
     const editor = getEditor();
     if (!editor) {

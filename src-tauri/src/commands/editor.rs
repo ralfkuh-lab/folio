@@ -102,14 +102,34 @@ pub fn apply_command_utf16(
 pub struct RenderPreview {
     pub content: String,
     pub toc_html: String,
+    pub heading_map: Vec<HeadingMapEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HeadingMapEntry {
+    pub slug: String,
+    pub line: usize,
 }
 
 #[tauri::command]
 pub async fn render_markdown_preview(text: String) -> Result<RenderPreview, String> {
+    let toc_entries = toc::extract(&text);
     Ok(RenderPreview {
         content: renderer::render_body(&text),
-        toc_html: toc::render_html(&toc::extract(&text)),
+        toc_html: toc::render_html(&toc_entries),
+        heading_map: heading_map(&toc_entries),
     })
+}
+
+pub(crate) fn heading_map(entries: &[toc::TocEntry]) -> Vec<HeadingMapEntry> {
+    entries
+        .iter()
+        .map(|entry| HeadingMapEntry {
+            slug: entry.slug.clone(),
+            line: entry.line,
+        })
+        .collect()
 }
 
 #[tauri::command]
@@ -253,23 +273,35 @@ mod tests {
 
     #[test]
     fn render_preview_produces_content_and_toc() {
+        let toc_entries = toc::extract("# Title\n\nBody");
         let preview = RenderPreview {
             content: renderer::render_body("# Title\n\nBody"),
-            toc_html: toc::render_html(&toc::extract("# Title\n\nBody")),
+            toc_html: toc::render_html(&toc_entries),
+            heading_map: heading_map(&toc_entries),
         };
         assert!(preview.content.contains("<h1"));
         assert!(preview.content.contains("Title"));
         assert!(preview.toc_html.contains("Title"));
+        assert_eq!(
+            vec![HeadingMapEntry {
+                slug: "title".into(),
+                line: 1,
+            }],
+            preview.heading_map,
+        );
     }
 
     #[test]
     fn render_preview_empty_text() {
+        let toc_entries = toc::extract("");
         let preview = RenderPreview {
             content: renderer::render_body(""),
-            toc_html: toc::render_html(&toc::extract("")),
+            toc_html: toc::render_html(&toc_entries),
+            heading_map: heading_map(&toc_entries),
         };
         // Render fuer leeren Text darf nicht panicken — kein <h*>-Anchor noetig.
         assert!(!preview.content.contains("<h1"));
+        assert!(preview.heading_map.is_empty());
     }
 
     #[test]
@@ -277,9 +309,15 @@ mod tests {
         let preview = RenderPreview {
             content: "<p>x</p>".to_string(),
             toc_html: "<ul></ul>".to_string(),
+            heading_map: vec![HeadingMapEntry {
+                slug: "title".into(),
+                line: 1,
+            }],
         };
         let json = serde_json::to_string(&preview).unwrap();
         assert!(json.contains("\"tocHtml\""), "json={json}");
+        assert!(json.contains("\"headingMap\""), "json={json}");
         assert!(!json.contains("toc_html"), "json={json}");
+        assert!(!json.contains("heading_map"), "json={json}");
     }
 }

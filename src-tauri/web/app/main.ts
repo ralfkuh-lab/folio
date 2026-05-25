@@ -25,6 +25,7 @@ import {
     scrollViewTo,
 } from './view/markdown';
 import { initPreview } from './view/preview';
+import { initMarkdownScrollSync, syncViewSlugToEditor } from './view/scroll-sync';
 import { scrollHtmlViewToAnchor } from './view/html';
 import {
     initDocumentState,
@@ -102,6 +103,7 @@ initDragDrop();
 initAutomationEvents();
 initDocumentState({ setActiveMode });
 initPreview({ getCurrentPath });
+initMarkdownScrollSync();
 
 // ----- Cross-modulare Backend-Event-Listener -----
 if (ev && typeof ev.listen === 'function' && invoke) {
@@ -168,6 +170,13 @@ if (ev && typeof ev.listen === 'function' && invoke) {
             }
             setTocActive(anchor || '');
         });
+    });
+
+    ev.listen('navigation:heading_changed', function (event: any) {
+        var data = (event && event.payload) || {};
+        var anchor = data.anchor || data.slug || '';
+        setTocActive(anchor || '');
+        syncViewSlugToEditor(anchor || '');
     });
 
     // panel:rail_changed feuert sowohl bei Backend-Push (z. B. nach
