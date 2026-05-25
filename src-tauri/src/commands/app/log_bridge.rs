@@ -98,7 +98,10 @@ mod tests {
     fn unknown_level_rejected() {
         assert!(parse_level("verbose").is_err());
         assert!(parse_level("").is_err());
-        assert!(parse_level("WARN").is_err(), "case-sensitive: lowercase erwartet");
+        assert!(
+            parse_level("WARN").is_err(),
+            "case-sensitive: lowercase erwartet"
+        );
     }
 
     #[test]
@@ -108,7 +111,8 @@ mod tests {
         // Wechsel auf rename_all="snake_case" o.ae. auffaellt.
         let json = serde_json::to_string(&serde_json::json!({
             "level": "warn", "source": "x", "message": "y", "fields": null
-        })).unwrap();
+        }))
+        .unwrap();
         #[derive(Deserialize)]
         struct Args {
             level: FrontendLevel,

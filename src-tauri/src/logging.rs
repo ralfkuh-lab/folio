@@ -196,7 +196,10 @@ fn resolve_boot_filter(level: LogLevel) -> (String, &'static str) {
         }
     }
     if cfg!(debug_assertions) {
-        return (LogLevel::Debug.env_filter().to_string(), "debug-build default");
+        return (
+            LogLevel::Debug.env_filter().to_string(),
+            "debug-build default",
+        );
     }
     (level.env_filter().to_string(), "logLevel setting")
 }
