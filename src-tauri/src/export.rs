@@ -1,6 +1,7 @@
 use crate::renderer;
+use regex::Regex;
 use serde::Serialize;
-use std::path::Path;
+use std::{path::Path, sync::OnceLock};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LayoutInfo {
@@ -47,7 +48,7 @@ pub fn layout_css(id: &str) -> Option<&'static str> {
 
 pub fn render_document(layout_id: &str, title: &str, markdown: &str) -> Result<String, String> {
     let css = layout_css(layout_id).ok_or_else(|| format!("Unbekanntes Layout: '{layout_id}'"))?;
-    let body = renderer::render_body(markdown);
+    let body = strip_scroll_sync_attrs(&renderer::render_body(markdown));
     Ok(wrap_html(title, css, &body))
 }
 
@@ -86,6 +87,17 @@ fn wrap_html(title: &str, css: &str, body_html: &str) -> String {
 </body>\n\
 </html>\n"
     )
+}
+
+fn strip_scroll_sync_attrs(html: &str) -> String {
+    scroll_sync_attr_regex().replace_all(html, "").into_owned()
+}
+
+fn scroll_sync_attr_regex() -> &'static Regex {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    REGEX.get_or_init(|| {
+        Regex::new(r#"\sdata-(?:sourcepos|line)="[^"]*""#).expect("scroll sync attr regex")
+    })
 }
 
 fn escape_html(s: &str) -> String {

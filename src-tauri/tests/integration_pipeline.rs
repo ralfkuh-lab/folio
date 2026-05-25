@@ -32,12 +32,15 @@ fn render_pipeline_extracts_toc_and_html_for_rich_markdown() {
 
     assert!(html.contains(r#"<aside class="frontmatter"><dl>"#));
     assert!(html.contains("<dt>title</dt><dd>Pipeline</dd>"));
-    assert!(html.contains(r#"<h1 id="overview-anchor">Overview</h1>"#));
-    assert!(html.contains(r#"<h2 id="tasks">Tasks</h2>"#));
-    assert!(html.contains(r#"<h2 id="custom-data">Data</h2>"#));
-    assert!(html.contains(r#"<ul class="contains-task-list">"#));
+    assert!(html.contains(r#"<h1 id="overview-anchor" data-sourcepos=""#));
+    assert!(html.contains(r#"data-line="5">Overview</h1>"#));
+    assert!(html.contains(r#"<h2 id="tasks" data-sourcepos="3:1-3:8" data-line="7">Tasks</h2>"#));
+    assert!(html.contains(r#"<h2 id="custom-data" data-sourcepos=""#));
+    assert!(html.contains(r#"data-line="11">Data</h2>"#));
+    assert!(html.contains(r#"<ul class="contains-task-list" data-sourcepos=""#));
     assert!(html.contains(r#"<input disabled="disabled" type="checkbox" checked="checked" />"#));
-    assert!(html.contains("<table>"));
+    assert!(html.contains(r#"<table data-sourcepos=""#));
+    assert!(html.contains(r#"data-line="12">"#));
 }
 
 #[test]
@@ -61,6 +64,6 @@ fn repeated_headings_get_consistent_unique_slugs_in_toc_and_html() {
 
     assert_eq!("same", entries[0].slug);
     assert_eq!("same-1", entries[1].slug);
-    assert!(html.contains(r#"<h1 id="same">Same</h1>"#));
-    assert!(html.contains(r#"<h1 id="same-1">Same</h1>"#));
+    assert!(html.contains(r#"<h1 id="same" data-sourcepos="1:1-1:6" data-line="1">Same</h1>"#));
+    assert!(html.contains(r#"<h1 id="same-1" data-sourcepos="2:1-2:6" data-line="2">Same</h1>"#));
 }

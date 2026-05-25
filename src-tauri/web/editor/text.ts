@@ -109,6 +109,28 @@ export function revealLineNearTop(line: number): void {
     }
 }
 
+export function revealLineFractionNearTop(line: number): void {
+    const editor = getEditor();
+    if (!editor) {
+        whenReady().then(() => revealLineFractionNearTop(line));
+        return;
+    }
+
+    const target = Math.max(1, line || 1);
+    if (typeof editor.getTopForLineNumber !== 'function' || typeof editor.setScrollTop !== 'function') {
+        revealLineNearTop(Math.round(target));
+        return;
+    }
+
+    const lowerLine = Math.max(1, Math.floor(target));
+    const upperLine = Math.max(lowerLine, Math.ceil(target));
+    const lowerTop = editor.getTopForLineNumber(lowerLine);
+    const upperTop = editor.getTopForLineNumber(upperLine);
+    const ratio = upperLine === lowerLine ? 0 : target - lowerLine;
+    const top = lowerTop + (upperTop - lowerTop) * ratio;
+    editor.setScrollTop(Math.max(0, top - 80));
+}
+
 export function setScroll(y: number): void {
     const editor = getEditor();
     if (!editor) {

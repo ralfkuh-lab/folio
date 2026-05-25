@@ -9,7 +9,8 @@
 //     editorFindState, editorSaveRequested
 //   Inbound (window.FolioEditor.*):
 //     mount, setText, getText, getSelection, setSelection, getScroll,
-//     setScroll, getCursorLine, revealLineNearTop, applyReplace, focus, layout, setTheme,
+//     setScroll, getCursorLine, revealLineNearTop, revealLineFractionNearTop,
+//     applyReplace, focus, layout, setTheme,
 //     undo, redo, getLanguage, setLanguage, listLanguages,
 //     openFind, closeFind, setFindOptions, setFindTerm, findNext, findPrev
 //
@@ -35,6 +36,7 @@ import {
     insertText,
     listLanguages,
     redo,
+    revealLineFractionNearTop,
     revealLineNearTop,
     setLanguage,
     setScroll,
@@ -53,6 +55,7 @@ import * as codeView from './view-code';
     setScroll,
     getCursorLine,
     revealLineNearTop,
+    revealLineFractionNearTop,
     applyReplace,
     focus,
     insertText,

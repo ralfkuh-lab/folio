@@ -17,6 +17,7 @@ interface FolioEditorSurface {
     getScroll(): number;
     getCursorLine(): number;
     revealLineNearTop(line: number): void;
+    revealLineFractionNearTop(line: number): void;
     setTheme(mode: string): void;
     setMinimap(enabled: boolean): void;
     layout(): void;
