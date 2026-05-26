@@ -15,6 +15,8 @@ interface FolioEditorSurface {
     getSelection(): { start: number; length: number };
     setScroll(y: number): void;
     getScroll(): number;
+    getScrollHeight(): number;
+    getVisibleHeight(): number;
     getCursorLine(): number;
     revealLineNearTop(line: number): void;
     revealLineFractionNearTop(line: number): void;

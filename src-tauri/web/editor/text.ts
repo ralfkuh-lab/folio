@@ -140,6 +140,20 @@ export function setScroll(y: number): void {
     editor.setScrollTop(Math.max(0, y));
 }
 
+export function getScrollHeight(): number {
+    const editor = getEditor();
+    return editor && typeof editor.getScrollHeight === 'function'
+        ? editor.getScrollHeight() : 0;
+}
+
+export function getVisibleHeight(): number {
+    const editor = getEditor();
+    if (!editor) return 0;
+    const layout = typeof editor.getLayoutInfo === 'function'
+        ? editor.getLayoutInfo() : null;
+    return layout ? layout.height : 0;
+}
+
 export function applyReplace(args: {
     fullText: string;
     selectionStart: number;

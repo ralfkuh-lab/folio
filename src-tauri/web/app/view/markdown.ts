@@ -211,7 +211,7 @@ function collectRangesAsync(root: Element, regex: RegExp, myToken: number, done:
 }
 
 function dispatchState(): void {
-    const detail = { term: currentTerm, total: rangesArr.length, active: activeIdx };
+    const detail = { source: 'view' as const, term: currentTerm, total: rangesArr.length, active: activeIdx };
     try {
         window.dispatchEvent(new CustomEvent('folio-find-state', { detail }));
     } catch (_) { /* ignore */ }
@@ -225,7 +225,7 @@ function dispatchState(): void {
 function dispatchProgress(partialTotal: number): void {
     try {
         window.dispatchEvent(new CustomEvent('folio-find-state', {
-            detail: { term: currentTerm, total: partialTotal, active: -1, scanning: true }
+            detail: { source: 'view', term: currentTerm, total: partialTotal, active: -1, scanning: true }
         }));
     } catch (_) { /* ignore */ }
 }

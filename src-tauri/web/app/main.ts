@@ -27,6 +27,7 @@ import {
 import { initPreview } from './view/preview';
 import { initMarkdownScrollSync, syncViewSlugToEditor, tocClickToEditor } from './view/scroll-sync';
 import { scrollHtmlViewToAnchor } from './view/html';
+import { initHtmlScrollSync } from './view/html-scroll-sync';
 import {
     initDocumentState,
     getCleanText,
@@ -104,6 +105,7 @@ initAutomationEvents();
 initDocumentState({ setActiveMode });
 initPreview({ getCurrentPath });
 initMarkdownScrollSync();
+initHtmlScrollSync();
 
 // ----- Cross-modulare Backend-Event-Listener -----
 if (ev && typeof ev.listen === 'function' && invoke) {

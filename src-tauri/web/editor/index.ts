@@ -31,8 +31,10 @@ import {
     getLanguage,
     getCursorLine,
     getScroll,
+    getScrollHeight,
     getSelection,
     getText,
+    getVisibleHeight,
     insertText,
     listLanguages,
     redo,
@@ -73,6 +75,8 @@ import * as codeView from './view-code';
     getLanguage,
     setLanguage,
     listLanguages,
+    getScrollHeight,
+    getVisibleHeight,
 };
 
 // Zweiter Surface: Read-Only Code-View fuer den View-Mode von Non-Markdown-

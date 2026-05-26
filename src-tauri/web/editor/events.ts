@@ -82,10 +82,14 @@ export function attachEditorListeners(editor: any, monaco: any): void {
                     : [];
                 line = ranges && ranges.length > 0 ? ranges[0].startLineNumber : 0;
             }
+            const scrollHeight = typeof editor.getScrollHeight === 'function'
+                ? editor.getScrollHeight() : 0;
             post({ type: 'editorScroll', y: scrollTop, line });
             try {
                 window.dispatchEvent(
-                    new CustomEvent('folio-editor-scroll', { detail: { y: scrollTop, line } }),
+                    new CustomEvent('folio-editor-scroll', {
+                        detail: { y: scrollTop, line, scrollHeight },
+                    }),
                 );
             } catch { /* ignored */ }
         });

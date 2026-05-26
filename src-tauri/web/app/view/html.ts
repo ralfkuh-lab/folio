@@ -6,6 +6,8 @@ let currentIframe: HTMLIFrameElement | null = null;
 let currentPath = '';
 let beforeLinkClick: (() => Promise<boolean>) | null = null;
 let messageListener: ((event: MessageEvent) => void) | null = null;
+let onIframeLoadedCallback: ((doc: Document) => void) | null = null;
+let onIframeClearCallback: (() => void) | null = null;
 const CHUNK_SIZE = 500;
 const BRIDGE_MARKER = 'folio-html-bridge';
 let matchHL: any = null;
@@ -261,11 +263,18 @@ export function mountHtmlView(
     // sind in sanitizeDocument bereits entfernt; nur das von uns
     // installierte Bridge-<script> laeuft.
     iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts');
-    iframe.onload = function () { HtmlFinder.refresh(); };
+    iframe.onload = function () {
+        HtmlFinder.refresh();
+        if (onIframeLoadedCallback) {
+            const doc = iframeDoc();
+            if (doc) onIframeLoadedCallback(doc);
+        }
+    };
     iframe.srcdoc = prepareHtmlForPreview(html || '', currentPath);
 }
 
 export function clearHtmlView(): void {
+    if (onIframeClearCallback) onIframeClearCallback();
     if (!currentIframe) {
         currentIframe = document.getElementById('html-view-frame') as HTMLIFrameElement | null;
     }
@@ -278,6 +287,14 @@ export function clearHtmlView(): void {
     beforeLinkClick = null;
     currentPath = '';
     currentIframe = null;
+}
+
+export function setHtmlViewCallbacks(
+    onLoaded: (doc: Document) => void,
+    onClear: () => void,
+): void {
+    onIframeLoadedCallback = onLoaded;
+    onIframeClearCallback = onClear;
 }
 
 export function scrollHtmlViewToAnchor(slug: string): void {
@@ -301,7 +318,7 @@ export function isHtmlDocument(kind: string, language: string, path?: string): b
     return /\.(html|htm)$/i.test(path || '');
 }
 
-function iframeDoc(): Document | null {
+export function iframeDoc(): Document | null {
     const iframe = currentIframe || document.getElementById('html-view-frame') as HTMLIFrameElement | null;
     if (!iframe) return null;
     try { return iframe.contentDocument; } catch (_) { return null; }

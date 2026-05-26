@@ -144,6 +144,7 @@ function scrollMatchIntoView(m: FindMatch): void {
 
 function publishFindState(): void {
     const detail = {
+        source: 'editor' as const,
         term: findState.term,
         total: findState.total,
         active: findState.active,

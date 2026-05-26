@@ -27,11 +27,33 @@ let inputDebounce: ReturnType<typeof setTimeout> | null = null;
 const INPUT_DEBOUNCE_MS = 150;
 
 function isEditMode(): boolean { return document.body.classList.contains('edit-mode'); }
+function isSplitMode(): boolean { return document.body.classList.contains('split-mode'); }
 function isHtmlPreviewMode(): boolean { return document.body.classList.contains('html-preview-mode'); }
 
-// Liefert die aktive Backend-Implementierung: Monaco-Editor (Edit) oder DOM-Sucher (View).
+const SplitFinder = {
+    openFind: function (seed?: string): void {
+        if (window.FolioEditor) window.FolioEditor.openFind(seed);
+        ViewFinder.openFind(seed);
+    },
+    closeFind: function (): void {
+        if (window.FolioEditor) window.FolioEditor.closeFind();
+        ViewFinder.closeFind();
+    },
+    setFindTerm: function (term: string): void {
+        if (window.FolioEditor) window.FolioEditor.setFindTerm(term);
+        ViewFinder.setFindTerm(term);
+    },
+    setFindOptions: function (opts: any): void {
+        if (window.FolioEditor) window.FolioEditor.setFindOptions(opts);
+        ViewFinder.setFindOptions(opts);
+    },
+    findNext: function (): void { if (window.FolioEditor) window.FolioEditor.findNext(); },
+    findPrev: function (): void { if (window.FolioEditor) window.FolioEditor.findPrev(); },
+};
+
 function getFinder(): any {
     if (isEditMode()) return window.FolioEditor;
+    if (isSplitMode() && !isHtmlPreviewMode()) return SplitFinder;
     return isHtmlPreviewMode() ? HtmlFinder : ViewFinder;
 }
 
@@ -55,7 +77,7 @@ function doOpen(initial?: string): void {
 }
 
 function open(initial?: string): void {
-    if (isEditMode()) {
+    if (isEditMode() || isSplitMode()) {
         ensureEditorMountedDep('').then(function (ok: boolean) {
             if (!ok) return;
             doOpen(initial);
@@ -235,11 +257,11 @@ export function initFindBar(deps: {
 
     window.addEventListener('folio-find-state', function (e: CustomEvent) {
         const s = e.detail || {};
+        if (isSplitMode() && s.source === 'view') return;
         if (!s.term && !input.value) { counter.textContent = ''; return; }
         if (typeof s.total !== 'number' || s.total === 0) {
             counter.textContent = (input.value || s.term) ? '0/0' : '';
         } else if (s.scanning || s.active < 0) {
-            // Suchlauf laeuft noch — Total waechst, Active steht erst am Ende fest.
             counter.textContent = '…/' + s.total;
         } else {
             counter.textContent = (s.active + 1) + '/' + s.total;
