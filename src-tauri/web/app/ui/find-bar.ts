@@ -30,30 +30,35 @@ function isEditMode(): boolean { return document.body.classList.contains('edit-m
 function isSplitMode(): boolean { return document.body.classList.contains('split-mode'); }
 function isHtmlPreviewMode(): boolean { return document.body.classList.contains('html-preview-mode'); }
 
-const SplitFinder = {
-    openFind: function (seed?: string): void {
-        if (window.FolioEditor) window.FolioEditor.openFind(seed);
-        ViewFinder.openFind(seed);
-    },
-    closeFind: function (): void {
-        if (window.FolioEditor) window.FolioEditor.closeFind();
-        ViewFinder.closeFind();
-    },
-    setFindTerm: function (term: string): void {
-        if (window.FolioEditor) window.FolioEditor.setFindTerm(term);
-        ViewFinder.setFindTerm(term);
-    },
-    setFindOptions: function (opts: any): void {
-        if (window.FolioEditor) window.FolioEditor.setFindOptions(opts);
-        ViewFinder.setFindOptions(opts);
-    },
-    findNext: function (): void { if (window.FolioEditor) window.FolioEditor.findNext(); },
-    findPrev: function (): void { if (window.FolioEditor) window.FolioEditor.findPrev(); },
-};
+function makeSplitFinder(viewFinder: any): any {
+    return {
+        openFind: function (seed?: string): void {
+            if (window.FolioEditor) window.FolioEditor.openFind(seed);
+            viewFinder.openFind(seed);
+        },
+        closeFind: function (): void {
+            if (window.FolioEditor) window.FolioEditor.closeFind();
+            viewFinder.closeFind();
+        },
+        setFindTerm: function (term: string): void {
+            if (window.FolioEditor) window.FolioEditor.setFindTerm(term);
+            viewFinder.setFindTerm(term);
+        },
+        setFindOptions: function (opts: any): void {
+            if (window.FolioEditor) window.FolioEditor.setFindOptions(opts);
+            viewFinder.setFindOptions(opts);
+        },
+        findNext: function (): void { if (window.FolioEditor) window.FolioEditor.findNext(); },
+        findPrev: function (): void { if (window.FolioEditor) window.FolioEditor.findPrev(); },
+    };
+}
+
+const SplitFinder = makeSplitFinder(ViewFinder);
+const SplitHtmlFinder = makeSplitFinder(HtmlFinder);
 
 function getFinder(): any {
     if (isEditMode()) return window.FolioEditor;
-    if (isSplitMode() && !isHtmlPreviewMode()) return SplitFinder;
+    if (isSplitMode()) return isHtmlPreviewMode() ? SplitHtmlFinder : SplitFinder;
     return isHtmlPreviewMode() ? HtmlFinder : ViewFinder;
 }
 

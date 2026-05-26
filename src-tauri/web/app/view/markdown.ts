@@ -99,7 +99,7 @@ let searchToken = 0;
 function ensureHighlights(): void {
     if (!hasHighlightAPI) return;
     if (!matchHL) { matchHL = new (window as any).Highlight(); (CSS as any).highlights.set('folio-find', matchHL); }
-    if (!activeHL) { activeHL = new (window as any).Highlight(); (CSS as any).highlights.set('folio-find-active', activeHL); }
+    if (!activeHL) { activeHL = new (window as any).Highlight(); activeHL.priority = 1; (CSS as any).highlights.set('folio-find-active', activeHL); }
 }
 
 function getRoot(): Element | null { return document.querySelector('#view-region main.markdown-body'); }

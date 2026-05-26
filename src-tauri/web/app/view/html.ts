@@ -139,8 +139,8 @@ function installPreviewDefaults(doc: Document): void {
         ':root{color-scheme:light;background:#fff;}',
         'body{background:#fff;}',
         'a[data-folio-href]{cursor:pointer;}',
-        '::highlight(folio-find){background:#ffe066;color:inherit;}',
-        '::highlight(folio-find-active){background:#ff9f1c;color:inherit;}',
+        '::highlight(folio-find){background:#FFD700;color:#000;}',
+        '::highlight(folio-find-active){background:#FF8C00;color:#000;}',
     ].join('');
     const head = doc.head || doc.documentElement.insertBefore(doc.createElement('head'), doc.body || null);
     head.insertBefore(style, head.firstChild);
@@ -338,8 +338,53 @@ function ensureHighlights(doc: Document): void {
     }
     if (!activeHL) {
         activeHL = new win.Highlight();
+        activeHL.priority = 1;
         win.CSS.highlights.set('folio-find-active', activeHL);
     }
+}
+
+function getHtmlLane(): HTMLElement | null {
+    return document.getElementById('html-marker-lane');
+}
+
+function clearLane(): void {
+    const lane = getHtmlLane();
+    if (!lane) return;
+    while (lane.firstChild) lane.removeChild(lane.firstChild);
+}
+
+function updateMarkers(): void {
+    const lane = getHtmlLane();
+    if (!lane) return;
+    clearLane();
+    if (rangesArr.length === 0) return;
+    const doc = iframeDoc();
+    if (!doc) return;
+    const scrollEl = doc.scrollingElement || doc.documentElement;
+    if (!scrollEl) return;
+    const totalH = scrollEl.scrollHeight;
+    if (totalH <= 0) return;
+    const laneH = Math.max(1, lane.clientHeight);
+    const seen = new Uint8Array(laneH);
+    let activePixel = -1;
+    const pixels: number[] = [];
+    const scrollTop = scrollEl.scrollTop;
+    for (let i = 0; i < rangesArr.length; i++) {
+        const rect = rangesArr[i].getBoundingClientRect();
+        const pos = scrollTop + rect.top;
+        const px = Math.max(0, Math.min(laneH - 1, Math.round((pos / totalH) * laneH)));
+        if (i === activeIdx) activePixel = px;
+        if (!seen[px]) { seen[px] = 1; pixels.push(px); }
+    }
+    const frag = document.createDocumentFragment();
+    for (let j = 0; j < pixels.length; j++) {
+        const p = pixels[j];
+        const dot = document.createElement('div');
+        dot.className = 'folio-marker' + (p === activePixel ? ' active' : '');
+        dot.style.top = ((p / laneH) * 100) + '%';
+        frag.appendChild(dot);
+    }
+    lane.appendChild(frag);
 }
 
 function clearMarks(): void {
@@ -347,6 +392,7 @@ function clearMarks(): void {
     if (activeHL) activeHL.clear();
     rangesArr = [];
     activeIdx = -1;
+    clearLane();
 }
 
 function dispatchState(): void {
@@ -427,6 +473,7 @@ function setActive(idx: number): void {
     if (rangesArr.length === 0) {
         activeIdx = -1;
         if (activeHL) activeHL.clear();
+        updateMarkers();
         dispatchState();
         return;
     }
@@ -443,6 +490,7 @@ function setActive(idx: number): void {
         try { anchor.scrollIntoView({ block: 'center', inline: 'nearest' }); }
         catch (_) { try { anchor.scrollIntoView(true); } catch (__) { /* ignore */ } }
     }
+    updateMarkers();
     dispatchState();
 }
 
@@ -459,7 +507,7 @@ function research(): void {
     collectRangesAsync(doc, root, regex, myToken, function () {
         if (myToken !== searchToken) return;
         if (rangesArr.length > 0) setActive(0);
-        else dispatchState();
+        else { updateMarkers(); dispatchState(); }
     });
 }
 

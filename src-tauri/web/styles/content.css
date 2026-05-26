@@ -61,6 +61,7 @@ body:not(.edit-mode):not(.kind-markdown):not(.kind-unknown):not(.kind-binary) .v
 body:not(.html-preview-mode) .html-view-region,
 body.edit-mode .html-view-region { display: none; }
 .html-view-region {
+  display: flex;
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
@@ -68,12 +69,19 @@ body.edit-mode .html-view-region { display: none; }
   background: #fff;
 }
 #html-view-frame {
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   height: 100%;
   border: 0;
   background: #fff;
   color-scheme: light;
   display: block;
+}
+#html-marker-lane {
+  flex: 0 0 6px;
+  position: relative;
+  background: rgba(128, 128, 128, 0.08);
+  border-left: 1px solid var(--border);
 }
 
 /* Image-View-Region: nur sichtbar bei kind=image. Bild laeuft ueber
