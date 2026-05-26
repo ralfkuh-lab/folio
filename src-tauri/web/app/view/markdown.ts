@@ -95,6 +95,7 @@ let findOpts = { caseSensitive: false, wholeWord: false };
 // sobald myToken !== searchToken — die alte Suche wird so verworfen,
 // statt die neue zu blockieren.
 let searchToken = 0;
+let suppressActive = false;
 
 function ensureHighlights(): void {
     if (!hasHighlightAPI) return;
@@ -238,6 +239,13 @@ function setActive(idx: number): void {
         dispatchState();
         return;
     }
+    if (suppressActive) {
+        activeIdx = -1;
+        if (activeHL) activeHL.clear();
+        updateMarkers();
+        dispatchState();
+        return;
+    }
     if (idx < 0) idx = (idx % rangesArr.length + rangesArr.length) % rangesArr.length;
     if (idx >= rangesArr.length) idx = idx % rangesArr.length;
     activeIdx = idx;
@@ -290,6 +298,7 @@ export const ViewFinder = {
         research();
     },
     findNext: function (): void { if (rangesArr.length > 0) setActive((activeIdx + 1) % rangesArr.length); },
+    setSuppressActive: function (on: boolean): void { suppressActive = on; },
     findPrev: function (): void { if (rangesArr.length > 0) setActive((activeIdx - 1 + rangesArr.length) % rangesArr.length); },
 };
 

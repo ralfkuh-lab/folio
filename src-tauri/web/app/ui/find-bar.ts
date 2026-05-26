@@ -34,14 +34,17 @@ function makeSplitFinder(viewFinder: any): any {
     return {
         openFind: function (seed?: string): void {
             if (window.FolioEditor) window.FolioEditor.openFind(seed);
+            if (typeof viewFinder.setSuppressActive === 'function') viewFinder.setSuppressActive(true);
             viewFinder.openFind(seed);
         },
         closeFind: function (): void {
             if (window.FolioEditor) window.FolioEditor.closeFind();
+            if (typeof viewFinder.setSuppressActive === 'function') viewFinder.setSuppressActive(false);
             viewFinder.closeFind();
         },
         setFindTerm: function (term: string): void {
             if (window.FolioEditor) window.FolioEditor.setFindTerm(term);
+            if (typeof viewFinder.setSuppressActive === 'function') viewFinder.setSuppressActive(true);
             viewFinder.setFindTerm(term);
         },
         setFindOptions: function (opts: any): void {

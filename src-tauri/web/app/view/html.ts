@@ -18,6 +18,7 @@ let activeIdx = -1;
 let currentTerm = '';
 let findOpts = { caseSensitive: false, wholeWord: false };
 let searchToken = 0;
+let suppressActive = false;
 
 function post(msg: any): void {
     if (window.__TAURI__ && window.__TAURI__.event) {
@@ -477,6 +478,13 @@ function setActive(idx: number): void {
         dispatchState();
         return;
     }
+    if (suppressActive) {
+        activeIdx = -1;
+        if (activeHL) activeHL.clear();
+        updateMarkers();
+        dispatchState();
+        return;
+    }
     if (idx < 0) idx = (idx % rangesArr.length + rangesArr.length) % rangesArr.length;
     if (idx >= rangesArr.length) idx = idx % rangesArr.length;
     activeIdx = idx;
@@ -531,5 +539,6 @@ export const HtmlFinder = {
     },
     findNext: function (): void { if (rangesArr.length > 0) setActive((activeIdx + 1) % rangesArr.length); },
     findPrev: function (): void { if (rangesArr.length > 0) setActive((activeIdx - 1 + rangesArr.length) % rangesArr.length); },
+    setSuppressActive: function (on: boolean): void { suppressActive = on; },
     refresh: function (): void { if (currentTerm) research(); },
 };
