@@ -72,6 +72,16 @@ sonst lehnt Tauri den Build ab.
 - **Automation-API**: nur Loopback. Keine externen Bind-Adressen. WebView-POSTs brauchen
   CORS/OPTIONS-Preflight; `/click` akzeptiert IDs, `data-name` und CSS-Selektoren.
   Stabiler Automation-/Frontend-Vertrag: [`docs/automation-contract.md`](docs/automation-contract.md).
+  `POST /eval { js }` führt beliebiges JS im WebView aus und liefert
+  das Ergebnis zurück (sync + async/Promise, Fehler werden gefangen,
+  konfigurierbarer Timeout via `timeoutMs`, Default 5 s). Pattern
+  analog zu `/dom`: Event `automation:eval` → Frontend `new Function`
+  → Tauri-Command `automation_eval_response` → oneshot-Channel.
+  `POST /find/text` öffnet die Find-Bar automatisch (`editor:open_find`
+  vor `editor:set_find_term`), ein separater `/find`-Aufruf ist nicht
+  mehr nötig. `GET /console/errors` liefert per Frontend-Hook
+  gesammelte Console-Errors (Ringpuffer, max 200); `?clear=true`
+  leert den Puffer.
 - **Vault-Markup**: Frontend erwartet Baum-Markup mit `.section`, `.node`, `.row`,
   `.caret`, `ul.children`. Jedes `.node` hat `data-path="<abs-path>"`
   und `title="<abs-path>"` (Tooltip).
@@ -189,6 +199,24 @@ sonst lehnt Tauri den Build ab.
   ueber `editor/mount.ts::whenMonacoLoaded` — `loadMonaco()` wird
   exakt einmal beim Bundle-Init gerufen. Wer Monaco erweitert oder
   Worker konfiguriert, muss beide Pfade beruecksichtigen.
+- **HTML-View-Suche** (`view/html.ts::HtmlFinder`): Fundstellen-
+  Highlighting via CSS Custom Highlight API im Sandbox-iframe
+  (`::highlight(folio-find)` / `::highlight(folio-find-active)`).
+  Styles werden in `installPreviewDefaults` ins iframe-`<head>`
+  injiziert; Farben identisch mit Markdown-View (`#FFD700` / `#FF8C00`).
+  `activeHL.priority = 1` stellt sicher, dass der aktive Treffer
+  (orange) immer über den normalen Treffern (gelb) gewinnt — auch in
+  `markdown.ts::ViewFinder` so gesetzt. Scrollbar-Marker-Lane
+  (`#html-marker-lane` in `dist/index.html`, CSS in `content.css`)
+  zeigt Treffer-Positionen analog zu `#view-marker-lane` im Markdown-
+  View; Koordinaten werden relativ zum iframe-`scrollingElement`
+  berechnet. Im **Split-Mode** routet `SplitHtmlFinder` (erzeugt von
+  `makeSplitFinder(HtmlFinder)` in `find-bar.ts`) die Suche an
+  **Editor + HtmlFinder** gleichzeitig — analog zu `SplitFinder` für
+  Markdown. `getFinder()` in `find-bar.ts` entscheidet:
+  `isEditMode()` → FolioEditor, `isSplitMode()` →
+  SplitHtmlFinder/SplitFinder je nach `isHtmlPreviewMode()`,
+  sonst → HtmlFinder/ViewFinder.
 - **MonacoEnvironment.getWorkerUrl**: in `editor/mount.ts::loadMonaco`
   wird vor `require.config(...)` ein Worker-Bootstrap via `data:`-URI
   registriert (`origin + /monaco/vs/base/worker/workerMain.js`). Ohne
