@@ -16,6 +16,7 @@ pub mod ack;
 mod context;
 pub mod dom;
 mod error;
+pub mod eval;
 mod handlers;
 mod helpers;
 mod middleware;

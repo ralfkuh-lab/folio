@@ -255,6 +255,7 @@ pub(in crate::automation) async fn post_find_text(
     payload: Result<Json<FindTextRequest>, JsonRejection>,
 ) -> ApiResult<Json<OkResponse>> {
     let Json(payload) = json_payload(payload)?;
+    emit(&context, "editor:open_find", serde_json::json!({}))?;
     emit(
         &context,
         "editor:set_find_term",

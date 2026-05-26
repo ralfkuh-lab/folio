@@ -78,6 +78,8 @@ pub struct AppState {
     /// `automation_dom_response` liefert.
     pub pending_dom_queries:
         Mutex<HashMap<u64, oneshot::Sender<crate::automation::dom::DomSnapshot>>>,
+    pub pending_evals:
+        Mutex<HashMap<u64, oneshot::Sender<crate::automation::eval::EvalResult>>>,
     /// Ringbuffer fuer Frontend-Console-Errors (Hook auf console.error,
     /// window.onerror, unhandledrejection). Max [`CONSOLE_ERROR_BUFFER_MAX`]
     /// Eintraege; ueberlaufende werden vorne abgeschnitten.
@@ -119,6 +121,7 @@ impl AppState {
             next_ack_id: AtomicU64::new(1),
             pending_waits: Mutex::new(HashMap::new()),
             pending_dom_queries: Mutex::new(HashMap::new()),
+            pending_evals: Mutex::new(HashMap::new()),
             console_errors: Mutex::new(VecDeque::with_capacity(CONSOLE_ERROR_BUFFER_MAX)),
             recent_events: Mutex::new(HashMap::new()),
         }

@@ -188,7 +188,8 @@ Loopback-HTTP-Server auf `127.0.0.1:9876` für E2E-Tests:
 | `/editor/selection` | POST | Editor-Selection setzen (mit Ack) |
 | `/workspace/pin` / `/workspace/unpin` | POST | Pfad pinnen / unpinnen |
 | `/history/back` / `/history/forward` | POST | Navigation, am Stack-Edge moved:false |
-| `/find` / `/find/text` | POST | Find-Bar öffnen / Suchbegriff setzen |
+| `/find` / `/find/text` | POST | Find-Bar öffnen / Suchbegriff setzen (auto-open) |
+| `/eval` | POST | JS im WebView ausführen, Ergebnis zurückliefern |
 | `/focus` | POST | Fenster fokussieren |
 | `/resize` | POST | Fenstergröße ändern |
 | `/save` | POST | Speichern (DocumentStore-Roundtrip mit Encoding-Treue) |

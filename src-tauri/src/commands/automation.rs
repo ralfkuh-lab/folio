@@ -10,6 +10,7 @@ use tauri::State;
 
 use crate::automation;
 use crate::automation::dom::DomSnapshot;
+use crate::automation::eval::EvalResult;
 use crate::state::{AppState, ConsoleErrorRecord, CONSOLE_ERROR_BUFFER_MAX};
 
 #[derive(Debug, serde::Deserialize)]
@@ -36,6 +37,15 @@ pub fn automation_dom_response(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     automation::dom::deliver(state.inner(), id, payload)
+}
+
+#[tauri::command]
+pub fn automation_eval_response(
+    id: u64,
+    payload: EvalResult,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    automation::eval::deliver(state.inner(), id, payload)
 }
 
 #[tauri::command]

@@ -294,6 +294,34 @@ export function initAutomationEvents(): void {
             };
         invoke('automation_dom_response', { id: id, payload: snap }).catch(function(){});
     });
+    ev.listen('automation:eval', function (event: any) {
+        var payload = (event && event.payload) || {};
+        var id = payload.requestId;
+        if (typeof id !== 'number') return;
+        var result: any;
+        try {
+            var fn = new Function('return (' + payload.js + ')');
+            var val = fn();
+            if (val !== undefined && val !== null && typeof val.then === 'function') {
+                val.then(function (resolved: any) {
+                    invoke('automation_eval_response', {
+                        id: id,
+                        payload: { ok: true, value: resolved, error: null },
+                    }).catch(function(){});
+                }).catch(function (err: any) {
+                    invoke('automation_eval_response', {
+                        id: id,
+                        payload: { ok: false, value: null, error: String(err) },
+                    }).catch(function(){});
+                });
+                return;
+            }
+            result = { ok: true, value: val === undefined ? null : val, error: null };
+        } catch (err) {
+            result = { ok: false, value: null, error: String(err) };
+        }
+        invoke('automation_eval_response', { id: id, payload: result }).catch(function(){});
+    });
     ev.listen('automation:set_editor_text', function (event: any) {
         var data = event && event.payload || {};
         var text = data.text || '';
