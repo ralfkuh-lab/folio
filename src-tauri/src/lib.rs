@@ -312,6 +312,16 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
 }
 
 pub fn run() {
+    // GTK-Menüs lösen auf Wayland einen Stack Overflow im GTK-Signal-
+    // Layer aus (tauri-apps/tauri#5940). XWayland als Backend umgeht
+    // das Problem; auf Nicht-Wayland-Systemen ist der Env-Var ein No-op.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("WAYLAND_DISPLAY").is_some()
+        && std::env::var_os("GDK_BACKEND").is_none()
+    {
+        std::env::set_var("GDK_BACKEND", "x11");
+    }
+
     // Logging zuerst hochziehen — alle nachfolgenden Module (inkl.
     // `builder().setup(...)`) sollen schon einen Subscriber haben.
     // Level: persistiert in `settings.json`; `RUST_LOG` und
