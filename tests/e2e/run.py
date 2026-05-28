@@ -142,6 +142,27 @@ def main(argv: list[str]) -> int:
     fixtures_dir = SCRIPT_DIR / "fixtures"
     baselines_dir = SCRIPT_DIR / "baselines"
 
+    # Fixtures sind git-getrackte Test-Daten, die schreibende Szenarien
+    # (03/08/10/11/15) in place modifizieren (Save-Roundtrip, append via
+    # Editor). Ohne Reset akkumulieren die Aenderungen ueber Laeufe UND
+    # lecken innerhalb eines Laufs in spaetere Szenarien (z. B. sieht
+    # 21_split die von 11/15 angehaengten Zeilen) -> nichtdeterministische
+    # Visual-Diffs. Wir snapshotten den Start-Zustand (als pristine
+    # angenommen) und stellen ihn vor jedem Szenario + am Ende wieder her.
+    # Restore passiert in place am Original-Pfad, damit der in der
+    # Statusleiste sichtbare Dateipfad (Teil der Visual-Baseline) stabil
+    # bleibt.
+    fixture_snapshot = {p: p.read_bytes() for p in fixtures_dir.rglob("*") if p.is_file()}
+
+    def restore_fixtures() -> None:
+        for p, data in fixture_snapshot.items():
+            try:
+                if p.read_bytes() == data:
+                    continue
+            except OSError:
+                pass
+            p.write_bytes(data)
+
     visual = VisualSuite(
         baselines_dir=baselines_dir,
         artifacts_dir=artifacts_dir,
@@ -160,6 +181,7 @@ def main(argv: list[str]) -> int:
     results = []
 
     for name, run_fn in scenarios:
+        restore_fixtures()
         print(f"[>] {name}")
         ctx = ScenarioContext(name, api, visual, fixtures_dir)
         try:
@@ -174,6 +196,10 @@ def main(argv: list[str]) -> int:
         print(f"[{status}] {name} ({result.duration_s:.2f}s)")
 
     run_end_wall = time.time()
+
+    # Fixtures auf den Start-Zustand zuruecksetzen, damit ein Lauf keine
+    # Diffs im Working Tree hinterlaesst.
+    restore_fixtures()
 
     # Vor dem Stop: console.errors einsammeln (best effort).
     try:

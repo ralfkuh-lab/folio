@@ -112,8 +112,11 @@ class ScenarioContext:
         ScenarioAbort wie gewohnt.
         """
         full_name = f"{self.name}__{name}"
-        # Kurze Stabilisierung fuer X11/Xvfb Rendering + CSS Layout-Transitions
-        time.sleep(0.20)
+        # Deterministische Render-Synchronisation statt fixem Sleep: wartet,
+        # bis das Frontend den durch Backend-State-Wechsel ausgeloesten
+        # Reflow gerendert hat (Microtask + zwei Frames + laufende
+        # CSS-Transitions, rAF-Ack ueber POST /sync/render).
+        self.api.sync_render()
         png = self.api.screenshot()
         result = self.visual.compare(full_name, png, threshold_ratio=threshold_ratio)
         if not result.passed:

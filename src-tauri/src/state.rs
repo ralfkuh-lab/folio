@@ -78,8 +78,7 @@ pub struct AppState {
     /// `automation_dom_response` liefert.
     pub pending_dom_queries:
         Mutex<HashMap<u64, oneshot::Sender<crate::automation::dom::DomSnapshot>>>,
-    pub pending_evals:
-        Mutex<HashMap<u64, oneshot::Sender<crate::automation::eval::EvalResult>>>,
+    pub pending_evals: Mutex<HashMap<u64, oneshot::Sender<crate::automation::eval::EvalResult>>>,
     /// Ringbuffer fuer Frontend-Console-Errors (Hook auf console.error,
     /// window.onerror, unhandledrejection). Max [`CONSOLE_ERROR_BUFFER_MAX`]
     /// Eintraege; ueberlaufende werden vorne abgeschnitten.

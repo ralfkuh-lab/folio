@@ -32,12 +32,17 @@ umbenannt werden:
   `editor:set_find_term`, `shell:command`, `panel:rail_changed`,
   `automation:click`, `automation:key`, `automation:dom_query`,
   `automation:set_editor_text`, `automation:set_editor_selection`,
-  `automation:open_document`, `cli:open`, `menu:*`.
+  `automation:open_document`, `automation:sync_render`, `cli:open`,
+  `menu:*`.
 - Frontend zu Backend: `shell:event` und `editor:event`.
 
 Ack-fähige Automation-Pfade bestätigen über den Tauri-Command
 `automation_ack({ id })`, nachdem der Frontend-Handler seine DOM-Mutation
-abgeschlossen hat.
+abgeschlossen hat. `POST /sync/render` nutzt denselben Ack-Mechanismus
+für einen reinen Render-Roundtrip ohne DOM-Mutation: der Handler
+emittiert `automation:sync_render`, das Frontend wartet Microtask + zwei
+Frames + laufende CSS-Transitions (capped) ab und ackt dann. Die E2E-
+Suite ruft das vor jedem Screenshot statt eines fixen Sleeps.
 
 ## DOM-Vertrag
 

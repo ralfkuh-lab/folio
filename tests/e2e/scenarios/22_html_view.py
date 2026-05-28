@@ -10,6 +10,12 @@ def run(ctx):
 
     with ctx.step("open html-view.html"):
         ctx.api.open(html)
+        # Mode explizit auf view zwingen: default_mode_text ist `Current`,
+        # d. h. der zuletzt aktive Mode bleibt erhalten. Laeuft ein
+        # vorheriges Szenario (21_split) im Split-Mode und bricht vor
+        # seinem Cleanup ab, wuerde dieser Szenario sonst den Split-Mode
+        # erben und der Screenshot divergiert. Test-Isolation > Leak-Glueck.
+        ctx.api.mode("view")
 
     with ctx.step("state file gesetzt und body markiert html-preview"):
         state = ctx.api.state()

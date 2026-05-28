@@ -106,6 +106,36 @@ function nextFrame(): Promise<void> {
     });
 }
 
+// Wartet, bis ein durch einen Backend-State-Wechsel ausgeloester Reflow
+// sicher gerendert ist: Microtask-Flush (pending Promises/State) + zwei
+// Frames (nach dem zweiten rAF ist der vorige Frame gepainted) + capped
+// Warten auf laufende CSS-Transitions (Vault-Caret, Overlay-Fade,
+// Dialog-Border). Der 300-ms-Cap verhindert, dass eine endlose Animation
+// (z. B. ein Spinner) den Ack haengen laesst — im Timeout-Fall wird der
+// Screenshot trotzdem gemacht. Basis fuer `automation:sync_render`.
+function settleRender(): Promise<void> {
+    return (async function () {
+        await Promise.resolve();
+        await nextFrame();
+        await nextFrame();
+        try {
+            var doc: any = document;
+            if (typeof doc.getAnimations === 'function') {
+                var anims = doc.getAnimations();
+                if (anims.length > 0) {
+                    var finished = Promise.all(anims.map(function (a: any) {
+                        return a.finished.catch(function () {});
+                    }));
+                    var cap = new Promise(function (resolve) {
+                        setTimeout(resolve, 300);
+                    });
+                    await Promise.race([finished, cap]);
+                }
+            }
+        } catch (_) {}
+    })();
+}
+
 // Wrapper fuer ack-faehige Listener: fuehrt `work` aus, wartet einen
 // Microtask + ein Frame ab und meldet danach ueber `automation_ack`
 // zurueck. requestId fehlt → kein ACK (Backward-Compat). Fehler in `work`
@@ -241,6 +271,15 @@ export function initAutomationEvents(): void {
         ackHandler(invoke, payload, function () {
             var el = resolveAutomationTarget(payload.name);
             if (el && typeof (el as HTMLElement).click === 'function') (el as HTMLElement).click();
+        });
+    });
+    ev.listen('automation:sync_render', function (event: any) {
+        var payload = (event && event.payload) || {};
+        var id = payload.requestId;
+        settleRender().then(function () {
+            if (typeof id === 'number') {
+                invoke('automation_ack', { id: id }).catch(function () {});
+            }
         });
     });
     ev.listen('automation:rightclick', function (event: any) {

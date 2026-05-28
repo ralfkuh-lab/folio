@@ -129,10 +129,7 @@ pub fn route_editor_event(
         }
         "editorScroll" => {
             let y = number_field(payload, "y")?;
-            let line = payload
-                .get("line")
-                .and_then(Value::as_f64)
-                .unwrap_or(0.0);
+            let line = payload.get("line").and_then(Value::as_f64).unwrap_or(0.0);
             state
                 .navigation
                 .lock()

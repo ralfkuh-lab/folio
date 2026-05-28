@@ -316,9 +316,7 @@ pub fn run() {
     // Layer aus (tauri-apps/tauri#5940). XWayland als Backend umgeht
     // das Problem; auf Nicht-Wayland-Systemen ist der Env-Var ein No-op.
     #[cfg(target_os = "linux")]
-    if std::env::var_os("WAYLAND_DISPLAY").is_some()
-        && std::env::var_os("GDK_BACKEND").is_none()
-    {
+    if std::env::var_os("WAYLAND_DISPLAY").is_some() && std::env::var_os("GDK_BACKEND").is_none() {
         std::env::set_var("GDK_BACKEND", "x11");
     }
 

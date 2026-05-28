@@ -109,6 +109,14 @@ class AutomationApi:
             "POST", f"/click?ackTimeoutMs={ack_timeout_ms}", {"name": name}
         )
 
+    def sync_render(self, ack_timeout_ms: int = 2000) -> dict:
+        # Deterministischer Render-Sync vor Screenshots: wartet, bis das
+        # Frontend Microtask + zwei Frames + laufende CSS-Transitions
+        # durch hat (rAF-Ack ueber die Automation-API).
+        return self._request(
+            "POST", f"/sync/render?ackTimeoutMs={ack_timeout_ms}", None
+        )
+
     def right_click(self, name: str, coords: Optional[dict] = None) -> dict:
         body: dict = {"name": name}
         if coords:

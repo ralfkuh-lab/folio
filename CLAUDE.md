@@ -79,7 +79,14 @@ sonst lehnt Tauri den Build ab.
   → Tauri-Command `automation_eval_response` → oneshot-Channel.
   `POST /find/text` öffnet die Find-Bar automatisch (`editor:open_find`
   vor `editor:set_find_term`), ein separater `/find`-Aufruf ist nicht
-  mehr nötig. `GET /console/errors` liefert per Frontend-Hook
+  mehr nötig.
+  `POST /sync/render` ist ein deterministischer Render-Roundtrip für
+  E2E-Screenshots: Handler emittiert `automation:sync_render` und ackt
+  über das `ack.rs`-Muster (`automation_ack`), nachdem das Frontend
+  (`settleRender` in `automation/events.ts`) einen Microtask + zwei
+  `requestAnimationFrame` + laufende CSS-Transitions (`getAnimations()`,
+  300-ms-Cap gegen Endlos-Animationen) abgewartet hat. `report.py`
+  ruft das vor jedem Screenshot statt des früheren `time.sleep(0.20)`. `GET /console/errors` liefert per Frontend-Hook
   gesammelte Console-Errors (Ringpuffer, max 200); `?clear=true`
   leert den Puffer.
 - **Vault-Markup**: Frontend erwartet Baum-Markup mit `.section`, `.node`, `.row`,
@@ -343,6 +350,24 @@ Wrapper: `bash scripts/run-e2e.sh` (Linux+Xvfb). Visual-Baselines in
 `tests/e2e/baselines/`, Artefakte (gitignored) in
 `tests/e2e/artifacts/<timestamp>/`. Bei fehlender Baseline wird sie beim
 ersten Run automatisch angelegt.
+
+**Screenshot-Sync**: `report.py::screenshot` ruft vor jeder Aufnahme
+`POST /sync/render` (deterministischer rAF-Roundtrip-Ack, siehe
+Automation-API oben) statt eines fixen Sleeps — das WebView-Reflow nach
+Backend-State-Wechsel ist sonst nicht synchron.
+
+**Fixture-Isolation**: Schreibende Szenarien (03/08/10/11/15) modifizieren
+Fixtures in place. `run.py` snapshottet `tests/e2e/fixtures/` beim Start
+(als pristine angenommen) und stellt den Zustand **vor jedem Szenario +
+am Ende** wieder her — am Original-Pfad, weil der in der Statusleiste
+sichtbare Dateipfad Teil der Visual-Baseline ist. Ohne das leckte z. B.
+die von 11/15 an `sample.md` angehängte Zeile in spätere Szenarien
+(21_split). Konsequenz für neue Szenarien: Fixtures dürfen frei
+beschrieben werden, aber **jedes Szenario muss seinen benötigten
+View-Mode explizit setzen** (`api.mode(...)`) statt sich auf den
+Vorzustand zu verlassen — `default_mode_{markdown,text}` ist `Current`
+(behält den aktuellen Mode), sodass ein Mode aus dem Vorszenario sonst
+leckt (war der 22_html_view-Folgefehler).
 
 Xvfb-spezifische Eigenheiten (scrollY-Sync, Monaco-Canvas-Capture,
 synthetic-keyboard-Fragilität bei Monaco-Shortcuts, native Tauri-Menüs

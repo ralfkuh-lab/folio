@@ -165,6 +165,31 @@ pub(in crate::automation) async fn post_rightclick(
     }))
 }
 
+/// Deterministischer Render-Sync fuer E2E-Screenshots: emittiert
+/// `automation:sync_render` und antwortet erst, wenn das Frontend einen
+/// Microtask + zwei Frames durch hat (und laufende CSS-Transitions
+/// abgeklungen sind). Ersetzt das fruehere fixe `time.sleep(0.20)` vor
+/// jedem Screenshot — kein Body, nur optionaler `ackTimeoutMs`-Query.
+pub(in crate::automation) async fn post_sync_render(
+    AxumState(context): AxumState<AutomationContext>,
+    Query(options): Query<AckOptions>,
+) -> ApiResult<Json<AckedResponse>> {
+    let state = context.app_handle.state::<AppState>();
+    let (request_id, receiver) = ack::register(state.inner()).map_err(ApiError::internal)?;
+    emit(
+        &context,
+        "automation:sync_render",
+        serde_json::json!({ "requestId": request_id }),
+    )?;
+    let timeout_ms = options.ack_timeout_ms.unwrap_or(DEFAULT_ACK_TIMEOUT_MS);
+    let acked = ack::wait_for_ack(state.inner(), request_id, receiver, timeout_ms).await;
+    Ok(Json(AckedResponse {
+        ok: true,
+        acked,
+        request_id,
+    }))
+}
+
 pub(in crate::automation) async fn post_key(
     AxumState(context): AxumState<AutomationContext>,
     Query(options): Query<AckOptions>,

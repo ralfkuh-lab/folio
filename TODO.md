@@ -2,15 +2,6 @@
 
 ## Mittlere Priorität
 
-- **Screenshot-Stabilisierung deterministisch machen**: `lib/report.py`
-  schiebt heute ein `time.sleep(0.20)` vor jedem Screenshot ein, weil
-  Backend-State-Wechsel synchron, WebView-Reflow aber asynchron ist
-  (Folge waren bis zu 90 % Visual-Diff bei Theme-Wechseln). Sauberer
-  wäre ein rAF-roundtrip-Ack über die Automation-API
-  (`POST /sync/render` o. ä.), das auf den nächsten Frame im Frontend
-  wartet und dann ackt. Danach kann der Sleep raus. Begründung siehe
-  `docs/e2e-headless-caveats.md`.
-
 - **Scenario 20 (TOC-Klick): „Canceled"-Console-Errors**: Beim TOC-
   Klick werfen vereinzelt IPC-Aufrufe `Canceled`-Errors in die Console.
   Gemini hatte sie 2026-05-22 kurzzeitig per Filter ausgeblendet —
@@ -52,17 +43,11 @@
     eingebautes Undo bleibt im Editor-Fokus unangetastet. Ohne Fokus
     im Editor (z. B. Vault-Tree aktiv) ruft der Handler
     `FolioEditor.undo()` / `.redo()`.
-
-- **Undo-Stack wird in `09_undo_redo` gecleared (Windows)** —
-  **Hypothese-Fix 2026-05-20**: `applyReplace` in `editor/text.ts`
-  ruft jetzt `editor.pushUndoStop()` direkt vor und nach dem
-  `executeEdits`. Ohne das verschmilzt Monaco unter bestimmten Timings
-  den vorhergehenden Type-Edit (`insertText("X")` via `trigger('type')`)
-  mit dem darauf folgenden Voll-Range-Replace zu einem einzigen Undo-
-  Eintrag — Undo entfernte dann beides auf einmal. Live-Verifikation
-  auf Windows ist mit der aktuellen Dev-Setup-Lage umständlich; der
-  Fix folgt Monacos Best-Practice (Stack-Stops trennen Edits) und ist
-  defensiv. Beim nächsten Windows-E2E-Run validieren.
+  - **Restpunkt**: WebView2-`accelerator_handler`-Config existiert
+    Rust-seitig noch nicht — die DOM-Capture-Handler bleiben bis dahin
+    die Wahrheit (`toolbar-actions.ts:155-282`). Undo-Stack-Fix
+    (`pushUndoStop` in `editor/text.ts:187,193`) ist erledigt; beim
+    nächsten Windows-E2E-Run (`09_undo_redo`) nur noch validieren.
 
 - **Config-/Einstellungen-Bereich Folgepunkte**: Basis-Settings-Panel
   ist vorhanden. Offene Ausbaustufen:
@@ -95,18 +80,17 @@
   CSS-Regeln `body.split-mode` in `content.css`):
   - **Draggable Splitter** zwischen View- und Editor-Pane, analog zu
     `splitter-left`/`splitter-right`. Position in `panel_state.json`
-    persistieren (z. B. `splitMidPercent`). Heute fix 50/50.
-  - **Find-Bar im Split-Mode**: routet aktuell an die View-Seite
-    (`ViewFinder`/`HtmlFinder`). Monacos eigene Ctrl+F läuft parallel im
-    Editor. Evtl. Toggle in der Find-Bar (oder Routing nach Fokus)
-    sinnvoll, falls User Verwirrung melden.
+    persistieren (z. B. `splitMidPercent`). Heute fix 50/50
+    (`content.css:28` `flex: 1 1 0`, kein Feld in `panel_state.rs`).
+  - ~~Find-Bar im Split-Mode~~ **(erledigt)**: `getFinder()` routet im
+    Split-Mode über `SplitFinder`/`SplitHtmlFinder` an Editor + View
+    gleichzeitig (`find-bar.ts:33-66`).
 
 - **Live-Preview Folgepunkte** (Hauptfeature 2026-05-22 implementiert,
   siehe `view/preview.ts`, Backend-Command `render_markdown_preview`):
-  - **Scroll-Sync**: Editor-Cursorline ↔ View-Heading-Position. Backend
-    liefert beim load schon TOC mit Slugs; bräuchten Heading→Line-
-    Mapping (Comrak-Sourcepos) plus bidirektionales Sync ohne Ping-Pong-
-    Schleife (Direction-Lock + Threshold).
+  - ~~Scroll-Sync Editor↔View~~ **(erledigt)**: bidirektionales Sync
+    über Comrak-Sourcepos + Heading→Line-Mapping in
+    `view/scroll-sync.ts`.
   - **Adaptive Debounce für große Docs**: 150 ms ist bei >10k-Zeilen-MD
     spürbar. render-on-idle (`requestIdleCallback`) oder messen +
     dynamisch erhöhen.
@@ -148,13 +132,12 @@
      Optionen: vor dem Capture per `/resize` auf eine feste Größe, oder
      ein zweites Baseline-Set pro Plattform, oder Visual-Tests im
      `--attach`-Mode standardmäßig skippen.
-  2. **`/open` blockt mit HTTP 409, solange Folio aus der letzten Session
-     eine dirty Recent-Datei restauriert hat** (`document_service.rs:64`
-     `DirtyRejected`). Heute nur lösbar, indem man
-     `%APPDATA%\Folio\workspace.json` wegmoved. Wünschenswert: optionaler
-     `force`/`discard`-Flag im `/open`-Body oder ein eigener
-     `/document/discard`-Endpoint, den die Test-Suite vor jedem Run
-     aufruft.
+  2. ~~`/open` blockt mit HTTP 409 bei dirty Recent-Datei~~
+     **(erledigt)**: `/open`-Body akzeptiert jetzt ein `discard`-Flag
+     (`DirtyPolicy::Discard`, `automation/handlers/document.rs:25-29`),
+     das ungespeicherten Zustand verwirft — die Test-Suite kann das vor
+     jedem Run setzen. Ein separater `/document/discard`-Endpoint wurde
+     bewusst nicht gebaut.
 
 - **Image-View Folgepunkte** (Hauptfeature 2026-05-21 implementiert,
   siehe `view/image.ts`, `file_kind.rs::FileKind::Image`,

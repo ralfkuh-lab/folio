@@ -35,6 +35,7 @@ pub(super) fn build_router(context: AutomationContext) -> Router {
         .route("/find", post(ui::post_find))
         .route("/find/text", post(ui::post_find_text))
         .route("/eval", post(eval::post_eval))
+        .route("/sync/render", post(ui::post_sync_render))
         .route(
             "/editor/text",
             get(document::get_editor_text).post(document::post_editor_text),
