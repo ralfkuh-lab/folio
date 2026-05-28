@@ -88,7 +88,14 @@ sonst lehnt Tauri den Build ab.
   300-ms-Cap gegen Endlos-Animationen) abgewartet hat. `report.py`
   ruft das vor jedem Screenshot statt des früheren `time.sleep(0.20)`. `GET /console/errors` liefert per Frontend-Hook
   gesammelte Console-Errors (Ringpuffer, max 200); `?clear=true`
-  leert den Puffer.
+  leert den Puffer. Der `unhandledrejection`-Teil des Hooks
+  (`automation/events.ts::installConsoleHook`) filtert **Monaco-
+  Cancellation-Rejections** (`name`/`message === 'Canceled'`) heraus:
+  beim Model-Wechsel (`mount.ts::doSetText`, Sprachwechsel →
+  `setModel`+`dispose`) bricht Monaco laufende async-Ops über
+  CancellationToken ab; die resultierende Rejection ist erwartet und
+  harmlos, würde aber sonst als False-Positive im Puffer landen
+  (`preventDefault()` unterdrückt zusätzlich die DevTools-Warnung).
 - **Vault-Markup**: Frontend erwartet Baum-Markup mit `.section`, `.node`, `.row`,
   `.caret`, `ul.children`. Jedes `.node` hat `data-path="<abs-path>"`
   und `title="<abs-path>"` (Tooltip).

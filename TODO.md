@@ -2,14 +2,6 @@
 
 ## Mittlere Priorität
 
-- **Scenario 20 (TOC-Klick): „Canceled"-Console-Errors**: Beim TOC-
-  Klick werfen vereinzelt IPC-Aufrufe `Canceled`-Errors in die Console.
-  Gemini hatte sie 2026-05-22 kurzzeitig per Filter ausgeblendet —
-  das war Symptom-Unterdrückung, der Filter ist wieder raus. Ursache
-  klären (vermutlich ein bei Navigation abgebrochener Fetch im
-  Frontend), dann entweder im Code beseitigen oder gezielt
-  white-listen mit Begründung.
-
 - **Menu-Keybindings (Accelerators) greifen oft nicht**: Viele der nativen
   Tauri-Menü-Accelerators (Ctrl+S Speichern, Ctrl+Z Undo, Ctrl+W Schließen,
   Ctrl+1/2/3 Mode, …) feuern nicht zuverlässig — User-Bericht 2026-05-19.

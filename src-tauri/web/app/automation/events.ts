@@ -235,6 +235,20 @@ function installConsoleHook(
     });
     window.addEventListener('unhandledrejection', function (e: PromiseRejectionEvent) {
         var reason = e.reason;
+        if (isBenignCancellation(reason)) {
+            // Monaco bricht beim Model-Wechsel (setModel + dispose des
+            // alten Models, z. B. in editor/mount.ts::doSetText bei
+            // Sprachwechsel) laufende async-Ops (Tokenizer/Folding/Links)
+            // ueber CancellationToken ab. Das resultierende Promise
+            // rejectet mit einem Error name===message==='Canceled' und
+            // schlaegt als unhandledrejection durch, obwohl es erwartetes,
+            // harmloses Verhalten ist (kein App-Fehler, keine verlorene
+            // Arbeit). preventDefault() unterdrueckt die DevTools-Warnung;
+            // wir melden es NICHT an den Console-Error-Puffer, damit die
+            // E2E-Suite (20_toc_click) keine False-Positives sammelt.
+            e.preventDefault();
+            return;
+        }
         var message: string;
         var stack: string | undefined;
         if (reason instanceof Error) {
@@ -247,6 +261,17 @@ function installConsoleHook(
         }
         send('rejection', message, stack);
     });
+}
+
+// Monacos CancellationToken erzeugt beim Abbruch einen Error mit
+// name === message === 'Canceled' (siehe `canceled()` in editor.main.js).
+// Das ist das einzige, eng umrissene Signal, das wir als benign behandeln —
+// echte App-Fehler tragen diesen exakten Namen praktisch nie.
+function isBenignCancellation(reason: any): boolean {
+    if (!reason) return false;
+    if (reason.name === 'Canceled') return true;
+    var message = typeof reason === 'string' ? reason : reason.message;
+    return message === 'Canceled';
 }
 
 function elementAttributes(el: Element): Record<string, string> {
