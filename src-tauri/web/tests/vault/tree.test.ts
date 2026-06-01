@@ -133,7 +133,9 @@ describe('vault/tree — insertVaultChildren', () => {
     });
 });
 
-describe('vault/tree — pinned items drag & drop reordering', () => {
+describe('vault/tree — pinned items pointer-drag reordering', () => {
+    // Reordering laeuft Pointer-basiert (kein HTML5-DnD, das auf
+    // Windows/WebView2 vom OS-Drag-Handler geschluckt wird).
     function buildPinnedVaultDom(): void {
         document.body.innerHTML = `
             <div id="vault-region">
@@ -172,44 +174,77 @@ describe('vault/tree — pinned items drag & drop reordering', () => {
         `;
     }
 
-    it('makes only direct root pinned items draggable', async () => {
+    // jsdom kennt PointerEvent nicht vollstaendig — wir bauen ein generisches
+    // Event und haengen die genutzten Felder dran (analog zur vorigen
+    // dataTransfer-Mock-Strategie).
+    function pe(type: string, opts: Record<string, any> = {}): any {
+        const ev = new Event(type, { bubbles: true, cancelable: true }) as any;
+        Object.assign(ev, { button: 0, pointerId: 1, clientX: 0, clientY: 0 }, opts);
+        return ev;
+    }
+
+    const RECT_20 = () => ({ top: 0, bottom: 20, left: 0, right: 100, width: 100, height: 20 } as any);
+
+    function row(path: string): HTMLElement {
+        return document.querySelector(`.node[data-path="${path}"] > .row`) as HTMLElement;
+    }
+    function pinnedChildren(): Element[] {
+        const ul = document.querySelector('li.section[data-section="pinned"] > ul.children') as HTMLElement;
+        return Array.from(ul.children);
+    }
+
+    it('does not start a drag from a nested child of a pinned folder', async () => {
         buildPinnedVaultDom();
         const tree = await import('../../app/vault/tree');
         tree.initVaultTree({ openDocument: vi.fn() });
-
-        // Trigger setVaultPinned to process it
         tree.setVaultPinned(`
             <li class="node" data-kind="file" data-path="/pinned/a.md"><div class="row"></div></li>
-            <li class="node" data-kind="file" data-path="/pinned/b.md"><div class="row"></div></li>
             <li class="node" data-kind="dir" data-path="/pinned/c">
                 <div class="row"></div>
                 <ul class="children">
-                    <li class="node" id="nested-item" data-kind="file" data-path="/pinned/c/nested.md"><div class="row"></div></li>
+                    <li class="node" data-kind="file" data-path="/pinned/c/nested.md"><div class="row" id="nested-row"></div></li>
                 </ul>
             </li>
         `);
 
-        const rootA = document.querySelector('.node[data-path="/pinned/a.md"]') as HTMLElement;
-        const rootB = document.querySelector('.node[data-path="/pinned/b.md"]') as HTMLElement;
-        const rootC = document.querySelector('.node[data-path="/pinned/c"]') as HTMLElement;
-        const nestedItem = document.getElementById('nested-item') as HTMLElement;
-        const recentItem = document.querySelector('.node[data-path="/recent/r.md"]') as HTMLElement;
+        const nestedRow = document.getElementById('nested-row') as HTMLElement;
+        nestedRow.dispatchEvent(pe('pointerdown'));
+        document.dispatchEvent(pe('pointermove', { clientY: 30 }));
 
-        expect(rootA.getAttribute('draggable')).toBe('true');
-        expect(rootB.getAttribute('draggable')).toBe('true');
-        expect(rootC.getAttribute('draggable')).toBe('true');
-        expect(nestedItem.getAttribute('draggable')).toBeNull();
-        if (recentItem) {
-            expect(recentItem.getAttribute('draggable')).toBeNull();
-        }
+        expect(document.querySelector('.node.dragging')).toBeNull();
+        expect(tauri.invoke).not.toHaveBeenCalledWith('workspace_reorder_pinned', expect.anything());
+    });
+
+    it('does not start a drag from a recent-section item', async () => {
+        buildPinnedVaultDom();
+        const tree = await import('../../app/vault/tree');
+        tree.initVaultTree({ openDocument: vi.fn() });
+
+        const recentRow = document.querySelector('.node[data-path="/recent/r.md"] > .row') as HTMLElement;
+        recentRow.dispatchEvent(pe('pointerdown'));
+        document.dispatchEvent(pe('pointermove', { clientY: 30 }));
+
+        expect(document.querySelector('.node.dragging')).toBeNull();
+    });
+
+    it('a sub-threshold pointer movement does not start a drag', async () => {
+        buildPinnedVaultDom();
+        const tree = await import('../../app/vault/tree');
+        tree.initVaultTree({ openDocument: vi.fn() });
+        tree.setVaultPinned(`
+            <li class="node" data-kind="file" data-path="/pinned/a.md"><div class="row"></div></li>
+            <li class="node" data-kind="file" data-path="/pinned/b.md"><div class="row"></div></li>
+        `);
+
+        row('/pinned/a.md').dispatchEvent(pe('pointerdown', { clientX: 0, clientY: 0 }));
+        document.dispatchEvent(pe('pointermove', { clientX: 2, clientY: 2 })); // dist ~2.8 < 4
+        expect(document.querySelector('.node.dragging')).toBeNull();
     });
 
     it('reorders DOM on drop and invokes workspace_reorder_pinned', async () => {
         buildPinnedVaultDom();
         const tree = await import('../../app/vault/tree');
         tree.initVaultTree({ openDocument: vi.fn() });
-
-        // Force elements draggable & DND setup
         tree.setVaultPinned(`
             <li class="node" data-kind="file" data-path="/pinned/a.md"><div class="row"></div></li>
             <li class="node" data-kind="file" data-path="/pinned/b.md"><div class="row"></div></li>
@@ -218,51 +253,20 @@ describe('vault/tree — pinned items drag & drop reordering', () => {
         const rootA = document.querySelector('.node[data-path="/pinned/a.md"]') as HTMLElement;
         const rootB = document.querySelector('.node[data-path="/pinned/b.md"]') as HTMLElement;
 
-        // Mock drag & drop events
-        const dragStartEvent = new Event('dragstart', { bubbles: true }) as any;
-        dragStartEvent.dataTransfer = {
-            setData: vi.fn(),
-            effectAllowed: 'none',
-        };
-        const labelA = rootA.querySelector('.row') as HTMLElement;
-        labelA.dispatchEvent(dragStartEvent);
-
-        expect(dragStartEvent.dataTransfer.setData).toHaveBeenCalledWith('application/x-folio-pin', '/pinned/a.md');
+        row('/pinned/a.md').dispatchEvent(pe('pointerdown'));
+        document.dispatchEvent(pe('pointermove', { clientY: 15 })); // exceed threshold -> active
         expect(rootA.classList.contains('dragging')).toBe(true);
 
-        const dragOverEvent = new Event('dragover', { bubbles: true }) as any;
-        dragOverEvent.dataTransfer = {
-            types: ['application/x-folio-pin'],
-            dropEffect: 'none',
-        };
-        dragOverEvent.clientY = 15; // Mock y coordinate (lower half)
-        rootB.getBoundingClientRect = () => ({
-            top: 0,
-            bottom: 20,
-            left: 0,
-            right: 100,
-            width: 100,
-            height: 20,
-        } as any);
-
-        rootB.dispatchEvent(dragOverEvent);
+        rootB.getBoundingClientRect = RECT_20;
+        rootB.dispatchEvent(pe('pointermove', { clientY: 15 })); // lower half -> after
         expect(rootB.classList.contains('drop-over-after')).toBe(true);
 
-        // Mock dropping
-        const dropEvent = new Event('drop', { bubbles: true }) as any;
-        dropEvent.dataTransfer = {
-            types: ['application/x-folio-pin'],
-            getData: (type: string) => type === 'application/x-folio-pin' ? '/pinned/a.md' : '',
-        };
-        rootB.dispatchEvent(dropEvent);
+        document.dispatchEvent(pe('pointerup', { clientY: 15 }));
 
-        // Check DOM is reordered locally: rootA should be placed after rootB
-        const pinnedUl = document.querySelector('li.section[data-section="pinned"] > ul.children') as HTMLElement;
-        const children = Array.from(pinnedUl.children);
+        const children = pinnedChildren();
         expect(children[0]).toBe(rootB);
         expect(children[1]).toBe(rootA);
-
-        // Expect Tauri invoke of workspace_reorder_pinned to have been called with the new order
+        expect(rootA.classList.contains('dragging')).toBe(false);
         expect(tauri.invoke).toHaveBeenCalledWith('workspace_reorder_pinned', {
             paths: ['/pinned/b.md', '/pinned/a.md'],
         });
@@ -272,7 +276,6 @@ describe('vault/tree — pinned items drag & drop reordering', () => {
         buildPinnedVaultDom();
         const tree = await import('../../app/vault/tree');
         tree.initVaultTree({ openDocument: vi.fn() });
-
         tree.setVaultPinned(`
             <li class="node" data-kind="file" data-path="/pinned/a.md"><div class="row"></div></li>
             <li class="node" data-kind="file" data-path="/pinned/b.md"><div class="row"></div></li>
@@ -287,39 +290,16 @@ describe('vault/tree — pinned items drag & drop reordering', () => {
         const rootA = document.querySelector('.node[data-path="/pinned/a.md"]') as HTMLElement;
         const rootC = document.querySelector('.node[data-path="/pinned/c"]') as HTMLElement;
 
-        const dragStartEvent = new Event('dragstart', { bubbles: true }) as any;
-        dragStartEvent.dataTransfer = {
-            setData: vi.fn(),
-            effectAllowed: 'none',
-        };
-        rootC.querySelector('.row')!.dispatchEvent(dragStartEvent);
+        row('/pinned/c').dispatchEvent(pe('pointerdown'));
+        document.dispatchEvent(pe('pointermove', { clientY: 15 })); // activate
 
-        const dragOverEvent = new Event('dragover', { bubbles: true }) as any;
-        dragOverEvent.dataTransfer = {
-            types: ['application/x-folio-pin'],
-            dropEffect: 'none',
-        };
-        dragOverEvent.clientY = 2;
-        rootA.getBoundingClientRect = () => ({
-            top: 0,
-            bottom: 20,
-            left: 0,
-            right: 100,
-            width: 100,
-            height: 20,
-        } as any);
-        rootA.dispatchEvent(dragOverEvent);
+        rootA.getBoundingClientRect = RECT_20;
+        rootA.dispatchEvent(pe('pointermove', { clientY: 2 })); // upper half -> before
         expect(rootA.classList.contains('drop-over-before')).toBe(true);
 
-        const dropEvent = new Event('drop', { bubbles: true }) as any;
-        dropEvent.dataTransfer = {
-            types: ['application/x-folio-pin'],
-            getData: (type: string) => type === 'application/x-folio-pin' ? '/pinned/c' : '',
-        };
-        rootA.dispatchEvent(dropEvent);
+        document.dispatchEvent(pe('pointerup', { clientY: 2 }));
 
-        const pinnedUl = document.querySelector('li.section[data-section="pinned"] > ul.children') as HTMLElement;
-        const children = Array.from(pinnedUl.children);
+        const children = pinnedChildren();
         expect(children[0]).toBe(rootC);
         expect(children[1]).toBe(rootA);
         expect(tauri.invoke).toHaveBeenCalledWith('workspace_reorder_pinned', {
@@ -331,7 +311,6 @@ describe('vault/tree — pinned items drag & drop reordering', () => {
         buildPinnedVaultDom();
         const tree = await import('../../app/vault/tree');
         tree.initVaultTree({ openDocument: vi.fn() });
-
         tree.setVaultPinned(`
             <li class="node" data-kind="file" data-path="/pinned/a.md"><div class="row"></div></li>
             <li class="node" data-kind="file" data-path="/pinned/b.md"><div class="row"></div></li>
@@ -347,44 +326,49 @@ describe('vault/tree — pinned items drag & drop reordering', () => {
         const rootC = document.querySelector('.node[data-path="/pinned/c"]') as HTMLElement;
         const nestedRow = document.getElementById('nested-row') as HTMLElement;
 
-        const dragStartEvent = new Event('dragstart', { bubbles: true }) as any;
-        dragStartEvent.dataTransfer = {
-            setData: vi.fn(),
-            effectAllowed: 'none',
-        };
-        rootA.querySelector('.row')!.dispatchEvent(dragStartEvent);
+        row('/pinned/a.md').dispatchEvent(pe('pointerdown'));
+        document.dispatchEvent(pe('pointermove', { clientY: 15 })); // activate
 
-        const dragOverEvent = new Event('dragover', { bubbles: true }) as any;
-        dragOverEvent.dataTransfer = {
-            types: ['application/x-folio-pin'],
-            dropEffect: 'none',
-        };
-        dragOverEvent.clientY = 15;
-        rootC.getBoundingClientRect = () => ({
-            top: 0,
-            bottom: 20,
-            left: 0,
-            right: 100,
-            width: 100,
-            height: 20,
-        } as any);
-        nestedRow.dispatchEvent(dragOverEvent);
+        rootC.getBoundingClientRect = RECT_20;
+        nestedRow.dispatchEvent(pe('pointermove', { clientY: 15 })); // over nested -> targets c, after
         expect(rootC.classList.contains('drop-over-after')).toBe(true);
 
-        const dropEvent = new Event('drop', { bubbles: true }) as any;
-        dropEvent.dataTransfer = {
-            types: ['application/x-folio-pin'],
-            getData: (type: string) => type === 'application/x-folio-pin' ? '/pinned/a.md' : '',
-        };
-        nestedRow.dispatchEvent(dropEvent);
+        document.dispatchEvent(pe('pointerup', { clientY: 15 }));
 
-        const pinnedUl = document.querySelector('li.section[data-section="pinned"] > ul.children') as HTMLElement;
-        const children = Array.from(pinnedUl.children);
+        const children = pinnedChildren();
         expect(children[0].getAttribute('data-path')).toBe('/pinned/b.md');
         expect(children[1]).toBe(rootC);
         expect(children[2]).toBe(rootA);
         expect(tauri.invoke).toHaveBeenCalledWith('workspace_reorder_pinned', {
             paths: ['/pinned/b.md', '/pinned/c', '/pinned/a.md'],
         });
+    });
+
+    it('suppresses the click that follows a real drag, but not a plain click', async () => {
+        buildPinnedVaultDom();
+        const tree = await import('../../app/vault/tree');
+        const openDocument = vi.fn();
+        tree.initVaultTree({ openDocument });
+        tree.setVaultPinned(`
+            <li class="node" data-kind="file" data-path="/pinned/a.md"><div class="row"></div></li>
+            <li class="node" data-kind="file" data-path="/pinned/b.md"><div class="row"></div></li>
+        `);
+
+        const rootB = document.querySelector('.node[data-path="/pinned/b.md"]') as HTMLElement;
+
+        // Real drag of a over b, then the synthetic click must NOT open a.md.
+        row('/pinned/a.md').dispatchEvent(pe('pointerdown'));
+        document.dispatchEvent(pe('pointermove', { clientY: 15 }));
+        rootB.getBoundingClientRect = RECT_20;
+        rootB.dispatchEvent(pe('pointermove', { clientY: 15 }));
+        document.dispatchEvent(pe('pointerup', { clientY: 15 }));
+        row('/pinned/a.md').dispatchEvent(pe('click'));
+        expect(openDocument).not.toHaveBeenCalled();
+
+        // A plain click (pointerdown/up without movement) still opens.
+        row('/pinned/b.md').dispatchEvent(pe('pointerdown'));
+        document.dispatchEvent(pe('pointerup'));
+        row('/pinned/b.md').dispatchEvent(pe('click'));
+        expect(openDocument).toHaveBeenCalledWith('/pinned/b.md');
     });
 });

@@ -189,13 +189,24 @@ html:not(.theme-dark) .vault-region .node.file > .row > .icon {
   cursor: default;
 }
 
-/* Drag and Drop Reordering Cues for Pinned section */
-.vault-region li.section[data-section="pinned"] > ul.children > li.node[draggable="true"] {
+/* Drag and Drop Reordering Cues for Pinned section.
+   Reordering laeuft Pointer-basiert (vault/tree.ts), nicht ueber HTML5-DnD —
+   daher Cursor ueber den Struktur-Selektor statt [draggable]. */
+.vault-region li.section[data-section="pinned"] > ul.children > li.node > .row {
   cursor: grab;
 }
 .vault-region li.section[data-section="pinned"] > ul.children > li.node.dragging {
   opacity: 0.4;
+}
+.vault-region li.section[data-section="pinned"] > ul.children > li.node.dragging > .row {
   cursor: grabbing;
+}
+/* Waehrend eines Pin-Drags keine Text-Selektion irgendwo im Fenster. */
+body.pin-dragging,
+body.pin-dragging * {
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grabbing !important;
 }
 .vault-region li.section[data-section="pinned"] > ul.children > li.node.drop-over-before > .row {
   box-shadow: inset 0 2px 0 var(--rail-accent);

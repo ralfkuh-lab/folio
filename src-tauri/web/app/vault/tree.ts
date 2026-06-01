@@ -25,7 +25,6 @@ let currentActivePath = '';
 
 const fileIconCache: Record<string, string> = {};
 const fileIconPending: Record<string, Promise<string>> = {};
-const PIN_DRAG_TYPE = 'application/x-folio-pin';
 
 function post(msg: any): void {
     if (window.__TAURI__ && window.__TAURI__.event) {
@@ -72,25 +71,13 @@ function reapplyActiveMarker(): void {
     for (let n = 0; n < nodes.length; n++) nodes[n].classList.add('active');
 }
 
-function makePinnedItemsDraggable(): void {
-    const section = ROOT.querySelector('li.section[data-section="pinned"]');
-    if (!section) return;
-    const ul = section.querySelector(':scope > ul.children');
-    if (!ul) return;
-    const items = Array.from(ul.children) as HTMLElement[];
-    items.forEach((item: HTMLElement) => {
-        if (item.classList.contains('node')) {
-            item.setAttribute('draggable', 'true');
-        }
-    });
-}
-
 export function setVaultPinned(html: string): void {
     const section = ROOT.querySelector('li.section[data-section="pinned"]');
     if (!section) return;
     const ul = section.querySelector(':scope > ul.children');
     if (ul) ul.innerHTML = html || '';
-    makePinnedItemsDraggable();
+    // Kein draggable-Attribut noetig: das Reordering laeuft delegiert
+    // ueber Pointer-Events (siehe initVaultTree), nicht ueber HTML5-DnD.
     reapplyActiveMarker();
 }
 
@@ -254,7 +241,8 @@ function renderVault(html: string): void {
     }
     ROOT.innerHTML = html;
     applyIconsToNode(ROOT);
-    makePinnedItemsDraggable();
+    // Pin-Reordering laeuft delegiert ueber Pointer-Events (initVaultTree),
+    // daher kein draggable-Attribut-Setup mehr noetig.
     reapplyActiveMarker();
 }
 
@@ -272,17 +260,6 @@ function isDirectChildOfSection(node: HTMLElement, sectionKey: string): boolean 
             && n.getAttribute('data-section') === sectionKey) return true;
         if (n.classList && n.classList.contains('node')) return false;
         n = n.parentElement;
-    }
-    return false;
-}
-
-function hasPinDragType(dataTransfer: DataTransfer): boolean {
-    const types = dataTransfer.types as any;
-    if (!types) return false;
-    if (typeof types.includes === 'function') return types.includes(PIN_DRAG_TYPE);
-    if (typeof types.contains === 'function') return types.contains(PIN_DRAG_TYPE);
-    for (let i = 0; i < types.length; i++) {
-        if (types[i] === PIN_DRAG_TYPE) return true;
     }
     return false;
 }
@@ -399,8 +376,19 @@ export function initVaultTree(d: Deps): void {
         iconObserver.observe(ROOT, { childList: true, subtree: true });
     }
 
-    // ----- Drag & Drop: Reordering of Pinned Items -----
-    function getDirectPinnedItem(target: HTMLElement): HTMLElement | null {
+    // ----- Reordering der angepinnten Root-Items (Pointer-basiert) -----
+    // BEWUSST kein HTML5-Drag&Drop: auf Windows/WebView2 faengt Tauris
+    // OS-Level-Drag-Handler (dragDropEnabled=true, noetig fuers
+    // Datei-Drop-zum-Oeffnen, siehe ui/drag-drop.ts) saemtliche
+    // Drag-Operationen ab und liefert keine dragover/drop-Events mehr in
+    // die WebView. Pointer-Events laufen unabhaengig davon und sind
+    // plattformuebergreifend robust. Bewusst OHNE setPointerCapture:
+    // ohne Capture ist e.target waehrend pointermove das Element unter
+    // dem Cursor (normales Hit-Testing) — genau das, was wir zur
+    // Drop-Ziel-Bestimmung brauchen, und in jsdom testbar.
+    const DRAG_THRESHOLD_PX = 4; // unterscheidet Klick (oeffnen) von Drag
+
+    function getDirectPinnedItem(target: HTMLElement | null): HTMLElement | null {
         let el: HTMLElement | null = target;
         while (el && el !== ROOT) {
             if (el.classList && el.classList.contains('node') && isDirectChildOfSection(el, 'pinned')) {
@@ -411,116 +399,116 @@ export function initVaultTree(d: Deps): void {
         return null;
     }
 
-    ROOT.addEventListener('dragstart', function (e: DragEvent) {
-        if (!e.dataTransfer) return;
-        const draggedItem = getDirectPinnedItem(e.target as HTMLElement);
-        if (!draggedItem) {
-            e.preventDefault();
-            return;
-        }
-        const path = draggedItem.getAttribute('data-path') || '';
-        if (!path) {
-            e.preventDefault();
-            return;
-        }
-        e.dataTransfer.setData(PIN_DRAG_TYPE, path);
-        e.dataTransfer.effectAllowed = 'move';
-        draggedItem.classList.add('dragging');
-    });
+    function clearPinDropMarkers(): void {
+        const marks = ROOT.querySelectorAll('.drop-over-before, .drop-over-after');
+        marks.forEach(el => el.classList.remove('drop-over-before', 'drop-over-after'));
+    }
 
-    ROOT.addEventListener('dragend', function (e: DragEvent) {
-        const draggedItem = getDirectPinnedItem(e.target as HTMLElement);
-        if (draggedItem) {
-            draggedItem.classList.remove('dragging');
-        }
-        const dropOvers = ROOT.querySelectorAll('.drop-over-before, .drop-over-after');
-        dropOvers.forEach(el => {
-            el.classList.remove('drop-over-before', 'drop-over-after');
-        });
-    });
-
-    ROOT.addEventListener('dragover', function (e: DragEvent) {
-        if (!e.dataTransfer) return;
-        if (!hasPinDragType(e.dataTransfer)) {
-            return;
-        }
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-
-        const targetItem = getDirectPinnedItem(e.target as HTMLElement);
-        if (!targetItem || targetItem.classList.contains('dragging')) return;
-
-        const rect = targetItem.getBoundingClientRect();
-        const relativeY = e.clientY - rect.top;
-        const isBefore = relativeY < rect.height / 2;
-
-        const otherItems = ROOT.querySelectorAll('li.section[data-section="pinned"] > ul.children > li.node');
-        otherItems.forEach((el: HTMLElement) => {
-            if (el !== targetItem) {
-                el.classList.remove('drop-over-before', 'drop-over-after');
-            }
-        });
-
-        if (isBefore) {
-            targetItem.classList.remove('drop-over-after');
-            targetItem.classList.add('drop-over-before');
-        } else {
-            targetItem.classList.remove('drop-over-before');
-            targetItem.classList.add('drop-over-after');
-        }
-    });
-
-    ROOT.addEventListener('dragleave', function (e: DragEvent) {
-        const targetItem = getDirectPinnedItem(e.target as HTMLElement);
-        if (targetItem) {
-            const related = e.relatedTarget as HTMLElement;
-            if (!related || !targetItem.contains(related)) {
-                targetItem.classList.remove('drop-over-before', 'drop-over-after');
-            }
-        }
-    });
-
-    ROOT.addEventListener('drop', function (e: DragEvent) {
-        if (!e.dataTransfer) return;
-        if (!hasPinDragType(e.dataTransfer)) return;
-        e.preventDefault();
-        const dragPath = e.dataTransfer.getData(PIN_DRAG_TYPE);
-        if (!dragPath) return;
-
-        const targetItem = getDirectPinnedItem(e.target as HTMLElement);
-        if (!targetItem) return;
-
-        const targetPath = targetItem.getAttribute('data-path');
-        if (!targetPath || dragPath === targetPath) return;
-
+    function commitPinReorder(draggedEl: HTMLElement, targetItem: HTMLElement, isBefore: boolean): void {
         const ul = targetItem.parentElement;
-        if (!ul) return;
-
-        let draggedEl: HTMLElement | null = null;
-        const children = Array.from(ul.children) as HTMLElement[];
-        for (const child of children) {
-            if (child.getAttribute('data-path') === dragPath) {
-                draggedEl = child;
-                break;
-            }
-        }
-        if (!draggedEl) return;
-
-        const isBefore = targetItem.classList.contains('drop-over-before');
-        targetItem.classList.remove('drop-over-before', 'drop-over-after');
-
+        if (!ul || draggedEl.parentElement !== ul || draggedEl === targetItem) return;
         if (isBefore) {
             ul.insertBefore(draggedEl, targetItem);
         } else {
             ul.insertBefore(draggedEl, targetItem.nextSibling);
         }
-
         const newPaths = Array.from(ul.children)
             .map(el => el.getAttribute('data-path'))
             .filter(Boolean) as string[];
-
         safeInvoke('workspace_reorder_pinned', { paths: newPaths }, 'workspace_reorder_pinned');
+    }
+
+    // { item, pointerId, startX, startY, active }
+    let pinDrag: {
+        item: HTMLElement;
+        pointerId: number;
+        startX: number;
+        startY: number;
+        active: boolean;
+    } | null = null;
+    // Nach einem echten Drag muss der vom Browser nachgereichte Klick
+    // unterdrueckt werden, damit das angepinnte Dokument nicht geoeffnet wird.
+    let suppressNextClick = false;
+
+    function endPinDrag(): void {
+        if (pinDrag) {
+            pinDrag.item.classList.remove('dragging');
+            pinDrag = null;
+        }
+        document.body.classList.remove('pin-dragging');
+        clearPinDropMarkers();
+    }
+
+    ROOT.addEventListener('pointerdown', function (e: PointerEvent) {
+        if (e.button !== 0) return;
+        suppressNextClick = false;
+        const item = getDirectPinnedItem(e.target as HTMLElement);
+        if (!item || !item.getAttribute('data-path')) return;
+        // Drag nur ueber die EIGENE Zeile des Root-Items starten — nicht aus
+        // verschachtelten Kind-Eintraegen eines aufgeklappten Pin-Ordners
+        // (getDirectPinnedItem klettert sonst zum Eltern-Root). Als Drop-ZIEL
+        // bleibt der gesamte Subtree gueltig (siehe pointermove/up).
+        const ownRow = item.querySelector(':scope > .row');
+        if (!ownRow || !ownRow.contains(e.target as Node)) return;
+        pinDrag = {
+            item,
+            pointerId: e.pointerId,
+            startX: e.clientX,
+            startY: e.clientY,
+            active: false,
+        };
     });
+
+    document.addEventListener('pointermove', function (e: PointerEvent) {
+        if (!pinDrag || e.pointerId !== pinDrag.pointerId) return;
+
+        if (!pinDrag.active) {
+            const dx = e.clientX - pinDrag.startX;
+            const dy = e.clientY - pinDrag.startY;
+            if (dx * dx + dy * dy < DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) return;
+            pinDrag.active = true;
+            pinDrag.item.classList.add('dragging');
+            document.body.classList.add('pin-dragging');
+        }
+        e.preventDefault(); // Text-Selektion waehrend des Drags verhindern
+
+        const targetItem = getDirectPinnedItem(e.target as HTMLElement);
+        clearPinDropMarkers();
+        if (!targetItem || targetItem === pinDrag.item) return;
+        const rect = targetItem.getBoundingClientRect();
+        const isBefore = (e.clientY - rect.top) < rect.height / 2;
+        targetItem.classList.add(isBefore ? 'drop-over-before' : 'drop-over-after');
+    });
+
+    document.addEventListener('pointerup', function (e: PointerEvent) {
+        if (!pinDrag || e.pointerId !== pinDrag.pointerId) return;
+        const draggedEl = pinDrag.item;
+        const wasActive = pinDrag.active;
+        const beforeTarget = ROOT.querySelector('.drop-over-before') as HTMLElement | null;
+        const afterTarget = ROOT.querySelector('.drop-over-after') as HTMLElement | null;
+        endPinDrag();
+        if (!wasActive) return;
+        suppressNextClick = true;
+        const targetItem = beforeTarget || afterTarget;
+        if (targetItem) {
+            commitPinReorder(draggedEl, targetItem, !!beforeTarget);
+        }
+    });
+
+    document.addEventListener('pointercancel', function (e: PointerEvent) {
+        if (!pinDrag || e.pointerId !== pinDrag.pointerId) return;
+        endPinDrag();
+    });
+
+    // Capture-Phase vor dem REGION/ROOT-Klick-Routing: schluckt den
+    // synthetischen Klick, der einem echten Pin-Drag folgt.
+    REGION.addEventListener('click', function (e: MouseEvent) {
+        if (suppressNextClick) {
+            suppressNextClick = false;
+            e.stopImmediatePropagation();
+            e.preventDefault();
+        }
+    }, true);
 
     // ----- Listener-Fusion -----
     // Vorher in IIFE #1: pinned/recent aus Event-Payload setzen.

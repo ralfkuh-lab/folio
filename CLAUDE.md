@@ -117,6 +117,23 @@ sonst lehnt Tauri den Build ab.
   (default an). Toggle live-aware: bei Re-Enable werden alle aktuell
   expanded_dirs erneut registriert (siehe `commands::app::settings::
   sync_vault_watcher`).
+- **Pin-Reordering** (`vault/tree.ts`): das Umsortieren der angepinnten
+  Top-Level-Einträge läuft **Pointer-basiert** (`pointerdown`/`move`/`up`,
+  delegiert auf `#vault-tree`), **bewusst NICHT über HTML5-Drag&Drop**.
+  Grund: auf Windows/WebView2 fängt Tauris OS-Level-Drag-Handler
+  (`dragDropEnabled`, Default an — wird fürs Datei-Drop-zum-Öffnen in
+  `ui/drag-drop.ts` gebraucht) sämtliche Drag-Operationen ab und liefert
+  keine `dragover`/`drop`-Events mehr in die WebView; HTML5-DnD ist damit
+  tot (auf Linux/WebKitGTK lief es, daher grün in der E2E-Suite). Die
+  Pointer-Variante ist unabhängig vom OS-Handler. Bewusst **ohne**
+  `setPointerCapture` (so ist `e.target` bei `pointermove` das Element
+  unter dem Cursor → Drop-Ziel-Bestimmung + jsdom-testbar).
+  Bewegungs-Threshold (4 px) trennt Klick (= öffnen) vom Drag; der dem
+  Drag folgende synthetische Klick wird per Capture-Listener auf
+  `#vault-region` geschluckt (`suppressNextClick`). Drag-**Quelle** nur
+  die eigene `.row` des Root-Items (nicht aus verschachtelten Pin-Ordner-
+  Kindern), Drop-**Ziel** der gesamte Subtree. Persistenz unverändert
+  über `workspace_reorder_pinned`. Kein `draggable`-Attribut mehr.
 - **Dateityp-Klassifizierung**: zentral in `file_kind.rs`
   (`FileKind::{Markdown, Text, Image, Binary}`, `classify(path)`).
   `read_file` und `document:loaded` liefern `kind` ans Frontend; das
