@@ -72,7 +72,7 @@ impl DocumentStore {
         self.is_dirty = false;
         self.line_ending = line_ending;
         self.had_bom = had_bom;
-        self.watch(path)?;
+        self.watch_non_fatal(path);
 
         let loaded = LoadedDocument {
             path: path.to_string(),
@@ -219,7 +219,7 @@ impl DocumentStore {
 
         self.path = Some(new_path.to_string());
         self.set_dirty(false);
-        self.watch(new_path)?;
+        self.watch_non_fatal(new_path);
 
         let loaded = LoadedDocument {
             path: new_path.to_string(),
@@ -239,7 +239,7 @@ impl DocumentStore {
     /// Editor-Inhalt wandert mit der Datei mit.
     pub fn rename_to(&mut self, new_path: &str) -> io::Result<LoadedDocument> {
         self.path = Some(new_path.to_string());
-        self.watch(new_path)?;
+        self.watch_non_fatal(new_path);
 
         let loaded = LoadedDocument {
             path: new_path.to_string(),
@@ -258,6 +258,23 @@ impl DocumentStore {
         self.is_dirty = dirty;
         if let Some(callback) = &self.events.dirty_changed {
             callback(dirty);
+        }
+    }
+
+    /// Watch-Fehler sind nicht-fatal (wie beim VaultWatcher): Load/
+    /// Save-As/Rename haben den Store-State zu diesem Zeitpunkt bereits
+    /// mutiert — ein `Err` hier wuerde den `loaded`-Callback (und damit
+    /// das Frontend-Update) unterschlagen, obwohl das Dokument korrekt
+    /// geladen/geschrieben ist. Folge eines Fehlschlags ist nur, dass
+    /// externe Aenderungen fuer dieses Dokument nicht erkannt werden.
+    fn watch_non_fatal(&mut self, path: &str) {
+        if let Err(error) = self.watch(path) {
+            tracing::warn!(
+                target: "folio::document",
+                %error,
+                path,
+                "file watch failed; external-change detection disabled for this document"
+            );
         }
     }
 
