@@ -270,6 +270,9 @@ function renderDocumentPayload(data: any): void {
     setTocList(data.tocHtml || data.toc_html || '');
     setMarkdownHeadingMap(data.headingMap || data.heading_map || []);
     const path = data.path || currentPath || '';
+    // language/kind kommen seit dem saved-Payload-Ausbau direkt vom
+    // Backend; Endungs-Test und body-Klasse sind bewusste Backstops fuer
+    // Payloads ohne die Felder (Source of Truth bleibt kind/language).
     const language = data.language || (/\.html?$/i.test(path) ? 'html' : '');
     const kind = data.kind || (document.body.classList.contains('kind-text') ? 'text' : '');
     const isHtml = isHtmlDocument(kind, language, path);

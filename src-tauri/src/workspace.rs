@@ -92,7 +92,15 @@ impl Workspace {
         }
         let workspace = Self { data, path };
         if dirty {
-            let _ = workspace.save();
+            if let Err(error) = workspace.save() {
+                // Verhalten bleibt: Migration laeuft beim naechsten Boot
+                // erneut — aber nicht mehr stumm.
+                tracing::warn!(
+                    target: "folio::settings",
+                    %error,
+                    "workspace path migration could not be persisted"
+                );
+            }
         }
         workspace
     }

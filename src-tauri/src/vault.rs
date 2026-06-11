@@ -363,7 +363,18 @@ impl Vault {
             "children collapsed"
         };
         let children = if expanded {
-            self.build_dir_children_html(&nav_path).unwrap_or_default()
+            self.build_dir_children_html(&nav_path)
+                .unwrap_or_else(|error| {
+                    // Expandierter Ordner rendert leer (Verhalten bleibt),
+                    // aber nicht mehr stumm.
+                    tracing::warn!(
+                        target: "folio::vault",
+                        %error,
+                        path = %nav_path,
+                        "building dir children failed; rendering empty"
+                    );
+                    String::new()
+                })
         } else {
             String::new()
         };

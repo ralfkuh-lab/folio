@@ -316,6 +316,10 @@ export function scrollHtmlViewToAnchor(slug: string): void {
 export function isHtmlDocument(kind: string, language: string, path?: string): boolean {
     if (kind !== 'text') return false;
     if ((language || '').toLowerCase() === 'html') return true;
+    // Bewusster Backstop zur "kind/language sind Source of Truth"-Regel:
+    // greift nur, wenn ein Event-Payload keine language mitliefert
+    // (document:loaded/saved liefern sie immer — der Pfad-Test deckt
+    // Rest-/Altpfade ab, statt faelschlich die Code-View zu zeigen).
     return /\.(html|htm)$/i.test(path || '');
 }
 

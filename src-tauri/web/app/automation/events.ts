@@ -35,6 +35,7 @@ import {
     updateWordCount,
 } from '../state/document';
 import { loadEditorText } from '../editor/shell';
+import { safeInvoke } from '../util/log';
 
 function keyToCode(key: string): string {
     if (key.length === 1) {
@@ -455,6 +456,8 @@ export function initAutomationEvents(): void {
         var text = (e as CustomEvent).detail || '';
         updateWordCount(text);
         if (getCurrentPath()) markDirty(text !== getCleanText());
-        invoke('editor_text_changed', { text: text }).catch(function(){});
+        // safeInvoke statt stillem catch (CLAUDE.md-Konvention);
+        // debug-Level, weil der Pfad pro Tastendruck feuert.
+        safeInvoke('editor_text_changed', { text: text }, 'editor_text_changed', 'debug');
     });
 }

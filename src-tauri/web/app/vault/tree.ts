@@ -248,8 +248,7 @@ function renderVault(html: string): void {
 
 export function refreshVault(): void {
     invoke('vault_build_tree').then(renderVault).catch(function (err) {
-        // eslint-disable-next-line no-console
-        console.warn('vault_build_tree failed:', err);
+        folioLog.warn('vault', 'vault_build_tree failed', { error: String(err) });
     });
 }
 
