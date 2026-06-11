@@ -338,6 +338,12 @@ fn same_path(a: &Path, b: &Path) -> bool {
 /// Line-Ending, BOM-Vorhandensein). Wird von `load` und
 /// `reload_if_changed` genutzt — beide brauchen exakt diese
 /// BOM-/CRLF-/UTF-8-Decode-Logik.
+///
+/// Bewusste Vereinfachung bei gemischten Endings: enthaelt die Datei
+/// auch nur ein CRLF, gilt sie als CRLF — ein Save vereinheitlicht
+/// dann ALLE Zeilen auf CRLF (getestet in
+/// `mixed_line_endings_are_classified_crlf_and_unified_on_save`).
+/// Lone-`\r` (Alt-Mac) wird nicht normalisiert und bleibt im Text.
 fn read_and_decode(path: &str) -> io::Result<(String, LineEnding, bool)> {
     let bytes = fs::read(path)?;
     let had_bom = bytes.starts_with(&[0xEF, 0xBB, 0xBF]);
@@ -368,6 +374,66 @@ mod tests {
         assert_eq!("one\ntwo\n", store.text);
         assert_eq!(LineEnding::Crlf, store.line_ending);
         assert!(store.had_bom);
+    }
+
+    #[test]
+    fn save_roundtrip_preserves_all_bom_eol_combinations() {
+        // BOM x EOL Matrix: Save muss das Original-Encoding exakt
+        // restaurieren — insbesondere KEIN BOM hinzufuegen, wenn keins
+        // da war. Bisher war nur BOM+CRLF unit-getestet; die uebrigen
+        // Kombis liefen nur im Linux-only-E2E (08_save_roundtrip).
+        let bom: &[u8] = &[0xEF, 0xBB, 0xBF];
+        for (with_bom, crlf) in [(true, true), (true, false), (false, true), (false, false)] {
+            let eol: &[u8] = if crlf { b"\r\n" } else { b"\n" };
+            let mut input = Vec::new();
+            if with_bom {
+                input.extend_from_slice(bom);
+            }
+            input.extend_from_slice(b"one");
+            input.extend_from_slice(eol);
+            input.extend_from_slice(b"two");
+            input.extend_from_slice(eol);
+
+            let temp = TempDir::new().unwrap();
+            let path = temp.path().join("doc.md");
+            fs::write(&path, &input).unwrap();
+            let mut store = DocumentStore::new();
+            store.load(path.to_str().unwrap()).unwrap();
+            store.update_text("one\nzwei\n".into());
+            assert!(store.save().unwrap());
+
+            let mut expected = Vec::new();
+            if with_bom {
+                expected.extend_from_slice(bom);
+            }
+            expected.extend_from_slice(b"one");
+            expected.extend_from_slice(eol);
+            expected.extend_from_slice(b"zwei");
+            expected.extend_from_slice(eol);
+            assert_eq!(
+                expected,
+                fs::read(&path).unwrap(),
+                "combo bom={with_bom} crlf={crlf}"
+            );
+        }
+    }
+
+    #[test]
+    fn mixed_line_endings_are_classified_crlf_and_unified_on_save() {
+        // Verhaltens-Pin (bewusste Vereinfachung, siehe read_and_decode):
+        // gemischte Endings gelten als CRLF, ein Save vereinheitlicht
+        // alle Zeilen auf CRLF.
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("doc.md");
+        fs::write(&path, b"a\r\nb\nc\r\n").unwrap();
+        let mut store = DocumentStore::new();
+        store.load(path.to_str().unwrap()).unwrap();
+        assert_eq!(LineEnding::Crlf, store.line_ending);
+        assert_eq!("a\nb\nc\n", store.text);
+
+        store.update_text("a\nb\nc\nd\n".into());
+        assert!(store.save().unwrap());
+        assert_eq!(b"a\r\nb\r\nc\r\nd\r\n".to_vec(), fs::read(&path).unwrap());
     }
 
     #[test]
