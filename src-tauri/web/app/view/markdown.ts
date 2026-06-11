@@ -288,6 +288,11 @@ export const ViewFinder = {
         searchToken++;
         clearMarks();
         currentTerm = '';
+        // Nicht nur der Split-Wrapper (find-bar.ts) ruft closeFind —
+        // close()/afterModeSwitch() treffen den Finder direkt. Ohne Reset
+        // bliebe ein im Split-Mode gesetztes suppressActive haengen und
+        // jede spaetere View-Suche haette keinen aktiven Treffer mehr.
+        suppressActive = false;
         dispatchState();
     },
     setFindTerm: function (term: string): void { currentTerm = term || ''; research(); },

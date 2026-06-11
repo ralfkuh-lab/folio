@@ -528,6 +528,10 @@ export const HtmlFinder = {
         searchToken++;
         clearMarks();
         currentTerm = '';
+        // Reset wie in markdown.ts::ViewFinder.closeFind — close()/
+        // afterModeSwitch() rufen den Finder direkt, nicht ueber den
+        // Split-Wrapper, der suppressActive zuruecksetzen wuerde.
+        suppressActive = false;
         dispatchState();
     },
     setFindTerm: function (term: string): void { currentTerm = term || ''; research(); },
