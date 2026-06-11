@@ -135,20 +135,10 @@ fn open_inner(
         if options.dirty == DirtyPolicy::Reject && is_dirty {
             return Err(OpenDocumentError::DirtyRejected);
         }
-        let kind = classify(&path);
         let mut store = document_store
             .lock()
             .map_err(|_| OpenDocumentError::LockPoisoned("document store"))?;
-        let loaded = if matches!(kind, FileKind::Image) {
-            // Bilder werden nicht als Text geladen — das Frontend rendert
-            // sie ueber `convertFileSrc` direkt von Disk. Wir setzen nur
-            // den Pfad im Store, damit Vault-Active, History und das
-            // `document:loaded`-Event mit dem richtigen Pfad feuern.
-            store.load_opaque(&path)
-        } else {
-            store.load(&path)
-        };
-        Some(loaded.map_err(OpenDocumentError::Load)?)
+        Some(load_by_kind(&mut store, &path).map_err(OpenDocumentError::Load)?)
     } else {
         None
     };
@@ -180,6 +170,96 @@ fn open_inner(
         nav_entry,
         mode_override,
     })
+}
+
+/// Laedt ein Dokument passend zu seinem FileKind in den Store. Bilder
+/// werden nicht als Text geladen — das Frontend rendert sie ueber
+/// `convertFileSrc` direkt von Disk; `load_opaque` setzt nur den Pfad,
+/// damit Vault-Active, History und das `document:loaded`-Event mit dem
+/// richtigen Pfad feuern. Alles andere laeuft als Text ueber `load`.
+pub fn load_by_kind(store: &mut DocumentStore, path: &str) -> std::io::Result<LoadedDocument> {
+    if matches!(classify(path), FileKind::Image) {
+        store.load_opaque(path)
+    } else {
+        store.load(path)
+    }
+}
+
+/// View-Mode fuer einen History-Restore: Markdown und HTML behalten den
+/// im Entry gespeicherten Mode (echte Preview vorhanden). Bilder
+/// erzwingen `view` — Edit ist fuer Images gesperrt, `load_opaque` legt
+/// keinen Text ab. Alle uebrigen Text-/Binary-Pfade clampen auf `edit`,
+/// damit ein zuvor gespeicherter `view`-Wert beim Restore nicht in einen
+/// leeren Markdown-Body fuehrt.
+pub fn history_view_mode(path: &str, stored: &str) -> String {
+    match classify(path) {
+        FileKind::Markdown => stored.to_string(),
+        FileKind::Image => "view".to_string(),
+        _ if crate::file_resolver::is_html(path) => stored.to_string(),
+        _ => "edit".to_string(),
+    }
+}
+
+/// Gemeinsamer Kern fuer History-Back/Forward (Tauri-Commands in
+/// `commands::nav` und Automation-API `/history/*`): bewegt den
+/// History-Index hinter dem `can_go_*`-Gate und laedt das Zieldokument
+/// passend zu seinem FileKind. `Ok(None)` am Stack-Edge — dort wuerde
+/// `go_back`/`go_forward` per Konvention `current()` liefern und wir
+/// wuerden das aktive Dokument unnoetig neu laden.
+///
+/// Schlaegt der Load fehl, wird der bereits bewegte Index zurueckgerollt:
+/// ohne Rollback zeigte die History auf das Ziel, waehrend die UI das
+/// alte Dokument zeigt, und jede weitere Navigation arbeitete ab dem
+/// falschen Index.
+pub fn move_history(
+    navigation: &Mutex<NavigationController>,
+    document_store: &Mutex<DocumentStore>,
+    vault: &Mutex<Vault>,
+    forward: bool,
+) -> Result<Option<NavigationEntry>, OpenDocumentError> {
+    let entry = {
+        let mut navigation = navigation
+            .lock()
+            .map_err(|_| OpenDocumentError::LockPoisoned("navigation"))?;
+        let can_move = if forward {
+            navigation.can_go_forward()
+        } else {
+            navigation.can_go_back()
+        };
+        if !can_move {
+            None
+        } else if forward {
+            navigation.go_forward().cloned()
+        } else {
+            navigation.go_back().cloned()
+        }
+    };
+    let Some(entry) = entry else {
+        return Ok(None);
+    };
+
+    let loaded = {
+        let mut store = document_store
+            .lock()
+            .map_err(|_| OpenDocumentError::LockPoisoned("document store"))?;
+        load_by_kind(&mut store, &entry.absolute_path)
+    };
+    if let Err(error) = loaded {
+        if let Ok(mut navigation) = navigation.lock() {
+            if forward {
+                navigation.go_back();
+            } else {
+                navigation.go_forward();
+            }
+        }
+        return Err(OpenDocumentError::Load(error));
+    }
+
+    vault
+        .lock()
+        .map_err(|_| OpenDocumentError::LockPoisoned("vault"))?
+        .set_active(Some(entry.absolute_path.clone()));
+    Ok(Some(entry))
 }
 
 /// Liest das Per-Typ-Setting fuer den Kind der frisch geladenen Datei
@@ -449,5 +529,90 @@ mod tests {
             outcome.loaded.as_ref().map(|l| l.path.as_str())
         );
         assert!(!store.lock().unwrap().is_dirty);
+    }
+
+    fn write_image(temp: &TempDir, name: &str) -> String {
+        // Bewusst invalides UTF-8 — ein Text-Load wuerde daran scheitern.
+        let path = temp.path().join(name);
+        fs::write(&path, b"\x89PNG\r\n\x1a\n\xff\xfe\x00binary").unwrap();
+        path.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn load_by_kind_loads_images_opaque() {
+        let temp = TempDir::new().unwrap();
+        let path = write_image(&temp, "pic.png");
+        let (store, _, _) = make_components();
+
+        let loaded = load_by_kind(&mut store.lock().unwrap(), &path).unwrap();
+
+        assert_eq!(path, loaded.path);
+        assert_eq!("", loaded.text);
+    }
+
+    #[test]
+    fn history_view_mode_keeps_markdown_and_html_clamps_rest() {
+        assert_eq!("split", history_view_mode("/notes.md", "split"));
+        assert_eq!("view", history_view_mode("/page.html", "view"));
+        assert_eq!("view", history_view_mode("/pic.png", "edit"));
+        assert_eq!("edit", history_view_mode("/data.json", "view"));
+    }
+
+    #[test]
+    fn move_history_back_over_image_loads_opaque() {
+        let temp = TempDir::new().unwrap();
+        let doc = write_doc(&temp, "a.md", "hello");
+        let img = write_image(&temp, "pic.png");
+        let (store, nav, vault) = make_components();
+
+        store.lock().unwrap().load(&doc).unwrap();
+        nav.lock().unwrap().navigate(doc.clone(), None);
+        store.lock().unwrap().load_opaque(&img).unwrap();
+        nav.lock().unwrap().navigate(img.clone(), None);
+
+        let back = move_history(&nav, &store, &vault, false).unwrap().unwrap();
+        assert_eq!(doc, back.absolute_path);
+        assert_eq!("hello", store.lock().unwrap().text);
+
+        // Forward zurueck aufs Bild: kein UTF-8-Fehler, Pfad gesetzt,
+        // kein Text im Store.
+        let fwd = move_history(&nav, &store, &vault, true).unwrap().unwrap();
+        assert_eq!(img, fwd.absolute_path);
+        assert_eq!(Some(img.as_str()), store.lock().unwrap().path.as_deref());
+        assert_eq!("", store.lock().unwrap().text);
+    }
+
+    #[test]
+    fn move_history_rolls_back_index_when_load_fails() {
+        let temp = TempDir::new().unwrap();
+        let doc = write_doc(&temp, "b.md", "current");
+        let missing = temp.path().join("gone.md").to_string_lossy().into_owned();
+        let (store, nav, vault) = make_components();
+
+        nav.lock().unwrap().navigate(missing.clone(), None);
+        store.lock().unwrap().load(&doc).unwrap();
+        nav.lock().unwrap().navigate(doc.clone(), None);
+
+        let result = move_history(&nav, &store, &vault, false);
+
+        assert!(matches!(result, Err(OpenDocumentError::Load(_))));
+        // Index ist zurueckgerollt: current zeigt weiter aufs geladene
+        // Dokument, der Store ist unangetastet.
+        let nav = nav.lock().unwrap();
+        assert_eq!(doc, nav.current().unwrap().absolute_path);
+        assert!(nav.can_go_back());
+        assert_eq!(Some(doc.as_str()), store.lock().unwrap().path.as_deref());
+    }
+
+    #[test]
+    fn move_history_returns_none_at_stack_edge() {
+        let temp = TempDir::new().unwrap();
+        let doc = write_doc(&temp, "a.md", "hello");
+        let (store, nav, vault) = make_components();
+
+        nav.lock().unwrap().navigate(doc.clone(), None);
+
+        assert!(move_history(&nav, &store, &vault, false).unwrap().is_none());
+        assert!(move_history(&nav, &store, &vault, true).unwrap().is_none());
     }
 }

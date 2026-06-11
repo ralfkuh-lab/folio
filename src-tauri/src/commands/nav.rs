@@ -1,9 +1,4 @@
-use crate::{
-    file_kind::{classify, FileKind},
-    file_resolver,
-    navigation::Entry,
-    state::AppState,
-};
+use crate::{document_service, navigation::Entry, state::AppState};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
@@ -20,17 +15,9 @@ pub struct NavEntry {
 
 impl From<&Entry> for NavEntry {
     fn from(entry: &Entry) -> Self {
-        // Renderable Formate (Markdown + HTML) erlauben view-Mode mit
-        // echter Preview. Alle anderen Text-/Binary-Pfade clampen wir auf
-        // "edit", damit ein zuvor gespeicherter "view"-Wert beim Restore
-        // nicht in einen leeren Markdown-Body fuehrt.
-        let renderable = classify(&entry.absolute_path) == FileKind::Markdown
-            || file_resolver::is_html(&entry.absolute_path);
-        let view_mode = if renderable {
-            entry.view_mode.clone()
-        } else {
-            "edit".to_string()
-        };
+        // Kind-abhaengiges Clamping (Markdown/HTML behalten, Image ->
+        // "view", Rest -> "edit") liegt zentral in document_service.
+        let view_mode = document_service::history_view_mode(&entry.absolute_path, &entry.view_mode);
         Self {
             path: entry.absolute_path.clone(),
             anchor: entry.anchor.clone(),
@@ -135,44 +122,17 @@ fn move_history(
     state: &AppState,
     handle: Option<AppHandle>,
 ) -> Result<Option<NavEntry>, String> {
-    let entry = {
-        let mut navigation = state
-            .navigation
-            .lock()
-            .map_err(|_| "navigation lock poisoned".to_string())?;
-        // can_go_*-Vorschaltung: NavigationController::go_back/go_forward
-        // liefert per Konvention auch am Stack-Edge `current()`. Hier ist
-        // das aber irrefuehrend — wir wuerden das aktive Dokument
-        // unnoetig neu laden und ein navigation:changed-Event emittieren.
-        let can_move = if forward {
-            navigation.can_go_forward()
-        } else {
-            navigation.can_go_back()
-        };
-        if !can_move {
-            None
-        } else if forward {
-            navigation.go_forward().map(NavEntry::from)
-        } else {
-            navigation.go_back().map(NavEntry::from)
-        }
-    };
+    let entry = document_service::move_history(
+        &state.navigation,
+        &state.document_store,
+        &state.vault,
+        forward,
+    )
+    .map_err(|error| error.to_string())?;
 
-    let Some(entry) = entry else {
+    let Some(entry) = entry.as_ref().map(NavEntry::from) else {
         return Ok(None);
     };
-
-    state
-        .document_store
-        .lock()
-        .map_err(|_| "document store lock poisoned".to_string())?
-        .load(&entry.path)
-        .map_err(|error| error.to_string())?;
-    state
-        .vault
-        .lock()
-        .map_err(|_| "vault lock poisoned".to_string())?
-        .set_active(Some(entry.path.clone()));
 
     if let Some(handle) = handle {
         handle
@@ -247,6 +207,19 @@ mod tests {
             editor_cursor: 0,
         };
         assert_eq!("edit", NavEntry::from(&entry).view_mode);
+    }
+
+    #[test]
+    fn nav_entry_forces_view_mode_for_images() {
+        let entry = Entry {
+            absolute_path: "/pic.png".into(),
+            anchor: None,
+            scroll_y: 0.0,
+            view_mode: "edit".into(),
+            editor_scroll_y: 0.0,
+            editor_cursor: 0,
+        };
+        assert_eq!("view", NavEntry::from(&entry).view_mode);
     }
 
     #[test]

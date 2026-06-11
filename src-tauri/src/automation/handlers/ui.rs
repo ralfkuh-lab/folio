@@ -417,55 +417,23 @@ async fn history_move(
     forward: bool,
 ) -> ApiResult<Json<HistoryMoveResponse>> {
     let state = context.app_handle.state::<AppState>();
-    // Logik wie in commands::nav::move_history, aber inline weil dort
-    // privat und an Tauri-Command-Signaturen gebunden.
-    let entry = {
-        let mut navigation = state
-            .navigation
-            .lock()
-            .map_err(|_| ApiError::internal("navigation lock poisoned"))?;
-        // can_go_*-Vorschaltung (siehe commands::nav::move_history fuer
-        // die Begruendung): am Stack-Edge geben wir None zurueck und
-        // ueberlassen dem Caller die moved=false-Antwort.
-        let can_move = if forward {
-            navigation.can_go_forward()
-        } else {
-            navigation.can_go_back()
-        };
-        if !can_move {
-            None
-        } else if forward {
-            navigation.go_forward().cloned()
-        } else {
-            navigation.go_back().cloned()
-        }
-    };
+    let entry = crate::document_service::move_history(
+        &state.navigation,
+        &state.document_store,
+        &state.vault,
+        forward,
+    )
+    .map_err(|error| ApiError::internal(error.to_string()))?;
     let Some(entry) = entry else {
+        // Stack-Edge: can_go_*-Gate hat den Move verhindert.
         return Ok(Json(HistoryMoveResponse {
             ok: true,
             moved: false,
             entry: None,
         }));
     };
-    state
-        .document_store
-        .lock()
-        .map_err(|_| ApiError::internal("document store lock poisoned"))?
-        .load(&entry.absolute_path)
-        .map_err(|error| ApiError::internal(error.to_string()))?;
-    state
-        .vault
-        .lock()
-        .map_err(|_| ApiError::internal("vault lock poisoned"))?
-        .set_active(Some(entry.absolute_path.clone()));
-    // Non-Markdown kennt keinen View-Mode (s. commands::nav).
-    let view_mode = if crate::file_kind::classify(&entry.absolute_path)
-        == crate::file_kind::FileKind::Markdown
-    {
-        entry.view_mode.clone()
-    } else {
-        "edit".to_string()
-    };
+    let view_mode =
+        crate::document_service::history_view_mode(&entry.absolute_path, &entry.view_mode);
     let response_entry = HistoryEntryResponse {
         path: entry.absolute_path.clone(),
         anchor: entry.anchor.clone(),
