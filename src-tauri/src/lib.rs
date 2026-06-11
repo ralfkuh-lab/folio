@@ -104,9 +104,14 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
                             let logical = size.to_logical::<f64>(scale);
                             if let Some(state) = app.try_state::<AppState>() {
                                 if let Ok(mut panel) = state.panel_state.lock() {
-                                    let _ = panel.set_window_size(logical.width, logical.height);
+                                    panel.set_window_size_in_memory(logical.width, logical.height);
                                 }
                             }
+                            // Persistenz debounced — Resized/Moved feuern
+                            // waehrend eines Drags dutzendfach pro Sekunde,
+                            // ein atomic Write pro Tick im UI-Thread waere
+                            // unnoetige IO-Last.
+                            schedule_panel_geometry_save(app);
                         }
                     }
                 }
@@ -119,9 +124,10 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
                             let logical = pos.to_logical::<f64>(scale);
                             if let Some(state) = app.try_state::<AppState>() {
                                 if let Ok(mut panel) = state.panel_state.lock() {
-                                    let _ = panel.set_window_position(logical.x, logical.y);
+                                    panel.set_window_position_in_memory(logical.x, logical.y);
                                 }
                             }
+                            schedule_panel_geometry_save(app);
                         }
                     }
                 }
@@ -337,6 +343,40 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
         ])
 }
 
+/// Debounced Persistenz der Fenster-Geometrie: pro Resized/Moved-Tick
+/// wird nur die Generation gebumpt und ein Save-Task geplant; schreiben
+/// darf nur der Task, dessen Generation beim Aufwachen noch aktuell ist
+/// (= seit 300 ms kein weiterer Tick).
+fn schedule_panel_geometry_save(app: &tauri::AppHandle) {
+    use std::sync::atomic::Ordering;
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    let generation = state
+        .panel_geometry_save_gen
+        .fetch_add(1, Ordering::Relaxed)
+        + 1;
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        let result = {
+            let Some(state) = app.try_state::<AppState>() else {
+                return;
+            };
+            if state.panel_geometry_save_gen.load(Ordering::Relaxed) != generation {
+                return;
+            }
+            let Ok(panel) = state.panel_state.lock() else {
+                return;
+            };
+            panel.save()
+        };
+        if let Err(error) = result {
+            tracing::warn!(target: "folio::settings", %error, "panel geometry save failed");
+        }
+    });
+}
+
 pub fn run() {
     // GTK-Menüs lösen auf Wayland einen Stack Overflow im GTK-Signal-
     // Layer aus (tauri-apps/tauri#5940). XWayland als Backend umgeht
@@ -354,6 +394,18 @@ pub fn run() {
     crate::logging::init(level, &crate::persist::log_dir());
 
     builder()
-        .run(tauri::generate_context!())
-        .expect("failed to run Tauri application");
+        .build(tauri::generate_context!())
+        .expect("failed to build Tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                // Pending debounced Geometrie-Save flushen — sonst ginge
+                // ein Move/Resize aus den letzten 300 ms vor dem Beenden
+                // verloren.
+                if let Some(state) = app.try_state::<AppState>() {
+                    if let Ok(panel) = state.panel_state.lock() {
+                        let _ = panel.save();
+                    }
+                }
+            }
+        });
 }

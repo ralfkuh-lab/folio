@@ -121,21 +121,38 @@ impl PanelState {
     }
 
     pub fn set_window_position(&mut self, x: f64, y: f64) -> io::Result<()> {
+        self.set_window_position_in_memory(x, y);
+        self.save()
+    }
+
+    /// In-Memory-Variante fuer den hochfrequenten Moved-Event-Pfad:
+    /// waehrend eines Fenster-Drags feuert das Event dutzendfach pro
+    /// Sekunde — die Persistenz laeuft debounced in
+    /// `lib.rs::schedule_panel_geometry_save` statt pro Tick.
+    pub fn set_window_position_in_memory(&mut self, x: f64, y: f64) {
         self.prev_window_x = self.data.window_x;
         self.prev_window_y = self.data.window_y;
         self.last_position_change_at = Some(Instant::now());
         self.data.window_x = Some(x);
         self.data.window_y = Some(y);
-        self.save()
     }
 
     pub fn set_window_size(&mut self, width: f64, height: f64) -> io::Result<()> {
-        if width <= 0.0 || height <= 0.0 {
+        if !self.set_window_size_in_memory(width, height) {
             return Ok(());
+        }
+        self.save()
+    }
+
+    /// Siehe [`Self::set_window_position_in_memory`]. Liefert `false`
+    /// bei verworfenen (nicht-positiven) Dimensionen.
+    pub fn set_window_size_in_memory(&mut self, width: f64, height: f64) -> bool {
+        if width <= 0.0 || height <= 0.0 {
+            return false;
         }
         self.data.window_width = Some(width);
         self.data.window_height = Some(height);
-        self.save()
+        true
     }
 
     pub fn set_window_maximized(&mut self, maximized: bool) -> io::Result<()> {

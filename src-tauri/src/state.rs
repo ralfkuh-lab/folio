@@ -69,6 +69,10 @@ pub struct AppState {
     /// Cleanup: Timeout-Pfad entfernt die ID; spaete ACKs ignorieren.
     pub pending_acks: Mutex<HashMap<u64, oneshot::Sender<()>>>,
     pub next_ack_id: AtomicU64,
+    /// Generation fuer den debounced Geometrie-Save (siehe
+    /// `lib.rs::schedule_panel_geometry_save`): nur der zuletzt
+    /// geplante Save-Task schreibt tatsaechlich auf Disk.
+    pub panel_geometry_save_gen: AtomicU64,
     /// Pro Event-Name eine Map von Wartenden (siehe
     /// `automation::wait`). `POST /wait` registriert hier, die Trigger-
     /// Punkte (`editor_ready`, DocumentEvents.loaded) drainen den Bucket.
@@ -118,6 +122,7 @@ impl AppState {
             cli_open_path: Mutex::new(None),
             pending_acks: Mutex::new(HashMap::new()),
             next_ack_id: AtomicU64::new(1),
+            panel_geometry_save_gen: AtomicU64::new(0),
             pending_waits: Mutex::new(HashMap::new()),
             pending_dom_queries: Mutex::new(HashMap::new()),
             pending_evals: Mutex::new(HashMap::new()),
