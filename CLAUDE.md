@@ -106,6 +106,14 @@ sonst lehnt Tauri den Build ab.
   CancellationToken ab; die resultierende Rejection ist erwartet und
   harmlos, würde aber sonst als False-Positive im Puffer landen
   (`preventDefault()` unterdrückt zusätzlich die DevTools-Warnung).
+- **assetProtocol-Scope `["**"]`** (tauri.conf.json): bewusste
+  Entscheidung — der Image-View rendert Bilder von beliebigen Pfaden via
+  `convertFileSrc`, ein engerer Scope würde jeden Ordner außerhalb einer
+  Whitelist brechen. Konsequenz: die WebView kann jede lokale Datei
+  **lesen**; in Kombination mit der HTML-View
+  (`sandbox="allow-same-origin allow-scripts"`) ist der HTML-Sanitizer
+  die einzige Barriere zwischen einer fremden `.html`-Datei und lokalen
+  Dateien. Bei Änderungen an HTML-View/Sanitizer mitdenken.
 - **Vault-Markup**: Frontend erwartet Baum-Markup mit `.section`, `.node`, `.row`,
   `.caret`, `ul.children`. Jedes `.node` hat `data-path="<abs-path>"`
   und `title="<abs-path>"` (Tooltip).

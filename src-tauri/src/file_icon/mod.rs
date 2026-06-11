@@ -118,8 +118,16 @@ mod tests {
 
     #[test]
     fn cache_hit_on_second_lookup() {
-        // Erste Anfrage berechnet, zweite muss gecached sein (sollte schnell sein).
-        let _ = icon_for_extension("xyzunknown");
-        let _ = icon_for_extension("xyzunknown");
+        let first = icon_for_extension("xyzunknown");
+        assert!(
+            CACHE.lock().unwrap().contains_key("xyzunknown"),
+            "erste Anfrage muss den Cache-Eintrag anlegen"
+        );
+        let second = icon_for_extension("xyzunknown");
+        assert_eq!(
+            first.as_ref().map(|i| &i.bytes),
+            second.as_ref().map(|i| &i.bytes),
+            "Cache-Treffer muss dasselbe Ergebnis liefern"
+        );
     }
 }
