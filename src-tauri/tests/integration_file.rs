@@ -50,7 +50,11 @@ fn document_store_file_resolver_and_workspace_work_together() {
         .unwrap();
     let reloaded = Workspace::load_from(workspace_path);
     assert_eq!(1, reloaded.recent().len());
-    assert_eq!(current.to_string_lossy(), reloaded.recent()[0].path);
+    // Workspace normalisiert Recent-Pfade auf Forward-Slashes.
+    assert_eq!(
+        current.to_string_lossy().replace('\\', "/"),
+        reloaded.recent()[0].path
+    );
 }
 
 #[test]
@@ -86,6 +90,13 @@ fn workspace_recent_tracks_multiple_loaded_documents() {
     workspace.add_recent(store.path.clone().unwrap()).unwrap();
 
     assert_eq!(2, workspace.recent().len());
-    assert_eq!(second.to_string_lossy(), workspace.recent()[0].path);
-    assert_eq!(first.to_string_lossy(), workspace.recent()[1].path);
+    // Workspace normalisiert Recent-Pfade auf Forward-Slashes.
+    assert_eq!(
+        second.to_string_lossy().replace('\\', "/"),
+        workspace.recent()[0].path
+    );
+    assert_eq!(
+        first.to_string_lossy().replace('\\', "/"),
+        workspace.recent()[1].path
+    );
 }
