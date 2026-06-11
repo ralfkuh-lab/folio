@@ -271,7 +271,8 @@ function renderDocumentPayload(data: any): void {
     setMarkdownHeadingMap(data.headingMap || data.heading_map || []);
     const path = data.path || currentPath || '';
     const language = data.language || (/\.html?$/i.test(path) ? 'html' : '');
-    const isHtml = isHtmlDocument(data.kind || (document.body.classList.contains('kind-text') ? 'text' : ''), language, path);
+    const kind = data.kind || (document.body.classList.contains('kind-text') ? 'text' : '');
+    const isHtml = isHtmlDocument(kind, language, path);
     const view = document.getElementById('view-region');
     const body = view && view.querySelector('.markdown-body');
     if (body) {
@@ -287,6 +288,19 @@ function renderDocumentPayload(data: any): void {
         mountHtmlView('html-view-frame', data.text || '', path, requestSaveIfDirty);
     } else {
         clearHtmlView();
+    }
+    // Code-View mit dem kanonischen Save-Text aktualisieren — vorher
+    // zeigte die Read-Only-Instanz nach einem Save im Edit-Mode den
+    // Stand vom letzten document:loaded.
+    if (window.FolioCodeView && kind === 'text' && !isHtml) {
+        const settings = getCachedSettings();
+        const autoFormat = settings ? !!settings.viewAutoFormat : true;
+        window.FolioCodeView.mount(
+            'code-view-mount',
+            data.text || '',
+            language || 'plaintext',
+            { autoFormat: autoFormat },
+        );
     }
     if (!document.body.classList.contains('kind-markdown')) {
         clearMarkdownHeadingMap();

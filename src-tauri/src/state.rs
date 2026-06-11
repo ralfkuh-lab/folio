@@ -168,10 +168,15 @@ impl AppState {
                 let app = app.clone();
                 move |path, text| {
                     let toc_entries = toc::extract(&text);
+                    // kind/language wie bei document:loaded mitgeben —
+                    // das Frontend braucht sie im saved-Pfad fuer den
+                    // Code-View-Refresh (sonst Endungs-Heuristik/plaintext).
                     let _ = app.emit(
                         "document:saved",
                         serde_json::json!({
                             "path": path,
+                            "kind": crate::file_kind::classify(&path),
+                            "language": crate::file_kind::editor_language(&path),
                             "text": text,
                             "content": renderer::render_body(&text),
                             "tocHtml": toc::render_html(&toc_entries),

@@ -124,7 +124,10 @@ function applyContent(text: string, language: string): void {
     if (!editor || !model) return;
     const monaco = getMonaco();
     if (!monaco) return;
-    const lang = language || 'plaintext';
+    // Ohne explizite Sprache aktuelle Model-Sprache behalten (analog
+    // zum Edit-Editor): ein Fallback auf plaintext wuerde unten einen
+    // Model-Wechsel erzwingen und das Highlighting verlieren.
+    const lang = language || model.getLanguageId() || 'plaintext';
     const content = text || '';
     if (model.getLanguageId() !== lang) {
         // Sprache aendert sich → frisches Model. setModelLanguage wuerde
