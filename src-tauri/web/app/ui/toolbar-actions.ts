@@ -233,9 +233,15 @@ export function initToolbarActions(): void {
         // Keybinding-Pfad greift dort wie gewohnt. Nur ausserhalb des
         // Editor-Mounts springt der DOM-Fallback ein (z. B. wenn Fokus
         // im Vault-Tree liegt und der User trotzdem ein Editor-Undo
-        // ausloesen will). Gate auf mdEdit nicht noetig: undo()/redo()
-        // sind im View-Mode No-Ops, weil getEditor() dort null ist.
+        // ausloesen will). Gate auf edit/split noetig: der Editor bleibt
+        // nach dem ersten document:loaded dauerhaft gemountet — ein Undo
+        // im View-Mode wuerde das Dokument unsichtbar editieren (markDirty
+        // + Live-Preview rendert ploetzlich den rueckgaengig gemachten
+        // Text).
+        const editorVisible = document.body.classList.contains('edit-mode')
+            || document.body.classList.contains('split-mode');
         if (!shift && k === 'z') {
+            if (!editorVisible) return;
             if (isEditorFocused()) return;
             e.preventDefault();
             if (window.FolioEditor && typeof window.FolioEditor.undo === 'function') {
@@ -244,6 +250,7 @@ export function initToolbarActions(): void {
             return;
         }
         if (shift && k === 'z') {
+            if (!editorVisible) return;
             if (isEditorFocused()) return;
             e.preventDefault();
             if (window.FolioEditor && typeof window.FolioEditor.redo === 'function') {
