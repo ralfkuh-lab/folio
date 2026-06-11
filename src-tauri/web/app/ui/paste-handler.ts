@@ -14,7 +14,11 @@ let trigger: Trigger | null = null;
 let attached = false;
 
 function isInEditorScope(target: EventTarget | null): boolean {
-    if (!document.body.classList.contains('edit-mode')) return false;
+    // Split-Mode zaehlt mit: dort ist der Editor sichtbar/editierbar
+    // und tb-image aktiv — Strg+V mit Bild soll denselben Dialog oeffnen.
+    const editorVisible = document.body.classList.contains('edit-mode')
+        || document.body.classList.contains('split-mode');
+    if (!editorVisible) return false;
     if (!document.body.classList.contains('kind-markdown')) return false;
     if (!(target instanceof Node)) return true;
     // Editor-Mount + dessen Descendant zaehlen. Wenn der Fokus in der
