@@ -489,6 +489,13 @@ export function initVaultTree(d: Deps): void {
         endPinDrag();
         if (!wasActive) return;
         suppressNextClick = true;
+        // Endet der Drag ausserhalb der Vault-Region, dispatcht der
+        // Browser den Folge-Klick auf den gemeinsamen Ancestor — der
+        // Capture-Listener unten feuert nie und das Flag bliebe armiert
+        // (der naechste Klick auf die Header-Buttons wuerde geschluckt).
+        // Der echte synthetische Klick kommt vor dem Timer-Fire
+        // (Input-Queue vor Timer-Queue), danach wird entwaffnet.
+        window.setTimeout(function () { suppressNextClick = false; }, 0);
         const targetItem = beforeTarget || afterTarget;
         if (targetItem) {
             commitPinReorder(draggedEl, targetItem, !!beforeTarget);
