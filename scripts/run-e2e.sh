@@ -117,7 +117,12 @@ export XDG_STATE_HOME="${TEMP_HOME}/.local/state"
 log "starte Folio (${BIN}) ..."
 # Release-Builds starten die Automation-API nur mit explizitem Opt-in.
 export FOLIO_AUTOMATION=1
-"$BIN" >/tmp/folio-stdout.log 2>&1 &
+# Konsole pro Run in eine eigene Datei (kein Ueberschreiben durch den
+# naechsten Lauf); run.py kopiert sie am Ende in den Artefaktordner
+# (Vertrag: FOLIO_E2E_CONSOLE_LOG).
+FOLIO_LOG="/tmp/folio-stdout-$$.log"
+export FOLIO_E2E_CONSOLE_LOG="${FOLIO_LOG}"
+"$BIN" >"${FOLIO_LOG}" 2>&1 &
 FOLIO_PID=$!
 
 # 4) Automation-API abwarten
@@ -128,7 +133,7 @@ for _ in $(seq 1 60); do
         break
     fi
     if ! kill -0 "${FOLIO_PID}" 2>/dev/null; then
-        log "Folio-Prozess ist gestorben — siehe /tmp/folio-stdout.log"
+        log "Folio-Prozess ist gestorben — siehe ${FOLIO_LOG}"
         exit 1
     fi
     sleep 1

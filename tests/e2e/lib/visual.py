@@ -159,7 +159,18 @@ class VisualSuite:
         return result
 
     def _diff(self, cur: "Image.Image", base: "Image.Image", name: str) -> Tuple[float, Path]:
-        diff = ImageChops.difference(cur, base).convert("L")
+        # Kanal-Maximum statt Luminanz-Konvertierung: convert("L")
+        # gewichtet Blau mit 0.114 — eine reine Blaukanal-Abweichung bis
+        # ~105 Stufen blieb unter diff_threshold=12 und galt als
+        # "gleich" (z. B. Akzentfarben-/Link-Farb-Regression unsichtbar).
+        # Hinweis: erhoeht die Empfindlichkeit; falls Bestands-Baselines
+        # dadurch knapp reissen, einmalig mit --update-baselines neu
+        # aufnehmen.
+        diff_rgb = ImageChops.difference(cur, base)
+        channels = diff_rgb.split()
+        diff = channels[0]
+        for ch in channels[1:3]:
+            diff = ImageChops.lighter(diff, ch)
         # Schwelle pro Pixel: alles < diff_threshold gilt als gleich.
         # Pillow.point() arbeitet auf Lookup-Table-Basis und ist deutlich
         # schneller als pixel-Python-Schleifen.

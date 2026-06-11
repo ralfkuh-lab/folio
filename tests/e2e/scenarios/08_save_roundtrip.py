@@ -41,7 +41,11 @@ def _verify_roundtrip(
     den der Editor setzt (Monaco arbeitet intern mit LF). Der Save muss
     daraus die gewuenschten Raw-Bytes machen.
     """
-    label = f"{'BOM' if with_bom else 'noBOM'}-{'CRLF' if eol == b'\\r\\n' else 'LF'}"
+    # NICHT als f-String-Inline-Vergleich schreiben: `eol == b'\\r\\n'`
+    # vergleicht gegen das 4-Byte-Literal Backslash-r-Backslash-n und
+    # ist immer False (beide CRLF-Faelle hiessen im Report "LF").
+    eol_label = "CRLF" if eol == b"\r\n" else "LF"
+    label = f"{'BOM' if with_bom else 'noBOM'}-{eol_label}"
 
     with ctx.step(f"[{label}] open fixture"):
         ctx.api.open(str(fixture))

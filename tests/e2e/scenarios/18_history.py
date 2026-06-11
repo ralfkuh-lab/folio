@@ -34,10 +34,18 @@ def _wait_for_file(ctx, expected_basename: str, timeout_s: float = 2.0) -> str:
 def run(ctx):
     # Ganz nach links in der Historie navigieren, um den Stack davor zu minimieren.
     # Dadurch bleibt genau 1 Element an Index 0 uebrig, wenn wir neu oeffnen.
-    while True:
+    # Mit Iterations-Cap: ein Regression-Bug, der am Stack-Edge moved=true
+    # liefert (der 2026-05-19-Bug, gegen den dieses Szenario testet),
+    # wuerde sonst die gesamte Suite haengen — der Orchestrator hat kein
+    # globales Timeout.
+    for _ in range(100):
         res = ctx.api.history_back()
         if not res.get("moved"):
             break
+    else:
+        raise AssertionError(
+            "history_back lieferte 100x moved=true — Stack-Edge-Gate kaputt?"
+        )
 
     # Zwei eigene Dateien — sample.md fixture ist als A nutzbar, aber
     # ein zweites File brauchen wir extra. tempfile haelt's hermetisch.

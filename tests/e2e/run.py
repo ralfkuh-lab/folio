@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import os
+import shutil
 import sys
 import time
 import traceback
@@ -126,8 +127,10 @@ def main(argv: list[str]) -> int:
         if not api.wait_for_alive(timeout=5.0):
             print(f"[ERR] --attach: keine Antwort von {args.base_url}/state")
             return 1
-        # Sicherstellen, dass eine Konsole-Datei existiert (auch wenn leer),
-        # damit Report sie referenzieren kann.
+        # Platzhalter, damit der Report immer eine Konsole-Datei
+        # referenzieren kann. Stellt der Wrapper (run-e2e.sh) die echte
+        # Konsole via FOLIO_E2E_CONSOLE_LOG bereit, wird sie nach dem
+        # Lauf hierher kopiert (siehe unten).
         console_log.write_text(
             "(attach mode — Folio-Konsole nicht aufgezeichnet)\n",
             encoding="utf-8",
@@ -230,6 +233,17 @@ def main(argv: list[str]) -> int:
             app.stop(api)
 
     run_end_wall = time.time()
+
+    # Im Attach-Modus die echte Folio-Konsole in den Artefaktordner
+    # uebernehmen, falls der Wrapper sie bereitstellt — vorher verlinkte
+    # der Report im Standard-Linux-Pfad nur den Platzhaltertext.
+    if args.attach:
+        wrapper_log = os.environ.get("FOLIO_E2E_CONSOLE_LOG")
+        if wrapper_log and Path(wrapper_log).is_file():
+            try:
+                shutil.copyfile(wrapper_log, console_log)
+            except OSError as e:
+                print(f"[WARN] Konsole-Log nicht kopierbar: {e}")
 
     writer = ReportWriter(artifacts_dir)
     report_path, errors_path = writer.write(
