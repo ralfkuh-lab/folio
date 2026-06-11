@@ -66,7 +66,10 @@ export function ensureEditorMounted(initial?: string): Promise<boolean> {
 export function loadEditorText(text: string, language?: string): void {
     ensureEditorMounted(text || '').then(function (ok) {
         if (!ok) return;
-        window.FolioEditor.setText(text || '', language || 'plaintext');
+        // language unveraendert durchreichen: ohne Angabe behaelt
+        // doSetText die aktuelle Model-Sprache (kein erzwungener
+        // plaintext-Model-Wechsel mit Undo-Stack-Verlust).
+        window.FolioEditor.setText(text || '', language);
         if (document.body.classList.contains('edit-mode')) {
             layoutEditor();
         }

@@ -161,9 +161,14 @@ function doSetText(text: string, language?: string): void {
     if (!editor) return;
     const monaco = getMonaco();
     const next = text || '';
-    const lang = (language && language.trim()) || 'plaintext';
     const currentModel = editor.getModel();
     const currentLang = currentModel ? currentModel.getLanguageId() : '';
+    // Ohne explizite Sprache die aktuelle Model-Sprache behalten:
+    // automation:set_editor_text / shell:loadEditorText liefern keine —
+    // ein Default auf plaintext wuerde unten den Model-Wechsel erzwingen
+    // (Undo-Stack + Syntax-Highlighting weg), obwohl nur der Text
+    // ersetzt werden soll.
+    const lang = (language && language.trim()) || currentLang || 'plaintext';
     const sameText = currentModel && currentModel.getValue() === next;
     const sameLang = currentLang === lang;
     if (sameText && sameLang) return;
