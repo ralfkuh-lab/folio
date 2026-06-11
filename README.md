@@ -165,7 +165,11 @@ gesammelt — Pflichtlektüre für neue Szenarien.
 
 ## Automation-API
 
-Loopback-HTTP-Server auf `127.0.0.1:9876` für E2E-Tests:
+Loopback-HTTP-Server auf `127.0.0.1:9876` für E2E-Tests. Im Release-Build
+startet er nur mit gesetzter Env-Var `FOLIO_AUTOMATION=1` (Debug-Builds:
+immer an); die E2E-Wrapper setzen sie automatisch. Host- und Origin-Header
+werden gegen Allowlists geprüft (Details:
+[`docs/automation-contract.md`](docs/automation-contract.md)).
 
 | Route | Methode | Beschreibung |
 |---|---|---|

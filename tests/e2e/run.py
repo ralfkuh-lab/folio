@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import os
 import sys
 import time
 from pathlib import Path
@@ -110,7 +111,10 @@ def main(argv: list[str]) -> int:
     app: AppController | None = None
     if not args.attach:
         ensure_xvfb_or_no_op()
-        app = AppController(binary=binary, console_log=console_log)
+        # Release-Builds starten die Automation-API nur mit explizitem Opt-in.
+        env = os.environ.copy()
+        env["FOLIO_AUTOMATION"] = "1"
+        app = AppController(binary=binary, console_log=console_log, env=env)
         app.start()
         if not api.wait_for_alive(timeout=45.0):
             app.stop(api)

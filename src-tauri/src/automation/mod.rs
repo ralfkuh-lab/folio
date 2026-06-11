@@ -1,7 +1,10 @@
 //! Loopback-only HTTP-API für E2E-Tests und externe Automation.
 //!
-//! Lauscht auf `127.0.0.1:9876`, blockt nicht-loopback-Anfragen via
-//! [`middleware::loopback_only`], hängt CORS-Header für WebView-POSTs an.
+//! Lauscht auf `127.0.0.1:9876`. [`middleware::security_guard`] blockt
+//! Nicht-Loopback-Peers, prüft den Host-Header gegen eine Allowlist
+//! (DNS-Rebinding) und erlaubt Origin-Header nur von den Tauri-WebView-
+//! Origins — CORS-Header werden gespiegelt statt `*`. Im Release-Build
+//! startet der Server nur mit `FOLIO_AUTOMATION=1` (siehe [`enabled`]).
 //! Routen werden in [`router::build_router`] zusammengestellt; ein
 //! pendant-Router für Tests ohne Tauri-State liegt in
 //! [`build_mock_router`].
@@ -28,6 +31,16 @@ pub mod wait;
 pub use mock::MockAutomationState;
 pub use router::build_mock_router;
 
+pub(crate) const PORT: u16 = 9876;
+
+/// Im Debug-Build immer aktiv; im Release-Build nur mit `FOLIO_AUTOMATION=1`
+/// (setzt `scripts/run-e2e.sh` bzw. `tests/e2e/run.py`). Verhindert, dass
+/// ausgelieferte Installationen dauerhaft eine lokale Automations-Fläche
+/// (insbesondere `/eval`) öffnen.
+pub fn enabled() -> bool {
+    cfg!(debug_assertions) || std::env::var("FOLIO_AUTOMATION").is_ok_and(|v| v == "1")
+}
+
 pub struct AutomationServer<'a> {
     pub port: u16,
     pub app_handle: AppHandle,
@@ -49,7 +62,7 @@ impl Drop for AutomationServerHandle {
 impl<'a> AutomationServer<'a> {
     pub fn new(app_handle: AppHandle, state: &'a AppState) -> Self {
         Self {
-            port: 9876,
+            port: PORT,
             app_handle,
             state,
             shutdown: Arc::new(Notify::new()),

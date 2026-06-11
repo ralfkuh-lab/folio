@@ -73,3 +73,27 @@ Wichtige stabile Selektor-Gruppen:
 Die HTTP-API läuft nur auf Loopback (`127.0.0.1:9876`). Die aktuelle Route-
 Übersicht steht im README; die Szenario-Details in `tests/e2e/README.md`
 und `docs/e2e-testing.md`.
+
+### Security-Gates (Middleware `security_guard`)
+
+Alle Requests durchlaufen vier Prüfungen (`automation/middleware.rs`):
+
+1. **Loopback-Peer**: Nicht-Loopback-IPs → 403.
+2. **Host-Header-Allowlist** (`127.0.0.1:9876`, `localhost:9876`,
+   `[::1]:9876`): blockt DNS-Rebinding. Fehlender/fremder Host → 403.
+3. **Origin-Allowlist**: Requests **ohne** Origin-Header (curl, Python
+   requests) sind erlaubt, bekommen aber keine CORS-Header. Mit Origin sind
+   nur die Tauri-WebView-Origins erlaubt (`http(s)://tauri.localhost`,
+   `tauri://localhost`) — der erlaubte Origin wird im
+   `Access-Control-Allow-Origin`-Header gespiegelt (kein `*` mehr, plus
+   `Vary: Origin`). Fremde Origins und `Origin: null` → 403; damit kann
+   keine Webseite im Browser des Users die API per `fetch` nutzen oder
+   Antworten lesen.
+4. **Optionales Token**: Ist die Env-Var `FOLIO_AUTOMATION_TOKEN` beim
+   App-Start gesetzt, muss jeder Nicht-OPTIONS-Request denselben Wert im
+   Header `x-folio-automation-token` mitschicken.
+
+**Release-Gate**: Im Release-Build startet der Server nur, wenn die Env-Var
+`FOLIO_AUTOMATION=1` gesetzt ist (Debug-Builds: immer an).
+`scripts/run-e2e.sh` und `tests/e2e/run.py` setzen sie automatisch; wer das
+Release-Binary manuell für Automation startet, muss sie selbst setzen.

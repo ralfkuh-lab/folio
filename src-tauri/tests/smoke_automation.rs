@@ -163,6 +163,7 @@ async fn preflight_allows_json_posts_from_webview() {
     let mut request = Request::builder()
         .method("OPTIONS")
         .uri("/open")
+        .header(header::HOST, "127.0.0.1:9876")
         .header(header::ORIGIN, "tauri://localhost")
         .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
         .header(header::ACCESS_CONTROL_REQUEST_HEADERS, "content-type")
@@ -174,7 +175,7 @@ async fn preflight_allows_json_posts_from_webview() {
 
     assert_eq!(StatusCode::NO_CONTENT, response.status());
     assert_eq!(
-        "*",
+        "tauri://localhost",
         response
             .headers()
             .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
@@ -187,6 +188,120 @@ async fn preflight_allows_json_posts_from_webview() {
         .to_str()
         .unwrap()
         .contains("content-type"));
+}
+
+#[tokio::test]
+async fn rejects_requests_from_disallowed_origin() {
+    let state = Arc::new(Mutex::new(MockAutomationState::default()));
+    let mut request = Request::builder()
+        .method("GET")
+        .uri("/state")
+        .header(header::HOST, "127.0.0.1:9876")
+        .header(header::ORIGIN, "https://evil.example")
+        .body(Body::empty())
+        .unwrap();
+    request.extensions_mut().insert(ConnectInfo(loopback()));
+
+    let response = build_mock_router(state).oneshot(request).await.unwrap();
+
+    assert_eq!(StatusCode::FORBIDDEN, response.status());
+    assert!(response
+        .headers()
+        .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+        .is_none());
+}
+
+#[tokio::test]
+async fn rejects_null_origin() {
+    let state = Arc::new(Mutex::new(MockAutomationState::default()));
+    let mut request = Request::builder()
+        .method("GET")
+        .uri("/state")
+        .header(header::HOST, "127.0.0.1:9876")
+        .header(header::ORIGIN, "null")
+        .body(Body::empty())
+        .unwrap();
+    request.extensions_mut().insert(ConnectInfo(loopback()));
+
+    let response = build_mock_router(state).oneshot(request).await.unwrap();
+
+    assert_eq!(StatusCode::FORBIDDEN, response.status());
+}
+
+#[tokio::test]
+async fn rejects_requests_with_foreign_host_header() {
+    let state = Arc::new(Mutex::new(MockAutomationState::default()));
+    let mut request = Request::builder()
+        .method("GET")
+        .uri("/state")
+        .header(header::HOST, "rebind.evil.example:9876")
+        .body(Body::empty())
+        .unwrap();
+    request.extensions_mut().insert(ConnectInfo(loopback()));
+
+    let response = build_mock_router(state).oneshot(request).await.unwrap();
+
+    assert_eq!(StatusCode::FORBIDDEN, response.status());
+}
+
+#[tokio::test]
+async fn rejects_requests_without_host_header() {
+    let state = Arc::new(Mutex::new(MockAutomationState::default()));
+    let mut request = Request::builder()
+        .method("GET")
+        .uri("/state")
+        .body(Body::empty())
+        .unwrap();
+    request.extensions_mut().insert(ConnectInfo(loopback()));
+
+    let response = build_mock_router(state).oneshot(request).await.unwrap();
+
+    assert_eq!(StatusCode::FORBIDDEN, response.status());
+}
+
+#[tokio::test]
+async fn requests_without_origin_get_no_cors_headers() {
+    let state = Arc::new(Mutex::new(MockAutomationState::default()));
+    let mut request = Request::builder()
+        .method("GET")
+        .uri("/state")
+        .header(header::HOST, "127.0.0.1:9876")
+        .body(Body::empty())
+        .unwrap();
+    request.extensions_mut().insert(ConnectInfo(loopback()));
+
+    let response = build_mock_router(state).oneshot(request).await.unwrap();
+
+    assert_eq!(StatusCode::OK, response.status());
+    assert!(response
+        .headers()
+        .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+        .is_none());
+}
+
+#[tokio::test]
+async fn webview_origin_is_echoed_with_vary() {
+    let state = Arc::new(Mutex::new(MockAutomationState::default()));
+    let mut request = Request::builder()
+        .method("GET")
+        .uri("/state")
+        .header(header::HOST, "localhost:9876")
+        .header(header::ORIGIN, "http://tauri.localhost")
+        .body(Body::empty())
+        .unwrap();
+    request.extensions_mut().insert(ConnectInfo(loopback()));
+
+    let response = build_mock_router(state).oneshot(request).await.unwrap();
+
+    assert_eq!(StatusCode::OK, response.status());
+    assert_eq!(
+        "http://tauri.localhost",
+        response
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .unwrap()
+    );
+    assert_eq!("Origin", response.headers().get(header::VARY).unwrap());
 }
 
 #[tokio::test]
@@ -468,6 +583,7 @@ async fn request(
     let mut request = Request::builder()
         .method(method)
         .uri(uri)
+        .header(header::HOST, "127.0.0.1:9876")
         .header("content-type", "application/json")
         .body(body)
         .unwrap();

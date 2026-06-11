@@ -189,9 +189,17 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
                 let _ = window.set_background_color(Some(bg));
                 let _ = window.show();
             }
-            let automation = automation::AutomationServer::new(app.handle().clone(), state.inner());
-            let automation_handle = automation.start();
-            app.manage(automation_handle);
+            if automation::enabled() {
+                let automation =
+                    automation::AutomationServer::new(app.handle().clone(), state.inner());
+                let automation_handle = automation.start();
+                app.manage(automation_handle);
+            } else {
+                tracing::info!(
+                    target: "folio::automation",
+                    "automation api disabled (release build without FOLIO_AUTOMATION=1)"
+                );
+            }
             let handle = app.handle().clone();
             app.listen("shell:event", {
                 let handle = handle.clone();

@@ -17,7 +17,8 @@ unter `docs/`.
 
 - Rust 2021, Tauri 2
 - comrak 0.35 (GFM-Markdown)
-- axum 0.8 (Automation-API auf `127.0.0.1:9876`, Loopback-only, CORS für WebView-POSTs)
+- axum 0.8 (Automation-API auf `127.0.0.1:9876`, Loopback-only + Host-/
+  Origin-Allowlist; Release-Build nur mit `FOLIO_AUTOMATION=1`)
 - Frontend: TypeScript-Module in `src-tauri/web/app/` (Bootstrap +
   `state/`, `view/`, `editor/`, `vault/`, `ui/`, `automation/`), CSS in
   `src-tauri/web/styles/`, Monaco-Editor-Adapter als Modul-Verzeichnis
@@ -69,8 +70,17 @@ sonst lehnt Tauri den Build ab.
   treibt den Roundtrip aktiv (Debounce + Generation-Token-
   Invalidierung in `view/preview.ts`); das passt nicht ins
   Push-Event-Modell der kanonischen `document:loaded`/`saved`-Pfade.
-- **Automation-API**: nur Loopback. Keine externen Bind-Adressen. WebView-POSTs brauchen
-  CORS/OPTIONS-Preflight; `/click` akzeptiert IDs, `data-name` und CSS-Selektoren.
+- **Automation-API**: nur Loopback. Keine externen Bind-Adressen.
+  Security-Middleware (`automation/middleware.rs::security_guard`):
+  Host-Header-Allowlist (gegen DNS-Rebinding), Origin-Allowlist (nur
+  Tauri-WebView-Origins, gespiegelt statt `Access-Control-Allow-Origin: *`;
+  Requests ohne Origin wie curl/Python sind erlaubt, bekommen aber keine
+  CORS-Header; fremde Origins/`null` → 403), optionales Token via
+  `FOLIO_AUTOMATION_TOKEN`. Im **Release-Build startet der Server nur mit
+  `FOLIO_AUTOMATION=1`** (Debug: immer) — `run-e2e.sh`/`run.py` setzen das;
+  wer das Release-Binary manuell automatisiert, muss es selbst setzen.
+  WebView-POSTs brauchen CORS/OPTIONS-Preflight; `/click` akzeptiert IDs,
+  `data-name` und CSS-Selektoren.
   Stabiler Automation-/Frontend-Vertrag: [`docs/automation-contract.md`](docs/automation-contract.md).
   `POST /eval { js }` führt beliebiges JS im WebView aus und liefert
   das Ergebnis zurück (sync + async/Promise, Fehler werden gefangen,

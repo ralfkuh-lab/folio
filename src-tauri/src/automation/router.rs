@@ -48,7 +48,7 @@ pub(super) fn build_router(context: AutomationContext) -> Router {
         .route("/{*path}", options(mw::preflight))
         .fallback(mw::not_found)
         .method_not_allowed_fallback(mw::method_not_allowed)
-        .layer(middleware::from_fn(mw::loopback_only))
+        .layer(middleware::from_fn(mw::security_guard))
         .with_state(context)
 }
 
@@ -68,6 +68,6 @@ pub fn build_mock_router(state: Arc<Mutex<MockAutomationState>>) -> Router {
         .route("/{*path}", options(mw::preflight))
         .fallback(mw::not_found)
         .method_not_allowed_fallback(mw::method_not_allowed)
-        .layer(middleware::from_fn(mw::loopback_only))
+        .layer(middleware::from_fn(mw::security_guard))
         .with_state(state)
 }

@@ -115,6 +115,8 @@ export XDG_DATA_HOME="${TEMP_HOME}/.local/share"
 export XDG_STATE_HOME="${TEMP_HOME}/.local/state"
 
 log "starte Folio (${BIN}) ..."
+# Release-Builds starten die Automation-API nur mit explizitem Opt-in.
+export FOLIO_AUTOMATION=1
 "$BIN" >/tmp/folio-stdout.log 2>&1 &
 FOLIO_PID=$!
 

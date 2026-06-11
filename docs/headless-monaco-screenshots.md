@@ -66,8 +66,9 @@ Test ob's wirkt:
 Xvfb :99 -screen 0 1920x1080x24 &
 export DISPLAY=:99
 
-# App mit Software-Pfad
-WEBKIT_DISABLE_COMPOSITING_MODE=1 LIBGL_ALWAYS_SOFTWARE=1 folio &
+# App mit Software-Pfad (FOLIO_AUTOMATION=1: Release-Builds starten die
+# Automation-API nur mit explizitem Opt-in)
+WEBKIT_DISABLE_COMPOSITING_MODE=1 LIBGL_ALWAYS_SOFTWARE=1 FOLIO_AUTOMATION=1 folio &
 sleep 3
 
 # Screenshot
@@ -105,7 +106,7 @@ export __GLX_VENDOR_LIBRARY_NAME=mesa
 glxinfo | grep -E "OpenGL renderer|direct rendering"
 # erwartet: "OpenGL renderer string: llvmpipe ..." + "direct rendering: Yes"
 
-folio &
+FOLIO_AUTOMATION=1 folio &
 ```
 
 Damit hat WebKit eine GLX-Pipeline, die ans X11-Display rendert →
