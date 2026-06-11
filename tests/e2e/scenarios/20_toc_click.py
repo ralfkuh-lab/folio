@@ -19,8 +19,12 @@ import time
 def run(ctx):
     sample = ctx.fixture("sample.md")
 
-    with ctx.step("open sample.md (view-mode default)"):
+    with ctx.step("open sample.md + view-mode explizit"):
         ctx.api.open(sample)
+        # default_mode_markdown ist `Current` — ohne explizites Set haengt
+        # der effektive Mode vom Vorszenario ab (exakt das Fehlermuster,
+        # das 22_html_view gebrochen hatte).
+        ctx.api.mode("view")
 
     with ctx.step("TOC enthaelt abschnitt-b-Slug"):
         state = ctx.api.state()

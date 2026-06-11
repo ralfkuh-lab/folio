@@ -53,6 +53,21 @@ def run(ctx):
     file_str = str(file_path).replace("\\", "/")
     selector = f'#vault-tree li.node[data-path="{file_str}"]'
 
+    # Cleanup im finally statt als regulaerer Step: nach einem Step-Fail
+    # wirft ctx.step sofort ScenarioAbort und ein Cleanup-Step liefe nie —
+    # der Pin (persistiert in workspace.json des Test-Profils) leakte in
+    # alle Folgeszenarien.
+    try:
+        _run_steps(ctx, file_str, selector)
+    finally:
+        try:
+            ctx.api.workspace_unpin(file_str)
+        except Exception:
+            pass
+
+
+def _run_steps(ctx, file_str: str, selector: str):
+
     with ctx.step("baseline: keine Test-Datei im DOM"):
         snap = ctx.api.dom(selector)
         ctx.expect(

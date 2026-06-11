@@ -21,6 +21,21 @@ def _poll_state(ctx, predicate, timeout_s: float = 2.0) -> dict:
 
 
 def run(ctx):
+    # try/finally: das Szenario endet sonst mit theme=light und
+    # versteckter rechter Rail — beides leakte in alle Folgeszenarien
+    # (die Baselines ab 14 kodierten den Leak). Restore laeuft auch bei
+    # Step-Fail.
+    try:
+        _run_steps(ctx)
+    finally:
+        try:
+            ctx.api.theme("dark")
+            ctx.api.rail("right", visible=True)
+        except Exception:
+            pass
+
+
+def _run_steps(ctx):
     sample = ctx.fixture("sample.md")
 
     with ctx.step("open sample.md"):

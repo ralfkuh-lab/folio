@@ -45,6 +45,20 @@ def run(ctx):
     file_str = str(file_path).replace("\\", "/")
     item_selector = f'#vault-tree li.node[data-path="{file_str}"]'
 
+    # Das Unpin ist hier zwar Teil des Tests (ctx-item-Klick), aber bei
+    # einem Step-Fail davor leakte der Pin in alle Folgeszenarien —
+    # daher best-effort-Unpin im finally (idempotent).
+    try:
+        _run_steps(ctx, file_str, item_selector)
+    finally:
+        try:
+            ctx.api.workspace_unpin(file_str)
+        except Exception:
+            pass
+
+
+def _run_steps(ctx, file_str: str, item_selector: str):
+
     with ctx.step("/workspace/pin → Tree-Eintrag im DOM"):
         ctx.api.workspace_pin(file_str, is_directory=False)
         snap = _wait_dom(ctx, item_selector)
