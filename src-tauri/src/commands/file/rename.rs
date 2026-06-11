@@ -84,6 +84,12 @@ fn perform_rename(
     state: &State<'_, AppState>,
     handle: &AppHandle,
 ) -> Result<(), String> {
+    // Auf Forward-Slashes normalisieren wie in document_service::open —
+    // die Vergleiche unten (store.path, recent) laufen gegen
+    // normalisierte Pfade.
+    let old_path = old_path.replace('\\', "/");
+    let new_path = new_path.replace('\\', "/");
+    let (old_path, new_path) = (old_path.as_str(), new_path.as_str());
     let target = Path::new(new_path);
     if target.exists() {
         return Err(format!(

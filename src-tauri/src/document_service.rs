@@ -120,6 +120,13 @@ fn open_inner(
     path: String,
     options: OpenDocumentOptions,
 ) -> Result<OpenDocumentOutcome, OpenDocumentError> {
+    // Pfad einmal am Service-Eingang auf Forward-Slashes normalisieren
+    // (Windows-Datei-Dialoge liefern Backslashes). Sonst fuehren Store
+    // und History gemischte Separatoren: dieselbe Datei per Dialog und
+    // per Vault/Recent geoeffnet wuerde das navigate-Dedupe und
+    // ReloadPolicy::IfPathChanged verfehlen. Windows-APIs akzeptieren
+    // beide Schreibweisen, Datei-IO bricht dadurch nicht.
+    let path = path.replace('\\', "/");
     let (needs_load, is_dirty) = {
         let store = document_store
             .lock()
@@ -340,7 +347,10 @@ mod tests {
     fn write_doc(temp: &TempDir, name: &str, body: &str) -> String {
         let path = temp.path().join(name);
         fs::write(&path, body).unwrap();
-        path.to_string_lossy().into_owned()
+        // Normalisiert wie der Service-Eingang — die Assertions unten
+        // vergleichen gegen Store-/Nav-Pfade, die immer Forward-Slashes
+        // tragen.
+        path.to_string_lossy().replace('\\', "/")
     }
 
     #[test]
@@ -535,7 +545,38 @@ mod tests {
         // Bewusst invalides UTF-8 — ein Text-Load wuerde daran scheitern.
         let path = temp.path().join(name);
         fs::write(&path, b"\x89PNG\r\n\x1a\n\xff\xfe\x00binary").unwrap();
-        path.to_string_lossy().into_owned()
+        path.to_string_lossy().replace('\\', "/")
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn open_normalizes_backslash_paths() {
+        let temp = TempDir::new().unwrap();
+        let normalized = write_doc(&temp, "a.md", "x");
+        let backslashed = normalized.replace('/', "\\");
+        let (store, nav, vault) = make_components();
+
+        let outcome = open_inner(
+            &store,
+            &nav,
+            &vault,
+            None,
+            None,
+            backslashed,
+            OpenDocumentOptions {
+                anchor: None,
+                reload: ReloadPolicy::Always,
+                dirty: DirtyPolicy::Discard,
+                apply_default_mode: false,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(normalized, outcome.nav_entry.absolute_path);
+        assert_eq!(
+            Some(normalized.as_str()),
+            store.lock().unwrap().path.as_deref()
+        );
     }
 
     #[test]
