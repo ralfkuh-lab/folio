@@ -23,6 +23,7 @@ type Deps = {
 
 let deps: Deps = null;
 let editorMounted = false;
+let mountInFlight: Promise<boolean> | null = null;
 
 function invoke(cmd: string, args?: any): Promise<any> {
     return window.__TAURI__.core.invoke(cmd, args);
@@ -36,12 +37,19 @@ export function isEditorMounted(): boolean { return editorMounted; }
 
 export function ensureEditorMounted(initial?: string): Promise<boolean> {
     if (editorMounted) return Promise.resolve(true);
+    // In-Flight-Guard: document:loaded (loadEditorText) und app:set_mode
+    // (focusEditor) treffen beim Oeffnen fast gleichzeitig ein — beide
+    // saehen editorMounted === false und wuerden monaco.editor.create
+    // doppelt ausfuehren. Der erste Mount konsumiert dabei
+    // pendingMinimapEnabled, der zweite (ueberlebende) Editor startete
+    // ohne das persistierte Minimap-Setting; zudem Model-Leak.
+    if (mountInFlight) return mountInFlight;
     if (!window.FolioEditor || typeof window.FolioEditor.mount !== 'function') {
         // eslint-disable-next-line no-console
         console.error('[folio] FolioEditor bundle not available');
         return Promise.resolve(false);
     }
-    return window.FolioEditor.mount('editor-mount', initial || '').then(function () {
+    mountInFlight = window.FolioEditor.mount('editor-mount', initial || '').then(function () {
         editorMounted = true;
         return true;
     }).catch(function (err) {
@@ -49,7 +57,10 @@ export function ensureEditorMounted(initial?: string): Promise<boolean> {
         console.error('[folio] Editor mount failed:', err);
         folioLog.error('editor', 'Monaco mount failed', { error: String(err) });
         return false;
+    }).finally(function () {
+        mountInFlight = null;
     });
+    return mountInFlight;
 }
 
 export function loadEditorText(text: string, language?: string): void {
