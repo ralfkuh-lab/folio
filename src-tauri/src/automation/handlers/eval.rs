@@ -1,10 +1,10 @@
-use axum::extract::State as AxumState;
+use axum::extract::{rejection::JsonRejection, State as AxumState};
 use axum::Json;
 use serde::Deserialize;
 use tauri::Manager;
 
 use crate::automation::context::AutomationContext;
-use crate::automation::error::{ApiError, ApiResult};
+use crate::automation::error::{json_payload, ApiError, ApiResult};
 use crate::automation::eval;
 use crate::automation::helpers::emit;
 use crate::state::AppState;
@@ -32,8 +32,12 @@ pub(in crate::automation) struct EvalResponse {
 
 pub(in crate::automation) async fn post_eval(
     AxumState(context): AxumState<AutomationContext>,
-    Json(payload): Json<EvalRequest>,
+    payload: Result<Json<EvalRequest>, JsonRejection>,
 ) -> ApiResult<Json<EvalResponse>> {
+    // json_payload wie in allen anderen Handlern: fehlerhafter Body
+    // liefert das einheitliche ErrorResponse-JSON statt axums
+    // Plaintext-400.
+    let Json(payload) = json_payload(payload)?;
     if payload.js.is_empty() {
         return Err(ApiError::bad_request("js must not be empty"));
     }
