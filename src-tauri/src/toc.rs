@@ -45,11 +45,17 @@ pub fn extract(markdown: &str) -> Vec<TocEntry> {
         let raw_text = extract_text(node);
         let (text, explicit_id) =
             renderer::split_explicit_id(&raw_text).unwrap_or((raw_text, String::new()));
-        let slug = if explicit_id.is_empty() {
-            unique_slug(renderer::slugify_heading(&text), &mut used_slugs)
+        // Auch explizite IDs durch unique_slug schicken — der Renderer
+        // (FolioHeadingAdapter::unique_slug) tut dasselbe. Sonst rendert
+        // das HTML bei einer Kollision (Heading "Foo" + spaeteres
+        // `{#foo}`) `foo`/`foo-1`, der TOC-Eintrag zeigte aber `foo`
+        // und der Klick sprang zum falschen Heading.
+        let base = if explicit_id.is_empty() {
+            renderer::slugify_heading(&text)
         } else {
             explicit_id
         };
+        let slug = unique_slug(base, &mut used_slugs);
 
         raw.push(TocEntry {
             text,
@@ -263,6 +269,17 @@ mod tests {
         assert_eq!("foo", entries[0].slug);
         assert_eq!("foo-1", entries[1].slug);
         assert_eq!("foo-2", entries[2].slug);
+    }
+
+    #[test]
+    fn test_explicit_id_collides_with_generated_slug_like_renderer() {
+        // Renderer schickt ALLE IDs durch unique_slug — das HTML rendert
+        // hier `foo` und `foo-1`. Der TOC muss dieselben Slugs liefern,
+        // sonst springt der TOC-Klick zum falschen Heading.
+        let entries = extract("# Foo\n# Other {#foo}");
+
+        assert_eq!("foo", entries[0].slug);
+        assert_eq!("foo-1", entries[1].slug);
     }
 
     #[test]
