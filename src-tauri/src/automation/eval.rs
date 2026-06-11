@@ -42,14 +42,11 @@ pub async fn wait_for(
     receiver: oneshot::Receiver<EvalResult>,
     timeout_ms: u64,
 ) -> Option<EvalResult> {
+    // Guard raeumt auch beim Future-Drop (Client-Disconnect) auf.
+    let _guard = super::ack::PendingGuard::new(&state.pending_evals, id);
     match timeout(Duration::from_millis(timeout_ms), receiver).await {
         Ok(Ok(payload)) => Some(payload),
-        _ => {
-            if let Ok(mut map) = state.pending_evals.lock() {
-                map.remove(&id);
-            }
-            None
-        }
+        _ => None,
     }
 }
 

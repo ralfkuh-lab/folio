@@ -17,11 +17,39 @@
 //!   ruft [`signal_ack`], das den Sender aus der Map nimmt und feuert. Wer
 //!   nach dem Timeout kommt, findet keinen Sender mehr und wird ignoriert.
 
+use std::collections::HashMap;
+use std::sync::Mutex;
 use std::time::Duration;
 use tokio::sync::oneshot;
 use tokio::time::timeout;
 
 use crate::state::AppState;
+
+/// RAII-Cleanup fuer die pending-Maps: entfernt die ID beim Drop.
+/// Deckt neben dem Timeout-Pfad auch den Future-Drop ab — bricht der
+/// HTTP-Client die Verbindung ab, droppt axum die Handler-Future mitten
+/// im `.await`, und ohne Guard bliebe der Sender dauerhaft in der Map
+/// liegen (unbegrenztes Wachstum ueber die Prozesslaufzeit). Auf dem
+/// Erfolgspfad hat `signal`/`deliver` den Eintrag bereits entfernt;
+/// das `remove` im Drop ist dann ein No-op.
+pub(crate) struct PendingGuard<'a, T> {
+    map: &'a Mutex<HashMap<u64, oneshot::Sender<T>>>,
+    id: u64,
+}
+
+impl<'a, T> PendingGuard<'a, T> {
+    pub(crate) fn new(map: &'a Mutex<HashMap<u64, oneshot::Sender<T>>>, id: u64) -> Self {
+        Self { map, id }
+    }
+}
+
+impl<T> Drop for PendingGuard<'_, T> {
+    fn drop(&mut self) {
+        if let Ok(mut map) = self.map.lock() {
+            map.remove(&self.id);
+        }
+    }
+}
 
 /// Reserviert eine neue Ack-ID und legt den Sender in `AppState.pending_acks`
 /// ab. Gibt die ID und den passenden Receiver zurueck.
@@ -47,15 +75,11 @@ pub async fn wait_for_ack(
     receiver: oneshot::Receiver<()>,
     timeout_ms: u64,
 ) -> bool {
-    match timeout(Duration::from_millis(timeout_ms), receiver).await {
-        Ok(Ok(())) => true,
-        _ => {
-            if let Ok(mut map) = state.pending_acks.lock() {
-                map.remove(&id);
-            }
-            false
-        }
-    }
+    let _guard = PendingGuard::new(&state.pending_acks, id);
+    matches!(
+        timeout(Duration::from_millis(timeout_ms), receiver).await,
+        Ok(Ok(()))
+    )
 }
 
 /// Signalisiert das ACK fuer die gegebene ID. Idempotent: wenn die ID
@@ -123,5 +147,21 @@ mod tests {
         let (b, _) = register(&state).unwrap();
         assert_ne!(a, b);
         assert_eq!(state.pending_acks.lock().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn dropped_wait_future_cleans_map() {
+        // Client-Disconnect-Simulation: axum droppt die Handler-Future
+        // mitten im await. select! pollt die Wait-Future an und droppt
+        // sie, wenn der Sleep-Arm gewinnt — der Guard muss aufraeumen.
+        let state = AppState::new();
+        let (id, receiver) = register(&state).unwrap();
+        tokio::select! {
+            _ = wait_for_ack(&state, id, receiver, 60_000) => {
+                panic!("ack wait should not resolve");
+            }
+            _ = tokio::time::sleep(Duration::from_millis(20)) => {}
+        }
+        assert!(state.pending_acks.lock().unwrap().is_empty());
     }
 }

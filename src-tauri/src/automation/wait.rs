@@ -101,8 +101,30 @@ pub fn register(state: &AppState, event: &str) -> Result<(u64, oneshot::Receiver
     Ok((id, receiver))
 }
 
-/// Wartet bis zur Timeout-Frist auf das Event. Bei Timeout entfernt
-/// `wait_for` die ID aus der Map (Cleanup).
+/// RAII-Cleanup fuer die verschachtelte pending_waits-Map — analog zu
+/// [`super::ack::PendingGuard`], deckt Timeout UND Future-Drop
+/// (Client-Disconnect) ab. Leere Event-Sub-Maps werden mit entfernt.
+struct PendingWaitGuard<'a> {
+    map: &'a std::sync::Mutex<HashMap<String, HashMap<u64, oneshot::Sender<()>>>>,
+    event: &'a str,
+    id: u64,
+}
+
+impl Drop for PendingWaitGuard<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut map) = self.map.lock() {
+            if let Some(per_event) = map.get_mut(self.event) {
+                per_event.remove(&self.id);
+                if per_event.is_empty() {
+                    map.remove(self.event);
+                }
+            }
+        }
+    }
+}
+
+/// Wartet bis zur Timeout-Frist auf das Event. Cleanup laeuft ueber den
+/// Guard — auch wenn die Future vor dem Timeout gedroppt wird.
 pub async fn wait_for(
     state: &AppState,
     event: &str,
@@ -110,17 +132,15 @@ pub async fn wait_for(
     receiver: oneshot::Receiver<()>,
     timeout_ms: u64,
 ) -> bool {
-    match timeout(Duration::from_millis(timeout_ms), receiver).await {
-        Ok(Ok(())) => true,
-        _ => {
-            if let Ok(mut map) = state.pending_waits.lock() {
-                if let Some(per_event) = map.get_mut(event) {
-                    per_event.remove(&id);
-                }
-            }
-            false
-        }
-    }
+    let _guard = PendingWaitGuard {
+        map: &state.pending_waits,
+        event,
+        id,
+    };
+    matches!(
+        timeout(Duration::from_millis(timeout_ms), receiver).await,
+        Ok(Ok(()))
+    )
 }
 
 /// Feuert alle Wartenden fuer einen Event-Namen. Hinterlegt zusaetzlich
