@@ -275,7 +275,6 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::app::log_bridge::frontend_log,
             commands::file::read::read_file,
             commands::file::read::reload_document,
-            commands::file::read::write_file,
             commands::file::list::file_list,
             commands::file::save_as::save_as,
             commands::file::close::close_document,

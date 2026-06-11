@@ -1,6 +1,6 @@
 //! Datei-bezogene Tauri-Commands und Helfer.
 //!
-//! - [`read_file`] / [`write_file`] — Tauri-Commands fürs reine Lesen/Schreiben
+//! - [`read_file`] — Tauri-Command fürs Öffnen/Lesen über den Service-Pfad
 //! - [`rename_file`] (Command) + [`run_rename_dialog`] (für Menü-Pfad) —
 //!   teilen sich `perform_rename` als gemeinsame State-Choreografie.
 //! - [`run_save_as`] (für Menü-Pfad) + [`save_as`] (Command-Wrapper).
