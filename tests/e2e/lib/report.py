@@ -101,6 +101,15 @@ class ScenarioContext:
         if not condition:
             raise AssertionError(message)
 
+    def record_failure(self, message: str, tb: str) -> None:
+        """Registriert einen Szenario-Fehler außerhalb der Step-Mechanik —
+        z. B. eine Exception vor dem ersten `step()`-Block. Ohne diese
+        Registrierung würde `finish()` ein Szenario mit 0 Steps als PASS
+        werten. No-op, wenn das Szenario bereits abgebrochen ist.
+        """
+        if self._aborted_with is None:
+            self._aborted_with = (message, tb)
+
     def expect_event(self, event: str, timeout_ms: int = 5000) -> None:
         result = self.api.wait(event, timeout_ms=timeout_ms)
         if not result.get("fired"):

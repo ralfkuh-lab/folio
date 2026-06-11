@@ -26,6 +26,7 @@ import importlib.util
 import os
 import sys
 import time
+import traceback
 from pathlib import Path
 from typing import Callable
 
@@ -37,7 +38,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 from lib.api import AutomationApi  # noqa: E402
 from lib.app import AppController, discover_folio_binary, ensure_xvfb_or_no_op  # noqa: E402
-from lib.report import ReportWriter, ScenarioContext  # noqa: E402
+from lib.report import ReportWriter, ScenarioAbort, ScenarioContext  # noqa: E402
 from lib.todo import append_e2e_failure_entry  # noqa: E402
 from lib.visual import VisualSuite  # noqa: E402
 
@@ -184,40 +185,51 @@ def main(argv: list[str]) -> int:
     run_start_wall = time.time()
     results = []
 
-    for name, run_fn in scenarios:
-        restore_fixtures()
-        print(f"[>] {name}")
-        ctx = ScenarioContext(name, api, visual, fixtures_dir)
+    # try/finally: Fixtures-Restore und App-Stop muessen auch bei
+    # Ctrl+C/Crash mitten in einem schreibenden Szenario laufen — sonst
+    # snapshottet der NAECHSTE Run die verschmutzten Fixtures "als
+    # pristine" und restored sie konsequent vor jedem Szenario
+    # (persistente Visual-Diffs bis zum manuellen git checkout).
+    try:
+        for name, run_fn in scenarios:
+            restore_fixtures()
+            print(f"[>] {name}")
+            ctx = ScenarioContext(name, api, visual, fixtures_dir)
+            try:
+                run_fn(ctx)
+            except ScenarioAbort:
+                # Im Step-Wrapper bereits erfasst; Run weiterfuehren.
+                pass
+            except Exception as e:
+                # Exception AUSSERHALB eines step()-Blocks (Setup,
+                # Pre-Loops): ohne Registrierung wuerde finish() das
+                # Szenario mit 0 Steps als PASS werten.
+                ctx.record_failure(
+                    str(e) or e.__class__.__name__, traceback.format_exc()
+                )
+            result = ctx.finish()
+            results.append(result)
+            status = "PASS" if result.passed else "FAIL"
+            print(f"[{status}] {name} ({result.duration_s:.2f}s)")
+
+        # Vor dem Stop: console.errors einsammeln (best effort).
         try:
-            run_fn(ctx)
+            errs = api.console_errors(clear=False)
+            if errs.get("count", 0) > 0:
+                (artifacts_dir / "console-errors.json").write_text(
+                    __import__("json").dumps(errs, indent=2, ensure_ascii=False),
+                    encoding="utf-8",
+                )
         except Exception:
-            # ScenarioAbort und alles andere wird im Step-Wrapper bereits
-            # geloggt; hier nur den Run weiterführen.
             pass
-        result = ctx.finish()
-        results.append(result)
-        status = "PASS" if result.passed else "FAIL"
-        print(f"[{status}] {name} ({result.duration_s:.2f}s)")
+    finally:
+        # Fixtures auf den Start-Zustand zuruecksetzen, damit ein Lauf
+        # keine Diffs im Working Tree hinterlaesst.
+        restore_fixtures()
+        if app is not None:
+            app.stop(api)
 
     run_end_wall = time.time()
-
-    # Fixtures auf den Start-Zustand zuruecksetzen, damit ein Lauf keine
-    # Diffs im Working Tree hinterlaesst.
-    restore_fixtures()
-
-    # Vor dem Stop: console.errors einsammeln (best effort).
-    try:
-        errs = api.console_errors(clear=False)
-        if errs.get("count", 0) > 0:
-            (artifacts_dir / "console-errors.json").write_text(
-                __import__("json").dumps(errs, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
-    except Exception:
-        pass
-
-    if app is not None:
-        app.stop(api)
 
     writer = ReportWriter(artifacts_dir)
     report_path, errors_path = writer.write(
