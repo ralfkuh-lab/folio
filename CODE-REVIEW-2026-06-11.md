@@ -347,6 +347,12 @@ npm-Artefakte, .gitattributes), `lib/api.py`/`lib/app.py` der E2E-Suite,
 3. ~~**K5, M9, M10**~~ ✓ erledigt 2026-06-11
 4. ~~Mittel-Findings M2–M8, M11; Niedrig L1–L17~~ ✓ erledigt 2026-06-11
 
-**Stand 2026-06-11: alle Findings abgearbeitet.** Offen bleibt nur die
+**Stand 2026-06-11: alle Findings abgearbeitet.** ~~Offen bleibt nur die
 Verifikation der E2E-Suite auf dem Linux-Runner (Baselines 20/21/22
-werden neu angelegt; Diff-Metrik ist empfindlicher geworden).
+werden neu angelegt; Diff-Metrik ist empfindlicher geworden).~~
+✓ erledigt 2026-06-11: Linux-Run grün (22/22 Szenarien, alle Visual-
+Diffs unter Threshold), Baselines 20/21/22 neu aufgenommen. Hinweis:
+ein erster Lauf testete versehentlich gegen eine alte, parallel
+laufende `/usr/bin/folio`-Instanz auf Port 9876 — `run-e2e.sh` erkennt
+einen belegten Port nicht und die Suite verbindet sich dann mit der
+falschen Instanz.
