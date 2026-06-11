@@ -397,7 +397,11 @@ function clearMarks(): void {
 }
 
 function dispatchState(): void {
-    const detail = { term: currentTerm, total: rangesArr.length, active: activeIdx };
+    // source: 'view' wie in markdown.ts — der Split-Mode-Filter in
+    // find-bar.ts unterdrueckt View-States nur anhand dieses Felds;
+    // ohne es konnte der (suppressed) HtmlFinder-State den
+    // Monaco-Zaehler im Split-HTML-Mode ueberschreiben.
+    const detail = { source: 'view' as const, term: currentTerm, total: rangesArr.length, active: activeIdx };
     try {
         window.dispatchEvent(new CustomEvent('folio-find-state', { detail }));
     } catch (_) { /* ignore */ }
@@ -409,7 +413,7 @@ function dispatchState(): void {
 function dispatchProgress(partialTotal: number): void {
     try {
         window.dispatchEvent(new CustomEvent('folio-find-state', {
-            detail: { term: currentTerm, total: partialTotal, active: -1, scanning: true }
+            detail: { source: 'view', term: currentTerm, total: partialTotal, active: -1, scanning: true }
         }));
     } catch (_) { /* ignore */ }
 }
