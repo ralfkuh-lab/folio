@@ -26,6 +26,11 @@ export function openAboutDialog(payload: AboutPayload): void {
     setField('about-build', payload.buildDate);
     setField('about-commit', payload.gitHash);
     dlg.hidden = false;
+    // Re-Open ohne Close: alten Handler abraeumen, sonst leakt er
+    // (die Modul-Variable haelt nur den zuletzt registrierten).
+    if (keydownHandler) {
+        document.removeEventListener('keydown', keydownHandler);
+    }
     keydownHandler = function (e: KeyboardEvent) {
         if (e.key === 'Escape' || e.key === 'Enter') {
             e.preventDefault();

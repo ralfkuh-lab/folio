@@ -508,6 +508,10 @@ export async function openImageDialog(opts: OpenImageDialogOptions = {}): Promis
         ? 'Kein Dokument geöffnet — Bild wird mit absolutem Pfad eingefügt.'
         : null);
 
+    // Re-Open ohne Close: alten Handler abraeumen, sonst leakt er.
+    if (keydownHandler) {
+        document.removeEventListener('keydown', keydownHandler);
+    }
     keydownHandler = (e: KeyboardEvent) => {
         if (e.key === 'Escape') {
             e.preventDefault();

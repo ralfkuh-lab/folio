@@ -101,12 +101,29 @@ async function patchSettings(patch: Partial<SettingsData>): Promise<void> {
     }
 }
 
+// Keydown-Handler erst registrieren, wenn der Dialog tatsaechlich
+// sichtbar wird — vorher konnte ein fehlgeschlagenes settings_get einen
+// Zombie-Handler hinterlassen (Dialog nie sichtbar, closeSettingsDialog
+// returnte am hidden-Check vor dem removeEventListener, und ab dann
+// wurde jede Enter/Escape-Taste app-weit preventDefault'd).
+function installKeydownHandler(): void {
+    if (keydownHandler) return;
+    keydownHandler = function (e: KeyboardEvent) {
+        if (e.key === 'Escape' || e.key === 'Enter') {
+            e.preventDefault();
+            closeSettingsDialog();
+        }
+    };
+    document.addEventListener('keydown', keydownHandler);
+}
+
 export function openSettingsDialog(): void {
     var dlg = $('settings-dialog');
     if (!dlg) return;
     var invoke = getInvoke();
     if (!invoke) {
         dlg.hidden = false;
+        installKeydownHandler();
         return;
     }
     invoke('settings_get').then(function (data: any) {
@@ -116,6 +133,7 @@ export function openSettingsDialog(): void {
         applySettingsToForm(currentSettings);
         applyLogLevelFromSettings(currentSettings.logLevel);
         dlg.hidden = false;
+        installKeydownHandler();
         setTimeout(function () {
             var btn = $('settings-close') as HTMLButtonElement | null;
             if (btn) btn.focus();
@@ -124,26 +142,18 @@ export function openSettingsDialog(): void {
         console.error('settings_get failed', err);
         folioLog.error('settings', 'settings_get failed', { error: String(err) });
     });
-
-    if (!keydownHandler) {
-        keydownHandler = function (e: KeyboardEvent) {
-            if (e.key === 'Escape' || e.key === 'Enter') {
-                e.preventDefault();
-                closeSettingsDialog();
-            }
-        };
-        document.addEventListener('keydown', keydownHandler);
-    }
 }
 
 export function closeSettingsDialog(): void {
-    var dlg = $('settings-dialog');
-    if (!dlg || dlg.hidden) return;
-    dlg.hidden = true;
+    // Handler-Removal VOR dem hidden-Early-Return — sonst bliebe er bei
+    // einem inkonsistenten Zustand (Handler da, Dialog hidden) haengen.
     if (keydownHandler) {
         document.removeEventListener('keydown', keydownHandler);
         keydownHandler = null;
     }
+    var dlg = $('settings-dialog');
+    if (!dlg || dlg.hidden) return;
+    dlg.hidden = true;
 }
 
 function bindInputs(): void {
