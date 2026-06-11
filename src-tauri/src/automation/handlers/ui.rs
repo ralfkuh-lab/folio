@@ -364,7 +364,7 @@ pub(in crate::automation) async fn post_workspace_pin(
     emit(
         &context,
         "vault:refresh",
-        serde_json::to_value(delta).unwrap(),
+        serde_json::to_value(delta).map_err(|e| ApiError::internal(e.to_string()))?,
     )?;
     ok()
 }
@@ -395,7 +395,7 @@ pub(in crate::automation) async fn post_workspace_unpin(
     emit(
         &context,
         "vault:refresh",
-        serde_json::to_value(delta).unwrap(),
+        serde_json::to_value(delta).map_err(|e| ApiError::internal(e.to_string()))?,
     )?;
     ok()
 }
@@ -445,7 +445,7 @@ async fn history_move(
     emit(
         &context,
         "navigation:changed",
-        serde_json::to_value(&response_entry).unwrap(),
+        serde_json::to_value(&response_entry).map_err(|e| ApiError::internal(e.to_string()))?,
     )?;
     Ok(Json(HistoryMoveResponse {
         ok: true,
