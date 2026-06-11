@@ -125,6 +125,24 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
                         }
                     }
                 }
+                WindowEvent::CloseRequested { api, .. } => {
+                    // Fenster-X mit ungespeicherten Aenderungen: Close
+                    // abfangen und denselben Quit-Prompt-Pfad wie
+                    // Strg+Q/Menue nutzen (menu:file_quit -> Frontend-
+                    // Prompt -> quit_app). Ohne Dirty-State (oder wenn
+                    // er nicht lesbar ist) schliesst das Fenster normal —
+                    // so kann ein totes Frontend den Close nie blockieren.
+                    let is_dirty = app
+                        .try_state::<AppState>()
+                        .and_then(|state| {
+                            state.document_store.lock().ok().map(|store| store.is_dirty)
+                        })
+                        .unwrap_or(false);
+                    if is_dirty {
+                        api.prevent_close();
+                        let _ = app.emit("menu:file_quit", serde_json::json!({}));
+                    }
+                }
                 _ => {}
             }
         })
@@ -270,6 +288,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             menu::menu_set_enabled,
             menu::menu_set_checked,
             menu::menu_dispatch,
+            menu::quit_app,
             commands::editor::editor_text_changed,
             commands::editor::editor_save_requested,
             commands::editor::discard_editor_changes,

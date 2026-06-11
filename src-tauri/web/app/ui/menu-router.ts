@@ -48,6 +48,15 @@ export function initMenuRouter(deps: Deps): void {
             safeInvoke('close_document', undefined, 'close_document');
         });
     });
+    // Backend emittiert menu:file_quit nur bei dirty Dokument (Strg+Q,
+    // Menue-Beenden, Fenster-X via CloseRequested) — sonst beendet es
+    // direkt. Nach bestaetigtem Prompt beendet quit_app ohne weiteres Gate.
+    ev.listen('menu:file_quit', function () {
+        requestSaveIfDirty().then(function (ok) {
+            if (!ok) return;
+            safeInvoke('quit_app', undefined, 'quit_app');
+        });
+    });
     ev.listen('menu:edit_undo', function () {
         if (window.FolioEditor && typeof window.FolioEditor.undo === 'function') {
             window.FolioEditor.undo();

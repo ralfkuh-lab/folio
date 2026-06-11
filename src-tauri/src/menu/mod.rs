@@ -67,3 +67,13 @@ pub async fn menu_dispatch(handle: AppHandle, id: String) -> Result<(), String> 
     dispatch_menu_action(&handle, &id);
     Ok(())
 }
+
+/// Beendet die App ohne weiteres Dirty-Gate — gerufen vom Frontend,
+/// nachdem der Quit-Prompt (`menu:file_quit`) bestätigt wurde. Der
+/// gegatete Einstieg ist `dispatch_menu_action(FILE_QUIT)` bzw. der
+/// `CloseRequested`-Handler in `lib.rs`.
+#[tauri::command]
+pub async fn quit_app(handle: AppHandle) -> Result<(), String> {
+    handle.exit(0);
+    Ok(())
+}
