@@ -121,24 +121,30 @@ fn explicit_id_regex() -> &'static Regex {
 /// `<li class="task-list-item">` and reorders attributes.
 /// This post-process string-rewrites the HTML to match the reference output.
 fn normalize_tasklist_html(html: &str) -> String {
-    let html = tasklist_ul_regex()
-        .replace_all(html, |captures: &regex::Captures<'_>| {
-            let attrs = captures.name("attrs").expect("attrs capture").as_str();
-            let body = captures.name("body").expect("body capture").as_str();
-            if body.contains(r#"<input type="checkbox""#) {
-                format!(
-                    r#"<ul{}>{body}</ul>"#,
-                    add_class_to_attrs(attrs, "contains-task-list")
-                )
-            } else {
-                captures
-                    .get(0)
-                    .expect("full tasklist ul match")
-                    .as_str()
-                    .to_string()
-            }
-        })
-        .into_owned();
+    // Nesting-aware statt Lazy-Regex: das fruehere
+    // `<ul[^>]*>(?s:.*?)</ul>`-Matching endete am ERSTEN inneren
+    // `</ul>` — eine normale aeussere Liste mit Task-Subliste bekam
+    // dadurch faelschlich `contains-task-list` (Bullet-Unterdrueckung
+    // auf der aeusseren Liste). Der Scanner markiert nur `<ul>`-Tags,
+    // die DIREKT (nicht ueber eine verschachtelte Liste) ein Task-Item
+    // enthalten.
+    let task_uls = find_direct_task_uls(html);
+    let html = if task_uls.is_empty() {
+        html.to_string()
+    } else {
+        let mut out = String::with_capacity(html.len() + task_uls.len() * 32);
+        let mut last = 0;
+        for &(start, gt) in &task_uls {
+            out.push_str(&html[last..start]);
+            let attrs = &html[start + 3..gt];
+            out.push_str("<ul");
+            out.push_str(&add_class_to_attrs(attrs, "contains-task-list"));
+            out.push('>');
+            last = gt + 1;
+        }
+        out.push_str(&html[last..]);
+        out
+    };
 
     tasklist_item_regex()
         .replace_all(&html, |captures: &regex::Captures<'_>| {
@@ -167,11 +173,60 @@ fn normalize_tasklist_html(html: &str) -> String {
         .into_owned()
 }
 
-fn tasklist_ul_regex() -> &'static Regex {
-    static REGEX: OnceLock<Regex> = OnceLock::new();
-    REGEX.get_or_init(|| {
-        Regex::new(r"(?s)<ul(?P<attrs>[^>]*)>(?P<body>.*?)</ul>").expect("tasklist ul regex")
-    })
+/// Liefert `(tag_start, '>'-Offset)` aller `<ul`-Tags, die direkt —
+/// also nicht erst in einer verschachtelten `<ul>`/`<ol>` — ein
+/// Task-Item (`<li…><input type="checkbox"`) enthalten. comrak emittiert
+/// lowercase-Tags, daher reicht der case-sensitive Vergleich.
+fn find_direct_task_uls(html: &str) -> Vec<(usize, usize)> {
+    // Stack-Eintrag: (is_ul, tag_start, '>'-Offset, has_direct_task)
+    let mut stack: Vec<(bool, usize, usize, bool)> = Vec::new();
+    let mut found = Vec::new();
+    let bytes = html.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] != b'<' {
+            i += 1;
+            continue;
+        }
+        let rest = &html[i..];
+        let is_list_open = (rest.starts_with("<ul") || rest.starts_with("<ol"))
+            && matches!(
+                bytes.get(i + 3),
+                Some(b'>') | Some(b' ') | Some(b'\t') | Some(b'\n')
+            );
+        if is_list_open {
+            if let Some(gt) = rest.find('>') {
+                stack.push((rest.starts_with("<ul"), i, i + gt, false));
+                i += gt + 1;
+                continue;
+            }
+        } else if rest.starts_with("</ul>") || rest.starts_with("</ol>") {
+            if let Some((is_ul, tag_start, gt, has_task)) = stack.pop() {
+                if is_ul && has_task {
+                    found.push((tag_start, gt));
+                }
+            }
+            i += 5;
+            continue;
+        } else if rest.starts_with("<li")
+            && matches!(bytes.get(i + 3), Some(b'>') | Some(b' ') | Some(b'\t'))
+        {
+            if let Some(gt) = rest.find('>') {
+                if rest[gt + 1..].starts_with(r#"<input type="checkbox""#) {
+                    if let Some(top) = stack.last_mut() {
+                        if top.0 {
+                            top.3 = true;
+                        }
+                    }
+                }
+                i += gt + 1;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    found.sort_unstable();
+    found
 }
 
 fn tasklist_item_regex() -> &'static Regex {
@@ -423,5 +478,26 @@ mod tests {
         let html = normalize_tasklist_html("<ul><li>Plain item</li></ul>");
         assert!(!html.contains("contains-task-list"));
         assert_eq!("<ul><li>Plain item</li></ul>", html);
+    }
+
+    #[test]
+    fn test_nested_tasklist_marks_only_inner_ul() {
+        // Aeussere normale Liste mit Task-SUBliste: nur die innere <ul>
+        // bekommt contains-task-list (das fruehere Lazy-Regex-Matching
+        // markierte die aeussere, weil ihr Body bis zum ersten inneren
+        // </ul> die Checkbox enthielt).
+        let html = normalize_tasklist_html(
+            "<ul><li>Outer<ul><li><input type=\"checkbox\" disabled=\"\" /> Task</li></ul></li><li>Second</li></ul>",
+        );
+        assert!(html.starts_with("<ul><li>Outer<ul class=\"contains-task-list\">"));
+        assert_eq!(1, html.matches("contains-task-list").count());
+    }
+
+    #[test]
+    fn test_task_in_nested_ol_does_not_mark_outer_ul() {
+        let html = normalize_tasklist_html(
+            "<ul><li>Outer<ol><li><input type=\"checkbox\" disabled=\"\" /> Task</li></ol></li></ul>",
+        );
+        assert!(!html.contains("contains-task-list"));
     }
 }
