@@ -65,7 +65,21 @@ if [[ "$ATTACH" -eq 1 ]]; then
     exec python3 "tests/e2e/run.py" --attach "${PASSTHROUGH_ARGS[@]}"
 fi
 
-# 1) Xvfb anwerfen
+# 1) Port-Vorabcheck: Folio bindet die Automation-API fix auf 9876. Ist der
+# Port schon belegt (z. B. eine parallel laufende Desktop-Instanz), startet
+# die Test-Instanz zwar, aber ohne API — und die Suite verbindet sich
+# unbemerkt mit der fremden Instanz. Deshalb hier hart abbrechen.
+if curl -sf --max-time 2 http://127.0.0.1:9876/state >/dev/null 2>&1; then
+    log "Port 9876 ist bereits belegt — dort laeuft schon eine Folio-Instanz."
+    log "Diese Instanz beenden (oder mit --attach gegen sie testen)."
+    exit 1
+elif command -v ss >/dev/null 2>&1 && ss -tln 2>/dev/null | grep -q '127\.0\.0\.1:9876 '; then
+    log "Port 9876 ist bereits belegt (Prozess antwortet nicht wie Folio)."
+    log "Belegenden Prozess beenden: ss -tlnp | grep 9876"
+    exit 1
+fi
+
+# 2) Xvfb anwerfen
 if ! command -v Xvfb >/dev/null 2>&1; then
     log "Xvfb fehlt. Auf Debian/Ubuntu: 'sudo apt install xvfb'."
     exit 1
@@ -91,7 +105,7 @@ export DISPLAY="${DISPLAY_ARG}"
 export WEBKIT_DISABLE_COMPOSITING_MODE=1
 export WEBKIT_DISABLE_DMABUF_RENDERER=1
 
-# 2) Folio-Release-Binary sicherstellen
+# 3) Folio-Release-Binary sicherstellen
 BIN="src-tauri/target/release/folio"
 if [[ ! -x "$BIN" ]]; then
     log "Release-Binary fehlt — baue mit 'cargo build --release' ..."
@@ -102,7 +116,7 @@ if [[ ! -x "$BIN" ]]; then
     exit 1
 fi
 
-# 3) XDG-Isolation: Folios Config/State/Data-Verzeichnisse vom User-Profil
+# 4) XDG-Isolation: Folios Config/State/Data-Verzeichnisse vom User-Profil
 # entkoppeln, damit Tests reproduzierbar laufen und nicht das Recent/
 # Workspace/Panel-State des Devs verändern. $HOME bleibt absichtlich
 # intakt — WebKitGTK- und fontconfig-Caches werden gemeinsam genutzt
@@ -125,7 +139,7 @@ export FOLIO_E2E_CONSOLE_LOG="${FOLIO_LOG}"
 "$BIN" >"${FOLIO_LOG}" 2>&1 &
 FOLIO_PID=$!
 
-# 4) Automation-API abwarten
+# 5) Automation-API abwarten
 log "warte auf Automation-API ..."
 for _ in $(seq 1 60); do
     if curl -sf http://127.0.0.1:9876/state >/dev/null 2>&1; then
@@ -144,7 +158,7 @@ if ! curl -sf http://127.0.0.1:9876/state >/dev/null 2>&1; then
     exit 1
 fi
 
-# 5) Python-Suite anwerfen (im --attach-Mode, weil Folio schon laeuft)
+# 6) Python-Suite anwerfen (im --attach-Mode, weil Folio schon laeuft)
 log "starte E2E-Suite ..."
 set +e
 python3 "tests/e2e/run.py" --attach "${PASSTHROUGH_ARGS[@]}"

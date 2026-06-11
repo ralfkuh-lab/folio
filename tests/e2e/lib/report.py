@@ -129,6 +129,19 @@ class ScenarioContext:
         png = self.api.screenshot()
         result = self.visual.compare(full_name, png, threshold_ratio=threshold_ratio)
         if not result.passed:
+            # Einmaliger Retry: der rAF-Ack aus /sync/render garantiert nur,
+            # dass die Page gerendert hat — nicht, dass WebKits Frame schon
+            # im Xvfb-Framebuffer angekommen ist (Monitor-Capture liest den
+            # X-Server, nicht die Page). Ein veralteter Frame verschwindet
+            # beim Recapture; eine echte Regression failt auch beim zweiten
+            # Versuch.
+            self.visual.discard(result)
+            self.api.sync_render()
+            png = self.api.screenshot()
+            result = self.visual.compare(
+                full_name, png, threshold_ratio=threshold_ratio
+            )
+        if not result.passed:
             raise AssertionError(f"visual diff failed: {result.message}")
 
     # ----- finalize ---------------------------------------------------

@@ -158,6 +158,16 @@ class VisualSuite:
         self.results.append(result)
         return result
 
+    def discard(self, result: CompareResult) -> None:
+        """Nimmt ein bereits registriertes Ergebnis aus der Summary zurück
+        (Retry-Pfad in `report.py::screenshot` — der Fehlversuch soll nicht
+        als ✗ in der Vergleichstabelle stehen, wenn der Recapture passt).
+        """
+        try:
+            self.results.remove(result)
+        except ValueError:
+            pass
+
     def _diff(self, cur: "Image.Image", base: "Image.Image", name: str) -> Tuple[float, Path]:
         # Kanal-Maximum statt Luminanz-Konvertierung: convert("L")
         # gewichtet Blau mit 0.114 — eine reine Blaukanal-Abweichung bis
@@ -193,6 +203,10 @@ class VisualSuite:
             red = Image.new("RGB", cur.size, (255, 0, 64))
             visual.paste(red, mask=mask)
             visual.save(diff_path)
+        elif diff_path.exists():
+            # Stale Diff aus einem frueheren Versuch (Screenshot-Retry)
+            # nicht liegen lassen — er gehoert zu keinem Ergebnis mehr.
+            diff_path.unlink()
         return ratio, diff_path
 
     def summary(self) -> dict:

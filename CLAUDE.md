@@ -396,7 +396,12 @@ ersten Run automatisch angelegt.
 **Screenshot-Sync**: `report.py::screenshot` ruft vor jeder Aufnahme
 `POST /sync/render` (deterministischer rAF-Roundtrip-Ack, siehe
 Automation-API oben) statt eines fixen Sleeps — das WebView-Reflow nach
-Backend-State-Wechsel ist sonst nicht synchron.
+Backend-State-Wechsel ist sonst nicht synchron. Bei Visual-Mismatch gibt
+es **einen** Retry (erneut sync + Recapture): der rAF-Ack garantiert
+nicht, dass WebKits Frame schon im Xvfb-Framebuffer angekommen ist
+(Monitor-Capture liest den X-Server, nicht die Page) — ein veralteter
+Frame verschwindet beim Recapture, eine echte Regression failt auch im
+zweiten Versuch.
 
 **Fixture-Isolation**: Schreibende Szenarien (03/08/10/11/15) modifizieren
 Fixtures in place. `run.py` snapshottet `tests/e2e/fixtures/` beim Start
