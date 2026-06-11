@@ -4,16 +4,13 @@
 
 import {
     getCleanText,
-    getCurrentPath,
     getIsDirty,
     openDocument,
     requestSaveIfDirty,
     saveCurrent,
-    syncEditorTextToStore,
     showStatus,
 } from '../state/document';
 import { setMode } from '../editor/shell';
-import { initExportDialog } from './export-dialog';
 import { openImageDialog } from './image-dialog';
 import { showCheatSheet, hideCheatSheet, cheatSheetRows } from './cheatsheet';
 import { folioLog, safeInvoke } from '../util/log';
@@ -38,12 +35,9 @@ export function initToolbarActions(): void {
     bind('tb-mode-split', function () { setMode('split'); });
     bind('tb-save', function () { if (getIsDirty()) saveCurrent(); });
 
-    /* ----- Export-Dialog (Modul) ----- */
-    initExportDialog({
-        getCurrentPath,
-        syncEditorTextToStore: syncEditorTextToStore,
-        showStatus: showStatus,
-    });
+    /* Export-Dialog wird in main.ts initialisiert (initExportDialog) —
+       ein zweiter Init hier wuerde alle Listener doppelt binden
+       (doppelter Export, geleakter Keydown-Handler). */
 
     bind('tb-rail-left', function () {
         var btn = $('tb-rail-left'); if (!btn) return;

@@ -81,6 +81,12 @@ function openExportDialog(): void {
         });
         selectLayoutCard((layouts && layouts[0] && layouts[0].id) || null);
         $('export-dialog').hidden = false;
+        // Defensive: bei Re-Open ohne Close (z. B. Doppelklick auf
+        // tb-export) den alten Handler abraeumen, sonst leakt er —
+        // closeExportDialog entfernt nur den zuletzt registrierten.
+        if (exportKeydownHandler) {
+            document.removeEventListener('keydown', exportKeydownHandler);
+        }
         exportKeydownHandler = function (e: KeyboardEvent) {
             if (e.key === 'Escape') {
                 e.preventDefault();
@@ -103,6 +109,9 @@ function closeExportDialog(): void {
         document.removeEventListener('keydown', exportKeydownHandler);
         exportKeydownHandler = null;
     }
+    // Sonst wuerde ein verbliebener Keydown-Handler (oder der naechste
+    // Enter-Druck nach Re-Open-Fehler) mit dem alten Layout exportieren.
+    selectedLayoutId = null;
     const cards = $('export-cards');
     if (cards) cards.innerHTML = '';
 }

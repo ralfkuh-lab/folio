@@ -50,7 +50,12 @@ Images auf `"edit"`, obwohl Edit für Images gesperrt ist.
 `load_opaque` für Image), Index erst nach erfolgreichem Load committen;
 `NavEntry::from` clampt Images auf `"view"`.
 
-### ⬜ K3 — `initExportDialog` doppelt initialisiert → Doppel-Export + Keydown-Leak
+### ✅ K3 — `initExportDialog` doppelt initialisiert → Doppel-Export + Keydown-Leak
+**Behoben (2026-06-11):** Init-Aufruf aus `toolbar-actions.ts` entfernt
+(main.ts ist kanonisch, Kommentar als Guard), `selectedLayoutId = null`
+in `closeExportDialog`, defensiver Handler-Cleanup bei Re-Open ohne
+Close. Neuer jsdom-Test `tests/ui/export-dialog.test.ts` (3 Fälle:
+Einzel-Export, Enter-nach-Close, Re-Open-Leak).
 **Verifiziert.** `main.ts:88` **und** `toolbar-actions.ts:42` rufen beide
 `initExportDialog`; kein Guard (`export-dialog.ts:129`). Alle Listener
 doppelt → „Speichern" startet zwei Exporte; `openExportDialog` registriert
