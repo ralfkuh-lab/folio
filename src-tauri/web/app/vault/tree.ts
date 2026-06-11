@@ -338,19 +338,9 @@ export function initVaultTree(d: Deps): void {
         });
     });
 
-    // ----- vault-item-Klicks (Pinned/Recent-Sections) + lokales Kontextmenue -----
-    ROOT.addEventListener('click', function (e: MouseEvent) {
-        const item = (e.target as HTMLElement).closest('.vault-item') as HTMLElement;
-        if (!item) return;
-        const path = item.getAttribute('data-path');
-        const isDir = item.getAttribute('data-directory') === 'true';
-        if (!path) return;
-        if (isDir) {
-            safeInvoke('vault_expand_dir', { path }, 'vault_expand_dir');
-        } else {
-            deps.openDocument(path);
-        }
-    });
+    // Der fruehere `.vault-item`-Klickpfad ist entfernt: das Markup wird
+    // vom Backend nirgends mehr erzeugt (Tree besteht aus .node/.row),
+    // und der Pfad rief vault_expand_dir ohne VaultWatcher-Sync.
     ROOT.addEventListener('contextmenu', function (e: MouseEvent) {
         const item = (e.target as HTMLElement).closest('li.node') as HTMLElement;
         if (!item) return;

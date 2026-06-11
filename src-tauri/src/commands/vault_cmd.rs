@@ -1,25 +1,12 @@
 use crate::state::AppState;
 use tauri::{AppHandle, Emitter, State};
 
-#[tauri::command]
-pub async fn vault_expand_dir(path: String, state: State<'_, AppState>) -> Result<String, String> {
-    state
-        .vault
-        .lock()
-        .map_err(|_| "vault lock poisoned".to_string())?
-        .on_expand(path)
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-pub async fn vault_collapse_dir(path: String, state: State<'_, AppState>) -> Result<(), String> {
-    state
-        .vault
-        .lock()
-        .map_err(|_| "vault lock poisoned".to_string())?
-        .on_collapse(&path);
-    Ok(())
-}
+// Hinweis: vault_expand_dir/vault_collapse_dir als Tauri-Commands sind
+// entfernt — sie mutierten nur expanded_dirs OHNE VaultWatcher-Sync und
+// hatten nur noch einen toten Frontend-Aufrufer. Expand/Collapse laeuft
+// ausschliesslich ueber die shell-Events `expand-dir`/`collapse-dir`
+// (commands/events/vault.rs), die Vault-State und Watcher symmetrisch
+// halten.
 
 #[tauri::command]
 pub async fn vault_toggle_section(

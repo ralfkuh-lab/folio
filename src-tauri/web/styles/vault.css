@@ -53,22 +53,6 @@ body.vault-hidden .vault-region { display: none; }
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-.vault-region .vault-item {
-  display: flex;
-  align-items: center;
-  padding: 3px 10px;
-  margin: 1px 4px;
-  border-radius: 3px;
-  cursor: pointer;
-}
-.vault-region .vault-item:hover { background: var(--rail-hover-bg); }
-.vault-region .vault-item.active {
-  background: var(--rail-selected-bg);
-  color: var(--rail-selected-fg);
-  font-weight: 600;
-}
-.vault-region .vault-item .vault-icon { width: 18px; flex: 0 0 auto; text-align: center; margin-right: 4px; }
-.vault-region .vault-item .vault-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Vault-Tree (innerhalb .vault-region) */
 .vault-region ul.tree { list-style: none; margin: 0; padding: 4px 0 24px 0; }
 .vault-region ul { list-style: none; margin: 0; padding: 0; }
