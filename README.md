@@ -65,6 +65,37 @@ folio/
 └── README.md
 ```
 
+## Installation
+
+Fertige Installer gibt es auf der
+[Releases-Seite](https://github.com/ralfkuh-lab/folio/releases):
+
+| Plattform | Datei |
+|---|---|
+| macOS | `Folio_<version>_x64.dmg` |
+| Windows | `Folio_<version>_x64-setup.exe` oder `.msi` |
+| Linux (Debian/Ubuntu) | `Folio_<version>_amd64.deb` |
+| Linux (Fedora/openSUSE) | `Folio-<version>-1.x86_64.rpm` |
+| Linux (portabel) | `Folio_<version>_amd64.AppImage` |
+
+### macOS: Gatekeeper-Hinweis
+
+Die macOS-Builds sind **ad-hoc-signiert und nicht notarisiert** (kein
+Apple-Developer-Programm). Beim ersten Start blockiert Gatekeeper die App
+mit „Folio ist beschädigt" bzw. „kann nicht überprüft werden". Workaround —
+eine der beiden Varianten:
+
+- Rechtsklick auf `Folio.app` → **Öffnen** → Dialog mit **Öffnen** bestätigen, oder
+- Quarantäne-Flag entfernen:
+
+  ```bash
+  xattr -d com.apple.quarantine /Applications/Folio.app
+  ```
+
+Das ist nur beim ersten Start nötig. Windows zeigt aus demselben Grund
+(unsignierter Installer) eine SmartScreen-Warnung — über „Weitere
+Informationen" → „Trotzdem ausführen" fortfahren.
+
 ## Build
 
 ### Voraussetzungen
