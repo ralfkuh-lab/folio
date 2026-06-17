@@ -378,12 +378,17 @@ impl Vault {
         } else {
             String::new()
         };
+        let exec_attr = if !is_directory && crate::file_kind::is_executable(&nav_path) {
+            r#" data-exec="1""#
+        } else {
+            ""
+        };
         // title-Attribut: vollstaendiger Pfad als Browser-Tooltip beim
         // Hover. Wichtig fuer Datei-Namen, die im Tree gekuerzt werden,
         // und damit der User auf einen Blick sieht, woher ein Pin oder
         // Recent-Eintrag stammt.
         format!(
-            r#"<li class="{classes}" data-kind="{kind}" data-path="{path}" title="{path}"><div class="row"><span class="{caret_class}">▾</span>{icon_html}<span class="label">{name}</span></div><ul class="{children_class}">{children}</ul></li>"#,
+            r#"<li class="{classes}" data-kind="{kind}"{exec_attr} data-path="{path}" title="{path}"><div class="row"><span class="{caret_class}">▾</span>{icon_html}<span class="label">{name}</span></div><ul class="{children_class}">{children}</ul></li>"#,
             path = escape_attr(&nav_path),
             name = escape_html(&label_name),
         )
@@ -523,6 +528,27 @@ mod tests {
         vault.set_active(Some("/tmp/a.md".into()));
         let html = vault.item_html("/tmp/a.md", &EntryInfo::plain(false));
         assert!(html.contains("node active"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn executable_file_gets_data_exec_attribute() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = TempDir::new().unwrap();
+        let exec_path = temp.path().join("script.sh");
+        std::fs::write(&exec_path, b"#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&exec_path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let plain_path = temp.path().join("notes.txt");
+        std::fs::write(&plain_path, b"hi").unwrap();
+
+        let exec_html =
+            Vault::new().item_html(&exec_path.to_string_lossy(), &EntryInfo::plain(false));
+        assert!(exec_html.contains(r#"data-exec="1""#));
+
+        // Nicht-ausfuehrbare Datei traegt das Attribut nicht.
+        let plain_html =
+            Vault::new().item_html(&plain_path.to_string_lossy(), &EntryInfo::plain(false));
+        assert!(!plain_html.contains("data-exec"));
     }
 
     #[test]

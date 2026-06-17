@@ -201,6 +201,33 @@ pub fn classify(path: &str) -> FileKind {
     FileKind::Binary
 }
 
+/// Heuristik, ob `path` "ausführbar" im Sinne eines Doppelklicks im
+/// Dateimanager ist. Unix: reguläre Datei mit gesetztem Execute-Bit
+/// (folgt Symlinks via `metadata`). Windows: reguläre Datei mit Endung
+/// aus einer PATHEXT-ähnlichen Liste. Verzeichnisse und nicht
+/// existierende Pfade sind nie ausführbar.
+#[cfg(unix)]
+pub fn is_executable(path: &str) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    match std::fs::metadata(Path::new(path)) {
+        Ok(meta) => meta.is_file() && (meta.permissions().mode() & 0o111 != 0),
+        Err(_) => false,
+    }
+}
+
+#[cfg(windows)]
+pub fn is_executable(path: &str) -> bool {
+    const EXEC_EXT: &[&str] = &["exe", "bat", "cmd", "com", "ps1", "msi", "scr"];
+    let p = Path::new(path);
+    if !p.is_file() {
+        return false;
+    }
+    p.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| EXEC_EXT.contains(&e.to_ascii_lowercase().as_str()))
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -247,5 +274,36 @@ mod tests {
         assert_eq!(FileKind::Image, classify("animated.gif"));
         assert_eq!(FileKind::Image, classify("photo.jpeg"));
         assert_eq!(FileKind::Image, classify("photo.jpg"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_is_executable_unix() {
+        use std::fs::{remove_file, set_permissions, File, Permissions};
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut temp_path = std::env::temp_dir();
+        let file_name = format!("test_exec_{}", std::process::id());
+        temp_path.push(file_name);
+
+        let path_str = temp_path.to_str().unwrap();
+
+        // Frisch geschriebene Datei anlegen (ohne +x)
+        {
+            let _file = File::create(&temp_path).unwrap();
+        }
+        set_permissions(&temp_path, Permissions::from_mode(0o644)).ok();
+        assert!(!is_executable(path_str));
+
+        // Nach set_permissions(0o755) -> true
+        set_permissions(&temp_path, Permissions::from_mode(0o755)).unwrap();
+        assert!(is_executable(path_str));
+
+        // Datei wieder löschen
+        let _ = remove_file(&temp_path);
+
+        // Ein Verzeichnis (z. B. std::env::temp_dir()) -> false
+        let temp_dir_str = std::env::temp_dir().to_str().unwrap().to_string();
+        assert!(!is_executable(&temp_dir_str));
     }
 }

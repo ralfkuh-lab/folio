@@ -84,3 +84,35 @@ export function showUnsavedDialog(): Promise<'save' | 'discard' | 'cancel'> {
         setTimeout(function () { const btn = $('unsaved-save'); if (btn) btn.focus(); }, 0);
     });
 }
+
+// Ausführen-Bestätigung: resolves true = ausführen, false = abbrechen.
+// Default-Fokus liegt bewusst auf "Abbrechen" (kein versehentliches
+// Ausführen per Enter).
+export function confirmRunFile(name: string): Promise<boolean> {
+    return new Promise<boolean>(function (resolve) {
+        const dialog = $('run-confirm-dialog');
+        const ok = $('run-confirm-ok');
+        const cancel = $('run-confirm-cancel');
+        const text = $('run-confirm-text');
+        if (!dialog || !ok || !cancel) { resolve(false); return; }
+        if (text) text.textContent = '„' + name + '" als Programm ausführen?';
+        dialog.hidden = false;
+        function done(result: boolean): void {
+            dialog.hidden = true;
+            ok.removeEventListener('click', onOk);
+            cancel.removeEventListener('click', onCancel);
+            document.removeEventListener('keydown', onKey);
+            resolve(result);
+        }
+        function onOk(): void { done(true); }
+        function onCancel(): void { done(false); }
+        function onKey(e: KeyboardEvent): void {
+            if (e.key === 'Escape') { e.preventDefault(); done(false); }
+        }
+        ok.addEventListener('click', onOk);
+        cancel.addEventListener('click', onCancel);
+        document.addEventListener('keydown', onKey);
+        setTimeout(function () { cancel.focus(); }, 0);
+    });
+}
+

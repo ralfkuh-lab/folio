@@ -11,6 +11,13 @@ type Deps = {
 };
 
 import { safeInvoke } from '../util/log';
+import { confirmRunFile } from '../ui/dialogs';
+
+function basename(p: string): string {
+    const n = p.replace(/\\/g, '/');
+    const i = n.lastIndexOf('/');
+    return i >= 0 ? n.slice(i + 1) : n;
+}
 
 let deps: Deps = null;
 let ctxMenu: HTMLElement | null = null;
@@ -27,11 +34,16 @@ export function openContextMenu(
     isDir: boolean,
     inPinned: boolean,
     inRecent: boolean,
+    isExec: boolean,
 ): void {
     if (!ctxMenu) return;
     ctxTarget = { path, isDirectory: isDir };
     const parts: string[] = [];
     if (!isDir) parts.push('<div class="ctx-item" data-act="open">Öffnen</div>');
+    if (!isDir) {
+        if (isExec) parts.push('<div class="ctx-item" data-act="run">Ausführen</div>');
+        else parts.push('<div class="ctx-item" data-act="open-default">Mit Standardprogramm öffnen</div>');
+    }
     const actionsBefore = parts.length;
     const actions: string[] = [];
     if (!isDir) actions.push('<div class="ctx-item" data-act="rename">Umbenennen</div>');
@@ -162,6 +174,12 @@ export function initContextMenu(d: Deps): void {
         closeContextMenu();
         if (act === 'open' && !isDir) {
             deps.openDocument(path);
+        } else if (act === 'run' && !isDir) {
+            confirmRunFile(basename(path)).then(function (ok) {
+                if (ok) safeInvoke('run_file', { path }, 'run_file', 'warn');
+            });
+        } else if (act === 'open-default' && !isDir) {
+            safeInvoke('open_with_default', { path }, 'open_with_default', 'warn');
         } else if (act === 'pin') {
             safeInvoke('workspace_pin', { path, isDirectory: isDir }, 'workspace_pin');
         } else if (act === 'unpin') {

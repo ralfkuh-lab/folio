@@ -349,7 +349,8 @@ export function initVaultTree(d: Deps): void {
         const isDir = item.getAttribute('data-kind') === 'dir';
         const inPinned = isDirectChildOfSection(item, 'pinned');
         const inRecent = isDirectChildOfSection(item, 'recent');
-        openContextMenu(e.clientX, e.clientY, path, isDir, inPinned, inRecent);
+        const isExec = item.getAttribute('data-exec') === '1';
+        openContextMenu(e.clientX, e.clientY, path, isDir, inPinned, inRecent, isExec);
     });
 
     // ----- MutationObserver: File-Icons fuer neu hinzugefuegte Tree-Knoten -----

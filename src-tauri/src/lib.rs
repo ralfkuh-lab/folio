@@ -276,6 +276,8 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::app::set_webview_zoom,
             commands::app::shell_opener::show_in_file_manager,
             commands::app::shell_opener::open_terminal_at,
+            commands::app::shell_opener::open_with_default,
+            commands::app::shell_opener::run_file,
             commands::app::settings::settings_get,
             commands::app::settings::settings_update,
             commands::app::log_bridge::frontend_log,

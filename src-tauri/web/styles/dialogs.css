@@ -1,5 +1,5 @@
-#unsaved-dialog[hidden], #rename-dialog[hidden] { display: none; }
-#unsaved-dialog, #rename-dialog {
+#unsaved-dialog[hidden], #rename-dialog[hidden], #run-confirm-dialog[hidden] { display: none; }
+#unsaved-dialog, #rename-dialog, #run-confirm-dialog {
   position: fixed;
   inset: 0;
   z-index: 10001;

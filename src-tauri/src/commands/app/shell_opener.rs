@@ -93,3 +93,55 @@ pub async fn open_terminal_at(path: String) -> Result<(), String> {
     #[allow(unreachable_code)]
     Ok(())
 }
+
+/// Datei mit dem registrierten Standardprogramm des OS öffnen
+/// (xdg-open / open / ShellExecute). Für nicht-ausführbare Dateien
+/// gedacht (PDF, Office, Bilder, …).
+#[tauri::command]
+pub async fn open_with_default(path: String, handle: AppHandle) -> Result<(), String> {
+    #[allow(deprecated)]
+    handle
+        .shell()
+        .open(path, None)
+        .map_err(|error| error.to_string())
+}
+
+/// Ausführbare Datei als eigenständigen Prozess starten (Arbeitsverzeichnis
+/// = Dateiordner), analog Doppelklick im Dateimanager. Schließt die
+/// Linux-Lücke, in der `xdg-open` Skripte/Binaries im Editor öffnet statt
+/// auszuführen. Defensiv: lehnt nicht-ausführbare Pfade ab.
+#[tauri::command]
+pub async fn run_file(path: String, handle: AppHandle) -> Result<(), String> {
+    if !crate::file_kind::is_executable(&path) {
+        return Err("Datei ist nicht ausführbar".into());
+    }
+
+    tracing::warn!(target: "folio::ipc", %path, "run_file: spawning executable");
+
+    #[cfg(unix)]
+    {
+        let p = Path::new(&path);
+        let mut cmd = std::process::Command::new(p);
+        if let Some(dir) = p.parent().filter(|d| !d.as_os_str().is_empty()) {
+            cmd.current_dir(dir);
+        }
+        cmd.spawn().map_err(|e| e.to_string())?;
+        let _ = &handle; // auf Unix ungenutzt
+        return Ok(());
+    }
+
+    #[cfg(windows)]
+    {
+        // Auf Windows ist ShellExecute (== shell().open) das Doppelklick-
+        // Verhalten und führt .exe/.bat/.cmd/.ps1 korrekt aus.
+        #[allow(deprecated)]
+        handle
+            .shell()
+            .open(path, None)
+            .map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+
+    #[allow(unreachable_code)]
+    Ok(())
+}
