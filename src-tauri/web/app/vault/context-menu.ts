@@ -19,6 +19,19 @@ function basename(p: string): string {
     return i >= 0 ? n.slice(i + 1) : n;
 }
 
+// Externe Datei-Aktion, geteilt von Kontextmenü und Doppelklick im Tree:
+// ausführbare Dateien werden nach Bestätigung als Prozess gestartet, alle
+// anderen mit dem Standardprogramm des OS geöffnet.
+export function runOrOpenFile(path: string, isExec: boolean): void {
+    if (isExec) {
+        confirmRunFile(basename(path)).then(function (ok) {
+            if (ok) safeInvoke('run_file', { path }, 'run_file', 'warn');
+        });
+    } else {
+        safeInvoke('open_with_default', { path }, 'open_with_default', 'warn');
+    }
+}
+
 let deps: Deps = null;
 let ctxMenu: HTMLElement | null = null;
 let ctxTarget: { path: string; isDirectory: boolean } | null = null;
@@ -175,11 +188,9 @@ export function initContextMenu(d: Deps): void {
         if (act === 'open' && !isDir) {
             deps.openDocument(path);
         } else if (act === 'run' && !isDir) {
-            confirmRunFile(basename(path)).then(function (ok) {
-                if (ok) safeInvoke('run_file', { path }, 'run_file', 'warn');
-            });
+            runOrOpenFile(path, true);
         } else if (act === 'open-default' && !isDir) {
-            safeInvoke('open_with_default', { path }, 'open_with_default', 'warn');
+            runOrOpenFile(path, false);
         } else if (act === 'pin') {
             safeInvoke('workspace_pin', { path, isDirectory: isDir }, 'workspace_pin');
         } else if (act === 'unpin') {

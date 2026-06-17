@@ -11,6 +11,7 @@ import { installTauriMock, type TauriMockHandles } from '../helpers';
 vi.mock('../../app/vault/context-menu', () => ({
     openContextMenu: vi.fn(),
     closeContextMenu: vi.fn(),
+    runOrOpenFile: vi.fn(),
 }));
 
 let tauri: TauriMockHandles;
@@ -39,6 +40,7 @@ function buildVaultDom(): void {
 }
 
 beforeEach(() => {
+    vi.clearAllMocks();
     tauri = installTauriMock();
     buildVaultDom();
     vi.resetModules();
@@ -113,6 +115,43 @@ describe('vault/tree — toggleDir via click', () => {
         fileRow.click();
 
         expect(openDocument).toHaveBeenCalledWith('/foo/bar.md');
+    });
+});
+
+describe('vault/tree — Doppelklick → externe Aktion', () => {
+    it('dblclick auf eine nicht-ausführbare Datei ruft runOrOpenFile(path, false)', async () => {
+        const ctxMenu = await import('../../app/vault/context-menu');
+        const tree = await import('../../app/vault/tree');
+        tree.initVaultTree({ openDocument: vi.fn() });
+
+        const row = document.querySelector('.node[data-kind="file"] .row') as HTMLElement;
+        row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, button: 0 }));
+
+        expect(ctxMenu.runOrOpenFile).toHaveBeenCalledWith('/foo/bar.md', false);
+    });
+
+    it('dblclick auf eine ausführbare Datei (data-exec="1") ruft runOrOpenFile(path, true)', async () => {
+        const ctxMenu = await import('../../app/vault/context-menu');
+        const tree = await import('../../app/vault/tree');
+        tree.initVaultTree({ openDocument: vi.fn() });
+
+        const fileNode = document.querySelector('.node[data-kind="file"]') as HTMLElement;
+        fileNode.setAttribute('data-exec', '1');
+        const row = fileNode.querySelector('.row') as HTMLElement;
+        row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, button: 0 }));
+
+        expect(ctxMenu.runOrOpenFile).toHaveBeenCalledWith('/foo/bar.md', true);
+    });
+
+    it('dblclick auf ein Verzeichnis ruft runOrOpenFile NICHT', async () => {
+        const ctxMenu = await import('../../app/vault/context-menu');
+        const tree = await import('../../app/vault/tree');
+        tree.initVaultTree({ openDocument: vi.fn() });
+
+        const row = document.querySelector('.node[data-kind="dir"] .row') as HTMLElement;
+        row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, button: 0 }));
+
+        expect(ctxMenu.runOrOpenFile).not.toHaveBeenCalled();
     });
 });
 

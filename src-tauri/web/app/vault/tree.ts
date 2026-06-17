@@ -11,7 +11,7 @@
    aus Event-Payload) und IIFE #2 (Tree-Rebuild via invoke). Reihenfolge:
    pinned/recent zuerst (sync DOM-Patches), dann refreshVault async. */
 
-import { openContextMenu, closeContextMenu } from './context-menu';
+import { openContextMenu, closeContextMenu, runOrOpenFile } from './context-menu';
 import { folioLog, safeInvoke } from '../util/log';
 
 type Deps = {
@@ -351,6 +351,22 @@ export function initVaultTree(d: Deps): void {
         const inRecent = isDirectChildOfSection(item, 'recent');
         const isExec = item.getAttribute('data-exec') === '1';
         openContextMenu(e.clientX, e.clientY, path, isDir, inPinned, inRecent, isExec);
+    });
+
+    // Doppelklick auf eine Datei loest die externe Aktion aus (ausfuehren /
+    // mit Standardprogramm oeffnen) — "fast wie im Explorer". Der Einzelklick
+    // (in Folio oeffnen) bleibt unveraendert und lief beim Doppelklick bereits;
+    // diese Geste kommt bewusst zusaetzlich obendrauf. preventDefault
+    // unterdrueckt die Wort-Selektion im Label. Verzeichnisse werden ignoriert.
+    ROOT.addEventListener('dblclick', function (e: MouseEvent) {
+        if (e.button !== 0) return;
+        const item = (e.target as HTMLElement).closest('li.node') as HTMLElement;
+        if (!item || item.getAttribute('data-kind') !== 'file') return;
+        const p = item.getAttribute('data-path');
+        if (!p) return;
+        e.preventDefault();
+        const isExec = item.getAttribute('data-exec') === '1';
+        runOrOpenFile(p, isExec);
     });
 
     // ----- MutationObserver: File-Icons fuer neu hinzugefuegte Tree-Knoten -----
