@@ -190,6 +190,55 @@ pre code {
   border-radius: 0;
   font-size: .875em;
 }
+/* Code-Block-Copy-Button (wie in KI-Web-Chats): oben rechts pro <pre>,
+   sichtbar bei Hover/Fokus. Markup + Verhalten in view/code-copy.ts. */
+.markdown-body pre { position: relative; }
+.markdown-body pre > .code-copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--fg-muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .12s ease, color .12s ease, border-color .12s ease;
+}
+/* Reveal bei Hover ueber dem Block oder Tastatur-Fokus. */
+.markdown-body pre:hover > .code-copy-btn,
+.markdown-body pre:focus-within > .code-copy-btn { opacity: 1; }
+.markdown-body pre > .code-copy-btn:hover { color: var(--fg); border-color: var(--fg-muted); }
+.markdown-body pre > .code-copy-btn:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.markdown-body pre > .code-copy-btn .cc-icon { display: inline-flex; }
+.markdown-body pre > .code-copy-btn .cc-check { display: none; }
+/* Erfolgs-State: gruener Haken statt Kopier-Icon. */
+.markdown-body pre > .code-copy-btn.copied {
+  opacity: 1;
+  color: #1a7f37;
+  border-color: #1a7f37;
+}
+.theme-dark .markdown-body pre > .code-copy-btn.copied {
+  color: #3fb950;
+  border-color: #3fb950;
+}
+.markdown-body pre > .code-copy-btn.copied .cc-copy { display: none; }
+.markdown-body pre > .code-copy-btn.copied .cc-check { display: inline-flex; }
+.markdown-body pre > .code-copy-btn.copy-failed {
+  opacity: 1;
+  color: #cf222e;
+  border-color: #cf222e;
+}
 table {
   border-collapse: collapse;
   margin: 0 0 16px;

@@ -12,6 +12,7 @@
 
 import { setTocList, rewriteRelativeAssets, ViewFinder } from '../view/markdown';
 import { highlightCodeBlocks } from '../view/code-highlight';
+import { addCodeCopyButtons } from '../view/code-copy';
 import { clearHtmlView, HtmlFinder, isHtmlDocument, mountHtmlView } from '../view/html';
 import { clearImageView, isImageDocument, mountImageView } from '../view/image';
 import { invalidatePreview } from '../view/preview';
@@ -284,6 +285,7 @@ function renderDocumentPayload(data: any): void {
         if (isMd) {
             rewriteRelativeAssets(body as HTMLElement, path);
             highlightCodeBlocks(body as HTMLElement);
+            addCodeCopyButtons(body as HTMLElement);
         }
     }
     document.body.classList.toggle('html-preview-mode', isHtml);
@@ -353,6 +355,7 @@ export function initDocumentState(d: Deps): void {
             if (isMd) {
                 rewriteRelativeAssets(body as HTMLElement, data.path || '');
                 highlightCodeBlocks(body as HTMLElement);
+                addCodeCopyButtons(body as HTMLElement);
             }
         }
         if (isHtml) {

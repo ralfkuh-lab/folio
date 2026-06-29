@@ -25,6 +25,7 @@ import {
     scrollViewTo,
 } from './view/markdown';
 import { initPreview } from './view/preview';
+import { initCodeCopy } from './view/code-copy';
 import { initMarkdownScrollSync, syncViewSlugToEditor, tocClickToEditor } from './view/scroll-sync';
 import { scrollHtmlViewToAnchor } from './view/html';
 import { initHtmlScrollSync } from './view/html-scroll-sync';
@@ -104,6 +105,7 @@ initDragDrop();
 initAutomationEvents();
 initDocumentState({ setActiveMode });
 initPreview({ getCurrentPath });
+initCodeCopy();
 initMarkdownScrollSync();
 initHtmlScrollSync();
 

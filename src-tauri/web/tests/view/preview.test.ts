@@ -20,6 +20,9 @@ vi.mock('../../app/view/markdown', () => ({
 vi.mock('../../app/view/code-highlight', () => ({
     highlightCodeBlocks: vi.fn(),
 }));
+vi.mock('../../app/view/code-copy', () => ({
+    addCodeCopyButtons: vi.fn(),
+}));
 vi.mock('../../app/view/scroll-sync', () => ({
     afterMarkdownPreviewRender: vi.fn(),
     setMarkdownHeadingMap: vi.fn(),
