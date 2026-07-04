@@ -3,7 +3,9 @@
 > **Arbeitsdokument mit Fortschritts-Checkliste** (Muster:
 > [`spec-multi-tabs.md`](spec-multi-tabs.md)). Checkboxen werden pro
 > abgeschlossener, grün getesteter Etappe abgehakt und committet.
-> Beschlossen am 2026-07-04, Implementierung ab Folgesession.
+> Beschlossen am 2026-07-04; **komplett umgesetzt am 2026-07-04**
+> (K1 `3b24540`, K2 `fa63514`, K3 `54ccdd1`). Folgepunkte (Streaming,
+> Chunking, Abbruch) stehen in [`TODO.md`](../TODO.md).
 
 ## Ziel
 
