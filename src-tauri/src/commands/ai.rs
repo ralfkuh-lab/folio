@@ -1,15 +1,23 @@
 use crate::{
     ai::{
         catalog::{self, CatalogResult},
+        client::{self, ChatMessage},
         config::{AiConfigError, AiConfigService},
-        types::{AiConfig, AuthStatus, CustomProviderDefinition},
+        types::{AiConfig, AuthStatus, Catalog, CustomProviderDefinition},
     },
+    file_kind::{classify, FileKind},
     state::AppState,
 };
 use reqwest::{StatusCode, Url};
 use serde::Deserialize;
-use std::{collections::BTreeSet, time::Duration};
-use tauri::State;
+use std::{
+    collections::BTreeSet,
+    fs::OpenOptions,
+    io::Write,
+    path::{Path, PathBuf},
+    time::Duration,
+};
+use tauri::{AppHandle, State};
 
 #[tauri::command]
 pub async fn ai_catalog_get() -> Result<CatalogResult, String> {
@@ -129,7 +137,7 @@ pub async fn ai_custom_models_fetch(
 
     let url = custom_models_url(&base_url)?;
     let mut request = state.ai_http.get(url).timeout(Duration::from_secs(15));
-    if let Some(key) = key {
+    if let Some(key) = key.as_deref() {
         request = request.bearer_auth(key);
     }
     let response = request.send().await.map_err(|error| {
@@ -140,7 +148,7 @@ pub async fn ai_custom_models_fetch(
         format!("Antwort von Provider '{provider_id}' konnte nicht gelesen werden: {error}")
     })?;
     if !status.is_success() {
-        return Err(http_error(&provider_id, status, &body));
+        return Err(http_error(&provider_id, status, &body, key.as_deref()));
     }
     let model_ids = parse_custom_models(&body).map_err(|error| {
         format!("Provider '{provider_id}' lieferte keine gültige Modellliste: {error}")
@@ -192,6 +200,100 @@ pub async fn ai_recent_languages_set(
         "recent AI translation languages updated"
     );
     Ok(result)
+}
+
+#[tauri::command]
+pub async fn ai_translate_document(
+    languages: Vec<String>,
+    provider_id: String,
+    model_id: String,
+    state: State<'_, AppState>,
+    handle: AppHandle,
+) -> Result<Vec<String>, String> {
+    let languages = normalize_languages(languages)?;
+    let (source_path, source_text) = {
+        let tabs = state
+            .tabs
+            .lock()
+            .map_err(|_| "tabs lock poisoned".to_string())?;
+        let store = &tabs.active().document_store;
+        let path = store.path.clone().ok_or_else(|| {
+            "Für die Übersetzung muss ein gespeichertes Dokument geöffnet sein.".to_string()
+        })?;
+        if classify(&path) != FileKind::Markdown {
+            return Err("Nur Markdown-Dokumente können mit KI übersetzt werden.".to_string());
+        }
+        // `DocumentStore::text` ist derselbe kanonische Inhalt, den Save
+        // verwendet. `editor_text_changed` hält ihn auch bei Dirty-Text
+        // aktuell; der Dialog awaited direkt vor diesem Command zusätzlich
+        // einen expliziten Sync.
+        (path, store.text.clone())
+    };
+
+    let (base_url, api_key) = {
+        let config = config_data(state.inner())?;
+        let catalog = catalog::load().catalog;
+        let provider = config
+            .provider
+            .get(&provider_id)
+            .ok_or_else(|| format!("KI-Provider '{provider_id}' ist nicht konfiguriert."))?;
+        if !provider.enabled {
+            return Err(format!("KI-Provider '{provider_id}' ist nicht aktiviert."));
+        }
+        if !provider.whitelist.iter().any(|id| id == &model_id) {
+            return Err(format!(
+                "Modell '{model_id}' ist für Provider '{provider_id}' nicht freigeschaltet."
+            ));
+        }
+        let base_url = provider_base_url(&config, &catalog, &provider_id)?;
+        let key = state
+            .ai_auth
+            .lock()
+            .map_err(|_| "AI auth lock poisoned".to_string())?
+            .get_key(&provider_id);
+        (base_url, key)
+    };
+
+    mutate_config(state.inner(), |service| {
+        service.recent_languages_set(languages.clone())
+    })?;
+
+    let mut created = Vec::with_capacity(languages.len());
+    for language in languages {
+        let messages = [
+            ChatMessage::system(client::translation_system_prompt(&language)),
+            ChatMessage::user(source_text.clone()),
+        ];
+        let translated = client::chat(
+            &state.ai_http,
+            &base_url,
+            api_key.as_deref(),
+            &model_id,
+            &messages,
+        )
+        .await
+        .map_err(|error| translation_error(&language, &created, error.to_string()))?;
+
+        let path = write_translation(&source_path, &language, translated.as_bytes())
+            .map_err(|error| translation_error(&language, &created, error))?;
+        let normalized_path = path.to_string_lossy().replace('\\', "/");
+        created.push(normalized_path.clone());
+
+        let transition =
+            crate::commands::tabs::open(state.inner(), &handle, normalized_path.clone())
+                .map_err(|error| translation_error(&language, &created, error.to_string()))?;
+        crate::commands::tabs::emit_navigation_changed(&handle, &transition, None)
+            .map_err(|error| translation_error(&language, &created, error.to_string()))?;
+    }
+
+    tracing::info!(
+        target: "folio::ai",
+        provider_id,
+        model_id,
+        files = created.len(),
+        "AI document translation completed"
+    );
+    Ok(created)
 }
 
 #[tauri::command]
@@ -266,6 +368,107 @@ fn mutate_config(
     Ok(service.data())
 }
 
+fn provider_base_url(
+    config: &AiConfig,
+    catalog: &Catalog,
+    provider_id: &str,
+) -> Result<String, String> {
+    let configured = config.provider.get(provider_id);
+    let endpoint = if configured.is_some_and(|provider| provider.custom) {
+        configured
+            .and_then(|provider| provider.options.as_ref())
+            .map(|options| options.base_url.trim())
+            .filter(|url| !url.is_empty())
+    } else {
+        catalog
+            .get(provider_id)
+            .and_then(|provider| provider.api.as_deref())
+            .map(str::trim)
+            .filter(|url| !url.is_empty())
+    };
+    endpoint
+        .map(str::to_string)
+        .ok_or_else(|| format!("Provider '{provider_id}' hat keinen bekannten Endpoint."))
+}
+
+fn normalize_languages(languages: Vec<String>) -> Result<Vec<String>, String> {
+    let mut normalized = Vec::new();
+    for language in languages {
+        let language = language.trim().to_ascii_lowercase();
+        if language.is_empty() {
+            continue;
+        }
+        if !language
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        {
+            return Err(format!(
+                "Ungültiger Sprachcode '{language}': erlaubt sind Buchstaben, Zahlen und '-'."
+            ));
+        }
+        if !normalized.contains(&language) {
+            normalized.push(language);
+        }
+    }
+    if normalized.is_empty() {
+        return Err("Bitte mindestens eine Zielsprache auswählen.".to_string());
+    }
+    Ok(normalized)
+}
+
+fn write_translation(source_path: &str, language: &str, bytes: &[u8]) -> Result<PathBuf, String> {
+    let source = Path::new(source_path);
+    let parent = source
+        .parent()
+        .ok_or_else(|| "Das Quelldokument hat kein Zielverzeichnis.".to_string())?;
+    let stem = source
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "Der Dateiname des Quelldokuments ist ungültig.".to_string())?;
+
+    for suffix in 0usize.. {
+        let filename = if suffix == 0 {
+            format!("{stem}.{language}.md")
+        } else {
+            format!("{stem}.{language}-{suffix}.md")
+        };
+        let path = parent.join(filename);
+        match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(mut file) => {
+                if let Err(error) = file.write_all(bytes) {
+                    drop(file);
+                    let _ = std::fs::remove_file(&path);
+                    return Err(format!(
+                        "Übersetzungsdatei '{}' konnte nicht geschrieben werden: {error}",
+                        path.display()
+                    ));
+                }
+                return Ok(path);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => {
+                return Err(format!(
+                    "Übersetzungsdatei '{}' konnte nicht angelegt werden: {error}",
+                    path.display()
+                ));
+            }
+        }
+    }
+    unreachable!("unbounded collision suffix loop")
+}
+
+fn translation_error(language: &str, created: &[String], error: String) -> String {
+    if created.is_empty() {
+        format!("Übersetzung für '{language}' fehlgeschlagen: {error}")
+    } else {
+        format!(
+            "Übersetzung für '{language}' fehlgeschlagen: {error} Bereits erzeugt: {}",
+            created.join(", ")
+        )
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct OpenAiModelsResponse {
     data: Vec<OpenAiModel>,
@@ -303,9 +506,13 @@ fn parse_custom_models(body: &str) -> Result<BTreeSet<String>, serde_json::Error
         .collect())
 }
 
-fn http_error(provider_id: &str, status: StatusCode, body: &str) -> String {
+fn http_error(provider_id: &str, status: StatusCode, body: &str, api_key: Option<&str>) -> String {
     let compact = body.split_whitespace().collect::<Vec<_>>().join(" ");
-    let message = compact.chars().take(300).collect::<String>();
+    let redacted = match api_key.map(str::trim).filter(|key| !key.is_empty()) {
+        Some(key) => compact.replace(key, "[REDACTED]"),
+        None => compact,
+    };
+    let message = redacted.chars().take(300).collect::<String>();
     if message.is_empty() {
         format!("Provider '{provider_id}' antwortete mit HTTP-Status {status}")
     } else {
@@ -315,7 +522,13 @@ fn http_error(provider_id: &str, status: StatusCode, body: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{custom_models_url, parse_custom_models};
+    use super::{
+        custom_models_url, http_error, normalize_languages, parse_custom_models, provider_base_url,
+        write_translation,
+    };
+    use crate::ai::types::{AiConfig, AiProviderConfig, AiProviderOptions, CatalogProvider};
+    use std::collections::BTreeMap;
+    use tempfile::TempDir;
 
     #[test]
     fn custom_models_url_appends_models_once() {
@@ -344,5 +557,85 @@ mod tests {
             parsed.iter().map(String::as_str).collect::<Vec<_>>()
         );
         assert!(parse_custom_models(r#"{"models":[]}"#).is_err());
+    }
+
+    #[test]
+    fn custom_models_http_error_redacts_api_key() {
+        let error = http_error(
+            "local",
+            reqwest::StatusCode::UNAUTHORIZED,
+            "rejected top-secret",
+            Some("top-secret"),
+        );
+        assert!(error.contains("[REDACTED]"));
+        assert!(!error.contains("top-secret"));
+    }
+
+    #[test]
+    fn provider_endpoint_prefers_custom_config_and_catalog_api() {
+        let mut config = AiConfig::default();
+        config.provider.insert(
+            "local".into(),
+            AiProviderConfig {
+                custom: true,
+                options: Some(AiProviderOptions {
+                    base_url: "http://localhost:1234/v1".into(),
+                }),
+                ..AiProviderConfig::default()
+            },
+        );
+        config
+            .provider
+            .insert("hosted".into(), AiProviderConfig::default());
+        let catalog = BTreeMap::from([(
+            "hosted".into(),
+            CatalogProvider {
+                id: "hosted".into(),
+                name: None,
+                env: None,
+                api: Some("https://provider.test/v1".into()),
+                doc: None,
+                models: BTreeMap::new(),
+            },
+        )]);
+
+        assert_eq!(
+            "http://localhost:1234/v1",
+            provider_base_url(&config, &catalog, "local").unwrap()
+        );
+        assert_eq!(
+            "https://provider.test/v1",
+            provider_base_url(&config, &catalog, "hosted").unwrap()
+        );
+        assert!(provider_base_url(&config, &catalog, "missing")
+            .unwrap_err()
+            .contains("keinen bekannten Endpoint"));
+    }
+
+    #[test]
+    fn languages_are_normalized_deduplicated_and_validated() {
+        assert_eq!(
+            vec!["de", "en-us"],
+            normalize_languages(vec![" DE ".into(), "en-US".into(), "de".into()]).unwrap()
+        );
+        assert!(normalize_languages(vec!["../de".into()]).is_err());
+        assert!(normalize_languages(vec![" ".into()]).is_err());
+    }
+
+    #[test]
+    fn translation_writer_never_overwrites_collisions() {
+        let temp = TempDir::new().unwrap();
+        let source = temp.path().join("notes.md");
+        std::fs::write(&source, "source").unwrap();
+        std::fs::write(temp.path().join("notes.de.md"), "existing").unwrap();
+
+        let created = write_translation(source.to_str().unwrap(), "de", b"translated").unwrap();
+
+        assert_eq!(temp.path().join("notes.de-1.md"), created);
+        assert_eq!(
+            "existing",
+            std::fs::read_to_string(temp.path().join("notes.de.md")).unwrap()
+        );
+        assert_eq!("translated", std::fs::read_to_string(created).unwrap());
     }
 }

@@ -183,27 +183,30 @@ sinnvoll ist — wer opencode kennt, findet sich sofort zurecht:
 
 ### Etappe K3 — Chat-Client + Übersetzungs-Feature
 
-- [ ] `client.rs`: `chat(provider, model, messages) -> Result<String>`
-      non-streaming, Bearer-Key aus AuthStore, Timeout, Fehlermapping;
+- [x] `client.rs`: `chat(http, baseURL, key, model, messages)`
+      non-streaming, Bearer-Key aus AuthStore (optional für lokale
+      Endpoints), 300-s-Timeout, Fehlermapping mit Key-Redaction;
       Übersetzungs-Systemprompt (Zielsprache, Markdown-Struktur/
       Frontmatter/Codeblöcke unangetastet, gleiche Formatierung).
-- [ ] Command `ai_translate_document { languages, providerId,
-      modelId }`: aktiver Tab muss Markdown sein; pro Sprache Call →
-      Datei `<stem>.<lang>.md` (Kollisions-Suffix) → `tabs::open`.
-      Lange Läufe: Command bleibt async, Frontend zeigt
-      Busy-Indikator; Abbruch-Button ist Folgepunkt.
-- [ ] Menüpunkt „Bearbeiten → Mit KI übersetzen…" (enabled nur bei
+- [x] Command `ai_translate_document { languages, providerId,
+      modelId }`: aktiver Tab muss Markdown sein; Frontend synct
+      Dirty-Text vor dem Call (`syncEditorTextToStoreRequired`); pro
+      Sprache Call → Datei `<stem>.<lang>.md` (Kollisions-Suffix via
+      `create_new`, nie überschreiben) → `tabs::open`. Command async,
+      Frontend zeigt Busy-Indikator; Abbruch-Button ist Folgepunkt.
+- [x] Menüpunkt „Bearbeiten → Mit KI übersetzen…" (enabled nur bei
       kind-markdown + mindestens einem getoggelten Modell) +
-      Übersetzungs-Dialog (Sprachen-Mehrfachauswahl mit
-      Common-Presets, Modell-Dropdown, Merken der letzten Auswahl in
+      Übersetzungs-Dialog `ui/translate-dialog.ts` (Sprachen-
+      Mehrfachauswahl mit Common-Presets + Freitext, Modell-Dropdown
+      mit Default vorausgewählt, Merken der letzten Auswahl in
       ai.json).
-- [ ] E2E `34_ai_translate.py`: lokaler OpenAI-kompatibler
+- [x] E2E `34_ai_translate.py`: lokaler OpenAI-kompatibler
       Mock-Server im Szenario, Custom-Provider via Automation
       registrieren, Übersetzungsfluss end-to-end (Datei entsteht mit
       Mock-Inhalt, neuer Tab aktiv); finally: Provider + Dateien
       aufräumen.
-- [ ] Doku: CLAUDE.md-Abschnitt „KI", automation-contract, TODO-Abbau
-      (KI-Eintrag), README-Satz.
+- [x] Doku: CLAUDE.md-Abschnitt „KI-Integration", automation-contract,
+      TODO-Abbau (Folgepunkte nach „Niedrige Priorität"), README.
 
 ## Risiken / bewusste Entscheidungen
 

@@ -95,6 +95,12 @@ Wichtige stabile Selektor-Gruppen:
   `[data-ai-model-id="<modelId>"]`,
   `#ai-model-toggle-<providerId>-<modelId>` und für eigene Provider
   `#ai-models-fetch-<providerId>`.
+- KI-Übersetzung: `#ai-translate-dialog`, `#ai-translate-start`,
+  `#ai-translate-cancel`, `#ai-translate-error`, `#ai-translate-model`,
+  `#ai-translate-lang-<code>` für die Presets
+  (`en,de,fr,es,it,pt,nl,pl,ja,zh`) und
+  `#ai-translate-langs-extra`. Der Automation-Menüpfad verwendet die ID
+  `edit.ai_translate`.
 - View-Theme: `#view-theme-style`, `body[data-view-theme="<id>"]`,
   `#settings-theme-list`, `#settings-theme-hint` und
   `[data-view-theme="<id>"]`, `[data-view-theme-fav="<id>"]`.

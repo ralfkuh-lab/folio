@@ -50,20 +50,10 @@
   Control + Etappen 3a View-Theme-Auswahl, 3b Custom-Themes, 3c
   Favoriten, 3d Export-Code-Highlighting via syntect):
   - Fonts als Theme-Bestandteile (Body-Font, Mono-Font, Schriftgröße).
-  - **Tab „KI"** — Setup für KI-Funktionen (Provider, API-Keys,
-    Modell), siehe KI-Eintrag unten.
   - Kleinere offene Ausbaustufen aus dem alten Settings-Eintrag:
     **macOS-Terminal-Wahl** (`open_terminal_at` öffnet fix
     `Terminal.app`); **Theme-Reihe als Aggregations-UI** (Persistenz
     bleibt in `theme.rs`/`theme_get`/`theme_set`).
-
-- **KI-Integration** (Spec beschlossen 2026-07-04, siehe
-  [`docs/spec-ki-tab.md`](docs/spec-ki-tab.md) — dort Architektur-
-  Entscheidungen und Etappen-Checkliste K1–K3): opencode-Muster
-  (models.dev-Katalog, auth.json 0600, Custom-Provider,
-  Modell-Toggles), KEIN geteiltes Crate mit dem youtube-summarizer
-  (nur Client-Vorlage). Erste Funktion: Dokument-Übersetzung.
-  Implementierung ab Folgesession.
 
 - **Tabs — Folgepunkte** (Kernfeature 2026-07-04 komplett, siehe
   [`docs/spec-multi-tabs.md`](docs/spec-multi-tabs.md)): Tab-Drag-
@@ -73,6 +63,13 @@
   LRU erwägen).
 
 ## Niedrige Priorität
+
+- **KI-Integration — Folgepunkte** (Kernfeature und Dokumentübersetzung
+  umgesetzt, Architektur in [`docs/spec-ki-tab.md`](docs/spec-ki-tab.md)):
+  Streaming-Antworten mit sichtbarem Fortschritt; Chunking sehr großer
+  Dokumente unter Beibehaltung der Markdown-Struktur; Abbruch laufender
+  Übersetzungen; zusätzliche E2E-/Desktop-Verifikation auf macOS und
+  Windows sowie weitere KI-Funktionen erst nach konkretem Bedarf.
 
 - **Live-Preview Folgepunkte** (Hauptfeature 2026-05-22 implementiert,
   siehe `view/preview.ts`, Backend-Command `render_markdown_preview`):
@@ -148,4 +145,3 @@
     Plattform-Split ist unschön; abwägen ob lohnt.
   - **Audio/Video-View**: `<audio>`/`<video>` läuft cross-platform out
     of the box, analog zum Image-Pfad. Sinnvoll, wenn Bedarf entsteht.
-

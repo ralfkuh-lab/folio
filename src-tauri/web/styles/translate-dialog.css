@@ -1,0 +1,121 @@
+#ai-translate-dialog[hidden] {
+  display: none;
+}
+
+#ai-translate-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 10040;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.42);
+}
+
+.ai-translate-dialog__panel {
+  width: min(560px, 100%);
+  max-height: min(720px, 90vh);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--fg);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.32);
+  padding: 20px;
+}
+
+.ai-translate-dialog__title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.ai-translate-dialog__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-translate-dialog__label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ai-translate-dialog__languages {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px 16px;
+}
+
+.ai-translate-dialog__languages label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+}
+
+.ai-translate-dialog__languages input {
+  accent-color: var(--accent);
+}
+
+.ai-translate-dialog__input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--rail-bg);
+  color: var(--fg);
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12px;
+}
+
+.ai-translate-dialog__hint {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+
+.ai-translate-dialog__error {
+  margin: 0;
+  color: #c23d3d;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.theme-dark .ai-translate-dialog__error {
+  color: #ff8585;
+}
+
+.ai-translate-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ai-translate-dialog__actions button {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--rail-bg);
+  color: var(--fg);
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ai-translate-dialog__actions button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.ai-translate-dialog__actions button:disabled,
+.ai-translate-dialog__input:disabled {
+  cursor: default;
+  opacity: 0.65;
+}

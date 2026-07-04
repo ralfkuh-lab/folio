@@ -67,7 +67,9 @@ async function invokeUi<T>(cmd: string, args: any, operation: string): Promise<I
     const invoke = getInvoke();
     if (!invoke) return { error: 'Tauri-Schnittstelle ist nicht verfügbar.' };
     try {
-        return { value: await invoke(cmd, args) as T };
+        const value = await invoke(cmd, args) as T;
+        document.dispatchEvent(new CustomEvent('folio-ai-invoke-complete', { detail: value }));
+        return { value };
     } catch (error) {
         folioLog.warn('settings-ai', operation, { cmd, error: String(error) });
         return { error: String(error) };

@@ -319,6 +319,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::ai::ai_auth_set,
             commands::ai::ai_auth_remove,
             commands::ai::ai_auth_status,
+            commands::ai::ai_translate_document,
             commands::app::dialog::open_folder,
             commands::app::dialog::pick_folder,
             commands::app::dialog::pick_file,

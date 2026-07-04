@@ -1,0 +1,310 @@
+import { syncEditorTextToStoreRequired } from '../state/document';
+import { folioLog, safeInvoke } from '../util/log';
+
+type CatalogModel = { id: string; name?: string };
+type CatalogProvider = {
+    id: string;
+    name?: string;
+    models?: Record<string, CatalogModel>;
+};
+type CatalogResult = { catalog: Record<string, CatalogProvider> };
+type ProviderConfig = {
+    enabled: boolean;
+    name?: string;
+    custom?: boolean;
+    models?: Record<string, { name?: string }>;
+    whitelist: string[];
+};
+type AiConfig = {
+    provider: Record<string, ProviderConfig>;
+    defaultModel?: { provider: string; model: string } | null;
+    translate?: { recentLanguages?: string[] };
+};
+
+const PRESET_LANGUAGES = ['en', 'de', 'fr', 'es', 'it', 'pt', 'nl', 'pl', 'ja', 'zh'];
+let configCache: AiConfig | null = null;
+let catalogCache: CatalogResult | null = null;
+let documentIsMarkdown = document.body.classList.contains('kind-markdown');
+let busy = false;
+let refreshScheduled = false;
+
+function $(id: string): HTMLElement | null {
+    return document.getElementById(id);
+}
+
+function select(id: string): HTMLSelectElement | null {
+    return $(id) as HTMLSelectElement | null;
+}
+
+function input(id: string): HTMLInputElement | null {
+    return $(id) as HTMLInputElement | null;
+}
+
+function invoke<T>(cmd: string, args?: any): Promise<T> {
+    return window.__TAURI__.core.invoke(cmd, args) as Promise<T>;
+}
+
+function hasWhitelistedModel(config: AiConfig | null): boolean {
+    return !!config && Object.values(config.provider).some(
+        (provider) => provider.enabled && (provider.whitelist || []).length > 0,
+    );
+}
+
+function syncMenuEnabled(): void {
+    safeInvoke(
+        'menu_set_enabled',
+        {
+            id: 'edit.ai_translate',
+            enabled: documentIsMarkdown && hasWhitelistedModel(configCache),
+        },
+        'menu_set_enabled edit.ai_translate',
+        'debug',
+    );
+}
+
+function looksLikeConfig(value: unknown): value is AiConfig {
+    return !!value && typeof value === 'object' &&
+        !!(value as AiConfig).provider &&
+        typeof (value as AiConfig).provider === 'object';
+}
+
+export async function refreshAiTranslateAvailability(
+    knownConfig?: unknown,
+): Promise<void> {
+    if (looksLikeConfig(knownConfig)) {
+        configCache = knownConfig;
+        syncMenuEnabled();
+        return;
+    }
+    const config = await safeInvoke<AiConfig>(
+        'ai_config_get',
+        undefined,
+        'KI-Konfiguration für Übersetzungsmenü laden',
+        'debug',
+    );
+    configCache = config || null;
+    syncMenuEnabled();
+}
+
+function scheduleAvailabilityRefresh(knownConfig?: unknown): void {
+    if (looksLikeConfig(knownConfig)) {
+        void refreshAiTranslateAvailability(knownConfig);
+        return;
+    }
+    if (refreshScheduled) return;
+    refreshScheduled = true;
+    Promise.resolve().then(() => {
+        refreshScheduled = false;
+        void refreshAiTranslateAvailability();
+    });
+}
+
+function setError(message: string | null): void {
+    const error = $('ai-translate-error');
+    if (!error) return;
+    error.textContent = message || '';
+    error.hidden = !message;
+}
+
+function providerName(
+    providerId: string,
+    provider: ProviderConfig,
+    catalog: CatalogResult,
+): string {
+    return provider.name || catalog.catalog[providerId]?.name || providerId;
+}
+
+function modelName(
+    providerId: string,
+    provider: ProviderConfig,
+    modelId: string,
+    catalog: CatalogResult,
+): string {
+    if (provider.custom) return provider.models?.[modelId]?.name || modelId;
+    return catalog.catalog[providerId]?.models?.[modelId]?.name || modelId;
+}
+
+function renderModels(config: AiConfig, catalog: CatalogResult): void {
+    const modelSelect = select('ai-translate-model');
+    if (!modelSelect) return;
+    modelSelect.textContent = '';
+    const choices: Array<{ value: string; label: string }> = [];
+    for (const [providerId, provider] of Object.entries(config.provider)) {
+        if (!provider.enabled) continue;
+        for (const modelId of new Set(provider.whitelist || [])) {
+            choices.push({
+                value: JSON.stringify([providerId, modelId]),
+                label: `${providerName(providerId, provider, catalog)} · ${modelName(
+                    providerId,
+                    provider,
+                    modelId,
+                    catalog,
+                )}`,
+            });
+        }
+    }
+    choices.sort((a, b) => a.label.localeCompare(b.label, 'de'));
+    for (const choice of choices) {
+        const option = document.createElement('option');
+        option.value = choice.value;
+        option.textContent = choice.label;
+        modelSelect.appendChild(option);
+    }
+    const preferred = config.defaultModel
+        ? JSON.stringify([config.defaultModel.provider, config.defaultModel.model])
+        : '';
+    modelSelect.value = choices.some((choice) => choice.value === preferred)
+        ? preferred
+        : choices[0]?.value || '';
+}
+
+function applyRecentLanguages(config: AiConfig): void {
+    const recent = config.translate?.recentLanguages || [];
+    for (const language of PRESET_LANGUAGES) {
+        const checkbox = input(`ai-translate-lang-${language}`);
+        if (checkbox) checkbox.checked = recent.includes(language);
+    }
+    const extra = input('ai-translate-langs-extra');
+    if (extra) {
+        extra.value = recent
+            .filter((language) => !PRESET_LANGUAGES.includes(language))
+            .join(', ');
+    }
+}
+
+function selectedLanguages(): string[] {
+    const result = PRESET_LANGUAGES.filter(
+        (language) => input(`ai-translate-lang-${language}`)?.checked,
+    );
+    const extra = (input('ai-translate-langs-extra')?.value || '')
+        .split(',')
+        .map((language) => language.trim())
+        .filter(Boolean);
+    for (const language of extra) {
+        if (!result.includes(language)) result.push(language);
+    }
+    return result;
+}
+
+function setBusy(next: boolean): void {
+    busy = next;
+    const dialog = $('ai-translate-dialog');
+    if (dialog) {
+        for (const element of Array.from(
+            dialog.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>(
+                'input, select, button',
+            ),
+        )) {
+            element.disabled = next;
+        }
+    }
+    const start = $('ai-translate-start') as HTMLButtonElement | null;
+    if (start) start.textContent = next ? 'Übersetze…' : 'Übersetzen';
+}
+
+function closeTranslateDialog(): void {
+    if (busy) return;
+    const dialog = $('ai-translate-dialog');
+    if (dialog) dialog.hidden = true;
+    setError(null);
+}
+
+export async function openTranslateDialog(): Promise<void> {
+    const dialog = $('ai-translate-dialog');
+    if (!dialog) return;
+    setError(null);
+    setBusy(false);
+    try {
+        const [config, catalog] = await Promise.all([
+            invoke<AiConfig>('ai_config_get'),
+            invoke<CatalogResult>('ai_catalog_get'),
+        ]);
+        configCache = config;
+        catalogCache = catalog;
+        syncMenuEnabled();
+        renderModels(config, catalog);
+        applyRecentLanguages(config);
+        if (!select('ai-translate-model')?.value) {
+            setError('Kein freigeschaltetes Modell verfügbar.');
+        }
+        dialog.hidden = false;
+        input('ai-translate-lang-en')?.focus();
+    } catch (error) {
+        folioLog.warn('translate', 'Übersetzungsdialog konnte nicht geladen werden', {
+            error: String(error),
+        });
+        dialog.hidden = false;
+        setError(String(error));
+    }
+}
+
+async function startTranslation(): Promise<void> {
+    const languages = selectedLanguages();
+    if (languages.length === 0) {
+        setError('Bitte mindestens eine Zielsprache auswählen.');
+        return;
+    }
+    const modelValue = select('ai-translate-model')?.value;
+    if (!modelValue) {
+        setError('Bitte ein Modell auswählen.');
+        return;
+    }
+    let providerId: string;
+    let modelId: string;
+    try {
+        [providerId, modelId] = JSON.parse(modelValue) as [string, string];
+    } catch {
+        setError('Die Modellauswahl ist ungültig.');
+        return;
+    }
+
+    setError(null);
+    setBusy(true);
+    try {
+        await syncEditorTextToStoreRequired();
+        await invoke<string[]>('ai_translate_document', {
+            languages,
+            providerId,
+            modelId,
+        });
+        setBusy(false);
+        closeTranslateDialog();
+        scheduleAvailabilityRefresh();
+    } catch (error) {
+        folioLog.warn('translate', 'Dokumentübersetzung fehlgeschlagen', {
+            error: String(error),
+        });
+        setBusy(false);
+        setError(String(error));
+    }
+}
+
+export function initTranslateDialog(): void {
+    if (!$('ai-translate-dialog')) return;
+    documentIsMarkdown = document.body.classList.contains('kind-markdown');
+    $('ai-translate-cancel')?.addEventListener('click', closeTranslateDialog);
+    $('ai-translate-start')?.addEventListener('click', () => void startTranslation());
+    $('ai-translate-dialog')?.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape' || busy) return;
+        event.preventDefault();
+        event.stopPropagation();
+        closeTranslateDialog();
+    });
+    document.addEventListener('folio-ai-invoke-complete', (event) => {
+        scheduleAvailabilityRefresh((event as CustomEvent).detail);
+    });
+
+    const events = window.__TAURI__ && window.__TAURI__.event;
+    if (events && typeof events.listen === 'function') {
+        events.listen('menu:edit_ai_translate', () => void openTranslateDialog());
+        events.listen('document:loaded', (event: any) => {
+            documentIsMarkdown = event?.payload?.kind === 'markdown';
+            syncMenuEnabled();
+        });
+        events.listen('document:closed', () => {
+            documentIsMarkdown = false;
+            syncMenuEnabled();
+        });
+    }
+    void refreshAiTranslateAvailability();
+}

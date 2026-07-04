@@ -126,6 +126,12 @@ export function syncEditorTextToStore(): Promise<unknown> {
     return safeInvoke('editor_text_changed', { text: editorText() }, 'editor_text_changed', 'debug');
 }
 
+/** Variante für Abläufe, die ohne erfolgreichen Sync nicht fortfahren dürfen. */
+export function syncEditorTextToStoreRequired(): Promise<unknown> {
+    if (!currentPath) return Promise.resolve();
+    return invoke('editor_text_changed', { text: editorText() });
+}
+
 export function saveCurrent(): Promise<boolean> {
     return syncEditorTextToStore().then(function () {
         return invoke('editor_save_requested');

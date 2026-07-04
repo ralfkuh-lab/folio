@@ -362,6 +362,38 @@
     </div>
   </div>
 </div>
+<div id="ai-translate-dialog" hidden>
+  <div class="ai-translate-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="ai-translate-title">
+    <div class="ai-translate-dialog__title" id="ai-translate-title">Mit KI übersetzen</div>
+    <div class="ai-translate-dialog__section">
+      <div class="ai-translate-dialog__label">Zielsprachen</div>
+      <div class="ai-translate-dialog__languages" role="group" aria-label="Zielsprachen">
+        <label><input type="checkbox" id="ai-translate-lang-en" /> Englisch (en)</label>
+        <label><input type="checkbox" id="ai-translate-lang-de" /> Deutsch (de)</label>
+        <label><input type="checkbox" id="ai-translate-lang-fr" /> Französisch (fr)</label>
+        <label><input type="checkbox" id="ai-translate-lang-es" /> Spanisch (es)</label>
+        <label><input type="checkbox" id="ai-translate-lang-it" /> Italienisch (it)</label>
+        <label><input type="checkbox" id="ai-translate-lang-pt" /> Portugiesisch (pt)</label>
+        <label><input type="checkbox" id="ai-translate-lang-nl" /> Niederländisch (nl)</label>
+        <label><input type="checkbox" id="ai-translate-lang-pl" /> Polnisch (pl)</label>
+        <label><input type="checkbox" id="ai-translate-lang-ja" /> Japanisch (ja)</label>
+        <label><input type="checkbox" id="ai-translate-lang-zh" /> Chinesisch (zh)</label>
+      </div>
+      <label class="ai-translate-dialog__label" for="ai-translate-langs-extra">Weitere Sprachcodes</label>
+      <input type="text" id="ai-translate-langs-extra" class="ai-translate-dialog__input" placeholder="z. B. sv, ko, en-GB" autocomplete="off" spellcheck="false" />
+      <p class="ai-translate-dialog__hint">Kommagetrennte BCP-47- oder ISO-Sprachcodes.</p>
+    </div>
+    <div class="ai-translate-dialog__section">
+      <label class="ai-translate-dialog__label" for="ai-translate-model">Modell</label>
+      <select id="ai-translate-model" class="ai-translate-dialog__input"></select>
+    </div>
+    <p id="ai-translate-error" class="ai-translate-dialog__error" hidden></p>
+    <div class="ai-translate-dialog__actions">
+      <button type="button" id="ai-translate-cancel">Abbrechen</button>
+      <button type="button" id="ai-translate-start" class="primary">Übersetzen</button>
+    </div>
+  </div>
+</div>
 <div id="about-dialog" hidden>
   <svg style="display:none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <symbol id="i-tag" viewBox="0 0 16 16"><path fill="currentColor" d="M1 7.775V2.75C1 1.784 1.784 1 2.75 1h5.025c.464 0 .91.184 1.238.513l6.25 6.25a1.75 1.75 0 0 1 0 2.474l-5.026 5.026a1.75 1.75 0 0 1-2.474 0l-6.25-6.25A1.75 1.75 0 0 1 1 7.775zM2.5 2.75v5.025c0 .066.026.13.073.177l6.25 6.25a.25.25 0 0 0 .354 0l5.025-5.026a.25.25 0 0 0 0-.354l-6.25-6.25a.25.25 0 0 0-.177-.072H2.75a.25.25 0 0 0-.25.25zM6 5a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/></symbol>

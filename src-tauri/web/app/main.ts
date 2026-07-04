@@ -13,6 +13,7 @@ import { initFindBar } from './ui/find-bar';
 import { initExportDialog } from './ui/export-dialog';
 import { initImageDialog, openImageDialog } from './ui/image-dialog';
 import { initAboutDialog } from './ui/about-dialog';
+import { initTranslateDialog } from './ui/translate-dialog';
 import { initSettingsDialog } from './ui/settings-dialog';
 import { attachPasteHandler } from './ui/paste-handler';
 import { applySplitMidFromBackend, initRails, setRailVisibility } from './ui/rails';
@@ -95,6 +96,7 @@ initExportDialog({
 });
 initImageDialog({ getCurrentPath, showStatus });
 initAboutDialog();
+initTranslateDialog();
 initViewTheme();
 initSettingsDialog();
 attachPasteHandler(function (blob) {

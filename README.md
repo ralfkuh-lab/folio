@@ -21,7 +21,10 @@ Plattformübergreifender Markdown-Viewer und -Editor auf **Tauri 2 + Rust**.
 - **Toggle-Bare Editor-Minimap** (Monaco-Übersicht am rechten Editor-Rand),
   persistiert pro App-Profil
 - **Automatisierungs-API** für E2E-Tests (HTTP auf `127.0.0.1:9876`)
-- **E2E-Test-Suite** mit 23 Szenarien, visueller Regression und auto-
+- **KI-Integration nach opencode-Muster** mit models.dev-Katalog,
+  getrennt gespeicherten Provider-Schlüsseln und Markdown-Übersetzung in
+  eine oder mehrere neue Dateien
+- **E2E-Test-Suite** mit 34 Szenarien, visueller Regression und auto-
   rotiertem Baseline-Mechanismus — siehe Abschnitt *Tests*
 - **Cross-Platform** dank Tauri 2 (WebView2 / WebKitGTK)
 
@@ -57,7 +60,7 @@ folio/
 │   │                            #    editor.bundle.js, monaco/)
 │   ├── Cargo.toml
 │   └── tauri.conf.json
-├── tests/e2e/                   # Python + Pillow E2E-Suite (23 Szenarien)
+├── tests/e2e/                   # Python + Pillow E2E-Suite (34 Szenarien)
 ├── docs/                        # E2E, Automation-Vertrag, Release,
 │                                #   Headless-Caveats, Linux-MD-Icon
 ├── scripts/                     # Linux-Helper (Icon-Install, run-e2e.sh)

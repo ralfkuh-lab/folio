@@ -441,6 +441,28 @@ sonst lehnt Tauri den Build ab.
   ein No-op, weil `__TAURI__` nicht installiert ist; Aufrufer
   bleiben framework-frei.
 
+## KI-Integration
+
+- Backend-Module liegen unter `src-tauri/src/ai/`: `catalog.rs` lädt den
+  eingebetteten models.dev-Snapshot bzw. den explizit aktualisierten Cache,
+  `config.rs` verwaltet Provider/Whitelists/Defaults, `auth.rs` ausschließlich
+  Schlüssel und `client.rs` den OpenAI-kompatiblen Chat-Call.
+- Persistenz ist bewusst getrennt und folgt opencode: `ai.json` enthält
+  Provider-/Modell-Konfiguration und Übersetzungshistorie, `auth.json`
+  ausschließlich API-Keys (0600), `ai-catalog.json` den optionalen
+  models.dev-Cache. Keys dürfen nie in Logs, Fehlern, DOM oder Automation
+  erscheinen.
+- Die Settings-Bereiche `KI-Anbieter` und `KI-Modelle` kuratieren aktive
+  Provider und Modell-Whitelists. Nur freigeschaltete Modelle aktivierter
+  Provider erscheinen im Übersetzungsdialog.
+- „Bearbeiten → Mit KI übersetzen…“ synchronisiert zuerst den aktuellen
+  Editorinhalt in den aktiven `DocumentStore`, ruft pro Zielsprache
+  non-streaming `/chat/completions` auf und schreibt kollisionsfrei
+  `<stem>.<lang>[-N].md` neben die Quelle. Jede Datei wird über den regulären
+  Tab-Open-Pfad geöffnet; der letzte Tab bleibt aktiv.
+- Architektur, opencode-Parität und bewusste Folgepunkte stehen in
+  [`docs/spec-ki-tab.md`](docs/spec-ki-tab.md).
+
 ## Headless-Screenshots
 
 - **Monaco in Xvfb via Monitor-Capture**: `tauri-plugin-screenshots`
@@ -469,12 +491,13 @@ sonst lehnt Tauri den Build ab.
 
 ## E2E-Test-Suite
 
-Vollständige UI-Coverage in `tests/e2e/` (25 Szenarien, Python +
+Vollständige UI-Coverage in `tests/e2e/` (34 Szenarien, Python +
 Pillow): Boot, View-/Edit-/Split-Mode, Theme, Vault, Find, Workspace,
 Save-Roundtrip durch alle BOM/EOL-Kombis, Undo/Redo, Toolbar-Commands
 (Bold/Italic/Heading), Menü-Coverage (File/Edit/View/Help), DOM-
 Keybindings, Vault-Tree-Klicks, Pin/Unpin, History-Back/Forward,
-Rechtsklick-Kontextmenüs, echter TOC-DOM-Klick, HTML-View.
+Rechtsklick-Kontextmenüs, echter TOC-DOM-Klick, HTML-View, Tabs,
+KI-Settings und KI-Übersetzung (Mock-Provider).
 
 Wrapper: `bash scripts/run-e2e.sh` (Linux+Xvfb). Visual-Baselines in
 `tests/e2e/baselines/`, Artefakte (gitignored) in
