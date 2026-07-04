@@ -1,6 +1,0 @@
-[2m2026-07-04T15:06:04.930272Z[0m [32m INFO[0m [2mfolio::boot[0m[2m:[0m logging initialisiert [3mlevel[0m[2m=[0minfo [3mlog_dir[0m[2m=[0m/home/ralf/dev/folio/src-tauri/t4home/.local/state/folio/logs [3mrust_log[0m[2m=[0mfalse
-libEGL warning: DRI3 error: Could not get DRI3 device
-libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
-[2m2026-07-04T15:06:05.163132Z[0m [32m INFO[0m [2mfolio::automation[0m[2m:[0m automation server listening [3mport[0m[2m=[0m9876
-
-** (process:965979): ERROR **: 17:07:54.830: WebProcess didn't exit as expected after the UI process connection was closed

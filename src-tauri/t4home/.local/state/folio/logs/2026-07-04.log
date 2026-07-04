@@ -1,2 +1,0 @@
-2026-07-04T15:06:04.930311Z  INFO ThreadId(01) folio::boot: logging initialisiert level=info log_dir=/home/ralf/dev/folio/src-tauri/t4home/.local/state/folio/logs rust_log=false
-2026-07-04T15:06:05.163152Z  INFO ThreadId(10) folio::automation: automation server listening port=9876
