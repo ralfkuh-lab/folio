@@ -82,6 +82,17 @@ pub fn dispatch_menu_action(app: &AppHandle, id: &str) {
         // Übrige Aktionen leben im Frontend (Toolbar-Pfad bleibt einzige
         // Implementierung). Wir emittieren je ein menu:<id>-Event, das
         // dort die bestehende Funktion ruft.
+        // Linux-only: Markdown-Icon-Integration im Datei-Manager. Das
+        // Skript ist blocking (startet u. a. nemo-desktop neu) und zeigt
+        // am Ende selbst einen Ergebnis-Dialog — daher wie FILE_SAVE_AS
+        // in einen eigenen Thread, damit die Menueleiste nicht haengt.
+        #[cfg(target_os = "linux")]
+        ids::HELP_SETUP_MD_ICON => {
+            let handle = app.clone();
+            std::thread::spawn(move || {
+                crate::commands::app::icon_integration::run_icon_integration(&handle);
+            });
+        }
         ids::HELP_ABOUT => {
             let _ = app.emit(
                 "menu:about",

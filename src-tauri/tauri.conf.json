@@ -28,6 +28,34 @@
     "macOS": {
       "signingIdentity": "-",
       "hardenedRuntime": false
+    },
+    "linux": {
+      "deb": {
+        "recommends": ["python3-pil"],
+        "files": {
+          "/usr/share/icons/hicolor/16x16/apps/folio.png": "icons/hicolor/16x16/apps/folio.png",
+          "/usr/share/icons/hicolor/22x22/apps/folio.png": "icons/hicolor/22x22/apps/folio.png",
+          "/usr/share/icons/hicolor/24x24/apps/folio.png": "icons/hicolor/24x24/apps/folio.png",
+          "/usr/share/icons/hicolor/48x48/apps/folio.png": "icons/hicolor/48x48/apps/folio.png",
+          "/usr/share/icons/hicolor/64x64/apps/folio.png": "icons/hicolor/64x64/apps/folio.png",
+          "/usr/share/icons/hicolor/256x256/apps/folio.png": "icons/hicolor/256x256/apps/folio.png",
+          "/usr/share/mime/packages/folio.xml": "linux/folio-mime.xml",
+          "/usr/share/folio/install-folio-icons.sh": "../scripts/install-folio-icons.sh"
+        }
+      },
+      "rpm": {
+        "recommends": ["python3-pillow"],
+        "files": {
+          "/usr/share/icons/hicolor/16x16/apps/folio.png": "icons/hicolor/16x16/apps/folio.png",
+          "/usr/share/icons/hicolor/22x22/apps/folio.png": "icons/hicolor/22x22/apps/folio.png",
+          "/usr/share/icons/hicolor/24x24/apps/folio.png": "icons/hicolor/24x24/apps/folio.png",
+          "/usr/share/icons/hicolor/48x48/apps/folio.png": "icons/hicolor/48x48/apps/folio.png",
+          "/usr/share/icons/hicolor/64x64/apps/folio.png": "icons/hicolor/64x64/apps/folio.png",
+          "/usr/share/icons/hicolor/256x256/apps/folio.png": "icons/hicolor/256x256/apps/folio.png",
+          "/usr/share/mime/packages/folio.xml": "linux/folio-mime.xml",
+          "/usr/share/folio/install-folio-icons.sh": "../scripts/install-folio-icons.sh"
+        }
+      }
     }
   },
   "app": {

@@ -25,4 +25,8 @@ pub(super) const VIEW_RAIL_LEFT: &str = "view.rail_left";
 pub(super) const VIEW_RAIL_RIGHT: &str = "view.rail_right";
 pub(super) const VIEW_MINIMAP: &str = "view.minimap";
 pub(super) const HELP_CHEATSHEET: &str = "help.cheatsheet";
+/// Linux-only: richtet das Folio-Icon im Datei-Manager fuer `.md` ein
+/// (fuehrt `install-folio-icons.sh` aus). Siehe docs/linux-md-icon.md.
+#[cfg(target_os = "linux")]
+pub(super) const HELP_SETUP_MD_ICON: &str = "help.setup_md_icon";
 pub(super) const HELP_ABOUT: &str = "help.about";

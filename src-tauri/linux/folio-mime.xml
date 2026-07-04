@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Verknüpft die Markdown-MIME-Typen mit dem Folio-App-Icon ("folio").
+  Wird vom .deb nach /usr/share/mime/packages/folio.xml installiert; der
+  dpkg-File-Trigger von shared-mime-info ruft beim Paketinstall automatisch
+  `update-mime-database /usr/share/mime` auf. Hintergrund: docs/linux-md-icon.md.
+-->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="text/markdown">
+    <icon name="folio"/>
+  </mime-type>
+  <mime-type type="text/x-markdown">
+    <icon name="folio"/>
+  </mime-type>
+</mime-info>

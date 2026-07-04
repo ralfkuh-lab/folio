@@ -159,10 +159,19 @@ pub fn build(handle: &AppHandle, lang: &str) -> tauri::Result<Menu<Wry>> {
         .enabled(false)
         .build(handle)?;
     let item_about = MenuItemBuilder::with_id(ids::HELP_ABOUT, l.help_about).build(handle)?;
-    let help_menu = SubmenuBuilder::new(handle, l.help)
-        .item(&item_cheatsheet)
-        .item(&item_about)
-        .build()?;
+    // help.setup_md_icon: nur Linux — richtet das Folio-Icon im
+    // Datei-Manager fuer .md ein (Per-User-Theme-Override via
+    // install-folio-icons.sh). Auf Windows/macOS uebernimmt das der
+    // OS-Default-Handler bzw. Launch-Services.
+    #[cfg(target_os = "linux")]
+    let item_setup_md_icon =
+        MenuItemBuilder::with_id(ids::HELP_SETUP_MD_ICON, l.help_setup_md_icon).build(handle)?;
+    let help_builder = SubmenuBuilder::new(handle, l.help).item(&item_cheatsheet);
+    #[cfg(target_os = "linux")]
+    let help_builder = help_builder
+        .item(&PredefinedMenuItem::separator(handle)?)
+        .item(&item_setup_md_icon);
+    let help_menu = help_builder.item(&item_about).build()?;
 
     MenuBuilder::new(handle)
         .item(&file_menu)

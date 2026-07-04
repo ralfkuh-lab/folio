@@ -33,6 +33,9 @@ pub struct MenuLabels {
     pub view_minimap: &'static str,
     pub help: &'static str,
     pub help_cheatsheet: &'static str,
+    /// Linux-only: Menue-Label fuer die Markdown-Icon-Integration.
+    #[cfg(target_os = "linux")]
+    pub help_setup_md_icon: &'static str,
     pub help_about: &'static str,
     pub save_as_filter_markdown: &'static str,
     pub save_as_filter_text: &'static str,
@@ -74,6 +77,8 @@ const fn de() -> MenuLabels {
         view_minimap: "Minimap ein/aus",
         help: "Hilfe",
         help_cheatsheet: "Cheat-Sheet",
+        #[cfg(target_os = "linux")]
+        help_setup_md_icon: "Markdown-Icon-Integration einrichten…",
         help_about: "Über folio",
         save_as_filter_markdown: "Markdown",
         save_as_filter_text: "Textdatei",
@@ -109,6 +114,8 @@ const fn en() -> MenuLabels {
         view_minimap: "Toggle Minimap",
         help: "Help",
         help_cheatsheet: "Cheat Sheet",
+        #[cfg(target_os = "linux")]
+        help_setup_md_icon: "Set up Markdown icon integration…",
         help_about: "About Folio",
         save_as_filter_markdown: "Markdown",
         save_as_filter_text: "Text File",

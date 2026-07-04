@@ -13,10 +13,35 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SRC_ICON="${REPO_ROOT}/src-tauri/icons/icon.png"
 
-if [[ ! -f "$SRC_ICON" ]]; then
-    echo "Quell-Icon nicht gefunden: $SRC_ICON" >&2
+# Quell-Icon suchen: im Dev-Repo liegt das Master-PNG unter
+# src-tauri/icons/; im installierten .deb liegt das Skript unter
+# /usr/share/folio/, dort ist das Repo nicht vorhanden — dann greifen
+# wir auf das vom Paket installierte hicolor-Icon zurueck.
+SRC_ICON=""
+for candidate in \
+    "${REPO_ROOT}/src-tauri/icons/icon.png" \
+    "/usr/share/icons/hicolor/256x256/apps/folio.png" \
+    "/usr/share/icons/hicolor/128x128/apps/folio.png"; do
+    if [[ -f "$candidate" ]]; then
+        SRC_ICON="$candidate"
+        break
+    fi
+done
+
+if [[ -z "$SRC_ICON" ]]; then
+    echo "Quell-Icon nicht gefunden (weder Dev-Repo noch installiertes hicolor-Icon)." >&2
+    exit 1
+fi
+echo "Quell-Icon: $SRC_ICON"
+
+# Preflight: die Größen-Renderings unten brauchen Pillow. Ohne den Check
+# gäbe es mitten im Lauf einen kryptischen ModuleNotFoundError (das .deb
+# deklariert python3-pil nur als Recommends, nicht als Depends).
+if ! python3 -c 'import PIL' >/dev/null 2>&1; then
+    echo "Python-Modul Pillow (PIL) fehlt — bitte installieren:" >&2
+    echo "  sudo apt install python3-pil   (Debian/Ubuntu/Mint)" >&2
+    echo "  sudo dnf install python3-pillow (Fedora)" >&2
     exit 1
 fi
 

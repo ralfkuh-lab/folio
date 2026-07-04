@@ -11,8 +11,16 @@ nicht jedes Mal neu auseinandernehmen müssen.
 
 ## TL;DR
 
-- Skript für lokalen Quick-Fix: [`scripts/install-folio-icons.sh`](../scripts/install-folio-icons.sh)
-- Ins `.deb`-Bundle ist es **noch nicht** integriert (siehe Punkt unten).
+- **Schicht 1 + 2 stecken im `.deb`**: hicolor-Icons in allen Größen
+  (`folio.png`) + MIME-XML (`text/markdown` / `text/x-markdown` →
+  `<icon name="folio">`). Wird beim Paketinstall über die dpkg-File-
+  Trigger von `hicolor-icon-theme` und `shared-mime-info` automatisch
+  aktiv (kein postinst nötig, siehe unten).
+- **Schicht 3 (Per-User-Theme-Override) bleibt manuell**: Skript
+  [`scripts/install-folio-icons.sh`](../scripts/install-folio-icons.sh)
+  liegt im Paket unter `/usr/share/folio/install-folio-icons.sh` und ist
+  aus der App über **Hilfe → „Markdown-Icon-Integration einrichten…"**
+  (nur Linux) auslösbar.
 
 ## Warum es kompliziert ist
 
@@ -105,25 +113,78 @@ Wenn `(deleted)` an einem der Pfade steht → Nemo neu starten.
 Wenn `strace` einen `@2x`-Pfad zeigt, den unser Override nicht abdeckt →
 HiDPI-Größen ergänzen.
 
+## Was jetzt im `.deb` (und `.rpm`) steckt
+
+Umgesetzt über `bundle.linux.deb.files` **und** `bundle.linux.rpm.files`
+in `tauri.conf.json` — beide Pakete bekommen identische Pfade (kein
+Build-Time-Rendering — die PNGs sind eingecheckt):
+
+1. **hicolor-Icons in allen gängigen Größen** als
+   `/usr/share/icons/hicolor/<W>x<H>/apps/folio.png`. Tauris deb-Bundler
+   liefert aus `bundle.icon` bereits **32, 128 und 256@2**; ergänzt sind
+   die eingecheckten Größen **16, 22, 24, 48, 64, 256** (aus
+   `src-tauri/icons/hicolor/…`, gerendert aus dem 1254×1254-Master
+   `icon-source.png`). Die `deb.files`-Einträge decken bewusst nur die
+   nicht schon von Tauri gelieferten Größen ab — sonst kollidieren
+   gleiche Zielpfade.
+2. **MIME-XML** (`src-tauri/linux/folio-mime.xml`) →
+   `/usr/share/mime/packages/folio.xml` mit `<icon name="folio">` für
+   `text/markdown` und `text/x-markdown`.
+3. **Das Per-User-Skript** →
+   `/usr/share/folio/install-folio-icons.sh` (Schicht 3, siehe unten).
+
+**Automatisch beim Paketinstall** (kein postinst im Paket): die
+dpkg-File-Trigger `interest-noawait /usr/share/icons/hicolor`
+(`hicolor-icon-theme`) und `interest-noawait /usr/share/mime/packages`
+(`shared-mime-info`) rufen `gtk-update-icon-cache` bzw.
+`update-mime-database` selbst auf, sobald ein Paket Dateien unter diesen
+Pfaden installiert. Tauris deb-Bundler baut das Paket zwar mit eigenem
+ar/tar (statt `dpkg-deb`), aber path-based File-Trigger werden von den
+*empfangenden* Paketen definiert und von dpkg beim Install anhand der
+enthaltenen Dateipfade aktiviert — sie funktionieren also auch bei einem
+so gebauten `.deb`. Ein `deb.postInstallScript` wäre nur nötig, falls das
+Trigger-Verhalten fehlt; auf Debian/Mint ist es Standard und verifiziert.
+
+## Was Per-User bleibt (Schicht 3)
+
+Der Theme-Override gehört **nicht** ins system-weite Paket (Mint-Y direkt
+zu patchen würde bei jedem Theme-Update überschrieben und alle User auf
+der Maschine treffen). Er läuft daher weiter über
+`install-folio-icons.sh` im `XDG_DATA_HOME` des Users:
+
+- **Aus der App**: Menü **Hilfe → „Markdown-Icon-Integration
+  einrichten…"** (nur Linux, `menu/build.rs` +
+  `commands/app/icon_integration.rs`). Der Menüpunkt findet das Skript
+  sowohl im installierten Pfad (`/usr/share/folio/…`) als auch im
+  Dev-Repo (`<repo>/scripts/…`), führt es in einem eigenen Thread aus und
+  meldet Erfolg/Fehler über einen nativen Message-Dialog.
+- **Manuell**: `bash /usr/share/folio/install-folio-icons.sh` bzw. im
+  Repo `bash scripts/install-folio-icons.sh`.
+
+Das Skript findet sein Quell-Icon in beiden Umgebungen: im Dev-Repo
+`src-tauri/icons/icon.png`, im installierten Fall fällt es auf das vom
+Paket gelegte `/usr/share/icons/hicolor/256x256/apps/folio.png` zurück.
+
+Die Größen-Renderings im Skript brauchen **Pillow** (`python3-pil` auf
+Debian/Mint, `python3-pillow` auf Fedora). Die Pakete deklarieren das als
+`Recommends` (kein hartes `Depends` — die App läuft ohne das Feature
+vollständig); fehlt es, bricht das Skript mit einer klaren
+Installationsanweisung ab statt mit einem `ModuleNotFoundError`.
+
+**AppImage-Einschränkung**: Das AppImage installiert naturgemäß nichts
+nach `/usr/share`, das Skript ist dort also nicht enthalten — der
+Menüpunkt meldet in dem Fall einen sauberen „Skript nicht
+gefunden"-Dialog. Wer das AppImage nutzt, kann das Skript aus dem Repo
+laufen lassen. Bewusst so gelassen; der Ziel-Workflow ist das `.deb`.
+
 ## Offen / TODO
 
-Im `.deb` steckt das alles noch nicht. Probleme bei der Integration:
-
-- **Theme-Override gehört strenggenommen nicht in ein system-weites
-  Paket** — Mint-Y selbst zu patchen würde bei jedem Mint-Y-Update
-  überschrieben und betrifft alle User auf der Maschine.
 - **Eigener MIME-Subtyp** (z. B. `application/x-folio-md`) wäre ein
-  Workaround, hätte aber Nebenwirkungen: Default-Handler-Logik müsste
-  daran hängen, andere Tools würden den Subtyp nicht kennen.
+  Workaround gegen das theme-eigene `text-markdown.png`, hätte aber
+  Nebenwirkungen: Default-Handler-Logik müsste daran hängen, andere Tools
+  würden den Subtyp nicht kennen.
 - **Symbolic-Icon-Variante** (`folio-symbolic.svg`) wäre für
   monochrome/Dark-Themes sinnvoll — aktuell nicht vorhanden.
-
-Weitere Stoßrichtungen, falls man's reproduzierbar haben will:
-
-- `postinst`-Hook im `.deb`, der einen analogen Schritt für *alle*
-  vorhandenen User macht (riskant — User-Dateien anfassen).
-- Ein optionales `Folio: Icon-Integration einrichten`-Menüitem in der
-  App, das `install-folio-icons.sh` aufruft.
-- Ein gepflegtes Icon-Set inkl. SVG-Mastern in `src-tauri/icons/`,
-  damit die Größen aus dem Master gerendert werden statt aus dem
-  512×512-PNG hochskaliert.
+- **SVG-Master statt PNG-Skalierung**: die hicolor-PNGs werden aus dem
+  1254×1254-`icon-source.png` gerendert; ein echtes SVG-Set würde bei
+  exotischen Größen schärfer bleiben.
