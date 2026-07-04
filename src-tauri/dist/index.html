@@ -278,6 +278,7 @@
     <div class="settings-dialog__body">
       <div class="settings-dialog__tabs" role="tablist" aria-label="Einstellungsbereiche" aria-orientation="vertical">
         <button type="button" id="settings-tab-allgemein" class="settings-dialog__tab settings-dialog__tab--active" role="tab" aria-selected="true" aria-controls="settings-panel-allgemein" tabindex="0">Allgemein</button>
+        <button type="button" id="settings-tab-themes" class="settings-dialog__tab" role="tab" aria-selected="false" aria-controls="settings-panel-themes" tabindex="-1">Markdown-Themes</button>
         <button type="button" id="settings-tab-diagnose" class="settings-dialog__tab" role="tab" aria-selected="false" aria-controls="settings-panel-diagnose" tabindex="-1">Diagnose</button>
       </div>
       <div class="settings-dialog__tabpanel" id="settings-panel-allgemein" role="tabpanel" aria-labelledby="settings-tab-allgemein" data-settings-tab="allgemein">
@@ -345,6 +346,13 @@
             </label>
           </div>
           <p class="settings-hint">Ohne Häkchen erscheint stattdessen ein Reload-Button in der Toolbar — sinnvoll für Log-Dateien o. ä. mit ständigen Schreibvorgängen.</p>
+        </section>
+      </div>
+      <div class="settings-dialog__tabpanel" id="settings-panel-themes" role="tabpanel" aria-labelledby="settings-tab-themes" data-settings-tab="themes" hidden>
+        <section class="settings-section">
+          <h3 class="settings-section__title">Markdown-Themes</h3>
+          <p class="settings-hint">Das Theme gilt für die Markdown-Ansicht. Themes ohne Dunkel-Variante bleiben auch im dunklen App-Theme hell.</p>
+          <div id="settings-theme-list" class="settings-theme-list" role="radiogroup" aria-label="Markdown-Theme"></div>
         </section>
       </div>
       <div class="settings-dialog__tabpanel" id="settings-panel-diagnose" role="tabpanel" aria-labelledby="settings-tab-diagnose" data-settings-tab="diagnose" hidden>

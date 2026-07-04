@@ -1,0 +1,18 @@
+.markdown-body {
+  --fg: #e7e5e1;
+  --muted: #aaa7a1;
+  --rule: #45433f;
+  --accent: #77a7ff;
+  --code-bg: #2b2a28;
+  --quote-bg: #302f2c;
+  --quote-bar: #66625c;
+  background: #222220;
+  color: var(--fg);
+}
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 { color: #f2f0ec; }
+.markdown-body th { background: #292826; }

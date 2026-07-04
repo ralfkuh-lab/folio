@@ -20,6 +20,16 @@ pub(in crate::automation) async fn post_settings(
     payload: Result<Json<SettingsPatch>, JsonRejection>,
 ) -> ApiResult<Json<SettingsData>> {
     let Json(patch) = json_payload(payload)?;
+    if let Some(theme_id) = patch.view_theme.as_deref() {
+        let valid = crate::export::view_themes()
+            .iter()
+            .any(|theme| theme.id == theme_id);
+        if !valid {
+            return Err(ApiError::bad_request(format!(
+                "Unbekanntes View-Theme: '{theme_id}'"
+            )));
+        }
+    }
     let state = context.app_handle.state::<AppState>();
     crate::commands::app::settings::update_settings(patch, &context.app_handle, state.inner())
         .map(Json)

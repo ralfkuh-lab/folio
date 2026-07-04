@@ -14,6 +14,7 @@ import { cheatsheetSyncMode, syncCheatsheetMenu } from '../ui/cheatsheet';
 import { afterModeSwitch as findBarAfterModeSwitch, openEditorFind, setEditorFindTerm } from '../ui/find-bar';
 import { highlightCodeBlocks } from '../view/code-highlight';
 import { flushPreviewRender } from '../view/preview';
+import { reapplyCurrentViewTheme } from '../view/theme';
 import { folioLog, safeInvoke } from '../util/log';
 
 type Deps = {
@@ -245,7 +246,7 @@ export function initEditorShell(d: Deps): void {
     // ----- app:set_theme (Theme-Switch) -----
     listen('app:set_theme', function (event: any) {
         const data = (event && event.payload) || {};
-        ackHandler(invoke, data, function () {
+        ackHandler(invoke, data, async function () {
             let mode = data.mode || 'light';
             const html = document.documentElement;
             if (mode === 'toggle') {
@@ -254,6 +255,7 @@ export function initEditorShell(d: Deps): void {
             html.classList.toggle('theme-dark', mode === 'dark');
             html.classList.toggle('theme-light', mode === 'light');
             setEditorTheme(mode);
+            await reapplyCurrentViewTheme();
             // Code-Bloecke in der Markdown-Preview re-highlighten — colorize()
             // nutzt das aktive Monaco-Theme, also muessen wir nach dem Switch
             // einmal komplett durch (data-folio-source bewahrt den Plaintext).

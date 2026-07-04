@@ -25,6 +25,7 @@ import {
     scrollViewTo,
 } from './view/markdown';
 import { initPreview } from './view/preview';
+import { initViewTheme, reapplyCurrentViewTheme } from './view/theme';
 import { initCodeCopy } from './view/code-copy';
 import { initMarkdownScrollSync, syncViewSlugToEditor, tocClickToEditor } from './view/scroll-sync';
 import { scrollHtmlViewToAnchor } from './view/html';
@@ -93,6 +94,7 @@ initExportDialog({
 });
 initImageDialog({ getCurrentPath, showStatus });
 initAboutDialog();
+initViewTheme();
 initSettingsDialog();
 attachPasteHandler(function (blob) {
     openImageDialog({ preloadedBlob: blob }).catch(function (err) {
@@ -259,6 +261,7 @@ if (invoke) {
         html.classList.toggle('theme-dark', mode === 'dark');
         html.classList.toggle('theme-light', mode === 'light');
         setEditorTheme(mode);
+        reapplyCurrentViewTheme();
         safeInvoke('menu_set_checked', { id: 'view.theme.light', checked: mode === 'light' }, 'menu_set_checked view.theme.light', 'debug');
         safeInvoke('menu_set_checked', { id: 'view.theme.dark', checked: mode === 'dark' }, 'menu_set_checked view.theme.dark', 'debug');
     }).catch(function (err) {

@@ -10,17 +10,26 @@
    und beim Boot via menu::build anwenden. */
 
 import { applyLogLevelFromSettings, folioLog } from '../util/log';
+import { applyViewTheme } from '../view/theme';
 
 type SettingsLanguage = 'de' | 'en';
 export type DefaultViewMode = 'view' | 'edit' | 'current';
 export type ExportDirMode = 'document' | 'last';
 export type LogLevel = 'off' | 'error' | 'warn' | 'info' | 'debug';
 
+export type ViewThemeInfo = {
+    id: string;
+    name: string;
+    description: string;
+    hasDark: boolean;
+};
+
 export type SettingsData = {
     language: SettingsLanguage;
     defaultModeMarkdown: DefaultViewMode;
     defaultModeText: DefaultViewMode;
     viewAutoFormat: boolean;
+    viewTheme: string;
     vaultAutoRefresh: boolean;
     documentAutoReload: boolean;
     exportDirMode: ExportDirMode;
@@ -42,6 +51,7 @@ function isExportDirMode(v: string): v is ExportDirMode {
 let currentSettings: SettingsData | null = null;
 let bootLanguage: SettingsLanguage | null = null;
 let keydownHandler: ((e: KeyboardEvent) => void) | null = null;
+let viewThemes: ViewThemeInfo[] = [];
 
 function $(id: string): HTMLElement | null { return document.getElementById(id); }
 
@@ -117,6 +127,7 @@ function applySettingsToForm(data: SettingsData): void {
     if (docReload) docReload.checked = !!data.documentAutoReload;
     if (exportDirMode) exportDirMode.value = data.exportDirMode || 'document';
     if (logLevel) logLevel.value = data.logLevel || 'info';
+    syncSelectedViewTheme(data.viewTheme);
 
     if (langHint) {
         // Hinweis nur akzentuieren, wenn die aktuelle Auswahl von der
@@ -129,6 +140,54 @@ function applySettingsToForm(data: SettingsData): void {
             langHint.classList.remove('settings-hint--alert');
         }
     }
+}
+
+function syncSelectedViewTheme(themeId: string): void {
+    var list = $('settings-theme-list');
+    if (!list) return;
+    var known = viewThemes.some(function (theme) { return theme.id === themeId; });
+    var selected = known ? themeId : 'standard';
+    list.querySelectorAll<HTMLElement>('[data-view-theme]').forEach(function (entry) {
+        var active = entry.dataset.viewTheme === selected;
+        entry.classList.toggle('selected', active);
+        entry.setAttribute('aria-checked', active ? 'true' : 'false');
+        entry.tabIndex = active ? 0 : -1;
+    });
+}
+
+function renderViewThemes(themes: ViewThemeInfo[]): void {
+    var list = $('settings-theme-list');
+    if (!list) return;
+    list.textContent = '';
+    themes.forEach(function (theme) {
+        var entry = document.createElement('button');
+        entry.type = 'button';
+        entry.className = 'settings-theme-card';
+        entry.dataset.viewTheme = theme.id;
+        entry.setAttribute('role', 'radio');
+        entry.setAttribute('aria-checked', 'false');
+        entry.tabIndex = -1;
+
+        var text = document.createElement('span');
+        text.className = 'settings-theme-card__text';
+        var name = document.createElement('span');
+        name.className = 'settings-theme-card__name';
+        name.textContent = theme.name;
+        var description = document.createElement('span');
+        description.className = 'settings-theme-card__description';
+        description.textContent = theme.description;
+        text.append(name, description);
+
+        var badge = document.createElement('span');
+        badge.className = 'settings-theme-card__badge';
+        badge.textContent = theme.hasDark ? 'Hell/Dunkel' : 'Nur hell';
+        entry.append(text, badge);
+        entry.addEventListener('click', function () {
+            patchSettings({ viewTheme: theme.id });
+        });
+        list.appendChild(entry);
+    });
+    syncSelectedViewTheme(currentSettings ? currentSettings.viewTheme : 'standard');
 }
 
 async function patchSettings(patch: Partial<SettingsData>): Promise<void> {
@@ -173,9 +232,13 @@ export function openSettingsDialog(): void {
         installKeydownHandler();
         return;
     }
-    invoke('settings_get').then(function (data: any) {
+    Promise.all([invoke('settings_get'), invoke('view_themes')]).then(function (result: any[]) {
+        var data = result[0];
+        var themes = result[1];
         if (!data || typeof data !== 'object') return;
         currentSettings = data as SettingsData;
+        viewThemes = Array.isArray(themes) ? themes as ViewThemeInfo[] : [];
+        renderViewThemes(viewThemes);
         if (bootLanguage === null) bootLanguage = currentSettings.language;
         applySettingsToForm(currentSettings);
         applyLogLevelFromSettings(currentSettings.logLevel);
@@ -303,6 +366,7 @@ export function initSettingsDialog(): void {
                 currentSettings = data as SettingsData;
                 if (bootLanguage === null) bootLanguage = currentSettings.language;
                 applyLogLevelFromSettings(currentSettings.logLevel);
+                applyViewTheme(currentSettings.viewTheme);
             }
         }).catch(function (err) {
             folioLog.warn('settings', 'settings_get on boot failed', { error: String(err) });

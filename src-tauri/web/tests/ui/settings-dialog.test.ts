@@ -11,6 +11,7 @@ const settings = {
     defaultModeMarkdown: 'current',
     defaultModeText: 'current',
     viewAutoFormat: true,
+    viewTheme: 'standard',
     vaultAutoRefresh: true,
     documentAutoReload: true,
     exportDirMode: 'document',
@@ -27,6 +28,9 @@ function buildDom(): void {
                 <button type="button" id="settings-tab-diagnose"
                     class="settings-dialog__tab"
                     role="tab" aria-selected="false" tabindex="-1">Diagnose</button>
+                <button type="button" id="settings-tab-themes"
+                    class="settings-dialog__tab"
+                    role="tab" aria-selected="false" tabindex="-1">Markdown-Themes</button>
             </div>
             <div role="tabpanel" data-settings-tab="allgemein">
                 <select id="settings-export-dir-mode">
@@ -39,6 +43,9 @@ function buildDom(): void {
                     <option value="info">Normal</option>
                     <option value="debug">Debug</option>
                 </select>
+            </div>
+            <div role="tabpanel" data-settings-tab="themes" hidden>
+                <div id="settings-theme-list" role="radiogroup"></div>
             </div>
             <button id="settings-close"></button>
         </div>
@@ -58,6 +65,23 @@ describe('settings-dialog', () => {
         buildDom();
         handles.invoke.mockImplementation((cmd: string, args?: any) => {
             if (cmd === 'settings_get') return Promise.resolve(settings);
+            if (cmd === 'view_themes') {
+                return Promise.resolve([
+                    {
+                        id: 'standard',
+                        name: 'Standard',
+                        description: 'Folio',
+                        hasDark: true,
+                    },
+                    {
+                        id: 'classic',
+                        name: 'Classic',
+                        description: 'Serifen',
+                        hasDark: false,
+                    },
+                ]);
+            }
+            if (cmd === 'view_theme_css') return Promise.resolve('');
             if (cmd === 'settings_update') {
                 return Promise.resolve({ ...settings, ...args.patch });
             }
@@ -109,6 +133,30 @@ describe('settings-dialog', () => {
         expect(allgemeinTab.getAttribute('aria-selected')).toBe('false');
         expect(allgemeinPanel.hidden).toBe(true);
         expect(diagnosePanel.hidden).toBe(false);
+    });
+
+    it('rendert den Theme-Tab und persistiert die Auswahl', async () => {
+        openSettingsDialog();
+        await flush();
+        document.getElementById('settings-tab-themes')!.click();
+
+        const classic = document.querySelector<HTMLElement>(
+            '[data-view-theme="classic"]',
+        )!;
+        expect(classic.textContent).toContain('Classic');
+        expect(classic.textContent).toContain('Nur hell');
+        expect(document.querySelector<HTMLElement>(
+            '#settings-theme-list [data-view-theme="standard"]',
+        )!.getAttribute('aria-checked')).toBe('true');
+
+        classic.click();
+        await flush();
+
+        expect(handles.invoke).toHaveBeenCalledWith('settings_update', {
+            patch: { viewTheme: 'classic' },
+        });
+        expect(classic.classList.contains('selected')).toBe(true);
+        expect(classic.getAttribute('aria-checked')).toBe('true');
     });
 
     it('setzt beim erneuten Öffnen auf Allgemein zurück', async () => {

@@ -2,6 +2,7 @@ use crate::export::{self, LayoutInfo};
 use crate::pdf_export;
 use crate::settings::ExportDirMode;
 use crate::state::AppState;
+use std::borrow::Cow;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, State};
@@ -10,6 +11,16 @@ use tauri_plugin_dialog::{DialogExt, FilePath};
 #[tauri::command]
 pub async fn export_layouts() -> Vec<LayoutInfo> {
     export::layouts()
+}
+
+#[tauri::command]
+pub async fn view_themes() -> Vec<LayoutInfo> {
+    export::view_themes()
+}
+
+#[tauri::command]
+pub async fn view_theme_css(theme_id: String, dark: bool) -> Result<String, String> {
+    export::view_theme_css(&theme_id, dark).map(Cow::into_owned)
 }
 
 #[tauri::command]

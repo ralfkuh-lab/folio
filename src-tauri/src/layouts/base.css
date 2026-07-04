@@ -10,14 +10,13 @@
 
 @media print {
   @page { size: A4; margin: 14mm 16mm; }
-  .markdown-body { margin: 0; padding: 0; max-width: none; }
-  body { font-size: 10.5pt; }
+  .markdown-body { margin: 0; padding: 0; max-width: none; font-size: 10.5pt; }
 
   /* Tabellen: kein horizontaler Überlauf, Cells brechen lange Wörter um.
      Themes wie GitHub setzen im Screen display:block + width:max-content
      für scrollbare Tabellen — im Print muss zurück zu klassischem
      Tabellen-Layout, sonst hängt Inhalt rechts über die Seite hinaus. */
-  table {
+  .markdown-body table {
     display: table;
     width: 100%;
     max-width: 100%;
@@ -25,7 +24,7 @@
     font-size: 0.88em;
     overflow: visible;
   }
-  th, td {
+  .markdown-body th, .markdown-body td {
     word-break: break-word;
     overflow-wrap: anywhere;
   }
@@ -33,7 +32,7 @@
   /* Code-Blöcke: müssen wrappen, sonst Scrollbars im PDF.
      pre code wird explizit mitgenommen, weil manche Themes (z. B. GitHub)
      dort white-space: pre setzen, was den pre-Wrap aushebelt. */
-  pre, pre code {
+  .markdown-body pre, .markdown-body pre code {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     word-break: break-word;
@@ -41,5 +40,5 @@
   }
 
   /* Block-Elemente nicht über Seitenumbrüche zerreißen. */
-  pre, blockquote { break-inside: avoid; }
+  .markdown-body pre, .markdown-body blockquote { break-inside: avoid; }
 }

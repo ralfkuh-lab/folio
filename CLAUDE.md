@@ -203,6 +203,16 @@ sonst lehnt Tauri den Build ab.
   wird der aktuelle Editor-Stand live aus Monaco geholt, statt den am
   Schedule-Zeitpunkt closure-captured Text — robust gegen
   verlorengegangene `editorTextChanged`-Events.
+- **View-Themes** (`view/theme.ts`, Backend-Commands `view_themes` /
+  `view_theme_css`): Theme-CSS ist immer auf `.markdown-body` gescopt
+  und wird ueber `#view-theme-style` als letztes Element in `head`
+  injiziert. Die Export-Layouts sind in Content-CSS (`<id>.css`, fuer
+  View + Export) und Seitenrahmen (`<id>.page.css`, nur Export)
+  getrennt; der Export verwendet weiterhin ausschliesslich die
+  Light-Variante. Dark-Overrides werden nach dem Light-CSS angehaengt.
+  Fehlt eine Dark-Variante (bewusst bei `classic`), liefert das Backend
+  auch fuer `dark=true` das Light-CSS; unbekannte gespeicherte IDs
+  fallen im Frontend effektiv auf `standard` zurueck.
 - **Image-View** (`view/image.ts`, Surface `#image-view-mount` in
   `dist/index.html`): `FileKind::Image` (png/jpg/jpeg/gif/webp/svg/
   bmp/ico/avif) wird read-only über `<img src={convertFileSrc(path)}>`
@@ -396,7 +406,7 @@ sonst lehnt Tauri den Build ab.
 
 ## E2E-Test-Suite
 
-Vollständige UI-Coverage in `tests/e2e/` (23 Szenarien, Python +
+Vollständige UI-Coverage in `tests/e2e/` (25 Szenarien, Python +
 Pillow): Boot, View-/Edit-/Split-Mode, Theme, Vault, Find, Workspace,
 Save-Roundtrip durch alle BOM/EOL-Kombis, Undo/Redo, Toolbar-Commands
 (Bold/Italic/Heading), Menü-Coverage (File/Edit/View/Help), DOM-

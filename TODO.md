@@ -43,19 +43,18 @@
     (`pushUndoStop` in `editor/text.ts:187,193`) ist erledigt; beim
     nächsten Windows-E2E-Run (`09_undo_redo`) nur noch validieren.
 
-- **Settings-Panel → Tab-Control ausbauen** (User-Wunsch 2026-07-04):
-  Umbau des Settings-Dialogs auf Tabs an der linken Seite:
-  - **Tab „Allgemein"** — die heutigen Settings.
-  - **Tab „Markdown-Themes"** — Ausbau der Export-Layouts
-    (`commands/export.rs::export_layouts`, haben bereits ein Theme-/
-    Layout-Konzept mit per-Layout-CSS) zu einem gemeinsamen
-    Theme-System: (a) **Custom-Themes** ermöglichen (User-CSS),
-    (b) eines der Themes auch für die **normale View-Ansicht**
-    auswählbar machen (Vereinheitlichung Preview + Export),
-    (c) Themes als **Favorit** markierbar; Favoriten werden im
-    Export-Dialog priorisiert angezeigt, der Rest unter „weitere…".
-    Deckt den früheren Punkt „Markdown-Preview-Themes / Fonts" mit ab
-    (Body-Font, Mono-Font, Schriftgröße als Theme-Bestandteile).
+- **Settings-Ausbau — Restetappen Theme-System** (User-Wunsch
+  2026-07-04; Tab-Control und Etappe 3a „View-Theme-Auswahl mit
+  Light/Dark" sind erledigt):
+  - **3b — Custom-Themes** (User-CSS unter `~/.config/folio/themes/`,
+    Einbindung in `view_themes`/`view_theme_css` + Export).
+  - **3c — Theme-Favoriten**: Themes als Favorit markierbar; Favoriten
+    werden im Export-Dialog priorisiert angezeigt, der Rest unter
+    „weitere…".
+  - **3d — Code-Highlighting im Export** (statisch via syntect o. ä.,
+    Light/Dark passend zum Theme; View bleibt bei Monaco).
+  - Später/mit abgedeckt: Fonts als Theme-Bestandteile (Body-Font,
+    Mono-Font, Schriftgröße).
   - **Tab „KI"** — Setup für KI-Funktionen (Provider, API-Keys,
     Modell), siehe KI-Eintrag unten.
   - Kleinere offene Ausbaustufen aus dem alten Settings-Eintrag:

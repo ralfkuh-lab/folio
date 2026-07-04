@@ -164,7 +164,7 @@ body.kind-image .code-view-region { display: none; }
 /* Markdown-Body: 900px-Constraint relativ zur View-Region (nicht zum
    gesamten Viewport — sonst springt der Inhalt seitlich, wenn die TOC
    ein-/ausgeblendet wird). */
-main.markdown-body {
+.markdown-body {
   max-width: 900px;
   margin: 0 auto;
   padding: 32px 40px 64px;

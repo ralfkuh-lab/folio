@@ -112,6 +112,14 @@ class AutomationApi:
     def theme(self, mode: str) -> dict:
         return self._request("POST", "/theme", {"mode": mode})
 
+    def eval(self, js: str, timeout_ms: int = 5000) -> dict:
+        return self._request(
+            "POST",
+            "/eval",
+            {"js": js, "timeoutMs": timeout_ms},
+            timeout=(timeout_ms / 1000.0) + 5.0,
+        )
+
     def rail(self, side: str, visible: bool) -> dict:
         return self._request("POST", "/rail", {"side": side, "visible": visible})
 

@@ -74,6 +74,8 @@ Wichtige stabile Selektor-Gruppen:
   `rename-dialog`, `unsaved-dialog`, `export-dialog`, `image-dialog`.
 - Settings-Tabs: `settings-tab-<slug>` und
   `[data-settings-tab="<slug>"]`.
+- View-Theme: `#view-theme-style`, `body[data-view-theme="<id>"]`,
+  `#settings-theme-list` und `[data-view-theme="<id>"]`.
 - Vault: `.section`, `.node`, `.row`, `.caret`, `ul.children`,
   `data-path="<normalized-absolute-path>"`.
 
@@ -82,6 +84,10 @@ Wichtige stabile Selektor-Gruppen:
 Die HTTP-API läuft nur auf Loopback (`127.0.0.1:9876`). Die aktuelle Route-
 Übersicht steht im README; die Szenario-Details in `tests/e2e/README.md`
 und `docs/e2e-testing.md`.
+
+`GET/POST /settings` transportiert unter anderem das persistierte Feld
+`viewTheme`. Erlaubte Werte kommen aus dem Tauri-Command `view_themes`;
+unbekannte Werte werden beim Patch mit HTTP 400 abgelehnt.
 
 ### Security-Gates (Middleware `security_guard`)
 

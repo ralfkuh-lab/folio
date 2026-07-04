@@ -1,34 +1,34 @@
-/* Folio-Export: "Classic" — Article-/Buch-Look mit Serifen, A4-orientiert. */
-:root {
+/* Folio-Theme: "Classic" — Article-/Buch-Look mit Serifen, A4-orientiert. */
+.markdown-body, .markdown-body * { box-sizing: border-box; }
+.markdown-body {
   --fg: #222;
   --muted: #555;
   --rule: #d8d4cc;
   --accent: #6e3a1f;
   --code-bg: #f5f1e8;
   --quote-bg: #faf6ec;
-}
-* { box-sizing: border-box; }
-html, body { background: #fff; }
-body {
-  margin: 0;
+  max-width: 720px;
+  margin: 48px auto;
+  padding: 0 32px 64px;
+  background: #fff;
   font-family: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, Cambria, "Times New Roman", serif;
   font-size: 11.5pt;
   line-height: 1.65;
   color: var(--fg);
 }
-.markdown-body {
-  max-width: 720px;
-  margin: 48px auto;
-  padding: 0 32px 64px;
-}
-h1, h2, h3, h4, h5, h6 {
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
   font-family: inherit;
   font-weight: 700;
   line-height: 1.25;
   margin: 1.6em 0 0.6em;
   color: #1a1a1a;
 }
-h1 {
+.markdown-body h1 {
   font-size: 2em;
   text-align: center;
   margin-top: 0.4em;
@@ -37,17 +37,17 @@ h1 {
   padding-bottom: 0.4em;
   letter-spacing: 0.01em;
 }
-h2 { font-size: 1.45em; border-bottom: 1px solid var(--rule); padding-bottom: 0.2em; }
-h3 { font-size: 1.2em; }
-h4 { font-size: 1.05em; }
-h5, h6 { font-size: 1em; color: var(--muted); }
-p { margin: 0 0 1em; text-indent: 0; }
+.markdown-body h2 { font-size: 1.45em; border-bottom: 1px solid var(--rule); padding-bottom: 0.2em; }
+.markdown-body h3 { font-size: 1.2em; }
+.markdown-body h4 { font-size: 1.05em; }
+.markdown-body h5, .markdown-body h6 { font-size: 1em; color: var(--muted); }
+.markdown-body p { margin: 0 0 1em; text-indent: 0; }
 .markdown-body > p:first-of-type::first-line { font-variant: small-caps; letter-spacing: 0.04em; }
-a { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(110, 58, 31, 0.35); }
-a:hover { border-bottom-color: var(--accent); }
-ul, ol { padding-left: 1.6em; margin: 0 0 1em; }
-li { margin: 0.25em 0; }
-blockquote {
+.markdown-body a { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(110, 58, 31, 0.35); }
+.markdown-body a:hover { border-bottom-color: var(--accent); }
+.markdown-body ul, .markdown-body ol { padding-left: 1.6em; margin: 0 0 1em; }
+.markdown-body li { margin: 0.25em 0; }
+.markdown-body blockquote {
   margin: 1.2em 0;
   padding: 0.6em 1em;
   border-left: 3px solid var(--accent);
@@ -55,21 +55,21 @@ blockquote {
   color: #3a2d20;
   font-style: italic;
 }
-hr {
+.markdown-body hr {
   border: 0;
   height: 1px;
   background: var(--rule);
   margin: 2em auto;
   width: 60%;
 }
-code {
+.markdown-body code {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 0.92em;
   background: var(--code-bg);
   padding: 0.1em 0.35em;
   border-radius: 3px;
 }
-pre {
+.markdown-body pre {
   background: var(--code-bg);
   border-radius: 4px;
   padding: 0.8em 1em;
@@ -77,21 +77,21 @@ pre {
   font-size: 0.9em;
   line-height: 1.5;
 }
-pre code { background: transparent; padding: 0; }
-table {
+.markdown-body pre code { background: transparent; padding: 0; }
+.markdown-body table {
   border-collapse: collapse;
   width: 100%;
   margin: 1.2em 0;
   font-size: 0.95em;
 }
-th, td { border: 1px solid var(--rule); padding: 0.45em 0.7em; text-align: left; }
-th { background: #f3ede0; font-weight: 700; }
-img { max-width: 100%; height: auto; display: block; margin: 1em auto; }
-.task-list-item { list-style: none; }
-.task-list-item input[type=checkbox] { margin-right: 0.4em; }
+.markdown-body th, .markdown-body td { border: 1px solid var(--rule); padding: 0.45em 0.7em; text-align: left; }
+.markdown-body th { background: #f3ede0; font-weight: 700; }
+.markdown-body img { max-width: 100%; height: auto; display: block; margin: 1em auto; }
+.markdown-body .task-list-item { list-style: none; }
+.markdown-body .task-list-item input[type=checkbox] { margin-right: 0.4em; }
 /* Layout-spezifische Print-Anpassungen — allgemeine Print-Defaults
    (Page-Margin, Tabellen-/Code-Wrap) liegen in base.css. */
 @media print {
-  a { color: var(--fg); border-bottom: none; }
-  th, td { padding: 0.3em 0.5em; }
+  .markdown-body a { color: var(--fg); border-bottom: none; }
+  .markdown-body th, .markdown-body td { padding: 0.3em 0.5em; }
 }

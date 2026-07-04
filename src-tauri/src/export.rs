@@ -1,13 +1,15 @@
 use crate::renderer;
 use regex::Regex;
 use serde::Serialize;
-use std::{path::Path, sync::OnceLock};
+use std::{borrow::Cow, path::Path, sync::OnceLock};
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LayoutInfo {
     pub id: &'static str,
     pub name: &'static str,
     pub description: &'static str,
+    pub has_dark: bool,
 }
 
 const LAYOUTS: &[LayoutInfo] = &[
@@ -15,41 +17,85 @@ const LAYOUTS: &[LayoutInfo] = &[
         id: "classic",
         name: "Classic",
         description: "Article-Look mit Serifen, A4-orientiert.",
+        has_dark: false,
     },
     LayoutInfo {
         id: "clean",
         name: "Clean",
         description: "Moderne, ruhige Sans-Serif-Optik.",
+        has_dark: true,
     },
     LayoutInfo {
         id: "github",
         name: "GitHub",
         description: "Stil angelehnt an die GitHub-Markdown-Vorschau.",
+        has_dark: true,
     },
 ];
 
 const CLASSIC_CSS: &str = include_str!("layouts/classic.css");
 const CLEAN_CSS: &str = include_str!("layouts/clean.css");
 const GITHUB_CSS: &str = include_str!("layouts/github.css");
+const CLASSIC_PAGE_CSS: &str = include_str!("layouts/classic.page.css");
+const CLEAN_PAGE_CSS: &str = include_str!("layouts/clean.page.css");
+const GITHUB_PAGE_CSS: &str = include_str!("layouts/github.page.css");
+const CLEAN_DARK_CSS: &str = include_str!("layouts/clean.dark.css");
+const GITHUB_DARK_CSS: &str = include_str!("layouts/github.dark.css");
 const BASE_CSS: &str = include_str!("layouts/base.css");
 
 pub fn layouts() -> Vec<LayoutInfo> {
     LAYOUTS.to_vec()
 }
 
-pub fn layout_css(id: &str) -> Option<&'static str> {
+pub fn view_themes() -> Vec<LayoutInfo> {
+    let mut themes = Vec::with_capacity(LAYOUTS.len() + 1);
+    themes.push(LayoutInfo {
+        id: "standard",
+        name: "Standard",
+        description: "Die eingebaute Folio-Ansicht, folgt dem App-Theme.",
+        has_dark: true,
+    });
+    themes.extend_from_slice(LAYOUTS);
+    themes
+}
+
+pub fn layout_css(id: &str, dark: bool) -> Option<Cow<'static, str>> {
+    let (light, dark_override) = match id {
+        "classic" => (CLASSIC_CSS, None),
+        "clean" => (CLEAN_CSS, Some(CLEAN_DARK_CSS)),
+        "github" => (GITHUB_CSS, Some(GITHUB_DARK_CSS)),
+        _ => return None,
+    };
+    match (dark, dark_override) {
+        (true, Some(override_css)) => Some(Cow::Owned(format!("{light}\n{override_css}"))),
+        _ => Some(Cow::Borrowed(light)),
+    }
+}
+
+pub fn view_theme_css(theme_id: &str, dark: bool) -> Result<Cow<'static, str>, String> {
+    if theme_id == "standard" {
+        return Ok(Cow::Borrowed(""));
+    }
+    layout_css(theme_id, dark).ok_or_else(|| format!("Unbekanntes View-Theme: '{theme_id}'"))
+}
+
+fn page_css(id: &str) -> Option<&'static str> {
     match id {
-        "classic" => Some(CLASSIC_CSS),
-        "clean" => Some(CLEAN_CSS),
-        "github" => Some(GITHUB_CSS),
+        "classic" => Some(CLASSIC_PAGE_CSS),
+        "clean" => Some(CLEAN_PAGE_CSS),
+        "github" => Some(GITHUB_PAGE_CSS),
         _ => None,
     }
 }
 
 pub fn render_document(layout_id: &str, title: &str, markdown: &str) -> Result<String, String> {
-    let css = layout_css(layout_id).ok_or_else(|| format!("Unbekanntes Layout: '{layout_id}'"))?;
+    let content_css =
+        layout_css(layout_id, false).ok_or_else(|| format!("Unbekanntes Layout: '{layout_id}'"))?;
+    let page_css =
+        page_css(layout_id).ok_or_else(|| format!("Unbekanntes Layout: '{layout_id}'"))?;
+    let css = format!("{page_css}\n{content_css}");
     let body = strip_scroll_sync_attrs(&renderer::render_body(markdown));
-    Ok(wrap_html(title, css, &body))
+    Ok(wrap_html(title, &css, &body))
 }
 
 pub fn derive_title(path: Option<&str>) -> String {
@@ -66,10 +112,8 @@ pub fn derive_default_filename(path: Option<&str>) -> String {
 
 fn wrap_html(title: &str, css: &str, body_html: &str) -> String {
     let title_escaped = escape_html(title);
-    // Layout-CSS zuerst, Base-CSS danach: Base liefert Print-Defaults für
-    // alle Themes; Custom-Themes können konkurrierende Werte über ihre
-    // eigene @media print-Regel setzen (gleiche Spezifität, gewinnt durch
-    // spätere Position innerhalb des Layout-CSS).
+    // Seiten- und Content-CSS zuerst, Base-CSS danach: Base liefert
+    // Print-Defaults fuer alle Export-Layouts.
     let base = BASE_CSS;
     format!(
         "<!doctype html>\n\
@@ -130,11 +174,42 @@ mod tests {
     }
 
     #[test]
+    fn view_themes_list_standard_and_layout_dark_flags() {
+        let themes = view_themes();
+        assert_eq!(4, themes.len());
+        for (id, has_dark) in [
+            ("standard", true),
+            ("classic", false),
+            ("clean", true),
+            ("github", true),
+        ] {
+            let theme = themes.iter().find(|theme| theme.id == id).unwrap();
+            assert_eq!(has_dark, theme.has_dark, "has_dark fuer {id}");
+        }
+    }
+
+    #[test]
+    fn view_theme_css_handles_known_unknown_and_dark_fallback() {
+        assert!(view_theme_css("standard", false).unwrap().is_empty());
+        for id in ["classic", "clean", "github"] {
+            assert!(!view_theme_css(id, false).unwrap().is_empty(), "{id}");
+        }
+        assert!(view_theme_css("bogus", false).is_err());
+        assert_eq!(
+            view_theme_css("classic", false).unwrap(),
+            view_theme_css("classic", true).unwrap()
+        );
+        assert!(view_theme_css("github", true).unwrap().contains("#0d1117"));
+    }
+
+    #[test]
     fn render_document_includes_title_and_body() {
         let html = render_document("clean", "Hallo Welt", "# Hallo").unwrap();
         assert!(html.contains("<title>Hallo Welt</title>"));
         assert!(html.contains(r#"<h1 id="hallo">Hallo</h1>"#));
         assert!(html.contains("<style>"));
+        assert!(html.contains("html, body"));
+        assert!(html.contains(".markdown-body h1"));
     }
 
     #[test]

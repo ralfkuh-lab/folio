@@ -121,6 +121,11 @@ pub struct SettingsData {
     pub default_mode_text: DefaultViewMode,
     #[serde(default = "default_true")]
     pub view_auto_format: bool,
+    /// Content-Theme fuer die Markdown-Ansicht. Unbekannte gespeicherte
+    /// IDs bleiben beim Laden erhalten; das Frontend faellt bei der
+    /// CSS-Abfrage auf `standard` zurueck.
+    #[serde(default = "default_view_theme")]
+    pub view_theme: String,
     /// Steuert, ob File-System-Events fuer gepinnte/aufgeklappte
     /// Vault-Ordner einen Tree-Refresh ausloesen. Default an; aus
     /// wenn der User viele Ordner pinnt und FS-Watch-Limits drueckt.
@@ -157,6 +162,10 @@ fn default_true() -> bool {
     true
 }
 
+fn default_view_theme() -> String {
+    "standard".to_string()
+}
+
 impl Default for SettingsData {
     fn default() -> Self {
         Self {
@@ -164,6 +173,7 @@ impl Default for SettingsData {
             default_mode_markdown: default_mode_markdown(),
             default_mode_text: default_mode_text(),
             view_auto_format: default_true(),
+            view_theme: default_view_theme(),
             vault_auto_refresh: default_true(),
             document_auto_reload: default_true(),
             export_dir_mode: ExportDirMode::default(),
@@ -182,6 +192,7 @@ pub struct SettingsPatch {
     pub default_mode_markdown: Option<DefaultViewMode>,
     pub default_mode_text: Option<DefaultViewMode>,
     pub view_auto_format: Option<bool>,
+    pub view_theme: Option<String>,
     pub vault_auto_refresh: Option<bool>,
     pub document_auto_reload: Option<bool>,
     pub export_dir_mode: Option<ExportDirMode>,
@@ -194,6 +205,7 @@ impl SettingsPatch {
             && self.default_mode_markdown.is_none()
             && self.default_mode_text.is_none()
             && self.view_auto_format.is_none()
+            && self.view_theme.is_none()
             && self.vault_auto_refresh.is_none()
             && self.document_auto_reload.is_none()
             && self.export_dir_mode.is_none()
@@ -233,6 +245,17 @@ impl SettingsService {
     /// es **nicht** in der `changed`-Liste auftauchen — so kann das
     /// Frontend Side-Effects wie Menue-Rebuild gezielt vermeiden.
     pub fn apply_patch(&mut self, patch: SettingsPatch) -> io::Result<Vec<&'static str>> {
+        if let Some(value) = patch.view_theme.as_deref() {
+            let valid = crate::export::view_themes()
+                .iter()
+                .any(|theme| theme.id == value);
+            if !valid {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("Unbekanntes View-Theme: '{value}'"),
+                ));
+            }
+        }
         let mut changed: Vec<&'static str> = Vec::new();
         if let Some(value) = patch.language {
             if self.data.language != value {
@@ -256,6 +279,12 @@ impl SettingsService {
             if self.data.view_auto_format != value {
                 self.data.view_auto_format = value;
                 changed.push("viewAutoFormat");
+            }
+        }
+        if let Some(value) = patch.view_theme {
+            if self.data.view_theme != value {
+                self.data.view_theme = value;
+                changed.push("viewTheme");
             }
         }
         if let Some(value) = patch.vault_auto_refresh {
@@ -301,6 +330,7 @@ mod tests {
         assert_eq!(DefaultViewMode::Current, data.default_mode_markdown);
         assert_eq!(DefaultViewMode::Current, data.default_mode_text);
         assert!(data.view_auto_format);
+        assert_eq!("standard", data.view_theme);
         assert!(data.vault_auto_refresh);
         assert!(data.document_auto_reload);
         assert_eq!(ExportDirMode::Document, data.export_dir_mode);
@@ -321,6 +351,39 @@ mod tests {
         assert_eq!(vec!["exportDirMode"], changed);
         let reloaded = SettingsService::load_from(path).data();
         assert_eq!(ExportDirMode::Last, reloaded.export_dir_mode);
+    }
+
+    #[test]
+    fn view_theme_patch_round_trips_and_rejects_unknown_ids() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("settings.json");
+        let mut svc = SettingsService::load_from(path.clone());
+        let changed = svc
+            .apply_patch(SettingsPatch {
+                view_theme: Some("github".to_string()),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(vec!["viewTheme"], changed);
+        assert_eq!("github", SettingsService::load_from(path).data().view_theme);
+
+        let error = svc
+            .apply_patch(SettingsPatch {
+                view_theme: Some("gibtsnicht".to_string()),
+                ..Default::default()
+            })
+            .unwrap_err();
+        assert_eq!(io::ErrorKind::InvalidInput, error.kind());
+        assert_eq!("github", svc.data().view_theme);
+    }
+
+    #[test]
+    fn unknown_view_theme_is_preserved_on_load() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("settings.json");
+        std::fs::write(&path, r#"{"viewTheme":"alt-theme"}"#).unwrap();
+        let svc = SettingsService::load_from(path);
+        assert_eq!("alt-theme", svc.data().view_theme);
     }
 
     #[test]
@@ -478,19 +541,21 @@ mod tests {
                 default_mode_markdown: Some(DefaultViewMode::Edit),
                 default_mode_text: Some(DefaultViewMode::View),
                 view_auto_format: Some(false),
+                view_theme: Some("clean".to_string()),
                 vault_auto_refresh: Some(false),
                 document_auto_reload: Some(false),
                 export_dir_mode: Some(ExportDirMode::Last),
                 log_level: Some(LogLevel::Debug),
             })
             .unwrap();
-        assert_eq!(8, changed.len());
+        assert_eq!(9, changed.len());
 
         let reloaded = SettingsService::load_from(path).data();
         assert_eq!(Language::En, reloaded.language);
         assert_eq!(DefaultViewMode::Edit, reloaded.default_mode_markdown);
         assert_eq!(DefaultViewMode::View, reloaded.default_mode_text);
         assert!(!reloaded.view_auto_format);
+        assert_eq!("clean", reloaded.view_theme);
         assert_eq!(ExportDirMode::Last, reloaded.export_dir_mode);
     }
 
