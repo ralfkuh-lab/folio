@@ -315,6 +315,16 @@
         <p class="settings-hint">Nutzt Monacos „Format Document" für alle Sprachen mit registriertem Formatter (JSON, XML, HTML, CSS, JS/TS, …). Ohne Häkchen wird der Rohinhalt angezeigt.</p>
       </section>
       <section class="settings-section">
+        <h3 class="settings-section__title">Export</h3>
+        <div class="settings-row">
+          <label for="settings-export-dir-mode">Export-Zielverzeichnis</label>
+          <select id="settings-export-dir-mode" class="settings-input">
+            <option value="document">Verzeichnis der Datei</option>
+            <option value="last">Zuletzt gewähltes Verzeichnis</option>
+          </select>
+        </div>
+      </section>
+      <section class="settings-section">
         <h3 class="settings-section__title">Datei-Überwachung</h3>
         <div class="settings-row settings-row--toggle">
           <label for="settings-vault-auto-refresh">

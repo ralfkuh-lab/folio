@@ -53,6 +53,14 @@ impl DefaultViewMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ExportDirMode {
+    #[default]
+    Document,
+    Last,
+}
+
 /// Log-Level fuer das `tracing`-Subscriber-Setup. `Off` schaltet die
 /// Ausgabe stumm (Filter auf `"off"`) — der Subscriber und der
 /// File-Appender bleiben registriert, sodass ein Live-Wechsel zurueck
@@ -124,6 +132,10 @@ pub struct SettingsData {
     /// stattdessen erscheint ein Reload-Button in der Toolbar.
     #[serde(default = "default_true")]
     pub document_auto_reload: bool,
+    /// Startverzeichnis des Export-Dialogs: Verzeichnis des offenen
+    /// Dokuments oder das zuletzt fuer einen Export gewaehlte Verzeichnis.
+    #[serde(default)]
+    pub export_dir_mode: ExportDirMode,
     /// Log-Level fuer den `tracing`-Subscriber. `Off` schaltet die
     /// Ausgabe stumm (Subscriber bleibt registriert, Filter auf
     /// `"off"`). `RUST_LOG`-ENV uebersteuert dies beim Boot und sperrt
@@ -154,6 +166,7 @@ impl Default for SettingsData {
             view_auto_format: default_true(),
             vault_auto_refresh: default_true(),
             document_auto_reload: default_true(),
+            export_dir_mode: ExportDirMode::default(),
             log_level: LogLevel::default(),
         }
     }
@@ -171,6 +184,7 @@ pub struct SettingsPatch {
     pub view_auto_format: Option<bool>,
     pub vault_auto_refresh: Option<bool>,
     pub document_auto_reload: Option<bool>,
+    pub export_dir_mode: Option<ExportDirMode>,
     pub log_level: Option<LogLevel>,
 }
 
@@ -182,6 +196,7 @@ impl SettingsPatch {
             && self.view_auto_format.is_none()
             && self.vault_auto_refresh.is_none()
             && self.document_auto_reload.is_none()
+            && self.export_dir_mode.is_none()
             && self.log_level.is_none()
     }
 }
@@ -255,6 +270,12 @@ impl SettingsService {
                 changed.push("documentAutoReload");
             }
         }
+        if let Some(value) = patch.export_dir_mode {
+            if self.data.export_dir_mode != value {
+                self.data.export_dir_mode = value;
+                changed.push("exportDirMode");
+            }
+        }
         if let Some(value) = patch.log_level {
             if self.data.log_level != value {
                 self.data.log_level = value;
@@ -282,7 +303,39 @@ mod tests {
         assert!(data.view_auto_format);
         assert!(data.vault_auto_refresh);
         assert!(data.document_auto_reload);
+        assert_eq!(ExportDirMode::Document, data.export_dir_mode);
         assert_eq!(LogLevel::Info, data.log_level);
+    }
+
+    #[test]
+    fn export_dir_mode_patch_round_trips() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("settings.json");
+        let mut svc = SettingsService::load_from(path.clone());
+        let changed = svc
+            .apply_patch(SettingsPatch {
+                export_dir_mode: Some(ExportDirMode::Last),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(vec!["exportDirMode"], changed);
+        let reloaded = SettingsService::load_from(path).data();
+        assert_eq!(ExportDirMode::Last, reloaded.export_dir_mode);
+    }
+
+    #[test]
+    fn export_dir_mode_deserializes_from_camel_case_patch() {
+        let patch: SettingsPatch = serde_json::from_str(r#"{"exportDirMode":"last"}"#).unwrap();
+        assert_eq!(Some(ExportDirMode::Last), patch.export_dir_mode);
+    }
+
+    #[test]
+    fn unknown_export_dir_mode_falls_back_to_default_on_load() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("settings.json");
+        std::fs::write(&path, r#"{"exportDirMode":"unknown"}"#).unwrap();
+        let svc = SettingsService::load_from(path);
+        assert_eq!(ExportDirMode::Document, svc.data().export_dir_mode);
     }
 
     #[test]
@@ -365,6 +418,10 @@ mod tests {
             json.contains("\"defaultModeText\":\"current\""),
             "got: {json}"
         );
+        assert!(
+            json.contains("\"exportDirMode\":\"document\""),
+            "got: {json}"
+        );
     }
 
     #[test]
@@ -423,16 +480,18 @@ mod tests {
                 view_auto_format: Some(false),
                 vault_auto_refresh: Some(false),
                 document_auto_reload: Some(false),
+                export_dir_mode: Some(ExportDirMode::Last),
                 log_level: Some(LogLevel::Debug),
             })
             .unwrap();
-        assert_eq!(7, changed.len());
+        assert_eq!(8, changed.len());
 
         let reloaded = SettingsService::load_from(path).data();
         assert_eq!(Language::En, reloaded.language);
         assert_eq!(DefaultViewMode::Edit, reloaded.default_mode_markdown);
         assert_eq!(DefaultViewMode::View, reloaded.default_mode_text);
         assert!(!reloaded.view_auto_format);
+        assert_eq!(ExportDirMode::Last, reloaded.export_dir_mode);
     }
 
     #[test]

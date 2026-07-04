@@ -13,6 +13,7 @@ import { applyLogLevelFromSettings, folioLog } from '../util/log';
 
 type SettingsLanguage = 'de' | 'en';
 export type DefaultViewMode = 'view' | 'edit' | 'current';
+export type ExportDirMode = 'document' | 'last';
 export type LogLevel = 'off' | 'error' | 'warn' | 'info' | 'debug';
 
 export type SettingsData = {
@@ -22,6 +23,7 @@ export type SettingsData = {
     viewAutoFormat: boolean;
     vaultAutoRefresh: boolean;
     documentAutoReload: boolean;
+    exportDirMode: ExportDirMode;
     logLevel: LogLevel;
 };
 
@@ -31,6 +33,10 @@ function isViewMode(v: string): v is DefaultViewMode {
 
 function isLogLevel(v: string): v is LogLevel {
     return v === 'off' || v === 'error' || v === 'warn' || v === 'info' || v === 'debug';
+}
+
+function isExportDirMode(v: string): v is ExportDirMode {
+    return v === 'document' || v === 'last';
 }
 
 let currentSettings: SettingsData | null = null;
@@ -61,6 +67,7 @@ function applySettingsToForm(data: SettingsData): void {
     var autoFormat = $('settings-view-auto-format') as HTMLInputElement | null;
     var vaultRefresh = $('settings-vault-auto-refresh') as HTMLInputElement | null;
     var docReload = $('settings-document-auto-reload') as HTMLInputElement | null;
+    var exportDirMode = $('settings-export-dir-mode') as HTMLSelectElement | null;
     var logLevel = $('settings-log-level') as HTMLSelectElement | null;
     var langHint = $('settings-language-hint');
 
@@ -70,6 +77,7 @@ function applySettingsToForm(data: SettingsData): void {
     if (autoFormat) autoFormat.checked = !!data.viewAutoFormat;
     if (vaultRefresh) vaultRefresh.checked = !!data.vaultAutoRefresh;
     if (docReload) docReload.checked = !!data.documentAutoReload;
+    if (exportDirMode) exportDirMode.value = data.exportDirMode || 'document';
     if (logLevel) logLevel.value = data.logLevel || 'info';
 
     if (langHint) {
@@ -197,6 +205,14 @@ function bindInputs(): void {
     if (docReload) {
         docReload.addEventListener('change', function () {
             patchSettings({ documentAutoReload: docReload!.checked });
+        });
+    }
+    var exportDirMode = $('settings-export-dir-mode') as HTMLSelectElement | null;
+    if (exportDirMode) {
+        exportDirMode.addEventListener('change', function () {
+            var v = exportDirMode!.value;
+            if (!isExportDirMode(v)) return;
+            patchSettings({ exportDirMode: v });
         });
     }
     var logLevel = $('settings-log-level') as HTMLSelectElement | null;

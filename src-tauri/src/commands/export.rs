@@ -1,8 +1,9 @@
 use crate::export::{self, LayoutInfo};
 use crate::pdf_export;
+use crate::settings::ExportDirMode;
 use crate::state::AppState;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::{DialogExt, FilePath};
 
@@ -54,18 +55,65 @@ pub async fn pick_export_target(
     handle: AppHandle,
     default_name: String,
     format: String,
+    state: State<'_, AppState>,
 ) -> Result<Option<String>, String> {
     let (filter_name, exts): (&str, &[&str]) = match format.as_str() {
         "pdf" => ("PDF", &["pdf"]),
         _ => ("HTML", &["html", "htm"]),
     };
-    Ok(handle
+    let document_dir = {
+        let store = state
+            .document_store
+            .lock()
+            .map_err(|_| "document store lock poisoned".to_string())?;
+        store
+            .path
+            .as_deref()
+            .and_then(|path| Path::new(path).parent())
+            .map(Path::to_path_buf)
+    };
+    let export_dir_mode = state
+        .settings
+        .lock()
+        .map_err(|_| "settings lock poisoned".to_string())?
+        .data()
+        .export_dir_mode;
+    let start_dir = match export_dir_mode {
+        ExportDirMode::Document => document_dir,
+        ExportDirMode::Last => state
+            .workspace
+            .lock()
+            .map_err(|_| "workspace lock poisoned".to_string())?
+            .last_export_dir()
+            .map(PathBuf::from)
+            .filter(|path| path.is_dir())
+            .or(document_dir),
+    };
+
+    let mut builder = handle
         .dialog()
         .file()
         .add_filter(filter_name, exts)
-        .set_file_name(&default_name)
+        .set_file_name(&default_name);
+    if let Some(dir) = start_dir {
+        builder = builder.set_directory(dir);
+    }
+    let target_path = builder
         .blocking_save_file()
-        .map(file_path_to_string))
+        .map(file_path_to_string)
+        .filter(|path| !path.is_empty());
+    let Some(target_path) = target_path else {
+        return Ok(None);
+    };
+    if let Some(parent) = Path::new(&target_path).parent() {
+        state
+            .workspace
+            .lock()
+            .map_err(|_| "workspace lock poisoned".to_string())?
+            .set_last_export_dir(parent.to_string_lossy().into_owned())
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(Some(target_path))
 }
 
 fn current_document(state: &State<'_, AppState>) -> Result<(Option<String>, String), String> {

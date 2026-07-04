@@ -30,6 +30,10 @@ pub struct WorkspaceData {
     /// workspace.json-Files ohne dieses Feld ablehnen.
     #[serde(default)]
     pub image_dirs: HashMap<String, String>,
+    /// Zuletzt gewaehltes Export-Zielverzeichnis. Global statt pro
+    /// Dokument, damit `exportDirMode=last` dokumentuebergreifend wirkt.
+    #[serde(default)]
+    pub last_export_dir: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -89,6 +93,13 @@ impl Workspace {
                 .map(|(k, v)| (normalize_path(&k), normalize_path(&v)))
                 .collect();
             dirty = true;
+        }
+        if let Some(dir) = &mut data.last_export_dir {
+            let normalized = normalize_path(dir);
+            if normalized != *dir {
+                *dir = normalized;
+                dirty = true;
+            }
         }
         let workspace = Self { data, path };
         if dirty {
@@ -192,6 +203,17 @@ impl Workspace {
         self.save()
     }
 
+    pub fn last_export_dir(&self) -> Option<&str> {
+        self.data.last_export_dir.as_deref()
+    }
+
+    /// Merkt das zuletzt gewaehlte Export-Zielverzeichnis und
+    /// persistiert es sofort.
+    pub fn set_last_export_dir(&mut self, dir: String) -> io::Result<()> {
+        self.data.last_export_dir = Some(normalize_path(&dir));
+        self.save()
+    }
+
     fn save(&self) -> io::Result<()> {
         persist::save_json_atomic(&self.path, &self.data)
     }
@@ -267,15 +289,32 @@ mod tests {
             &path,
             r#"{"pinned":[{"path":"C:\\Users\\a.md","is_directory":false}],
                 "recent":[{"path":"C:\\Users\\b.md","last_opened":42}],
-                "image_dirs":{}}"#,
+                "image_dirs":{},
+                "last_export_dir":"C:\\Exports"}"#,
         )
         .unwrap();
         let workspace = Workspace::load_from(path.clone());
         assert_eq!("C:/Users/a.md", workspace.pinned()[0].path);
         assert_eq!("C:/Users/b.md", workspace.recent()[0].path);
+        assert_eq!(Some("C:/Exports"), workspace.last_export_dir());
         // Migration persistiert: nach erneutem Load steht Forward-Slash drin.
         let reloaded = Workspace::load_from(path);
         assert_eq!("C:/Users/a.md", reloaded.pinned()[0].path);
+        assert_eq!(Some("C:/Exports"), reloaded.last_export_dir());
+    }
+
+    #[test]
+    fn last_export_dir_normalizes_persists_and_reloads() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("workspace.json");
+        let mut workspace = Workspace::load_from(path.clone());
+        workspace
+            .set_last_export_dir(r"C:\Users\rakul\Exports".into())
+            .unwrap();
+        assert_eq!(Some("C:/Users/rakul/Exports"), workspace.last_export_dir());
+
+        let reloaded = Workspace::load_from(path);
+        assert_eq!(Some("C:/Users/rakul/Exports"), reloaded.last_export_dir());
     }
 
     #[test]

@@ -43,13 +43,6 @@
     (`pushUndoStop` in `editor/text.ts:187,193`) ist erledigt; beim
     nächsten Windows-E2E-Run (`09_undo_redo`) nur noch validieren.
 
-- **Export: Zielverzeichnis-Default** (User-Wunsch 2026-07-04): Der
-  Export-Dialog soll per Default das Verzeichnis der offenen MD-Datei
-  vorschlagen. Zusätzlich Setting, ob dieser Default gilt oder das
-  zuletzt gewählte Exportverzeichnis wieder vorgeschlagen wird
-  (Persistenz des letzten Verzeichnisses dann analog
-  `WorkspaceData.image_dirs`-Muster bzw. global im Workspace).
-
 - **Settings-Panel → Tab-Control ausbauen** (User-Wunsch 2026-07-04):
   Umbau des Settings-Dialogs auf Tabs an der linken Seite:
   - **Tab „Allgemein"** — die heutigen Settings.

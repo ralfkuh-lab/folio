@@ -125,7 +125,8 @@ sonst lehnt Tauri den Build ab.
   workspace.json-Speicher oder `is_pinned`/`is_expanded`-Vergleiche
   gehen, werden auf Forward-Slashes normalisiert (`\` → `/`).
   Implementiert in `Workspace::pin/unpin/is_pinned/add_recent/
-  remove_recent/image_dir/set_image_dir`, `Vault::set_active/
+  remove_recent/image_dir/set_image_dir/set_last_export_dir`,
+  `WorkspaceData::last_export_dir`, `Vault::set_active/
   on_expand/is_expanded` und `Vault::item_html`. Begründung: CSS-
   Selektoren `[data-path="C:\Users\..."]` schlagen sonst fehl
   (`\U` = Unicode-Escape). `Workspace::load_from` migriert bestehende
