@@ -43,48 +43,75 @@
     (`pushUndoStop` in `editor/text.ts:187,193`) ist erledigt; beim
     nächsten Windows-E2E-Run (`09_undo_redo`) nur noch validieren.
 
-- **Config-/Einstellungen-Bereich Folgepunkte**: Basis-Settings-Panel
-  ist vorhanden. Offene Ausbaustufen:
-  - **macOS: Terminal-Wahl im Settings-Panel** — `open_terminal_at`
-    öffnet auf macOS aktuell immer `Terminal.app`. Settings-Panel
-    bietet noch keine Auswahl an; Default funktioniert zuverlässig.
-  - **Markdown-Preview-Themes / Fonts** — Layout/Theming der View-
-    Region anpassbar machen: Body-Font, Mono-Font für Code-Blöcke,
-    Schriftgröße, ggf. Farbschema-Auswahl getrennt von App-Theme.
-    Charme der Sache: die HTML/PDF-Export-Layouts in
-    `commands/export.rs::export_layouts` haben bereits ein Theme-/
-    Layout-Konzept (per Layout eigenes CSS, gerendert ins iframe-
-    Preview). Vereinheitlichung wäre ein Theme/Layout, das sowohl die
-    Markdown-Preview im View-Mode als auch den Export steuert.
-  - **Theme im Settings-Panel** — Theme bleibt in `theme.rs` /
-    `theme_get`/`theme_set` (separate Persistenz). Settings-Dialog
-    könnte als reine Aggregations-UI eine zusätzliche Theme-Reihe
-    anzeigen, ohne den Persistenz-Ort zu verschieben.
-- **Linux-Paket: `.md`-Icon im Datei-Manager**: Aktuell muss
-  [`scripts/install-folio-icons.sh`](scripts/install-folio-icons.sh)
-  manuell laufen, damit Nemo/Nautilus & Co. das Folio-Icon für `.md`
-  zeigen. Reproduzierbare Lösung im `.deb`-Build wäre schöner —
-  Hintergrund, bisherige Erkenntnisse und mögliche Wege in
-  [`docs/linux-md-icon.md`](docs/linux-md-icon.md).
+- **Export: Zielverzeichnis-Default** (User-Wunsch 2026-07-04): Der
+  Export-Dialog soll per Default das Verzeichnis der offenen MD-Datei
+  vorschlagen. Zusätzlich Setting, ob dieser Default gilt oder das
+  zuletzt gewählte Exportverzeichnis wieder vorgeschlagen wird
+  (Persistenz des letzten Verzeichnisses dann analog
+  `WorkspaceData.image_dirs`-Muster bzw. global im Workspace).
+
+- **Settings-Panel → Tab-Control ausbauen** (User-Wunsch 2026-07-04):
+  Umbau des Settings-Dialogs auf Tabs an der linken Seite:
+  - **Tab „Allgemein"** — die heutigen Settings.
+  - **Tab „Markdown-Themes"** — Ausbau der Export-Layouts
+    (`commands/export.rs::export_layouts`, haben bereits ein Theme-/
+    Layout-Konzept mit per-Layout-CSS) zu einem gemeinsamen
+    Theme-System: (a) **Custom-Themes** ermöglichen (User-CSS),
+    (b) eines der Themes auch für die **normale View-Ansicht**
+    auswählbar machen (Vereinheitlichung Preview + Export),
+    (c) Themes als **Favorit** markierbar; Favoriten werden im
+    Export-Dialog priorisiert angezeigt, der Rest unter „weitere…".
+    Deckt den früheren Punkt „Markdown-Preview-Themes / Fonts" mit ab
+    (Body-Font, Mono-Font, Schriftgröße als Theme-Bestandteile).
+  - **Tab „KI"** — Setup für KI-Funktionen (Provider, API-Keys,
+    Modell), siehe KI-Eintrag unten.
+  - Kleinere offene Ausbaustufen aus dem alten Settings-Eintrag:
+    **macOS-Terminal-Wahl** (`open_terminal_at` öffnet fix
+    `Terminal.app`); **Theme-Reihe als Aggregations-UI** (Persistenz
+    bleibt in `theme.rs`/`theme_get`/`theme_set`).
+
+- **KI-Funktionen** (User-Wunsch 2026-07-04, konkretisiert):
+  - **KI-Config nach Vorbild `~/dev/youtube-summarizer`** (gleicher
+    Stack: Tauri 2 + Rust + framework-loses TS). Dessen
+    `src-tauri/src/ai_config/`-Modul (`types.rs` Datenstrukturen,
+    `store.rs` Provider-Verwaltung/Key-Sync, `client.rs`
+    OpenAI-kompatible API-Clients + Modell-Fetch) ist weitgehend
+    projektunabhängig; projektspezifisch sind nur Persistenz-Anbindung
+    (`AppPaths`/`load_config`/`save_config`) und die Settings-UI.
+  - **Modularisierung**: Empfehlung — das Rust-Modul als eigenes
+    kleines Crate herauslösen (eigenes Repo, Einbindung per
+    git/path-Dependency), dabei Persistenz über ein Trait/Callback
+    entkoppeln und die projektspezifische `summarize`-Methode durch
+    einen generischen Prompt-Payload ersetzen. UI bleibt pro App
+    (framework-loses DOM-UI lässt sich nicht sinnvoll als Paket
+    kapseln). Die TS-Typen aus `ai-config.ts` mitkopieren. Erst beim
+    Einbau in folio extrahieren — vorher lohnt der Overhead nicht.
+    Randnotiz aus der Analyse: API-Keys liegen dort im Klartext in
+    `config.json`; für folio `keyring`-Crate (System-Schlüsselbund)
+    prüfen.
+  - **Erstes Feature: Übersetzung** — offenes .md-Dokument per Klick
+    in mehrere Sprachen übersetzen (Zielsprachen-Auswahl, Ergebnis
+    als neue Datei `<name>.<lang>.md` daneben o. ä.).
+  - Weitere Ideen (unpriorisiert): Zusammenfassung, Rechtschreib-/
+    Grammatik-Check, Markdown-Reformatierung, Linkvorschläge im
+    Vault, TOC/Heading-Vorschläge, Cheat-Sheet-„Frag mich"-Modus.
+- **Mehrere Dateien gleichzeitig offen (Tabs)** (User-Wunsch
+  2026-07-04; bewusst als größerer Brocken markiert): Tab-Leiste wie im
+  Browser, mehrere Dokumente parallel geöffnet. Architektur-Berührung
+  ist breit — heute ist fast alles Single-Document: `DocumentStore`
+  (ein aktives Doc + ein File-Watcher), `NavigationController`
+  (eine History), `document:loaded/saved/closed`-Events, Dirty-/
+  Discard-Handling, Find-Bar/Preview/Scroll-Sync-State im Frontend,
+  Fenstertitel, Automation-API (`/open`, `/document/...`).
+  Vorarbeit nötig: Konzept, ob Tabs = mehrere `DocumentStore`-
+  Instanzen mit aktivem Index (plus per-Tab-History) oder ein
+  Multi-Doc-Store; Persistenz offener Tabs im Workspace; E2E-Impact.
+  Erst Konzept/Plan, dann in Etappen umsetzen.
 
 ## Niedrige Priorität
 
-- **Split-Mode Folgepunkte** (Hauptfeature 2026-05-22 implementiert,
-  siehe Toolbar-Button `tb-mode-split`, Menü `view.mode.split`,
-  CSS-Regeln `body.split-mode` in `content.css`):
-  - **Draggable Splitter** zwischen View- und Editor-Pane, analog zu
-    `splitter-left`/`splitter-right`. Position in `panel_state.json`
-    persistieren (z. B. `splitMidPercent`). Heute fix 50/50
-    (`content.css:28` `flex: 1 1 0`, kein Feld in `panel_state.rs`).
-  - ~~Find-Bar im Split-Mode~~ **(erledigt)**: `getFinder()` routet im
-    Split-Mode über `SplitFinder`/`SplitHtmlFinder` an Editor + View
-    gleichzeitig (`find-bar.ts:33-66`).
-
 - **Live-Preview Folgepunkte** (Hauptfeature 2026-05-22 implementiert,
   siehe `view/preview.ts`, Backend-Command `render_markdown_preview`):
-  - ~~Scroll-Sync Editor↔View~~ **(erledigt)**: bidirektionales Sync
-    über Comrak-Sourcepos + Heading→Line-Mapping in
-    `view/scroll-sync.ts`.
   - **Adaptive Debounce für große Docs**: 150 ms ist bei >10k-Zeilen-MD
     spürbar. render-on-idle (`requestIdleCallback`) oder messen +
     dynamisch erhöhen.
@@ -118,20 +145,14 @@
 
 
 - **E2E-Suite auf Windows lauffähig machen**: Aus dem Windows-Run 2026-05-18
-  zwei Stolpersteine, die die Suite dort heute praktisch unbrauchbar machen,
-  obwohl die Library `--attach` explizit unterstützt:
-  1. **Visual-Baselines an Linux 1280×800 gebunden** — 6 Szenarien (01–06)
-     liefern auf einem 1920×1080-Monitor `size mismatch` und brechen am
-     ersten Screenshot ab, obwohl ihre funktionalen Asserts grün waren.
-     Optionen: vor dem Capture per `/resize` auf eine feste Größe, oder
-     ein zweites Baseline-Set pro Plattform, oder Visual-Tests im
-     `--attach`-Mode standardmäßig skippen.
-  2. ~~`/open` blockt mit HTTP 409 bei dirty Recent-Datei~~
-     **(erledigt)**: `/open`-Body akzeptiert jetzt ein `discard`-Flag
-     (`DirtyPolicy::Discard`, `automation/handlers/document.rs:25-29`),
-     das ungespeicherten Zustand verwirft — die Test-Suite kann das vor
-     jedem Run setzen. Ein separater `/document/discard`-Endpoint wurde
-     bewusst nicht gebaut.
+  bleibt ein Stolperstein: **Visual-Baselines an Linux 1280×800
+  gebunden** — 6 Szenarien (01–06) liefern auf einem 1920×1080-Monitor
+  `size mismatch` und brechen am ersten Screenshot ab, obwohl ihre
+  funktionalen Asserts grün waren. Optionen: vor dem Capture per
+  `/resize` auf eine feste Größe, oder ein zweites Baseline-Set pro
+  Plattform, oder Visual-Tests im `--attach`-Mode standardmäßig skippen.
+  (Der zweite Stolperstein — `/open` blockte mit 409 bei dirty
+  Recent-Datei — ist über das `discard`-Flag im `/open`-Body gelöst.)
 
 - **Image-View Folgepunkte** (Hauptfeature 2026-05-21 implementiert,
   siehe `view/image.ts`, `file_kind.rs::FileKind::Image`,
@@ -150,8 +171,3 @@
   - **Audio/Video-View**: `<audio>`/`<video>` läuft cross-platform out
     of the box, analog zum Image-Pfad. Sinnvoll, wenn Bedarf entsteht.
 
-- **KI-Funktionen (Ideen sammeln)**: Sinnvolle Integrationen prüfen, z. B.
-  Zusammenfassung des aktuellen Dokuments, Übersetzung, Rechtschreib-/
-  Grammatik-Check, Markdown-Reformatierung, Linkvorschläge im Vault,
-  TOC/Heading-Vorschläge, Cheat-Sheet-„Frag mich"-Modus. Erst Ideen
-  sammeln, dann eine konkrete priorisieren (Provider/Datenschutz klären).
