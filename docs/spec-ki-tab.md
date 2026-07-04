@@ -129,28 +129,30 @@ sinnvoll ist — wer opencode kennt, findet sich sofort zurecht:
 
 ### Etappe K1 — Backend-Fundament
 
-- [ ] Modul `src-tauri/src/ai/` (`types.rs`, `catalog.rs`, `config.rs`,
-      `auth.rs`, `client.rs`, `mod.rs`).
-- [ ] `catalog.rs`: models.dev-Snapshot einbetten (Datei
-      `src-tauri/src/ai/models-dev-snapshot.json`, beschaffen +
-      einchecken; Größe im Commit notieren), Parser auf das
-      api.json-Schema (Provider: id/name/env/api/doc; Modelle:
-      id/name/cost/limit/Fähigkeiten — tolerant gegen unbekannte
-      Felder), Cache-Datei `ai-catalog.json` + Refresh-Funktion
-      (reqwest, Timeout, Fehler → Cache/Snapshot bleibt), Merge-Regel
-      „neuere Quelle gewinnt".
-- [ ] `config.rs`: `AiConfigService` (ai.json, atomare Writes wie
+- [x] Modul `src-tauri/src/ai/` (`types.rs`, `catalog.rs`, `config.rs`,
+      `auth.rs`, `client.rs` (Stub bis K3), `mod.rs`).
+- [x] `catalog.rs`: models.dev-Snapshot einbetten (Datei
+      `src-tauri/src/ai/models-dev-snapshot.json`, 1,33 MB reduziert
+      aus 2,96 MB via `scripts/update-models-snapshot.py`, 150
+      Provider / 5346 Modelle), Parser auf das api.json-Schema
+      (tolerant gegen unbekannte Felder), Cache-Datei `ai-catalog.json`
+      (Wrapper `{fetchedAt, catalog}`) + Refresh-Funktion (reqwest,
+      Timeout 30 s, Fehler → Cache/Snapshot bleibt), Merge-Regel
+      „neuere Quelle gewinnt" via `SNAPSHOT_DATE`-Konstante (beim
+      Snapshot-Update manuell mitziehen).
+- [x] `config.rs`: `AiConfigService` (ai.json, atomare Writes wie
       persist), Datenmodell gemäß Schema oben (opencode-Parität) inkl.
       serde-Default-Migration; CRUD für Custom-Provider (Slug-
-      Validierung wie Screenshot: Kleinbuchstaben/Zahlen/-/_).
-- [ ] `auth.rs`: `AuthStore` (auth.json, beim Schreiben 0600 setzen,
-      Unix-only-Guard sauber gekapselt), set/remove/status pro
-      Provider-ID; niemals Werte herausgeben außer an den Client.
-- [ ] Tauri-Commands: `ai_catalog_get`, `ai_catalog_refresh`,
-      `ai_config_get`, `ai_config_update` (gezielte Mutationen statt
-      Vollersatz: provider_enable, model_toggle, custom_upsert/delete,
-      default_model_set), `ai_auth_set/remove/status`.
-- [ ] Unit-Tests: Snapshot parst, Cache-Vorrang, ai.json-Roundtrip +
+      Validierung Kleinbuchstaben/Zahlen/-/_).
+- [x] `auth.rs`: `AuthStore` (auth.json, 0600 inkl. Temp-File vor dem
+      ersten Key-Byte, Unix-only-Guard gekapselt), set/remove/status;
+      `get_key` nur `pub(crate)` für den K3-Client.
+- [x] Tauri-Commands: `ai_catalog_get`, `ai_catalog_refresh`,
+      `ai_config_get`, gezielte Mutationen als einzelne Commands
+      (`ai_provider_enable`, `ai_model_toggle`, `ai_custom_upsert`,
+      `ai_custom_delete`, `ai_default_model_set`,
+      `ai_recent_languages_set`), `ai_auth_set/remove/status`.
+- [x] Unit-Tests: Snapshot parst, Cache-Vorrang, ai.json-Roundtrip +
       Migration, auth-0600 + Status-ohne-Wert, Slug-Validierung.
 
 ### Etappe K2 — Settings-UI (Anbieter + Modelle)

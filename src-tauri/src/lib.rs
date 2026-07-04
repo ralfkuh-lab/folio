@@ -1,3 +1,4 @@
+pub mod ai;
 pub mod automation;
 pub mod commands;
 pub mod document_service;
@@ -305,6 +306,18 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::ai::ai_catalog_get,
+            commands::ai::ai_catalog_refresh,
+            commands::ai::ai_config_get,
+            commands::ai::ai_provider_enable,
+            commands::ai::ai_model_toggle,
+            commands::ai::ai_custom_upsert,
+            commands::ai::ai_custom_delete,
+            commands::ai::ai_default_model_set,
+            commands::ai::ai_recent_languages_set,
+            commands::ai::ai_auth_set,
+            commands::ai::ai_auth_remove,
+            commands::ai::ai_auth_status,
             commands::app::dialog::open_folder,
             commands::app::dialog::pick_folder,
             commands::app::dialog::pick_file,
