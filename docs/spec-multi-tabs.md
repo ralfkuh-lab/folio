@@ -125,21 +125,33 @@ Tabs funktional per API, noch ohne UI (API-first → testbar).
       Tab-Leisten-Zeile neu geseedet (10 Stück) und im Folgelauf
       bestätigt.
 
-### Etappe T4 — Persistenz + Session-Restore
+### Etappe T4 — Persistenz + Session-Restore ✅ FERTIG
 
-- [ ] `WorkspaceData.open_tabs`/`active_tab` (Forward-Slash-
-      Normalisierung wie alle Pfade!), Update bei jeder Tab-Mutation.
-- [ ] Boot-Restore lazy (nur aktiver Tab lädt; inaktive beim ersten
-      Aktivieren; tote Pfade still verworfen, warn-Log).
-- [ ] Zusammenspiel mit `cli_pending_open`: CLI-Pfad gewinnt (wird
-      nach Restore als neuer/aktivierter Tab geöffnet).
-- [ ] Rust-Tests (Roundtrip, tote Pfade, Normalisierung).
-- [ ] E2E `31_tabs_restore.py`: Tabs öffnen → App-Neustart im
-      Szenario ist in der Suite nicht vorgesehen → stattdessen
-      workspace.json-Inhalt via API/Datei prüfen + Restore-Logik
-      als Rust-Test; UI-Restore manuell verifizieren (run-Skill).
-- [ ] E2E-Zustands-Leak-Regel ergänzen: Szenarien, die Tabs öffnen,
-      schließen sie im finally (`/tabs/close_all`).
+- [x] `WorkspaceData.open_tabs`/`active_tab` (Forward-Slash-
+      Normalisierung, serde-Default-Migration), zentraler Sync in
+      `emit_tabs_changed` — jede Tab-Mutation persistiert.
+- [x] Boot-Restore lazy über `Tab.pending_path` (nur aktiver Tab lädt,
+      kein Watcher für pending Tabs; tote Pfade beim Restore UND beim
+      späteren Aktivieren verworfen + warn-Log, workspace.json wird
+      sofort bereinigt).
+- [x] `cli_pending_open` zum Frontend-ready-Hook umgebaut: CLI-Pfad
+      wird als zusätzlicher/deduplizieren Tab geöffnet, sonst wird der
+      restaurierte aktive Tab re-emittiert; Rückgabe `None` (Frontend
+      öffnet nichts doppelt).
+- [x] Rust-Tests (Roundtrip, Migration, tote Pfade, lazy Aktivierung).
+- [x] E2E `31_tabs_restore.py` (workspace.json-Sync live geprüft);
+      echter Neustart-Restore headless manuell bewiesen (2 Tabs →
+      Restart → Tabs + aktiver Tab + Lazy-Load beim Aktivieren ok).
+- [x] Zustands-Leak-Regel: Tab-Szenarien schließen im finally via
+      `/tabs/close_all`.
+- [x] **Regressions-Fix aus der T4-Abnahme** (Claude): Boot ohne
+      Dokument emittierte jetzt `navigation:changed` → Editor-Restore
+      auf ungemountetem Editor → Endlos-Microtask-Schleife über die
+      `whenReady()`-Retry-Defers (JS-Thread tot, 28 E2E-Fails).
+      Strukturell behoben: `mountReady` ist bis zum ersten Mount
+      pending, alle 7 Retry-Defers in `editor/text.ts` laufen über
+      single-shot `deferUntilMounted` (+ Regressionstest), Backend
+      emittiert bei leerem Tab kein `navigation:changed` mehr.
 
 ### Etappe T5 — Öffnen-Integration + Feinschliff
 

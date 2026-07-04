@@ -138,6 +138,79 @@ impl AppState {
         Ok(())
     }
 
+    /// Rekonstruiert die persistierte Tab-Reihenfolge vor dem Frontend-
+    /// Boot. Alle Tabs werden pending angelegt; nur der gespeicherte
+    /// aktive Tab wird sofort geladen. Ein Load-Fehler entfernt den Tab
+    /// wie eine zwischen Persistenz und Boot verschwundene Datei.
+    pub fn restore_tabs(&self) -> Result<(), String> {
+        let (open_tabs, active_tab) = {
+            let workspace = self
+                .workspace
+                .lock()
+                .map_err(|_| "workspace lock poisoned".to_string())?;
+            (workspace.open_tabs().to_vec(), workspace.active_tab())
+        };
+        let report = self
+            .tabs
+            .lock()
+            .map_err(|_| "tabs lock poisoned".to_string())?
+            .restore_session(&open_tabs, active_tab);
+        let mut pruned_restore_paths = !report.discarded_paths.is_empty();
+        for path in report.discarded_paths {
+            tracing::warn!(
+                target: "folio::tabs",
+                %path,
+                "discarding missing tab path during session restore"
+            );
+        }
+
+        loop {
+            match crate::document_service::load_active_pending(self) {
+                Ok(_) => break,
+                Err(crate::document_service::OpenDocumentError::Load(error)) => {
+                    pruned_restore_paths = true;
+                    let (id, path) = {
+                        let tabs = self
+                            .tabs
+                            .lock()
+                            .map_err(|_| "tabs lock poisoned".to_string())?;
+                        (
+                            tabs.active().id,
+                            tabs.active().document_path().map(str::to_string),
+                        )
+                    };
+                    tracing::warn!(
+                        target: "folio::tabs",
+                        path,
+                        %error,
+                        "discarding tab that failed to load during session restore"
+                    );
+                    self.tabs
+                        .lock()
+                        .map_err(|_| "tabs lock poisoned".to_string())?
+                        .close(id);
+                }
+                Err(error) => return Err(error.to_string()),
+            }
+        }
+
+        // Tote oder nicht lesbare Restore-Pfade sofort aus workspace.json
+        // entfernen, nicht erst beim spaeteren Frontend-ready-Emit.
+        if pruned_restore_paths {
+            let (open_tabs, active_tab) = self
+                .tabs
+                .lock()
+                .map_err(|_| "tabs lock poisoned".to_string())?
+                .session_state();
+            self.workspace
+                .lock()
+                .map_err(|_| "workspace lock poisoned".to_string())?
+                .set_open_tabs(open_tabs, active_tab)
+                .map_err(|error| error.to_string())?;
+        }
+        Ok(())
+    }
+
     fn document_events(app: AppHandle, tab_id: u64) -> DocumentEvents {
         DocumentEvents {
             loaded: Some(Arc::new({
@@ -221,7 +294,25 @@ impl AppState {
     }
 
     pub fn emit_tabs_changed(app: &AppHandle) -> Result<(), String> {
-        let payload = app.state::<AppState>().tabs_payload()?;
+        let state = app.state::<AppState>();
+        let (payload, open_tabs, active_tab) = {
+            let tabs = state
+                .tabs
+                .lock()
+                .map_err(|_| "tabs lock poisoned".to_string())?;
+            let payload = TabsPayload {
+                tabs: tabs.summaries(),
+                active_index: tabs.active_index(),
+            };
+            let (open_tabs, active_tab) = tabs.session_state();
+            (payload, open_tabs, active_tab)
+        };
+        state
+            .workspace
+            .lock()
+            .map_err(|_| "workspace lock poisoned".to_string())?
+            .set_open_tabs(open_tabs, active_tab)
+            .map_err(|error| error.to_string())?;
         app.emit("tabs:changed", payload)
             .map_err(|error| error.to_string())
     }

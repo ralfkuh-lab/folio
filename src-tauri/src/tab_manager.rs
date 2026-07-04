@@ -1,7 +1,7 @@
-use crate::document_store::{DocumentEvents, DocumentStore};
+use crate::document_store::{DocumentEvents, DocumentStore, LoadedDocument};
 use crate::navigation::NavigationController;
 use serde::Serialize;
-use std::sync::Arc;
+use std::{io, path::Path, sync::Arc};
 
 pub type DocumentEventFactory = Arc<dyn Fn(u64) -> DocumentEvents + Send + Sync>;
 
@@ -10,6 +10,10 @@ pub struct Tab {
     pub document_store: DocumentStore,
     pub navigation: NavigationController,
     pub view_mode: String,
+    /// Beim Session-Restore werden inaktive Dokumente nur als Pfad
+    /// repraesentiert. Der DocumentStore bleibt bis zur ersten Aktivierung
+    /// leer und erzeugt deshalb weder Datei-IO noch einen Watcher.
+    pending_path: Option<String>,
 }
 
 impl Tab {
@@ -19,8 +23,34 @@ impl Tab {
             document_store: DocumentStore::new(),
             navigation: NavigationController::new(),
             view_mode: "view".to_string(),
+            pending_path: None,
         }
     }
+
+    pub fn document_path(&self) -> Option<&str> {
+        self.document_store
+            .path
+            .as_deref()
+            .or(self.pending_path.as_deref())
+    }
+
+    pub fn pending_path(&self) -> Option<&str> {
+        self.pending_path.as_deref()
+    }
+
+    pub fn set_pending_path(&mut self, path: String) {
+        self.document_store.close();
+        self.pending_path = Some(path.replace('\\', "/"));
+    }
+
+    pub fn retarget_pending_path(&mut self, path: String) {
+        self.pending_path = Some(path.replace('\\', "/"));
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RestoreReport {
+    pub discarded_paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -94,7 +124,7 @@ impl TabManager {
         let path = path.replace('\\', "/");
         self.tabs
             .iter()
-            .find(|tab| tab.document_store.path.as_deref() == Some(path.as_str()))
+            .find(|tab| tab.document_path() == Some(path.as_str()))
             .map(|tab| tab.id)
     }
 
@@ -104,11 +134,7 @@ impl TabManager {
             .iter()
             .map(|tab| TabSummary {
                 id: tab.id,
-                path: tab
-                    .document_store
-                    .path
-                    .as_ref()
-                    .map(|path| path.replace('\\', "/")),
+                path: tab.document_path().map(|path| path.replace('\\', "/")),
                 dirty: tab.document_store.is_dirty,
                 active: tab.id == active_id,
             })
@@ -147,6 +173,7 @@ impl TabManager {
         };
         if self.tabs.len() == 1 {
             self.tabs[0].document_store.close();
+            self.tabs[0].pending_path = None;
             return true;
         }
 
@@ -164,6 +191,7 @@ impl TabManager {
     pub fn close_all(&mut self) {
         let mut tab = self.tabs.remove(self.active);
         tab.document_store.close();
+        tab.pending_path = None;
         tab.navigation = NavigationController::new();
         tab.view_mode = "view".to_string();
         self.tabs.clear();
@@ -176,6 +204,91 @@ impl TabManager {
             tab.document_store.set_events(factory(tab.id));
         }
         self.document_event_factory = Some(factory);
+    }
+
+    /// Liefert nur dokumenttragende Tabs fuer workspace.json. Ein leerer
+    /// Container-Tab wird nicht persistiert; `active_tab` ist ein Index in
+    /// der gefilterten Pfadliste.
+    pub fn session_state(&self) -> (Vec<String>, Option<usize>) {
+        let active_id = self.active().id;
+        let mut open_tabs = Vec::new();
+        let mut active_tab = None;
+        for tab in &self.tabs {
+            let Some(path) = tab.document_path() else {
+                continue;
+            };
+            if tab.id == active_id {
+                active_tab = Some(open_tabs.len());
+            }
+            open_tabs.push(path.replace('\\', "/"));
+        }
+        (open_tabs, active_tab)
+    }
+
+    /// Baut die beim letzten Lauf dokumenttragenden Tabs in gespeicherter
+    /// Reihenfolge wieder auf. Alle Pfade starten pending; der Aufrufer
+    /// laedt danach ausschliesslich den aktiven Tab. Fehlende Dateien
+    /// werden aus dem Ergebnis entfernt und fuer ein Warn-Log gemeldet.
+    pub fn restore_session(
+        &mut self,
+        open_tabs: &[String],
+        active_tab: Option<usize>,
+    ) -> RestoreReport {
+        let mut restored = Vec::new();
+        let mut discarded_paths = Vec::new();
+        for (original_index, path) in open_tabs.iter().enumerate() {
+            let normalized = path.replace('\\', "/");
+            if Path::new(&normalized).is_file() {
+                restored.push((original_index, normalized));
+            } else {
+                discarded_paths.push(normalized);
+            }
+        }
+
+        self.close_all();
+        if restored.is_empty() {
+            return RestoreReport { discarded_paths };
+        }
+
+        let first_path = restored[0].1.clone();
+        self.tabs[0].set_pending_path(first_path);
+        for (_, path) in restored.iter().skip(1) {
+            let id = self.next_id;
+            self.next_id = self.next_id.checked_add(1).expect("tab ID space exhausted");
+            let mut tab = Tab::new(id);
+            if let Some(factory) = &self.document_event_factory {
+                tab.document_store.set_events(factory(id));
+            }
+            tab.set_pending_path(path.clone());
+            self.tabs.push(tab);
+        }
+        self.active = active_tab
+            .and_then(|wanted| {
+                restored
+                    .iter()
+                    .position(|(original_index, _)| *original_index == wanted)
+                    .or_else(|| Some(wanted.min(restored.len() - 1)))
+            })
+            .unwrap_or(0);
+
+        RestoreReport { discarded_paths }
+    }
+
+    /// Laedt den pending Pfad des aktiven Tabs genau einmal. Der Loader
+    /// wird injiziert, damit Restore/Aktivierung ohne AppHandle testbar
+    /// bleiben und die FileKind-Auswahl im document_service wohnen kann.
+    pub fn load_active_pending<F>(&mut self, loader: F) -> io::Result<Option<LoadedDocument>>
+    where
+        F: FnOnce(&mut DocumentStore, &str) -> io::Result<LoadedDocument>,
+    {
+        let Some(path) = self.active().pending_path.clone() else {
+            return Ok(None);
+        };
+        let tab = self.active_mut();
+        let loaded = loader(&mut tab.document_store, &path)?;
+        tab.pending_path = None;
+        tab.navigation.navigate(path, None);
+        Ok(Some(loaded))
     }
 }
 
@@ -318,6 +431,85 @@ mod tests {
                 active: true,
             }],
             manager.summaries()
+        );
+    }
+
+    #[test]
+    fn session_state_omits_empty_tabs_and_indexes_filtered_paths() {
+        let mut manager = TabManager::new();
+        manager.active_mut().document_store.path = Some("/a.md".into());
+        let empty_id = manager.add_tab();
+
+        assert_eq!(manager.session_state(), (vec!["/a.md".into()], None));
+
+        assert!(manager.activate(1));
+        assert_eq!(manager.session_state(), (vec!["/a.md".into()], Some(0)));
+        assert!(manager.activate(empty_id));
+    }
+
+    #[test]
+    fn restore_discards_dead_paths_and_preserves_active_document() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let first = temp.path().join("first.md");
+        let dead = temp.path().join("dead.md");
+        let third = temp.path().join("third.md");
+        std::fs::write(&first, "first").unwrap();
+        std::fs::write(&third, "third").unwrap();
+        let paths = vec![
+            first.to_string_lossy().into_owned(),
+            dead.to_string_lossy().into_owned(),
+            third.to_string_lossy().into_owned(),
+        ];
+        let mut manager = TabManager::new();
+
+        let report = manager.restore_session(&paths, Some(2));
+
+        assert_eq!(
+            report.discarded_paths,
+            vec![dead.to_string_lossy().replace('\\', "/")]
+        );
+        assert_eq!(manager.tabs().len(), 2);
+        assert_eq!(manager.active_index(), 1);
+        assert_eq!(
+            manager.active().document_path(),
+            Some(third.to_string_lossy().replace('\\', "/").as_str())
+        );
+        assert!(manager
+            .tabs()
+            .iter()
+            .all(|tab| tab.document_store.path.is_none()));
+    }
+
+    #[test]
+    fn first_activation_loads_pending_document() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let path = temp.path().join("lazy.md");
+        std::fs::write(&path, "lazy body").unwrap();
+        let normalized = path.to_string_lossy().replace('\\', "/");
+        let mut manager = TabManager::new();
+        manager.restore_session(std::slice::from_ref(&normalized), Some(0));
+
+        assert_eq!(manager.active().pending_path(), Some(normalized.as_str()));
+        assert!(manager.active().document_store.path.is_none());
+
+        let loaded = manager
+            .load_active_pending(|store, path| store.load(path))
+            .unwrap()
+            .expect("pending tab must load");
+
+        assert_eq!(loaded.text, "lazy body");
+        assert_eq!(
+            manager.active().document_store.path.as_deref(),
+            Some(normalized.as_str())
+        );
+        assert_eq!(manager.active().pending_path(), None);
+        assert_eq!(
+            manager
+                .active()
+                .navigation
+                .current()
+                .map(|entry| entry.absolute_path.as_str()),
+            Some(normalized.as_str())
         );
     }
 }

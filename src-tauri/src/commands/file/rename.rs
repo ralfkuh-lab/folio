@@ -103,22 +103,49 @@ fn perform_rename(
     }
     fs::rename(old_path, new_path).map_err(|error| error.to_string())?;
 
-    let is_current = {
+    let (is_open, is_current) = {
         let mut tabs = state
             .tabs
             .lock()
             .map_err(|_| "tabs lock poisoned".to_string())?;
-        let store = &mut tabs.active_mut().document_store;
-        if store.path.as_deref() == Some(old_path) {
-            store
-                .rename_to(new_path)
-                .map_err(|error| error.to_string())?;
-            true
+        if let Some(tab_id) = tabs.find_by_path(old_path) {
+            let is_active = tabs.is_active(tab_id);
+            let tab = tabs
+                .tab_mut(tab_id)
+                .expect("find_by_path returned an existing tab");
+            if tab.pending_path().is_some() {
+                // Noch nie geladener Restore-Tab: nur den Pfad umhaengen,
+                // weiterhin kein Watcher und kein Datei-Load.
+                tab.retarget_pending_path(new_path.to_string());
+            } else {
+                if is_active {
+                    tab.document_store
+                        .rename_to(new_path)
+                        .map_err(|error| error.to_string())?;
+                } else {
+                    tab.document_store
+                        .rename_to_silent(new_path)
+                        .map_err(|error| error.to_string())?;
+                }
+                tab.navigation.navigate(new_path.to_string(), None);
+            }
+            (true, is_active)
         } else {
-            false
+            (false, false)
         }
     };
 
+    finish_rename(state, handle, old_path, new_path, is_open, is_current)
+}
+
+fn finish_rename(
+    state: &State<'_, AppState>,
+    handle: &AppHandle,
+    old_path: &str,
+    new_path: &str,
+    is_open: bool,
+    is_current: bool,
+) -> Result<(), String> {
     // Recent-Liste in einem einzigen Lock-Take aktualisieren: was_in_recent
     // lesen → remove_recent → optional add_recent. Vorher hingen die drei
     // Schritte als separate `if let Ok(...)`-Blocks, was bei Lock-Poisoning
@@ -132,7 +159,7 @@ fn perform_rename(
         workspace
             .remove_recent(old_path)
             .map_err(|error| error.to_string())?;
-        if was_in_recent || is_current {
+        if was_in_recent || is_open {
             workspace
                 .add_recent(new_path.to_string())
                 .map_err(|error| error.to_string())?;
@@ -162,5 +189,6 @@ fn perform_rename(
             .emit("vault:refresh", vault.compute_refresh_delta(&workspace))
             .map_err(|error| error.to_string())?;
     }
+    AppState::emit_tabs_changed(handle)?;
     Ok(())
 }

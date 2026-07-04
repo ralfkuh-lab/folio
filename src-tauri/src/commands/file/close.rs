@@ -19,5 +19,6 @@ pub async fn close_document(state: State<'_, AppState>, handle: AppHandle) -> Re
     }
     handle
         .emit("document:closed", serde_json::json!({}))
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    AppState::emit_tabs_changed(&handle)
 }

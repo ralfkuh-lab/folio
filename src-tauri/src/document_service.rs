@@ -110,6 +110,50 @@ pub fn open(
     )
 }
 
+/// Laedt den beim Session-Restore nur als Pfad angelegten aktiven Tab.
+/// `None` bedeutet, dass der Tab bereits geladen oder leer ist. Bis zu
+/// diesem Aufruf bleibt sein DocumentStore watcher-frei.
+pub fn load_active_pending(
+    state: &AppState,
+) -> Result<Option<OpenDocumentOutcome>, OpenDocumentError> {
+    load_active_pending_inner(&state.tabs, &state.vault, Some(&state.settings))
+}
+
+fn load_active_pending_inner(
+    tabs: &Mutex<TabManager>,
+    vault: &Mutex<Vault>,
+    settings: Option<&Mutex<SettingsService>>,
+) -> Result<Option<OpenDocumentOutcome>, OpenDocumentError> {
+    let mut tabs = tabs
+        .lock()
+        .map_err(|_| OpenDocumentError::LockPoisoned("tabs"))?;
+    let loaded = tabs
+        .load_active_pending(load_by_kind)
+        .map_err(OpenDocumentError::Load)?;
+    let Some(loaded) = loaded else {
+        return Ok(None);
+    };
+    let tab = tabs.active_mut();
+    let mode_override = apply_default_mode(settings, tab, &loaded.path);
+    let nav_entry = tab
+        .navigation
+        .current()
+        .expect("loading a pending tab creates its navigation entry")
+        .clone();
+    drop(tabs);
+
+    vault
+        .lock()
+        .map_err(|_| OpenDocumentError::LockPoisoned("vault"))?
+        .set_active(Some(loaded.path.clone()));
+
+    Ok(Some(OpenDocumentOutcome {
+        loaded: Some(loaded),
+        nav_entry,
+        mode_override,
+    }))
+}
+
 fn open_inner(
     tabs: &Mutex<TabManager>,
     vault: &Mutex<Vault>,

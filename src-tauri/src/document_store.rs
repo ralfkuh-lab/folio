@@ -238,6 +238,17 @@ impl DocumentStore {
     /// nachzieht. `is_dirty` bleibt erhalten — der ungespeicherte
     /// Editor-Inhalt wandert mit der Datei mit.
     pub fn rename_to(&mut self, new_path: &str) -> io::Result<LoadedDocument> {
+        self.rename_to_inner(new_path, true)
+    }
+
+    /// Variante fuer einen offenen, aber inaktiven Tab. Der Watcher und
+    /// Store-Pfad muessen der umbenannten Datei folgen, ein
+    /// `document:loaded`-Event darf jedoch nur den aktiven Tab betreffen.
+    pub(crate) fn rename_to_silent(&mut self, new_path: &str) -> io::Result<LoadedDocument> {
+        self.rename_to_inner(new_path, false)
+    }
+
+    fn rename_to_inner(&mut self, new_path: &str, emit_loaded: bool) -> io::Result<LoadedDocument> {
         self.path = Some(new_path.to_string());
         self.watch_non_fatal(new_path);
 
@@ -245,8 +256,10 @@ impl DocumentStore {
             path: new_path.to_string(),
             text: self.text.clone(),
         };
-        if let Some(callback) = &self.events.loaded {
-            callback(loaded.clone());
+        if emit_loaded {
+            if let Some(callback) = &self.events.loaded {
+                callback(loaded.clone());
+            }
         }
         Ok(loaded)
     }

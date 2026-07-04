@@ -266,6 +266,14 @@ sonst lehnt Tauri den Build ab.
   go_back/go_forward-Call — am Stack-Edge wird Ok(None) bzw.
   `{moved: false, entry: null}` geliefert, statt unnötig current() zu
   re-loaden.
+- **Tab-Session-Persistenz**: Dokumenttragende Tabs werden in
+  `workspace.json` als `open_tabs` plus `active_tab` (Index in dieser
+  gefilterten Liste) gespeichert. Pfade sind wie alle Workspace-Pfade auf
+  Forward-Slashes normalisiert. Beim Boot wird nur der aktive Tab geladen;
+  inaktive Tabs halten `Tab.pending_path` und erzeugen bis zur ersten
+  Aktivierung weder Datei-IO noch einen Watcher. Fehlende Restore-Pfade
+  werden verworfen. Ein Boot-CLI-Pfad wird nach dem Restore als
+  zusätzlicher aktiver Tab geöffnet beziehungsweise dedupliziert aktiviert.
 - **UI-Toggle-Persistenz**: alle UI-Schalter mit Memo (Vault-Rail,
   TOC-Rail, Editor-Minimap, Cheatsheet-Position, Window-Geometrie,
   Pinned/Recent-Section-Expansion) sitzen in

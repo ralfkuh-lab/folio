@@ -1,0 +1,17 @@
+{
+  "left_rail_visible": true,
+  "right_rail_visible": true,
+  "left_rail_width": 280.0,
+  "right_rail_width": 280.0,
+  "pinned_expanded": true,
+  "recent_expanded": true,
+  "window_x": 0.0,
+  "window_y": 0.0,
+  "window_width": 1200.0,
+  "window_height": 800.0,
+  "window_maximized": false,
+  "cheat_sheet_offset_x": 0.0,
+  "cheat_sheet_offset_y": 0.0,
+  "editor_minimap_visible": false,
+  "split_mid_percent": 50.0
+}

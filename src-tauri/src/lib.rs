@@ -159,6 +159,11 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
         })
         .setup(|app| {
             let state = app.state::<AppState>();
+            // Session vor der Event-Verdrahtung rekonstruieren: nur der
+            // aktive Tab liest seine Datei; inaktive bleiben watcher-frei
+            // pending. Der spaetere cli_pending_open-Aufruf re-emittiert
+            // den aktiven Zustand, sobald das Frontend lauscht.
+            state.restore_tabs()?;
             state.install_document_events(app.handle().clone())?;
             // VaultWatcher-Callback registrieren + initial-State aus
             // dem persistierten `vaultAutoRefresh`-Setting setzen.

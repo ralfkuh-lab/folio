@@ -49,6 +49,7 @@ function createMonacoMock() {
                     saveViewState: vi.fn(() => ({ cursor: model && model.value })),
                     restoreViewState: vi.fn(),
                     addCommand: vi.fn(),
+                    setScrollTop: vi.fn(),
                     onDidChangeModelContent: vi.fn(),
                     onDidChangeCursorSelection: vi.fn(),
                     onDidScrollChange: vi.fn(),
@@ -117,6 +118,24 @@ describe('editor/mount tab model cache', () => {
         mount.syncTabModels([10]);
         expect(modelB.disposed).toBe(true);
         expect(modelA.disposed).toBe(false);
+    });
+
+    it('pre-mount setScroll neither spins the microtask queue nor gets lost', async () => {
+        const mock = createMonacoMock();
+        (window as any).monaco = mock.monaco;
+        const text = await import('../../editor/text');
+
+        // Vor dem ersten mount(): darf nicht in einer Endlos-Microtask-
+        // Schleife rekursieren (der Test wuerde sonst nie fertig) ...
+        text.setScroll(120);
+        await Promise.resolve();
+        await Promise.resolve();
+
+        // ... und wird nach dem ersten Mount genau einmal angewendet.
+        const mount = await import('../../editor/mount');
+        await mount.mount('editor-mount', 'hallo');
+        await Promise.resolve();
+        expect(mock.getEditor().setScrollTop).toHaveBeenCalledWith(120);
     });
 
     it('replace-open in same tab sets the new text, save-as keeps undo', async () => {

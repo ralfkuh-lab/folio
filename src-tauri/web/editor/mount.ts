@@ -16,7 +16,15 @@ import {
 } from './state';
 
 let monacoReady: Promise<void> | null = null;
-let mountReady: Promise<void> = Promise.resolve();
+// `mountReady` ist bis zum ERSTEN erfolgreichen mount() ein pending
+// Promise (nicht `Promise.resolve()`): die whenReady()-Defers in
+// text.ts warten damit tatsaechlich auf den Editor, statt in einer
+// Endlos-Microtask-Schleife sofort erneut zu feuern (der Bug, der bei
+// Boot ohne Dokument + navigation:changed das gesamte Frontend killte).
+let resolveFirstMount: (() => void) | null = null;
+let mountReady: Promise<void> = new Promise(function (resolve) {
+    resolveFirstMount = resolve;
+});
 
 interface TabModelEntry {
     model: any;
@@ -41,10 +49,10 @@ let pendingDocument: PendingDocument | null = null;
 // Pre-Mount-Wunschzustand fuer optionale Editor-Optionen, die schon
 // beim Boot gesetzt werden (z. B. Minimap aus persistentem Panel-State).
 // Wenn `mount()` noch nicht lief, gibt es keinen Editor zum
-// updateOptions(), und ein Defer auf `mountReady` waere eine
-// Endlos-Microtask-Schleife (mountReady ist bis zum ersten mount()
-// `Promise.resolve()`-vorbelegt). Stattdessen merken wir uns hier den
-// Wunsch und applien ihn im mount()-Callback.
+// updateOptions(). Der Wunsch wird hier gemerkt und im mount()-Callback
+// in die create-Options gezogen — direkter als ein mountReady-Defer
+// (und historisch: mountReady war frueher pre-mount bereits resolved,
+// ein Defer war damals eine Endlos-Microtask-Schleife).
 let pendingMinimapEnabled: boolean | null = null;
 
 function loadMonaco(): Promise<void> {
@@ -153,9 +161,8 @@ export function mount(elementId: string, initialText: string): Promise<void> {
         });
         setEditor(editor);
 
-        // Wie pendingMinimapEnabled ist dies ein echter Pre-Mount-
-        // Wunschzustand. Kein mountReady.then()-Defer: mountReady ist vor
-        // dem ersten mount() bereits resolved und wuerde rekursiv spinnen.
+        // Wie pendingMinimapEnabled ein echter Pre-Mount-Wunschzustand:
+        // direkt im mount()-Callback anwenden statt via mountReady-Defer.
         if (pendingDocument) {
             const pending = pendingDocument;
             pendingDocument = null;
@@ -171,6 +178,15 @@ export function mount(elementId: string, initialText: string): Promise<void> {
 
         layout();
         post({ type: 'editorReady' });
+
+        // Erster erfolgreicher Mount: das initiale pending mountReady
+        // aufloesen, damit alle Pre-Mount-Defers jetzt (mit existierendem
+        // Editor) genau einmal feuern.
+        if (resolveFirstMount) {
+            const resolve = resolveFirstMount;
+            resolveFirstMount = null;
+            resolve();
+        }
     });
     return mountReady;
 }
@@ -373,12 +389,11 @@ export function setMinimap(enabled: boolean): void {
     if (!editor) {
         // Pre-Mount: Wunsch in `pendingMinimapEnabled` merken — der
         // `mount()`-Callback zieht ihn in die initialen Create-Options.
-        // Kein `mountReady.then(setMinimap)`-Defer: `mountReady` ist bis
-        // zum ersten Mount `Promise.resolve()` (already-resolved), ein
-        // Defer waere damit eine Endlos-Microtask-Schleife, die die
-        // Event-Loop blockt und das gesamte Frontend-Init kaputtmacht.
-        // Genau das war der Bug, der bei Folio-Start ohne offene Datei
-        // zu "nichts funktioniert mehr" fuehrte (2026-05-19).
+        // Historie: mountReady war frueher pre-mount bereits resolved,
+        // ein `mountReady.then(setMinimap)`-Defer war damit eine
+        // Endlos-Microtask-Schleife ("nichts funktioniert mehr"-Bug
+        // 2026-05-19; seit 2026-07-04 ist mountReady bis zum ersten
+        // Mount pending und die Defers in text.ts sind single-shot).
         pendingMinimapEnabled = !!enabled;
         return;
     }

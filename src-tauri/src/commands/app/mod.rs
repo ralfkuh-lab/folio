@@ -226,10 +226,51 @@ pub async fn open_find(handle: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn cli_pending_open(state: State<'_, AppState>) -> Result<Option<String>, String> {
-    Ok(state
+pub async fn cli_pending_open(
+    state: State<'_, AppState>,
+    handle: AppHandle,
+) -> Result<Option<String>, String> {
+    let cli_path = state
         .cli_open_path
         .lock()
         .map_err(|_| "cli open path lock poisoned".to_string())?
-        .take())
+        .take();
+
+    // Dieser Command ist zugleich der Frontend-ready-Hook fuer den
+    // Session-Restore. Ein Boot-CLI-Pfad wird bewusst backendseitig als
+    // zusaetzlicher Tab geoeffnet (oder dedupliziert aktiviert), waehrend
+    // der laufende `cli:open`-Frontend-Handler bis T5 Replace-Semantik hat.
+    let transition = if let Some(path) = cli_path {
+        match crate::commands::tabs::open(&state, &handle, path) {
+            Ok(transition) => transition,
+            Err(error) => {
+                tracing::warn!(
+                    target: "folio::tabs",
+                    %error,
+                    "boot CLI path could not be opened; keeping restored active tab"
+                );
+                let active_id = state
+                    .tabs
+                    .lock()
+                    .map_err(|_| "tabs lock poisoned".to_string())?
+                    .active()
+                    .id;
+                crate::commands::tabs::activate(&state, &handle, active_id).map_err(String::from)?
+            }
+        }
+    } else {
+        let active_id = state
+            .tabs
+            .lock()
+            .map_err(|_| "tabs lock poisoned".to_string())?
+            .active()
+            .id;
+        crate::commands::tabs::activate(&state, &handle, active_id).map_err(String::from)?
+    };
+    crate::commands::tabs::emit_navigation_changed(&handle, &transition, None)
+        .map_err(String::from)?;
+
+    // Das Frontend darf den Pfad nicht noch einmal ueber openDocument
+    // ersetzen; die Boot-Operation ist oben vollstaendig abgeschlossen.
+    Ok(None)
 }

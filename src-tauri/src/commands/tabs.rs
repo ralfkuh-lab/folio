@@ -104,7 +104,7 @@ pub fn open(state: &AppState, handle: &AppHandle, path: String) -> Result<TabTra
 }
 
 pub fn activate(state: &AppState, handle: &AppHandle, id: u64) -> Result<TabTransition, TabError> {
-    let (path, text, dirty, tab_id) = {
+    {
         let mut tabs = state
             .tabs
             .lock()
@@ -112,6 +112,54 @@ pub fn activate(state: &AppState, handle: &AppHandle, id: u64) -> Result<TabTran
         if !tabs.activate(id) {
             return Err(TabError::UnknownId(id));
         }
+    }
+
+    // Restore-Tabs tragen bis zur ersten Aktivierung nur `pending_path`.
+    // Schlaegt das Laden inzwischen fehl, wird der tote Tab entfernt und
+    // der dadurch aktive Nachbar bei Bedarf ebenfalls lazy geladen.
+    loop {
+        match document_service::load_active_pending(state) {
+            Ok(Some(outcome)) => {
+                if let Some(mode) = outcome.mode_override.as_deref() {
+                    handle
+                        .emit("app:set_mode", serde_json::json!({ "mode": mode }))
+                        .map_err(|error| TabError::Internal(error.to_string()))?;
+                }
+                break;
+            }
+            Ok(None) => break,
+            Err(document_service::OpenDocumentError::Load(error)) => {
+                let (failed_id, path) = {
+                    let tabs = state
+                        .tabs
+                        .lock()
+                        .map_err(|_| TabError::Internal("tabs lock poisoned".into()))?;
+                    (
+                        tabs.active().id,
+                        tabs.active().document_path().map(str::to_string),
+                    )
+                };
+                tracing::warn!(
+                    target: "folio::tabs",
+                    ?path,
+                    %error,
+                    "closing lazy tab after load failed"
+                );
+                state
+                    .tabs
+                    .lock()
+                    .map_err(|_| TabError::Internal("tabs lock poisoned".into()))?
+                    .close(failed_id);
+            }
+            Err(error) => return Err(TabError::Internal(error.to_string())),
+        }
+    }
+
+    let (path, text, dirty, tab_id) = {
+        let tabs = state
+            .tabs
+            .lock()
+            .map_err(|_| TabError::Internal("tabs lock poisoned".into()))?;
         let tab = tabs.active();
         (
             tab.document_store.path.clone(),
@@ -261,6 +309,13 @@ pub fn emit_navigation_changed(
     request_id: Option<u64>,
 ) -> Result<(), TabError> {
     if !transition.frontend_changed {
+        return Ok(());
+    }
+    // Leerer Tab (kein Dokument, kein Nav-Entry): es gibt nichts zu
+    // restoren. Insbesondere der Boot ohne Dokument darf keinen
+    // Editor-Restore im Frontend anstossen — der Editor ist dann noch
+    // nicht gemountet.
+    if transition.navigation.is_none() && transition.tab.path.is_none() {
         return Ok(());
     }
     let mut payload = transition

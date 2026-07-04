@@ -71,7 +71,7 @@ pub fn run_save_as(
     let Some(target) = builder.blocking_save_file() else {
         return Ok(None);
     };
-    let target_path = file_path_to_string(target);
+    let target_path = file_path_to_string(target).replace('\\', "/");
     if target_path.is_empty() {
         return Ok(None);
     }
@@ -113,6 +113,7 @@ pub fn run_save_as(
 
     // document:loaded wird bereits vom DocumentStore::save_as-Callback
     // emittiert (verdrahtet in state.rs); kein zusätzlicher emit nötig.
+    AppState::emit_tabs_changed(handle)?;
     Ok(Some(target_path))
 }
 

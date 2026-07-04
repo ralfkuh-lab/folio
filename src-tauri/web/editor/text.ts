@@ -1,13 +1,26 @@
 // Text-, Selection-, Scroll-, Replace- und Sprach-Operationen auf der
 // laufenden Monaco-Instanz. Reine Reads (getText/getSelection/...) sind
 // best-effort: liefern Defaults, solange `mount()` nicht durch ist.
-// Programmatic Writes (`applyReplace`, `setSelection`) deferren auf
-// `whenReady()`, damit Pre-Mount-Calls nicht silent verloren gehen.
+// Programmatic Writes (`applyReplace`, `setSelection`) deferren via
+// `deferUntilMounted` (single-shot auf whenReady + Editor-Guard),
+// damit Pre-Mount-Calls nicht silent verloren gehen und niemals eine
+// Endlos-Microtask-Schleife entsteht.
 
 import { post } from './bridge';
 import { hasActiveTerm, recomputeMatches } from './find';
 import { layout, whenReady } from './mount';
 import { getEditor, getMonaco, withProgrammaticWrite } from './state';
+
+// Pre-Mount-Defer: genau EIN Retry nach dem ersten Mount, und nur wenn
+// der Editor dann wirklich existiert. Niemals unbedingt rekursieren —
+// ein resolved whenReady() ohne Editor (fehlgeschlagener Mount) wuerde
+// sonst zur Endlos-Microtask-Schleife, die den JS-Thread verhungern
+// laesst (Boot-Killer-Bug 2026-05-19 und 2026-07-04).
+function deferUntilMounted(retry: () => void): void {
+    whenReady().then(() => {
+        if (getEditor()) retry();
+    });
+}
 
 export function getText(): string {
     const editor = getEditor();
@@ -24,7 +37,7 @@ export function getLanguage(): string {
 export function setLanguage(language: string): void {
     const editor = getEditor();
     if (!editor) {
-        whenReady().then(() => setLanguage(language));
+        deferUntilMounted(() => setLanguage(language));
         return;
     }
     const monaco = getMonaco();
@@ -60,7 +73,7 @@ export function getSelection(): { start: number; length: number } {
 export function setSelection(start: number, length: number): void {
     const editor = getEditor();
     if (!editor) {
-        whenReady().then(() => setSelection(start, length));
+        deferUntilMounted(() => setSelection(start, length));
         return;
     }
     const model = editor.getModel();
@@ -96,7 +109,7 @@ export function getCursorLine(): number {
 export function revealLineNearTop(line: number): void {
     const editor = getEditor();
     if (!editor) {
-        whenReady().then(() => revealLineNearTop(line));
+        deferUntilMounted(() => revealLineNearTop(line));
         return;
     }
     const target = Math.max(1, Math.floor(line || 1));
@@ -112,7 +125,7 @@ export function revealLineNearTop(line: number): void {
 export function revealLineFractionNearTop(line: number): void {
     const editor = getEditor();
     if (!editor) {
-        whenReady().then(() => revealLineFractionNearTop(line));
+        deferUntilMounted(() => revealLineFractionNearTop(line));
         return;
     }
 
@@ -134,7 +147,7 @@ export function revealLineFractionNearTop(line: number): void {
 export function setScroll(y: number): void {
     const editor = getEditor();
     if (!editor) {
-        whenReady().then(() => setScroll(y));
+        deferUntilMounted(() => setScroll(y));
         return;
     }
     editor.setScrollTop(Math.max(0, y));
@@ -161,7 +174,7 @@ export function applyReplace(args: {
 }): void {
     const editor = getEditor();
     if (!editor) {
-        whenReady().then(() => applyReplace(args));
+        deferUntilMounted(() => applyReplace(args));
         return;
     }
     const model = editor.getModel();
@@ -234,7 +247,7 @@ export function undo(): void {
 export function insertText(text: string): void {
     const editor = getEditor();
     if (!editor) {
-        whenReady().then(() => insertText(text));
+        deferUntilMounted(() => insertText(text));
         return;
     }
     editor.focus();

@@ -25,6 +25,13 @@ pub struct RecentItem {
 pub struct WorkspaceData {
     pub pinned: Vec<PinnedItem>,
     pub recent: Vec<RecentItem>,
+    /// Dokumentpfade der beim letzten Lauf offenen Tabs. Serde-Default
+    /// migriert bestehende workspace.json-Dateien ohne Session-State.
+    #[serde(default)]
+    pub open_tabs: Vec<String>,
+    /// Index des aktiven dokumenttragenden Tabs in `open_tabs`.
+    #[serde(default)]
+    pub active_tab: Option<usize>,
     /// Pro Dokument-Pfad das zuletzt verwendete Speicherverzeichnis fuers
     /// Image-Insert-Feature. Ohne `#[serde(default)]` wuerden alte
     /// workspace.json-Files ohne dieses Feld ablehnen.
@@ -84,6 +91,13 @@ impl Workspace {
                 dirty = true;
             }
         }
+        for path in &mut data.open_tabs {
+            let normalized = normalize_path(path);
+            if normalized != *path {
+                *path = normalized;
+                dirty = true;
+            }
+        }
         if data.image_dirs.keys().any(|k| k.contains('\\'))
             || data.image_dirs.values().any(|v| v.contains('\\'))
         {
@@ -126,6 +140,30 @@ impl Workspace {
 
     pub fn recent(&self) -> &[RecentItem] {
         &self.data.recent
+    }
+
+    pub fn open_tabs(&self) -> &[String] {
+        &self.data.open_tabs
+    }
+
+    pub fn active_tab(&self) -> Option<usize> {
+        self.data.active_tab
+    }
+
+    /// Ersetzt den persistierten Tab-Session-State atomar mit den
+    /// uebrigen Workspace-Daten. Pfade folgen derselben Forward-Slash-
+    /// Konvention wie Pins, Recents und Image-Verzeichnisse.
+    pub fn set_open_tabs(
+        &mut self,
+        open_tabs: Vec<String>,
+        active_tab: Option<usize>,
+    ) -> io::Result<()> {
+        self.data.open_tabs = open_tabs
+            .into_iter()
+            .map(|path| normalize_path(&path))
+            .collect();
+        self.data.active_tab = active_tab.filter(|index| *index < self.data.open_tabs.len());
+        self.save()
     }
 
     pub fn add_recent(&mut self, path: String) -> io::Result<()> {
@@ -262,8 +300,28 @@ mod tests {
         let mut workspace = Workspace::load_from(path.clone());
         workspace.pin("/a".into(), false).unwrap();
         workspace.add_recent("/b".into()).unwrap();
+        workspace
+            .set_open_tabs(
+                vec![r"C:\notes\a.md".into(), r"D:\docs\b.md".into()],
+                Some(1),
+            )
+            .unwrap();
         let loaded = Workspace::load_from(path);
         assert_eq!(workspace.data(), loaded.data());
+        assert_eq!(workspace.open_tabs(), ["C:/notes/a.md", "D:/docs/b.md"]);
+        assert_eq!(workspace.active_tab(), Some(1));
+    }
+
+    #[test]
+    fn legacy_workspace_without_tab_fields_uses_migration_defaults() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("workspace.json");
+        std::fs::write(&path, r#"{"pinned":[],"recent":[]}"#).unwrap();
+
+        let workspace = Workspace::load_from(path);
+
+        assert!(workspace.open_tabs().is_empty());
+        assert_eq!(workspace.active_tab(), None);
     }
 
     #[test]
@@ -289,6 +347,8 @@ mod tests {
             &path,
             r#"{"pinned":[{"path":"C:\\Users\\a.md","is_directory":false}],
                 "recent":[{"path":"C:\\Users\\b.md","last_opened":42}],
+                "open_tabs":["C:\\Users\\tab.md"],
+                "active_tab":0,
                 "image_dirs":{},
                 "last_export_dir":"C:\\Exports"}"#,
         )
@@ -296,10 +356,13 @@ mod tests {
         let workspace = Workspace::load_from(path.clone());
         assert_eq!("C:/Users/a.md", workspace.pinned()[0].path);
         assert_eq!("C:/Users/b.md", workspace.recent()[0].path);
+        assert_eq!(workspace.open_tabs(), ["C:/Users/tab.md"]);
+        assert_eq!(workspace.active_tab(), Some(0));
         assert_eq!(Some("C:/Exports"), workspace.last_export_dir());
         // Migration persistiert: nach erneutem Load steht Forward-Slash drin.
         let reloaded = Workspace::load_from(path);
         assert_eq!("C:/Users/a.md", reloaded.pinned()[0].path);
+        assert_eq!(reloaded.open_tabs(), ["C:/Users/tab.md"]);
         assert_eq!(Some("C:/Exports"), reloaded.last_export_dir());
     }
 
