@@ -72,6 +72,8 @@ Wichtige stabile Selektor-Gruppen:
   `code-view-mount`, `html-view-frame`, `toc-region`, `vault-region`.
 - Floating UI: `find-bar`, `cheatsheet-overlay`, `context-menu`,
   `rename-dialog`, `unsaved-dialog`, `export-dialog`, `image-dialog`.
+- Settings-Tabs: `settings-tab-<slug>` und
+  `[data-settings-tab="<slug>"]`.
 - Vault: `.section`, `.node`, `.row`, `.caret`, `ul.children`,
   `data-path="<normalized-absolute-path>"`.
 

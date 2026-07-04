@@ -575,7 +575,7 @@
   background: rgba(0, 0, 0, 0.28);
 }
 .settings-dialog__panel {
-  width: min(560px, calc(100vw - 48px));
+  width: min(740px, calc(100vw - 48px));
   max-height: calc(100vh - 48px);
   display: flex;
   flex-direction: column;
@@ -593,9 +593,58 @@
 }
 .settings-dialog__body {
   display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 16px;
+  overflow: hidden;
+}
+.settings-dialog__tabs {
+  width: 132px;
+  flex: 0 0 132px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border-right: 1px solid var(--border);
+  padding-right: 12px;
+}
+.settings-dialog__tab {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg-muted);
+  padding: 7px 9px;
+  text-align: left;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.settings-dialog__tab:hover {
+  background: var(--rail-hover-bg);
+  color: var(--fg);
+}
+.settings-dialog__tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.settings-dialog__tab--active {
+  border-color: var(--border);
+  background: var(--rail-hover-bg);
+  color: var(--fg);
+  box-shadow: inset 3px 0 var(--accent);
+  font-weight: 600;
+}
+.settings-dialog__tabpanel {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
   flex-direction: column;
   gap: 18px;
-  overflow: auto;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.settings-dialog__tabpanel[hidden] {
+  display: none;
 }
 .settings-section {
   display: flex;

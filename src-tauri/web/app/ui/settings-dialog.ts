@@ -45,6 +45,44 @@ let keydownHandler: ((e: KeyboardEvent) => void) | null = null;
 
 function $(id: string): HTMLElement | null { return document.getElementById(id); }
 
+function settingsTabs(dlg: HTMLElement): HTMLButtonElement[] {
+    return Array.from(dlg.querySelectorAll<HTMLButtonElement>(
+        '[role="tab"][id^="settings-tab-"]',
+    ));
+}
+
+function activateSettingsTab(slug: string): void {
+    var dlg = $('settings-dialog');
+    if (!dlg) return;
+    settingsTabs(dlg).forEach(function (tab) {
+        var active = tab.id === 'settings-tab-' + slug;
+        tab.setAttribute('aria-selected', active ? 'true' : 'false');
+        tab.classList.toggle('settings-dialog__tab--active', active);
+        tab.tabIndex = active ? 0 : -1;
+    });
+    dlg.querySelectorAll<HTMLElement>('[role="tabpanel"][data-settings-tab]')
+        .forEach(function (panel) {
+            panel.hidden = panel.dataset.settingsTab !== slug;
+        });
+}
+
+function bindTabs(dlg: HTMLElement): void {
+    var tabs = settingsTabs(dlg);
+    tabs.forEach(function (tab, index) {
+        tab.addEventListener('click', function () {
+            activateSettingsTab(tab.id.slice('settings-tab-'.length));
+        });
+        tab.addEventListener('keydown', function (e) {
+            if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+            e.preventDefault();
+            var offset = e.key === 'ArrowDown' ? 1 : -1;
+            var next = tabs[(index + offset + tabs.length) % tabs.length];
+            next.click();
+            next.focus();
+        });
+    });
+}
+
 function getInvoke(): ((cmd: string, args?: any) => Promise<any>) | null {
     var core = window.__TAURI__ && window.__TAURI__.core;
     return core && typeof core.invoke === 'function' ? core.invoke : null;
@@ -128,6 +166,7 @@ function installKeydownHandler(): void {
 export function openSettingsDialog(): void {
     var dlg = $('settings-dialog');
     if (!dlg) return;
+    activateSettingsTab('allgemein');
     var invoke = getInvoke();
     if (!invoke) {
         dlg.hidden = false;
@@ -228,6 +267,7 @@ function bindInputs(): void {
 export function initSettingsDialog(): void {
     var dlg = $('settings-dialog');
     if (dlg) {
+        bindTabs(dlg);
         dlg.addEventListener('click', function (e) {
             if (e.target === dlg) closeSettingsDialog();
         });
