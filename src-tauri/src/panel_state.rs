@@ -29,6 +29,16 @@ pub struct PanelStateData {
     // bringt die Minimap wenig und nimmt Platz.
     #[serde(default)]
     pub editor_minimap_visible: bool,
+    // Split-Mode: Breitenanteil der Editor-Pane in Prozent (Rest geht an
+    // die View-Pane). Steuert den mittleren Draggable-Splitter. Clamp
+    // 20–80, Default 50 (50/50). serde-default-Funktion statt
+    // `#[serde(default)]`, weil f64s Default 0.0 waere.
+    #[serde(default = "default_split_mid_percent")]
+    pub split_mid_percent: f64,
+}
+
+fn default_split_mid_percent() -> f64 {
+    50.0
 }
 
 impl Default for PanelStateData {
@@ -48,6 +58,7 @@ impl Default for PanelStateData {
             cheat_sheet_offset_x: 0.0,
             cheat_sheet_offset_y: 0.0,
             editor_minimap_visible: false,
+            split_mid_percent: 50.0,
         }
     }
 }
@@ -108,6 +119,11 @@ impl PanelState {
 
     pub fn set_editor_minimap_visible(&mut self, visible: bool) -> io::Result<()> {
         self.data.editor_minimap_visible = visible;
+        self.save()
+    }
+
+    pub fn set_split_mid_percent(&mut self, percent: f64) -> io::Result<()> {
+        self.data.split_mid_percent = percent.clamp(20.0, 80.0);
         self.save()
     }
 
@@ -260,5 +276,29 @@ mod tests {
         assert!(!state.data().editor_minimap_visible);
         state.set_editor_minimap_visible(true).unwrap();
         assert!(PanelState::load_from(path).data().editor_minimap_visible);
+    }
+
+    #[test]
+    fn split_mid_percent_default_is_fifty() {
+        assert_eq!(50.0, PanelStateData::default().split_mid_percent);
+    }
+
+    #[test]
+    fn split_mid_percent_is_clamped_and_persisted() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("panel.json");
+        let mut state = PanelState::load_from(path.clone());
+        state.set_split_mid_percent(95.0).unwrap();
+        assert_eq!(
+            80.0,
+            PanelState::load_from(path.clone()).data().split_mid_percent
+        );
+        state.set_split_mid_percent(5.0).unwrap();
+        assert_eq!(
+            20.0,
+            PanelState::load_from(path.clone()).data().split_mid_percent
+        );
+        state.set_split_mid_percent(35.0).unwrap();
+        assert_eq!(35.0, PanelState::load_from(path).data().split_mid_percent);
     }
 }

@@ -15,7 +15,7 @@ import { initImageDialog, openImageDialog } from './ui/image-dialog';
 import { initAboutDialog } from './ui/about-dialog';
 import { initSettingsDialog } from './ui/settings-dialog';
 import { attachPasteHandler } from './ui/paste-handler';
-import { initRails, setRailVisibility } from './ui/rails';
+import { applySplitMidFromBackend, initRails, setRailVisibility } from './ui/rails';
 import { initContextMenu } from './vault/context-menu';
 import { initVaultTree, insertVaultChildren, refreshVault } from './vault/tree';
 import {
@@ -210,6 +210,18 @@ if (ev && typeof ev.listen === 'function' && invoke) {
         if (window.FolioEditor) window.FolioEditor.setMinimap(data.visible);
     });
 
+    // panel:split_mid_changed: der geclampte Wert kommt vom Backend
+    // zurueck (Drag-Ende via set_split_mid_percent) — Frontend zieht die
+    // CSS-Variable nach. Automation/Multi-Window-Sync analog zu Minimap.
+    // applySplitMidFromBackend droppt Events waehrend eines aktiven Drags
+    // (verspaetetes Event aus frueherem Drag darf den Live-Wert nicht
+    // ueberschreiben).
+    ev.listen('panel:split_mid_changed', function (event: any) {
+        var data = event && event.payload;
+        if (!data || typeof data.percent !== 'number') return;
+        applySplitMidFromBackend(data.percent);
+    });
+
     // CLI/External-Open: argv-Pfad beim Boot + cli:open bei
     // Single-Instance-Reinvoke.
     invoke('cli_pending_open').then(function (path: any) {
@@ -251,6 +263,15 @@ if (invoke) {
         if (window.FolioEditor) window.FolioEditor.setMinimap(on);
     }).catch(function (err) {
         folioLog.warn('boot', 'editor_minimap_get failed', { error: String(err) });
+    });
+
+    // Split-Mode-Teiler aus dem persistierten Panel-State beim Boot
+    // wiederherstellen (analog Minimap). Setzt nur --split-mid; sichtbar
+    // wird es erst, wenn der Split-Mode aktiv ist.
+    invoke('split_mid_get').then(function (percent: any) {
+        if (typeof percent === 'number') applySplitMidFromBackend(percent);
+    }).catch(function (err) {
+        folioLog.warn('boot', 'split_mid_get failed', { error: String(err) });
     });
 
     // Rail-Visibility ebenfalls beim Boot syncen. `panel:rail_changed`

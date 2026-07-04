@@ -165,6 +165,43 @@ pub async fn set_editor_minimap_visible(
         .map_err(|error| error.to_string())
 }
 
+/// Liefert den persistierten Split-Mode-Teiler (Editor-Pane-Anteil in
+/// Prozent) ans Frontend. Beim Boot gerufen, damit `--split-mid` synchron
+/// zum persistierten Wert steht (analog `editor_minimap_get`).
+#[tauri::command]
+pub async fn split_mid_get(state: State<'_, AppState>) -> Result<f64, String> {
+    Ok(state
+        .panel_state
+        .lock()
+        .map_err(|_| "panel state lock poisoned".to_string())?
+        .data()
+        .split_mid_percent)
+}
+
+#[tauri::command]
+pub async fn set_split_mid_percent(
+    percent: f64,
+    handle: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let clamped = {
+        let mut guard = state
+            .panel_state
+            .lock()
+            .map_err(|_| "panel state lock poisoned".to_string())?;
+        guard
+            .set_split_mid_percent(percent)
+            .map_err(|error| error.to_string())?;
+        guard.data().split_mid_percent
+    };
+    handle
+        .emit(
+            "panel:split_mid_changed",
+            serde_json::json!({ "percent": clamped }),
+        )
+        .map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 pub async fn set_window_title(title: String, handle: AppHandle) -> Result<(), String> {
     let window = handle

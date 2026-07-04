@@ -171,7 +171,17 @@ sonst lehnt Tauri den Build ab.
   Cursor-Buttons verhindert Fokus-Diebstahl (Standard-Trick aus
   CodeMirror/Slate). Ctrl+1/2/3 laufen ueber `menu_dispatch` statt
   `button.click()` — robust gegen disabled-Buttons + gleicher Pfad wie
-  Menue/Automation.
+  Menue/Automation. Die Aufteilung Editor/View steuert ein **draggbarer
+  Mid-Splitter** (`#splitter-mid`, `ui/rails.ts::initMidSplitter`):
+  CSS-Variable `--split-mid` = Editor-Anteil in Prozent (Clamp 20–80,
+  Default 50), persistiert als `split_mid_percent` in
+  `panel_state.rs`/`panel-state.json` (Command `set_split_mid_percent`,
+  Boot-Restore via `split_mid_get`). Backend-Sync-Events
+  (`panel:split_mid_changed`) laufen ueber `applySplitMidFromBackend`,
+  das waehrend eines aktiven Drags droppt — ein verspaetetes Event aus
+  einem frueheren Drag darf den Live-Wert nicht ueberschreiben.
+  Vorzeichen-Detail: der Editor liegt physisch links (row-reverse
+  ordnet nur DOM-Kinder um), Drag nach rechts vergroessert ihn.
 - **Live-Preview** (`view/preview.ts`, Backend-Command
   `render_markdown_preview`): im Split-/View-Mode rendert das Frontend
   den aktuellen Editor-Text debounced 150 ms ohne Save. Trigger ist das

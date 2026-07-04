@@ -21,10 +21,16 @@ body:not(.edit-mode):not(.split-mode) .editor-region { display: none; }
    (dort ist die jeweils andere Region eh display:none). */
 body.split-mode .content-region { flex-direction: row-reverse; }
 body.split-mode .editor-region { display: flex; }
+/* Editor-Pane bekommt ihren Breitenanteil aus --split-mid (Prozent,
+   gesetzt vom mittleren Splitter + Boot-Restore); die View-Seite fuellt
+   den Rest. Default 50% = 50/50 wie vor dem Draggable-Splitter. */
+body.split-mode .editor-region {
+  flex: 0 0 var(--split-mid, 50%);
+  min-width: 0;
+}
 body.split-mode .view-region,
 body.split-mode .code-view-region,
-body.split-mode .html-view-region,
-body.split-mode .editor-region {
+body.split-mode .html-view-region {
   flex: 1 1 0;
   min-width: 0;
 }
@@ -33,6 +39,23 @@ body.split-mode .editor-region {
 body.split-mode .view-region,
 body.split-mode .code-view-region,
 body.split-mode .html-view-region { border-left: 1px solid var(--border); }
+
+/* Mittlerer Splitter zwischen Editor (links) und View (rechts). Nur im
+   Split-Mode sichtbar/aktiv; sonst ein toter display:none-Flex-Child.
+   Optik + Bedienung gespiegelt von .splitter-left/-right (base.css):
+   4px, col-resize, Hover-Highlight. Im DOM steht er vor .editor-region,
+   liegt durch row-reverse also visuell zwischen Editor und View. */
+.splitter-mid { display: none; }
+body.split-mode .splitter-mid {
+  display: block;
+  flex: 0 0 4px;
+  cursor: col-resize;
+  background: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  z-index: 2;
+}
+body.split-mode .splitter-mid:hover { background: rgba(128, 128, 128, 0.18); }
 
 /* Code-View-Region: zweite Monaco-Instanz fuer JSON/XML/Code im View-
    Mode. Wird nur sichtbar, wenn die Datei kein Markdown ist UND der

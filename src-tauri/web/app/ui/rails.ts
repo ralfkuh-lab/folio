@@ -2,9 +2,18 @@
    CSS-Custom-Properties --vault-w / --toc-w. Splitter-Drag emittiert
    railResize zum Backend (workspace-persistierter Wert).
 
+   Zusaetzlich der mittlere Split-Mode-Splitter zwischen Editor- und
+   View-Pane: steuert --split-mid (Editor-Anteil in Prozent), Persistenz
+   ueber das Panel-State-Command set_split_mid_percent (Muster wie der
+   Minimap-Toggle).
+
    Public API: setRailVisibility(side, visible), setTocWidth(w),
-   setVaultWidth(w) — werden von Document-State und ApplyShellState
-   gerufen. initRails() registriert die zwei Splitter-Drag-Listener. */
+   setVaultWidth(w), setSplitMidPercent(p), applySplitMidFromBackend(p)
+   — werden von Document-State, ApplyShellState, Boot-Restore und dem
+   panel:split_mid_changed-Listener gerufen. initRails() registriert
+   die drei Splitter-Drag-Listener. */
+
+import { safeInvoke } from '../util/log';
 
 function post(msg: any): void {
     if (window.__TAURI__ && window.__TAURI__.event) {
@@ -28,6 +37,26 @@ export function setTocWidth(w: number): void {
 export function setVaultWidth(w: number): void {
     if (typeof w !== 'number' || isNaN(w) || w <= 0) return;
     document.documentElement.style.setProperty('--vault-w', w + 'px');
+}
+
+const SPLIT_MID_MIN = 20;
+const SPLIT_MID_MAX = 80;
+
+let midDragActive = false;
+
+/* Backend-Sync-Pfad (panel:split_mid_changed + Boot-Restore): waehrend
+   eines aktiven Drags ignorieren — ein verspaetet eintreffendes Event aus
+   einem frueheren Drag wuerde sonst den Live-Wert ueberschreiben, und
+   pointerup persistierte den veralteten Stand. */
+export function applySplitMidFromBackend(p: number): void {
+    if (midDragActive) return;
+    setSplitMidPercent(p);
+}
+
+export function setSplitMidPercent(p: number): void {
+    if (typeof p !== 'number' || isNaN(p)) return;
+    const clamped = Math.max(SPLIT_MID_MIN, Math.min(SPLIT_MID_MAX, p));
+    document.documentElement.style.setProperty('--split-mid', clamped + '%');
 }
 
 function initRightSplitter(): void {
@@ -94,7 +123,50 @@ function initLeftSplitter(): void {
     splitter.addEventListener('pointercancel', endDrag);
 }
 
+function initMidSplitter(): void {
+    const splitter = document.getElementById('splitter-mid');
+    const content = document.getElementById('content-region');
+    if (!splitter || !content) return;
+    let dragState: { startX: number; startPct: number; width: number } | null = null;
+    function currentSplitMid(): number {
+        // Inline-Style ist autoritativ — setSplitMidPercent schreibt immer
+        // dorthin (Boot-Restore + Live-Drag). Kein getComputedStyle-
+        // Roundtrip noetig (und in jsdom liefert der keine Custom-Props).
+        const v = document.documentElement.style.getPropertyValue('--split-mid').trim();
+        const n = parseFloat(v);
+        return isNaN(n) ? 50 : n;
+    }
+    splitter.addEventListener('pointerdown', function (e: PointerEvent) {
+        try { splitter.setPointerCapture(e.pointerId); } catch (_) {}
+        const width = (content as HTMLElement).clientWidth;
+        dragState = { startX: e.clientX, startPct: currentSplitMid(), width };
+        midDragActive = true;
+        e.preventDefault();
+    });
+    splitter.addEventListener('pointermove', function (e: PointerEvent) {
+        if (!dragState || dragState.width <= 0) return;
+        // --split-mid ist der Editor-Anteil; der Editor liegt physisch
+        // LINKS (row-reverse ordnet nur die DOM-Kinder um, nicht die
+        // Pixel-Koordinaten). Splitter nach rechts ziehen (dx > 0)
+        // vergroessert die linke Editor-Pane → Prozent steigt. Vorzeichen
+        // daher positiv, trotz row-reverse.
+        const dx = e.clientX - dragState.startX;
+        const pct = dragState.startPct + (dx / dragState.width) * 100;
+        setSplitMidPercent(pct);
+    });
+    function endDrag(e: PointerEvent): void {
+        if (!dragState) return;
+        try { splitter.releasePointerCapture(e.pointerId); } catch (_) {}
+        dragState = null;
+        midDragActive = false;
+        safeInvoke('set_split_mid_percent', { percent: currentSplitMid() }, 'set_split_mid_percent');
+    }
+    splitter.addEventListener('pointerup', endDrag);
+    splitter.addEventListener('pointercancel', endDrag);
+}
+
 export function initRails(): void {
     initRightSplitter();
     initLeftSplitter();
+    initMidSplitter();
 }
