@@ -107,6 +107,21 @@
   Instanzen mit aktivem Index (plus per-Tab-History) oder ein
   Multi-Doc-Store; Persistenz offener Tabs im Workspace; E2E-Impact.
   Erst Konzept/Plan, dann in Etappen umsetzen.
+  - **Single-Instance-Verhalten** (User-Frage 2026-07-04): Heute fix
+    single-instance — Explorer-Doppelklick landet per `cli:open` in der
+    bestehenden Instanz und ersetzt das offene Dokument. Empfehlung
+    (Claude): **so lassen, kein Setting bauen.** Single-instance ist
+    für einen Dokument-Editor der richtige Default (VS Code, Obsidian
+    machen es genauso); ein Umschalter bräuchte App-Neustart (Plugin
+    wird beim Boot registriert), verkompliziert Datei-Assoziations-
+    Verhalten und E2E, und das eigentliche Bedürfnis hinter „zweite
+    Instanz" — zwei Dokumente nebeneinander — löst dieses Tabs-Feature
+    besser. Sobald Tabs da sind: Doppelklick öffnet per Default **als
+    neuer Tab** (statt zu ersetzen); wer das alte Verhalten will,
+    bekommt es als Setting („ersetzen vs. neuer Tab"). Falls später
+    echtes Nebeneinander gewünscht: „Neues Fenster"-Command als
+    Zweitfenster im selben Prozess (Tauri-Multi-Window) — das liefert
+    Multi-Instanz-Nutzen ohne die Single-Instance-Garantie aufzugeben.
 
 ## Niedrige Priorität
 
@@ -143,6 +158,20 @@
     Xvfb-Skip-Marker oder `--include-desktop-only`.
 
 
+
+- **E2E: Zustands-Leaks zwischen Szenarien beseitigen** (Befund
+  2026-07-04 beim Bau der Einzelszenario-Läufe): Szenarien hinterlassen
+  Zustand, der in die Visual-Baselines *späterer* Szenarien einfließt —
+  04_theme lässt Dark-Theme aktiv, 06_find die Find-Bar offen, dazu
+  wächst die Recent-Liste über den Lauf. Im festen Voll-Lauf ist das
+  deterministisch, aber fragil: ein neu einsortiertes Szenario
+  verschiebt die Baselines aller nachfolgenden, und Einzelläufe können
+  visuell nicht verglichen werden (deshalb heute `record_only` bei
+  Szenario-Auswahl). Sauberer Fix: Reset auf kanonischen Zustand vor
+  jedem Szenario (Theme light, Find-Bar zu, View-Mode; Recents wären
+  per Automation-API zu leeren oder aus dem Capture-Bereich zu nehmen)
+  + einmalige Baseline-Neuaufnahme mit Sichtprüfung. Danach könnten
+  auch Einzelläufe wieder visuell vergleichen.
 
 - **E2E-Suite auf Windows lauffähig machen**: Aus dem Windows-Run 2026-05-18
   bleibt ein Stolperstein: **Visual-Baselines an Linux 1280×800
