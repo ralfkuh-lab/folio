@@ -39,6 +39,7 @@ import {
     syncEditorTextToStore,
     getCurrentPath,
 } from './state/document';
+import { initTabs } from './state/tabs';
 import {
     initEditorShell,
     ensureEditorMounted,
@@ -105,6 +106,7 @@ initContextMenu({ openDocument, refreshVault, showStatus });
 initMenuRouter({ applyRailVisibility });
 initDragDrop();
 initAutomationEvents();
+initTabs();
 initDocumentState({ setActiveMode });
 initPreview({ getCurrentPath });
 initCodeCopy();

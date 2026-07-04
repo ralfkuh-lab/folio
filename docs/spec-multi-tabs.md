@@ -100,28 +100,30 @@ Tabs funktional per API, noch ohne UI (API-first → testbar).
       doppeltem Pfad, Dirty-Reject beim Close, per-Tab-History
       (back/forward wirkt nur im aktiven Tab), close_all.
 
-### Etappe T3 — Tab-Leiste UI + Editor-Model-Cache
+### Etappe T3 — Tab-Leiste UI + Editor-Model-Cache ✅ FERTIG
 
-- [ ] Tab-Leiste in `dist/index.html` (zwischen Toolbar und Content,
-      `#tab-bar`, bei 0 Tabs ausgeblendet), CSS im Bestand-Stil
-      (Dark/Light via Variablen), Dirty-Indikator (Punkt),
-      Close-Button pro Tab, Mittelklick schließt, Overflow scrollbar.
-- [ ] Frontend `state/tabs.ts`: `tabs:changed`-Listener rendert die
-      Leiste; Klick → `tab_activate`, Close → `tab_close`.
-- [ ] Monaco-Model-Cache pro Tab in `editor/mount.ts`
-      (Model + ViewState halten, Undo-Stack bleibt; Disposal beim
-      Tab-Schließen via `tabs:changed`-Diff). Pre-Mount-Konvention
-      aus CLAUDE.md beachten (kein mountReady-Defer!).
-- [ ] Shortcuts über den bestehenden DOM-Capture-Keybinding-Pfad:
-      Ctrl+Tab / Ctrl+Shift+Tab (nächster/voriger Tab),
-      Ctrl+W (Tab schließen); Menü „Datei": „Tab schließen".
-- [ ] Fenstertitel/Statusbar folgen dem aktiven Tab (bestehender
-      document:loaded-Pfad — verifizieren, kein Doppel-Update).
-- [ ] jsdom-Tests für Tab-Leisten-Rendering + Model-Cache-Logik.
-- [ ] E2E `30_tabs_ui.py`: Leiste erscheint/verschwindet, Klick
-      wechselt (Statusbar-Pfad), Dirty-Punkt, Close-Button,
-      Undo-Stack überlebt Tab-Wechsel (Edit → Wechsel → zurück →
-      Undo wirkt).
+- [x] Tab-Leiste in `dist/index.html` (eigene Grid-Zeile zwischen
+      Toolbar und Content — alle `grid-row`-Indizes rutschen um 1,
+      `#tab-bar`, bei 0 Dokumenten ausgeblendet), CSS `tabs.css`,
+      Dirty-Indikator, Close-Button, Mittelklick schließt, Overflow
+      scrollbar.
+- [x] Frontend `state/tabs.ts`: `tabs:changed`-Listener rendert die
+      Leiste; Klick → `tab_activate`, Close → `tab_close` (Dirty-
+      Confirm-Fluss); Boot-Initialisierung via `tabs_list`.
+- [x] Monaco-Model-Cache pro Tab in `editor/mount.ts` (Model +
+      ViewState, Undo-Stack bleibt; Disposal via `document:closed` +
+      `tabs:changed`-Diff; pendingDocument nach Pre-Mount-Konvention).
+      Review-Fix (Claude): Save-As-Kurzschluss nur bei unverändertem
+      Inhalt — Ersetzen-Open im selben Tab (Vault-Klick, History)
+      setzt den neuen Text.
+- [x] Shortcuts über den DOM-Capture-Keybinding-Pfad: Ctrl+Tab /
+      Ctrl+Shift+Tab, Ctrl+W; Menü „Datei" → „Tab schließen".
+- [x] Fenstertitel/Statusbar folgen dem aktiven Tab über den
+      bestehenden document:loaded-Pfad.
+- [x] jsdom-Tests für Tab-Leiste + Model-Cache (18 Dateien/130 Tests).
+- [x] E2E `30_tabs_ui.py` grün; Visual-Baselines wegen der neuen
+      Tab-Leisten-Zeile neu geseedet (10 Stück) und im Folgelauf
+      bestätigt.
 
 ### Etappe T4 — Persistenz + Session-Restore
 

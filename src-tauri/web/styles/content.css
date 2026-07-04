@@ -2,7 +2,7 @@
    position:absolute der find-bar (oben rechts im mittleren Pane), und
    flex-Container, in dem die jeweils sichtbare Region die volle Hoehe fuellt. */
 .content-region {
-  grid-row: 2;
+  grid-row: 3;
   grid-column: 3;
   position: relative;
   min-width: 0;

@@ -1,7 +1,5 @@
 # TODO
 
-## Hohe Priorität
-
 ## Mittlere Priorität
 
 - **Menu-Keybindings (Accelerators) greifen oft nicht**: Viele der nativen

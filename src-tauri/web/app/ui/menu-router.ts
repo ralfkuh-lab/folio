@@ -6,12 +6,12 @@
    und tauchen hier nicht auf. */
 
 import {
-    getCurrentPath,
     getIsDirty,
     openDocument,
     requestSaveIfDirty,
     saveCurrent,
 } from '../state/document';
+import { closeActiveTab } from '../state/tabs';
 import { setMode } from '../editor/shell';
 import { openEditorFind } from './find-bar';
 import { folioLog, safeInvoke } from '../util/log';
@@ -42,11 +42,7 @@ export function initMenuRouter(deps: Deps): void {
         if (p) openDocument(p);
     });
     ev.listen('menu:file_close', function () {
-        if (!getCurrentPath()) return;
-        requestSaveIfDirty().then(function (ok) {
-            if (!ok) return;
-            safeInvoke('close_document', undefined, 'close_document');
-        });
+        closeActiveTab();
     });
     // Backend emittiert menu:file_quit nur bei dirty Dokument (Strg+Q,
     // Menue-Beenden, Fenster-X via CloseRequested) — sonst beendet es

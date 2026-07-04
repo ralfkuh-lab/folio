@@ -24,7 +24,16 @@ import {
     setFindOptions,
     setFindTerm,
 } from './find';
-import { layout, mount, setMinimap, setTheme, setText } from './mount';
+import {
+    closeDocument,
+    layout,
+    mount,
+    setDocument,
+    setMinimap,
+    setTheme,
+    setText,
+    syncTabModels,
+} from './mount';
 import {
     applyReplace,
     focus,
@@ -50,6 +59,9 @@ import * as codeView from './view-code';
 (window as any).FolioEditor = {
     mount,
     setText,
+    setDocument,
+    syncTabModels,
+    closeDocument,
     getText,
     getSelection,
     setSelection,

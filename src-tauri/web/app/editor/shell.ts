@@ -64,13 +64,21 @@ export function ensureEditorMounted(initial?: string): Promise<boolean> {
     return mountInFlight;
 }
 
-export function loadEditorText(text: string, language?: string): Promise<void> {
+export function loadEditorText(
+    text: string,
+    language?: string,
+    tabId?: number,
+    path?: string,
+): Promise<void> {
     return ensureEditorMounted(text || '').then(function (ok) {
         if (!ok) return;
-        // language unveraendert durchreichen: ohne Angabe behaelt
-        // doSetText die aktuelle Model-Sprache (kein erzwungener
-        // plaintext-Model-Wechsel mit Undo-Stack-Verlust).
-        window.FolioEditor.setText(text || '', language);
+        if (typeof tabId === 'number'
+            && typeof window.FolioEditor.setDocument === 'function') {
+            window.FolioEditor.setDocument(tabId, path || '', text || '', language);
+        } else {
+            // Nicht-Tab-Payloads behalten den bisherigen setText-Pfad.
+            window.FolioEditor.setText(text || '', language);
+        }
         if (document.body.classList.contains('edit-mode')) {
             layoutEditor();
         }

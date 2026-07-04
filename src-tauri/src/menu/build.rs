@@ -35,8 +35,8 @@ pub fn build(handle: &AppHandle, lang: &str) -> tauri::Result<Menu<Wry>> {
     let item_rename = MenuItemBuilder::with_id(ids::FILE_RENAME, l.file_rename)
         .enabled(false)
         .build(handle)?;
-    // file.close: nur bei geladenem Dokument aktiv — Frontend toggelt
-    // analog zu file.save_as via applyDocKind.
+    // file.close: schliesst den aktiven Tab. Nur bei geladenem Dokument
+    // aktiv — Frontend toggelt analog zu file.save_as via applyDocKind.
     let item_close = MenuItemBuilder::with_id(ids::FILE_CLOSE, l.file_close)
         .accelerator("CmdOrCtrl+W")
         .enabled(false)

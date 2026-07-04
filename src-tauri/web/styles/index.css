@@ -3,6 +3,7 @@
    -> Cosmetic. Aenderungen bitte in der jeweiligen *.css-Datei vornehmen. */
 @import "./base.css";
 @import "./toolbar.css";
+@import "./tabs.css";
 @import "./statusbar.css";
 @import "./vault.css";
 @import "./content.css";

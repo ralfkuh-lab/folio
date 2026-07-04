@@ -141,9 +141,9 @@ export function saveCurrent(): Promise<boolean> {
     });
 }
 
-export function requestSaveIfDirty(): Promise<boolean> {
+export function requestSaveIfDirty(forceDirty = false): Promise<boolean> {
     const dirty = refreshDirtyFromEditor();
-    if (!dirty && !isDirty) return Promise.resolve(true);
+    if (!forceDirty && !dirty && !isDirty) return Promise.resolve(true);
     return syncEditorTextToStore().then(showUnsavedDialog).then(function (decision) {
         if (decision === 'cancel') return false;
         if (decision === 'discard') {
@@ -338,7 +338,12 @@ export function initDocumentState(d: Deps): void {
 
         // 2. UI-Rendering. loadEditorText kuemmert sich um den
         // ensureEditorMounted-Pfad (mount-on-demand bei erstem Edit-Switch).
-        loadEditorText(data.text || '', data.language || '');
+        loadEditorText(
+            data.text || '',
+            data.language || '',
+            typeof data.tabId === 'number' ? data.tabId : undefined,
+            data.path || '',
+        );
         setEditorLanguageDisplay(data.language || 'plaintext');
         setTocList(data.tocHtml || data.toc_html || '');
         setMarkdownHeadingMap(data.headingMap || data.heading_map || []);
@@ -447,13 +452,17 @@ export function initDocumentState(d: Deps): void {
     // document:closed wird vom close_document-Command emittiert. Wir setzen
     // die Frontend-Sicht analog zum Boot-Zustand zurueck: kein Pfad, leerer
     // Editor, "Bereit"-Statusbar, kein Word-Count.
-    listen('document:closed', function () {
+    listen('document:closed', function (event: any) {
+        const data = (event && event.payload) || {};
         invalidatePreview();
         currentPath = null;
         cleanText = '';
         markDirty(false);
         setReloadButtonPending(false);
-        if (window.FolioEditor && typeof window.FolioEditor.setText === 'function') {
+        if (window.FolioEditor && typeof window.FolioEditor.closeDocument === 'function'
+            && typeof data.tabId === 'number') {
+            window.FolioEditor.closeDocument(data.tabId);
+        } else if (window.FolioEditor && typeof window.FolioEditor.setText === 'function') {
             window.FolioEditor.setText('', 'plaintext');
         }
         // View-Region und TOC zuruecksetzen, sonst bleibt das zuletzt gerenderte

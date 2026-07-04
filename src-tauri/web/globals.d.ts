@@ -10,6 +10,9 @@
 interface FolioEditorSurface {
     mount(elementId: string, initialText: string): Promise<void>;
     setText(text: string, language?: string): void;
+    setDocument(tabId: number, path: string, text: string, language?: string): void;
+    syncTabModels(openDocumentTabIds: number[]): void;
+    closeDocument(tabId: number): void;
     getText(): string;
     setSelection(start: number, length: number): void;
     getSelection(): { start: number; length: number };

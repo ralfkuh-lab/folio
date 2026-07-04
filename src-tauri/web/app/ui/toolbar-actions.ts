@@ -1,5 +1,5 @@
 /* Toolbar-Buttons (`tb-*`) + Edit-Toolbar-`applyCmd` + Tastatur-
-   Shortcuts (Strg+1/2, Strg+S, Alt+←/→). Status-Theme-Toggle nimmt
+   Shortcuts (Strg+1/2, Strg+Tab, Strg+S, Alt+←/→). Status-Theme-Toggle nimmt
    pragmatisch teil, weil er semantisch zum Toolbar-Set gehoert. */
 
 import {
@@ -10,6 +10,7 @@ import {
     saveCurrent,
     showStatus,
 } from '../state/document';
+import { activateRelativeTab } from '../state/tabs';
 import { setMode } from '../editor/shell';
 import { openImageDialog } from './image-dialog';
 import { showCheatSheet, hideCheatSheet, cheatSheetRows } from './cheatsheet';
@@ -177,6 +178,12 @@ export function initToolbarActions(): void {
         }
         if (!ctrl) return;
 
+        if (k === 'Tab') {
+            e.preventDefault();
+            e.stopPropagation();
+            activateRelativeTab(shift ? -1 : 1);
+            return;
+        }
         if (!shift && (k === '1' || k === '2' || k === '3')) {
             // Diagnose: User-Bericht 2026-05-22 — Ctrl+1/2/3 feuert nicht,
             // wenn der Fokus in der View liegt. Logging zeigt ob der
@@ -212,7 +219,7 @@ export function initToolbarActions(): void {
         }
         if (!shift && k === 'w') {
             e.preventDefault();
-            // Gleicher Pfad wie menu:file_close — Dirty-Prompt + close_document.
+            // Gleicher Pfad wie das native Menue "Tab schliessen".
             safeInvoke('menu_dispatch', { id: 'file.close' }, 'menu_dispatch file.close');
             return;
         }
