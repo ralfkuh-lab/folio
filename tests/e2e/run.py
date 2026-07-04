@@ -16,7 +16,20 @@ Aufruf-Varianten:
 - Baselines updaten:
     python tests/e2e/run.py --update-baselines
 
-Exit-Code: 0 = alle Szenarien gruen, 1 = mind. ein Fehler.
+- Nur einzelne Szenarien (Name oder Praefix) — fuer funktionales
+  Debugging. Screenshots werden dabei nur aufgenommen, NICHT gegen
+  Baselines verglichen: die Baselines kodieren den kumulierten
+  Voll-Lauf-Zustand (Theme aus 04, offene Find-Bar aus 06, Recents),
+  gegen den ein Einzellauf prinzipiell nicht bestehen kann.
+    python tests/e2e/run.py 21_split_mode
+    python tests/e2e/run.py 21 05
+
+- Eine einzelne Baseline erneuern: Datei in `baselines/` loeschen und
+  einen VOLLEN Lauf starten (Auto-Seed legt sie neu an).
+  `--update-baselines` ist mit Szenario-Auswahl deshalb gesperrt.
+
+Exit-Code: 0 = alle Szenarien gruen, 1 = mind. ein Fehler,
+2 = Aufruf-Fehler (unbekanntes Szenario / verbotene Options-Kombi).
 """
 
 from __future__ import annotations
@@ -44,19 +57,15 @@ from lib.todo import append_e2e_failure_entry  # noqa: E402
 from lib.visual import VisualSuite  # noqa: E402
 
 
-def discover_scenarios(
-    scenarios_dir: Path,
-    include_desktop_only: bool = False,
-) -> list[tuple[str, Callable]]:
+def discover_scenarios(scenarios_dir: Path) -> list[tuple[str, Callable, bool]]:
     """Importiert alle nummerierten `NN_name.py`-Module und gibt
-    (Name, run)-Paare in lexikografischer Reihenfolge zurueck.
-
-    Szenarien, die eine Modul-Konstante `DESKTOP_ONLY = True` exportieren,
-    werden standardmaessig uebersprungen (Xvfb-untauglich — z. B. OS-
-    Dialoge oder Multi-Monitor-Capture). `include_desktop_only=True`
-    nimmt sie mit. Siehe `docs/e2e-headless-caveats.md`.
+    (Name, run, desktop_only)-Tripel in lexikografischer Reihenfolge
+    zurueck. Das Skippen von `DESKTOP_ONLY = True`-Szenarien (Xvfb-
+    untauglich — z. B. OS-Dialoge; siehe `docs/e2e-headless-caveats.md`)
+    entscheidet der Aufrufer — eine explizite Auswahl per Szenario-
+    Argument darf sie mitnehmen.
     """
-    found: list[tuple[str, Callable]] = []
+    found: list[tuple[str, Callable, bool]] = []
     for path in sorted(scenarios_dir.glob("[0-9][0-9]_*.py")):
         spec = importlib.util.spec_from_file_location(path.stem, path)
         if spec is None or spec.loader is None:
@@ -67,11 +76,45 @@ def discover_scenarios(
         if not callable(run_fn):
             print(f"[WARN] scenarios/{path.name}: missing run() function — skipped")
             continue
-        if getattr(module, "DESKTOP_ONLY", False) and not include_desktop_only:
-            print(f"[SKIP] scenarios/{path.name}: DESKTOP_ONLY (use --include-desktop-only)")
-            continue
-        found.append((path.stem, run_fn))
+        found.append((path.stem, run_fn, bool(getattr(module, "DESKTOP_ONLY", False))))
     return found
+
+
+def select_scenarios(
+    all_scenarios: list[tuple[str, Callable, bool]],
+    selectors: list[str],
+    include_desktop_only: bool,
+) -> list[tuple[str, Callable]] | None:
+    """Filtert die entdeckten Szenarien auf die per CLI angeforderten.
+
+    Ein Selektor matcht per Gleichheit oder Praefix (`21` findet
+    `21_split_mode`); ein optionales `.py`-Suffix wird toleriert. Die
+    Reihenfolge bleibt lexikografisch (nicht Selektor-Reihenfolge) —
+    Szenarien sind zwar isoliert, aber ein deterministischer Ablauf haelt
+    Läufe vergleichbar. Explizit angeforderte DESKTOP_ONLY-Szenarien
+    laufen auch ohne --include-desktop-only (mit Hinweis).
+
+    Rueckgabe None bei unbekanntem Selektor (Aufruf-Fehler).
+    """
+    selected_names: set[str] = set()
+    for raw in selectors:
+        sel = raw[:-3] if raw.endswith(".py") else raw
+        matches = [name for name, _, _ in all_scenarios
+                   if name == sel or name.startswith(sel)]
+        if not matches:
+            available = ", ".join(name for name, _, _ in all_scenarios)
+            print(f"[ERR] Kein Szenario passt zu {raw!r}. Verfuegbar: {available}")
+            return None
+        selected_names.update(matches)
+
+    result: list[tuple[str, Callable]] = []
+    for name, run_fn, desktop_only in all_scenarios:
+        if name not in selected_names:
+            continue
+        if desktop_only and not include_desktop_only:
+            print(f"[i] {name}: DESKTOP_ONLY — explizit angefordert, laeuft trotzdem.")
+        result.append((name, run_fn))
+    return result
 
 
 def main(argv: list[str]) -> int:
@@ -100,7 +143,41 @@ def main(argv: list[str]) -> int:
         "--include-desktop-only", action="store_true",
         help="Szenarien mit `DESKTOP_ONLY = True` mitnehmen (sonst geskippt).",
     )
+    parser.add_argument(
+        "only", nargs="*", metavar="SZENARIO",
+        help="Nur diese Szenarien ausfuehren (Name oder Praefix, z. B. "
+             "'21_split_mode' oder '21'). Ohne Angabe laeuft die volle Suite.",
+    )
     args = parser.parse_args(argv)
+
+    # Szenario-Auswahl VOR dem App-Start validieren: ein Tippfehler im
+    # Selektor soll sofort mit Exit 2 enden, nicht erst nach dem
+    # 45-s-Folio-Boot (dessen Cleanup erst im try/finally weiter unten
+    # haengt).
+    all_scenarios = discover_scenarios(Path(args.scenarios_dir))
+    if args.only:
+        if args.update_baselines:
+            print("[ERR] --update-baselines ist mit Szenario-Auswahl gesperrt: "
+                  "Baselines kodieren den kumulierten Voll-Lauf-Zustand "
+                  "(Theme/Find-Bar/Recents aus frueheren Szenarien) — ein "
+                  "Teil-Lauf wuerde sie vergiften. Einzelne Baseline erneuern: "
+                  "Datei in baselines/ loeschen + voller Lauf.")
+            return 2
+        maybe = select_scenarios(all_scenarios, args.only, args.include_desktop_only)
+        if maybe is None:
+            return 2
+        scenarios = maybe
+        print("[i] Teil-Lauf: Screenshots werden nur aufgenommen, nicht "
+              "gegen Baselines verglichen (siehe Modul-Docstring).")
+    else:
+        scenarios = []
+        for name, run_fn, desktop_only in all_scenarios:
+            if desktop_only and not args.include_desktop_only:
+                print(f"[SKIP] {name}: DESKTOP_ONLY (use --include-desktop-only)")
+                continue
+            scenarios.append((name, run_fn))
+    print(f"[i] {len(scenarios)} Szenario(s) ausgewaehlt: "
+          f"{', '.join(n for n, _ in scenarios)}")
 
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     artifacts_dir = SCRIPT_DIR / "artifacts" / timestamp
@@ -175,14 +252,8 @@ def main(argv: list[str]) -> int:
         baselines_dir=baselines_dir,
         artifacts_dir=artifacts_dir,
         update_baselines=args.update_baselines,
+        record_only=bool(args.only),
     )
-
-    scenarios = discover_scenarios(
-        Path(args.scenarios_dir),
-        include_desktop_only=args.include_desktop_only,
-    )
-    print(f"[i] {len(scenarios)} Szenario(s) entdeckt: "
-          f"{', '.join(n for n, _ in scenarios)}")
 
     run_start = time.monotonic()
     run_start_wall = time.time()

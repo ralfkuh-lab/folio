@@ -401,7 +401,20 @@ Rechtsklick-Kontextmenüs, echter TOC-DOM-Klick, HTML-View.
 Wrapper: `bash scripts/run-e2e.sh` (Linux+Xvfb). Visual-Baselines in
 `tests/e2e/baselines/`, Artefakte (gitignored) in
 `tests/e2e/artifacts/<timestamp>/`. Bei fehlender Baseline wird sie beim
-ersten Run automatisch angelegt.
+ersten Run automatisch angelegt. Der Wrapper bricht mit klarer Meldung
+ab, wenn bereits eine Folio-Instanz des Users läuft (das
+single-instance-Plugin würde die Test-Instanz sonst sofort still
+beenden — Symptom: „Folio-Prozess ist gestorben", Log endet nach der
+Logging-Init-Zeile).
+
+**Einzelszenario-Läufe**: `bash scripts/run-e2e.sh 21_split_mode`
+(Name oder Präfix, mehrere möglich) — für funktionales Debugging.
+Screenshots werden dabei nur aufgenommen, **nicht** gegen Baselines
+verglichen, und `--update-baselines` ist mit Auswahl gesperrt: die
+Baselines kodieren den kumulierten Voll-Lauf-Zustand (Dark-Theme aus
+04, offene Find-Bar aus 06, Recent-Liste), gegen den ein Einzellauf
+prinzipiell nicht bestehen kann. Einzelne Baseline erneuern = Datei in
+`baselines/` löschen + voller Lauf (Auto-Seed).
 
 **Screenshot-Sync**: `report.py::screenshot` ruft vor jeder Aufnahme
 `POST /sync/render` (deterministischer rAF-Roundtrip-Ack, siehe

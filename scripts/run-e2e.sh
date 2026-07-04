@@ -9,6 +9,10 @@
 # Aufruf:
 #   bash scripts/run-e2e.sh                  # voller Run
 #   bash scripts/run-e2e.sh --update-baselines
+#   bash scripts/run-e2e.sh 21_split_mode    # nur einzelne Szenarien
+#                                              (Name oder Praefix, z. B. 21;
+#                                              funktional — Screenshots ohne
+#                                              Baseline-Vergleich)
 #   bash scripts/run-e2e.sh --attach         # bypass Xvfb+folio, gegen
 #                                              laufende Instanz testen
 #
@@ -77,6 +81,24 @@ elif command -v ss >/dev/null 2>&1 && ss -tln 2>/dev/null | grep -q '127\.0\.0\.
     log "Port 9876 ist bereits belegt (Prozess antwortet nicht wie Folio)."
     log "Belegenden Prozess beenden: ss -tlnp | grep 9876"
     exit 1
+fi
+
+# 1b) Single-Instance-Vorabcheck: laeuft bereits IRGENDEIN Folio dieses
+# Users (typisch: die Desktop-Instanz ohne Automation-API — die faengt
+# der Port-Check oben nicht), beendet tauri-plugin-single-instance die
+# Test-Instanz sofort nach dem Boot: sauberer Exit 0, im Log steht nur
+# die eine Logging-Init-Zeile. Das Symptom ("Folio-Prozess ist
+# gestorben") ist ohne diesen Check kaum diagnostizierbar.
+if command -v pgrep >/dev/null 2>&1; then
+    RUNNING_FOLIO="$(pgrep -a -u "$(id -u)" -x folio || true)"
+    if [[ -n "${RUNNING_FOLIO}" ]]; then
+        log "Es laeuft bereits eine Folio-Instanz dieses Users:"
+        while IFS= read -r line; do log "    ${line}"; done <<< "${RUNNING_FOLIO}"
+        log "tauri-plugin-single-instance wuerde die Test-Instanz sofort beenden."
+        log "Bitte die Instanz schliessen — oder mit --attach gegen sie testen"
+        log "(dann muss sie mit FOLIO_AUTOMATION=1 gestartet sein)."
+        exit 1
+    fi
 fi
 
 # 2) Xvfb anwerfen
@@ -148,6 +170,9 @@ for _ in $(seq 1 60); do
     fi
     if ! kill -0 "${FOLIO_PID}" 2>/dev/null; then
         log "Folio-Prozess ist gestorben — siehe ${FOLIO_LOG}"
+        log "(Endet das Log nach der Logging-Init-Zeile mit Exit 0, hat"
+        log " vermutlich eine parallel gestartete Folio-Instanz per"
+        log " single-instance-Plugin uebernommen.)"
         exit 1
     fi
     sleep 1
