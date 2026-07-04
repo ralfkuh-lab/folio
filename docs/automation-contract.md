@@ -30,7 +30,9 @@ umbenannt werden:
   `vault:dir_changed`, `navigation:changed`, `navigation:toc_click`,
   `editor:load_text`, `editor:apply_replace`, `editor:open_find`,
   `editor:set_find_term`, `shell:command`, `panel:rail_changed`,
-  `automation:click`, `automation:key`, `automation:dom_query`,
+  `panel:split_mid_changed`, `automation:click`, `automation:rightclick`,
+  `automation:key`, `automation:dom_query`, `automation:editor_command`,
+  `automation:eval`,
   `automation:set_editor_text`, `automation:set_editor_selection`,
   `automation:open_document`, `automation:sync_render`, `cli:open`,
   `menu:*`.
@@ -38,7 +40,11 @@ umbenannt werden:
 
 Ack-fähige Automation-Pfade bestätigen über den Tauri-Command
 `automation_ack({ id })`, nachdem der Frontend-Handler seine DOM-Mutation
-abgeschlossen hat. `POST /sync/render` nutzt denselben Ack-Mechanismus
+abgeschlossen hat. Von Automation und normalen App-Pfaden gemeinsam
+genutzte Events tragen dafür nur im Automation-Fall ein optionales
+`requestId`: `app:set_theme`, `panel:rail_changed`,
+`navigation:changed`, `panel:split_mid_changed` und `vault:refresh`.
+`POST /sync/render` nutzt denselben Ack-Mechanismus
 für einen reinen Render-Roundtrip ohne DOM-Mutation: der Handler
 emittiert `automation:sync_render`, das Frontend wartet Microtask + zwei
 Frames + laufende CSS-Transitions (capped) ab und ackt dann. Die E2E-
@@ -60,7 +66,8 @@ bewusst ändern.
 Wichtige stabile Selektor-Gruppen:
 
 - Toolbar: `tb-back`, `tb-forward`, `tb-mode-view`, `tb-mode-edit`,
-  `tb-mode-split`, `tb-find`, `tb-save`, `tb-cheatsheet`, `tb-image`.
+  `tb-mode-split`, `tb-find`, `tb-save`, `tb-export`, `tb-cheatsheet`,
+  `tb-image`.
 - Layout: `view-region`, `editor-region`, `editor-mount`,
   `code-view-mount`, `html-view-frame`, `toc-region`, `vault-region`.
 - Floating UI: `find-bar`, `cheatsheet-overlay`, `context-menu`,

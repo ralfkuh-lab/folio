@@ -1,4 +1,4 @@
-use axum::extract::{Query, State as AxumState};
+use axum::extract::State as AxumState;
 use axum::Json;
 use serde::Deserialize;
 use std::sync::{Arc, Mutex};
@@ -6,6 +6,7 @@ use tauri::Manager;
 
 use crate::automation::context::AutomationContext;
 use crate::automation::error::{ApiError, ApiResult};
+use crate::automation::extract::ApiQuery;
 use crate::automation::mock::MockAutomationState;
 use crate::state::{AppState, ConsoleErrorRecord};
 
@@ -25,7 +26,7 @@ pub(in crate::automation) struct ConsoleErrorsResponse {
 
 pub(in crate::automation) async fn get_console_errors(
     AxumState(context): AxumState<AutomationContext>,
-    Query(query): Query<ConsoleErrorsQuery>,
+    ApiQuery(query): ApiQuery<ConsoleErrorsQuery>,
 ) -> ApiResult<Json<ConsoleErrorsResponse>> {
     let state = context.app_handle.state::<AppState>();
     let mut buf = state
@@ -47,7 +48,7 @@ pub(in crate::automation) async fn get_console_errors(
 /// gleicher VecDeque-Struktur fuer Tests.
 pub(in crate::automation) async fn mock_get_console_errors(
     AxumState(state): AxumState<Arc<Mutex<MockAutomationState>>>,
-    Query(query): Query<ConsoleErrorsQuery>,
+    ApiQuery(query): ApiQuery<ConsoleErrorsQuery>,
 ) -> ApiResult<Json<ConsoleErrorsResponse>> {
     let mut snapshot = state
         .lock()

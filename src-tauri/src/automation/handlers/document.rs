@@ -1,4 +1,4 @@
-use axum::extract::{rejection::JsonRejection, Json, Query, State as AxumState};
+use axum::extract::{rejection::JsonRejection, Json, State as AxumState};
 use std::fs;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
@@ -6,6 +6,7 @@ use tauri::Manager;
 use crate::automation::ack;
 use crate::automation::context::AutomationContext;
 use crate::automation::error::{json_payload, ok, ApiError, ApiResult};
+use crate::automation::extract::ApiQuery;
 use crate::automation::helpers::emit;
 use crate::automation::mock::MockAutomationState;
 use crate::automation::types::{
@@ -15,6 +16,9 @@ use crate::automation::types::{
 use crate::state::AppState;
 
 const DEFAULT_ACK_TIMEOUT_MS: u64 = 1000;
+// Dokument-Open umfasst Laden, Rendern und ggf. den Dirty-Prompt und
+// braucht deshalb mehr Zeit als eine einzelne UI-Mutation.
+const DEFAULT_OPEN_ACK_TIMEOUT_MS: u64 = 3000;
 
 pub(in crate::automation) async fn post_open(
     AxumState(context): AxumState<AutomationContext>,
@@ -59,7 +63,7 @@ pub(in crate::automation) async fn post_open(
 
 pub(in crate::automation) async fn post_open_ui(
     AxumState(context): AxumState<AutomationContext>,
-    Query(options): Query<AckOptions>,
+    ApiQuery(options): ApiQuery<AckOptions>,
     payload: Result<Json<OpenRequest>, JsonRejection>,
 ) -> ApiResult<Json<AckedResponse>> {
     let Json(payload) = json_payload(payload)?;
@@ -70,9 +74,9 @@ pub(in crate::automation) async fn post_open_ui(
         "automation:open_document",
         serde_json::json!({ "path": payload.path, "requestId": request_id }),
     )?;
-    // /open-ui braucht laenger als /click: Document-Load + Render +
-    // optionaler Dirty-Prompt. Default 3 s, per ?ackTimeoutMs= ueberschreibbar.
-    let timeout_ms = options.ack_timeout_ms.unwrap_or(3000);
+    let timeout_ms = options
+        .ack_timeout_ms
+        .unwrap_or(DEFAULT_OPEN_ACK_TIMEOUT_MS);
     let acked = ack::wait_for_ack(state.inner(), request_id, receiver, timeout_ms).await;
     Ok(Json(AckedResponse {
         ok: true,
@@ -134,7 +138,7 @@ pub(in crate::automation) async fn mock_get_editor_text(
 
 pub(in crate::automation) async fn post_editor_selection(
     AxumState(context): AxumState<AutomationContext>,
-    Query(options): Query<AckOptions>,
+    ApiQuery(options): ApiQuery<AckOptions>,
     payload: Result<Json<EditorSelectionRequest>, JsonRejection>,
 ) -> ApiResult<Json<AckedResponse>> {
     let Json(payload) = json_payload(payload)?;
@@ -181,22 +185,29 @@ pub(in crate::automation) async fn mock_post_editor_selection(
 
 pub(in crate::automation) async fn post_editor_text(
     AxumState(context): AxumState<AutomationContext>,
+    ApiQuery(options): ApiQuery<AckOptions>,
     payload: Result<Json<EditorTextRequest>, JsonRejection>,
-) -> ApiResult<Json<OkResponse>> {
+) -> ApiResult<Json<AckedResponse>> {
     let Json(payload) = json_payload(payload)?;
-    context
-        .app_handle
-        .state::<AppState>()
+    let state = context.app_handle.state::<AppState>();
+    state
         .document_store
         .lock()
         .map_err(|_| ApiError::internal("document store lock poisoned"))?
         .update_text(payload.text.clone());
+    let (request_id, receiver) = ack::register(state.inner()).map_err(ApiError::internal)?;
     emit(
         &context,
         "automation:set_editor_text",
-        serde_json::json!({ "text": payload.text }),
+        serde_json::json!({ "text": payload.text, "requestId": request_id }),
     )?;
-    ok()
+    let timeout_ms = options.ack_timeout_ms.unwrap_or(DEFAULT_ACK_TIMEOUT_MS);
+    let acked = ack::wait_for_ack(state.inner(), request_id, receiver, timeout_ms).await;
+    Ok(Json(AckedResponse {
+        ok: true,
+        acked,
+        request_id,
+    }))
 }
 
 pub(in crate::automation) async fn post_save(

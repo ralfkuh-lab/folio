@@ -100,6 +100,7 @@ pub(in crate::automation) async fn get_state(
         theme: automation.theme,
         left_rail_visible: panel.left_rail_visible,
         right_rail_visible: panel.right_rail_visible,
+        split_mid_percent: panel.split_mid_percent,
         toc,
         editor: EditorAutomationState {
             ready: automation.editor_ready,
@@ -147,6 +148,7 @@ pub(in crate::automation) async fn mock_get_state(
         theme: state.theme.clone(),
         left_rail_visible: true,
         right_rail_visible: true,
+        split_mid_percent: 50.0,
         toc,
         editor: EditorAutomationState {
             ready: state.editor_ready,

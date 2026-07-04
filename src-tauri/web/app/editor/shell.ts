@@ -63,8 +63,8 @@ export function ensureEditorMounted(initial?: string): Promise<boolean> {
     return mountInFlight;
 }
 
-export function loadEditorText(text: string, language?: string): void {
-    ensureEditorMounted(text || '').then(function (ok) {
+export function loadEditorText(text: string, language?: string): Promise<void> {
+    return ensureEditorMounted(text || '').then(function (ok) {
         if (!ok) return;
         // language unveraendert durchreichen: ohne Angabe behaelt
         // doSetText die aktuelle Model-Sprache (kein erzwungener
@@ -244,23 +244,25 @@ export function initEditorShell(d: Deps): void {
 
     // ----- app:set_theme (Theme-Switch) -----
     listen('app:set_theme', function (event: any) {
-        const data = event && event.payload;
-        let mode = (data && data.mode) || 'light';
-        const html = document.documentElement;
-        if (mode === 'toggle') {
-            mode = html.classList.contains('theme-dark') ? 'light' : 'dark';
-        }
-        html.classList.toggle('theme-dark', mode === 'dark');
-        html.classList.toggle('theme-light', mode === 'light');
-        setEditorTheme(mode);
-        // Code-Bloecke in der Markdown-Preview re-highlighten — colorize()
-        // nutzt das aktive Monaco-Theme, also muessen wir nach dem Switch
-        // einmal komplett durch (data-folio-source bewahrt den Plaintext).
-        const mdBody = document.querySelector('#view-region .markdown-body');
-        if (mdBody) highlightCodeBlocks(mdBody as HTMLElement);
-        // Theme-Submenue-Haekchen synchron halten — egal ueber welchen Pfad
-        // der Wechsel kam (Menue, Statusbar-Button, Init).
-        safeInvoke('menu_set_checked', { id: 'view.theme.light', checked: mode === 'light' }, 'menu_set_checked view.theme.light', 'debug');
-        safeInvoke('menu_set_checked', { id: 'view.theme.dark', checked: mode === 'dark' }, 'menu_set_checked view.theme.dark', 'debug');
+        const data = (event && event.payload) || {};
+        ackHandler(invoke, data, function () {
+            let mode = data.mode || 'light';
+            const html = document.documentElement;
+            if (mode === 'toggle') {
+                mode = html.classList.contains('theme-dark') ? 'light' : 'dark';
+            }
+            html.classList.toggle('theme-dark', mode === 'dark');
+            html.classList.toggle('theme-light', mode === 'light');
+            setEditorTheme(mode);
+            // Code-Bloecke in der Markdown-Preview re-highlighten — colorize()
+            // nutzt das aktive Monaco-Theme, also muessen wir nach dem Switch
+            // einmal komplett durch (data-folio-source bewahrt den Plaintext).
+            const mdBody = document.querySelector('#view-region .markdown-body');
+            if (mdBody) highlightCodeBlocks(mdBody as HTMLElement);
+            // Theme-Submenue-Haekchen synchron halten — egal ueber welchen Pfad
+            // der Wechsel kam (Menue, Statusbar-Button, Init).
+            safeInvoke('menu_set_checked', { id: 'view.theme.light', checked: mode === 'light' }, 'menu_set_checked view.theme.light', 'debug');
+            safeInvoke('menu_set_checked', { id: 'view.theme.dark', checked: mode === 'dark' }, 'menu_set_checked view.theme.dark', 'debug');
+        });
     });
 }

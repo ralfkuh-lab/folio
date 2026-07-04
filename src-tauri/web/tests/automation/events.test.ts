@@ -130,6 +130,27 @@ describe('automation/events — ackHandler', () => {
         expect(tauri.invoke).toHaveBeenCalledWith('automation_ack', { id: 13 });
     });
 
+    it('ackt automation:set_editor_text nach loadEditorText', async () => {
+        let resolveLoad: (v?: any) => void = () => {};
+        const editor = await import('../../app/editor/shell');
+        (editor.loadEditorText as any).mockImplementation(
+            () => new Promise((resolve) => { resolveLoad = resolve; }),
+        );
+        const events = await import('../../app/automation/events');
+        events.initAutomationEvents();
+
+        tauri.emitEvent('automation:set_editor_text', {
+            text: 'updated',
+            requestId: 14,
+        });
+        await flushAck();
+        expect(tauri.invoke).not.toHaveBeenCalledWith('automation_ack', { id: 14 });
+
+        resolveLoad();
+        await flushAck();
+        expect(tauri.invoke).toHaveBeenCalledWith('automation_ack', { id: 14 });
+    });
+
     it('ackt automation:open_document erst nach openDocument-Promise', async () => {
         let resolveOpen: (v?: any) => void = () => {};
         const docMod = await import('../../app/state/document');

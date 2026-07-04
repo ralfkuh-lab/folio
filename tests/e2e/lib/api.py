@@ -70,6 +70,17 @@ class AutomationApi:
     def state(self) -> dict:
         return self._request("GET", "/state")
 
+    def settings_get(self) -> dict:
+        return self._request("GET", "/settings")
+
+    def settings_set(self, partial: dict) -> dict:
+        return self._request("POST", "/settings", partial)
+
+    def split(self, percent: float, ack_timeout_ms: int = 1000) -> dict:
+        return self._request(
+            "POST", f"/split?ackTimeoutMs={ack_timeout_ms}", {"percent": percent}
+        )
+
     def screenshot(self) -> bytes:
         return self._request("GET", "/screenshot", accept_bytes=True, timeout=30.0)
 

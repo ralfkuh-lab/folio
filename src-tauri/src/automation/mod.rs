@@ -20,6 +20,7 @@ mod context;
 pub mod dom;
 mod error;
 pub mod eval;
+mod extract;
 mod handlers;
 mod helpers;
 mod middleware;

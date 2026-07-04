@@ -13,6 +13,10 @@ use tauri::{AppHandle, Emitter, State};
 
 #[tauri::command]
 pub async fn settings_get(state: State<'_, AppState>) -> Result<SettingsData, String> {
+    get_settings(state.inner())
+}
+
+pub(crate) fn get_settings(state: &AppState) -> Result<SettingsData, String> {
     Ok(state
         .settings
         .lock()
@@ -26,12 +30,19 @@ pub async fn settings_update(
     handle: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<SettingsData, String> {
+    update_settings(patch, &handle, state.inner())
+}
+
+/// Gemeinsamer Update-Pfad fuer Tauri-Command und Automation-API.
+/// Persistenz, Live-Side-Effects und Frontend-Event bleiben damit atomar
+/// an einer Stelle definiert.
+pub(crate) fn update_settings(
+    patch: SettingsPatch,
+    handle: &AppHandle,
+    state: &AppState,
+) -> Result<SettingsData, String> {
     if patch.is_empty() {
-        return state
-            .settings
-            .lock()
-            .map_err(|_| "settings lock poisoned".to_string())
-            .map(|svc| svc.data());
+        return get_settings(state);
     }
     let (data, changed) = {
         let mut svc = state
@@ -47,7 +58,7 @@ pub async fn settings_update(
     // dem Vault-State erneut registriert, damit der Re-Enable nicht
     // erst beim naechsten Expand wirksam wird.
     if changed.contains(&"vaultAutoRefresh") {
-        sync_vault_watcher(&state, data.vault_auto_refresh);
+        sync_vault_watcher(state, data.vault_auto_refresh);
     }
     if changed.contains(&"logLevel") {
         crate::logging::set_level(data.log_level);
@@ -63,7 +74,7 @@ pub async fn settings_update(
     Ok(data)
 }
 
-fn sync_vault_watcher(state: &State<'_, AppState>, enabled: bool) {
+fn sync_vault_watcher(state: &AppState, enabled: bool) {
     let expanded: Vec<String> = state
         .vault
         .lock()

@@ -129,33 +129,41 @@ if (ev && typeof ev.listen === 'function' && invoke) {
     // Payload-Felder sind camelCase (Tauri-Konvention) — sowohl aus
     // commands::nav::move_history als auch aus automation::history_move.
     ev.listen('navigation:changed', function (event: any) {
-        var data = event && event.payload;
+        var data = (event && event.payload) || {};
         if (!data || typeof data !== 'object') return;
-        var anchor = data.anchor || data.slug || '';
-        setTocActive(anchor);
-        if (data.viewMode) {
-            safeInvoke('set_view_mode', { mode: data.viewMode }, 'set_view_mode', 'warn');
-        }
-        var viewScroll = (typeof data.scrollY === 'number') ? data.scrollY : 0;
-        var editorCursor = (typeof data.editorCursor === 'number') ? data.editorCursor : 0;
-        var editorScroll = (typeof data.editorScrollY === 'number') ? data.editorScrollY : 0;
-        requestAnimationFrame(function () {
-            if (anchor) {
-                if (document.body.classList.contains('html-preview-mode')) {
-                    scrollHtmlViewToAnchor(anchor);
-                } else {
-                    scrollViewToAnchor(anchor);
+        ackHandler(invoke!, data, function () {
+            return (async function () {
+                var anchor = data.anchor || data.slug || '';
+                setTocActive(anchor);
+                if (data.viewMode) {
+                    await safeInvoke('set_view_mode', { mode: data.viewMode }, 'set_view_mode', 'warn');
                 }
-            } else {
-                scrollViewTo(viewScroll);
-            }
-            if (!window.FolioEditor) return;
-            if (typeof window.FolioEditor.setSelection === 'function') {
-                window.FolioEditor.setSelection(editorCursor, 0);
-            }
-            if (typeof window.FolioEditor.setScroll === 'function') {
-                window.FolioEditor.setScroll(editorScroll);
-            }
+                var viewScroll = (typeof data.scrollY === 'number') ? data.scrollY : 0;
+                var editorCursor = (typeof data.editorCursor === 'number') ? data.editorCursor : 0;
+                var editorScroll = (typeof data.editorScrollY === 'number') ? data.editorScrollY : 0;
+                await new Promise(function (resolve) {
+                    requestAnimationFrame(function () {
+                        if (anchor) {
+                            if (document.body.classList.contains('html-preview-mode')) {
+                                scrollHtmlViewToAnchor(anchor);
+                            } else {
+                                scrollViewToAnchor(anchor);
+                            }
+                        } else {
+                            scrollViewTo(viewScroll);
+                        }
+                        if (window.FolioEditor) {
+                            if (typeof window.FolioEditor.setSelection === 'function') {
+                                window.FolioEditor.setSelection(editorCursor, 0);
+                            }
+                            if (typeof window.FolioEditor.setScroll === 'function') {
+                                window.FolioEditor.setScroll(editorScroll);
+                            }
+                        }
+                        resolve(undefined);
+                    });
+                });
+            })();
         });
     });
 
@@ -188,16 +196,18 @@ if (ev && typeof ev.listen === 'function' && invoke) {
     // Boot-Restore) als auch nach Toolbar-Click → CSS-Klassen + Toolbar-
     // Button werden synchron gehalten.
     ev.listen('panel:rail_changed', function (event: any) {
-        var data = event && event.payload;
+        var data = (event && event.payload) || {};
         if (!data) return;
-        if (typeof data.leftRailVisible === 'boolean') {
-            setRailVisibility('left', data.leftRailVisible);
-            setRailButton('left', data.leftRailVisible);
-        }
-        if (typeof data.rightRailVisible === 'boolean') {
-            setRailVisibility('right', data.rightRailVisible);
-            setRailButton('right', data.rightRailVisible);
-        }
+        ackHandler(invoke!, data, function () {
+            if (typeof data.leftRailVisible === 'boolean') {
+                setRailVisibility('left', data.leftRailVisible);
+                setRailButton('left', data.leftRailVisible);
+            }
+            if (typeof data.rightRailVisible === 'boolean') {
+                setRailVisibility('right', data.rightRailVisible);
+                setRailButton('right', data.rightRailVisible);
+            }
+        });
     });
 
     // panel:minimap_changed analog: Automation oder Multi-Window-Sync
@@ -217,9 +227,11 @@ if (ev && typeof ev.listen === 'function' && invoke) {
     // (verspaetetes Event aus frueherem Drag darf den Live-Wert nicht
     // ueberschreiben).
     ev.listen('panel:split_mid_changed', function (event: any) {
-        var data = event && event.payload;
+        var data = (event && event.payload) || {};
         if (!data || typeof data.percent !== 'number') return;
-        applySplitMidFromBackend(data.percent);
+        ackHandler(invoke!, data, function () {
+            applySplitMidFromBackend(data.percent);
+        });
     });
 
     // CLI/External-Open: argv-Pfad beim Boot + cli:open bei

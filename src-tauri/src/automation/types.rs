@@ -10,6 +10,7 @@ pub(super) struct AutomationState {
     pub(super) theme: String,
     pub(super) left_rail_visible: bool,
     pub(super) right_rail_visible: bool,
+    pub(super) split_mid_percent: f64,
     pub(super) toc: Vec<TocEntry>,
     pub(super) editor: EditorAutomationState,
     pub(super) view: ViewAutomationState,
@@ -78,6 +79,20 @@ pub(super) struct AckedResponse {
     pub(super) ok: bool,
     pub(super) acked: bool,
     pub(super) request_id: u64,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct SplitRequest {
+    pub(super) percent: f64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct SplitResponse {
+    pub(super) ok: bool,
+    pub(super) acked: bool,
+    pub(super) request_id: u64,
+    pub(super) percent: f64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -247,6 +262,8 @@ pub(super) struct WorkspaceUnpinRequest {
 pub(super) struct HistoryMoveResponse {
     pub(super) ok: bool,
     pub(super) moved: bool,
+    pub(super) acked: bool,
+    pub(super) request_id: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) entry: Option<HistoryEntryResponse>,
 }
@@ -312,6 +329,8 @@ mod phase0_request_tests {
         let resp = HistoryMoveResponse {
             ok: true,
             moved: true,
+            acked: true,
+            request_id: Some(42),
             entry: Some(HistoryEntryResponse {
                 path: "/p.md".into(),
                 anchor: Some("h2".into()),
@@ -324,6 +343,8 @@ mod phase0_request_tests {
         let json = serde_json::to_value(&resp).unwrap();
         assert_eq!(true, json["ok"]);
         assert_eq!(true, json["moved"]);
+        assert_eq!(true, json["acked"]);
+        assert_eq!(42, json["requestId"]);
         assert_eq!("/p.md", json["entry"]["path"]);
         assert_eq!("h2", json["entry"]["anchor"]);
         assert_eq!(1.0, json["entry"]["scrollY"]);
@@ -337,9 +358,71 @@ mod phase0_request_tests {
         let resp = HistoryMoveResponse {
             ok: true,
             moved: false,
+            acked: false,
+            request_id: None,
             entry: None,
         };
         let json = serde_json::to_value(&resp).unwrap();
         assert!(json.get("entry").is_none(), "entry should be skipped");
+        assert_eq!(false, json["acked"]);
+        assert!(json["requestId"].is_null());
+    }
+
+    #[test]
+    fn split_request_deserializes_percent() {
+        let req: SplitRequest = serde_json::from_str(r#"{"percent":65.5}"#).unwrap();
+        assert_eq!(65.5, req.percent);
+    }
+
+    #[test]
+    fn split_response_serializes_ack_and_clamped_percent() {
+        let resp = SplitResponse {
+            ok: true,
+            acked: true,
+            request_id: 7,
+            percent: 80.0,
+        };
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(true, json["ok"]);
+        assert_eq!(true, json["acked"]);
+        assert_eq!(7, json["requestId"]);
+        assert_eq!(80.0, json["percent"]);
+    }
+
+    #[test]
+    fn automation_state_serializes_split_mid_percent_camel_case() {
+        let state = AutomationState {
+            title: "Folio".into(),
+            file: None,
+            dirty: false,
+            view_mode: "split".into(),
+            theme: "light".into(),
+            left_rail_visible: true,
+            right_rail_visible: true,
+            split_mid_percent: 65.0,
+            toc: Vec::new(),
+            editor: EditorAutomationState {
+                ready: false,
+                selection_start: 0,
+                selection_length: 0,
+                left_rail_width: 280.0,
+                right_rail_width: 280.0,
+                scroll_y: 0.0,
+                cursor_offset: 0,
+            },
+            view: ViewAutomationState {
+                scroll_y: 0.0,
+                anchor: None,
+            },
+            workspace: WorkspaceAutomationState {
+                pinned: Vec::new(),
+                recent: Vec::new(),
+                expanded_dirs: Vec::new(),
+            },
+            console_error_count: 0,
+        };
+        let json = serde_json::to_value(&state).unwrap();
+        assert_eq!(65.0, json["splitMidPercent"]);
+        assert!(json.get("split_mid_percent").is_none());
     }
 }

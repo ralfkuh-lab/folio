@@ -389,13 +389,15 @@ export function initAutomationEvents(): void {
     });
     ev.listen('automation:set_editor_text', function (event: any) {
         var data = event && event.payload || {};
-        var text = data.text || '';
-        loadEditorText(text);
-        updateWordCount(text);
-        // currentPath/cleanText leben seit Phase-4-Extract in state/document.ts;
-        // hier nicht mehr im Scope. Ueber die Getter holen, sonst
-        // ReferenceError beim ersten automation:set_editor_text.
-        if (getCurrentPath()) markDirty(text !== getCleanText());
+        ackHandler(invoke, data, async function () {
+            var text = data.text || '';
+            await loadEditorText(text);
+            updateWordCount(text);
+            // currentPath/cleanText leben seit Phase-4-Extract in state/document.ts;
+            // hier nicht mehr im Scope. Ueber die Getter holen, sonst
+            // ReferenceError beim ersten automation:set_editor_text.
+            if (getCurrentPath()) markDirty(text !== getCleanText());
+        });
     });
     ev.listen('automation:set_editor_selection', function (event: any) {
         var data = (event && event.payload) || {};

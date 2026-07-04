@@ -21,7 +21,7 @@ Plattformübergreifender Markdown-Viewer und -Editor auf **Tauri 2 + Rust**.
 - **Toggle-Bare Editor-Minimap** (Monaco-Übersicht am rechten Editor-Rand),
   persistiert pro App-Profil
 - **Automatisierungs-API** für E2E-Tests (HTTP auf `127.0.0.1:9876`)
-- **E2E-Test-Suite** mit 22 Szenarien, visueller Regression und auto-
+- **E2E-Test-Suite** mit 23 Szenarien, visueller Regression und auto-
   rotiertem Baseline-Mechanismus — siehe Abschnitt *Tests*
 - **Cross-Platform** dank Tauri 2 (WebView2 / WebKitGTK)
 
@@ -57,7 +57,7 @@ folio/
 │   │                            #    editor.bundle.js, monaco/)
 │   ├── Cargo.toml
 │   └── tauri.conf.json
-├── tests/e2e/                   # Python + Pillow E2E-Suite (22 Szenarien)
+├── tests/e2e/                   # Python + Pillow E2E-Suite (23 Szenarien)
 ├── docs/                        # E2E, Automation-Vertrag, Release,
 │                                #   Headless-Caveats, Linux-MD-Icon
 ├── scripts/                     # Linux-Helper (Icon-Install, run-e2e.sh)
@@ -208,12 +208,14 @@ werden gegen Allowlists geprüft (Details:
 | `/screenshot` | GET | PNG-Screenshot (Monitor-Capture für Monaco-Canvas) |
 | `/dom` | GET | DOM-Snapshot zu CSS-Selektor (exists, attrs, innerHTML) |
 | `/console/errors` | GET | Per Frontend-Hook gesammelte Console-Errors |
+| `/settings` | GET / POST | App-Settings vollständig lesen / partiell aktualisieren |
 | `/editor/text` | GET / POST | Editor-Inhalt lesen / setzen |
 | `/open` | POST | Datei öffnen (Backend-Pfad) |
 | `/open-ui` | POST | Datei via UI-Flow öffnen (Dirty-Check etc.) |
 | `/mode` | POST | ViewMode setzen (view / edit / split, mit Ack) |
 | `/theme` | POST | Theme setzen (light / dark / toggle) |
 | `/rail` | POST | Rail-Sichtbarkeit (left / right) |
+| `/split` | POST | Split-Teiler setzen (20–80 %, mit Ack) |
 | `/click` | POST | Element klicken (ID, `data-name`, CSS-Selector, mit Ack) |
 | `/rightclick` | POST | Rechtsklick mit optionalen Koords |
 | `/key` | POST | Synthetischer KeyboardEvent (target document/editor, mit Ack) |
@@ -225,6 +227,7 @@ werden gegen Allowlists geprüft (Details:
 | `/history/back` / `/history/forward` | POST | Navigation, am Stack-Edge moved:false |
 | `/find` / `/find/text` | POST | Find-Bar öffnen / Suchbegriff setzen (auto-open) |
 | `/eval` | POST | JS im WebView ausführen, Ergebnis zurückliefern |
+| `/sync/render` | POST | Render-Roundtrip vor Screenshots (mit Ack) |
 | `/focus` | POST | Fenster fokussieren |
 | `/resize` | POST | Fenstergröße ändern |
 | `/save` | POST | Speichern (DocumentStore-Roundtrip mit Encoding-Treue) |

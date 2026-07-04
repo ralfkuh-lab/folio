@@ -106,6 +106,10 @@ sonst lehnt Tauri den Build ab.
   CancellationToken ab; die resultierende Rejection ist erwartet und
   harmlos, würde aber sonst als False-Positive im Puffer landen
   (`preventDefault()` unterdrückt zusätzlich die DevTools-Warnung).
+  `GET/POST /settings` lesen bzw. patchen die App-Settings über denselben
+  Service- und Side-Effect-Pfad wie die Tauri-Commands; `POST /split`
+  setzt den persistierten Split-Teiler. Geteilte Backend-Events erhalten
+  nur für Automation ein optionales `requestId` und acken nach Anwendung.
 - **assetProtocol-Scope `["**"]`** (tauri.conf.json): bewusste
   Entscheidung — der Image-View rendert Bilder von beliebigen Pfaden via
   `convertFileSrc`, ein engerer Scope würde jeden Ordner außerhalb einer
@@ -391,7 +395,7 @@ sonst lehnt Tauri den Build ab.
 
 ## E2E-Test-Suite
 
-Vollständige UI-Coverage in `tests/e2e/` (22 Szenarien, Python +
+Vollständige UI-Coverage in `tests/e2e/` (23 Szenarien, Python +
 Pillow): Boot, View-/Edit-/Split-Mode, Theme, Vault, Find, Workspace,
 Save-Roundtrip durch alle BOM/EOL-Kombis, Undo/Redo, Toolbar-Commands
 (Bold/Italic/Heading), Menü-Coverage (File/Edit/View/Help), DOM-

@@ -246,8 +246,10 @@ function renderVault(html: string): void {
     reapplyActiveMarker();
 }
 
-export function refreshVault(): void {
-    invoke('vault_build_tree').then(renderVault).catch(function (err) {
+export function refreshVault(): Promise<void> {
+    return invoke('vault_build_tree').then(function (html) {
+        renderVault(html);
+    }).catch(function (err) {
         folioLog.warn('vault', 'vault_build_tree failed', { error: String(err) });
     });
 }
@@ -532,7 +534,12 @@ export function initVaultTree(d: Deps): void {
         const data = (event && event.payload) || {};
         if (data.pinned) setVaultPinned(data.pinned);
         if (data.recent) setVaultRecent(data.recent);
-        refreshVault();
+        refreshVault().then(function () {
+            if (typeof data.requestId !== 'number') return;
+            requestAnimationFrame(function () {
+                invoke('automation_ack', { id: data.requestId }).catch(function () {});
+            });
+        });
     });
 
     // vault:dir_changed feuert aus dem VaultWatcher (Backend) bei

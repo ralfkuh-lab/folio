@@ -127,12 +127,13 @@ export DISPLAY="${DISPLAY_ARG}"
 export WEBKIT_DISABLE_COMPOSITING_MODE=1
 export WEBKIT_DISABLE_DMABUF_RENDERER=1
 
-# 3) Folio-Release-Binary sicherstellen
+# 3) Folio-Release-Binary sicherstellen. Immer bauen, nicht nur bei
+# fehlendem Binary: cargo ist inkrementell (Sekunden, wenn aktuell),
+# und ein stales Release-Binary testet sonst stillschweigend alten
+# Code (passiert real: neue API-Endpoints -> 404 im frischen Szenario).
 BIN="src-tauri/target/release/folio"
-if [[ ! -x "$BIN" ]]; then
-    log "Release-Binary fehlt — baue mit 'cargo build --release' ..."
-    (cd src-tauri && cargo build --release)
-fi
+log "stelle aktuelles Release-Binary sicher (cargo build --release) ..."
+(cd src-tauri && cargo build --release)
 if [[ ! -x "$BIN" ]]; then
     log "Build fehlgeschlagen — kein ausfuehrbares ${BIN}"
     exit 1

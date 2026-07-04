@@ -1,10 +1,11 @@
-use axum::extract::{Query, State as AxumState};
+use axum::extract::State as AxumState;
 use axum::Json;
 use tauri::Manager;
 
 use crate::automation::context::AutomationContext;
 use crate::automation::dom::{self, DomSnapshot};
 use crate::automation::error::{ApiError, ApiResult};
+use crate::automation::extract::ApiQuery;
 use crate::automation::helpers::emit;
 use crate::automation::types::{DomQuery, DomResponse};
 use crate::state::AppState;
@@ -13,7 +14,7 @@ const DEFAULT_DOM_TIMEOUT_MS: u64 = 1000;
 
 pub(in crate::automation) async fn get_dom(
     AxumState(context): AxumState<AutomationContext>,
-    Query(query): Query<DomQuery>,
+    ApiQuery(query): ApiQuery<DomQuery>,
 ) -> ApiResult<Json<DomResponse>> {
     if query.selector.is_empty() {
         return Err(ApiError::bad_request("selector must not be empty"));

@@ -33,6 +33,7 @@ async fn get_state_returns_expected_json_shape() {
     assert_eq!("Folio", response.json["title"]);
     assert_eq!(false, response.json["dirty"]);
     assert_eq!("view", response.json["viewMode"]);
+    assert_eq!(50.0, response.json["splitMidPercent"]);
     assert_eq!(true, response.json["editor"]["ready"]);
     assert_eq!(2, response.json["editor"]["selectionStart"]);
     assert_eq!(120.0, response.json["editor"]["scrollY"]);
@@ -533,6 +534,22 @@ async fn get_console_errors_returns_buffer_and_clears() {
     assert_eq!("at foo", response.json["errors"][0]["stack"]);
     // Nach clear=true ist der Buffer leer.
     assert!(state.lock().unwrap().console_errors.is_empty());
+}
+
+#[tokio::test]
+async fn malformed_query_uses_json_error_shape() {
+    let state = Arc::new(Mutex::new(MockAutomationState::default()));
+    let response = request(
+        build_mock_router(state),
+        "GET",
+        "/console/errors?clear=not-a-bool",
+        None,
+        loopback(),
+    )
+    .await;
+
+    assert_eq!(StatusCode::BAD_REQUEST, response.status);
+    assert!(response.json["error"].is_string());
 }
 
 #[tokio::test]
