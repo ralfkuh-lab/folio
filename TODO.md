@@ -57,31 +57,14 @@
     `Terminal.app`); **Theme-Reihe als Aggregations-UI** (Persistenz
     bleibt in `theme.rs`/`theme_get`/`theme_set`).
 
-- **KI-Funktionen** (User-Wunsch 2026-07-04, konkretisiert):
-  - **KI-Config nach Vorbild `~/dev/youtube-summarizer`** (gleicher
-    Stack: Tauri 2 + Rust + framework-loses TS). Dessen
-    `src-tauri/src/ai_config/`-Modul (`types.rs` Datenstrukturen,
-    `store.rs` Provider-Verwaltung/Key-Sync, `client.rs`
-    OpenAI-kompatible API-Clients + Modell-Fetch) ist weitgehend
-    projektunabhängig; projektspezifisch sind nur Persistenz-Anbindung
-    (`AppPaths`/`load_config`/`save_config`) und die Settings-UI.
-  - **Modularisierung**: Empfehlung — das Rust-Modul als eigenes
-    kleines Crate herauslösen (eigenes Repo, Einbindung per
-    git/path-Dependency), dabei Persistenz über ein Trait/Callback
-    entkoppeln und die projektspezifische `summarize`-Methode durch
-    einen generischen Prompt-Payload ersetzen. UI bleibt pro App
-    (framework-loses DOM-UI lässt sich nicht sinnvoll als Paket
-    kapseln). Die TS-Typen aus `ai-config.ts` mitkopieren. Erst beim
-    Einbau in folio extrahieren — vorher lohnt der Overhead nicht.
-    Randnotiz aus der Analyse: API-Keys liegen dort im Klartext in
-    `config.json`; für folio `keyring`-Crate (System-Schlüsselbund)
-    prüfen.
-  - **Erstes Feature: Übersetzung** — offenes .md-Dokument per Klick
-    in mehrere Sprachen übersetzen (Zielsprachen-Auswahl, Ergebnis
-    als neue Datei `<name>.<lang>.md` daneben o. ä.).
-  - Weitere Ideen (unpriorisiert): Zusammenfassung, Rechtschreib-/
-    Grammatik-Check, Markdown-Reformatierung, Linkvorschläge im
-    Vault, TOC/Heading-Vorschläge, Cheat-Sheet-„Frag mich"-Modus.
+- **KI-Integration** (Spec beschlossen 2026-07-04, siehe
+  [`docs/spec-ki-tab.md`](docs/spec-ki-tab.md) — dort Architektur-
+  Entscheidungen und Etappen-Checkliste K1–K3): opencode-Muster
+  (models.dev-Katalog, auth.json 0600, Custom-Provider,
+  Modell-Toggles), KEIN geteiltes Crate mit dem youtube-summarizer
+  (nur Client-Vorlage). Erste Funktion: Dokument-Übersetzung.
+  Implementierung ab Folgesession.
+
 - **Tabs — Folgepunkte** (Kernfeature 2026-07-04 komplett, siehe
   [`docs/spec-multi-tabs.md`](docs/spec-multi-tabs.md)): Tab-Drag-
   Reorder (Pointer-Muster aus `vault/tree.ts` als Vorlage); optional
