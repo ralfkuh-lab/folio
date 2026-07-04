@@ -10,6 +10,12 @@ repository = "https://github.com/ralfkuh-lab/folio"
 [dependencies]
 # Phase 1: Markdown-Pipeline
 comrak = { version = "0.35", default-features = false, features = ["shortcodes"] }
+# comrak 0.35 koppelt sein optionales `syntect`-Feature auf nativen Targets
+# fest an `regex-onig`. Deshalb nutzen wir dessen oeffentlichen
+# SyntaxHighlighterAdapter-Slot mit syntect direkt. `default-fancy` liefert
+# Default-Syntaxen/-Themes und HTML-Ausgabe ueber das pure-Rust-Backend
+# fancy-regex, ohne Oniguruma/C-Toolchain.
+syntect = { version = "5.3", default-features = false, features = ["default-fancy"] }
 regex = "1.11"
 # YAML 1.2 fuer Frontmatter-Anzeige. Wird ausschliesslich im Display-Pfad
 # benutzt; die Delimiter-Detektion bleibt eigen, damit ein Parse-Fehler

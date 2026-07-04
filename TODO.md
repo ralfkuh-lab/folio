@@ -43,13 +43,10 @@
     (`pushUndoStop` in `editor/text.ts:187,193`) ist erledigt; beim
     nächsten Windows-E2E-Run (`09_undo_redo`) nur noch validieren.
 
-- **Settings-Ausbau — Restetappen Theme-System** (User-Wunsch
-  2026-07-04; Tab-Control und die Etappen 3a „View-Theme-Auswahl mit
-  Light/Dark", 3b „Custom-Themes", 3c „Theme-Favoriten" sind erledigt):
-  - **3d — Code-Highlighting im Export** (statisch via syntect o. ä.,
-    Light/Dark passend zum Theme; View bleibt bei Monaco).
-  - Später/mit abgedeckt: Fonts als Theme-Bestandteile (Body-Font,
-    Mono-Font, Schriftgröße).
+- **Settings-Ausbau — Reste** (das Theme-System ist komplett: Tab-
+  Control + Etappen 3a View-Theme-Auswahl, 3b Custom-Themes, 3c
+  Favoriten, 3d Export-Code-Highlighting via syntect):
+  - Fonts als Theme-Bestandteile (Body-Font, Mono-Font, Schriftgröße).
   - **Tab „KI"** — Setup für KI-Funktionen (Provider, API-Keys,
     Modell), siehe KI-Eintrag unten.
   - Kleinere offene Ausbaustufen aus dem alten Settings-Eintrag:

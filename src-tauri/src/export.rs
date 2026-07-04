@@ -30,6 +30,13 @@ const BASE_CSS: &str = include_str!("layouts/base.css");
 const DEFAULT_PAGE_CSS: &str = "html, body { background: #fff; }\nbody { margin: 0; }";
 const BUILTIN_IDS: &[&str] = &["standard", "classic", "clean", "github"];
 
+#[derive(Debug, Default, PartialEq, Eq)]
+struct ThemeMetadata {
+    name: Option<String>,
+    description: Option<String>,
+    code_dark: bool,
+}
+
 fn builtin_layouts() -> Vec<LayoutInfo> {
     vec![
         LayoutInfo {
@@ -169,11 +176,13 @@ fn custom_themes_in(dir: &Path) -> Vec<LayoutInfo> {
                 continue;
             }
         };
-        let (name, description) = parse_theme_metadata(&css);
+        let metadata = parse_theme_metadata(&css);
         themes.push(LayoutInfo {
             id: id.to_string(),
-            name: name.unwrap_or_else(|| id.to_string()),
-            description: description.unwrap_or_else(|| "Eigenes Theme".to_string()),
+            name: metadata.name.unwrap_or_else(|| id.to_string()),
+            description: metadata
+                .description
+                .unwrap_or_else(|| "Eigenes Theme".to_string()),
             has_dark: dir.join(format!("{id}.dark.css")).is_file(),
             custom: true,
         });
@@ -182,9 +191,8 @@ fn custom_themes_in(dir: &Path) -> Vec<LayoutInfo> {
     themes
 }
 
-fn parse_theme_metadata(css: &str) -> (Option<String>, Option<String>) {
-    let mut name = None;
-    let mut description = None;
+fn parse_theme_metadata(css: &str) -> ThemeMetadata {
+    let mut metadata = ThemeMetadata::default();
     for line in css.lines().take(10) {
         let line = line.trim();
         let Some(comment) = line
@@ -196,17 +204,28 @@ fn parse_theme_metadata(css: &str) -> (Option<String>, Option<String>) {
         let Some((key, value)) = comment.trim().split_once(':') else {
             continue;
         };
+        let key = key.trim();
         let value = value.trim();
-        if value.is_empty() {
-            continue;
-        }
-        if key.trim().eq_ignore_ascii_case("name") {
-            name = Some(value.to_string());
-        } else if key.trim().eq_ignore_ascii_case("description") {
-            description = Some(value.to_string());
+        if key.eq_ignore_ascii_case("name") && !value.is_empty() {
+            metadata.name = Some(value.to_string());
+        } else if key.eq_ignore_ascii_case("description") && !value.is_empty() {
+            metadata.description = Some(value.to_string());
+        } else if key.eq_ignore_ascii_case("code") {
+            metadata.code_dark = match value.to_ascii_lowercase().as_str() {
+                "dark" => true,
+                "light" => false,
+                _ => {
+                    tracing::warn!(
+                        target: "folio::settings",
+                        value,
+                        "Unbekannter code-Metadatenwert im Custom-Theme; Light wird verwendet"
+                    );
+                    false
+                }
+            };
         }
     }
-    (name, description)
+    metadata
 }
 
 fn valid_theme_id(id: &str) -> bool {
@@ -309,6 +328,18 @@ fn theme_path(dir: &Path, id: &str, suffix: &str) -> Option<PathBuf> {
     valid_theme_id(id).then(|| dir.join(format!("{id}{suffix}")))
 }
 
+fn layout_code_dark_in(id: &str, dir: &Path) -> bool {
+    if !valid_theme_id(id) || BUILTIN_IDS.contains(&id) || !is_custom_theme_in(id, dir) {
+        return false;
+    }
+    let Some(path) = theme_path(dir, id, ".css") else {
+        return false;
+    };
+    read_custom_css(&path, id)
+        .map(|css| parse_theme_metadata(&css).code_dark)
+        .unwrap_or(false)
+}
+
 fn page_css_in(id: &str, dir: &Path) -> Option<Cow<'static, str>> {
     if !valid_theme_id(id) {
         return None;
@@ -356,7 +387,10 @@ fn render_document_in(
     let page_css =
         page_css_in(layout_id, dir).ok_or_else(|| format!("Unbekanntes Layout: '{layout_id}'"))?;
     let css = format!("{page_css}\n{content_css}");
-    let body = strip_scroll_sync_attrs(&renderer::render_body(markdown));
+    let body = strip_scroll_sync_attrs(&renderer::render_body_highlighted(
+        markdown,
+        layout_code_dark_in(layout_id, dir),
+    ));
     Ok(wrap_html(title, &css, &body))
 }
 
@@ -478,6 +512,17 @@ mod tests {
     }
 
     #[test]
+    fn render_document_highlights_builtin_code_and_strips_scroll_sync_attributes() {
+        let html =
+            render_document("github", "Code", "```rust\nfn main() {}\n```\n\nDanach").unwrap();
+        assert!(html.contains(r#"class="language-rust""#), "{html}");
+        assert!(html.contains(r#"<span style="#), "{html}");
+        assert!(html.contains("#a71d5d"), "{html}");
+        assert!(!html.contains("data-sourcepos"), "{html}");
+        assert!(!html.contains("data-line"), "{html}");
+    }
+
+    #[test]
     fn render_document_each_layout_loads_distinct_css() {
         let classic = render_document("classic", "T", "x").unwrap();
         let clean = render_document("clean", "T", "x").unwrap();
@@ -581,6 +626,14 @@ mod tests {
     }
 
     #[test]
+    fn custom_theme_code_metadata_handles_light_dark_and_unknown_values() {
+        assert!(!parse_theme_metadata("/* code: light */").code_dark);
+        assert!(parse_theme_metadata("/* CODE: DARK */").code_dark);
+        assert!(!parse_theme_metadata("/* code: sepia */").code_dark);
+        assert!(!parse_theme_metadata(".markdown-body {}").code_dark);
+    }
+
+    #[test]
     fn custom_theme_collisions_and_variant_files_are_not_listed() {
         let temp = tempfile::tempdir().unwrap();
         fs::write(temp.path().join("clean.css"), ".markdown-body {}").unwrap();
@@ -645,5 +698,29 @@ mod tests {
         let html = render_document_in("mine", "Custom", "# Hallo", temp.path()).unwrap();
         assert!(html.contains("background: papayawhip"));
         assert!(!html.contains(DEFAULT_PAGE_CSS));
+    }
+
+    #[test]
+    fn custom_render_selects_code_palette_from_metadata() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::write(
+            temp.path().join("dark-code.css"),
+            "/* code: dark */\n.markdown-body { color: white; }",
+        )
+        .unwrap();
+        fs::write(
+            temp.path().join("light-code.css"),
+            ".markdown-body { color: black; }",
+        )
+        .unwrap();
+        let markdown = "```rust\nfn main() {}\n```";
+
+        let dark = render_document_in("dark-code", "Dark", markdown, temp.path()).unwrap();
+        assert!(dark.contains("#b48ead"), "{dark}");
+        assert!(!dark.contains("#a71d5d"), "{dark}");
+
+        let light = render_document_in("light-code", "Light", markdown, temp.path()).unwrap();
+        assert!(light.contains("#a71d5d"), "{light}");
+        assert!(!light.contains("#b48ead"), "{light}");
     }
 }

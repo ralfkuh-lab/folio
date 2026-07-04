@@ -218,6 +218,8 @@ sonst lehnt Tauri den Build ab.
   verwendet der Export einen weissen, randlosen Seitenrahmen. In den
   ersten zehn Zeilen der Hauptdatei koennen `/* name: ... */` und
   `/* description: ... */` (Schluessel case-insensitive) stehen.
+  `/* code: dark */` waehlt fuer den Export die dunkle syntect-Palette;
+  `light` bzw. ein fehlender/ungueltiger Wert verwenden die helle Palette.
   Built-in-IDs gewinnen bei Kollisionen; ungueltige/verschwundene IDs
   folgen dem bestehenden Unknown-ID-/`standard`-Fallback. Die Theme-Liste
   und CSS-Dateien werden bei jedem Aufruf neu gelesen; es gibt in dieser
@@ -226,6 +228,11 @@ sonst lehnt Tauri den Build ab.
   Export-Dialog vor den weiteren Layouts angezeigt; `standard` ist kein
   Export-Layout und daher nicht favorisierbar. Verschwundene Custom-Theme-IDs
   bleiben beim Laden erhalten, werden in der UI aber ausgeblendet.
+  HTML- und PDF-Export rendern Code-Fences backendseitig mit syntect und
+  selbstenthaltenen Inline-Styles (`InspiredGitHub`, bei `code: dark`
+  `base16-ocean.dark`). Die App-View bleibt davon getrennt und nutzt weiter
+  `view/code-highlight.ts`/Monaco; `render_body` bleibt ohne Backend-
+  Highlighting.
 - **Image-View** (`view/image.ts`, Surface `#image-view-mount` in
   `dist/index.html`): `FileKind::Image` (png/jpg/jpeg/gif/webp/svg/
   bmp/ico/avif) wird read-only über `<img src={convertFileSrc(path)}>`

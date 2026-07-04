@@ -1,6 +1,6 @@
 use crate::{frontmatter, heading_anchor};
 use comrak::{
-    adapters::{HeadingAdapter, HeadingMeta},
+    adapters::{HeadingAdapter, HeadingMeta, SyntaxHighlighterAdapter},
     format_html_with_plugins,
     nodes::{AstNode, NodeValue, Sourcepos},
     parse_document, Arena, Options, Plugins,
@@ -11,8 +11,26 @@ use std::{
     io::{self, Write},
     sync::{Mutex, OnceLock},
 };
+use syntect::{
+    easy::HighlightLines,
+    highlighting::{Color, ThemeSet},
+    html::{append_highlighted_html_for_styled_line, IncludeBackground},
+    parsing::SyntaxSet,
+    util::LinesWithEndings,
+};
 
 pub fn render_body(markdown: &str) -> String {
+    render_body_with_highlighter(markdown, None)
+}
+
+pub fn render_body_highlighted(markdown: &str, dark: bool) -> String {
+    render_body_with_highlighter(markdown, Some(syntect_adapter(dark)))
+}
+
+fn render_body_with_highlighter(
+    markdown: &str,
+    syntax_highlighter: Option<&dyn SyntaxHighlighterAdapter>,
+) -> String {
     let frontmatter = frontmatter::extract(markdown);
     let preprocessed = heading_anchor::convert_inline_anchors_in_headings(&frontmatter.body);
 
@@ -24,6 +42,7 @@ pub fn render_body(markdown: &str) -> String {
     let heading_adapter = FolioHeadingAdapter::new(heading_ids);
     let mut plugins = Plugins::default();
     plugins.render.heading_adapter = Some(&heading_adapter);
+    plugins.render.codefence_syntax_highlighter = syntax_highlighter;
 
     let mut body_html = Vec::new();
     format_html_with_plugins(root, &options, &mut body_html, &plugins)
@@ -39,6 +58,132 @@ pub fn render_body(markdown: &str) -> String {
         html.push('\n');
     }
     html
+}
+
+fn syntect_adapter(dark: bool) -> &'static FolioSyntectAdapter {
+    static LIGHT: OnceLock<FolioSyntectAdapter> = OnceLock::new();
+    static DARK: OnceLock<FolioSyntectAdapter> = OnceLock::new();
+
+    if dark {
+        DARK.get_or_init(|| FolioSyntectAdapter::new("base16-ocean.dark"))
+    } else {
+        LIGHT.get_or_init(|| FolioSyntectAdapter::new("InspiredGitHub"))
+    }
+}
+
+/// Entspricht comraks `SyntectAdapter` fuer Inline-Styles, verwendet aber
+/// syntects pure-Rust-Regex-Backend. comrak 0.35 aktiviert fuer seinen
+/// eingebauten Adapter auf nativen Targets sonst zwingend `regex-onig`.
+#[derive(Debug)]
+struct FolioSyntectAdapter {
+    theme: &'static str,
+    syntax_set: SyntaxSet,
+    theme_set: ThemeSet,
+}
+
+impl FolioSyntectAdapter {
+    fn new(theme: &'static str) -> Self {
+        Self {
+            theme,
+            syntax_set: SyntaxSet::load_defaults_newlines(),
+            theme_set: ThemeSet::load_defaults(),
+        }
+    }
+
+    fn theme(&self) -> &syntect::highlighting::Theme {
+        &self.theme_set.themes[self.theme]
+    }
+}
+
+impl SyntaxHighlighterAdapter for FolioSyntectAdapter {
+    fn write_highlighted(
+        &self,
+        output: &mut dyn Write,
+        lang: Option<&str>,
+        code: &str,
+    ) -> io::Result<()> {
+        let lang = lang.filter(|lang| !lang.is_empty()).unwrap_or("Plain Text");
+        let syntax = self
+            .syntax_set
+            .find_syntax_by_token(lang)
+            .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text());
+        if syntax.name == "Plain Text" {
+            return write_html_escaped(output, code);
+        }
+
+        let mut highlighter = HighlightLines::new(syntax, self.theme());
+        let background = self.theme().settings.background.unwrap_or(Color::WHITE);
+        let mut highlighted = String::new();
+        for line in LinesWithEndings::from(code) {
+            let regions = match highlighter.highlight_line(line, &self.syntax_set) {
+                Ok(regions) => regions,
+                Err(_) => return write_html_escaped(output, code),
+            };
+            if append_highlighted_html_for_styled_line(
+                &regions,
+                IncludeBackground::IfDifferent(background),
+                &mut highlighted,
+            )
+            .is_err()
+            {
+                return write_html_escaped(output, code);
+            }
+        }
+        output.write_all(highlighted.as_bytes())
+    }
+
+    fn write_pre_tag(
+        &self,
+        output: &mut dyn Write,
+        mut attributes: HashMap<String, String>,
+    ) -> io::Result<()> {
+        let background = self.theme().settings.background.unwrap_or(Color::WHITE);
+        let style = format!(
+            "background-color:#{:02x}{:02x}{:02x};",
+            background.r, background.g, background.b
+        );
+        attributes
+            .entry("style".to_string())
+            .and_modify(|existing| existing.insert_str(0, &style))
+            .or_insert(style);
+        write_opening_tag(output, "pre", &attributes)
+    }
+
+    fn write_code_tag(
+        &self,
+        output: &mut dyn Write,
+        attributes: HashMap<String, String>,
+    ) -> io::Result<()> {
+        write_opening_tag(output, "code", &attributes)
+    }
+}
+
+fn write_opening_tag(
+    output: &mut dyn Write,
+    name: &str,
+    attributes: &HashMap<String, String>,
+) -> io::Result<()> {
+    write!(output, "<{name}")?;
+    for (key, value) in attributes {
+        write!(output, " {key}=\"")?;
+        escape_html_attribute(output, value)?;
+        write!(output, "\"")?;
+    }
+    write!(output, ">")
+}
+
+fn write_html_escaped(output: &mut dyn Write, value: &str) -> io::Result<()> {
+    for ch in value.chars() {
+        match ch {
+            '&' => output.write_all(b"&amp;")?,
+            '<' => output.write_all(b"&lt;")?,
+            '>' => output.write_all(b"&gt;")?,
+            '"' => output.write_all(b"&quot;")?,
+            '\'' => output.write_all(b"&#39;")?,
+            _ => write!(output, "{ch}")?,
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn markdown_options() -> Options<'static> {
@@ -396,6 +541,31 @@ fn escape_html_attribute(output: &mut dyn Write, value: &str) -> io::Result<()> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const RUST_FENCE: &str = "```rust\nfn main() {}\n```";
+
+    #[test]
+    fn highlighted_body_colours_rust_but_view_body_does_not() {
+        let export = render_body_highlighted(RUST_FENCE, false);
+        assert!(export.contains(r#"<span style="#), "{export}");
+        assert!(export.contains(r#"class="language-rust""#), "{export}");
+
+        let view = render_body(RUST_FENCE);
+        assert!(!view.contains(r#"<span style="#), "{view}");
+        assert!(view.contains(r#"class="language-rust""#), "{view}");
+    }
+
+    #[test]
+    fn highlighted_body_handles_plain_and_unknown_fences_without_colour() {
+        for markdown in [
+            "```\neinfacher Text\n```",
+            "```text\neinfacher Text\n```",
+            "```definitely-unknown\neinfacher Text\n```",
+        ] {
+            let html = render_body_highlighted(markdown, false);
+            assert!(!html.contains(r#"<span style="#), "{html}");
+        }
+    }
 
     #[test]
     fn test_simple_heading() {
