@@ -78,21 +78,25 @@ UI-/Verhaltensänderung. Abnahme: komplette E2E-Suite unverändert grün.
 - [x] `cargo test`/`clippy`/`fmt` grün; keine Frontend-Änderung.
 - [x] Volle E2E-Suite (28 Szenarien) unverändert grün.
 
-### Etappe T2 — Tab-Operationen Backend + Automation-API
+### Etappe T2 — Tab-Operationen Backend + Automation-API ✅ FERTIG
 
 Tabs funktional per API, noch ohne UI (API-first → testbar).
 
-- [ ] Commands: `tab_open` (Pfad → neuer Tab hinter aktivem, wird
+- [x] Commands: `tab_open` (Pfad → neuer Tab hinter aktivem, wird
       aktiv; existiert Pfad schon → aktivieren), `tab_close(id)`
       (DirtyPolicy; letzter Tab → leerer Zustand wie heute nach
-      close_document), `tab_activate(id)`, `tabs_list`.
-- [ ] Event `tabs:changed { tabs: [{id, path, dirty, active}], … }`
-      bei jeder Mutation; `document:loaded` beim Aktivieren.
-- [ ] Automation: `GET /tabs`, `POST /tabs/open|close|activate`,
+      close_document), `tab_activate(id)`, `tabs_list`. Open-Fehler
+      rollen den frisch angelegten Tab zurück.
+- [x] Event `tabs:changed { tabs: [{id, path, dirty, active}], … }`
+      bei jeder Mutation; `document:loaded` beim Aktivieren
+      (gemeinsame Payload-Quelle `emit_document_loaded` — Format-
+      parität mit dem Open-Pfad; async-Hop gegen rekursiven Lock aus
+      Store-Callbacks).
+- [x] Automation: `GET /tabs`, `POST /tabs/open|close|activate`,
       `POST /tabs/close_all` (E2E-Isolation); `/state` um
       `tabs`-Feld erweitert; Acks nach ack.rs-Muster.
-- [ ] `docs/automation-contract.md` um /tabs erweitert.
-- [ ] E2E `29_tabs_api.py`: open/list/activate/close, Dedupe bei
+- [x] `docs/automation-contract.md` um /tabs erweitert.
+- [x] E2E `29_tabs_api.py`: open/list/activate/close, Dedupe bei
       doppeltem Pfad, Dirty-Reject beim Close, per-Tab-History
       (back/forward wirkt nur im aktiven Tab), close_all.
 

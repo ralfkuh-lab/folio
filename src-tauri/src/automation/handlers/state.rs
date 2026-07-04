@@ -21,7 +21,7 @@ pub(in crate::automation) async fn get_state(
         .and_then(|window| window.title().ok())
         .unwrap_or_else(|| "Folio".into());
     let state = context.app_handle.state::<AppState>();
-    let (document_path, document_text, document_dirty, view_mode, navigation_state) = {
+    let (document_path, document_text, document_dirty, view_mode, navigation_state, tabs_list) = {
         let tabs = state
             .tabs
             .lock()
@@ -45,6 +45,7 @@ pub(in crate::automation) async fn get_state(
             tab.document_store.is_dirty,
             tab.view_mode.clone(),
             navigation_state,
+            tabs.summaries(),
         )
     };
     let panel = state
@@ -129,6 +130,7 @@ pub(in crate::automation) async fn get_state(
             recent: workspace.1,
             expanded_dirs,
         },
+        tabs: tabs_list,
         console_error_count,
     }))
 }
@@ -191,6 +193,12 @@ pub(in crate::automation) async fn mock_get_state(
                 .collect(),
             expanded_dirs: state.expanded_dirs.clone(),
         },
+        tabs: vec![crate::tab_manager::TabSummary {
+            id: 1,
+            path: state.file.clone(),
+            dirty: state.dirty,
+            active: true,
+        }],
         console_error_count: state.console_errors.len(),
     }))
 }

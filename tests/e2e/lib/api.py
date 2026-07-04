@@ -70,6 +70,35 @@ class AutomationApi:
     def state(self) -> dict:
         return self._request("GET", "/state")
 
+    def tabs(self) -> dict:
+        return self._request("GET", "/tabs")
+
+    def tab_open(self, path: str, ack_timeout_ms: int = 3000) -> dict:
+        return self._request(
+            "POST", f"/tabs/open?ackTimeoutMs={ack_timeout_ms}", {"path": path}
+        )
+
+    def tab_close(
+        self, tab_id: int, discard: bool = False, ack_timeout_ms: int = 3000
+    ) -> dict:
+        return self._request(
+            "POST",
+            f"/tabs/close?ackTimeoutMs={ack_timeout_ms}",
+            {"id": tab_id, "discard": discard},
+        )
+
+    def tab_activate(self, tab_id: int, ack_timeout_ms: int = 3000) -> dict:
+        return self._request(
+            "POST",
+            f"/tabs/activate?ackTimeoutMs={ack_timeout_ms}",
+            {"id": tab_id},
+        )
+
+    def tabs_close_all(self, ack_timeout_ms: int = 3000) -> dict:
+        return self._request(
+            "POST", f"/tabs/close_all?ackTimeoutMs={ack_timeout_ms}", {}
+        )
+
     def settings_get(self) -> dict:
         return self._request("GET", "/settings")
 

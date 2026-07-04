@@ -6,7 +6,7 @@ use axum::{
 use std::sync::{Arc, Mutex};
 
 use super::context::AutomationContext;
-use super::handlers::{console, document, dom, eval, screenshot, settings, state, ui, wait};
+use super::handlers::{console, document, dom, eval, screenshot, settings, state, tabs, ui, wait};
 use super::middleware as mw;
 use super::mock::MockAutomationState;
 
@@ -21,6 +21,11 @@ pub(super) fn build_router(context: AutomationContext) -> Router {
             get(settings::get_settings).post(settings::post_settings),
         )
         .route("/open", post(document::post_open))
+        .route("/tabs", get(tabs::get_tabs))
+        .route("/tabs/open", post(tabs::post_open))
+        .route("/tabs/close", post(tabs::post_close))
+        .route("/tabs/activate", post(tabs::post_activate))
+        .route("/tabs/close_all", post(tabs::post_close_all))
         .route("/open-ui", post(document::post_open_ui))
         .route("/mode", post(ui::post_mode))
         .route("/theme", post(ui::post_theme))

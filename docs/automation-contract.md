@@ -26,6 +26,7 @@ umbenannt werden:
 
 - Backend zu Frontend: `document:loaded`, `document:dirty_changed`,
   `document:closed`, `document:saved`, `document:external_changed`,
+  `tabs:changed`,
   `app:set_mode`, `app:set_theme`, `vault:refresh`,
   `vault:dir_changed`, `navigation:changed`, `navigation:toc_click`,
   `editor:load_text`, `editor:apply_replace`, `editor:open_find`,
@@ -95,6 +96,33 @@ Aufruf frisch aus `<config>/folio/themes/` gelesenen Custom-Theme-IDs.
 `themeFavorites` ersetzt beim Patch die gesamte geordnete Liste;
 `standard` ist darin nicht erlaubt. Unbekannte oder ungueltige Werte werden
 beim Patch mit HTTP 400 abgelehnt.
+
+### Tabs
+
+`GET /tabs` liefert
+`{ "tabs": [{ "id", "path", "dirty", "active" }], "activeIndex": 0 }`.
+`tabs:changed` verwendet dasselbe Payload. Dieselbe Liste steht in
+`GET /state` unter `tabs`. Pfade sind wie im restlichen Backend auf
+Forward-Slashes normalisiert.
+
+- `POST /tabs/open { "path": "..." }` öffnet die Datei in einem neuen,
+  aktiven Tab direkt hinter dem bisher aktiven Tab. Ist der normalisierte
+  Pfad bereits offen, wird nur dessen Tab aktiviert.
+- `POST /tabs/activate { "id": 2 }` aktiviert einen vorhandenen Tab.
+- `POST /tabs/close { "id": 2, "discard": false }` schließt einen Tab.
+  Dirty-Tabs werden ohne explizites `discard: true` mit HTTP 409 abgelehnt.
+- `POST /tabs/close_all {}` verwirft alle Dirty-Zustände und hinterlässt
+  genau einen aktiven, leeren Tab. Der Endpunkt ist ausschließlich für
+  E2E-Isolation vorgesehen.
+
+Open, Aktivierung und das Schließen des aktiven Tabs antworten im
+Ack-Format `{ ok, acked, requestId, tab }`. Das Ack kommt über das
+anschließende `navigation:changed` und bestätigt damit, dass der bestehende
+`document:loaded`- bzw. `document:closed`-Frontend-Pfad einschließlich
+Mode-/Scroll-/Cursor-Restore verarbeitet wurde. Beim Schließen eines
+inaktiven Tabs ist kein Frontend-Dokumentwechsel nötig (`acked: false`,
+`requestId: null`). Unbekannte IDs liefern HTTP 404, Dirty-Reject HTTP 409
+und ungültige oder nicht existente Dateipfade HTTP 400.
 
 ### Security-Gates (Middleware `security_guard`)
 

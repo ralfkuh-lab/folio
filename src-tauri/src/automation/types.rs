@@ -1,3 +1,4 @@
+use crate::tab_manager::TabSummary;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize)]
@@ -15,6 +16,7 @@ pub(super) struct AutomationState {
     pub(super) editor: EditorAutomationState,
     pub(super) view: ViewAutomationState,
     pub(super) workspace: WorkspaceAutomationState,
+    pub(super) tabs: Vec<TabSummary>,
     pub(super) console_error_count: usize,
 }
 
@@ -419,6 +421,12 @@ mod phase0_request_tests {
                 recent: Vec::new(),
                 expanded_dirs: Vec::new(),
             },
+            tabs: vec![TabSummary {
+                id: 1,
+                path: None,
+                dirty: false,
+                active: true,
+            }],
             console_error_count: 0,
         };
         let json = serde_json::to_value(&state).unwrap();

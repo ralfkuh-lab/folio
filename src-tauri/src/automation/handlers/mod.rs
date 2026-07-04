@@ -5,5 +5,6 @@ pub(super) mod eval;
 pub(super) mod screenshot;
 pub(super) mod settings;
 pub(super) mod state;
+pub(super) mod tabs;
 pub(super) mod ui;
 pub(super) mod wait;

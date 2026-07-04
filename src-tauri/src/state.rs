@@ -4,7 +4,7 @@ use crate::{
     panel_state::PanelState,
     renderer,
     settings::SettingsService,
-    tab_manager::{DocumentEventFactory, TabManager},
+    tab_manager::{DocumentEventFactory, TabManager, TabsPayload},
     theme::ThemeService,
     toc,
     vault::Vault,
@@ -143,20 +143,8 @@ impl AppState {
             loaded: Some(Arc::new({
                 let app = app.clone();
                 move |payload| {
-                    let toc_entries = toc::extract(&payload.text);
-                    let _ = app.emit(
-                        "document:loaded",
-                        serde_json::json!({
-                            "path": payload.path,
-                            "kind": crate::file_kind::classify(&payload.path),
-                            "language": crate::file_kind::editor_language(&payload.path),
-                            "text": payload.text,
-                            "content": renderer::render_body(&payload.text),
-                            "tocHtml": toc::render_html(&toc_entries),
-                            "headingMap": crate::commands::editor::heading_map(&toc_entries),
-                            "tabId": tab_id,
-                        }),
-                    );
+                    let _ = Self::emit_document_loaded(&app, tab_id, &payload.path, &payload.text);
+                    Self::schedule_tabs_changed(app.clone());
                     // Wartende `POST /wait { event: "document.loaded" }` aufwecken.
                     crate::automation::wait::signal_document_loaded(
                         app.state::<AppState>().inner(),
@@ -170,6 +158,7 @@ impl AppState {
                         "document:dirty_changed",
                         serde_json::json!({ "is_dirty": is_dirty, "tabId": tab_id }),
                     );
+                    Self::schedule_tabs_changed(app.clone());
                     if !is_dirty {
                         crate::automation::wait::signal_document_dirty_clean(
                             app.state::<AppState>().inner(),
@@ -197,6 +186,7 @@ impl AppState {
                             "tabId": tab_id,
                         }),
                     );
+                    Self::schedule_tabs_changed(app.clone());
                     crate::automation::wait::signal_document_saved(app.state::<AppState>().inner());
                 }
             })),
@@ -217,5 +207,56 @@ impl AppState {
                 );
             })),
         }
+    }
+
+    pub fn tabs_payload(&self) -> Result<TabsPayload, String> {
+        let tabs = self
+            .tabs
+            .lock()
+            .map_err(|_| "tabs lock poisoned".to_string())?;
+        Ok(TabsPayload {
+            tabs: tabs.summaries(),
+            active_index: tabs.active_index(),
+        })
+    }
+
+    pub fn emit_tabs_changed(app: &AppHandle) -> Result<(), String> {
+        let payload = app.state::<AppState>().tabs_payload()?;
+        app.emit("tabs:changed", payload)
+            .map_err(|error| error.to_string())
+    }
+
+    fn schedule_tabs_changed(app: AppHandle) {
+        tauri::async_runtime::spawn(async move {
+            // DocumentStore-Callbacks laufen unter dem Tabs-Lock. Der
+            // asynchrone Hop verhindert einen rekursiven Lock-Versuch.
+            tokio::task::yield_now().await;
+            if let Err(error) = Self::emit_tabs_changed(&app) {
+                tracing::warn!(target: "folio::tabs", %error, "tabs:changed emit failed");
+            }
+        });
+    }
+
+    pub fn emit_document_loaded(
+        app: &AppHandle,
+        tab_id: u64,
+        path: &str,
+        text: &str,
+    ) -> Result<(), String> {
+        let toc_entries = toc::extract(text);
+        app.emit(
+            "document:loaded",
+            serde_json::json!({
+                "path": path,
+                "kind": crate::file_kind::classify(path),
+                "language": crate::file_kind::editor_language(path),
+                "text": text,
+                "content": renderer::render_body(text),
+                "tocHtml": toc::render_html(&toc_entries),
+                "headingMap": crate::commands::editor::heading_map(&toc_entries),
+                "tabId": tab_id,
+            }),
+        )
+        .map_err(|error| error.to_string())
     }
 }
