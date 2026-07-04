@@ -42,20 +42,14 @@ pub fn dispatch_menu_action(app: &AppHandle, id: &str) {
     }
     match id {
         ids::FILE_QUIT => {
-            // Dirty-Gate wie bei file.close: bei ungespeicherten
-            // Aenderungen entscheidet das Frontend per Prompt
+            // Dirty-Gate ueber ALLE Tabs: hat irgendein Tab ungespeicherte
+            // Aenderungen, entscheidet das Frontend per Prompt(s)
             // (menu:file_quit -> requestSaveIfDirty -> quit_app),
             // sonst direkt beenden. Ohne das Gate verwarf Strg+Q /
             // Menue-Beenden Dirty-Inhalt kommentarlos.
             let is_dirty = app
                 .try_state::<crate::state::AppState>()
-                .and_then(|state| {
-                    state
-                        .tabs
-                        .lock()
-                        .ok()
-                        .map(|tabs| tabs.active().document_store.is_dirty)
-                })
+                .and_then(|state| state.tabs.lock().ok().map(|tabs| tabs.any_dirty()))
                 .unwrap_or(false);
             if is_dirty {
                 let _ = app.emit("menu:file_quit", serde_json::json!({}));

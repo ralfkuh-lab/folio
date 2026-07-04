@@ -94,7 +94,10 @@ und `docs/e2e-testing.md`.
 Tauri-Command `view_themes`; das sind die Built-ins sowie die bei jedem
 Aufruf frisch aus `<config>/folio/themes/` gelesenen Custom-Theme-IDs.
 `themeFavorites` ersetzt beim Patch die gesamte geordnete Liste;
-`standard` ist darin nicht erlaubt. Unbekannte oder ungueltige Werte werden
+`standard` ist darin nicht erlaubt. `openFileTarget`
+(`newtab` Default | `replace`) steuert, ob extern geoeffnete Dateien
+(Single-Instance-Reinvoke) einen neuen Tab bekommen oder das Dokument im
+aktiven Tab ersetzen. Unbekannte oder ungueltige Werte werden
 beim Patch mit HTTP 400 abgelehnt.
 
 ### Tabs

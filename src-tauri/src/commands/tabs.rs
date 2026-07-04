@@ -64,11 +64,23 @@ pub fn open(state: &AppState, handle: &AppHandle, path: String) -> Result<TabTra
         return activate(state, handle, id);
     }
 
-    let id = state
-        .tabs
-        .lock()
-        .map_err(|_| TabError::Internal("tabs lock poisoned".into()))?
-        .add_tab();
+    // Einen leeren aktiven Tab (kein Dokument, kein pending Restore-
+    // Pfad) wiederverwenden statt daneben einzufuegen — sonst bleibt
+    // z. B. nach Boot-CLI-Open ein unerreichbarer leerer Zombie-Tab
+    // zurueck (die Leiste blendet pfadlose Tabs aus).
+    let reused_empty = {
+        let mut tabs = state
+            .tabs
+            .lock()
+            .map_err(|_| TabError::Internal("tabs lock poisoned".into()))?;
+        let active_is_empty = tabs.active().document_store.path.is_none()
+            && tabs.active().pending_path().is_none()
+            && !tabs.active().document_store.is_dirty;
+        if !active_is_empty {
+            tabs.add_tab();
+        }
+        active_is_empty
+    };
     let outcome = document_service::open(
         state,
         path,
@@ -82,8 +94,11 @@ pub fn open(state: &AppState, handle: &AppHandle, path: String) -> Result<TabTra
     let outcome = match outcome {
         Ok(outcome) => outcome,
         Err(error) => {
-            if let Ok(mut tabs) = state.tabs.lock() {
-                tabs.close(id);
+            if !reused_empty {
+                if let Ok(mut tabs) = state.tabs.lock() {
+                    let id = tabs.active().id;
+                    tabs.close(id);
+                }
             }
             return Err(match error {
                 document_service::OpenDocumentError::Load(error) => {

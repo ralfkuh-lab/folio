@@ -15,6 +15,7 @@ import { applyViewTheme } from '../view/theme';
 type SettingsLanguage = 'de' | 'en';
 export type DefaultViewMode = 'view' | 'edit' | 'current';
 export type ExportDirMode = 'document' | 'last';
+export type OpenFileTarget = 'newtab' | 'replace';
 export type LogLevel = 'off' | 'error' | 'warn' | 'info' | 'debug';
 
 export type ViewThemeInfo = {
@@ -35,6 +36,7 @@ export type SettingsData = {
     vaultAutoRefresh: boolean;
     documentAutoReload: boolean;
     exportDirMode: ExportDirMode;
+    openFileTarget: OpenFileTarget;
     logLevel: LogLevel;
 };
 
@@ -44,6 +46,10 @@ function isViewMode(v: string): v is DefaultViewMode {
 
 function isLogLevel(v: string): v is LogLevel {
     return v === 'off' || v === 'error' || v === 'warn' || v === 'info' || v === 'debug';
+}
+
+function isOpenFileTarget(v: string): v is OpenFileTarget {
+    return v === 'newtab' || v === 'replace';
 }
 
 function isExportDirMode(v: string): v is ExportDirMode {
@@ -118,6 +124,7 @@ function applySettingsToForm(data: SettingsData): void {
     var vaultRefresh = $('settings-vault-auto-refresh') as HTMLInputElement | null;
     var docReload = $('settings-document-auto-reload') as HTMLInputElement | null;
     var exportDirMode = $('settings-export-dir-mode') as HTMLSelectElement | null;
+    var openFileTarget = $('settings-open-file-target') as HTMLSelectElement | null;
     var logLevel = $('settings-log-level') as HTMLSelectElement | null;
     var langHint = $('settings-language-hint');
 
@@ -128,6 +135,7 @@ function applySettingsToForm(data: SettingsData): void {
     if (vaultRefresh) vaultRefresh.checked = !!data.vaultAutoRefresh;
     if (docReload) docReload.checked = !!data.documentAutoReload;
     if (exportDirMode) exportDirMode.value = data.exportDirMode || 'document';
+    if (openFileTarget) openFileTarget.value = data.openFileTarget || 'newtab';
     if (logLevel) logLevel.value = data.logLevel || 'info';
     syncSelectedViewTheme(data.viewTheme);
     syncFavoriteViewThemes(data.themeFavorites || []);
@@ -399,6 +407,14 @@ function bindInputs(): void {
             var v = exportDirMode!.value;
             if (!isExportDirMode(v)) return;
             patchSettings({ exportDirMode: v });
+        });
+    }
+    var openFileTarget = $('settings-open-file-target') as HTMLSelectElement | null;
+    if (openFileTarget) {
+        openFileTarget.addEventListener('change', function () {
+            var v = openFileTarget!.value;
+            if (!isOpenFileTarget(v)) return;
+            patchSettings({ openFileTarget: v });
         });
     }
     var logLevel = $('settings-log-level') as HTMLSelectElement | null;

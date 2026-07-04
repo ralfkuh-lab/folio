@@ -112,6 +112,11 @@ impl TabManager {
         self.active().id == tab_id
     }
 
+    /// Mindestens ein Tab hat ungespeicherte Aenderungen (Quit-Gate).
+    pub fn any_dirty(&self) -> bool {
+        self.tabs.iter().any(|tab| tab.document_store.is_dirty)
+    }
+
     pub fn tab(&self, id: u64) -> Option<&Tab> {
         self.tabs.iter().find(|tab| tab.id == id)
     }

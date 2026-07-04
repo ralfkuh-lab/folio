@@ -69,6 +69,29 @@ describe('state/tabs', () => {
         });
     });
 
+    it('confirmAllDirtyTabs prompts every dirty tab and stops on cancel', async () => {
+        const { renderTabs, confirmAllDirtyTabs } = await import('../../app/state/tabs');
+        renderTabs({
+            activeIndex: 0,
+            tabs: [
+                { id: 1, path: '/notes/a.md', dirty: true, active: true },
+                { id: 2, path: '/notes/b.md', dirty: true, active: false },
+                { id: 3, path: '/notes/c.md', dirty: false, active: false },
+            ],
+        });
+
+        expect(await confirmAllDirtyTabs()).toBe(true);
+        // Aktiver dirty Tab wird direkt geprompted, inaktiver erst aktiviert.
+        expect(requestSaveIfDirty).toHaveBeenCalledTimes(2);
+        expect(tauri.invoke).toHaveBeenCalledWith('tab_activate', { id: 2 });
+
+        // Abbruch beim ersten Prompt stoppt die Kette.
+        vi.clearAllMocks();
+        requestSaveIfDirty.mockResolvedValueOnce(false);
+        expect(await confirmAllDirtyTabs()).toBe(false);
+        expect(requestSaveIfDirty).toHaveBeenCalledTimes(1);
+    });
+
     it('registers listener before the initial tabs_list synchronization', async () => {
         tauri.invoke.mockImplementation((command: string) => {
             if (command === 'tabs_list') {

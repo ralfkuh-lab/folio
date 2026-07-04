@@ -16,6 +16,7 @@ const settings = {
     vaultAutoRefresh: true,
     documentAutoReload: true,
     exportDirMode: 'document',
+    openFileTarget: 'newtab',
     logLevel: 'info',
 };
 
@@ -37,6 +38,10 @@ function buildDom(): void {
                 <select id="settings-export-dir-mode">
                     <option value="document">Verzeichnis der Datei</option>
                     <option value="last">Zuletzt gewähltes Verzeichnis</option>
+                </select>
+                <select id="settings-open-file-target">
+                    <option value="newtab">In neuem Tab öffnen</option>
+                    <option value="replace">Aktuellen Tab ersetzen</option>
                 </select>
             </div>
             <div role="tabpanel" data-settings-tab="diagnose" hidden>
@@ -125,6 +130,24 @@ describe('settings-dialog', () => {
             patch: { exportDirMode: 'last' },
         });
         expect(select.value).toBe('last');
+    });
+
+    it('laedt und persistiert das Ziel fuer extern geoeffnete Dateien', async () => {
+        openSettingsDialog();
+        await flush();
+
+        const select = document.getElementById(
+            'settings-open-file-target',
+        ) as HTMLSelectElement;
+        expect(select.value).toBe('newtab');
+
+        select.value = 'replace';
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        await flush();
+
+        expect(handles.invoke).toHaveBeenCalledWith('settings_update', {
+            patch: { openFileTarget: 'replace' },
+        });
     });
 
     it('wechselt per Klick vom Allgemein- zum Diagnose-Panel', async () => {

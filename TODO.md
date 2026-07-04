@@ -77,33 +77,12 @@
   - Weitere Ideen (unpriorisiert): Zusammenfassung, Rechtschreib-/
     Grammatik-Check, Markdown-Reformatierung, Linkvorschläge im
     Vault, TOC/Heading-Vorschläge, Cheat-Sheet-„Frag mich"-Modus.
-- **Mehrere Dateien gleichzeitig offen (Tabs)** (User-Wunsch
-  2026-07-04; bewusst als größerer Brocken markiert): Tab-Leiste wie im
-  Browser, mehrere Dokumente parallel geöffnet. Architektur-Berührung
-  ist breit — heute ist fast alles Single-Document: `DocumentStore`
-  (ein aktives Doc + ein File-Watcher), `NavigationController`
-  (eine History), `document:loaded/saved/closed`-Events, Dirty-/
-  Discard-Handling, Find-Bar/Preview/Scroll-Sync-State im Frontend,
-  Fenstertitel, Automation-API (`/open`, `/document/...`).
-  Vorarbeit nötig: Konzept, ob Tabs = mehrere `DocumentStore`-
-  Instanzen mit aktivem Index (plus per-Tab-History) oder ein
-  Multi-Doc-Store; Persistenz offener Tabs im Workspace; E2E-Impact.
-  Erst Konzept/Plan, dann in Etappen umsetzen.
-  - **Single-Instance-Verhalten** (User-Frage 2026-07-04): Heute fix
-    single-instance — Explorer-Doppelklick landet per `cli:open` in der
-    bestehenden Instanz und ersetzt das offene Dokument. Empfehlung
-    (Claude): **so lassen, kein Setting bauen.** Single-instance ist
-    für einen Dokument-Editor der richtige Default (VS Code, Obsidian
-    machen es genauso); ein Umschalter bräuchte App-Neustart (Plugin
-    wird beim Boot registriert), verkompliziert Datei-Assoziations-
-    Verhalten und E2E, und das eigentliche Bedürfnis hinter „zweite
-    Instanz" — zwei Dokumente nebeneinander — löst dieses Tabs-Feature
-    besser. Sobald Tabs da sind: Doppelklick öffnet per Default **als
-    neuer Tab** (statt zu ersetzen); wer das alte Verhalten will,
-    bekommt es als Setting („ersetzen vs. neuer Tab"). Falls später
-    echtes Nebeneinander gewünscht: „Neues Fenster"-Command als
-    Zweitfenster im selben Prozess (Tauri-Multi-Window) — das liefert
-    Multi-Instanz-Nutzen ohne die Single-Instance-Garantie aufzugeben.
+- **Tabs — Folgepunkte** (Kernfeature 2026-07-04 komplett, siehe
+  [`docs/spec-multi-tabs.md`](docs/spec-multi-tabs.md)): Tab-Drag-
+  Reorder (Pointer-Muster aus `vault/tree.ts` als Vorlage); optional
+  „Neues Fenster"-Command (Tauri-Multi-Window) für echtes
+  Nebeneinander; Monaco-Model-Cache ohne Cap (bei sehr vielen Tabs
+  LRU erwägen).
 
 ## Niedrige Priorität
 

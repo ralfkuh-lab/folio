@@ -61,6 +61,19 @@ pub enum ExportDirMode {
     Last,
 }
 
+/// Ziel fuer extern geoeffnete Dateien (Single-Instance-Reinvoke,
+/// z. B. Explorer-Doppelklick): neuer Tab (Default) oder Ersetzen im
+/// aktiven Tab (Verhalten vor dem Tabs-Feature). Betrifft NUR den
+/// `cli:open`-Pfad der laufenden Instanz — der Boot-CLI-Pfad oeffnet
+/// immer als eigener Tab (cli_pending_open).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OpenFileTarget {
+    #[default]
+    Newtab,
+    Replace,
+}
+
 /// Log-Level fuer das `tracing`-Subscriber-Setup. `Off` schaltet die
 /// Ausgabe stumm (Filter auf `"off"`) — der Subscriber und der
 /// File-Appender bleiben registriert, sodass ein Live-Wechsel zurueck
@@ -146,6 +159,9 @@ pub struct SettingsData {
     /// Dokuments oder das zuletzt fuer einen Export gewaehlte Verzeichnis.
     #[serde(default)]
     pub export_dir_mode: ExportDirMode,
+    /// Ziel fuer extern geoeffnete Dateien (siehe [`OpenFileTarget`]).
+    #[serde(default)]
+    pub open_file_target: OpenFileTarget,
     /// Log-Level fuer den `tracing`-Subscriber. `Off` schaltet die
     /// Ausgabe stumm (Subscriber bleibt registriert, Filter auf
     /// `"off"`). `RUST_LOG`-ENV uebersteuert dies beim Boot und sperrt
@@ -183,6 +199,7 @@ impl Default for SettingsData {
             vault_auto_refresh: default_true(),
             document_auto_reload: default_true(),
             export_dir_mode: ExportDirMode::default(),
+            open_file_target: OpenFileTarget::default(),
             log_level: LogLevel::default(),
         }
     }
@@ -203,6 +220,7 @@ pub struct SettingsPatch {
     pub vault_auto_refresh: Option<bool>,
     pub document_auto_reload: Option<bool>,
     pub export_dir_mode: Option<ExportDirMode>,
+    pub open_file_target: Option<OpenFileTarget>,
     pub log_level: Option<LogLevel>,
 }
 
@@ -217,6 +235,7 @@ impl SettingsPatch {
             && self.vault_auto_refresh.is_none()
             && self.document_auto_reload.is_none()
             && self.export_dir_mode.is_none()
+            && self.open_file_target.is_none()
             && self.log_level.is_none()
     }
 }
@@ -345,6 +364,12 @@ impl SettingsService {
                 changed.push("exportDirMode");
             }
         }
+        if let Some(value) = patch.open_file_target {
+            if self.data.open_file_target != value {
+                self.data.open_file_target = value;
+                changed.push("openFileTarget");
+            }
+        }
         if let Some(value) = patch.log_level {
             if self.data.log_level != value {
                 self.data.log_level = value;
@@ -375,7 +400,33 @@ mod tests {
         assert!(data.vault_auto_refresh);
         assert!(data.document_auto_reload);
         assert_eq!(ExportDirMode::Document, data.export_dir_mode);
+        assert_eq!(OpenFileTarget::Newtab, data.open_file_target);
         assert_eq!(LogLevel::Info, data.log_level);
+    }
+
+    #[test]
+    fn open_file_target_round_trips_and_rejects_unknown() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("settings.json");
+        let mut svc = SettingsService::load_from(path.clone());
+        let changed = svc
+            .apply_patch(SettingsPatch {
+                open_file_target: Some(OpenFileTarget::Replace),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(vec!["openFileTarget"], changed);
+        assert_eq!(
+            OpenFileTarget::Replace,
+            SettingsService::load_from(path.clone())
+                .data()
+                .open_file_target
+        );
+
+        // Unbekannter Wert in settings.json -> Default statt Crash.
+        std::fs::write(&path, r#"{"openFileTarget":"popup"}"#).unwrap();
+        let svc = SettingsService::load_from(path);
+        assert_eq!(OpenFileTarget::Newtab, svc.data().open_file_target);
     }
 
     #[test]
@@ -717,10 +768,11 @@ mod tests {
                 vault_auto_refresh: Some(false),
                 document_auto_reload: Some(false),
                 export_dir_mode: Some(ExportDirMode::Last),
+                open_file_target: Some(OpenFileTarget::Replace),
                 log_level: Some(LogLevel::Debug),
             })
             .unwrap();
-        assert_eq!(10, changed.len());
+        assert_eq!(11, changed.len());
 
         let reloaded = SettingsService::load_from(path).data();
         assert_eq!(Language::En, reloaded.language);
@@ -730,6 +782,7 @@ mod tests {
         assert_eq!("clean", reloaded.view_theme);
         assert_eq!(vec!["github".to_string()], reloaded.theme_favorites);
         assert_eq!(ExportDirMode::Last, reloaded.export_dir_mode);
+        assert_eq!(OpenFileTarget::Replace, reloaded.open_file_target);
     }
 
     #[test]

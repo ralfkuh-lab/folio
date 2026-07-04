@@ -266,6 +266,30 @@ sonst lehnt Tauri den Build ab.
   go_back/go_forward-Call — am Stack-Edge wird Ok(None) bzw.
   `{moved: false, entry: null}` geliefert, statt unnötig current() zu
   re-loaden.
+- **Multi-Datei-Tabs** (Spec + Etappenhistorie:
+  [`docs/spec-multi-tabs.md`](docs/spec-multi-tabs.md)): Backend ist
+  Source of Truth — `tab_manager.rs::TabManager` haelt `Vec<Tab>` mit je
+  eigenem `DocumentStore` (Datei+Watcher+Dirty) und
+  `NavigationController` (History ist per Tab) plus `view_mode`.
+  `document:*`-Events bleiben "aktiver Tab"-bezogen (mit `tabId`-Feld);
+  `tabs:changed` traegt die Leisten-Sicht und triggert zugleich die
+  Session-Persistenz. Frontend: `state/tabs.ts` rendert `#tab-bar` rein
+  aus `tabs:changed`; `editor/mount.ts` cachet Monaco-Model+ViewState
+  pro `tabId` (Undo-Stack ueberlebt Tab-Wechsel; Save-As/Rename behaelt
+  das Model nur bei unveraendertem Inhalt — Ersetzen-Open im selben Tab
+  setzt neuen Text). Oeffnen-Konventionen: Vault-Klick ersetzt im
+  aktiven Tab, Ctrl/Cmd-Klick + Mittelklick + Kontextmenue "In neuem
+  Tab oeffnen" nutzen `tab_open`; bereits offene Pfade werden aktiviert
+  statt dupliziert; ein leerer aktiver Tab wird von `tab_open` recycelt.
+  Extern geoeffnete Dateien (Single-Instance-Reinvoke) folgen dem
+  Setting `openFileTarget` (`newtab` Default | `replace`), entschieden
+  im Backend (`lib.rs`-single-instance-Callback). Quit-Gate (Strg+Q,
+  Menue, Fenster-X) prueft `TabManager::any_dirty()`; das Frontend
+  fragt jeden dirty Tab einzeln ab (`confirmAllDirtyTabs`).
+  Shortcuts: Ctrl+Tab/Ctrl+Shift+Tab (Wechsel), Ctrl+W (schliessen).
+  Automation: `GET /tabs`, `POST /tabs/open|close|activate|close_all`
+  (Letzteres fuer E2E-Isolation — Tab-Szenarien raeumen damit im
+  finally auf), `/state.tabs`.
 - **Tab-Session-Persistenz**: Dokumenttragende Tabs werden in
   `workspace.json` als `open_tabs` plus `active_tab` (Index in dieser
   gefilterten Liste) gespeichert. Pfade sind wie alle Workspace-Pfade auf
@@ -341,14 +365,17 @@ sonst lehnt Tauri den Build ab.
   über `file_resolver::make_relative` (Wrapper um `pathdiff::diff_paths`,
   POSIX-Slashes für Markdown-Konvention). Clipboard-RGBA → PNG-Encoding
   passiert im Backend mit dem `image`-Crate.
-- **Pre-Mount-Editor-Optionen**: Editor-Optionen, die schon beim Boot
-  gesetzt werden (heute nur Minimap aus dem persistierten Panel-State),
-  laufen über eine `pendingMinimapEnabled`-Variable in `editor/mount.ts`,
-  die `mount()` in die initialen `monaco.editor.create()`-Options zieht.
-  KEIN `mountReady.then(...)`-Defer für Pre-Mount-Calls: `mountReady` ist
-  bis zum ersten Mount `Promise.resolve()`, ein Defer wäre eine
-  Endlos-Microtask-Schleife (war der Bug, der bei Folio-Start ohne offene
-  Datei das gesamte Frontend killte; siehe Fix-Commit `f4ef8f1`).
+- **Pre-Mount-Editor-Calls**: `mountReady` in `editor/mount.ts` ist seit
+  2026-07-04 bis zum ERSTEN erfolgreichen `mount()` ein pending Promise
+  (vorher `Promise.resolve()` — damals war jeder `mountReady.then(...)`-
+  Retry-Defer eine Endlos-Microtask-Schleife, die zweimal das gesamte
+  Frontend gekillt hat: Fix-Commit `f4ef8f1` und T4-Boot-Bug). Die
+  Write-Funktionen in `editor/text.ts` deferieren über
+  `deferUntilMounted` (genau EIN Retry nach dem ersten Mount, nur wenn
+  der Editor existiert — niemals unbedingte Selbst-Rekursion!).
+  Pre-Mount-OPTIONEN (Minimap, initiales Dokument) laufen weiterhin über
+  pending-Variablen (`pendingMinimapEnabled`, `pendingDocument`), die
+  `mount()` direkt in die `monaco.editor.create()`-Options zieht.
 - **Logging** (`logging.rs`): `tracing` + `tracing-subscriber` mit
   Stderr- und täglich rotierendem File-Sink. Logverzeichnis pro OS via
   `persist::log_dir()` (Windows: `%LOCALAPPDATA%\Folio\logs`, macOS:

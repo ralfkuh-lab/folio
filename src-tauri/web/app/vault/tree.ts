@@ -310,12 +310,37 @@ export function initVaultTree(d: Deps): void {
             if (kind === 'dir') { toggleDir(node); return; }
             if (kind === 'file') {
                 const p = node.getAttribute('data-path');
-                if (p) deps.openDocument(p);
+                if (!p) return;
+                // Ctrl/Cmd+Klick: in neuem Tab oeffnen (Browser-Konvention);
+                // normaler Klick ersetzt das Dokument im aktiven Tab.
+                if (e.ctrlKey || e.metaKey) {
+                    safeInvoke('tab_open', { path: p }, 'tab_open');
+                } else {
+                    deps.openDocument(p);
+                }
                 return;
             }
         }
         const section = findAncestor(row.parentElement, 'section');
         if (section) toggleSection(section);
+    });
+
+    // Mittelklick auf eine Datei-Row: in neuem Tab oeffnen (Browser-
+    // Konvention). auxclick statt click, weil Browser fuer button!=0
+    // kein click-Event garantieren.
+    REGION.addEventListener('auxclick', function (e: MouseEvent) {
+        if (e.button !== 1) return;
+        let row: HTMLElement | null = e.target as HTMLElement;
+        while (row && row !== ROOT && !(row.classList && row.classList.contains('row'))) {
+            row = row.parentElement;
+        }
+        if (!row || row === ROOT) return;
+        const node = findAncestor(row.parentElement, 'node');
+        if (!node || node.getAttribute('data-kind') !== 'file') return;
+        const p = node.getAttribute('data-path');
+        if (!p) return;
+        e.preventDefault();
+        safeInvoke('tab_open', { path: p }, 'tab_open');
     });
 
     // Rechtsklick auf Tree-Reihen → Backend signalisieren (legacy-Pfad fuer

@@ -8,10 +8,9 @@
 import {
     getIsDirty,
     openDocument,
-    requestSaveIfDirty,
     saveCurrent,
 } from '../state/document';
-import { closeActiveTab } from '../state/tabs';
+import { closeActiveTab, confirmAllDirtyTabs } from '../state/tabs';
 import { setMode } from '../editor/shell';
 import { openEditorFind } from './find-bar';
 import { folioLog, safeInvoke } from '../util/log';
@@ -44,11 +43,13 @@ export function initMenuRouter(deps: Deps): void {
     ev.listen('menu:file_close', function () {
         closeActiveTab();
     });
-    // Backend emittiert menu:file_quit nur bei dirty Dokument (Strg+Q,
-    // Menue-Beenden, Fenster-X via CloseRequested) — sonst beendet es
-    // direkt. Nach bestaetigtem Prompt beendet quit_app ohne weiteres Gate.
+    // Backend emittiert menu:file_quit, sobald IRGENDEIN Tab dirty ist
+    // (Strg+Q, Menue-Beenden, Fenster-X via CloseRequested) — sonst
+    // beendet es direkt. Das Frontend fragt jeden dirty Tab einzeln ab
+    // (Save/Discard/Cancel); nach Bestaetigung beendet quit_app ohne
+    // weiteres Gate.
     ev.listen('menu:file_quit', function () {
-        requestSaveIfDirty().then(function (ok) {
+        confirmAllDirtyTabs().then(function (ok) {
             if (!ok) return;
             safeInvoke('quit_app', undefined, 'quit_app');
         });

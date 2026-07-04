@@ -53,6 +53,7 @@ export function openContextMenu(
     ctxTarget = { path, isDirectory: isDir };
     const parts: string[] = [];
     if (!isDir) parts.push('<div class="ctx-item" data-act="open">Öffnen</div>');
+    if (!isDir) parts.push('<div class="ctx-item" data-act="open-newtab">In neuem Tab öffnen</div>');
     if (!isDir) {
         if (isExec) parts.push('<div class="ctx-item" data-act="run">Ausführen</div>');
         else parts.push('<div class="ctx-item" data-act="open-default">Mit Standardprogramm öffnen</div>');
@@ -187,6 +188,8 @@ export function initContextMenu(d: Deps): void {
         closeContextMenu();
         if (act === 'open' && !isDir) {
             deps.openDocument(path);
+        } else if (act === 'open-newtab' && !isDir) {
+            safeInvoke('tab_open', { path }, 'tab_open');
         } else if (act === 'run' && !isDir) {
             runOrOpenFile(path, true);
         } else if (act === 'open-default' && !isDir) {

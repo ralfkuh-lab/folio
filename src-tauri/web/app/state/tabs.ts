@@ -183,6 +183,25 @@ export function closeActiveTab(): Promise<boolean> {
     return active ? requestCloseTab(active.id) : Promise.resolve(false);
 }
 
+/** Quit-Gate: fragt fuer JEDEN dirty Tab einzeln Save/Discard/Cancel ab
+    (Tab wird dafuer aktiviert, damit der User sieht, worum es geht).
+    Liefert false, sobald der User einmal abbricht. */
+export async function confirmAllDirtyTabs(): Promise<boolean> {
+    // Snapshot der IDs — current.tabs aendert sich durch Save/Aktivieren.
+    const dirtyIds = current.tabs
+        .filter(function (tab) { return tab.dirty; })
+        .map(function (tab) { return tab.id; });
+    for (const id of dirtyIds) {
+        const tab = current.tabs.find(function (candidate) {
+            return candidate.id === id;
+        });
+        if (!tab || !tab.dirty) continue;
+        if (!tab.active && !await activateTab(id)) return false;
+        if (!await requestSaveIfDirty(true)) return false;
+    }
+    return true;
+}
+
 export function activateRelativeTab(direction: 1 | -1): Promise<boolean> {
     const tabs = current.tabs.filter(function (tab) { return !!tab.path; });
     if (tabs.length < 2) return Promise.resolve(false);

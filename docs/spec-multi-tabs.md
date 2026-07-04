@@ -153,23 +153,34 @@ Tabs funktional per API, noch ohne UI (API-first → testbar).
       single-shot `deferUntilMounted` (+ Regressionstest), Backend
       emittiert bei leerem Tab kein `navigation:changed` mehr.
 
-### Etappe T5 — Öffnen-Integration + Feinschliff
+### Etappe T5 — Öffnen-Integration + Feinschliff ✅ FERTIG
 
-- [ ] Setting `openFileTarget` (`newtab` Default | `replace`) im
-      Settings-Tab „Allgemein"; `cli:open`-Handler respektiert es.
-- [ ] Vault: Ctrl+Klick/Mittelklick → neuer Tab (Pointer-Pfad in
-      `vault/tree.ts` beachten — Pin-Reorder-Logik nicht brechen);
-      Recent/Pin-Klick unverändert aktiver Tab.
-- [ ] Kontextmenü Vault-Datei: „In neuem Tab öffnen".
-- [ ] Dirty-Handling „App beenden": alle dirty Tabs prüfen
-      (bestehenden Quit-Fluss ansehen und erweitern).
-- [ ] Doku: CLAUDE.md-Abschnitt „Tabs" (Architektur, Events,
-      Model-Cache-Konvention), TODO.md-Eintrag abbauen,
-      automation-contract final.
-- [ ] Voller E2E-Lauf inkl. Alt-Szenarien; betroffene Szenarien
-      (02/03/07/08/09/11/16/18, siehe Kartierung) bei Bedarf
-      angepasst — Ziel: minimale Änderungen, da aktiver-Tab-
-      Semantik kompatibel bleibt.
+- [x] Setting `openFileTarget` (`newtab` Default | `replace`) im
+      Settings-Tab „Allgemein" (Sektion „Tabs"); die Weiche sitzt im
+      Backend (single-instance-Callback in `lib.rs`): `newtab` öffnet
+      direkt via `tabs::open`, `replace`/Fehler fallen auf den
+      bestehenden `cli:open`-Frontend-Pfad zurück. Headless mit echter
+      zweiter Instanz verifiziert (newtab + replace).
+- [x] Vault: Ctrl/Cmd+Klick und Mittelklick (`auxclick`) → neuer Tab;
+      normaler Klick/Recent/Pin unverändert aktiver Tab. Pin-Reorder
+      unberührt (eigener Pointer-Pfad).
+- [x] Kontextmenü Vault-Datei: „In neuem Tab öffnen"
+      (`data-act="open-newtab"`).
+- [x] Dirty-Handling „App beenden": Backend-Gate prüft
+      `TabManager::any_dirty()` (Strg+Q, Menü UND Fenster-X/
+      CloseRequested); Frontend fragt jeden dirty Tab einzeln ab
+      (`confirmAllDirtyTabs`, aktiviert den Tab sichtbar), Cancel
+      stoppt die Kette.
+- [x] Bonus (Smoke-Befund): `tab_open` recycelt einen leeren aktiven
+      Tab statt einen unerreichbaren Zombie-Tab zu hinterlassen
+      (Boot-CLI-Pfad).
+- [x] Doku: CLAUDE.md-Abschnitt „Multi-Datei-Tabs" + aktualisierte
+      Pre-Mount-Konvention, automation-contract (`openFileTarget`),
+      TODO auf Folgepunkte-Eintrag geschrumpft.
+- [x] Voller E2E-Lauf 32/32 grün inkl. neuem `32_open_target`;
+      Alt-Szenarien blieben dank aktiver-Tab-Semantik unverändert.
+
+**Status: Alle Etappen T1–T5 abgeschlossen (2026-07-04).**
 
 ## Risiken / bewusste Entscheidungen
 

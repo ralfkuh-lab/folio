@@ -65,6 +65,41 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
                 let _ = window.unminimize();
                 let _ = window.set_focus();
             }
+            // Setting openFileTarget entscheidet: neuer Tab direkt im
+            // Backend (Default) oder Replace-Semantik ueber den
+            // bestehenden cli:open-Frontend-Pfad (openDocument ersetzt
+            // das Dokument im aktiven Tab).
+            let target = app
+                .try_state::<crate::state::AppState>()
+                .and_then(|state| {
+                    state
+                        .settings
+                        .lock()
+                        .ok()
+                        .map(|settings| settings.data().open_file_target)
+                })
+                .unwrap_or_default();
+            if target == crate::settings::OpenFileTarget::Newtab {
+                if let Some(state) = app.try_state::<crate::state::AppState>() {
+                    match crate::commands::tabs::open(&state, app, path.clone()) {
+                        Ok(transition) => {
+                            let _ = crate::commands::tabs::emit_navigation_changed(
+                                app,
+                                &transition,
+                                None,
+                            );
+                            return;
+                        }
+                        Err(error) => {
+                            tracing::warn!(
+                                target: "folio::tabs",
+                                %error,
+                                "external open as new tab failed; falling back to cli:open"
+                            );
+                        }
+                    }
+                }
+            }
             let _ = app.emit("cli:open", serde_json::json!({ "path": path }));
         }))
         .plugin(tauri_plugin_dialog::init())
@@ -146,7 +181,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
                                 .tabs
                                 .lock()
                                 .ok()
-                                .map(|tabs| tabs.active().document_store.is_dirty)
+                                .map(|tabs| tabs.any_dirty())
                         })
                         .unwrap_or(false);
                     if is_dirty {
