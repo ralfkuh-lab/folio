@@ -10,6 +10,17 @@
   flex-direction: column;
   overflow: hidden;
 }
+/* Wrapper um die Pane-Regionen (View/Code/HTML/Image/Editor + Mid-
+   Splitter). Noetig, damit der Split-Mode NUR die Panes auf row-reverse
+   stellt — Tab-Leiste und Find-Bar bleiben Kinder der column-
+   .content-region und damit oben. */
+.content-panes {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
 body.edit-mode .view-region { display: none; }
 body:not(.edit-mode):not(.split-mode) .editor-region { display: none; }
 
@@ -19,7 +30,7 @@ body:not(.edit-mode):not(.split-mode) .editor-region { display: none; }
    sie einfach sichtbar und blendet den Editor zusaetzlich ein.
    row-reverse statt HTML-Reorder, damit View/Edit-Mode unberuehrt bleiben
    (dort ist die jeweils andere Region eh display:none). */
-body.split-mode .content-region { flex-direction: row-reverse; }
+body.split-mode .content-panes { flex-direction: row-reverse; }
 body.split-mode .editor-region { display: flex; }
 /* Editor-Pane bekommt ihren Breitenanteil aus --split-mid (Prozent,
    gesetzt vom mittleren Splitter + Boot-Restore); die View-Seite fuellt

@@ -178,10 +178,11 @@ export function initToolbarActions(): void {
         }
         if (!ctrl) return;
 
-        if (k === 'Tab') {
+        // X11/GTK meldet Shift+Tab teils als 'ISO_Left_Tab' statt 'Tab'.
+        if (k === 'Tab' || k === 'ISO_Left_Tab') {
             e.preventDefault();
             e.stopPropagation();
-            activateRelativeTab(shift ? -1 : 1);
+            activateRelativeTab(shift || k === 'ISO_Left_Tab' ? -1 : 1);
             return;
         }
         if (!shift && (k === '1' || k === '2' || k === '3')) {
