@@ -35,6 +35,11 @@
     eingebautes Undo bleibt im Editor-Fokus unangetastet. Ohne Fokus
     im Editor (z. B. Vault-Tree aktiv) ruft der Handler
     `FolioEditor.undo()` / `.redo()`.
+  - **Ctrl+Shift+Tab (Tab-Rueckwaertswechsel) kommt unter Linux nicht
+    an** (User-Report 2026-07-04): Handler-Pfad ist verifiziert
+    (synthetische Events inkl. ISO_Left_Tab-Guard funktionieren) —
+    vermutlich schluckt WebKitGTK die Kombination vor der Seite.
+    Niedrige Prio, Ctrl+Tab rotiert zyklisch.
   - **Restpunkt**: WebView2-`accelerator_handler`-Config existiert
     Rust-seitig noch nicht — die DOM-Capture-Handler bleiben bis dahin
     die Wahrheit (`toolbar-actions.ts:155-282`). Undo-Stack-Fix
