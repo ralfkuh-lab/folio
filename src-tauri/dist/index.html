@@ -124,6 +124,123 @@
     </div>
   </div>
   </div>
+<div id="settings-dialog" hidden>
+  <div class="settings-dialog__panel" role="region" aria-labelledby="settings-dialog-title">
+    <div class="settings-dialog__title" id="settings-dialog-title">Einstellungen</div>
+    <div class="settings-dialog__body">
+      <div class="settings-dialog__tabs" role="tablist" aria-label="Einstellungsbereiche" aria-orientation="vertical">
+        <button type="button" id="settings-tab-allgemein" class="settings-dialog__tab settings-dialog__tab--active" role="tab" aria-selected="true" aria-controls="settings-panel-allgemein" tabindex="0">Allgemein</button>
+        <button type="button" id="settings-tab-themes" class="settings-dialog__tab" role="tab" aria-selected="false" aria-controls="settings-panel-themes" tabindex="-1">Markdown-Themes</button>
+        <button type="button" id="settings-tab-diagnose" class="settings-dialog__tab" role="tab" aria-selected="false" aria-controls="settings-panel-diagnose" tabindex="-1">Diagnose</button>
+      </div>
+      <div class="settings-dialog__tabpanel" id="settings-panel-allgemein" role="tabpanel" aria-labelledby="settings-tab-allgemein" data-settings-tab="allgemein">
+        <section class="settings-section">
+          <h3 class="settings-section__title">Allgemein</h3>
+          <div class="settings-row">
+            <label for="settings-language">Sprache</label>
+            <select id="settings-language" class="settings-input">
+              <option value="de">Deutsch</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+          <p class="settings-hint" id="settings-language-hint">Sprachänderung wird beim nächsten Start aktiv.</p>
+        </section>
+        <section class="settings-section">
+          <h3 class="settings-section__title">View-/Edit-Mode</h3>
+          <div class="settings-row">
+            <label for="settings-default-md">Markdown-Dateien öffnen in</label>
+            <select id="settings-default-md" class="settings-input">
+              <option value="view">Anzeige</option>
+              <option value="edit">Bearbeiten</option>
+              <option value="current">Aktueller Modus</option>
+            </select>
+          </div>
+          <div class="settings-row">
+            <label for="settings-default-text">Text-/Code-Dateien öffnen in</label>
+            <select id="settings-default-text" class="settings-input">
+              <option value="view">Anzeige</option>
+              <option value="edit">Bearbeiten</option>
+              <option value="current">Aktueller Modus</option>
+            </select>
+          </div>
+          <p class="settings-hint">„Aktueller Modus" behält den aktuell aktiven View/Edit-Status beim Öffnen einer neuen Datei. Zurück/Vorwärts stellt unabhängig davon den ursprünglichen Modus wieder her.</p>
+          <div class="settings-row settings-row--toggle">
+            <label for="settings-view-auto-format">
+              <input type="checkbox" id="settings-view-auto-format" />
+              Im View-Mode automatisch formatieren
+            </label>
+          </div>
+          <p class="settings-hint">Nutzt Monacos „Format Document" für alle Sprachen mit registriertem Formatter (JSON, XML, HTML, CSS, JS/TS, …). Ohne Häkchen wird der Rohinhalt angezeigt.</p>
+        </section>
+        <section class="settings-section">
+          <h3 class="settings-section__title">Export</h3>
+          <div class="settings-row">
+            <label for="settings-export-dir-mode">Export-Zielverzeichnis</label>
+            <select id="settings-export-dir-mode" class="settings-input">
+              <option value="document">Verzeichnis der Datei</option>
+              <option value="last">Zuletzt gewähltes Verzeichnis</option>
+            </select>
+          </div>
+        </section>
+        <section class="settings-section">
+          <h3 class="settings-section__title">Tabs</h3>
+          <div class="settings-row">
+            <label for="settings-open-file-target">Extern geöffnete Dateien</label>
+            <select id="settings-open-file-target" class="settings-input">
+              <option value="newtab">In neuem Tab öffnen</option>
+              <option value="replace">Aktuellen Tab ersetzen</option>
+            </select>
+          </div>
+          <p class="settings-hint">Gilt für Dateien, die per Explorer-Doppelklick oder Kommandozeile in der laufenden Instanz geöffnet werden.</p>
+        </section>
+        <section class="settings-section">
+          <h3 class="settings-section__title">Datei-Überwachung</h3>
+          <div class="settings-row settings-row--toggle">
+            <label for="settings-vault-auto-refresh">
+              <input type="checkbox" id="settings-vault-auto-refresh" />
+              Vault-Tree bei externen Änderungen aktualisieren
+            </label>
+          </div>
+          <p class="settings-hint">Aufgeklappte Ordner werden überwacht; neue, gelöschte oder umbenannte Dateien tauchen direkt im Arbeitsbereich auf.</p>
+          <div class="settings-row settings-row--toggle">
+            <label for="settings-document-auto-reload">
+              <input type="checkbox" id="settings-document-auto-reload" />
+              Geöffnete Datei bei externer Änderung neuladen
+            </label>
+          </div>
+          <p class="settings-hint">Ohne Häkchen erscheint stattdessen ein Reload-Button in der Toolbar — sinnvoll für Log-Dateien o. ä. mit ständigen Schreibvorgängen.</p>
+        </section>
+      </div>
+      <div class="settings-dialog__tabpanel" id="settings-panel-themes" role="tabpanel" aria-labelledby="settings-tab-themes" data-settings-tab="themes" hidden>
+        <section class="settings-section">
+          <h3 class="settings-section__title">Markdown-Themes</h3>
+          <p class="settings-hint">Das Theme gilt für die Markdown-Ansicht. Themes ohne Dunkel-Variante bleiben auch im dunklen App-Theme hell.</p>
+          <div id="settings-theme-list" class="settings-theme-list" role="radiogroup" aria-label="Markdown-Theme"></div>
+          <p id="settings-theme-hint" class="settings-hint"></p>
+        </section>
+      </div>
+      <div class="settings-dialog__tabpanel" id="settings-panel-diagnose" role="tabpanel" aria-labelledby="settings-tab-diagnose" data-settings-tab="diagnose" hidden>
+        <section class="settings-section">
+          <h3 class="settings-section__title">Diagnose</h3>
+          <div class="settings-row">
+            <label for="settings-log-level">Log-Level</label>
+            <select id="settings-log-level">
+              <option value="off">Aus (keine Logdateien)</option>
+              <option value="error">Nur Fehler</option>
+              <option value="warn">Warnungen + Fehler</option>
+              <option value="info">Normal (empfohlen)</option>
+              <option value="debug">Debug (ausführlich)</option>
+            </select>
+          </div>
+          <p class="settings-hint">Logs landen rotierend (täglich, max. 7 Tage) im OS-Log-Verzeichnis (Windows: <code>%LOCALAPPDATA%\Folio\logs</code>). Änderung greift sofort. Während der Entwicklung überschreibt <code>RUST_LOG</code> und der Debug-Build immer auf <code>debug</code>.</p>
+        </section>
+      </div>
+    </div>
+    <div class="settings-dialog__actions">
+      <button type="button" id="settings-close" class="primary">Schließen</button>
+    </div>
+  </div>
+</div>
 </div>
 <div class="splitter-right" id="splitter-right"></div>
 <aside class="toc-region" id="toc-region">
@@ -272,123 +389,6 @@
     </div>
     <div class="about-dialog__actions">
       <button type="button" id="about-close" class="primary">Schließen</button>
-    </div>
-  </div>
-</div>
-<div id="settings-dialog" hidden>
-  <div class="settings-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="settings-dialog-title">
-    <div class="settings-dialog__title" id="settings-dialog-title">Einstellungen</div>
-    <div class="settings-dialog__body">
-      <div class="settings-dialog__tabs" role="tablist" aria-label="Einstellungsbereiche" aria-orientation="vertical">
-        <button type="button" id="settings-tab-allgemein" class="settings-dialog__tab settings-dialog__tab--active" role="tab" aria-selected="true" aria-controls="settings-panel-allgemein" tabindex="0">Allgemein</button>
-        <button type="button" id="settings-tab-themes" class="settings-dialog__tab" role="tab" aria-selected="false" aria-controls="settings-panel-themes" tabindex="-1">Markdown-Themes</button>
-        <button type="button" id="settings-tab-diagnose" class="settings-dialog__tab" role="tab" aria-selected="false" aria-controls="settings-panel-diagnose" tabindex="-1">Diagnose</button>
-      </div>
-      <div class="settings-dialog__tabpanel" id="settings-panel-allgemein" role="tabpanel" aria-labelledby="settings-tab-allgemein" data-settings-tab="allgemein">
-        <section class="settings-section">
-          <h3 class="settings-section__title">Allgemein</h3>
-          <div class="settings-row">
-            <label for="settings-language">Sprache</label>
-            <select id="settings-language" class="settings-input">
-              <option value="de">Deutsch</option>
-              <option value="en">English</option>
-            </select>
-          </div>
-          <p class="settings-hint" id="settings-language-hint">Sprachänderung wird beim nächsten Start aktiv.</p>
-        </section>
-        <section class="settings-section">
-          <h3 class="settings-section__title">View-/Edit-Mode</h3>
-          <div class="settings-row">
-            <label for="settings-default-md">Markdown-Dateien öffnen in</label>
-            <select id="settings-default-md" class="settings-input">
-              <option value="view">Anzeige</option>
-              <option value="edit">Bearbeiten</option>
-              <option value="current">Aktueller Modus</option>
-            </select>
-          </div>
-          <div class="settings-row">
-            <label for="settings-default-text">Text-/Code-Dateien öffnen in</label>
-            <select id="settings-default-text" class="settings-input">
-              <option value="view">Anzeige</option>
-              <option value="edit">Bearbeiten</option>
-              <option value="current">Aktueller Modus</option>
-            </select>
-          </div>
-          <p class="settings-hint">„Aktueller Modus" behält den aktuell aktiven View/Edit-Status beim Öffnen einer neuen Datei. Zurück/Vorwärts stellt unabhängig davon den ursprünglichen Modus wieder her.</p>
-          <div class="settings-row settings-row--toggle">
-            <label for="settings-view-auto-format">
-              <input type="checkbox" id="settings-view-auto-format" />
-              Im View-Mode automatisch formatieren
-            </label>
-          </div>
-          <p class="settings-hint">Nutzt Monacos „Format Document" für alle Sprachen mit registriertem Formatter (JSON, XML, HTML, CSS, JS/TS, …). Ohne Häkchen wird der Rohinhalt angezeigt.</p>
-        </section>
-        <section class="settings-section">
-          <h3 class="settings-section__title">Export</h3>
-          <div class="settings-row">
-            <label for="settings-export-dir-mode">Export-Zielverzeichnis</label>
-            <select id="settings-export-dir-mode" class="settings-input">
-              <option value="document">Verzeichnis der Datei</option>
-              <option value="last">Zuletzt gewähltes Verzeichnis</option>
-            </select>
-          </div>
-        </section>
-        <section class="settings-section">
-          <h3 class="settings-section__title">Tabs</h3>
-          <div class="settings-row">
-            <label for="settings-open-file-target">Extern geöffnete Dateien</label>
-            <select id="settings-open-file-target" class="settings-input">
-              <option value="newtab">In neuem Tab öffnen</option>
-              <option value="replace">Aktuellen Tab ersetzen</option>
-            </select>
-          </div>
-          <p class="settings-hint">Gilt für Dateien, die per Explorer-Doppelklick oder Kommandozeile in der laufenden Instanz geöffnet werden.</p>
-        </section>
-        <section class="settings-section">
-          <h3 class="settings-section__title">Datei-Überwachung</h3>
-          <div class="settings-row settings-row--toggle">
-            <label for="settings-vault-auto-refresh">
-              <input type="checkbox" id="settings-vault-auto-refresh" />
-              Vault-Tree bei externen Änderungen aktualisieren
-            </label>
-          </div>
-          <p class="settings-hint">Aufgeklappte Ordner werden überwacht; neue, gelöschte oder umbenannte Dateien tauchen direkt im Arbeitsbereich auf.</p>
-          <div class="settings-row settings-row--toggle">
-            <label for="settings-document-auto-reload">
-              <input type="checkbox" id="settings-document-auto-reload" />
-              Geöffnete Datei bei externer Änderung neuladen
-            </label>
-          </div>
-          <p class="settings-hint">Ohne Häkchen erscheint stattdessen ein Reload-Button in der Toolbar — sinnvoll für Log-Dateien o. ä. mit ständigen Schreibvorgängen.</p>
-        </section>
-      </div>
-      <div class="settings-dialog__tabpanel" id="settings-panel-themes" role="tabpanel" aria-labelledby="settings-tab-themes" data-settings-tab="themes" hidden>
-        <section class="settings-section">
-          <h3 class="settings-section__title">Markdown-Themes</h3>
-          <p class="settings-hint">Das Theme gilt für die Markdown-Ansicht. Themes ohne Dunkel-Variante bleiben auch im dunklen App-Theme hell.</p>
-          <div id="settings-theme-list" class="settings-theme-list" role="radiogroup" aria-label="Markdown-Theme"></div>
-          <p id="settings-theme-hint" class="settings-hint"></p>
-        </section>
-      </div>
-      <div class="settings-dialog__tabpanel" id="settings-panel-diagnose" role="tabpanel" aria-labelledby="settings-tab-diagnose" data-settings-tab="diagnose" hidden>
-        <section class="settings-section">
-          <h3 class="settings-section__title">Diagnose</h3>
-          <div class="settings-row">
-            <label for="settings-log-level">Log-Level</label>
-            <select id="settings-log-level">
-              <option value="off">Aus (keine Logdateien)</option>
-              <option value="error">Nur Fehler</option>
-              <option value="warn">Warnungen + Fehler</option>
-              <option value="info">Normal (empfohlen)</option>
-              <option value="debug">Debug (ausführlich)</option>
-            </select>
-          </div>
-          <p class="settings-hint">Logs landen rotierend (täglich, max. 7 Tage) im OS-Log-Verzeichnis (Windows: <code>%LOCALAPPDATA%\Folio\logs</code>). Änderung greift sofort. Während der Entwicklung überschreibt <code>RUST_LOG</code> und der Debug-Build immer auf <code>debug</code>.</p>
-        </section>
-      </div>
-    </div>
-    <div class="settings-dialog__actions">
-      <button type="button" id="settings-close" class="primary">Schließen</button>
     </div>
   </div>
 </div>

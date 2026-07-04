@@ -66,3 +66,11 @@
   color: var(--fg);
   background: rgba(128, 128, 128, 0.22);
 }
+
+/* Virtueller "Einstellungen"-Tab (rechts): kompakt, kein Dirty-Punkt. */
+.tab-item.tab-settings {
+  flex: 0 0 auto;
+  min-width: auto;
+  margin-left: auto;
+  border-left: 1px solid var(--border);
+}

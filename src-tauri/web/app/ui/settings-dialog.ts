@@ -10,6 +10,7 @@
    und beim Boot via menu::build anwenden. */
 
 import { applyLogLevelFromSettings, folioLog } from '../util/log';
+import { configureSettingsTab, setSettingsTabOpen } from '../state/tabs';
 import { applyViewTheme } from '../view/theme';
 
 type SettingsLanguage = 'de' | 'en';
@@ -300,7 +301,9 @@ async function patchSettings(patch: Partial<SettingsData>): Promise<void> {
 function installKeydownHandler(): void {
     if (keydownHandler) return;
     keydownHandler = function (e: KeyboardEvent) {
-        if (e.key === 'Escape' || e.key === 'Enter') {
+        // Nur Escape: Enter-Close war Modal-Semantik — in der Settings-
+        // REGION wuerde es Enter in Formularfeldern kapern.
+        if (e.key === 'Escape') {
             e.preventDefault();
             closeSettingsDialog();
         }
@@ -314,8 +317,7 @@ export function openSettingsDialog(): void {
     activateSettingsTab('allgemein');
     var invoke = getInvoke();
     if (!invoke) {
-        dlg.hidden = false;
-        installKeydownHandler();
+        showSettingsRegion(dlg);
         return;
     }
     Promise.all([
@@ -334,8 +336,7 @@ export function openSettingsDialog(): void {
         if (bootLanguage === null) bootLanguage = currentSettings.language;
         applySettingsToForm(currentSettings);
         applyLogLevelFromSettings(currentSettings.logLevel);
-        dlg.hidden = false;
-        installKeydownHandler();
+        showSettingsRegion(dlg);
         setTimeout(function () {
             var btn = $('settings-close') as HTMLButtonElement | null;
             if (btn) btn.focus();
@@ -346,6 +347,15 @@ export function openSettingsDialog(): void {
     });
 }
 
+function showSettingsRegion(dlg: HTMLElement): void {
+    dlg.hidden = false;
+    // Blendet die .content-panes aus (CSS) — Settings bekommen die
+    // gesamte Inhaltsflaeche; der virtuelle Leisten-Tab zeigt den Modus.
+    document.body.classList.add('settings-open');
+    setSettingsTabOpen(true);
+    installKeydownHandler();
+}
+
 export function closeSettingsDialog(): void {
     // Handler-Removal VOR dem hidden-Early-Return — sonst bliebe er bei
     // einem inkonsistenten Zustand (Handler da, Dialog hidden) haengen.
@@ -353,6 +363,8 @@ export function closeSettingsDialog(): void {
         document.removeEventListener('keydown', keydownHandler);
         keydownHandler = null;
     }
+    document.body.classList.remove('settings-open');
+    setSettingsTabOpen(false);
     var dlg = $('settings-dialog');
     if (!dlg || dlg.hidden) return;
     dlg.hidden = true;
@@ -431,10 +443,13 @@ export function initSettingsDialog(): void {
     var dlg = $('settings-dialog');
     if (dlg) {
         bindTabs(dlg);
-        dlg.addEventListener('click', function (e) {
-            if (e.target === dlg) closeSettingsDialog();
-        });
     }
+    // Virtueller Leisten-Tab: Klick auf den Settings-Tab ist no-op-open
+    // (Region ist schon offen), das X schliesst.
+    configureSettingsTab({
+        onActivate: function () { /* Region ist bereits sichtbar */ },
+        onClose: closeSettingsDialog,
+    });
     var closeBtn = $('settings-close');
     if (closeBtn) closeBtn.addEventListener('click', closeSettingsDialog);
     bindInputs();

@@ -290,6 +290,14 @@ sonst lehnt Tauri den Build ab.
   Automation: `GET /tabs`, `POST /tabs/open|close|activate|close_all`
   (Letzteres fuer E2E-Isolation — Tab-Szenarien raeumen damit im
   finally auf), `/state.tabs`.
+  **Settings als virtueller Tab**: `#settings-dialog` ist kein Modal
+  mehr, sondern eine Vollflaechen-Region in der `.content-region`
+  (`body.settings-open` blendet die `.content-panes` aus). Der
+  „⚙ Einstellungen"-Eintrag in der Tab-Leiste ist rein frontend-seitig
+  (`state/tabs.ts::setSettingsTabOpen`, Hooks via
+  `configureSettingsTab` — kein Backend-Tab, keine Persistenz).
+  Klick auf einen Dokument-Tab oder Escape schliesst die Region;
+  Enter schliesst bewusst NICHT mehr (Formular-Semantik).
 - **Tab-Session-Persistenz**: Dokumenttragende Tabs werden in
   `workspace.json` als `open_tabs` plus `active_tab` (Index in dieser
   gefilterten Liste) gespeichert. Pfade sind wie alle Workspace-Pfade auf

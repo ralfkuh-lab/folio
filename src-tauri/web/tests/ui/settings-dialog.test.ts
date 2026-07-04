@@ -21,7 +21,9 @@ const settings = {
 };
 
 function buildDom(): void {
+    document.body.className = '';
     document.body.innerHTML = `
+        <nav id="tab-bar" hidden></nav>
         <div id="settings-dialog" hidden>
             <div role="tablist" aria-orientation="vertical">
                 <button type="button" id="settings-tab-allgemein"
@@ -148,6 +150,23 @@ describe('settings-dialog', () => {
         expect(handles.invoke).toHaveBeenCalledWith('settings_update', {
             patch: { openFileTarget: 'replace' },
         });
+    });
+
+    it('oeffnet als Vollflaechen-Region mit virtuellem Leisten-Tab', async () => {
+        openSettingsDialog();
+        await flush();
+
+        expect(document.body.classList.contains('settings-open')).toBe(true);
+        const settingsTab = document.querySelector('#tab-bar .tab-item.tab-settings');
+        expect(settingsTab).not.toBeNull();
+        expect(settingsTab!.getAttribute('aria-selected')).toBe('true');
+
+        // X am virtuellen Tab schliesst die Region wieder.
+        (settingsTab!.querySelector('.tab-close') as HTMLButtonElement).click();
+        await flush();
+        expect(document.body.classList.contains('settings-open')).toBe(false);
+        expect(document.getElementById('settings-dialog')!.hidden).toBe(true);
+        expect(document.querySelector('.tab-item.tab-settings')).toBeNull();
     });
 
     it('wechselt per Klick vom Allgemein- zum Diagnose-Panel', async () => {

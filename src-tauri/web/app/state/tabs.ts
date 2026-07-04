@@ -24,6 +24,23 @@ export interface TabsPayload {
 let current: TabsPayload = { tabs: [], activeIndex: 0 };
 let eventRevision = 0;
 
+// Virtueller "Einstellungen"-Tab (VS-Code-Muster): kein Backend-Tab,
+// nur ein Leisten-Eintrag, solange die Settings-Region offen ist.
+// Callbacks statt Direktimport von settings-dialog.ts (Import-Zyklus).
+let settingsTabOpen = false;
+let settingsTabHooks: { onActivate: () => void; onClose: () => void } | null = null;
+
+export function configureSettingsTab(hooks: { onActivate: () => void; onClose: () => void }): void {
+    settingsTabHooks = hooks;
+}
+
+/** Von settings-dialog.ts bei open/close gerufen; rendert die Leiste neu. */
+export function setSettingsTabOpen(open: boolean): void {
+    if (settingsTabOpen === open) return;
+    settingsTabOpen = open;
+    renderTabs(current);
+}
+
 function invoke(command: string, args?: Record<string, unknown>): Promise<any> {
     return window.__TAURI__.core.invoke(command, args);
 }
@@ -57,20 +74,24 @@ export function renderTabs(payload: TabsPayload): void {
     const bar = document.getElementById('tab-bar');
     if (!bar) return;
 
-    const visible = current.tabs.length > 0
-        && !(current.tabs.length === 1 && !current.tabs[0].path);
+    const visible = settingsTabOpen
+        || (current.tabs.length > 0
+            && !(current.tabs.length === 1 && !current.tabs[0].path));
     bar.hidden = !visible;
     bar.replaceChildren();
 
     for (const tab of current.tabs) {
         if (!tab.path) continue;
         const item = document.createElement('div');
-        item.className = 'tab-item' + (tab.active ? ' active' : '');
+        // Bei offener Settings-Region ist der virtuelle Tab "aktiv" —
+        // Dokument-Tabs verlieren solange ihre aktive Markierung.
+        item.className = 'tab-item' + (tab.active && !settingsTabOpen ? ' active' : '');
         item.dataset.tabId = String(tab.id);
         item.title = tab.path;
         item.setAttribute('role', 'tab');
-        item.setAttribute('aria-selected', tab.active ? 'true' : 'false');
-        item.tabIndex = tab.active ? 0 : -1;
+        const selected = tab.active && !settingsTabOpen;
+        item.setAttribute('aria-selected', selected ? 'true' : 'false');
+        item.tabIndex = selected ? 0 : -1;
 
         const label = document.createElement('span');
         label.className = 'tab-title';
@@ -99,12 +120,50 @@ export function renderTabs(payload: TabsPayload): void {
         item.appendChild(close);
 
         item.addEventListener('click', function () {
+            if (settingsTabOpen && settingsTabHooks) settingsTabHooks.onClose();
             activateTab(tab.id);
         });
         item.addEventListener('auxclick', function (event) {
             if (event.button !== 1) return;
             event.preventDefault();
             requestCloseTab(tab.id);
+        });
+        bar.appendChild(item);
+    }
+
+    if (settingsTabOpen) {
+        const item = document.createElement('div');
+        item.className = 'tab-item tab-settings active';
+        item.dataset.tabId = 'settings';
+        item.title = 'Einstellungen';
+        item.setAttribute('role', 'tab');
+        item.setAttribute('aria-selected', 'true');
+        item.tabIndex = 0;
+
+        const label = document.createElement('span');
+        label.className = 'tab-title';
+        label.textContent = '\u2699 Einstellungen';
+        item.appendChild(label);
+
+        const close = document.createElement('button');
+        close.className = 'tab-close';
+        close.type = 'button';
+        close.title = 'Einstellungen schließen';
+        close.setAttribute('aria-label', 'Einstellungen schließen');
+        close.textContent = '×';
+        close.addEventListener('click', function (event) {
+            event.stopPropagation();
+            if (settingsTabHooks) settingsTabHooks.onClose();
+        });
+        item.appendChild(close);
+
+        item.addEventListener('click', function () {
+            if (settingsTabHooks) settingsTabHooks.onActivate();
+        });
+        item.addEventListener('auxclick', function (event) {
+            if (event.button !== 1) return;
+            event.preventDefault();
+            if (settingsTabHooks) settingsTabHooks.onClose();
         });
         bar.appendChild(item);
     }

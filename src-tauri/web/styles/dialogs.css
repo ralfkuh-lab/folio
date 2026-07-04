@@ -593,29 +593,31 @@
   }
 }
 
-/* Settings-Dialog */
+/* Settings-Ansicht: kein Modal mehr, sondern Vollflaechen-Region in der
+   .content-region (virtueller "Einstellungen"-Tab in der Tab-Leiste).
+   body.settings-open blendet die .content-panes aus — die Settings
+   bekommen damit immer die gesamte Inhaltsflaeche, unabhaengig vom
+   gewaehlten Settings-Unterbereich. */
 #settings-dialog[hidden] { display: none; }
 #settings-dialog {
-  position: fixed;
-  inset: 0;
-  z-index: 10001;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
   display: flex;
-  align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+  background: var(--bg);
 }
+body.settings-open .content-panes { display: none; }
 .settings-dialog__panel {
-  width: min(740px, calc(100vw - 48px));
-  max-height: calc(100vh - 48px);
+  width: min(980px, 100%);
   display: flex;
   flex-direction: column;
   background: var(--bg);
   color: var(--fg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.28);
-  padding: 18px;
+  padding: 18px 24px;
   gap: 12px;
+  min-height: 0;
 }
 .settings-dialog__title {
   font-weight: 700;
