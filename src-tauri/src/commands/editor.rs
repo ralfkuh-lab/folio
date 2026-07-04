@@ -22,9 +22,11 @@ impl From<editor_commands::EditResult> for EditResult {
 #[tauri::command]
 pub async fn editor_text_changed(text: String, state: State<'_, AppState>) -> Result<(), String> {
     state
-        .document_store
+        .tabs
         .lock()
-        .map_err(|_| "document store lock poisoned".to_string())?
+        .map_err(|_| "tabs lock poisoned".to_string())?
+        .active_mut()
+        .document_store
         .update_text(text);
     Ok(())
 }
@@ -32,19 +34,22 @@ pub async fn editor_text_changed(text: String, state: State<'_, AppState>) -> Re
 #[tauri::command]
 pub async fn editor_save_requested(state: State<'_, AppState>) -> Result<bool, String> {
     state
-        .document_store
+        .tabs
         .lock()
-        .map_err(|_| "document store lock poisoned".to_string())?
+        .map_err(|_| "tabs lock poisoned".to_string())?
+        .active_mut()
+        .document_store
         .save()
         .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 pub async fn discard_editor_changes(state: State<'_, AppState>) -> Result<bool, String> {
-    let mut store = state
-        .document_store
+    let mut tabs = state
+        .tabs
         .lock()
-        .map_err(|_| "document store lock poisoned".to_string())?;
+        .map_err(|_| "tabs lock poisoned".to_string())?;
+    let store = &mut tabs.active_mut().document_store;
     let Some(path) = store.path.clone() else {
         return Ok(false);
     };

@@ -93,9 +93,11 @@ pub fn route_editor_event(
             }),
         "editorTextChanged" => {
             state
-                .document_store
+                .tabs
                 .lock()
-                .map_err(|_| "document store lock poisoned".to_string())?
+                .map_err(|_| "tabs lock poisoned".to_string())?
+                .active_mut()
+                .document_store
                 .update_text(string_field(payload, "text")?);
             Ok(())
         }
@@ -116,9 +118,11 @@ pub fn route_editor_event(
                 automation.selection_length = length;
             }
             state
-                .navigation
+                .tabs
                 .lock()
-                .map_err(|_| "navigation lock poisoned".to_string())?
+                .map_err(|_| "tabs lock poisoned".to_string())?
+                .active_mut()
+                .navigation
                 .update_editor_cursor(start);
             handle
                 .emit(
@@ -131,9 +135,11 @@ pub fn route_editor_event(
             let y = number_field(payload, "y")?;
             let line = payload.get("line").and_then(Value::as_f64).unwrap_or(0.0);
             state
-                .navigation
+                .tabs
                 .lock()
-                .map_err(|_| "navigation lock poisoned".to_string())?
+                .map_err(|_| "tabs lock poisoned".to_string())?
+                .active_mut()
+                .navigation
                 .update_editor_scroll(y);
             handle
                 .emit("editor:scroll", serde_json::json!({ "y": y, "line": line }))
@@ -141,9 +147,11 @@ pub fn route_editor_event(
         }
         "editorSaveRequested" => {
             state
-                .document_store
+                .tabs
                 .lock()
-                .map_err(|_| "document store lock poisoned".to_string())?
+                .map_err(|_| "tabs lock poisoned".to_string())?
+                .active_mut()
+                .document_store
                 .save()
                 .map_err(|error| error.to_string())?;
             Ok(())

@@ -9,9 +9,11 @@ use tauri_plugin_shell::ShellExt;
 
 pub(super) fn link_click(href: String, state: &AppState, handle: &AppHandle) -> Result<(), String> {
     let current_file = state
-        .document_store
+        .tabs
         .lock()
-        .map_err(|_| "document store lock poisoned".to_string())?
+        .map_err(|_| "tabs lock poisoned".to_string())?
+        .active()
+        .document_store
         .path
         .clone();
     match state
@@ -65,9 +67,11 @@ pub(super) fn visible_heading(anchor: String, handle: &AppHandle) -> Result<(), 
 
 pub(super) fn scroll_position(y: f64, state: &AppState) -> Result<(), String> {
     state
-        .navigation
+        .tabs
         .lock()
-        .map_err(|_| "navigation lock poisoned".to_string())?
+        .map_err(|_| "tabs lock poisoned".to_string())?
+        .active_mut()
+        .navigation
         .update_scroll_position(y);
     Ok(())
 }

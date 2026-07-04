@@ -8,9 +8,11 @@ use tauri::{AppHandle, Emitter, State};
 #[tauri::command]
 pub async fn close_document(state: State<'_, AppState>, handle: AppHandle) -> Result<(), String> {
     state
-        .document_store
+        .tabs
         .lock()
-        .map_err(|_| "document store lock poisoned".to_string())?
+        .map_err(|_| "tabs lock poisoned".to_string())?
+        .active_mut()
+        .document_store
         .close();
     if let Ok(mut vault) = state.vault.lock() {
         vault.set_active(None);

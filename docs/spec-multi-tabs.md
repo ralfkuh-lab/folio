@@ -59,22 +59,24 @@ Pro Tab eigene History, eigener Dirty-Zustand, eigener Undo-Stack.
 
 ## Etappen & Checkliste
 
-### Etappe T1 — Backend-Fundament (verhaltensneutral) ✅=fertig
+### Etappe T1 — Backend-Fundament (verhaltensneutral) ✅ FERTIG
 
 Reines Refactoring: TabManager mit genau einem Tab, keinerlei
 UI-/Verhaltensänderung. Abnahme: komplette E2E-Suite unverändert grün.
 
-- [ ] `tab_manager.rs`: `Tab`/`TabManager` (new/active/active_mut,
+- [x] `tab_manager.rs`: `Tab`/`TabManager` (new/active/active_mut,
       Tab-IDs monoton), Unit-Tests.
-- [ ] `AppState`: `document_store`/`navigation` durch
+- [x] `AppState`: `document_store`/`navigation` durch
       `tabs: Mutex<TabManager>` ersetzt; alle Zugriffe in
       commands/, document_service, automation/handlers auf
-      „aktiver Tab" umgestellt.
-- [ ] `DocumentEvents`-Verkabelung (dirty_changed-Callback etc.) pro
+      „aktiver Tab" umgestellt. (Zusatz: `view_mode` von
+      `AutomationUiState` in den Tab verschoben — dokumentbezogen.)
+- [x] `DocumentEvents`-Verkabelung (dirty_changed-Callback etc.) pro
       Tab statt einmalig global; Watcher-Callback trägt Tab-ID, Events
       aus inaktiven Tabs (external_changed) werden korrekt zugeordnet.
-- [ ] `cargo test`/`clippy`/`fmt` grün; keine Frontend-Änderung.
-- [ ] Volle E2E-Suite (28 Szenarien) unverändert grün.
+      Alle `document:*`-Events tragen jetzt `tabId`.
+- [x] `cargo test`/`clippy`/`fmt` grün; keine Frontend-Änderung.
+- [x] Volle E2E-Suite (28 Szenarien) unverändert grün.
 
 ### Etappe T2 — Tab-Operationen Backend + Automation-API
 

@@ -28,11 +28,15 @@ pub(in crate::automation) async fn post_mode(
         return Err(ApiError::bad_request(format!("unknown mode '{mode}'")));
     }
     let state = context.app_handle.state::<AppState>();
-    state
-        .automation
-        .lock()
-        .map_err(|_| ApiError::internal("automation state lock poisoned"))?
-        .view_mode = mode.clone();
+    {
+        let mut tabs = state
+            .tabs
+            .lock()
+            .map_err(|_| ApiError::internal("tabs lock poisoned"))?;
+        let tab = tabs.active_mut();
+        tab.view_mode = mode.clone();
+        tab.navigation.update_view_mode(&mode);
+    }
     let (request_id, receiver) = ack::register(state.inner()).map_err(ApiError::internal)?;
     emit(
         &context,
@@ -490,13 +494,8 @@ async fn history_move(
     options: AckOptions,
 ) -> ApiResult<Json<HistoryMoveResponse>> {
     let state = context.app_handle.state::<AppState>();
-    let entry = crate::document_service::move_history(
-        &state.navigation,
-        &state.document_store,
-        &state.vault,
-        forward,
-    )
-    .map_err(|error| ApiError::internal(error.to_string()))?;
+    let entry = crate::document_service::move_history(&state.tabs, &state.vault, forward)
+        .map_err(|error| ApiError::internal(error.to_string()))?;
     let Some(entry) = entry else {
         // Stack-Edge: can_go_*-Gate hat den Move verhindert.
         return Ok(Json(HistoryMoveResponse {

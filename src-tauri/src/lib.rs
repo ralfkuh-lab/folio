@@ -19,6 +19,7 @@ mod persist;
 pub mod renderer;
 pub mod settings;
 pub mod state;
+pub mod tab_manager;
 pub mod text_statistics;
 pub mod theme;
 pub mod toc;
@@ -141,7 +142,11 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
                     let is_dirty = app
                         .try_state::<AppState>()
                         .and_then(|state| {
-                            state.document_store.lock().ok().map(|store| store.is_dirty)
+                            state
+                                .tabs
+                                .lock()
+                                .ok()
+                                .map(|tabs| tabs.active().document_store.is_dirty)
                         })
                         .unwrap_or(false);
                     if is_dirty {

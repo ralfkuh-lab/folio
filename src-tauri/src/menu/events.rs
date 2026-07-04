@@ -49,7 +49,13 @@ pub fn dispatch_menu_action(app: &AppHandle, id: &str) {
             // Menue-Beenden Dirty-Inhalt kommentarlos.
             let is_dirty = app
                 .try_state::<crate::state::AppState>()
-                .and_then(|state| state.document_store.lock().ok().map(|store| store.is_dirty))
+                .and_then(|state| {
+                    state
+                        .tabs
+                        .lock()
+                        .ok()
+                        .map(|tabs| tabs.active().document_store.is_dirty)
+                })
                 .unwrap_or(false);
             if is_dirty {
                 let _ = app.emit("menu:file_quit", serde_json::json!({}));

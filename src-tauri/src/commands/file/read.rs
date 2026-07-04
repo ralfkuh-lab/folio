@@ -51,9 +51,11 @@ pub async fn read_file(
 #[tauri::command]
 pub async fn reload_document(state: State<'_, AppState>) -> Result<bool, String> {
     state
-        .document_store
+        .tabs
         .lock()
-        .map_err(|_| "document store lock poisoned".to_string())?
+        .map_err(|_| "tabs lock poisoned".to_string())?
+        .active_mut()
+        .document_store
         .reload_if_changed()
         .map_err(|error| error.to_string())
 }

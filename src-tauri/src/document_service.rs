@@ -14,9 +14,10 @@ use std::sync::Mutex;
 
 use crate::document_store::{DocumentStore, LoadedDocument};
 use crate::file_kind::{classify, FileKind};
-use crate::navigation::{Entry as NavigationEntry, NavigationController};
+use crate::navigation::Entry as NavigationEntry;
 use crate::settings::{DefaultViewMode, SettingsService};
-use crate::state::{AppState, AutomationUiState};
+use crate::state::AppState;
+use crate::tab_manager::{Tab, TabManager};
 use crate::vault::Vault;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,7 +63,7 @@ pub struct OpenDocumentOutcome {
     /// (`defaultModeMarkdown` / `defaultModeText`) einen View-/Edit-
     /// Switch bewirkt hat. Der Aufrufer ist dafuer zustaendig,
     /// `app:set_mode` mit diesem Mode ans Frontend zu emittieren —
-    /// State.automation/navigation sind hier bereits aktualisiert.
+    /// Tab.view_mode/navigation sind hier bereits aktualisiert.
     ///
     /// `None` bedeutet entweder: Setting steht auf `current` (default),
     /// oder Mode war schon korrekt, oder Kind ist nicht switching-faehig
@@ -101,22 +102,18 @@ pub fn open(
     options: OpenDocumentOptions,
 ) -> Result<OpenDocumentOutcome, OpenDocumentError> {
     open_inner(
-        &state.document_store,
-        &state.navigation,
+        &state.tabs,
         &state.vault,
         Some(&state.settings),
-        Some(&state.automation),
         path,
         options,
     )
 }
 
 fn open_inner(
-    document_store: &Mutex<DocumentStore>,
-    navigation: &Mutex<NavigationController>,
+    tabs: &Mutex<TabManager>,
     vault: &Mutex<Vault>,
     settings: Option<&Mutex<SettingsService>>,
-    automation: Option<&Mutex<AutomationUiState>>,
     path: String,
     options: OpenDocumentOptions,
 ) -> Result<OpenDocumentOutcome, OpenDocumentError> {
@@ -127,32 +124,30 @@ fn open_inner(
     // ReloadPolicy::IfPathChanged verfehlen. Windows-APIs akzeptieren
     // beide Schreibweisen, Datei-IO bricht dadurch nicht.
     let path = path.replace('\\', "/");
-    let (needs_load, is_dirty) = {
-        let store = document_store
-            .lock()
-            .map_err(|_| OpenDocumentError::LockPoisoned("document store"))?;
+    let mut tabs = tabs
+        .lock()
+        .map_err(|_| OpenDocumentError::LockPoisoned("tabs"))?;
+    let tab = tabs.active_mut();
+    let needs_load = {
+        let store = &tab.document_store;
         let needs_load = match options.reload {
             ReloadPolicy::Always => true,
             ReloadPolicy::IfPathChanged => store.path.as_deref() != Some(path.as_str()),
         };
-        (needs_load, store.is_dirty)
+        needs_load
     };
 
     let loaded = if needs_load {
-        if options.dirty == DirtyPolicy::Reject && is_dirty {
+        if options.dirty == DirtyPolicy::Reject && tab.document_store.is_dirty {
             return Err(OpenDocumentError::DirtyRejected);
         }
-        let mut store = document_store
-            .lock()
-            .map_err(|_| OpenDocumentError::LockPoisoned("document store"))?;
-        Some(load_by_kind(&mut store, &path).map_err(OpenDocumentError::Load)?)
+        Some(load_by_kind(&mut tab.document_store, &path).map_err(OpenDocumentError::Load)?)
     } else {
         None
     };
 
-    let nav_entry = navigation
-        .lock()
-        .map_err(|_| OpenDocumentError::LockPoisoned("navigation"))?
+    let nav_entry = tab
+        .navigation
         .navigate(path.clone(), options.anchor)
         .clone();
 
@@ -167,10 +162,11 @@ fn open_inner(
     // anwenden (nicht beim Anker-Sprung mit IfPathChanged). History,
     // Reload und Save laufen ueber andere Pfade und sind unberuehrt.
     let mode_override = if needs_load && options.apply_default_mode {
-        apply_default_mode(settings, automation, navigation, &path)
+        apply_default_mode(settings, tab, &path)
     } else {
         None
     };
+    drop(tabs);
 
     Ok(OpenDocumentOutcome {
         loaded,
@@ -219,15 +215,16 @@ pub fn history_view_mode(path: &str, stored: &str) -> String {
 /// alte Dokument zeigt, und jede weitere Navigation arbeitete ab dem
 /// falschen Index.
 pub fn move_history(
-    navigation: &Mutex<NavigationController>,
-    document_store: &Mutex<DocumentStore>,
+    tabs: &Mutex<TabManager>,
     vault: &Mutex<Vault>,
     forward: bool,
 ) -> Result<Option<NavigationEntry>, OpenDocumentError> {
+    let mut tabs = tabs
+        .lock()
+        .map_err(|_| OpenDocumentError::LockPoisoned("tabs"))?;
+    let tab = tabs.active_mut();
     let entry = {
-        let mut navigation = navigation
-            .lock()
-            .map_err(|_| OpenDocumentError::LockPoisoned("navigation"))?;
+        let navigation = &mut tab.navigation;
         let can_move = if forward {
             navigation.can_go_forward()
         } else {
@@ -245,22 +242,16 @@ pub fn move_history(
         return Ok(None);
     };
 
-    let loaded = {
-        let mut store = document_store
-            .lock()
-            .map_err(|_| OpenDocumentError::LockPoisoned("document store"))?;
-        load_by_kind(&mut store, &entry.absolute_path)
-    };
+    let loaded = load_by_kind(&mut tab.document_store, &entry.absolute_path);
     if let Err(error) = loaded {
-        if let Ok(mut navigation) = navigation.lock() {
-            if forward {
-                navigation.go_back();
-            } else {
-                navigation.go_forward();
-            }
+        if forward {
+            tab.navigation.go_back();
+        } else {
+            tab.navigation.go_forward();
         }
         return Err(OpenDocumentError::Load(error));
     }
+    drop(tabs);
 
     vault
         .lock()
@@ -272,12 +263,11 @@ pub fn move_history(
 /// Liest das Per-Typ-Setting fuer den Kind der frisch geladenen Datei
 /// und wechselt den View-/Edit-Mode, wenn das Setting ein konkretes
 /// Target (`view`/`edit`) fordert und der aktuelle Mode davon abweicht.
-/// `current` ist No-op. Bei fehlenden Mutex-Argumenten (Tests, die ohne
+/// `current` ist No-op. Bei fehlendem Settings-Argument (Tests, die ohne
 /// AppState arbeiten) ebenfalls No-op.
 fn apply_default_mode(
     settings: Option<&Mutex<SettingsService>>,
-    automation: Option<&Mutex<AutomationUiState>>,
-    navigation: &Mutex<NavigationController>,
+    tab: &mut Tab,
     path: &str,
 ) -> Option<String> {
     let kind = classify(path);
@@ -289,20 +279,14 @@ fn apply_default_mode(
     // ein Setting zu gehen. Damit landet der User auch dann auf der
     // Bild-Vorschau, wenn er vorher im Edit-Mode auf einer .md-Datei war.
     if matches!(kind, FileKind::Image) {
-        let automation = automation?;
-        let mut auto = automation.lock().ok()?;
-        if auto.view_mode == "view" {
+        if tab.view_mode == "view" {
             return None;
         }
-        auto.view_mode = "view".to_string();
-        drop(auto);
-        if let Ok(mut nav) = navigation.lock() {
-            nav.update_view_mode("view".to_string());
-        }
+        tab.view_mode = "view".to_string();
+        tab.navigation.update_view_mode("view");
         return Some("view".to_string());
     }
     let settings = settings?;
-    let automation = automation?;
     let data = settings.lock().ok()?.data();
     let target = match kind {
         FileKind::Markdown => data.default_mode_markdown,
@@ -314,15 +298,11 @@ fn apply_default_mode(
         DefaultViewMode::Edit => "edit",
         DefaultViewMode::Current => return None,
     };
-    let mut auto = automation.lock().ok()?;
-    if auto.view_mode == target_mode {
+    if tab.view_mode == target_mode {
         return None;
     }
-    auto.view_mode = target_mode.to_string();
-    drop(auto);
-    if let Ok(mut nav) = navigation.lock() {
-        nav.update_view_mode(target_mode.to_string());
-    }
+    tab.view_mode = target_mode.to_string();
+    tab.navigation.update_view_mode(target_mode);
     Some(target_mode.to_string())
 }
 
@@ -332,16 +312,8 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
-    fn make_components() -> (
-        Mutex<DocumentStore>,
-        Mutex<NavigationController>,
-        Mutex<Vault>,
-    ) {
-        (
-            Mutex::new(DocumentStore::new()),
-            Mutex::new(NavigationController::new()),
-            Mutex::new(Vault::new()),
-        )
+    fn make_components() -> (Mutex<TabManager>, Mutex<Vault>) {
+        (Mutex::new(TabManager::new()), Mutex::new(Vault::new()))
     }
 
     fn write_doc(temp: &TempDir, name: &str, body: &str) -> String {
@@ -357,13 +329,11 @@ mod tests {
     fn open_loads_and_navigates_on_first_open() {
         let temp = TempDir::new().unwrap();
         let path = write_doc(&temp, "a.md", "hello");
-        let (store, nav, vault) = make_components();
+        let (tabs, vault) = make_components();
 
         let outcome = open_inner(
-            &store,
-            &nav,
+            &tabs,
             &vault,
-            None,
             None,
             path.clone(),
             OpenDocumentOptions {
@@ -380,21 +350,28 @@ mod tests {
             outcome.loaded.as_ref().map(|l| l.path.as_str())
         );
         assert_eq!(path, outcome.nav_entry.absolute_path);
-        assert_eq!(path, nav.lock().unwrap().current().unwrap().absolute_path);
+        assert_eq!(
+            path,
+            tabs.lock()
+                .unwrap()
+                .active()
+                .navigation
+                .current()
+                .unwrap()
+                .absolute_path
+        );
     }
 
     #[test]
     fn open_skips_load_on_same_path_with_if_path_changed() {
         let temp = TempDir::new().unwrap();
         let path = write_doc(&temp, "a.md", "hello");
-        let (store, nav, vault) = make_components();
+        let (tabs, vault) = make_components();
 
         // erstes Mal: laedt
         let _ = open_inner(
-            &store,
-            &nav,
+            &tabs,
             &vault,
-            None,
             None,
             path.clone(),
             OpenDocumentOptions {
@@ -408,10 +385,8 @@ mod tests {
 
         // zweites Mal mit Anchor, gleicher Pfad: kein Load
         let outcome = open_inner(
-            &store,
-            &nav,
+            &tabs,
             &vault,
-            None,
             None,
             path.clone(),
             OpenDocumentOptions {
@@ -434,13 +409,11 @@ mod tests {
     fn open_reloads_on_same_path_with_always_policy() {
         let temp = TempDir::new().unwrap();
         let path = write_doc(&temp, "a.md", "one");
-        let (store, nav, vault) = make_components();
+        let (tabs, vault) = make_components();
 
         let _ = open_inner(
-            &store,
-            &nav,
+            &tabs,
             &vault,
-            None,
             None,
             path.clone(),
             OpenDocumentOptions {
@@ -454,10 +427,8 @@ mod tests {
 
         fs::write(&path, "two").unwrap();
         let outcome = open_inner(
-            &store,
-            &nav,
+            &tabs,
             &vault,
-            None,
             None,
             path.clone(),
             OpenDocumentOptions {
@@ -480,18 +451,20 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let path_a = write_doc(&temp, "a.md", "a");
         let path_b = write_doc(&temp, "b.md", "b");
-        let (store, nav, vault) = make_components();
+        let (tabs, vault) = make_components();
 
         // a laden, dirty markieren
-        store.lock().unwrap().load(&path_a).unwrap();
-        store.lock().unwrap().update_text("a-modified".into());
-        assert!(store.lock().unwrap().is_dirty);
+        {
+            let mut tabs = tabs.lock().unwrap();
+            let store = &mut tabs.active_mut().document_store;
+            store.load(&path_a).unwrap();
+            store.update_text("a-modified".into());
+            assert!(store.is_dirty);
+        }
 
         let result = open_inner(
-            &store,
-            &nav,
+            &tabs,
             &vault,
-            None,
             None,
             path_b.clone(),
             OpenDocumentOptions {
@@ -504,8 +477,12 @@ mod tests {
 
         assert!(matches!(result, Err(OpenDocumentError::DirtyRejected)));
         // store soll unangetastet bleiben — keine History-Mutation
-        assert_eq!(Some(path_a.as_str()), store.lock().unwrap().path.as_deref());
-        assert!(nav.lock().unwrap().current().is_none());
+        let tabs = tabs.lock().unwrap();
+        assert_eq!(
+            Some(path_a.as_str()),
+            tabs.active().document_store.path.as_deref()
+        );
+        assert!(tabs.active().navigation.current().is_none());
     }
 
     #[test]
@@ -513,16 +490,18 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let path_a = write_doc(&temp, "a.md", "a");
         let path_b = write_doc(&temp, "b.md", "b");
-        let (store, nav, vault) = make_components();
+        let (tabs, vault) = make_components();
 
-        store.lock().unwrap().load(&path_a).unwrap();
-        store.lock().unwrap().update_text("a-modified".into());
+        {
+            let mut tabs = tabs.lock().unwrap();
+            let store = &mut tabs.active_mut().document_store;
+            store.load(&path_a).unwrap();
+            store.update_text("a-modified".into());
+        }
 
         let outcome = open_inner(
-            &store,
-            &nav,
+            &tabs,
             &vault,
-            None,
             None,
             path_b.clone(),
             OpenDocumentOptions {
@@ -538,7 +517,7 @@ mod tests {
             Some(path_b.as_str()),
             outcome.loaded.as_ref().map(|l| l.path.as_str())
         );
-        assert!(!store.lock().unwrap().is_dirty);
+        assert!(!tabs.lock().unwrap().active().document_store.is_dirty);
     }
 
     fn write_image(temp: &TempDir, name: &str) -> String {
@@ -554,13 +533,11 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let normalized = write_doc(&temp, "a.md", "x");
         let backslashed = normalized.replace('/', "\\");
-        let (store, nav, vault) = make_components();
+        let (tabs, vault) = make_components();
 
         let outcome = open_inner(
-            &store,
-            &nav,
+            &tabs,
             &vault,
-            None,
             None,
             backslashed,
             OpenDocumentOptions {
@@ -575,7 +552,7 @@ mod tests {
         assert_eq!(normalized, outcome.nav_entry.absolute_path);
         assert_eq!(
             Some(normalized.as_str()),
-            store.lock().unwrap().path.as_deref()
+            tabs.lock().unwrap().active().document_store.path.as_deref()
         );
     }
 
@@ -583,9 +560,10 @@ mod tests {
     fn load_by_kind_loads_images_opaque() {
         let temp = TempDir::new().unwrap();
         let path = write_image(&temp, "pic.png");
-        let (store, _, _) = make_components();
+        let (tabs, _) = make_components();
 
-        let loaded = load_by_kind(&mut store.lock().unwrap(), &path).unwrap();
+        let loaded =
+            load_by_kind(&mut tabs.lock().unwrap().active_mut().document_store, &path).unwrap();
 
         assert_eq!(path, loaded.path);
         assert_eq!("", loaded.text);
@@ -604,23 +582,31 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let doc = write_doc(&temp, "a.md", "hello");
         let img = write_image(&temp, "pic.png");
-        let (store, nav, vault) = make_components();
+        let (tabs, vault) = make_components();
 
-        store.lock().unwrap().load(&doc).unwrap();
-        nav.lock().unwrap().navigate(doc.clone(), None);
-        store.lock().unwrap().load_opaque(&img).unwrap();
-        nav.lock().unwrap().navigate(img.clone(), None);
+        {
+            let mut tabs = tabs.lock().unwrap();
+            let tab = tabs.active_mut();
+            tab.document_store.load(&doc).unwrap();
+            tab.navigation.navigate(doc.clone(), None);
+            tab.document_store.load_opaque(&img).unwrap();
+            tab.navigation.navigate(img.clone(), None);
+        }
 
-        let back = move_history(&nav, &store, &vault, false).unwrap().unwrap();
+        let back = move_history(&tabs, &vault, false).unwrap().unwrap();
         assert_eq!(doc, back.absolute_path);
-        assert_eq!("hello", store.lock().unwrap().text);
+        assert_eq!("hello", tabs.lock().unwrap().active().document_store.text);
 
         // Forward zurueck aufs Bild: kein UTF-8-Fehler, Pfad gesetzt,
         // kein Text im Store.
-        let fwd = move_history(&nav, &store, &vault, true).unwrap().unwrap();
+        let fwd = move_history(&tabs, &vault, true).unwrap().unwrap();
         assert_eq!(img, fwd.absolute_path);
-        assert_eq!(Some(img.as_str()), store.lock().unwrap().path.as_deref());
-        assert_eq!("", store.lock().unwrap().text);
+        let tabs = tabs.lock().unwrap();
+        assert_eq!(
+            Some(img.as_str()),
+            tabs.active().document_store.path.as_deref()
+        );
+        assert_eq!("", tabs.active().document_store.text);
     }
 
     #[test]
@@ -628,32 +614,41 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let doc = write_doc(&temp, "b.md", "current");
         let missing = temp.path().join("gone.md").to_string_lossy().into_owned();
-        let (store, nav, vault) = make_components();
+        let (tabs, vault) = make_components();
 
-        nav.lock().unwrap().navigate(missing.clone(), None);
-        store.lock().unwrap().load(&doc).unwrap();
-        nav.lock().unwrap().navigate(doc.clone(), None);
+        {
+            let mut tabs = tabs.lock().unwrap();
+            let tab = tabs.active_mut();
+            tab.navigation.navigate(missing.clone(), None);
+            tab.document_store.load(&doc).unwrap();
+            tab.navigation.navigate(doc.clone(), None);
+        }
 
-        let result = move_history(&nav, &store, &vault, false);
+        let result = move_history(&tabs, &vault, false);
 
         assert!(matches!(result, Err(OpenDocumentError::Load(_))));
         // Index ist zurueckgerollt: current zeigt weiter aufs geladene
         // Dokument, der Store ist unangetastet.
-        let nav = nav.lock().unwrap();
-        assert_eq!(doc, nav.current().unwrap().absolute_path);
-        assert!(nav.can_go_back());
-        assert_eq!(Some(doc.as_str()), store.lock().unwrap().path.as_deref());
+        let tabs = tabs.lock().unwrap();
+        let tab = tabs.active();
+        assert_eq!(doc, tab.navigation.current().unwrap().absolute_path);
+        assert!(tab.navigation.can_go_back());
+        assert_eq!(Some(doc.as_str()), tab.document_store.path.as_deref());
     }
 
     #[test]
     fn move_history_returns_none_at_stack_edge() {
         let temp = TempDir::new().unwrap();
         let doc = write_doc(&temp, "a.md", "hello");
-        let (store, nav, vault) = make_components();
+        let (tabs, vault) = make_components();
 
-        nav.lock().unwrap().navigate(doc.clone(), None);
+        tabs.lock()
+            .unwrap()
+            .active_mut()
+            .navigation
+            .navigate(doc.clone(), None);
 
-        assert!(move_history(&nav, &store, &vault, false).unwrap().is_none());
-        assert!(move_history(&nav, &store, &vault, true).unwrap().is_none());
+        assert!(move_history(&tabs, &vault, false).unwrap().is_none());
+        assert!(move_history(&tabs, &vault, true).unwrap().is_none());
     }
 }

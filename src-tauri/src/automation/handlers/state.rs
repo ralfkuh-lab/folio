@@ -21,10 +21,32 @@ pub(in crate::automation) async fn get_state(
         .and_then(|window| window.title().ok())
         .unwrap_or_else(|| "Folio".into());
     let state = context.app_handle.state::<AppState>();
-    let document = state
-        .document_store
-        .lock()
-        .map_err(|_| ApiError::internal("document store lock poisoned"))?;
+    let (document_path, document_text, document_dirty, view_mode, navigation_state) = {
+        let tabs = state
+            .tabs
+            .lock()
+            .map_err(|_| ApiError::internal("tabs lock poisoned"))?;
+        let tab = tabs.active();
+        let navigation_state = tab
+            .navigation
+            .current()
+            .map(|entry| {
+                (
+                    entry.scroll_y,
+                    entry.anchor.clone(),
+                    entry.editor_scroll_y,
+                    entry.editor_cursor,
+                )
+            })
+            .unwrap_or((0.0, None, 0.0, 0));
+        (
+            tab.document_store.path.clone(),
+            tab.document_store.text.clone(),
+            tab.document_store.is_dirty,
+            tab.view_mode.clone(),
+            navigation_state,
+        )
+    };
     let panel = state
         .panel_state
         .lock()
@@ -35,20 +57,7 @@ pub(in crate::automation) async fn get_state(
         .lock()
         .map_err(|_| ApiError::internal("automation state lock poisoned"))?
         .clone();
-    let (view_scroll_y, view_anchor, editor_scroll_y, editor_cursor) = state
-        .navigation
-        .lock()
-        .map_err(|_| ApiError::internal("navigation lock poisoned"))?
-        .current()
-        .map(|entry| {
-            (
-                entry.scroll_y,
-                entry.anchor.clone(),
-                entry.editor_scroll_y,
-                entry.editor_cursor,
-            )
-        })
-        .unwrap_or((0.0, None, 0.0, 0));
+    let (view_scroll_y, view_anchor, editor_scroll_y, editor_cursor) = navigation_state;
     let workspace = {
         let ws = state
             .workspace
@@ -82,7 +91,7 @@ pub(in crate::automation) async fn get_state(
         .lock()
         .map_err(|_| ApiError::internal("console errors lock poisoned"))?
         .len();
-    let toc = toc::extract(&document.text)
+    let toc = toc::extract(&document_text)
         .into_iter()
         .map(|entry| TocEntry {
             level: entry.level,
@@ -94,9 +103,9 @@ pub(in crate::automation) async fn get_state(
 
     Ok(Json(AutomationState {
         title,
-        file: document.path.clone(),
-        dirty: document.is_dirty,
-        view_mode: automation.view_mode,
+        file: document_path,
+        dirty: document_dirty,
+        view_mode,
         theme: automation.theme,
         left_rail_visible: panel.left_rail_visible,
         right_rail_visible: panel.right_rail_visible,

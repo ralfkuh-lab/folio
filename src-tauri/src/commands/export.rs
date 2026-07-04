@@ -78,11 +78,12 @@ pub async fn pick_export_target(
         _ => ("HTML", &["html", "htm"]),
     };
     let document_dir = {
-        let store = state
-            .document_store
+        let tabs = state
+            .tabs
             .lock()
-            .map_err(|_| "document store lock poisoned".to_string())?;
-        store
+            .map_err(|_| "tabs lock poisoned".to_string())?;
+        tabs.active()
+            .document_store
             .path
             .as_deref()
             .and_then(|path| Path::new(path).parent())
@@ -133,10 +134,11 @@ pub async fn pick_export_target(
 }
 
 fn current_document(state: &State<'_, AppState>) -> Result<(Option<String>, String), String> {
-    let store = state
-        .document_store
+    let tabs = state
+        .tabs
         .lock()
-        .map_err(|_| "document store lock poisoned".to_string())?;
+        .map_err(|_| "tabs lock poisoned".to_string())?;
+    let store = &tabs.active().document_store;
     if store.path.is_none() {
         return Err("Kein Dokument geöffnet.".into());
     }

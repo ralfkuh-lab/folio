@@ -33,11 +33,12 @@ pub fn run_rename_dialog(
     handle: &AppHandle,
 ) -> Result<Option<String>, String> {
     let current_path = {
-        let store = state
-            .document_store
+        let tabs = state
+            .tabs
             .lock()
-            .map_err(|_| "document store lock poisoned".to_string())?;
-        store
+            .map_err(|_| "tabs lock poisoned".to_string())?;
+        tabs.active()
+            .document_store
             .path
             .clone()
             .ok_or_else(|| "Kein Dokument geöffnet.".to_string())?
@@ -103,10 +104,11 @@ fn perform_rename(
     fs::rename(old_path, new_path).map_err(|error| error.to_string())?;
 
     let is_current = {
-        let mut store = state
-            .document_store
+        let mut tabs = state
+            .tabs
             .lock()
-            .map_err(|_| "document store lock poisoned".to_string())?;
+            .map_err(|_| "tabs lock poisoned".to_string())?;
+        let store = &mut tabs.active_mut().document_store;
         if store.path.as_deref() == Some(old_path) {
             store
                 .rename_to(new_path)

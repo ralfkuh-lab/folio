@@ -117,9 +117,11 @@ pub(in crate::automation) async fn get_editor_text(
     let text = context
         .app_handle
         .state::<AppState>()
-        .document_store
+        .tabs
         .lock()
-        .map_err(|_| ApiError::internal("document store lock poisoned"))?
+        .map_err(|_| ApiError::internal("tabs lock poisoned"))?
+        .active()
+        .document_store
         .text
         .clone();
     Ok(Json(EditorTextResponse { text }))
@@ -191,9 +193,11 @@ pub(in crate::automation) async fn post_editor_text(
     let Json(payload) = json_payload(payload)?;
     let state = context.app_handle.state::<AppState>();
     state
-        .document_store
+        .tabs
         .lock()
-        .map_err(|_| ApiError::internal("document store lock poisoned"))?
+        .map_err(|_| ApiError::internal("tabs lock poisoned"))?
+        .active_mut()
+        .document_store
         .update_text(payload.text.clone());
     let (request_id, receiver) = ack::register(state.inner()).map_err(ApiError::internal)?;
     emit(
@@ -216,9 +220,11 @@ pub(in crate::automation) async fn post_save(
     let saved = context
         .app_handle
         .state::<AppState>()
-        .document_store
+        .tabs
         .lock()
-        .map_err(|_| ApiError::internal("document store lock poisoned"))?
+        .map_err(|_| ApiError::internal("tabs lock poisoned"))?
+        .active_mut()
+        .document_store
         .save()
         .map_err(|error| ApiError::internal(error.to_string()))?;
     Ok(Json(OkResponse { ok: saved }))

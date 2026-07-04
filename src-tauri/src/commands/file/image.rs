@@ -190,10 +190,11 @@ pub async fn pick_image_target_dir(
 /// um den Default-Speicherort vorzubelegen.
 #[tauri::command]
 pub async fn current_document_dir(state: State<'_, AppState>) -> Result<Option<String>, String> {
-    let store = state
-        .document_store
+    let tabs = state
+        .tabs
         .lock()
-        .map_err(|_| "document store lock poisoned".to_string())?;
+        .map_err(|_| "tabs lock poisoned".to_string())?;
+    let store = &tabs.active().document_store;
     Ok(store.path.as_deref().and_then(|doc_path| {
         Path::new(doc_path)
             .parent()

@@ -63,9 +63,9 @@ pub fn already_satisfied(state: &AppState, event: &str) -> bool {
             .map(|s| s.editor_ready)
             .unwrap_or(false),
         "document.dirty_clean" => state
-            .document_store
+            .tabs
             .lock()
-            .map(|s| !s.is_dirty)
+            .map(|tabs| !tabs.active().document_store.is_dirty)
             .unwrap_or(false),
         "document.loaded" | "document.saved" => recently_emitted(state, event, RECENT_EVENT_TTL_MS),
         _ => false,

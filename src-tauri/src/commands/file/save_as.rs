@@ -19,10 +19,11 @@ pub fn run_save_as(
     // 1) Aktuellen Pfad/Text aus dem Store ziehen — hier nur lesen,
     //    damit der Lock vor dem blockierenden Dialog wieder frei ist.
     let current_path = {
-        let store = state
-            .document_store
+        let tabs = state
+            .tabs
             .lock()
-            .map_err(|_| "document store lock poisoned".to_string())?;
+            .map_err(|_| "tabs lock poisoned".to_string())?;
+        let store = &tabs.active().document_store;
         if store.path.is_none() {
             return Err("Kein Dokument geöffnet.".into());
         }
@@ -77,14 +78,15 @@ pub fn run_save_as(
 
     // 3) Persist via DocumentStore — kapselt Schreiben, Pfad-Update,
     //    Watcher-Refresh und loaded-Callback (→ document:loaded-Event).
-    let mut store = state
-        .document_store
+    let mut tabs = state
+        .tabs
         .lock()
-        .map_err(|_| "document store lock poisoned".to_string())?;
-    store
+        .map_err(|_| "tabs lock poisoned".to_string())?;
+    tabs.active_mut()
+        .document_store
         .save_as(&target_path)
         .map_err(|error| error.to_string())?;
-    drop(store);
+    drop(tabs);
 
     // 4) Workspace + Vault + Navigation nachziehen — Lock-Fehler werden
     //    propagiert, sonst driften die vier State-Komponenten bei
@@ -102,9 +104,11 @@ pub fn run_save_as(
         .map_err(|_| "vault lock poisoned".to_string())?
         .set_active(Some(target_path.clone()));
     state
-        .navigation
+        .tabs
         .lock()
-        .map_err(|_| "navigation lock poisoned".to_string())?
+        .map_err(|_| "tabs lock poisoned".to_string())?
+        .active_mut()
+        .navigation
         .navigate(target_path.clone(), None);
 
     // document:loaded wird bereits vom DocumentStore::save_as-Callback

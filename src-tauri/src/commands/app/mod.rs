@@ -27,16 +27,14 @@ pub async fn set_view_mode(
     if !matches!(mode.as_str(), "view" | "edit" | "split") {
         return Err(format!("unknown mode '{mode}'"));
     }
-    state
-        .automation
+    let mut tabs = state
+        .tabs
         .lock()
-        .map_err(|_| "automation state lock poisoned".to_string())?
-        .view_mode = mode.clone();
-    state
-        .navigation
-        .lock()
-        .map_err(|_| "navigation lock poisoned".to_string())?
-        .update_view_mode(&mode);
+        .map_err(|_| "tabs lock poisoned".to_string())?;
+    let tab = tabs.active_mut();
+    tab.view_mode = mode.clone();
+    tab.navigation.update_view_mode(&mode);
+    drop(tabs);
     handle
         .emit("app:set_mode", serde_json::json!({ "mode": mode }))
         .map_err(|error| error.to_string())

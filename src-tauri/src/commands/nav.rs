@@ -35,11 +35,13 @@ pub async fn navigate(
     anchor: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<NavEntry, String> {
-    let mut navigation = state
-        .navigation
+    let mut tabs = state
+        .tabs
         .lock()
-        .map_err(|_| "navigation lock poisoned".to_string())?;
-    Ok(NavEntry::from(navigation.navigate(path, anchor)))
+        .map_err(|_| "tabs lock poisoned".to_string())?;
+    Ok(NavEntry::from(
+        tabs.active_mut().navigation.navigate(path, anchor),
+    ))
 }
 
 #[tauri::command]
@@ -71,9 +73,11 @@ pub async fn go_forward_and_emit(
 #[tauri::command]
 pub async fn update_scroll(y: f64, state: State<'_, AppState>) -> Result<(), String> {
     state
-        .navigation
+        .tabs
         .lock()
-        .map_err(|_| "navigation lock poisoned".to_string())?
+        .map_err(|_| "tabs lock poisoned".to_string())?
+        .active_mut()
+        .navigation
         .update_scroll_position(y);
     Ok(())
 }
@@ -84,9 +88,11 @@ pub async fn update_history_view_mode(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     state
-        .navigation
+        .tabs
         .lock()
-        .map_err(|_| "navigation lock poisoned".to_string())?
+        .map_err(|_| "tabs lock poisoned".to_string())?
+        .active_mut()
+        .navigation
         .update_view_mode(mode);
     Ok(())
 }
@@ -97,9 +103,11 @@ pub async fn update_history_editor_scroll(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     state
-        .navigation
+        .tabs
         .lock()
-        .map_err(|_| "navigation lock poisoned".to_string())?
+        .map_err(|_| "tabs lock poisoned".to_string())?
+        .active_mut()
+        .navigation
         .update_editor_scroll(y);
     Ok(())
 }
@@ -110,9 +118,11 @@ pub async fn update_history_editor_cursor(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     state
-        .navigation
+        .tabs
         .lock()
-        .map_err(|_| "navigation lock poisoned".to_string())?
+        .map_err(|_| "tabs lock poisoned".to_string())?
+        .active_mut()
+        .navigation
         .update_editor_cursor(cursor);
     Ok(())
 }
@@ -122,13 +132,8 @@ fn move_history(
     state: &AppState,
     handle: Option<AppHandle>,
 ) -> Result<Option<NavEntry>, String> {
-    let entry = document_service::move_history(
-        &state.navigation,
-        &state.document_store,
-        &state.vault,
-        forward,
-    )
-    .map_err(|error| error.to_string())?;
+    let entry = document_service::move_history(&state.tabs, &state.vault, forward)
+        .map_err(|error| error.to_string())?;
 
     let Some(entry) = entry.as_ref().map(NavEntry::from) else {
         return Ok(None);

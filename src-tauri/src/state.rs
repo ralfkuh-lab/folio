@@ -1,10 +1,10 @@
 use crate::{
-    document_store::{DocumentEvents, DocumentStore},
+    document_store::DocumentEvents,
     link_interceptor::LinkInterceptor,
-    navigation::NavigationController,
     panel_state::PanelState,
     renderer,
     settings::SettingsService,
+    tab_manager::{DocumentEventFactory, TabManager},
     theme::ThemeService,
     toc,
     vault::Vault,
@@ -32,7 +32,6 @@ pub const CONSOLE_ERROR_BUFFER_MAX: usize = 200;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AutomationUiState {
-    pub view_mode: String,
     pub theme: String,
     pub editor_ready: bool,
     pub selection_start: usize,
@@ -42,7 +41,6 @@ pub struct AutomationUiState {
 impl Default for AutomationUiState {
     fn default() -> Self {
         Self {
-            view_mode: "view".into(),
             theme: "light".into(),
             editor_ready: false,
             selection_start: 0,
@@ -52,14 +50,13 @@ impl Default for AutomationUiState {
 }
 
 pub struct AppState {
-    pub document_store: Mutex<DocumentStore>,
+    pub tabs: Mutex<TabManager>,
     pub workspace: Mutex<Workspace>,
     pub panel_state: Mutex<PanelState>,
     pub theme: Mutex<ThemeService>,
     pub settings: Mutex<SettingsService>,
     pub vault: Mutex<Vault>,
     pub vault_watcher: Mutex<VaultWatcher>,
-    pub navigation: Mutex<NavigationController>,
     pub link_interceptor: LinkInterceptor,
     pub automation: Mutex<AutomationUiState>,
     pub cli_open_path: Mutex<Option<String>>,
@@ -106,14 +103,13 @@ impl AppState {
         let theme = ThemeService::load();
         let initial_theme = theme.mode().to_string();
         Self {
-            document_store: Mutex::new(DocumentStore::new()),
+            tabs: Mutex::new(TabManager::new()),
             workspace: Mutex::new(Workspace::load()),
             panel_state: Mutex::new(PanelState::load()),
             theme: Mutex::new(theme),
             settings: Mutex::new(SettingsService::load()),
             vault: Mutex::new(Vault::new()),
             vault_watcher: Mutex::new(VaultWatcher::new()),
-            navigation: Mutex::new(NavigationController::new()),
             link_interceptor: LinkInterceptor::new(),
             automation: Mutex::new(AutomationUiState {
                 theme: initial_theme,
@@ -132,7 +128,18 @@ impl AppState {
     }
 
     pub fn install_document_events(&self, app: AppHandle) -> Result<(), String> {
-        let events = DocumentEvents {
+        let mut tabs = self
+            .tabs
+            .lock()
+            .map_err(|_| "tabs lock poisoned".to_string())?;
+        let factory: DocumentEventFactory =
+            Arc::new(move |tab_id| Self::document_events(app.clone(), tab_id));
+        tabs.set_document_event_factory(factory);
+        Ok(())
+    }
+
+    fn document_events(app: AppHandle, tab_id: u64) -> DocumentEvents {
+        DocumentEvents {
             loaded: Some(Arc::new({
                 let app = app.clone();
                 move |payload| {
@@ -147,6 +154,7 @@ impl AppState {
                             "content": renderer::render_body(&payload.text),
                             "tocHtml": toc::render_html(&toc_entries),
                             "headingMap": crate::commands::editor::heading_map(&toc_entries),
+                            "tabId": tab_id,
                         }),
                     );
                     // Wartende `POST /wait { event: "document.loaded" }` aufwecken.
@@ -160,7 +168,7 @@ impl AppState {
                 move |is_dirty| {
                     let _ = app.emit(
                         "document:dirty_changed",
-                        serde_json::json!({ "is_dirty": is_dirty }),
+                        serde_json::json!({ "is_dirty": is_dirty, "tabId": tab_id }),
                     );
                     if !is_dirty {
                         crate::automation::wait::signal_document_dirty_clean(
@@ -186,6 +194,7 @@ impl AppState {
                             "content": renderer::render_body(&text),
                             "tocHtml": toc::render_html(&toc_entries),
                             "headingMap": crate::commands::editor::heading_map(&toc_entries),
+                            "tabId": tab_id,
                         }),
                     );
                     crate::automation::wait::signal_document_saved(app.state::<AppState>().inner());
@@ -193,16 +202,20 @@ impl AppState {
             })),
             text_changed: None,
             external_changed: Some(Arc::new(move |path| {
+                let is_active = app
+                    .state::<AppState>()
+                    .tabs
+                    .lock()
+                    .map(|tabs| tabs.is_active(tab_id))
+                    .unwrap_or(false);
+                if !is_active {
+                    return;
+                }
                 let _ = app.emit(
                     "document:external_changed",
-                    serde_json::json!({ "path": path }),
+                    serde_json::json!({ "path": path, "tabId": tab_id }),
                 );
             })),
-        };
-        self.document_store
-            .lock()
-            .map_err(|_| "document store lock poisoned".to_string())?
-            .set_events(events);
-        Ok(())
+        }
     }
 }
