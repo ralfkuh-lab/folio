@@ -11,7 +11,10 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import { installTauriMock, TauriMockHandles } from '../helpers';
-import { initExportDialog } from '../../app/ui/export-dialog';
+import {
+    initExportDialog,
+    splitLayoutsByFavorites,
+} from '../../app/ui/export-dialog';
 
 function buildDom(): void {
     document.body.innerHTML = `
@@ -30,16 +33,24 @@ function buildDom(): void {
 }
 
 function flush(): Promise<void> {
-    // openExportDialog kettet mehrere Promises (sync -> export_layouts
+    // openExportDialog kettet mehrere Promises (sync -> Promise.all
     // -> Karten-Render) — ein paar Microtask-Runden reichen in jsdom.
     return Promise.resolve().then(() => Promise.resolve()).then(() => Promise.resolve());
 }
+
+let themeFavorites: string[] = [];
 
 function setupInvokeResponses(handles: TauriMockHandles): void {
     handles.invoke.mockImplementation((cmd: string) => {
         switch (cmd) {
             case 'export_layouts':
-                return Promise.resolve([{ id: 'plain', name: 'Plain', description: '' }]);
+                return Promise.resolve([
+                    { id: 'plain', name: 'Plain', description: '' },
+                    { id: 'github', name: 'GitHub', description: '' },
+                    { id: 'clean', name: 'Clean', description: '' },
+                ]);
+            case 'settings_get':
+                return Promise.resolve({ themeFavorites });
             case 'export_render':
                 return Promise.resolve('<html></html>');
             case 'pick_export_target':
@@ -66,6 +77,7 @@ describe('export-dialog', () => {
     let handles: TauriMockHandles;
 
     beforeEach(() => {
+        themeFavorites = [];
         handles = installTauriMock();
         setupInvokeResponses(handles);
         buildDom();
@@ -74,6 +86,17 @@ describe('export-dialog', () => {
             syncEditorTextToStore: () => Promise.resolve(),
             showStatus: () => undefined,
         });
+    });
+
+    it('gruppiert Favoriten in gespeicherter Reihenfolge und ignoriert tote IDs', () => {
+        const groups = splitLayoutsByFavorites([
+            { id: 'plain', name: 'Plain' },
+            { id: 'github', name: 'GitHub' },
+            { id: 'clean', name: 'Clean' },
+        ], ['geloescht', 'clean', 'github', 'clean']);
+
+        expect(groups.favorites.map((layout) => layout.id)).toEqual(['clean', 'github']);
+        expect(groups.rest.map((layout) => layout.id)).toEqual(['plain']);
     });
 
     it('startet beim Klick auf Speichern genau einen Export', async () => {
@@ -110,5 +133,45 @@ describe('export-dialog', () => {
         await flush();
 
         expect(exportCalls(handles)).toBe(0);
+    });
+
+    it('rendert ohne Favoriten weiterhin eine flache Kartenliste', async () => {
+        await openDialog();
+
+        expect(document.getElementById('export-more-toggle')).toBeNull();
+        expect(document.querySelectorAll('#export-cards .export-card')).toHaveLength(3);
+        expect(handles.invoke.mock.calls.filter((c) => c[0] === 'export_render'))
+            .toHaveLength(3);
+    });
+
+    it('priorisiert Favoriten und lädt weitere Vorschauen erst beim Aufklappen', async () => {
+        themeFavorites = ['geloescht', 'github'];
+        await openDialog();
+
+        const firstCard = document.querySelector<HTMLElement>(
+            '#export-cards .export-card',
+        )!;
+        const toggle = document.getElementById('export-more-toggle') as HTMLButtonElement;
+        const moreCards = document.getElementById('export-more-cards')!;
+        expect(firstCard.dataset.layoutId).toBe('github');
+        expect(toggle.textContent).toBe('Weitere Layouts (2)');
+        expect(toggle.getAttribute('aria-expanded')).toBe('false');
+        expect(moreCards.hidden).toBe(true);
+        expect(handles.invoke.mock.calls.filter((c) => c[0] === 'export_render'))
+            .toHaveLength(1);
+
+        toggle.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'Enter',
+            bubbles: true,
+        }));
+        await flush();
+        expect(exportCalls(handles)).toBe(0);
+
+        toggle.click();
+        await flush();
+        expect(toggle.getAttribute('aria-expanded')).toBe('true');
+        expect(moreCards.hidden).toBe(false);
+        expect(handles.invoke.mock.calls.filter((c) => c[0] === 'export_render'))
+            .toHaveLength(3);
     });
 });

@@ -221,7 +221,11 @@ sonst lehnt Tauri den Build ab.
   Built-in-IDs gewinnen bei Kollisionen; ungueltige/verschwundene IDs
   folgen dem bestehenden Unknown-ID-/`standard`-Fallback. Die Theme-Liste
   und CSS-Dateien werden bei jedem Aufruf neu gelesen; es gibt in dieser
-  Etappe keinen Cache oder File-Watcher.
+  Etappe keinen Cache oder File-Watcher. Export-Theme-Favoriten werden als
+  geordnete ID-Liste `themeFavorites` in `settings.json` gespeichert und im
+  Export-Dialog vor den weiteren Layouts angezeigt; `standard` ist kein
+  Export-Layout und daher nicht favorisierbar. Verschwundene Custom-Theme-IDs
+  bleiben beim Laden erhalten, werden in der UI aber ausgeblendet.
 - **Image-View** (`view/image.ts`, Surface `#image-view-mount` in
   `dist/index.html`): `FileKind::Image` (png/jpg/jpeg/gif/webp/svg/
   bmp/ico/avif) wird read-only über `<img src={convertFileSrc(path)}>`

@@ -44,11 +44,8 @@
     nächsten Windows-E2E-Run (`09_undo_redo`) nur noch validieren.
 
 - **Settings-Ausbau — Restetappen Theme-System** (User-Wunsch
-  2026-07-04; Tab-Control, Etappe 3a „View-Theme-Auswahl mit
-  Light/Dark" und 3b „Custom-Themes" sind erledigt):
-  - **3c — Theme-Favoriten**: Themes als Favorit markierbar; Favoriten
-    werden im Export-Dialog priorisiert angezeigt, der Rest unter
-    „weitere…".
+  2026-07-04; Tab-Control und die Etappen 3a „View-Theme-Auswahl mit
+  Light/Dark", 3b „Custom-Themes", 3c „Theme-Favoriten" sind erledigt):
   - **3d — Code-Highlighting im Export** (statisch via syntect o. ä.,
     Light/Dark passend zum Theme; View bleibt bei Monaco).
   - Später/mit abgedeckt: Fonts als Theme-Bestandteile (Body-Font,

@@ -12,6 +12,7 @@ const settings = {
     defaultModeText: 'current',
     viewAutoFormat: true,
     viewTheme: 'standard',
+    themeFavorites: [],
     vaultAutoRefresh: true,
     documentAutoReload: true,
     exportDirMode: 'document',
@@ -177,6 +178,40 @@ describe('settings-dialog', () => {
         });
         expect(classic.classList.contains('selected')).toBe(true);
         expect(classic.getAttribute('aria-checked')).toBe('true');
+    });
+
+    it('rendert Favoriten-Sterne und toggelt nur die Favoritenliste', async () => {
+        openSettingsDialog();
+        await flush();
+
+        expect(document.querySelector('[data-view-theme-fav="standard"]')).toBeNull();
+        expect(document.querySelectorAll('[data-view-theme-fav]')).toHaveLength(2);
+
+        handles.invoke.mockClear();
+        const favorite = document.querySelector<HTMLButtonElement>(
+            '[data-view-theme-fav="classic"]',
+        )!;
+        favorite.click();
+        await flush();
+
+        expect(handles.invoke).toHaveBeenCalledWith('settings_update', {
+            patch: { themeFavorites: ['classic'] },
+        });
+        expect(handles.invoke).not.toHaveBeenCalledWith('settings_update', {
+            patch: { viewTheme: 'classic' },
+        });
+        expect(document.querySelector('#settings-theme-list [data-view-theme="standard"]')!
+            .getAttribute('aria-checked')).toBe('true');
+        expect(favorite.getAttribute('aria-pressed')).toBe('true');
+        expect(favorite.getAttribute('aria-label')).toBe('Favorit entfernen');
+        expect(favorite.textContent).toBe('★');
+
+        handles.emitEvent('settings:changed', {
+            settings: { ...settings, themeFavorites: [] },
+            changed: ['themeFavorites'],
+        });
+        expect(favorite.getAttribute('aria-pressed')).toBe('false');
+        expect(favorite.textContent).toBe('☆');
     });
 
     it('setzt beim erneuten Öffnen auf Allgemein zurück', async () => {

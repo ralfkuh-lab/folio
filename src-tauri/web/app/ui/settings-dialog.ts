@@ -31,6 +31,7 @@ export type SettingsData = {
     defaultModeText: DefaultViewMode;
     viewAutoFormat: boolean;
     viewTheme: string;
+    themeFavorites: string[];
     vaultAutoRefresh: boolean;
     documentAutoReload: boolean;
     exportDirMode: ExportDirMode;
@@ -129,6 +130,7 @@ function applySettingsToForm(data: SettingsData): void {
     if (exportDirMode) exportDirMode.value = data.exportDirMode || 'document';
     if (logLevel) logLevel.value = data.logLevel || 'info';
     syncSelectedViewTheme(data.viewTheme);
+    syncFavoriteViewThemes(data.themeFavorites || []);
 
     if (langHint) {
         // Hinweis nur akzentuieren, wenn die aktuelle Auswahl von der
@@ -156,13 +158,42 @@ function syncSelectedViewTheme(themeId: string): void {
     });
 }
 
+function syncFavoriteViewThemes(favorites: string[]): void {
+    var favoriteIds = new Set(favorites);
+    document.querySelectorAll<HTMLButtonElement>('[data-view-theme-fav]')
+        .forEach(function (button) {
+            var active = favoriteIds.has(button.dataset.viewThemeFav || '');
+            button.setAttribute('aria-pressed', active ? 'true' : 'false');
+            button.setAttribute(
+                'aria-label',
+                active ? 'Favorit entfernen' : 'Als Favorit markieren',
+            );
+            button.textContent = active ? '★' : '☆';
+        });
+}
+
+function toggleThemeFavorite(themeId: string): void {
+    if (!currentSettings) return;
+    var knownIds = new Set(viewThemes
+        .filter(function (theme) { return theme.id !== 'standard'; })
+        .map(function (theme) { return theme.id; }));
+    var favorites = (currentSettings.themeFavorites || [])
+        .filter(function (id) { return knownIds.has(id); });
+    var index = favorites.indexOf(themeId);
+    if (index >= 0) {
+        favorites.splice(index, 1);
+    } else {
+        favorites.push(themeId);
+    }
+    patchSettings({ themeFavorites: favorites });
+}
+
 function renderViewThemes(themes: ViewThemeInfo[]): void {
     var list = $('settings-theme-list');
     if (!list) return;
     list.textContent = '';
     themes.forEach(function (theme) {
-        var entry = document.createElement('button');
-        entry.type = 'button';
+        var entry = document.createElement('div');
         entry.className = 'settings-theme-card';
         entry.dataset.viewTheme = theme.id;
         entry.setAttribute('role', 'radio');
@@ -192,13 +223,42 @@ function renderViewThemes(themes: ViewThemeInfo[]): void {
         variantBadge.className = 'settings-theme-card__badge';
         variantBadge.textContent = theme.hasDark ? 'Hell/Dunkel' : 'Nur hell';
         badges.appendChild(variantBadge);
-        entry.append(text, badges);
+        entry.appendChild(text);
+        if (theme.id !== 'standard') {
+            var favorite = document.createElement('button');
+            favorite.type = 'button';
+            favorite.className = 'settings-theme-card__fav';
+            favorite.dataset.viewThemeFav = theme.id;
+            favorite.setAttribute('aria-label', 'Als Favorit markieren');
+            favorite.setAttribute('aria-pressed', 'false');
+            favorite.textContent = '☆';
+            favorite.addEventListener('click', function (event) {
+                event.stopPropagation();
+                toggleThemeFavorite(theme.id);
+            });
+            favorite.addEventListener('keydown', function (event) {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.stopPropagation();
+                }
+            });
+            entry.appendChild(favorite);
+        }
+        entry.appendChild(badges);
         entry.addEventListener('click', function () {
+            patchSettings({ viewTheme: theme.id });
+        });
+        entry.addEventListener('keydown', function (event) {
+            if (event.target !== entry || (event.key !== 'Enter' && event.key !== ' ')) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
             patchSettings({ viewTheme: theme.id });
         });
         list.appendChild(entry);
     });
     syncSelectedViewTheme(currentSettings ? currentSettings.viewTheme : 'standard');
+    syncFavoriteViewThemes(currentSettings ? currentSettings.themeFavorites || [] : []);
 }
 
 function renderThemesDirHint(path: string): void {

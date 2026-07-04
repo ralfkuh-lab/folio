@@ -10,6 +10,17 @@ type Deps = {
     showStatus: (msg: string) => void;
 };
 
+type ExportLayout = {
+    id: string;
+    name: string;
+    description?: string;
+};
+
+type LayoutGroups = {
+    favorites: ExportLayout[];
+    rest: ExportLayout[];
+};
+
 let deps: Deps = null;
 let selectedLayoutId: string | null = null;
 let selectedExportFormat: 'html' | 'pdf' = 'html';
@@ -46,40 +57,124 @@ function selectLayoutCard(id: string | null): void {
     if (saveBtn) saveBtn.disabled = !id;
 }
 
+export function splitLayoutsByFavorites(
+    layouts: ExportLayout[],
+    favoriteIds: string[],
+): LayoutGroups {
+    const layoutsById = new Map(layouts.map(function (layout) {
+        return [layout.id, layout];
+    }));
+    const seen = new Set<string>();
+    const favorites: ExportLayout[] = [];
+    favoriteIds.forEach(function (id) {
+        const layout = layoutsById.get(id);
+        if (layout && !seen.has(id)) {
+            favorites.push(layout);
+            seen.add(id);
+        }
+    });
+    return {
+        favorites,
+        rest: layouts.filter(function (layout) { return !seen.has(layout.id); }),
+    };
+}
+
+function loadLayoutPreview(card: HTMLElement, layoutId: string): void {
+    if (card.dataset.previewLoaded === 'true') return;
+    card.dataset.previewLoaded = 'true';
+    invoke('export_render', { layoutId }).then(function (html) {
+        const iframe = card.querySelector('iframe');
+        if (iframe && typeof html === 'string') (iframe as HTMLIFrameElement).srcdoc = html;
+    }).catch(function () { /* ignore */ });
+}
+
+function createLayoutCard(layout: ExportLayout, loadPreview: boolean): HTMLElement {
+    const card = document.createElement('div');
+    card.className = 'export-card';
+    card.dataset.layoutId = layout.id;
+    card.tabIndex = 0;
+    card.innerHTML =
+        '<div class="export-card__name"></div>' +
+        '<div class="export-card__desc"></div>' +
+        '<div class="export-card__preview"><iframe sandbox></iframe></div>';
+    card.querySelector('.export-card__name').textContent = layout.name;
+    card.querySelector('.export-card__desc').textContent = layout.description || '';
+    card.addEventListener('click', function () { selectLayoutCard(layout.id); });
+    card.addEventListener('keydown', function (e: KeyboardEvent) {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            selectLayoutCard(layout.id);
+        }
+    });
+    if (loadPreview) loadLayoutPreview(card, layout.id);
+    return card;
+}
+
+function renderLayoutCards(
+    cards: HTMLElement,
+    layouts: ExportLayout[],
+    favoriteIds: string[],
+): string | null {
+    cards.innerHTML = '';
+    const groups = splitLayoutsByFavorites(layouts, favoriteIds);
+    if (groups.favorites.length === 0) {
+        groups.rest.forEach(function (layout) {
+            cards.appendChild(createLayoutCard(layout, true));
+        });
+        return groups.rest.length > 0 ? groups.rest[0].id : null;
+    }
+
+    groups.favorites.forEach(function (layout) {
+        cards.appendChild(createLayoutCard(layout, true));
+    });
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.id = 'export-more-toggle';
+    toggle.className = 'export-more-toggle';
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.setAttribute('aria-controls', 'export-more-cards');
+    toggle.textContent = 'Weitere Layouts (' + groups.rest.length + ')';
+
+    const moreCards = document.createElement('div');
+    moreCards.id = 'export-more-cards';
+    moreCards.className = 'export-more-cards';
+    moreCards.hidden = true;
+    groups.rest.forEach(function (layout) {
+        moreCards.appendChild(createLayoutCard(layout, false));
+    });
+    toggle.addEventListener('click', function () {
+        const expanding = moreCards.hidden;
+        moreCards.hidden = !expanding;
+        toggle.setAttribute('aria-expanded', expanding ? 'true' : 'false');
+        if (expanding) {
+            moreCards.querySelectorAll<HTMLElement>('.export-card').forEach(function (card) {
+                if (card.dataset.layoutId) {
+                    loadLayoutPreview(card, card.dataset.layoutId);
+                }
+            });
+        }
+    });
+    cards.append(toggle, moreCards);
+    return groups.favorites[0].id;
+}
+
 function openExportDialog(): void {
     if (!document.body.classList.contains('kind-markdown')) return;
     setExportFormat('html');
     // Editor-Text in den Store syncen, damit die Vorschau den aktuellen Stand zeigt.
     const sync = (document.body.classList.contains('edit-mode') && deps.getCurrentPath())
         ? deps.syncEditorTextToStore() : Promise.resolve();
-    sync.then(function () { return invoke('export_layouts'); }).then(function (layouts: any[]) {
+    sync.then(function () {
+        return Promise.all([invoke('export_layouts'), invoke('settings_get')]);
+    }).then(function (result: [ExportLayout[], { themeFavorites?: string[] }]) {
+        const layouts = Array.isArray(result[0]) ? result[0] : [];
+        const settings = result[1];
+        const favoriteIds = settings && Array.isArray(settings.themeFavorites)
+            ? settings.themeFavorites : [];
         const cards = $('export-cards');
-        cards.innerHTML = '';
-        (layouts || []).forEach(function (layout) {
-            const card = document.createElement('div');
-            card.className = 'export-card';
-            card.dataset.layoutId = layout.id;
-            card.tabIndex = 0;
-            card.innerHTML =
-                '<div class="export-card__name"></div>' +
-                '<div class="export-card__desc"></div>' +
-                '<div class="export-card__preview"><iframe sandbox></iframe></div>';
-            card.querySelector('.export-card__name').textContent = layout.name;
-            card.querySelector('.export-card__desc').textContent = layout.description || '';
-            card.addEventListener('click', function () { selectLayoutCard(layout.id); });
-            card.addEventListener('keydown', function (e: KeyboardEvent) {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    selectLayoutCard(layout.id);
-                }
-            });
-            cards.appendChild(card);
-            invoke('export_render', { layoutId: layout.id }).then(function (html) {
-                const iframe = card.querySelector('iframe');
-                if (iframe && typeof html === 'string') (iframe as HTMLIFrameElement).srcdoc = html;
-            }).catch(function () { /* ignore */ });
-        });
-        selectLayoutCard((layouts && layouts[0] && layouts[0].id) || null);
+        const initiallySelected = renderLayoutCards(cards, layouts, favoriteIds);
+        selectLayoutCard(initiallySelected);
         $('export-dialog').hidden = false;
         // Defensive: bei Re-Open ohne Close (z. B. Doppelklick auf
         // tb-export) den alten Handler abraeumen, sonst leakt er —
@@ -92,7 +187,10 @@ function openExportDialog(): void {
                 e.preventDefault();
                 closeExportDialog();
             } else if (e.key === 'Enter' && selectedLayoutId) {
-                if (e.target && (e.target as HTMLElement).id === 'export-cancel') return;
+                if (e.target) {
+                    const targetId = (e.target as HTMLElement).id;
+                    if (targetId === 'export-cancel' || targetId === 'export-more-toggle') return;
+                }
                 e.preventDefault();
                 doExportSave();
             }

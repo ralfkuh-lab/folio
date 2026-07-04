@@ -30,6 +30,21 @@ pub(in crate::automation) async fn post_settings(
             )));
         }
     }
+    if let Some(favorites) = patch.theme_favorites.as_deref() {
+        let themes = crate::export::view_themes();
+        for theme_id in favorites {
+            if theme_id == "standard" {
+                return Err(ApiError::bad_request(
+                    "Das Standard-Theme kann kein Favorit sein",
+                ));
+            }
+            if !themes.iter().any(|theme| theme.id == *theme_id) {
+                return Err(ApiError::bad_request(format!(
+                    "Unbekanntes Theme-Favorit: '{theme_id}'"
+                )));
+            }
+        }
+    }
     let state = context.app_handle.state::<AppState>();
     crate::commands::app::settings::update_settings(patch, &context.app_handle, state.inner())
         .map(Json)

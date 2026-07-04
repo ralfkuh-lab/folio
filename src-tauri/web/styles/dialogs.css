@@ -122,6 +122,36 @@
   overflow: auto;
   padding-bottom: 4px;
 }
+.export-more-toggle {
+  grid-column: 1 / -1;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--rail-bg);
+  color: var(--fg-muted);
+  padding: 7px 10px;
+  text-align: left;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.export-more-toggle:hover {
+  background: var(--rail-hover-bg);
+  color: var(--fg);
+}
+.export-more-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.export-more-cards {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.export-more-cards[hidden] {
+  display: none;
+}
 .export-card {
   border: 2px solid var(--border);
   border-radius: 6px;
@@ -751,6 +781,31 @@
   color: var(--fg-muted);
   font-size: 11.5px;
   line-height: 1.35;
+}
+.settings-theme-card__fav {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg-muted);
+  padding: 0;
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.settings-theme-card__fav:hover {
+  background: var(--rail-hover-bg);
+  color: var(--accent);
+}
+.settings-theme-card__fav:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.settings-theme-card__fav[aria-pressed="true"] {
+  color: var(--accent);
 }
 .settings-theme-card__badges {
   flex: 0 0 auto;

@@ -10,7 +10,7 @@
 
 use crate::persist;
 use serde::{Deserialize, Serialize};
-use std::{io, path::PathBuf};
+use std::{collections::HashSet, io, path::PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -126,6 +126,11 @@ pub struct SettingsData {
     /// CSS-Abfrage auf `standard` zurueck.
     #[serde(default = "default_view_theme")]
     pub view_theme: String,
+    /// Fuer den Export priorisierte Theme-IDs. Unbekannte gespeicherte
+    /// IDs bleiben beim Laden erhalten und werden im Frontend lediglich
+    /// ausgeblendet.
+    #[serde(default)]
+    pub theme_favorites: Vec<String>,
     /// Steuert, ob File-System-Events fuer gepinnte/aufgeklappte
     /// Vault-Ordner einen Tree-Refresh ausloesen. Default an; aus
     /// wenn der User viele Ordner pinnt und FS-Watch-Limits drueckt.
@@ -174,6 +179,7 @@ impl Default for SettingsData {
             default_mode_text: default_mode_text(),
             view_auto_format: default_true(),
             view_theme: default_view_theme(),
+            theme_favorites: Vec::new(),
             vault_auto_refresh: default_true(),
             document_auto_reload: default_true(),
             export_dir_mode: ExportDirMode::default(),
@@ -193,6 +199,7 @@ pub struct SettingsPatch {
     pub default_mode_text: Option<DefaultViewMode>,
     pub view_auto_format: Option<bool>,
     pub view_theme: Option<String>,
+    pub theme_favorites: Option<Vec<String>>,
     pub vault_auto_refresh: Option<bool>,
     pub document_auto_reload: Option<bool>,
     pub export_dir_mode: Option<ExportDirMode>,
@@ -206,6 +213,7 @@ impl SettingsPatch {
             && self.default_mode_text.is_none()
             && self.view_auto_format.is_none()
             && self.view_theme.is_none()
+            && self.theme_favorites.is_none()
             && self.vault_auto_refresh.is_none()
             && self.document_auto_reload.is_none()
             && self.export_dir_mode.is_none()
@@ -251,7 +259,7 @@ impl SettingsService {
 
     fn apply_patch_with_view_themes(
         &mut self,
-        patch: SettingsPatch,
+        mut patch: SettingsPatch,
         themes: &[crate::export::LayoutInfo],
     ) -> io::Result<Vec<&'static str>> {
         if let Some(value) = patch.view_theme.as_deref() {
@@ -262,6 +270,25 @@ impl SettingsService {
                     format!("Unbekanntes View-Theme: '{value}'"),
                 ));
             }
+        }
+        if let Some(values) = patch.theme_favorites.as_mut() {
+            for value in values.iter() {
+                if value == "standard" {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "Das Standard-Theme kann kein Favorit sein",
+                    ));
+                }
+                let valid = themes.iter().any(|theme| theme.id == *value);
+                if !valid {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        format!("Unbekanntes Theme-Favorit: '{value}'"),
+                    ));
+                }
+            }
+            let mut seen = HashSet::new();
+            values.retain(|value| seen.insert(value.clone()));
         }
         let mut changed: Vec<&'static str> = Vec::new();
         if let Some(value) = patch.language {
@@ -292,6 +319,12 @@ impl SettingsService {
             if self.data.view_theme != value {
                 self.data.view_theme = value;
                 changed.push("viewTheme");
+            }
+        }
+        if let Some(value) = patch.theme_favorites {
+            if self.data.theme_favorites != value {
+                self.data.theme_favorites = value;
+                changed.push("themeFavorites");
             }
         }
         if let Some(value) = patch.vault_auto_refresh {
@@ -338,6 +371,7 @@ mod tests {
         assert_eq!(DefaultViewMode::Current, data.default_mode_text);
         assert!(data.view_auto_format);
         assert_eq!("standard", data.view_theme);
+        assert!(data.theme_favorites.is_empty());
         assert!(data.vault_auto_refresh);
         assert!(data.document_auto_reload);
         assert_eq!(ExportDirMode::Document, data.export_dir_mode);
@@ -420,6 +454,107 @@ mod tests {
         std::fs::write(&path, r#"{"viewTheme":"alt-theme"}"#).unwrap();
         let svc = SettingsService::load_from(path);
         assert_eq!("alt-theme", svc.data().view_theme);
+    }
+
+    #[test]
+    fn theme_favorites_patch_sets_replaces_and_clears_list() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("settings.json");
+        let mut svc = SettingsService::load_from(path.clone());
+
+        let changed = svc
+            .apply_patch(SettingsPatch {
+                theme_favorites: Some(vec!["github".to_string(), "clean".to_string()]),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(vec!["themeFavorites"], changed);
+        assert_eq!(
+            vec!["github".to_string(), "clean".to_string()],
+            SettingsService::load_from(path.clone())
+                .data()
+                .theme_favorites
+        );
+
+        svc.apply_patch(SettingsPatch {
+            theme_favorites: Some(vec!["classic".to_string()]),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(
+            vec!["classic".to_string()],
+            SettingsService::load_from(path.clone())
+                .data()
+                .theme_favorites
+        );
+
+        svc.apply_patch(SettingsPatch {
+            theme_favorites: Some(Vec::new()),
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(SettingsService::load_from(path)
+            .data()
+            .theme_favorites
+            .is_empty());
+    }
+
+    #[test]
+    fn theme_favorites_patch_rejects_unknown_and_standard_ids() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("settings.json");
+        let mut svc = SettingsService::load_from(path);
+
+        for invalid in ["gibtsnicht", "standard"] {
+            let error = svc
+                .apply_patch(SettingsPatch {
+                    theme_favorites: Some(vec![invalid.to_string()]),
+                    ..Default::default()
+                })
+                .unwrap_err();
+            assert_eq!(io::ErrorKind::InvalidInput, error.kind());
+            assert!(svc.data().theme_favorites.is_empty());
+        }
+    }
+
+    #[test]
+    fn theme_favorites_patch_deduplicates_in_first_seen_order() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("settings.json");
+        let mut svc = SettingsService::load_from(path);
+
+        svc.apply_patch(SettingsPatch {
+            theme_favorites: Some(vec![
+                "github".to_string(),
+                "clean".to_string(),
+                "github".to_string(),
+                "classic".to_string(),
+                "clean".to_string(),
+            ]),
+            ..Default::default()
+        })
+        .unwrap();
+
+        assert_eq!(
+            vec![
+                "github".to_string(),
+                "clean".to_string(),
+                "classic".to_string()
+            ],
+            svc.data().theme_favorites
+        );
+    }
+
+    #[test]
+    fn unknown_theme_favorite_is_preserved_on_load() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("settings.json");
+        std::fs::write(&path, r#"{"themeFavorites":["alt-theme","github"]}"#).unwrap();
+        let svc = SettingsService::load_from(path);
+        assert_eq!(
+            vec!["alt-theme".to_string(), "github".to_string()],
+            svc.data().theme_favorites
+        );
     }
 
     #[test]
@@ -578,13 +713,14 @@ mod tests {
                 default_mode_text: Some(DefaultViewMode::View),
                 view_auto_format: Some(false),
                 view_theme: Some("clean".to_string()),
+                theme_favorites: Some(vec!["github".to_string()]),
                 vault_auto_refresh: Some(false),
                 document_auto_reload: Some(false),
                 export_dir_mode: Some(ExportDirMode::Last),
                 log_level: Some(LogLevel::Debug),
             })
             .unwrap();
-        assert_eq!(9, changed.len());
+        assert_eq!(10, changed.len());
 
         let reloaded = SettingsService::load_from(path).data();
         assert_eq!(Language::En, reloaded.language);
@@ -592,6 +728,7 @@ mod tests {
         assert_eq!(DefaultViewMode::View, reloaded.default_mode_text);
         assert!(!reloaded.view_auto_format);
         assert_eq!("clean", reloaded.view_theme);
+        assert_eq!(vec!["github".to_string()], reloaded.theme_favorites);
         assert_eq!(ExportDirMode::Last, reloaded.export_dir_mode);
     }
 
