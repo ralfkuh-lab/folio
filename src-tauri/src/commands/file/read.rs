@@ -22,6 +22,28 @@ pub async fn read_file(
                 .unwrap_or(&path)
         ));
     }
+    // Bereits in einem anderen Tab offen? Dann dorthin springen statt
+    // die Datei doppelt zu oeffnen (Replace im aktiven Tab).
+    if crate::commands::tabs::focus_existing_tab(&state, &handle, &path)
+        .map_err(String::from)?
+        .is_some()
+    {
+        let (path, content) = {
+            let tabs = state
+                .tabs
+                .lock()
+                .map_err(|_| "tabs lock poisoned".to_string())?;
+            let store = &tabs.active().document_store;
+            (store.path.clone().unwrap_or_default(), store.text.clone())
+        };
+        let language = editor_language(&path).to_string();
+        return Ok(FileData {
+            path,
+            content,
+            kind,
+            language,
+        });
+    }
     let outcome = document_service::open(
         &state,
         path,

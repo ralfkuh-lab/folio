@@ -99,14 +99,23 @@ def run(ctx):
             ctx.expect(c_str in (paths or []) and len(paths) == 3,
                        f"Tabs nach Mittelklick: {paths!r}")
 
-        with ctx.step("Normaler Vault-Klick ersetzt im aktiven Tab (kein 4. Tab)"):
+        with ctx.step("Vault-Klick auf offene Datei springt zum bestehenden Tab"):
+            # Datei A ist in Tab 1 offen, aktiv ist der C-Tab. Der Klick
+            # darf A nicht doppelt oeffnen (frueherer Bug: Replace im
+            # aktiven Tab), sondern aktiviert Tab 1.
             result = _dispatch_row_mouse(ctx, a_str, "click", "button: 0")
             ctx.expect(result.get("ok") is True, f"eval: {result!r}")
-            # Datei A ist bereits als Tab offen — openDocument ersetzt im
-            # aktiven Tab; die Tab-Anzahl darf nicht wachsen.
-            time.sleep(0.3)
+            state = _poll(
+                ctx,
+                lambda: (
+                    ctx.api.state()
+                    if (ctx.api.state().get("file") or "").replace("\\", "/") == a_str
+                    else None
+                ),
+            )
+            ctx.expect(bool(state), "Klick hat nicht zum offenen A-Tab gewechselt")
             paths = _tab_paths(ctx)
-            ctx.expect(len(paths) == 3, f"Tab-Anzahl gewachsen: {paths!r}")
+            ctx.expect(paths == [a_str, b_str, c_str], f"Tabs veraendert: {paths!r}")
 
         with ctx.step("Kontextmenue: 'In neuem Tab oeffnen' vorhanden"):
             ctx.api.tabs_close_all()

@@ -61,6 +61,9 @@ pub(super) fn open_document(
     state: &AppState,
     handle: &AppHandle,
 ) -> Result<(), String> {
+    if crate::commands::tabs::focus_existing_tab(state, handle, &path)?.is_some() {
+        return Ok(());
+    }
     let outcome = crate::document_service::open(
         state,
         path,

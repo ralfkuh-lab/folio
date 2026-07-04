@@ -31,6 +31,14 @@ pub(in crate::automation) async fn post_open(
     } else {
         crate::document_service::DirtyPolicy::Reject
     };
+    // Konsistent zum UI-Open: bereits in einem anderen Tab offene Pfade
+    // aktivieren diesen Tab statt die Datei doppelt zu oeffnen.
+    if crate::commands::tabs::focus_existing_tab(&state, &context.app_handle, &payload.path)
+        .map_err(|error| ApiError::internal(error.to_string()))?
+        .is_some()
+    {
+        return Ok(Json(OkResponse { ok: true }));
+    }
     let outcome = crate::document_service::open(
         &state,
         payload.path,

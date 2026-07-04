@@ -118,6 +118,39 @@ pub fn open(state: &AppState, handle: &AppHandle, path: String) -> Result<TabTra
     transition_for_active(state, true)
 }
 
+/// Ist `path` bereits in einem ANDEREN Tab offen, wird dieser aktiviert
+/// (inkl. document:loaded/tabs:changed) und die Transition geliefert —
+/// die Replace-Open-Pfade (Vault-Klick, Recent, /open) springen damit
+/// zum bestehenden Tab statt die Datei doppelt zu oeffnen. Der aktive
+/// Tab selbst zaehlt nicht: Re-Open dort bleibt ein normaler Reload.
+/// History-Back/Forward nutzt diesen Helper bewusst NICHT (tab-lokale
+/// Browser-Semantik; Back darf nie den Tab wechseln).
+pub fn focus_existing_tab(
+    state: &AppState,
+    handle: &AppHandle,
+    path: &str,
+) -> Result<Option<TabTransition>, TabError> {
+    let normalized = path.replace('\\', "/");
+    let other = {
+        let tabs = state
+            .tabs
+            .lock()
+            .map_err(|_| TabError::Internal("tabs lock poisoned".into()))?;
+        match tabs.find_by_path(&normalized) {
+            Some(id) if !tabs.is_active(id) => Some(id),
+            _ => None,
+        }
+    };
+    match other {
+        Some(id) => {
+            let transition = activate(state, handle, id)?;
+            emit_navigation_changed(handle, &transition, None)?;
+            Ok(Some(transition))
+        }
+        None => Ok(None),
+    }
+}
+
 pub fn activate(state: &AppState, handle: &AppHandle, id: u64) -> Result<TabTransition, TabError> {
     {
         let mut tabs = state
