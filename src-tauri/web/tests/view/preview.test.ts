@@ -73,7 +73,8 @@ describe('view/preview', () => {
             return Promise.resolve();
         });
         buildDom();
-        (window as any).FolioEditor = { getText: () => editorText };
+        // hasEditor: true — die Preview rendert nur bei lebender Editor-Instanz.
+        (window as any).FolioEditor = { getText: () => editorText, hasEditor: () => true };
         preview = await import('../../app/view/preview');
         preview.initPreview({ getCurrentPath: () => '/doc/sample.md' });
     });

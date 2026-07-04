@@ -1,5 +1,5 @@
 .vault-region {
-  grid-row: 3;
+  grid-row: 2;
   grid-column: 1;
   overflow: auto;
   background: var(--rail-bg);
@@ -14,7 +14,9 @@ body.vault-hidden .vault-region { display: none; }
 .vault-header {
   display: flex;
   align-items: center;
-  padding: 8px 6px 6px 10px;
+  box-sizing: border-box;
+  height: var(--panel-header-h);
+  padding: 0 6px 0 10px;
   background: var(--rail-header-bg);
   border-bottom: 1px solid var(--border);
 }

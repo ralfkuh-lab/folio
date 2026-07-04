@@ -81,6 +81,13 @@ function invokeRender(text: string): Promise<RenderPreview> {
 
 function currentEditorText(): string | null {
     const editor = (window as any).FolioEditor;
+    // Vor dem ersten Mount gibt es keinen "Editor-Stand": getText()
+    // wuerde '' liefern und ein Flush (z. B. app:set_mode beim
+    // Boot-Session-Restore) den kanonischen View-Render mit leerem
+    // HTML ueberschreiben (Bug: leere View nach Restore).
+    if (!editor || typeof editor.hasEditor !== 'function' || !editor.hasEditor()) {
+        return null;
+    }
     if (editor && typeof editor.getText === 'function') {
         return editor.getText();
     }

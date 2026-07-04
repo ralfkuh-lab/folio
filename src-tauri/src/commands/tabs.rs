@@ -132,6 +132,7 @@ pub fn activate(state: &AppState, handle: &AppHandle, id: u64) -> Result<TabTran
     // Restore-Tabs tragen bis zur ersten Aktivierung nur `pending_path`.
     // Schlaegt das Laden inzwischen fehl, wird der tote Tab entfernt und
     // der dadurch aktive Nachbar bei Bedarf ebenfalls lazy geladen.
+    let mut lazy_loaded = false;
     loop {
         match document_service::load_active_pending(state) {
             Ok(Some(outcome)) => {
@@ -140,6 +141,11 @@ pub fn activate(state: &AppState, handle: &AppHandle, id: u64) -> Result<TabTran
                         .emit("app:set_mode", serde_json::json!({ "mode": mode }))
                         .map_err(|error| TabError::Internal(error.to_string()))?;
                 }
+                // Der Store-load-Callback hat document:loaded (inkl.
+                // /wait-Signal) und dirty_changed bereits emittiert —
+                // unten NICHT erneut emitten, sonst rendert das Frontend
+                // doppelt und der Model-Cache sieht zwei loaded-Events.
+                lazy_loaded = true;
                 break;
             }
             Ok(None) => break,
@@ -191,14 +197,17 @@ pub fn activate(state: &AppState, handle: &AppHandle, id: u64) -> Result<TabTran
         .set_active(path.clone());
 
     if let Some(path) = path {
-        AppState::emit_document_loaded(handle, tab_id, &path, &text).map_err(TabError::Internal)?;
-        handle
-            .emit(
-                "document:dirty_changed",
-                serde_json::json!({ "is_dirty": dirty, "tabId": tab_id }),
-            )
-            .map_err(|error| TabError::Internal(error.to_string()))?;
-        crate::automation::wait::signal_document_loaded(handle.state::<AppState>().inner());
+        if !lazy_loaded {
+            AppState::emit_document_loaded(handle, tab_id, &path, &text)
+                .map_err(TabError::Internal)?;
+            handle
+                .emit(
+                    "document:dirty_changed",
+                    serde_json::json!({ "is_dirty": dirty, "tabId": tab_id }),
+                )
+                .map_err(|error| TabError::Internal(error.to_string()))?;
+            crate::automation::wait::signal_document_loaded(handle.state::<AppState>().inner());
+        }
     } else {
         emit_document_closed(handle, tab_id)?;
     }

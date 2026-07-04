@@ -1,10 +1,13 @@
+/* Erstes Flex-Kind der .content-region: die Leiste sitzt nur ueber dem
+   mittleren Inhaltsbereich (VS-Code-Muster) und teilt sich die Hoehe mit
+   den Panel-Headern (--panel-header-h, siehe base.css/vault.css). */
 .tab-bar {
-  grid-row: 2;
-  grid-column: 1 / -1;
+  flex: 0 0 auto;
   display: flex;
   align-items: stretch;
   min-width: 0;
-  min-height: 31px;
+  height: var(--panel-header-h);
+  box-sizing: border-box;
   overflow-x: auto;
   overflow-y: hidden;
   background: var(--rail-header-bg);

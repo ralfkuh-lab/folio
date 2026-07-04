@@ -33,6 +33,7 @@ import {
     setTheme,
     setText,
     syncTabModels,
+    hasEditor,
 } from './mount';
 import {
     applyReplace,
@@ -58,6 +59,7 @@ import * as codeView from './view-code';
 
 (window as any).FolioEditor = {
     mount,
+    hasEditor,
     setText,
     setDocument,
     syncTabModels,

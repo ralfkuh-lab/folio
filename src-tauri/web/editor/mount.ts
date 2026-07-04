@@ -144,9 +144,15 @@ export function mount(elementId: string, initialText: string): Promise<void> {
         const minimapEnabled =
             pendingMinimapEnabled === null ? false : pendingMinimapEnabled;
         pendingMinimapEnabled = null;
+        // Model EXPLIZIT erzeugen statt ueber `value` im create-Options-
+        // Objekt: das implizite create-Model gehoert Monaco und wird beim
+        // ersten editor.setModel(anderes) automatisch disposed — der
+        // Tab-Model-Cache hielte dann eine tote Referenz und setModel
+        // darauf wirft (Bug: leerer Editor + Phantom-Dirty nach
+        // Session-Restore). Explizite Models besitzt unser Cache.
+        const initialModel = monaco.editor.createModel(initialText || '', 'markdown');
         const editor = monaco.editor.create(el, {
-            value: initialText || '',
-            language: 'markdown',
+            model: initialModel,
             theme: isDark ? 'vs-dark' : 'vs',
             automaticLayout: true,
             minimap: { enabled: minimapEnabled },
@@ -194,6 +200,12 @@ export function mount(elementId: string, initialText: string): Promise<void> {
 // Awaitable Ready-Promise für defensive Pre-Mount-Calls in `text.ts` &
 // Co. — Programmatic Writes vor abgeschlossener Mount-Promise werden
 // dadurch deferred statt silent verworfen (Phase-5-Race-Smell).
+/** Existiert eine lebende Editor-Instanz? (Fuer Konsumenten ausserhalb
+ *  des Editor-Bundles, z. B. den Live-Preview-Mount-Guard.) */
+export function hasEditor(): boolean {
+    return !!getEditor();
+}
+
 export function whenReady(): Promise<void> {
     return mountReady;
 }
@@ -318,6 +330,17 @@ function doSetDocument(
             doSetText(text, language);
             return;
         }
+        target = {
+            model: monaco.editor.createModel(text || '', nextLanguage),
+            viewState: null,
+            path,
+        };
+        tabModels.set(tabId, target);
+    } else if (typeof target.model.isDisposed === 'function' && target.model.isDisposed()) {
+        // Defensive Selbstheilung: tote Model-Referenz (z. B. durch
+        // externes Disposal) verwerfen und aus dem Payload neu bauen —
+        // setModel auf einem disposed Model wuerde werfen und den
+        // Tab-Wechsel-Handler killen.
         target = {
             model: monaco.editor.createModel(text || '', nextLanguage),
             viewState: null,

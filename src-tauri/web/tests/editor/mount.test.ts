@@ -8,6 +8,7 @@ type MockModel = {
     getValue(): string;
     getLanguageId(): string;
     dispose(): void;
+    isDisposed(): boolean;
 };
 
 function createMonacoMock() {
@@ -23,6 +24,7 @@ function createMonacoMock() {
             getValue() { return this.value; },
             getLanguageId() { return this.language; },
             dispose() { this.disposed = true; },
+            isDisposed() { return this.disposed; },
         };
         models.push(model);
         return model;
@@ -38,7 +40,10 @@ function createMonacoMock() {
             }),
             setTheme: vi.fn(),
             create: vi.fn((_element: HTMLElement, options: any) => {
-                let model: MockModel | null = createModel(options.value, options.language);
+                // Bestand: mount() erzeugt das Model EXPLIZIT (options.model);
+                // options.value existiert nur noch als Fallback fuer Alt-Pfade.
+                let model: MockModel | null = options.model
+                    ?? createModel(options.value, options.language);
                 editorInstance = {
                     getModel: vi.fn(() => model),
                     setModel: vi.fn((next: MockModel | null) => { model = next; }),
@@ -118,6 +123,40 @@ describe('editor/mount tab model cache', () => {
         mount.syncTabModels([10]);
         expect(modelB.disposed).toBe(true);
         expect(modelA.disposed).toBe(false);
+    });
+
+    it('mount creates an explicit model owned by the tab cache', async () => {
+        const mock = createMonacoMock();
+        (window as any).monaco = mock.monaco;
+        const mount = await import('../../editor/mount');
+        await mount.mount('editor-mount', 'boot');
+
+        // Regression: das create()-eigene implizite Model wird von Monaco
+        // beim ersten setModel disposed — mount MUSS deshalb ein explizit
+        // erzeugtes Model uebergeben (options.model statt options.value).
+        const createOptions = (mock.monaco.editor.create as any).mock.calls[0][1];
+        expect(createOptions.model).toBeTruthy();
+        expect(createOptions.value).toBeUndefined();
+        expect(mock.monaco.editor.createModel).toHaveBeenCalled();
+    });
+
+    it('self-heals when a cached tab model was disposed externally', async () => {
+        const mock = createMonacoMock();
+        (window as any).monaco = mock.monaco;
+        const mount = await import('../../editor/mount');
+        await mount.mount('editor-mount', 'doc a');
+
+        mount.setDocument(40, '/tmp/a.md', 'doc a', 'markdown');
+        const modelA = mock.getEditor().getModel() as MockModel;
+        mount.setDocument(41, '/tmp/b.md', 'doc b', 'markdown');
+
+        // Simuliertes Fremd-Disposal der gecachten Referenz von Tab 40.
+        modelA.dispose();
+        mount.setDocument(40, '/tmp/a.md', 'doc a', 'markdown');
+        const healed = mock.getEditor().getModel() as MockModel;
+        expect(healed).not.toBe(modelA);
+        expect(healed.disposed).toBe(false);
+        expect(healed.getValue()).toBe('doc a');
     });
 
     it('pre-mount setScroll neither spins the microtask queue nor gets lost', async () => {
