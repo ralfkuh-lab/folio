@@ -212,7 +212,16 @@ sonst lehnt Tauri den Build ab.
   Light-Variante. Dark-Overrides werden nach dem Light-CSS angehaengt.
   Fehlt eine Dark-Variante (bewusst bei `classic`), liefert das Backend
   auch fuer `dark=true` das Light-CSS; unbekannte gespeicherte IDs
-  fallen im Frontend effektiv auf `standard` zurueck.
+  fallen im Frontend effektiv auf `standard` zurueck. Eigene Themes
+  liegen unter `<config>/folio/themes/`: `<id>.css` ist Pflicht,
+  `<id>.dark.css` und `<id>.page.css` sind optional. Fehlt das Page-CSS,
+  verwendet der Export einen weissen, randlosen Seitenrahmen. In den
+  ersten zehn Zeilen der Hauptdatei koennen `/* name: ... */` und
+  `/* description: ... */` (Schluessel case-insensitive) stehen.
+  Built-in-IDs gewinnen bei Kollisionen; ungueltige/verschwundene IDs
+  folgen dem bestehenden Unknown-ID-/`standard`-Fallback. Die Theme-Liste
+  und CSS-Dateien werden bei jedem Aufruf neu gelesen; es gibt in dieser
+  Etappe keinen Cache oder File-Watcher.
 - **Image-View** (`view/image.ts`, Surface `#image-view-mount` in
   `dist/index.html`): `FileKind::Image` (png/jpg/jpeg/gif/webp/svg/
   bmp/ico/avif) wird read-only über `<img src={convertFileSrc(path)}>`

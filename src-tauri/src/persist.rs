@@ -14,6 +14,14 @@ pub(crate) fn config_file(name: &str) -> PathBuf {
     dir.join(name)
 }
 
+/// Verzeichnis fuer benutzerdefinierte Markdown-Themes.
+///
+/// Das Verzeichnis wird hier bewusst nicht angelegt. Discovery liest es
+/// nur, wenn der User selbst Theme-Dateien darin abgelegt hat.
+pub fn themes_dir() -> PathBuf {
+    config_file("themes")
+}
+
 /// Liefert das OS-spezifische Log-Verzeichnis fuer Folio.
 ///
 /// - Linux/BSD: `$XDG_STATE_HOME/folio/logs` (Fallback

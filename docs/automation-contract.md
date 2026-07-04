@@ -75,7 +75,8 @@ Wichtige stabile Selektor-Gruppen:
 - Settings-Tabs: `settings-tab-<slug>` und
   `[data-settings-tab="<slug>"]`.
 - View-Theme: `#view-theme-style`, `body[data-view-theme="<id>"]`,
-  `#settings-theme-list` und `[data-view-theme="<id>"]`.
+  `#settings-theme-list`, `#settings-theme-hint` und
+  `[data-view-theme="<id>"]`.
 - Vault: `.section`, `.node`, `.row`, `.caret`, `ul.children`,
   `data-path="<normalized-absolute-path>"`.
 
@@ -87,7 +88,9 @@ und `docs/e2e-testing.md`.
 
 `GET/POST /settings` transportiert unter anderem das persistierte Feld
 `viewTheme`. Erlaubte Werte kommen aus dem Tauri-Command `view_themes`;
-unbekannte Werte werden beim Patch mit HTTP 400 abgelehnt.
+das sind die Built-ins sowie die bei jedem Aufruf frisch aus
+`<config>/folio/themes/` gelesenen Custom-Theme-IDs. Unbekannte oder
+ungueltige Werte werden beim Patch mit HTTP 400 abgelehnt.
 
 ### Security-Gates (Middleware `security_guard`)
 

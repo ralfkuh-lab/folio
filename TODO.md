@@ -44,10 +44,8 @@
     nächsten Windows-E2E-Run (`09_undo_redo`) nur noch validieren.
 
 - **Settings-Ausbau — Restetappen Theme-System** (User-Wunsch
-  2026-07-04; Tab-Control und Etappe 3a „View-Theme-Auswahl mit
-  Light/Dark" sind erledigt):
-  - **3b — Custom-Themes** (User-CSS unter `~/.config/folio/themes/`,
-    Einbindung in `view_themes`/`view_theme_css` + Export).
+  2026-07-04; Tab-Control, Etappe 3a „View-Theme-Auswahl mit
+  Light/Dark" und 3b „Custom-Themes" sind erledigt):
   - **3c — Theme-Favoriten**: Themes als Favorit markierbar; Favoriten
     werden im Export-Dialog priorisiert angezeigt, der Rest unter
     „weitere…".

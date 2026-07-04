@@ -46,6 +46,7 @@ function buildDom(): void {
             </div>
             <div role="tabpanel" data-settings-tab="themes" hidden>
                 <div id="settings-theme-list" role="radiogroup"></div>
+                <p id="settings-theme-hint"></p>
             </div>
             <button id="settings-close"></button>
         </div>
@@ -72,14 +73,26 @@ describe('settings-dialog', () => {
                         name: 'Standard',
                         description: 'Folio',
                         hasDark: true,
+                        custom: false,
                     },
                     {
                         id: 'classic',
                         name: 'Classic',
                         description: 'Serifen',
                         hasDark: false,
+                        custom: false,
+                    },
+                    {
+                        id: 'meins',
+                        name: 'Mein Theme',
+                        description: 'Eigene Farben',
+                        hasDark: true,
+                        custom: true,
                     },
                 ]);
+            }
+            if (cmd === 'themes_dir_path') {
+                return Promise.resolve('/home/test/.config/folio/themes');
             }
             if (cmd === 'view_theme_css') return Promise.resolve('');
             if (cmd === 'settings_update') {
@@ -145,6 +158,13 @@ describe('settings-dialog', () => {
         )!;
         expect(classic.textContent).toContain('Classic');
         expect(classic.textContent).toContain('Nur hell');
+        const custom = document.querySelector<HTMLElement>(
+            '[data-view-theme="meins"]',
+        )!;
+        expect(custom.textContent).toContain('Eigenes Theme');
+        expect(custom.textContent).toContain('Hell/Dunkel');
+        expect(document.getElementById('settings-theme-hint')!.textContent)
+            .toContain('/home/test/.config/folio/themes');
         expect(document.querySelector<HTMLElement>(
             '#settings-theme-list [data-view-theme="standard"]',
         )!.getAttribute('aria-checked')).toBe('true');

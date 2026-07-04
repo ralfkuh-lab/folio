@@ -22,6 +22,7 @@ export type ViewThemeInfo = {
     name: string;
     description: string;
     hasDark: boolean;
+    custom: boolean;
 };
 
 export type SettingsData = {
@@ -178,16 +179,33 @@ function renderViewThemes(themes: ViewThemeInfo[]): void {
         description.textContent = theme.description;
         text.append(name, description);
 
-        var badge = document.createElement('span');
-        badge.className = 'settings-theme-card__badge';
-        badge.textContent = theme.hasDark ? 'Hell/Dunkel' : 'Nur hell';
-        entry.append(text, badge);
+        var badges = document.createElement('span');
+        badges.className = 'settings-theme-card__badges';
+        if (theme.custom) {
+            var customBadge = document.createElement('span');
+            customBadge.className =
+                'settings-theme-card__badge settings-theme-card__badge--custom';
+            customBadge.textContent = 'Eigenes Theme';
+            badges.appendChild(customBadge);
+        }
+        var variantBadge = document.createElement('span');
+        variantBadge.className = 'settings-theme-card__badge';
+        variantBadge.textContent = theme.hasDark ? 'Hell/Dunkel' : 'Nur hell';
+        badges.appendChild(variantBadge);
+        entry.append(text, badges);
         entry.addEventListener('click', function () {
             patchSettings({ viewTheme: theme.id });
         });
         list.appendChild(entry);
     });
     syncSelectedViewTheme(currentSettings ? currentSettings.viewTheme : 'standard');
+}
+
+function renderThemesDirHint(path: string): void {
+    var hint = $('settings-theme-hint');
+    if (!hint) return;
+    hint.textContent = 'Eigene Themes: CSS-Dateien in ' + path +
+        ' ablegen (name.css, optional name.dark.css / name.page.css).';
 }
 
 async function patchSettings(patch: Partial<SettingsData>): Promise<void> {
@@ -232,13 +250,19 @@ export function openSettingsDialog(): void {
         installKeydownHandler();
         return;
     }
-    Promise.all([invoke('settings_get'), invoke('view_themes')]).then(function (result: any[]) {
+    Promise.all([
+        invoke('settings_get'),
+        invoke('view_themes'),
+        invoke('themes_dir_path'),
+    ]).then(function (result: any[]) {
         var data = result[0];
         var themes = result[1];
+        var themesDir = result[2];
         if (!data || typeof data !== 'object') return;
         currentSettings = data as SettingsData;
         viewThemes = Array.isArray(themes) ? themes as ViewThemeInfo[] : [];
         renderViewThemes(viewThemes);
+        renderThemesDirHint(typeof themesDir === 'string' ? themesDir : '');
         if (bootLanguage === null) bootLanguage = currentSettings.language;
         applySettingsToForm(currentSettings);
         applyLogLevelFromSettings(currentSettings.logLevel);

@@ -245,10 +245,17 @@ impl SettingsService {
     /// es **nicht** in der `changed`-Liste auftauchen — so kann das
     /// Frontend Side-Effects wie Menue-Rebuild gezielt vermeiden.
     pub fn apply_patch(&mut self, patch: SettingsPatch) -> io::Result<Vec<&'static str>> {
+        let themes = crate::export::view_themes();
+        self.apply_patch_with_view_themes(patch, &themes)
+    }
+
+    fn apply_patch_with_view_themes(
+        &mut self,
+        patch: SettingsPatch,
+        themes: &[crate::export::LayoutInfo],
+    ) -> io::Result<Vec<&'static str>> {
         if let Some(value) = patch.view_theme.as_deref() {
-            let valid = crate::export::view_themes()
-                .iter()
-                .any(|theme| theme.id == value);
+            let valid = themes.iter().any(|theme| theme.id == value);
             if !valid {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
@@ -375,6 +382,35 @@ mod tests {
             .unwrap_err();
         assert_eq!(io::ErrorKind::InvalidInput, error.kind());
         assert_eq!("github", svc.data().view_theme);
+    }
+
+    #[test]
+    fn view_theme_patch_accepts_injected_custom_theme() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("settings.json");
+        let mut svc = SettingsService::load_from(path.clone());
+        let themes = vec![crate::export::LayoutInfo {
+            id: "mein-theme".to_string(),
+            name: "Mein Theme".to_string(),
+            description: "Eigenes Theme".to_string(),
+            has_dark: false,
+            custom: true,
+        }];
+        let changed = svc
+            .apply_patch_with_view_themes(
+                SettingsPatch {
+                    view_theme: Some("mein-theme".to_string()),
+                    ..Default::default()
+                },
+                &themes,
+            )
+            .unwrap();
+
+        assert_eq!(vec!["viewTheme"], changed);
+        assert_eq!(
+            "mein-theme",
+            SettingsService::load_from(path).data().view_theme
+        );
     }
 
     #[test]

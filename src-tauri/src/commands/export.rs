@@ -19,6 +19,11 @@ pub async fn view_themes() -> Vec<LayoutInfo> {
 }
 
 #[tauri::command]
+pub async fn themes_dir_path() -> String {
+    crate::persist::themes_dir().to_string_lossy().into_owned()
+}
+
+#[tauri::command]
 pub async fn view_theme_css(theme_id: String, dark: bool) -> Result<String, String> {
     export::view_theme_css(&theme_id, dark).map(Cow::into_owned)
 }

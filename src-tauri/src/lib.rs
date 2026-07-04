@@ -307,6 +307,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::editor::render_markdown_preview,
             commands::export::export_layouts,
             commands::export::view_themes,
+            commands::export::themes_dir_path,
             commands::export::view_theme_css,
             commands::export::export_render,
             commands::export::export_html,
