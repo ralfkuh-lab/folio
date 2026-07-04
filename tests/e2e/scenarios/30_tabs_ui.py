@@ -112,6 +112,21 @@ def run(ctx):
             undone = _poll(ctx, _text_if_original)
             ctx.expect(undone == original, "Undo-Stack hat den Tab-Wechsel nicht ueberlebt")
 
+            # Regression (User-Bug 2026-07-04): Revert auf den
+            # Ausgangstext muss auch den BACKEND-Dirty-State und damit
+            # den Tab-Punkt zuruecksetzen (clean_text-Referenz im Store).
+            dirty_cleared = _poll(
+                ctx, lambda: ctx.api.state().get("dirty") is False
+            )
+            ctx.expect(bool(dirty_cleared), "Backend blieb nach Undo-Revert dirty")
+            dot_gone = _poll(
+                ctx,
+                lambda: not ctx.api.dom(
+                    f'.tab-item[data-tab-id="{tab_a["id"]}"] .tab-dirty'
+                ).get("exists"),
+            )
+            ctx.expect(bool(dot_gone), "Tab-Dirty-Punkt blieb nach Undo-Revert")
+
         with ctx.step("Ctrl+W schliesst aktiven Dirty-Tab nach Verwerfen"):
             # Nach Undo erneut dirty machen, damit der Dialogpfad garantiert
             # getestet wird.

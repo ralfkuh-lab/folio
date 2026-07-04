@@ -32,6 +32,11 @@ pub struct DocumentEvents {
 pub struct DocumentStore {
     pub path: Option<String>,
     pub text: String,
+    /// Referenzstand von Load/Save/Reload — `update_text` vergleicht
+    /// dagegen, damit ein Undo zurueck zum Ausgangstext den Store
+    /// wieder clean macht (Tab-Dirty-Punkt und Close-Prompt haengen
+    /// am Backend-Flag, nicht am Frontend-Vergleich).
+    clean_text: String,
     pub is_dirty: bool,
     pub line_ending: LineEnding,
     pub had_bom: bool,
@@ -44,6 +49,7 @@ impl Default for DocumentStore {
     fn default() -> Self {
         Self {
             path: None,
+            clean_text: String::new(),
             text: String::new(),
             is_dirty: false,
             line_ending: LineEnding::Lf,
@@ -69,6 +75,7 @@ impl DocumentStore {
 
         self.path = Some(path.to_string());
         self.text = text.clone();
+        self.clean_text = text.clone();
         self.is_dirty = false;
         self.line_ending = line_ending;
         self.had_bom = had_bom;
@@ -96,6 +103,7 @@ impl DocumentStore {
     pub fn load_opaque(&mut self, path: &str) -> io::Result<LoadedDocument> {
         self.path = Some(path.to_string());
         self.text = String::new();
+        self.clean_text = String::new();
         self.is_dirty = false;
         // line_ending/had_bom unveraendert — sie betreffen nur Text-Saves.
         let loaded = LoadedDocument {
@@ -133,6 +141,7 @@ impl DocumentStore {
             return Ok(false);
         }
         self.text = text.clone();
+        self.clean_text = text.clone();
         self.is_dirty = false;
         self.line_ending = line_ending;
         self.had_bom = had_bom;
@@ -156,6 +165,7 @@ impl DocumentStore {
     pub fn close(&mut self) {
         self.path = None;
         self.text = String::new();
+        self.clean_text = String::new();
         self.is_dirty = false;
         self.line_ending = LineEnding::Lf;
         self.had_bom = false;
@@ -172,7 +182,9 @@ impl DocumentStore {
         }
         self.text = text.clone();
         if self.path.is_some() {
-            self.set_dirty(true);
+            // Vergleich gegen den Referenzstand statt pauschal dirty:
+            // Undo zurueck zum Ausgangstext -> wieder clean.
+            self.set_dirty(text != self.clean_text);
         }
         if let Some(callback) = &self.events.text_changed {
             callback(text);
@@ -193,6 +205,7 @@ impl DocumentStore {
         }
         bytes.extend_from_slice(disk_text.as_bytes());
         fs::write(&path, bytes)?;
+        self.clean_text = self.text.clone();
         self.set_dirty(false);
         if let Some(callback) = &self.events.saved {
             callback(path, self.text.clone());
@@ -218,6 +231,7 @@ impl DocumentStore {
         fs::write(new_path, bytes)?;
 
         self.path = Some(new_path.to_string());
+        self.clean_text = self.text.clone();
         self.set_dirty(false);
         self.watch_non_fatal(new_path);
 
@@ -458,6 +472,30 @@ mod tests {
         store.load(path.to_str().unwrap()).unwrap();
         store.update_text("two".into());
         assert!(store.is_dirty);
+    }
+
+    #[test]
+    fn update_text_clears_dirty_when_reverted_to_clean_text() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("doc.md");
+        fs::write(&path, "one").unwrap();
+        let mut store = DocumentStore::new();
+        store.load(path.to_str().unwrap()).unwrap();
+
+        store.update_text("two".into());
+        assert!(store.is_dirty);
+        // Undo zurueck zum geladenen Stand -> Store wieder clean.
+        store.update_text("one".into());
+        assert!(!store.is_dirty);
+
+        // Nach einem Save ist der gespeicherte Text die neue Referenz.
+        store.update_text("three".into());
+        store.save().unwrap();
+        assert!(!store.is_dirty);
+        store.update_text("one".into());
+        assert!(store.is_dirty);
+        store.update_text("three".into());
+        assert!(!store.is_dirty);
     }
 
     #[test]
