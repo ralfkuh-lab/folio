@@ -12,6 +12,7 @@
 import { applyLogLevelFromSettings, folioLog } from '../util/log';
 import { configureSettingsTab, setSettingsTabOpen } from '../state/tabs';
 import { applyViewTheme } from '../view/theme';
+import { initSettingsAi } from './settings-ai';
 
 type SettingsLanguage = 'de' | 'en';
 export type DefaultViewMode = 'view' | 'edit' | 'current';
@@ -453,6 +454,7 @@ export function initSettingsDialog(): void {
     var closeBtn = $('settings-close');
     if (closeBtn) closeBtn.addEventListener('click', closeSettingsDialog);
     bindInputs();
+    initSettingsAi();
 
     // Settings-Cache via 'settings:changed' aktuell halten (z.B. wenn
     // mehrere Webviews / Automation-API patchen). Boot-Sprache wird beim

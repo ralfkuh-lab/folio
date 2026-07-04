@@ -157,27 +157,29 @@ sinnvoll ist — wer opencode kennt, findet sich sofort zurecht:
 
 ### Etappe K2 — Settings-UI (Anbieter + Modelle)
 
-- [ ] Bereichs-Tabs „KI-Anbieter" und „KI-Modelle" in der
+- [x] Bereichs-Tabs „KI-Anbieter" und „KI-Modelle" in der
       Settings-Region (Muster `settings-tab-<slug>`), Markup +
       `ui/settings-ai.ts` (eigenes Modul, settings-dialog.ts nur
-      Tab-Registrierung).
-- [ ] Anbieter-Panel: Katalog-Provider mit Toggle + Key-Zeile
+      Tab-Registrierung), CSS `styles/settings-ai.css`.
+- [x] Anbieter-Panel: Katalog-Provider mit Toggle + Key-Zeile
       (Status-Punkt, „Schlüssel setzen/ändern/entfernen",
       Passwort-Input, nie Klartext-Anzeige), Custom-Provider-Dialog
       (ID/Name/Basis-URL/Schlüssel, Validierungshinweise wie im
-      opencode-Screenshot).
-- [ ] Modelle-Panel: Suchfeld (filtert live), Gruppierung nach
+      opencode-Screenshot), Hinweis auf auth.json-Speicherort (0600).
+- [x] Modelle-Panel: Suchfeld (filtert live), Gruppierung nach
       aktivierten Providern, Toggle pro Modell, Katalog-Metadaten
       kompakt, „Katalog aktualisieren" + Standanzeige; Custom-Provider
       zeigen ihre via `GET /v1/models` geholten Modelle
-      („Modelle abrufen"-Button pro Custom-Provider).
-- [ ] Default-Modell-Auswahl (Dropdown über alle getoggelten Modelle).
-- [ ] jsdom-Tests (Rendering, Toggle-Invokes, Key-Flows ohne
+      („Modelle abrufen"-Button, neues Backend-Command
+      `ai_custom_models_fetch` + `custom_models_replace` mit
+      Namenserhalt).
+- [x] Default-Modell-Auswahl (Dropdown über alle getoggelten Modelle).
+- [x] jsdom-Tests (Rendering, Toggle-Invokes, Key-Flows ohne
       Klartext-Leak); E2E `33_ai_settings.py` funktional
       (Custom-Provider anlegen via UI-Flow, Toggles, auth-Status;
       KEINE echten Netz-Calls — models.dev-Refresh wird NICHT
       getriggert).
-- [ ] Automation-Contract: neue stabile Selektoren dokumentieren.
+- [x] Automation-Contract: neue stabile Selektoren dokumentiert.
 
 ### Etappe K3 — Chat-Client + Übersetzungs-Feature
 

@@ -6,6 +6,9 @@ use crate::{
     },
     state::AppState,
 };
+use reqwest::{StatusCode, Url};
+use serde::Deserialize;
+use std::{collections::BTreeSet, time::Duration};
 use tauri::State;
 
 #[tauri::command]
@@ -92,6 +95,66 @@ pub async fn ai_custom_delete(id: String, state: State<'_, AppState>) -> Result<
         target: "folio::ai",
         provider_id = id,
         "custom AI provider deleted; auth entry left unchanged"
+    );
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn ai_custom_models_fetch(
+    provider_id: String,
+    state: State<'_, AppState>,
+) -> Result<AiConfig, String> {
+    let (base_url, key) = {
+        let config = config_data(state.inner())?;
+        let provider = config
+            .provider
+            .get(&provider_id)
+            .ok_or_else(|| format!("Custom-Provider '{provider_id}' wurde nicht gefunden"))?;
+        if !provider.custom {
+            return Err(format!("Provider '{provider_id}' ist kein Custom-Provider"));
+        }
+        let base_url = provider
+            .options
+            .as_ref()
+            .map(|options| options.base_url.clone())
+            .filter(|url| !url.trim().is_empty())
+            .ok_or_else(|| format!("Custom-Provider '{provider_id}' hat keine Basis-URL"))?;
+        let key = state
+            .ai_auth
+            .lock()
+            .map_err(|_| "AI auth lock poisoned".to_string())?
+            .get_key(&provider_id);
+        (base_url, key)
+    };
+
+    let url = custom_models_url(&base_url)?;
+    let mut request = state.ai_http.get(url).timeout(Duration::from_secs(15));
+    if let Some(key) = key {
+        request = request.bearer_auth(key);
+    }
+    let response = request.send().await.map_err(|error| {
+        format!("Modelle von Provider '{provider_id}' konnten nicht abgerufen werden: {error}")
+    })?;
+    let status = response.status();
+    let body = response.text().await.map_err(|error| {
+        format!("Antwort von Provider '{provider_id}' konnte nicht gelesen werden: {error}")
+    })?;
+    if !status.is_success() {
+        return Err(http_error(&provider_id, status, &body));
+    }
+    let model_ids = parse_custom_models(&body).map_err(|error| {
+        format!("Provider '{provider_id}' lieferte keine gültige Modellliste: {error}")
+    })?;
+
+    let count = model_ids.len();
+    let result = mutate_config(state.inner(), |service| {
+        service.custom_models_replace(&provider_id, model_ids)
+    })?;
+    tracing::info!(
+        target: "folio::ai",
+        provider_id,
+        count,
+        "custom AI provider models refreshed"
     );
     Ok(result)
 }
@@ -201,4 +264,85 @@ fn mutate_config(
         .map_err(|_| "AI config lock poisoned".to_string())?;
     mutation(&mut service).map_err(|error| error.to_string())?;
     Ok(service.data())
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiModelsResponse {
+    data: Vec<OpenAiModel>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiModel {
+    id: String,
+}
+
+fn custom_models_url(base_url: &str) -> Result<Url, String> {
+    let mut url = Url::parse(base_url.trim())
+        .map_err(|error| format!("Ungültige Basis-URL für Custom-Provider: {error}"))?;
+    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
+        return Err("Basis-URL des Custom-Providers muss eine HTTP(S)-URL sein".to_string());
+    }
+    let path = url.path().trim_end_matches('/').to_string();
+    if !path.ends_with("/models") {
+        url.set_path(&format!("{path}/models"));
+    } else {
+        url.set_path(&path);
+    }
+    url.set_query(None);
+    url.set_fragment(None);
+    Ok(url)
+}
+
+fn parse_custom_models(body: &str) -> Result<BTreeSet<String>, serde_json::Error> {
+    let response = serde_json::from_str::<OpenAiModelsResponse>(body)?;
+    Ok(response
+        .data
+        .into_iter()
+        .map(|model| model.id.trim().to_string())
+        .filter(|id| !id.is_empty())
+        .collect())
+}
+
+fn http_error(provider_id: &str, status: StatusCode, body: &str) -> String {
+    let compact = body.split_whitespace().collect::<Vec<_>>().join(" ");
+    let message = compact.chars().take(300).collect::<String>();
+    if message.is_empty() {
+        format!("Provider '{provider_id}' antwortete mit HTTP-Status {status}")
+    } else {
+        format!("Provider '{provider_id}' antwortete mit HTTP-Status {status}: {message}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{custom_models_url, parse_custom_models};
+
+    #[test]
+    fn custom_models_url_appends_models_once() {
+        assert_eq!(
+            "http://localhost:11434/v1/models",
+            custom_models_url("http://localhost:11434/v1")
+                .unwrap()
+                .as_str()
+        );
+        assert_eq!(
+            "https://example.test/v1/models",
+            custom_models_url("https://example.test/v1/models/")
+                .unwrap()
+                .as_str()
+        );
+    }
+
+    #[test]
+    fn custom_models_parser_reads_openai_data_and_deduplicates_ids() {
+        let parsed = parse_custom_models(
+            r#"{"object":"list","data":[{"id":"zeta"},{"id":"alpha"},{"id":"zeta"},{"id":"  "}]} "#,
+        )
+        .unwrap();
+        assert_eq!(
+            vec!["alpha", "zeta"],
+            parsed.iter().map(String::as_str).collect::<Vec<_>>()
+        );
+        assert!(parse_custom_models(r#"{"models":[]}"#).is_err());
+    }
 }

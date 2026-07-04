@@ -1,8 +1,9 @@
 use super::types::{
-    AiConfig, AiModelRef, AiProviderConfig, AiProviderOptions, CustomProviderDefinition,
+    AiConfig, AiConfiguredModel, AiModelRef, AiProviderConfig, AiProviderOptions,
+    CustomProviderDefinition,
 };
 use crate::persist;
-use std::{io, path::PathBuf};
+use std::{collections::BTreeMap, io, path::PathBuf};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -161,6 +162,34 @@ impl AiConfigService {
         }
         // Der zugehoerige Auth-Eintrag bleibt bewusst bestehen: auth.json
         // ist ein separater Store und wird nur ueber Auth-Commands veraendert.
+        self.save()
+    }
+
+    pub fn custom_models_replace(
+        &mut self,
+        id: &str,
+        model_ids: impl IntoIterator<Item = String>,
+    ) -> Result<(), AiConfigError> {
+        validate_slug(id)?;
+        let Some(provider) = self.data.provider.get_mut(id) else {
+            return Err(AiConfigError::NotCustom(id.to_string()));
+        };
+        if !provider.custom {
+            return Err(AiConfigError::NotCustom(id.to_string()));
+        }
+
+        let existing = provider.models.clone();
+        let models = model_ids
+            .into_iter()
+            .map(|model_id| {
+                let configured = existing.get(&model_id).cloned().unwrap_or_default();
+                (model_id, configured)
+            })
+            .collect::<BTreeMap<String, AiConfiguredModel>>();
+        if models == existing {
+            return Ok(());
+        }
+        provider.models = models;
         self.save()
     }
 
@@ -328,6 +357,35 @@ mod tests {
         service.custom_delete("local").unwrap();
         assert!(service.data().default_model.is_none());
         assert!(!service.data().provider.contains_key("local"));
+    }
+
+    #[test]
+    fn custom_model_replace_preserves_existing_names_and_removes_stale_models() {
+        let temp = TempDir::new().unwrap();
+        let mut service = AiConfigService::load_from(temp.path().join("ai.json"));
+        service.custom_upsert(custom("local")).unwrap();
+        {
+            let provider = service.data.provider.get_mut("local").unwrap();
+            provider.models.insert(
+                "keep".into(),
+                AiConfiguredModel {
+                    name: Some("Lesbarer Name".into()),
+                },
+            );
+            provider
+                .models
+                .insert("stale".into(), AiConfiguredModel::default());
+        }
+
+        service
+            .custom_models_replace("local", ["new".to_string(), "keep".to_string()])
+            .unwrap();
+
+        let data = service.data();
+        let models = &data.provider["local"].models;
+        assert_eq!(Some("Lesbarer Name"), models["keep"].name.as_deref());
+        assert!(models.contains_key("new"));
+        assert!(!models.contains_key("stale"));
     }
 
     #[test]

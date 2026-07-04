@@ -75,6 +75,26 @@ Wichtige stabile Selektor-Gruppen:
   `rename-dialog`, `unsaved-dialog`, `export-dialog`, `image-dialog`.
 - Settings-Tabs: `settings-tab-<slug>` und
   `[data-settings-tab="<slug>"]`.
+- KI-Settings: `#settings-panel-ki-anbieter`,
+  `#settings-panel-ki-modelle`, `#ai-provider-list`,
+  `#ai-custom-provider-list`, `#ai-model-list`, `#ai-model-search`,
+  `#ai-default-model`, `#ai-catalog-refresh` und
+  `#ai-catalog-updated`.
+- KI-Provider-Zeilen: `[data-ai-provider-id="<providerId>"]`,
+  `#ai-provider-enabled-<providerId>`,
+  `[data-ai-auth-provider="<providerId>"]`,
+  `#ai-auth-edit-<providerId>`, `#ai-auth-key-<providerId>`,
+  `#ai-auth-save-<providerId>`, `#ai-auth-remove-<providerId>` sowie
+  bei eigenen Providern `#ai-custom-edit-<providerId>` und
+  `#ai-custom-delete-<providerId>`.
+- KI-Custom-Dialog: `#ai-custom-dialog`, `#ai-custom-add`,
+  `#ai-custom-form`, `#ai-custom-id`, `#ai-custom-name`,
+  `#ai-custom-base-url`, `#ai-custom-key`, `#ai-custom-error`,
+  `#ai-custom-save` und `#ai-custom-cancel`.
+- KI-Modell-Zeilen: `[data-ai-model-provider="<providerId>"]`,
+  `[data-ai-model-id="<modelId>"]`,
+  `#ai-model-toggle-<providerId>-<modelId>` und für eigene Provider
+  `#ai-models-fetch-<providerId>`.
 - View-Theme: `#view-theme-style`, `body[data-view-theme="<id>"]`,
   `#settings-theme-list`, `#settings-theme-hint` und
   `[data-view-theme="<id>"]`, `[data-view-theme-fav="<id>"]`.
