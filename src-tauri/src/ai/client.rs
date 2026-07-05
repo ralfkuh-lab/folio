@@ -52,6 +52,12 @@ pub enum ChatError {
     MissingChoice,
     #[error("KI-Übersetzung abgebrochen")]
     Cancelled,
+    #[error(
+        "Die KI-Antwort wurde am Output-Limit des Modells abgeschnitten \
+         (finish_reason=length). Das Dokument in kleinere Dateien teilen \
+         oder ein Modell mit größerem Output-Limit wählen."
+    )]
+    TruncatedOutput,
 }
 
 #[derive(Debug, Serialize)]
@@ -70,6 +76,7 @@ struct ChatResponse {
 #[derive(Debug, Deserialize)]
 struct ChatChoice {
     message: ChatResponseMessage,
+    finish_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -85,6 +92,7 @@ struct ChatStreamResponse {
 #[derive(Debug, Deserialize)]
 struct ChatStreamChoice {
     delta: ChatStreamDelta,
+    finish_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -268,14 +276,18 @@ pub async fn chat_stream_cancellable(
             }
             let response = serde_json::from_str::<ChatStreamResponse>(&event)
                 .map_err(|error| ChatError::InvalidJson(error.to_string()))?;
-            if let Some(content) = response
-                .choices
-                .into_iter()
-                .next()
-                .and_then(|choice| choice.delta.content)
-            {
-                accumulated.push_str(&content);
-                on_delta(&accumulated);
+            if let Some(choice) = response.choices.into_iter().next() {
+                if let Some(content) = choice.delta.content {
+                    accumulated.push_str(&content);
+                    on_delta(&accumulated);
+                }
+                // Provider melden ein abgeschnittenes Output-Limit nicht als
+                // Fehler, sondern nur über finish_reason — ohne diesen Check
+                // landete eine still gekürzte Übersetzung als Datei, sofern im
+                // fehlenden Teil kein Masking-Token lag.
+                if choice.finish_reason.as_deref() == Some("length") {
+                    return Err(ChatError::TruncatedOutput);
+                }
             }
         }
     }
@@ -317,11 +329,15 @@ pub(crate) fn chat_url(base_url: &str) -> Result<Url, ChatError> {
 fn parse_chat_response(body: &str) -> Result<String, ChatError> {
     let response = serde_json::from_str::<ChatResponse>(body)
         .map_err(|error| ChatError::InvalidJson(error.to_string()))?;
-    response
+    let choice = response
         .choices
         .into_iter()
         .next()
-        .map(|choice| choice.message.content)
+        .ok_or(ChatError::MissingChoice)?;
+    if choice.finish_reason.as_deref() == Some("length") {
+        return Err(ChatError::TruncatedOutput);
+    }
+    Some(choice.message.content)
         .filter(|content| !content.trim().is_empty())
         .ok_or(ChatError::MissingChoice)
 }
@@ -489,6 +505,56 @@ mod tests {
 
         assert_eq!("Fallback", result);
         assert_eq!(vec!["Fallback"], deltas);
+    }
+
+    #[tokio::test]
+    async fn streaming_client_rejects_length_truncated_stream() {
+        use axum::{http::header, routing::post, Router};
+
+        let body = concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"Anfang\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\n",
+            "data: [DONE]\n\n",
+        );
+        let app = Router::new().route(
+            "/v1/chat/completions",
+            post(move || async move { ([(header::CONTENT_TYPE, "text/event-stream")], body) }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let result = chat_stream(
+            &Client::new(),
+            &format!("http://{address}/v1"),
+            None,
+            "test-model",
+            &[ChatMessage::user("document")],
+            |_| {},
+        )
+        .await;
+        server.abort();
+
+        assert!(matches!(result, Err(ChatError::TruncatedOutput)));
+    }
+
+    #[test]
+    fn response_parser_rejects_length_truncated_output() {
+        assert!(matches!(
+            parse_chat_response(
+                r#"{"choices":[{"message":{"content":"Halb"},"finish_reason":"length"}]}"#
+            ),
+            Err(ChatError::TruncatedOutput)
+        ));
+        assert_eq!(
+            "Ganz",
+            parse_chat_response(
+                r#"{"choices":[{"message":{"content":"Ganz"},"finish_reason":"stop"}]}"#
+            )
+            .unwrap()
+        );
     }
 
     #[test]
