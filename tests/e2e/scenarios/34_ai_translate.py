@@ -2,6 +2,8 @@
 
 import json
 import re
+import shutil
+import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -11,9 +13,61 @@ from pathlib import Path
 PROVIDER_ID = "e2e-translate-provider"
 MODEL_ID = "mock-translate"
 LANGUAGE = "fr"
+SOURCE = """---
+title: Geschützter Titel
+slug: ai-mask-test
+---
+
+# Originalüberschrift
+
+Deutscher Absatz mit `secret_call("ä")`.
+
+```python
+def hello(name: str) -> str:
+    return f"Hallo, {name}!"
+```
+"""
+TRANSLATED = SOURCE.replace(
+    "# Originalüberschrift", "# MOCK-ÜBERSETZUNG (fr)"
+).replace(
+    "Deutscher Absatz mit", "Paragraphe français avec"
+)
+PROTECTED_FRAGMENTS = (
+    "---\ntitle: Geschützter Titel\nslug: ai-mask-test\n---",
+    '`secret_call("ä")`',
+    '```python\ndef hello(name: str) -> str:\n    return f"Hallo, {name}!"\n```',
+)
+TOKEN_RE = re.compile(r"⟦F(?P<nonce>\d+):(?P<index>\d+)⟧")
+
+
+def _validate_masked_user(content: str):
+    for fragment in PROTECTED_FRAGMENTS:
+        if fragment in content:
+            raise ValueError(f"geschütztes Fragment kam im Klartext an: {fragment!r}")
+
+    matches = list(TOKEN_RE.finditer(content))
+    if len(matches) != len(PROTECTED_FRAGMENTS):
+        raise ValueError(
+            f"{len(matches)} Platzhalter empfangen, "
+            f"{len(PROTECTED_FRAGMENTS)} erwartet: {content!r}"
+        )
+    nonces = {match.group("nonce") for match in matches}
+    indices = [int(match.group("index")) for match in matches]
+    if len(nonces) != 1 or indices != list(range(len(PROTECTED_FRAGMENTS))):
+        raise ValueError(f"unerwartete Platzhalter: {[match.group(0) for match in matches]!r}")
+
+    placeholders = [match.group(0) for match in matches]
+    expected = SOURCE
+    for fragment, placeholder in zip(PROTECTED_FRAGMENTS, placeholders):
+        expected = expected.replace(fragment, placeholder)
+    if content != expected:
+        raise ValueError(f"maskierter User-Content weicht ab: {content!r}")
 
 
 class _MockHandler(BaseHTTPRequestHandler):
+    received_user = None
+    validation_error = None
+
     def do_POST(self):
         if self.path != "/v1/chat/completions":
             self.send_error(404)
@@ -28,11 +82,39 @@ class _MockHandler(BaseHTTPRequestHandler):
             ),
             "",
         )
+        user = next(
+            (
+                message.get("content", "")
+                for message in payload.get("messages", [])
+                if message.get("role") == "user"
+            ),
+            "",
+        )
+        type(self).received_user = user
+        try:
+            _validate_masked_user(user)
+        except ValueError as error:
+            type(self).validation_error = str(error)
+            body = json.dumps(
+                {"error": {"message": str(error)}}, ensure_ascii=False
+            ).encode("utf-8")
+            self.send_response(422)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
         match = re.search(r"target language\s+([^\s(]+)", system, re.IGNORECASE)
         language = match.group(1) if match else "unknown"
-        content = f"# MOCK-ÜBERSETZUNG ({language})\n\nLokaler Testinhalt.\n"
+        content = user.replace(
+            "# Originalüberschrift", f"# MOCK-ÜBERSETZUNG ({language})"
+        ).replace(
+            "Deutscher Absatz mit", "Paragraphe français avec"
+        )
         body = json.dumps(
-            {"choices": [{"message": {"role": "assistant", "content": content}}]}
+            {"choices": [{"message": {"role": "assistant", "content": content}}]},
+            ensure_ascii=False,
         ).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -107,12 +189,15 @@ def _translation_files(source: Path):
 
 
 def run(ctx):
+    _MockHandler.received_user = None
+    _MockHandler.validation_error = None
     server = ThreadingHTTPServer(("127.0.0.1", 0), _MockHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    source = Path(ctx.fixture("sample.md"))
+    tmp = Path(tempfile.mkdtemp(prefix="folio-e2e-ai-translate-"))
+    source = tmp / "translate-mask.md"
+    source.write_text(SOURCE, encoding="utf-8")
     generated = source.with_name(f"{source.stem}.{LANGUAGE}.md")
-    expected = f"# MOCK-ÜBERSETZUNG ({LANGUAGE})\n\nLokaler Testinhalt.\n"
 
     try:
         for path in _translation_files(source):
@@ -161,15 +246,22 @@ def run(ctx):
             )
             ctx.expect(bool(active), f"Erzeugter Tab wurde nicht aktiv: {ctx.api.tabs()!r}")
             ctx.expect(generated.is_file(), f"Übersetzungsdatei fehlt: {generated}")
-            ctx.expect(generated.read_text(encoding="utf-8") == expected, "Mock-Inhalt weicht ab")
+            ctx.expect(
+                _MockHandler.validation_error is None,
+                f"Mock-Payload-Prüfung fehlgeschlagen: {_MockHandler.validation_error}",
+            )
+            ctx.expect(bool(_MockHandler.received_user), "Mock erhielt keinen User-Content")
+            ctx.expect(
+                generated.read_text(encoding="utf-8") == TRANSLATED,
+                "Demaskierter Mock-Inhalt weicht ab; geschützte Bytes wurden verändert",
+            )
     finally:
         try:
             ctx.api.tabs_close_all()
         except Exception:
             pass
         _cleanup_provider(ctx)
-        for path in _translation_files(source):
-            path.unlink(missing_ok=True)
+        shutil.rmtree(tmp, ignore_errors=True)
         server.shutdown()
         server.server_close()
         thread.join(timeout=2.0)

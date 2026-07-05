@@ -460,6 +460,19 @@ sonst lehnt Tauri den Build ab.
   non-streaming `/chat/completions` auf und schreibt kollisionsfrei
   `<stem>.<lang>[-N].md` neben die Quelle. Jede Datei wird über den regulären
   Tab-Open-Pfad geöffnet; der letzte Tab bleibt aktiv.
+- **Deterministischer Code-Schutz** (`ai/mask.rs`): vor dem LLM-Call werden
+  Frontmatter, Code-Blöcke (fenced + indented), Inline-Code sowie
+  HTML-Blöcke/-Inlines per comrak-`sourcepos`-Byte-Ranges durch opake Token
+  `⟦F<nonce>:<index>⟧` ersetzt und nach der Antwort wieder eingesetzt —
+  Schutz hängt nicht mehr an der Prompt-Disziplin des Modells. Maskiert wird
+  auf dem Original-String (kein AST-Roundtrip, keine Normalisierung); der
+  Nonce ist deterministisch (Hochzählen bei Kollision, kein `rand`).
+  `unmask` toleriert Whitespace/Backticks am Token; **fehlende Token sind
+  ein Fehler pro Zielsprache** (kein stiller Codeverlust), Duplikate werden
+  ersetzt + gewarnt. Lone-`\r`-Dokumente überspringen das Masking bewusst
+  (Fallback auf reines Prompt-Verhalten). E2E-Szenario 34 verifiziert per
+  Mock, dass geschützte Fragmente als Token ankommen und die Zieldatei die
+  Original-Bytes 1:1 enthält.
 - Architektur, opencode-Parität und bewusste Folgepunkte stehen in
   [`docs/spec-ki-tab.md`](docs/spec-ki-tab.md).
 

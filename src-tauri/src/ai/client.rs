@@ -182,8 +182,11 @@ pub fn translation_system_prompt(language: &str) -> String {
 Keep all frontmatter including its delimiters and contents, fenced code blocks \
 including their fences and contents, \
 inline code, URLs, image paths, and HTML tags unchanged. Do not omit or summarize \
-any content. Return only the translated Markdown document, with no explanation \
-and without wrapping the document in an additional code fence.",
+any content. The document contains opaque placeholder tokens of the form \
+`⟦F…:N⟧`. Copy every such token verbatim into the output at the same position. \
+Never translate, modify, reorder, remove, or add whitespace inside these tokens. \
+Return only the translated Markdown document, with no explanation and without \
+wrapping the document in an additional code fence.",
         language = language.trim(),
     )
 }
@@ -270,6 +273,8 @@ mod tests {
             "URLs",
             "image paths",
             "HTML tags",
+            "⟦F…:N⟧",
+            "Copy every such token verbatim",
             "only the translated Markdown document",
             "without wrapping",
         ] {

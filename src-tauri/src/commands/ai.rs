@@ -3,6 +3,7 @@ use crate::{
         catalog::{self, CatalogResult},
         client::{self, ChatMessage},
         config::{AiConfigError, AiConfigService},
+        mask,
         types::{AiConfig, AuthStatus, Catalog, CustomProviderDefinition},
     },
     file_kind::{classify, FileKind},
@@ -258,13 +259,14 @@ pub async fn ai_translate_document(
         service.recent_languages_set(languages.clone())
     })?;
 
+    let masked = mask::mask(&source_text);
     let mut created = Vec::with_capacity(languages.len());
     for language in languages {
         let messages = [
             ChatMessage::system(client::translation_system_prompt(&language)),
-            ChatMessage::user(source_text.clone()),
+            ChatMessage::user(masked.text.clone()),
         ];
-        let translated = client::chat(
+        let translated_raw = client::chat(
             &state.ai_http,
             &base_url,
             api_key.as_deref(),
@@ -273,6 +275,8 @@ pub async fn ai_translate_document(
         )
         .await
         .map_err(|error| translation_error(&language, &created, error.to_string()))?;
+        let translated = mask::unmask(&translated_raw, &masked)
+            .map_err(|error| translation_error(&language, &created, error.to_string()))?;
 
         let path = write_translation(&source_path, &language, translated.as_bytes())
             .map_err(|error| translation_error(&language, &created, error))?;
