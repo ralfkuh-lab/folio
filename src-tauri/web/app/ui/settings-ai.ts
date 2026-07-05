@@ -102,15 +102,20 @@ function makeToggle(
     onChange: (checked: boolean) => void,
 ): HTMLLabelElement {
     const label = document.createElement('label');
-    label.className = 'settings-ai-toggle';
+    label.className = 'settings-ai-switch';
+    label.title = labelText;
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
     checkbox.id = id;
     checkbox.checked = checked;
+    checkbox.setAttribute('aria-label', labelText);
     checkbox.addEventListener('change', () => onChange(checkbox.checked));
-    const text = document.createElement('span');
-    text.textContent = labelText;
-    label.append(checkbox, text);
+    const track = document.createElement('span');
+    track.className = 'settings-ai-switch__track';
+    const thumb = document.createElement('span');
+    thumb.className = 'settings-ai-switch__thumb';
+    track.appendChild(thumb);
+    label.append(checkbox, track);
     return label;
 }
 
@@ -292,21 +297,50 @@ function providerCard(
     return card;
 }
 
+// Rang für die Anbieter-Sortierung: aktive zuerst (0), dann alle weiteren
+// konfigurierten — mit hinterlegtem Schlüssel oder bestehendem Config-Eintrag
+// (1) —, dann der ungenutzte Rest (2). Innerhalb jeder Gruppe alphabetisch.
+function providerRank(id: string): number {
+    const cfg = aiConfig?.provider[id];
+    if (cfg?.enabled) return 0;
+    if (cfg || authStatus[id] === true) return 1;
+    return 2;
+}
+
+function providerMatchesTerm(id: string, name: string, term: string): boolean {
+    return !term || `${name} ${id}`.toLocaleLowerCase('de').includes(term);
+}
+
 function renderProviders(): void {
     const catalogList = $('ai-provider-list');
     const customList = $('ai-custom-provider-list');
     if (!catalogList || !customList || !catalogResult || !aiConfig) return;
     catalogList.textContent = '';
     customList.textContent = '';
+    const term = (input('ai-provider-search')?.value || '')
+        .trim()
+        .toLocaleLowerCase('de');
 
     const providers = Object.entries(catalogResult.catalog)
         .filter(([id]) => !aiConfig!.provider[id]?.custom)
-        .sort(([idA, a], [idB, b]) =>
-            providerName(idA, a).localeCompare(providerName(idB, b), 'de'));
-    for (const [id, provider] of providers) {
+        .map(([id, provider]) =>
+            [id, provider, providerName(id, provider)] as
+                [string, CatalogProvider, string])
+        .filter(([id, , name]) => providerMatchesTerm(id, name, term))
+        .sort(([idA, , nameA], [idB, , nameB]) => {
+            const byRank = providerRank(idA) - providerRank(idB);
+            return byRank !== 0 ? byRank : nameA.localeCompare(nameB, 'de');
+        });
+    if (providers.length === 0) {
+        const empty = document.createElement('p');
+        empty.className = 'settings-hint';
+        empty.textContent = term ? 'Keine passenden Anbieter.' : 'Keine Anbieter im Katalog.';
+        catalogList.appendChild(empty);
+    }
+    for (const [id, provider, name] of providers) {
         catalogList.appendChild(providerCard(
             id,
-            providerName(id, provider),
+            name,
             aiConfig.provider[id]?.enabled === true,
             provider.api,
             provider.doc,
@@ -315,15 +349,18 @@ function renderProviders(): void {
 
     const customProviders = Object.entries(aiConfig.provider)
         .filter(([, provider]) => provider.custom)
-        .sort(([idA, a], [idB, b]) =>
-            providerName(idA, undefined, a).localeCompare(
-                providerName(idB, undefined, b),
-                'de',
-            ));
+        .map(([id, provider]) =>
+            [id, provider, providerName(id, undefined, provider)] as
+                [string, ProviderConfig, string])
+        .filter(([id, , name]) => providerMatchesTerm(id, name, term))
+        .sort(([, a, nameA], [, b, nameB]) => {
+            const byActive = (a.enabled ? 0 : 1) - (b.enabled ? 0 : 1);
+            return byActive !== 0 ? byActive : nameA.localeCompare(nameB, 'de');
+        });
     if (customProviders.length === 0) {
         const empty = document.createElement('p');
         empty.className = 'settings-hint';
-        empty.textContent = 'Noch keine eigenen Anbieter.';
+        empty.textContent = term ? 'Keine passenden eigenen Anbieter.' : 'Noch keine eigenen Anbieter.';
         customList.appendChild(empty);
     }
     for (const [id, provider] of customProviders) {
@@ -468,10 +505,16 @@ function configuredModels(
         ? provider.models || {}
         : catalogResult?.catalog[providerId]?.models || {};
     const ids = new Set([...Object.keys(source), ...(provider.whitelist || [])]);
+    const whitelisted = new Set(provider.whitelist || []);
     return Array.from(ids)
         .map((id) => [id, source[id] || {}] as [string, CatalogModel | ConfiguredModel])
-        .sort(([idA, a], [idB, b]) =>
-            (a.name || idA).localeCompare(b.name || idB, 'de'));
+        .sort(([idA, a], [idB, b]) => {
+            // Verwendete (whitelistete) Modelle zuerst, danach der Rest —
+            // jede Gruppe alphabetisch.
+            const byUse = (whitelisted.has(idA) ? 0 : 1) - (whitelisted.has(idB) ? 0 : 1);
+            if (byUse !== 0) return byUse;
+            return (a.name || idA).localeCompare(b.name || idB, 'de');
+        });
 }
 
 async function toggleModel(providerId: string, modelId: string, on: boolean): Promise<void> {
@@ -777,6 +820,7 @@ export function initSettingsAi(): void {
         event.stopPropagation();
         closeCustomDialog();
     });
+    input('ai-provider-search')?.addEventListener('input', renderProviders);
     input('ai-model-search')?.addEventListener('input', renderModels);
     $('ai-catalog-refresh')?.addEventListener('click', refreshCatalog);
     select('ai-default-model')?.addEventListener('change', (event) => {

@@ -225,6 +225,9 @@
         <section class="settings-section">
           <h3 class="settings-section__title">KI-Anbieter</h3>
           <p class="settings-hint">Schlüssel liegen im Klartext in <code>auth.json</code> im Config-Verzeichnis (Dateirechte 0600).</p>
+          <div class="settings-ai-toolbar">
+            <input type="search" id="ai-provider-search" class="settings-input" placeholder="Anbieter suchen…" autocomplete="off" />
+          </div>
           <p id="ai-providers-error" class="settings-ai-error" hidden></p>
           <div id="ai-provider-list" class="settings-ai-list" aria-live="polite"></div>
         </section>

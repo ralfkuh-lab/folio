@@ -65,6 +65,7 @@ function buildDom(): void {
         <button id="settings-tab-ki-anbieter"></button>
         <button id="settings-tab-ki-modelle"></button>
         <div id="settings-panel-ki-anbieter">
+            <input id="ai-provider-search" />
             <p id="ai-providers-error" hidden></p>
             <div id="ai-provider-list"></div>
             <button id="ai-custom-add"></button>
@@ -151,9 +152,11 @@ describe('settings-ai', () => {
         const cards = Array.from(
             document.querySelectorAll<HTMLElement>('#ai-provider-list [data-ai-provider-id]'),
         );
+        // Aktive Anbieter zuerst (openai ist enabled), dann der Rest
+        // alphabetisch (anthropic ist unkonfiguriert).
         expect(cards.map((card) => card.dataset.aiProviderId))
-            .toEqual(['anthropic', 'openai']);
-        expect(cards[1].textContent).toContain('https://api.openai.test/v1');
+            .toEqual(['openai', 'anthropic']);
+        expect(cards[0].textContent).toContain('https://api.openai.test/v1');
         expect(document.querySelector('[data-ai-provider-id="local"]')!.textContent)
             .toContain('Lokales Modell');
 
@@ -218,6 +221,31 @@ describe('settings-ai', () => {
             .toContain('Schlüssel hinterlegt');
         expect(handles.invoke.mock.calls.filter(([cmd]) => cmd === 'ai_auth_status').length)
             .toBeGreaterThan(1);
+    });
+
+    it('filtert Anbieter live über Name und ID', async () => {
+        document.getElementById('settings-tab-ki-anbieter')!.click();
+        await settle();
+        const search = document.getElementById('ai-provider-search') as HTMLInputElement;
+        search.value = 'anthro';
+        search.dispatchEvent(new Event('input', { bubbles: true }));
+
+        const cards = Array.from(
+            document.querySelectorAll<HTMLElement>('#ai-provider-list [data-ai-provider-id]'),
+        );
+        expect(cards.map((card) => card.dataset.aiProviderId)).toEqual(['anthropic']);
+    });
+
+    it('listet verwendete Modelle vor den ungenutzten', async () => {
+        document.getElementById('settings-tab-ki-modelle')!.click();
+        await settle();
+        const rows = Array.from(
+            document.querySelectorAll<HTMLElement>(
+                '[data-ai-model-provider="openai"] [data-ai-model-id]',
+            ),
+        );
+        // gpt-4o ist whitelistet → vor gpt-4o-mini, obwohl alphabetisch später.
+        expect(rows.map((row) => row.dataset.aiModelId)).toEqual(['gpt-4o', 'gpt-4o-mini']);
     });
 
     it('filtert live über Modellnamen', async () => {
