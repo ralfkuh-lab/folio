@@ -1,4 +1,6 @@
 import { syncEditorTextToStoreRequired } from '../state/document';
+import { getActiveTabId } from '../state/tabs';
+import { renderPreviewText } from '../view/preview';
 import { folioLog, safeInvoke } from '../util/log';
 
 type CatalogModel = { id: string; name?: string };
@@ -27,6 +29,7 @@ let catalogCache: CatalogResult | null = null;
 let documentIsMarkdown = document.body.classList.contains('kind-markdown');
 let busy = false;
 let refreshScheduled = false;
+let runningLanguages: string[] = [];
 
 function $(id: string): HTMLElement | null {
     return document.getElementById(id);
@@ -202,6 +205,34 @@ function setBusy(next: boolean): void {
     if (start) start.textContent = next ? 'Übersetze…' : 'Übersetzen';
 }
 
+function showStatus(language: string): void {
+    const status = $('ai-translate-status');
+    if (!status) return;
+    status.hidden = false;
+    updateStatusText(`KI-Übersetzung ${language} · 0 Zeichen`);
+    const cancel = $('ai-translate-status-cancel') as HTMLButtonElement | null;
+    if (cancel) {
+        cancel.disabled = false;
+        cancel.textContent = 'Abbrechen';
+    }
+}
+
+function hideStatus(): void {
+    const status = $('ai-translate-status');
+    if (status) status.hidden = true;
+}
+
+function updateStatusText(text: string): void {
+    const label = $('ai-translate-status-text');
+    if (label) label.textContent = text;
+}
+
+function reopenTranslateDialogWithError(error: unknown): void {
+    const dialog = $('ai-translate-dialog');
+    if (dialog) dialog.hidden = false;
+    setError(String(error));
+}
+
 function closeTranslateDialog(): void {
     if (busy) return;
     const dialog = $('ai-translate-dialog');
@@ -262,21 +293,37 @@ async function startTranslation(): Promise<void> {
     setBusy(true);
     try {
         await syncEditorTextToStoreRequired();
-        await invoke<string[]>('ai_translate_document', {
-            languages,
-            providerId,
-            modelId,
-        });
-        setBusy(false);
-        closeTranslateDialog();
-        scheduleAvailabilityRefresh();
     } catch (error) {
-        folioLog.warn('translate', 'Dokumentübersetzung fehlgeschlagen', {
+        folioLog.warn('translate', 'Editorinhalt konnte nicht synchronisiert werden', {
             error: String(error),
         });
         setBusy(false);
         setError(String(error));
+        return;
     }
+
+    runningLanguages = languages;
+    const dialog = $('ai-translate-dialog');
+    if (dialog) dialog.hidden = true;
+    showStatus(languages[0]);
+    invoke<string[]>('ai_translate_document', {
+        languages,
+        providerId,
+        modelId,
+    }).then(() => {
+        setBusy(false);
+        hideStatus();
+        runningLanguages = [];
+        scheduleAvailabilityRefresh();
+    }).catch((error) => {
+        folioLog.warn('translate', 'Dokumentübersetzung fehlgeschlagen', {
+            error: String(error),
+        });
+        setBusy(false);
+        hideStatus();
+        runningLanguages = [];
+        reopenTranslateDialogWithError(error);
+    });
 }
 
 export function initTranslateDialog(): void {
@@ -284,6 +331,22 @@ export function initTranslateDialog(): void {
     documentIsMarkdown = document.body.classList.contains('kind-markdown');
     $('ai-translate-cancel')?.addEventListener('click', closeTranslateDialog);
     $('ai-translate-start')?.addEventListener('click', () => void startTranslation());
+    $('ai-translate-status-cancel')?.addEventListener('click', () => {
+        const button = $('ai-translate-status-cancel') as HTMLButtonElement | null;
+        if (button) {
+            button.disabled = true;
+            button.textContent = 'Bricht ab…';
+        }
+        invoke<void>('ai_translate_cancel').catch((error) => {
+            folioLog.warn('translate', 'Abbruch der Dokumentübersetzung fehlgeschlagen', {
+                error: String(error),
+            });
+            if (button) {
+                button.disabled = false;
+                button.textContent = 'Abbrechen';
+            }
+        });
+    });
     $('ai-translate-dialog')?.addEventListener('keydown', (event) => {
         if (event.key !== 'Escape' || busy) return;
         event.preventDefault();
@@ -304,6 +367,28 @@ export function initTranslateDialog(): void {
         events.listen('document:closed', () => {
             documentIsMarkdown = false;
             syncMenuEnabled();
+        });
+        events.listen('ai:translate_stream', (event: any) => {
+            const data = event?.payload || {};
+            const language = String(data.language || '');
+            const chars = Number(data.chars) || 0;
+            updateStatusText(
+                `KI-Übersetzung ${language} · ${chars.toLocaleString('de-DE')} Zeichen`,
+            );
+            if (typeof data.tabId === 'number'
+                && data.tabId === getActiveTabId()
+                && typeof data.text === 'string') {
+                void renderPreviewText(data.text);
+            }
+        });
+        events.listen('ai:translate_done', (event: any) => {
+            const data = event?.payload || {};
+            const language = String(data.language || '');
+            const index = runningLanguages.indexOf(language);
+            const next = index >= 0 ? runningLanguages[index + 1] : undefined;
+            updateStatusText(next
+                ? `✓ ${language} · KI-Übersetzung ${next} · 0 Zeichen`
+                : `✓ ${language}`);
         });
     }
     void refreshAiTranslateAvailability();

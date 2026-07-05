@@ -24,6 +24,12 @@ export interface TabsPayload {
 let current: TabsPayload = { tabs: [], activeIndex: 0 };
 let eventRevision = 0;
 
+export function getActiveTabId(): number | null {
+    const active = current.tabs.find(function (tab) { return tab.active; })
+        || current.tabs[current.activeIndex];
+    return active ? active.id : null;
+}
+
 // Virtueller "Einstellungen"-Tab (VS-Code-Muster): kein Backend-Tab,
 // nur ein Leisten-Eintrag, solange die Settings-Region offen ist.
 // Callbacks statt Direktimport von settings-dialog.ts (Import-Zyklus).

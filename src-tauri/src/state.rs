@@ -13,7 +13,7 @@ use crate::{
     workspace::Workspace,
 };
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
@@ -59,6 +59,8 @@ pub struct AppState {
     pub ai_config: Mutex<AiConfigService>,
     pub ai_auth: Mutex<AuthStore>,
     pub ai_http: reqwest::Client,
+    pub ai_translate_cancel: Arc<AtomicBool>,
+    pub ai_translate_active: Mutex<bool>,
     pub vault: Mutex<Vault>,
     pub vault_watcher: Mutex<VaultWatcher>,
     pub link_interceptor: LinkInterceptor,
@@ -115,6 +117,8 @@ impl AppState {
             ai_config: Mutex::new(AiConfigService::load()),
             ai_auth: Mutex::new(AuthStore::load()),
             ai_http: reqwest::Client::new(),
+            ai_translate_cancel: Arc::new(AtomicBool::new(false)),
+            ai_translate_active: Mutex::new(false),
             vault: Mutex::new(Vault::new()),
             vault_watcher: Mutex::new(VaultWatcher::new()),
             link_interceptor: LinkInterceptor::new(),

@@ -14,11 +14,24 @@ use serde::Deserialize;
 use std::{
     collections::BTreeSet,
     fs::OpenOptions,
-    io::Write,
     path::{Path, PathBuf},
+    sync::{atomic::Ordering, Mutex},
     time::Duration,
+    time::Instant,
 };
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
+
+struct ActiveTranslation<'a> {
+    active: &'a Mutex<bool>,
+}
+
+impl Drop for ActiveTranslation<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut active) = self.active.lock() {
+            *active = false;
+        }
+    }
+}
 
 #[tauri::command]
 pub async fn ai_catalog_get() -> Result<CatalogResult, String> {
@@ -211,6 +224,20 @@ pub async fn ai_translate_document(
     state: State<'_, AppState>,
     handle: AppHandle,
 ) -> Result<Vec<String>, String> {
+    let _active = {
+        let mut active = state
+            .ai_translate_active
+            .lock()
+            .map_err(|_| "AI translation lock poisoned".to_string())?;
+        if *active {
+            return Err("Es läuft bereits eine KI-Übersetzung.".to_string());
+        }
+        *active = true;
+        ActiveTranslation {
+            active: &state.ai_translate_active,
+        }
+    };
+    state.ai_translate_cancel.store(false, Ordering::Release);
     let languages = normalize_languages(languages)?;
     let (source_path, source_text) = {
         let tabs = state
@@ -262,31 +289,110 @@ pub async fn ai_translate_document(
     let masked = mask::mask(&source_text);
     let mut created = Vec::with_capacity(languages.len());
     for language in languages {
+        if state.ai_translate_cancel.load(Ordering::Acquire) {
+            break;
+        }
+
+        let path = reserve_translation(&source_path, &language)
+            .map_err(|error| translation_error(&language, &created, error))?;
+        let normalized_path = path.to_string_lossy().replace('\\', "/");
+        let transition =
+            match crate::commands::tabs::open(state.inner(), &handle, normalized_path.clone()) {
+                Ok(transition) => transition,
+                Err(error) => {
+                    remove_translation_file(&path);
+                    return Err(translation_error(&language, &created, error.to_string()));
+                }
+            };
+        let tab_id = transition.tab.id;
+        if let Err(error) =
+            crate::commands::tabs::emit_navigation_changed(&handle, &transition, None)
+        {
+            cleanup_translation(state.inner(), &handle, tab_id, &path);
+            return Err(translation_error(&language, &created, error.to_string()));
+        }
+
         let messages = [
             ChatMessage::system(client::translation_system_prompt(&language)),
             ChatMessage::user(masked.text.clone()),
         ];
-        let translated_raw = client::chat(
+        let cancel = state.ai_translate_cancel.clone();
+        let mut last_emit = None;
+        let mut emit_error = None;
+        let translated_raw = client::chat_stream_cancellable(
             &state.ai_http,
             &base_url,
             api_key.as_deref(),
             &model_id,
             &messages,
+            |accumulated| {
+                let now = Instant::now();
+                if last_emit.is_some_and(|last: Instant| {
+                    now.duration_since(last) < Duration::from_millis(150)
+                }) {
+                    return;
+                }
+                last_emit = Some(now);
+                let text = mask::unmask_partial(accumulated, &masked);
+                let chars = text.chars().count();
+                if let Err(error) = handle.emit(
+                    "ai:translate_stream",
+                    serde_json::json!({
+                        "tabId": tab_id,
+                        "language": language,
+                        "text": text,
+                        "chars": chars,
+                    }),
+                ) {
+                    emit_error = Some(error.to_string());
+                }
+            },
+            || cancel.load(Ordering::Acquire),
         )
-        .await
-        .map_err(|error| translation_error(&language, &created, error.to_string()))?;
-        let translated = mask::unmask(&translated_raw, &masked)
-            .map_err(|error| translation_error(&language, &created, error.to_string()))?;
+        .await;
 
-        let path = write_translation(&source_path, &language, translated.as_bytes())
-            .map_err(|error| translation_error(&language, &created, error))?;
-        let normalized_path = path.to_string_lossy().replace('\\', "/");
+        if matches!(translated_raw, Err(client::ChatError::Cancelled))
+            || state.ai_translate_cancel.load(Ordering::Acquire)
+        {
+            cleanup_translation(state.inner(), &handle, tab_id, &path);
+            break;
+        }
+        let translated_raw = match translated_raw {
+            Ok(translated) => translated,
+            Err(error) => {
+                cleanup_translation(state.inner(), &handle, tab_id, &path);
+                return Err(translation_error(&language, &created, error.to_string()));
+            }
+        };
+        if let Some(error) = emit_error {
+            cleanup_translation(state.inner(), &handle, tab_id, &path);
+            return Err(translation_error(&language, &created, error));
+        }
+        let translated = match mask::unmask(&translated_raw, &masked) {
+            Ok(translated) => translated,
+            Err(error) => {
+                cleanup_translation(state.inner(), &handle, tab_id, &path);
+                return Err(translation_error(&language, &created, error.to_string()));
+            }
+        };
+        if let Err(error) = finalize_translation(&path, translated.as_bytes()) {
+            cleanup_translation(state.inner(), &handle, tab_id, &path);
+            return Err(translation_error(&language, &created, error));
+        }
+        if let Err(error) = reload_translation_tab(state.inner(), tab_id, &normalized_path) {
+            cleanup_translation(state.inner(), &handle, tab_id, &path);
+            return Err(translation_error(&language, &created, error));
+        }
         created.push(normalized_path.clone());
-
-        let transition =
-            crate::commands::tabs::open(state.inner(), &handle, normalized_path.clone())
-                .map_err(|error| translation_error(&language, &created, error.to_string()))?;
-        crate::commands::tabs::emit_navigation_changed(&handle, &transition, None)
+        handle
+            .emit(
+                "ai:translate_done",
+                serde_json::json!({
+                    "tabId": tab_id,
+                    "language": language,
+                    "path": normalized_path,
+                }),
+            )
             .map_err(|error| translation_error(&language, &created, error.to_string()))?;
     }
 
@@ -298,6 +404,12 @@ pub async fn ai_translate_document(
         "AI document translation completed"
     );
     Ok(created)
+}
+
+#[tauri::command]
+pub async fn ai_translate_cancel(state: State<'_, AppState>) -> Result<(), String> {
+    state.ai_translate_cancel.store(true, Ordering::Release);
+    Ok(())
 }
 
 #[tauri::command]
@@ -420,7 +532,7 @@ fn normalize_languages(languages: Vec<String>) -> Result<Vec<String>, String> {
     Ok(normalized)
 }
 
-fn write_translation(source_path: &str, language: &str, bytes: &[u8]) -> Result<PathBuf, String> {
+fn reserve_translation(source_path: &str, language: &str) -> Result<PathBuf, String> {
     let source = Path::new(source_path);
     let parent = source
         .parent()
@@ -439,17 +551,7 @@ fn write_translation(source_path: &str, language: &str, bytes: &[u8]) -> Result<
         };
         let path = parent.join(filename);
         match OpenOptions::new().write(true).create_new(true).open(&path) {
-            Ok(mut file) => {
-                if let Err(error) = file.write_all(bytes) {
-                    drop(file);
-                    let _ = std::fs::remove_file(&path);
-                    return Err(format!(
-                        "Übersetzungsdatei '{}' konnte nicht geschrieben werden: {error}",
-                        path.display()
-                    ));
-                }
-                return Ok(path);
-            }
+            Ok(_) => return Ok(path),
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(error) => {
                 return Err(format!(
@@ -460,6 +562,82 @@ fn write_translation(source_path: &str, language: &str, bytes: &[u8]) -> Result<
         }
     }
     unreachable!("unbounded collision suffix loop")
+}
+
+fn finalize_translation(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    std::fs::write(path, bytes).map_err(|error| {
+        format!(
+            "Übersetzungsdatei '{}' konnte nicht geschrieben werden: {error}",
+            path.display()
+        )
+    })
+}
+
+fn reload_translation_tab(state: &AppState, tab_id: u64, path: &str) -> Result<(), String> {
+    let mut tabs = state
+        .tabs
+        .lock()
+        .map_err(|_| "tabs lock poisoned".to_string())?;
+    let active = tabs.is_active(tab_id);
+    let tab = tabs
+        .tab_mut(tab_id)
+        .ok_or_else(|| format!("translation tab {tab_id} no longer exists"))?;
+    if active {
+        tab.document_store.load(path)
+    } else {
+        tab.document_store.load_silent(path)
+    }
+    .map(|_| ())
+    .map_err(|error| {
+        format!(
+            "Übersetzungsdatei '{}' konnte nicht neu geladen werden: {error}",
+            path
+        )
+    })
+}
+
+fn remove_translation_file(path: &Path) {
+    if let Err(error) = std::fs::remove_file(path) {
+        if error.kind() != std::io::ErrorKind::NotFound {
+            tracing::warn!(
+                target: "folio::ai",
+                path = %path.display(),
+                %error,
+                "failed to remove incomplete translation file"
+            );
+        }
+    }
+}
+
+fn cleanup_translation(state: &AppState, handle: &AppHandle, tab_id: u64, path: &Path) {
+    remove_translation_file(path);
+    match crate::commands::tabs::close(
+        state,
+        handle,
+        tab_id,
+        crate::document_service::DirtyPolicy::Discard,
+    ) {
+        Ok(transition) => {
+            if let Err(error) =
+                crate::commands::tabs::emit_navigation_changed(handle, &transition, None)
+            {
+                tracing::warn!(
+                    target: "folio::ai",
+                    %error,
+                    tab_id,
+                    "failed to emit navigation after translation cleanup"
+                );
+            }
+        }
+        Err(error) => {
+            tracing::warn!(
+                target: "folio::ai",
+                %error,
+                tab_id,
+                "failed to close incomplete translation tab"
+            );
+        }
+    }
 }
 
 fn translation_error(language: &str, created: &[String], error: String) -> String {
@@ -527,8 +705,8 @@ fn http_error(provider_id: &str, status: StatusCode, body: &str, api_key: Option
 #[cfg(test)]
 mod tests {
     use super::{
-        custom_models_url, http_error, normalize_languages, parse_custom_models, provider_base_url,
-        write_translation,
+        custom_models_url, finalize_translation, http_error, normalize_languages,
+        parse_custom_models, provider_base_url, reserve_translation,
     };
     use crate::ai::types::{AiConfig, AiProviderConfig, AiProviderOptions, CatalogProvider};
     use std::collections::BTreeMap;
@@ -633,7 +811,8 @@ mod tests {
         std::fs::write(&source, "source").unwrap();
         std::fs::write(temp.path().join("notes.de.md"), "existing").unwrap();
 
-        let created = write_translation(source.to_str().unwrap(), "de", b"translated").unwrap();
+        let created = reserve_translation(source.to_str().unwrap(), "de").unwrap();
+        finalize_translation(&created, b"translated").unwrap();
 
         assert_eq!(temp.path().join("notes.de-1.md"), created);
         assert_eq!(

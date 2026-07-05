@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     initTranslateDialog,
     openTranslateDialog,
@@ -38,6 +38,10 @@ function buildDom(): void {
             <p id="ai-translate-error" hidden></p>
             <button id="ai-translate-cancel"></button>
             <button id="ai-translate-start">Übersetzen</button>
+        </div>
+        <div id="ai-translate-status" hidden>
+            <span id="ai-translate-status-text"></span>
+            <button id="ai-translate-status-cancel">Abbrechen</button>
         </div>
     `;
 }
@@ -80,6 +84,45 @@ describe('translate-dialog', () => {
         expect(handles.invoke).toHaveBeenCalledWith('menu_set_enabled', {
             id: 'edit.ai_translate',
             enabled: true,
+        });
+    });
+
+    it('schließt den Dialog während des Laufs und aktualisiert die Statusleiste', async () => {
+        let finishTranslation: (value: string[]) => void = () => {};
+        handles.invoke.mockImplementation((cmd: string) => {
+            if (cmd === 'ai_config_get') return Promise.resolve(config);
+            if (cmd === 'ai_catalog_get') return Promise.resolve({ catalog: {} });
+            if (cmd === 'ai_translate_document') {
+                return new Promise<string[]>((resolve) => {
+                    finishTranslation = resolve;
+                });
+            }
+            return Promise.resolve(undefined);
+        });
+        await openTranslateDialog();
+        document.getElementById('ai-translate-start')!.click();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(document.getElementById('ai-translate-dialog')!.hidden).toBe(true);
+        expect(document.getElementById('ai-translate-status')!.hidden).toBe(false);
+        handles.emitEvent('ai:translate_stream', {
+            tabId: 99,
+            language: 'de',
+            text: 'Text',
+            chars: 12400,
+        });
+        expect(document.getElementById('ai-translate-status-text')!.textContent)
+            .toBe('KI-Übersetzung de · 12.400 Zeichen');
+        handles.emitEvent('ai:translate_done', { tabId: 99, language: 'de' });
+        expect(document.getElementById('ai-translate-status-text')!.textContent)
+            .toContain('✓ de');
+
+        document.getElementById('ai-translate-status-cancel')!.click();
+        expect(handles.invoke).toHaveBeenCalledWith('ai_translate_cancel', undefined);
+
+        finishTranslation(['/tmp/doc.de.md']);
+        await vi.waitFor(() => {
+            expect(document.getElementById('ai-translate-status')!.hidden).toBe(true);
         });
     });
 });

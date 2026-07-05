@@ -66,10 +66,9 @@
 
 - **KI-Integration — Folgepunkte** (Kernfeature und Dokumentübersetzung
   umgesetzt, Architektur in [`docs/spec-ki-tab.md`](docs/spec-ki-tab.md)):
-  Streaming-Antworten mit sichtbarem Fortschritt; Chunking sehr großer
-  Dokumente unter Beibehaltung der Markdown-Struktur; Abbruch laufender
-  Übersetzungen; zusätzliche E2E-/Desktop-Verifikation auf macOS und
-  Windows sowie weitere KI-Funktionen erst nach konkretem Bedarf.
+  Chunking sehr großer Dokumente unter Beibehaltung der Markdown-Struktur;
+  zusätzliche E2E-/Desktop-Verifikation auf macOS und Windows sowie weitere
+  KI-Funktionen erst nach konkretem Bedarf.
 
 - **Live-Preview Folgepunkte** (Hauptfeature 2026-05-22 implementiert,
   siehe `view/preview.ts`, Backend-Command `render_markdown_preview`):

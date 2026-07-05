@@ -66,6 +66,7 @@ def _validate_masked_user(content: str):
 
 class _MockHandler(BaseHTTPRequestHandler):
     received_user = None
+    received_stream = None
     validation_error = None
 
     def do_POST(self):
@@ -74,6 +75,9 @@ class _MockHandler(BaseHTTPRequestHandler):
             return
         length = int(self.headers.get("Content-Length", "0"))
         payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        type(self).received_stream = payload.get("stream")
+        if payload.get("stream") is not True:
+            type(self).validation_error = "Request enthielt nicht stream: true"
         system = next(
             (
                 message.get("content", "")
@@ -92,6 +96,8 @@ class _MockHandler(BaseHTTPRequestHandler):
         )
         type(self).received_user = user
         try:
+            if type(self).validation_error:
+                raise ValueError(type(self).validation_error)
             _validate_masked_user(user)
         except ValueError as error:
             type(self).validation_error = str(error)
@@ -112,15 +118,35 @@ class _MockHandler(BaseHTTPRequestHandler):
         ).replace(
             "Deutscher Absatz mit", "Paragraphe français avec"
         )
-        body = json.dumps(
-            {"choices": [{"message": {"role": "assistant", "content": content}}]},
-            ensure_ascii=False,
-        ).encode("utf-8")
         self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
         self.end_headers()
-        self.wfile.write(body)
+
+        token = TOKEN_RE.search(content)
+        cuts = [max(1, (token.start() if token else 4) - 2)]
+        if token:
+            cuts.extend([token.start() + 3, token.end() - 1])
+        cuts.extend([max(1, len(content) // 2), len(content)])
+        start = 0
+        for end in sorted(set(cut for cut in cuts if start < cut <= len(content))):
+            delta = content[start:end]
+            event = (
+                "data: "
+                + json.dumps(
+                    {"choices": [{"delta": {"content": delta}}]},
+                    ensure_ascii=False,
+                )
+                + "\r\n\r\n"
+            ).encode("utf-8")
+            midpoint = max(1, len(event) // 2)
+            self.wfile.write(event[:midpoint])
+            self.wfile.flush()
+            self.wfile.write(event[midpoint:])
+            self.wfile.flush()
+            start = end
+        self.wfile.write(b"data: [DONE]\r\n\r\n")
+        self.wfile.flush()
 
     def log_message(self, _format, *_args):
         return
@@ -190,6 +216,7 @@ def _translation_files(source: Path):
 
 def run(ctx):
     _MockHandler.received_user = None
+    _MockHandler.received_stream = None
     _MockHandler.validation_error = None
     server = ThreadingHTTPServer(("127.0.0.1", 0), _MockHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -245,10 +272,19 @@ def run(ctx):
                 timeout_s=15.0,
             )
             ctx.expect(bool(active), f"Erzeugter Tab wurde nicht aktiv: {ctx.api.tabs()!r}")
-            ctx.expect(generated.is_file(), f"Übersetzungsdatei fehlt: {generated}")
+            completed = _poll(
+                lambda: generated.is_file()
+                and generated.read_text(encoding="utf-8") == TRANSLATED,
+                timeout_s=15.0,
+            )
+            ctx.expect(bool(completed), f"Übersetzungsdatei fehlt oder ist unvollständig: {generated}")
             ctx.expect(
                 _MockHandler.validation_error is None,
                 f"Mock-Payload-Prüfung fehlgeschlagen: {_MockHandler.validation_error}",
+            )
+            ctx.expect(
+                _MockHandler.received_stream is True,
+                "Mock-Request enthielt nicht stream: true",
             )
             ctx.expect(bool(_MockHandler.received_user), "Mock erhielt keinen User-Content")
             ctx.expect(

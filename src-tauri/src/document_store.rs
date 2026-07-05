@@ -71,6 +71,15 @@ impl DocumentStore {
     }
 
     pub fn load(&mut self, path: &str) -> io::Result<LoadedDocument> {
+        self.load_inner(path, true)
+    }
+
+    /// Reloads an inactive tab without publishing an active-document event.
+    pub(crate) fn load_silent(&mut self, path: &str) -> io::Result<LoadedDocument> {
+        self.load_inner(path, false)
+    }
+
+    fn load_inner(&mut self, path: &str, emit_loaded: bool) -> io::Result<LoadedDocument> {
         let (text, line_ending, had_bom) = read_and_decode(path)?;
 
         self.path = Some(path.to_string());
@@ -85,11 +94,13 @@ impl DocumentStore {
             path: path.to_string(),
             text,
         };
-        if let Some(callback) = &self.events.loaded {
-            callback(loaded.clone());
-        }
-        if let Some(callback) = &self.events.dirty_changed {
-            callback(false);
+        if emit_loaded {
+            if let Some(callback) = &self.events.loaded {
+                callback(loaded.clone());
+            }
+            if let Some(callback) = &self.events.dirty_changed {
+                callback(false);
+            }
         }
         Ok(loaded)
     }

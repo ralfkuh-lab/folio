@@ -4,8 +4,8 @@
 > [`spec-multi-tabs.md`](spec-multi-tabs.md)). Checkboxen werden pro
 > abgeschlossener, grün getesteter Etappe abgehakt und committet.
 > Beschlossen am 2026-07-04; **komplett umgesetzt am 2026-07-04**
-> (K1 `3b24540`, K2 `fa63514`, K3 `54ccdd1`). Folgepunkte (Streaming,
-> Chunking, Abbruch) stehen in [`TODO.md`](../TODO.md).
+> (K1 `3b24540`, K2 `fa63514`, K3 `54ccdd1`). Streaming und Abbruch wurden
+> am 2026-07-05 ergänzt; Chunking steht weiter in [`TODO.md`](../TODO.md).
 
 ## Ziel
 
@@ -52,11 +52,9 @@ Zielsprache → neue Datei `<name>.<lang>.md` als neuer Tab).
    falls nicht vorhanden), optional Key. Lokale Endpoints (Ollama,
    LM Studio, llama.cpp) laufen darüber; Modelle dort via
    `GET /v1/models`-Refresh statt models.dev.
-6. **Client**: neuer `ai/client.rs`, OpenAI-kompatibles
-   `/chat/completions`, non-streaming in V1 (Übersetzung zeigt
-   Progress-Zustand „läuft…"; Streaming ist Folgepunkt). `reqwest`
-   als neue Dependency (tokio existiert). Timeouts + saubere
-   Fehlertexte (Status + Provider-Fehlermeldung, gekürzt).
+6. **Client**: `ai/client.rs`, OpenAI-kompatibles `/chat/completions` mit
+   SSE-Streaming, 60-s-Timeout zwischen Chunks und JSON-Fallback.
+   Timeouts + saubere Fehlertexte (Status + Provider-Fehlermeldung, gekürzt).
 7. **UI**: zwei neue Bereichs-Tabs in der Settings-Region
    (opencode-Parität, verhindert eine überladene Seite):
    - **„KI-Anbieter"**: Liste der Katalog-Provider (aktivieren-Toggle,
@@ -185,17 +183,18 @@ sinnvoll ist — wer opencode kennt, findet sich sofort zurecht:
 
 ### Etappe K3 — Chat-Client + Übersetzungs-Feature
 
-- [x] `client.rs`: `chat(http, baseURL, key, model, messages)`
-      non-streaming, Bearer-Key aus AuthStore (optional für lokale
-      Endpoints), 300-s-Timeout, Fehlermapping mit Key-Redaction;
+- [x] `client.rs`: `chat_stream(http, baseURL, key, model, messages, onDelta)`
+      mit SSE und JSON-Fallback, Bearer-Key aus AuthStore (optional für lokale
+      Endpoints), 60-s-Chunk-Timeout, Fehlermapping mit Key-Redaction;
       Übersetzungs-Systemprompt (Zielsprache, Markdown-Struktur/
       Frontmatter/Codeblöcke unangetastet, gleiche Formatierung).
 - [x] Command `ai_translate_document { languages, providerId,
       modelId }`: aktiver Tab muss Markdown sein; Frontend synct
-      Dirty-Text vor dem Call (`syncEditorTextToStoreRequired`); pro
-      Sprache Call → Datei `<stem>.<lang>.md` (Kollisions-Suffix via
-      `create_new`, nie überschreiben) → `tabs::open`. Command async,
-      Frontend zeigt Busy-Indikator; Abbruch-Button ist Folgepunkt.
+      Dirty-Text vor dem Call (`syncEditorTextToStoreRequired`); pro Sprache
+      wird die kollisionsfrei reservierte Datei sofort per `tabs::open`
+      geöffnet und aus SSE-Deltas live gerendert. Nach strikter Demaskierung
+      wird final geschrieben und kanonisch neu geladen. Die Statusleiste
+      bietet Fortschritt und Abbruch; fertige Sprachen bleiben erhalten.
 - [x] Menüpunkt „Bearbeiten → Mit KI übersetzen…" (enabled nur bei
       kind-markdown + mindestens einem getoggelten Modell) +
       Übersetzungs-Dialog `ui/translate-dialog.ts` (Sprachen-
@@ -215,8 +214,8 @@ sinnvoll ist — wer opencode kennt, findet sich sofort zurecht:
 - **Snapshot-Größe/Aktualität**: api.json ist groß; falls >1,5 MB,
   beim Einchecken auf die Provider-Felder reduzieren, die folio nutzt
   (Skript `scripts/update-models-snapshot.py` als Teil von K1).
-- **Kein Streaming in V1** — Folgepunkt, ebenso Chunking großer
-  Dokumente und Abbruch laufender Übersetzungen.
+- **Chunking großer Dokumente** bleibt Folgepunkt; die Übersetzungen laufen
+  bewusst seriell, um Rate-Limits und Abbruchsemantik einfach zu halten.
 - **Keys in Klartext-Datei (0600)** — bewusste opencode-Parität statt
   keyring (Linux-Reibung, E2E-Headless). Im UI wird der Speicherort
   mit Hinweis angezeigt.

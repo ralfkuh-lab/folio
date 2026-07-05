@@ -31,11 +31,12 @@ dirs = "6.0"
 # Phase 5: File-Watching + Automation-API
 notify = "7.0"
 axum = "0.8"
-tokio = { version = "1.42", features = ["rt-multi-thread", "macros", "net", "sync"] }
+tokio = { version = "1.42", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
 # Explizite models.dev-/Provider-HTTP-Aufrufe. Dieselbe reqwest-Major-
 # Version zieht Tauri bereits ein; rustls vermeidet eine weitere native
 # TLS-Abhaengigkeit fuer folio-eigene Requests.
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "stream"] }
+futures-util = "0.3"
 thiserror = "2"
 
 # Phase 4: Tauri

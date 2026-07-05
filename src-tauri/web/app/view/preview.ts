@@ -94,7 +94,7 @@ function currentEditorText(): string | null {
     return null;
 }
 
-async function runRender(text: string): Promise<void> {
+async function runRender(text: string, scrollToEnd = false): Promise<void> {
     const myGen = ++renderGen;
     const viewContent = $('view-content');
     const preInvokeScroll = viewContent ? viewContent.scrollTop : 0;
@@ -128,7 +128,7 @@ async function runRender(text: string): Promise<void> {
     const userScrolledDuringRender = !!viewContent && viewContent.scrollTop !== preInvokeScroll;
     const targetScroll = userScrolledDuringRender ? viewContent.scrollTop : preInvokeScroll;
 
-    applyToDom(result, targetScroll, userScrolledDuringRender);
+    applyToDom(result, targetScroll, userScrolledDuringRender, scrollToEnd);
     folioLog.debug('preview', 'applied', { gen: myGen, textLen: text.length });
 }
 
@@ -136,6 +136,7 @@ function applyToDom(
     result: RenderPreview,
     targetScroll: number,
     userScrolledDuringRender: boolean,
+    scrollToEnd: boolean,
 ): void {
     const body = getMarkdownBody();
     if (!body) return;
@@ -157,8 +158,10 @@ function applyToDom(
     // Scroll restore — view-content ist der scrollende Container,
     // nicht view-region (das ist der Flex-Wrapper).
     const viewContent = $('view-content');
-    if (viewContent) viewContent.scrollTop = targetScroll;
-    afterMarkdownPreviewRender(userScrolledDuringRender);
+    if (viewContent) {
+        viewContent.scrollTop = scrollToEnd ? viewContent.scrollHeight : targetScroll;
+    }
+    afterMarkdownPreviewRender(scrollToEnd || userScrolledDuringRender);
 
     // Find-Bar-Marker re-binden: nur wenn die Bar offen ist UND ein
     // Term gesetzt ist. Im Microtask getrennt vom Render, damit das
@@ -208,6 +211,17 @@ export async function flushPreviewRender(): Promise<void> {
     const text = currentEditorText();
     if (text == null) return;
     await runRender(text);
+}
+
+/** Rendert den vom Backend akkumulierten Streaming-Text über denselben
+ * Preview-/Generation-Pfad und hält die View am Dokumentende. */
+export async function renderPreviewText(text: string): Promise<void> {
+    if (pendingTimer != null) {
+        window.clearTimeout(pendingTimer);
+        pendingTimer = null;
+    }
+    if (!gateOpen() || !viewVisible()) return;
+    await runRender(text, true);
 }
 
 /** Bei document:loaded/saved/closed aufgerufen. Bumpt die Generation,

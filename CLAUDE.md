@@ -456,10 +456,15 @@ sonst lehnt Tauri den Build ab.
   Provider und Modell-Whitelists. Nur freigeschaltete Modelle aktivierter
   Provider erscheinen im Übersetzungsdialog.
 - „Bearbeiten → Mit KI übersetzen…“ synchronisiert zuerst den aktuellen
-  Editorinhalt in den aktiven `DocumentStore`, ruft pro Zielsprache
-  non-streaming `/chat/completions` auf und schreibt kollisionsfrei
-  `<stem>.<lang>[-N].md` neben die Quelle. Jede Datei wird über den regulären
-  Tab-Open-Pfad geöffnet; der letzte Tab bleibt aktiv.
+  Editorinhalt in den aktiven `DocumentStore` und ruft pro Zielsprache seriell
+  `/chat/completions` mit `stream: true` auf. SSE-Deltas bauen die über den
+  regulären Tab-Open-Pfad sofort angelegte Zieldatei live über den bestehenden
+  Preview-/`renderGen`-Pfad auf; Provider mit `application/json` werden als
+  Fallback weiterhin unterstützt. Die Statusleiste zeigt Sprache und
+  Zeichenzahl und kann den Lauf abbrechen. Fertige Sprachen bleiben dabei
+  erhalten, die gerade laufende leere Datei samt Tab wird aufgeräumt. Final
+  schreibt der strikte Demaskierungs-Gate kollisionsfrei
+  `<stem>.<lang>[-N].md` neben die Quelle und lädt den Tab kanonisch neu.
 - **Deterministischer Code-Schutz** (`ai/mask.rs`): vor dem LLM-Call werden
   Frontmatter, Code-Blöcke (fenced + indented), Inline-Code sowie
   HTML-Blöcke/-Inlines per comrak-`sourcepos`-Byte-Ranges durch opake Token
@@ -469,10 +474,12 @@ sonst lehnt Tauri den Build ab.
   Nonce ist deterministisch (Hochzählen bei Kollision, kein `rand`).
   `unmask` toleriert Whitespace/Backticks am Token; **fehlende Token sind
   ein Fehler pro Zielsprache** (kein stiller Codeverlust), Duplikate werden
-  ersetzt + gewarnt. Lone-`\r`-Dokumente überspringen das Masking bewusst
-  (Fallback auf reines Prompt-Verhalten). E2E-Szenario 34 verifiziert per
-  Mock, dass geschützte Fragmente als Token ankommen und die Zieldatei die
-  Original-Bytes 1:1 enthält.
+  ersetzt + gewarnt. `unmask_partial` ersetzt für die Streaming-Anzeige nur
+  bereits vollständig empfangene Token; `unmask` bleibt der finale
+  Schreib-Gate. Lone-`\r`-Dokumente überspringen das Masking bewusst (Fallback
+  auf reines Prompt-Verhalten). E2E-Szenario 34 verifiziert per SSE-Mock, dass
+  geschützte Fragmente als Token ankommen und die Zieldatei die Original-Bytes
+  1:1 enthält.
 - Architektur, opencode-Parität und bewusste Folgepunkte stehen in
   [`docs/spec-ki-tab.md`](docs/spec-ki-tab.md).
 

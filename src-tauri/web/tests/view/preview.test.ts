@@ -166,4 +166,19 @@ describe('view/preview', () => {
         await done;
         expect(markdownBody().innerHTML).toBe('<p>sofort</p>');
     });
+
+    it('rendert Streaming-Text sofort und scrollt ans Ende', async () => {
+        const viewContent = document.getElementById('view-content') as HTMLElement;
+        Object.defineProperty(viewContent, 'scrollHeight', { value: 500 });
+
+        const done = preview.renderPreviewText('streaming');
+        await flushMicrotasks();
+        expect(renderCalls().length).toBe(1);
+        expect(renderCalls()[0][1]).toEqual({ text: 'streaming' });
+
+        renderResolvers[0]('<p>streaming</p>');
+        await done;
+        expect(markdownBody().innerHTML).toBe('<p>streaming</p>');
+        expect(viewContent.scrollTop).toBe(500);
+    });
 });

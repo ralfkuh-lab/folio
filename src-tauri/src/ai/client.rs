@@ -1,12 +1,15 @@
-//! OpenAI-kompatibler, nicht-streamender Chat-Client.
+//! OpenAI-kompatibler Chat-Client mit SSE-Streaming und JSON-Fallback.
 
+use futures_util::StreamExt;
 use reqwest::{Client, StatusCode, Url};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use thiserror::Error;
 
 const CHAT_TIMEOUT: Duration = Duration::from_secs(300);
+const STREAM_CHUNK_TIMEOUT: Duration = Duration::from_secs(60);
+const CANCEL_POLL_INTERVAL: Duration = Duration::from_millis(250);
 const MAX_PROVIDER_ERROR_CHARS: usize = 300;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,12 +50,16 @@ pub enum ChatError {
     InvalidJson(String),
     #[error("KI-Antwort enthält keine Text-Antwort in choices[0]")]
     MissingChoice,
+    #[error("KI-Übersetzung abgebrochen")]
+    Cancelled,
 }
 
 #[derive(Debug, Serialize)]
 struct ChatRequest<'a> {
     model: &'a str,
     messages: &'a [ChatMessage],
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    stream: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -70,6 +77,55 @@ struct ChatResponseMessage {
     content: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct ChatStreamResponse {
+    choices: Vec<ChatStreamChoice>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChatStreamChoice {
+    delta: ChatStreamDelta,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChatStreamDelta {
+    content: Option<String>,
+}
+
+#[derive(Debug, Default)]
+struct SseDecoder {
+    buffer: Vec<u8>,
+    data_lines: Vec<String>,
+}
+
+impl SseDecoder {
+    fn push(&mut self, chunk: &[u8]) -> Result<Vec<String>, ChatError> {
+        self.buffer.extend_from_slice(chunk);
+        let mut events = Vec::new();
+
+        while let Some(newline) = self.buffer.iter().position(|byte| *byte == b'\n') {
+            let mut line = self.buffer.drain(..=newline).collect::<Vec<_>>();
+            line.pop();
+            if line.last() == Some(&b'\r') {
+                line.pop();
+            }
+            let line = std::str::from_utf8(&line)
+                .map_err(|error| ChatError::InvalidJson(error.to_string()))?;
+            if line.is_empty() {
+                if !self.data_lines.is_empty() {
+                    events.push(self.data_lines.join("\n"));
+                    self.data_lines.clear();
+                }
+            } else if let Some(data) = line.strip_prefix("data:") {
+                self.data_lines
+                    .push(data.strip_prefix(' ').unwrap_or(data).to_string());
+            }
+        }
+
+        Ok(events)
+    }
+}
+
 pub async fn chat(
     http: &Client,
     base_url: &str,
@@ -82,7 +138,11 @@ pub async fn chat(
     let mut request = http
         .post(endpoint)
         .timeout(CHAT_TIMEOUT)
-        .json(&ChatRequest { model, messages });
+        .json(&ChatRequest {
+            model,
+            messages,
+            stream: false,
+        });
     if let Some(key) = api_key {
         request = request.bearer_auth(key);
     }
@@ -103,6 +163,138 @@ pub async fn chat(
         });
     }
     parse_chat_response(&body)
+}
+
+pub async fn chat_stream(
+    http: &Client,
+    base_url: &str,
+    api_key: Option<&str>,
+    model: &str,
+    messages: &[ChatMessage],
+    on_delta: impl FnMut(&str),
+) -> Result<String, ChatError> {
+    chat_stream_cancellable(http, base_url, api_key, model, messages, on_delta, || false).await
+}
+
+pub async fn chat_stream_cancellable(
+    http: &Client,
+    base_url: &str,
+    api_key: Option<&str>,
+    model: &str,
+    messages: &[ChatMessage],
+    mut on_delta: impl FnMut(&str),
+    mut is_cancelled: impl FnMut() -> bool,
+) -> Result<String, ChatError> {
+    let endpoint = chat_url(base_url)?;
+    let api_key = api_key.map(str::trim).filter(|key| !key.is_empty());
+    let mut request = http.post(endpoint).json(&ChatRequest {
+        model,
+        messages,
+        stream: true,
+    });
+    if let Some(key) = api_key {
+        request = request.bearer_auth(key);
+    }
+
+    let response = request
+        .send()
+        .await
+        .map_err(|error| ChatError::Request(error.to_string()))?;
+    let status = response.status();
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    if !status.is_success() {
+        let body = response
+            .text()
+            .await
+            .map_err(|error| ChatError::ResponseRead(error.to_string()))?;
+        return Err(ChatError::Http {
+            status,
+            message: provider_error_message(&body, api_key),
+        });
+    }
+
+    if !content_type.starts_with("text/event-stream") {
+        let body = response
+            .text()
+            .await
+            .map_err(|error| ChatError::ResponseRead(error.to_string()))?;
+        let translated = parse_chat_response(&body)?;
+        on_delta(&translated);
+        return Ok(translated);
+    }
+
+    let mut stream = response.bytes_stream();
+    let mut decoder = SseDecoder::default();
+    let mut accumulated = String::new();
+    let mut chunk_wait_started = Instant::now();
+    loop {
+        if is_cancelled() {
+            return Err(ChatError::Cancelled);
+        }
+        let elapsed = chunk_wait_started.elapsed();
+        if elapsed >= STREAM_CHUNK_TIMEOUT {
+            return Err(ChatError::ResponseRead(
+                "Zeitüberschreitung beim Warten auf den nächsten Stream-Chunk".to_string(),
+            ));
+        }
+        let wait = CANCEL_POLL_INTERVAL.min(STREAM_CHUNK_TIMEOUT - elapsed);
+        let next = match tokio::time::timeout(wait, stream.next()).await {
+            Ok(next) => next,
+            Err(_) => continue,
+        };
+        let Some(chunk) = next else {
+            break;
+        };
+        let chunk = chunk.map_err(|error| ChatError::ResponseRead(error.to_string()))?;
+        chunk_wait_started = Instant::now();
+        for event in decoder.push(&chunk)? {
+            if is_cancelled() {
+                return Err(ChatError::Cancelled);
+            }
+            if event.trim() == "[DONE]" {
+                return finish_stream(accumulated);
+            }
+            if let Some(message) = stream_error_message(&event, api_key) {
+                return Err(ChatError::Http {
+                    status: StatusCode::BAD_GATEWAY,
+                    message,
+                });
+            }
+            let response = serde_json::from_str::<ChatStreamResponse>(&event)
+                .map_err(|error| ChatError::InvalidJson(error.to_string()))?;
+            if let Some(content) = response
+                .choices
+                .into_iter()
+                .next()
+                .and_then(|choice| choice.delta.content)
+            {
+                accumulated.push_str(&content);
+                on_delta(&accumulated);
+            }
+        }
+    }
+    finish_stream(accumulated)
+}
+
+fn finish_stream(accumulated: String) -> Result<String, ChatError> {
+    if accumulated.trim().is_empty() {
+        Err(ChatError::MissingChoice)
+    } else {
+        Ok(accumulated)
+    }
+}
+
+fn stream_error_message(body: &str, api_key: Option<&str>) -> Option<String> {
+    serde_json::from_str::<Value>(body)
+        .ok()
+        .filter(|value| value.get("error").is_some())
+        .map(|_| provider_error_message(body, api_key))
 }
 
 pub(crate) fn chat_url(base_url: &str) -> Result<Url, ChatError> {
@@ -216,12 +408,87 @@ mod tests {
         let value = serde_json::to_value(ChatRequest {
             model: "test-model",
             messages: &messages,
+            stream: false,
         })
         .unwrap();
         assert_eq!("test-model", value["model"]);
         assert_eq!("system", value["messages"][0]["role"]);
         assert_eq!("document", value["messages"][1]["content"]);
         assert!(value.get("stream").is_none());
+    }
+
+    #[test]
+    fn request_payload_serializes_stream_only_when_enabled() {
+        let messages = vec![ChatMessage::user("document")];
+        let value = serde_json::to_value(ChatRequest {
+            model: "test-model",
+            messages: &messages,
+            stream: true,
+        })
+        .unwrap();
+        assert_eq!(Some(true), value["stream"].as_bool());
+    }
+
+    #[test]
+    fn sse_decoder_handles_chunk_boundaries_crlf_and_done() {
+        let mut decoder = SseDecoder::default();
+        let mut events = Vec::new();
+        for chunk in [
+            &b"data: {\"choices\":[{\"delta\":{\"content\":\"Bon"[..],
+            &b"jour\"}}]}\r"[..],
+            &b"\n\r\ndata: [DO"[..],
+            &b"NE]\n\n"[..],
+        ] {
+            events.extend(decoder.push(chunk).unwrap());
+        }
+        assert_eq!(
+            vec![r#"{"choices":[{"delta":{"content":"Bonjour"}}]}"#, "[DONE]"],
+            events
+        );
+    }
+
+    #[test]
+    fn sse_error_event_becomes_redacted_provider_error() {
+        let event = r#"{"error":{"message":"bad secret"}}"#;
+        assert_eq!(
+            Some("bad [REDACTED]".to_string()),
+            stream_error_message(event, Some("secret"))
+        );
+    }
+
+    #[tokio::test]
+    async fn streaming_client_falls_back_to_json_response() {
+        use axum::{routing::post, Json, Router};
+
+        let app = Router::new().route(
+            "/v1/chat/completions",
+            post(|| async {
+                Json(serde_json::json!({
+                    "choices": [{"message": {"content": "Fallback"}}]
+                }))
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let mut deltas = Vec::new();
+        let result = chat_stream(
+            &Client::new(),
+            &format!("http://{address}/v1"),
+            None,
+            "test-model",
+            &[ChatMessage::user("document")],
+            |delta| deltas.push(delta.to_string()),
+        )
+        .await
+        .unwrap();
+        server.abort();
+
+        assert_eq!("Fallback", result);
+        assert_eq!(vec!["Fallback"], deltas);
     }
 
     #[test]

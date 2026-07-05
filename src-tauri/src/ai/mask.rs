@@ -104,8 +104,7 @@ pub fn unmask(translated: &str, masked: &Masked) -> Result<String, UnmaskError> 
         return Ok(translated.to_string());
     }
 
-    let pattern = format!(r"`*⟦\s*F{}:(\d+)\s*⟧`*", regex::escape(&masked.nonce));
-    let token_regex = Regex::new(&pattern).expect("placeholder regex must compile");
+    let token_regex = token_regex(masked);
     let mut occurrences = vec![0_usize; masked.fragments.len()];
     for captures in token_regex.captures_iter(translated) {
         let Some(index) = captures
@@ -151,6 +150,31 @@ pub fn unmask(translated: &str, masked: &Masked) -> Result<String, UnmaskError> 
                 .unwrap_or_else(|| captures[0].to_string())
         })
         .into_owned())
+}
+
+/// Restores every complete placeholder received so far. Missing or partial
+/// placeholders remain untouched so streaming previews can be rendered safely.
+pub fn unmask_partial(translated: &str, masked: &Masked) -> String {
+    if masked.fragments.is_empty() {
+        return translated.to_string();
+    }
+    token_regex(masked)
+        .replace_all(translated, |captures: &regex::Captures<'_>| {
+            let index = captures[1]
+                .parse::<usize>()
+                .expect("placeholder index consists only of digits");
+            masked
+                .fragments
+                .get(index)
+                .cloned()
+                .unwrap_or_else(|| captures[0].to_string())
+        })
+        .into_owned()
+}
+
+fn token_regex(masked: &Masked) -> Regex {
+    let pattern = format!(r"`*⟦\s*F{}:(\d+)\s*⟧`*", regex::escape(&masked.nonce));
+    Regex::new(&pattern).expect("placeholder regex must compile")
 }
 
 fn available_nonce(source: &str) -> String {
@@ -289,6 +313,30 @@ fn main() {
             "Bonjour `secret()` monde.\n",
             unmask(&translated, &masked).unwrap()
         );
+    }
+
+    #[test]
+    fn partial_unmask_restores_complete_tokens_and_leaves_half_token() {
+        let masked = mask("Before `secret()` after.");
+        let partial = format!("Avant {} puis ⟦F", token(&masked.nonce, 0));
+        assert_eq!(
+            "Avant `secret()` puis ⟦F",
+            unmask_partial(&partial, &masked)
+        );
+    }
+
+    #[test]
+    fn partial_unmask_allows_missing_tokens() {
+        let masked = mask("Before `secret()` after.");
+        assert_eq!("Avant", unmask_partial("Avant", &masked));
+    }
+
+    #[test]
+    fn partial_unmask_without_fragments_returns_input() {
+        let masked = mask("Plain prose.");
+        assert!(masked.fragments.is_empty());
+        assert_eq!("", unmask_partial("", &masked));
+        assert_eq!("Préfixe", unmask_partial("Préfixe", &masked));
     }
 
     #[test]
