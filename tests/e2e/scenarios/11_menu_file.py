@@ -7,6 +7,7 @@ durchlaeuft wie ein nativer User-Klick — die Routing-Logik in
 
 Testbar:
   file.save     — wenn dirty, triggert document:saved
+  file.export   — oeffnet den HTML-Exportdialog
   file.close    — schliesst aktives Dokument, state.file=null
   file.recent.0 — oeffnet zuletzt geoeffnete Datei wieder
 
@@ -26,6 +27,32 @@ def run(ctx):
     # ----- Setup: Dokument oeffnen + dirty machen ---------------------
     with ctx.step("open sample.md"):
         ctx.api.open(sample)
+
+    # ----- file.export ------------------------------------------------
+    with ctx.step("/menu/click file.export → Exportdialog sichtbar"):
+        ctx.api.menu_click("file.export")
+        deadline = time.monotonic() + 2.0
+        opened = False
+        while time.monotonic() < deadline:
+            snap = ctx.api.dom("#export-dialog")
+            attrs = snap.get("attributes") or {}
+            if snap.get("exists") and "hidden" not in attrs:
+                opened = True
+                break
+            time.sleep(0.05)
+        ctx.expect(opened, "Exportdialog wurde nach file.export nicht sichtbar")
+
+    with ctx.step("Exportdialog wieder schliessen"):
+        ctx.api.click("export-cancel")
+        deadline = time.monotonic() + 2.0
+        closed = False
+        while time.monotonic() < deadline:
+            snap = ctx.api.dom("#export-dialog")
+            if "hidden" in (snap.get("attributes") or {}):
+                closed = True
+                break
+            time.sleep(0.05)
+        ctx.expect(closed, "Exportdialog blieb nach Abbrechen sichtbar")
 
     with ctx.step("edit mode + cursor ans Ende"):
         ctx.api.mode("edit")

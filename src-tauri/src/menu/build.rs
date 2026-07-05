@@ -35,6 +35,11 @@ pub fn build(handle: &AppHandle, lang: &str) -> tauri::Result<Menu<Wry>> {
     let item_rename = MenuItemBuilder::with_id(ids::FILE_RENAME, l.file_rename)
         .enabled(false)
         .build(handle)?;
+    // file.export: nur fuer Markdown-Dokumente aktiv — Frontend synchronisiert
+    // den Zustand gemeinsam mit dem Toolbar-Button via applyDocKind.
+    let item_export = MenuItemBuilder::with_id(ids::FILE_EXPORT, l.file_export)
+        .enabled(false)
+        .build(handle)?;
     // file.close: schliesst den aktiven Tab. Nur bei geladenem Dokument
     // aktiv — Frontend toggelt analog zu file.save_as via applyDocKind.
     let item_close = MenuItemBuilder::with_id(ids::FILE_CLOSE, l.file_close)
@@ -59,6 +64,7 @@ pub fn build(handle: &AppHandle, lang: &str) -> tauri::Result<Menu<Wry>> {
         .item(&item_save)
         .item(&item_save_as)
         .item(&item_rename)
+        .item(&item_export)
         .item(&PredefinedMenuItem::separator(handle)?)
         .item(&item_close)
         .item(&PredefinedMenuItem::separator(handle)?)

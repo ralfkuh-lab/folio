@@ -246,6 +246,7 @@ export function applyDocKind(kind: string | null): void {
     safeInvoke('menu_set_enabled', { id: 'view.mode.split', enabled: canEdit }, 'menu_set_enabled view.mode.split', 'debug');
     safeInvoke('menu_set_enabled', { id: 'file.save_as', enabled: canEdit }, 'menu_set_enabled file.save_as', 'debug');
     safeInvoke('menu_set_enabled', { id: 'file.rename', enabled: hasDoc }, 'menu_set_enabled file.rename', 'debug');
+    safeInvoke('menu_set_enabled', { id: 'file.export', enabled: md }, 'menu_set_enabled file.export', 'debug');
     safeInvoke('menu_set_enabled', { id: 'file.close', enabled: hasDoc }, 'menu_set_enabled file.close', 'debug');
     syncCheatsheetMenu();
     // Haekchen nach dem Enable-Wechsel erneut anwenden — Tauri scheint

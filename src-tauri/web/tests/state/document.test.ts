@@ -111,6 +111,26 @@ describe('state/document — synchronous setters', () => {
         expect(el.textContent).toBe('Bereit');
         expect(el.classList.contains('dirty')).toBe(false);
     });
+
+    it('applyDocKind synchronisiert Export-Button und file.export-Menüeintrag', async () => {
+        const { applyDocKind } = await import('../../app/state/document');
+        const button = document.getElementById('tb-export') as HTMLButtonElement;
+
+        applyDocKind('markdown');
+        expect(button.disabled).toBe(false);
+        expect(tauri.invoke).toHaveBeenCalledWith('menu_set_enabled', {
+            id: 'file.export',
+            enabled: true,
+        });
+
+        tauri.invoke.mockClear();
+        applyDocKind('text');
+        expect(button.disabled).toBe(true);
+        expect(tauri.invoke).toHaveBeenCalledWith('menu_set_enabled', {
+            id: 'file.export',
+            enabled: false,
+        });
+    });
 });
 
 describe('state/document — document:loaded listener', () => {

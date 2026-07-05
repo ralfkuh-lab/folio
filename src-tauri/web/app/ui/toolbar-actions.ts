@@ -13,6 +13,7 @@ import {
 import { activateRelativeTab } from '../state/tabs';
 import { setMode } from '../editor/shell';
 import { openImageDialog } from './image-dialog';
+import { openTranslateDialog } from './translate-dialog';
 import { showCheatSheet, hideCheatSheet, cheatSheetRows } from './cheatsheet';
 import { folioLog, safeInvoke } from '../util/log';
 
@@ -39,6 +40,7 @@ export function initToolbarActions(): void {
     /* Export-Dialog wird in main.ts initialisiert (initExportDialog) —
        ein zweiter Init hier wuerde alle Listener doppelt binden
        (doppelter Export, geleakter Keydown-Handler). */
+    bind('tb-ai-translate', function () { void openTranslateDialog(); });
 
     bind('tb-rail-left', function () {
         var btn = $('tb-rail-left'); if (!btn) return;
@@ -51,6 +53,9 @@ export function initToolbarActions(): void {
         var on = !btn.classList.contains('active');
         btn.classList.toggle('active', on);
         safeInvoke('set_rail_visible', { side: 'right', visible: on }, 'set_rail_visible right');
+    });
+    bind('tb-settings', function () {
+        safeInvoke('menu_dispatch', { id: 'edit.settings' }, 'menu_dispatch edit.settings');
     });
     bind('tb-minimap', function () {
         var btn = $('tb-minimap'); if (!btn) return;

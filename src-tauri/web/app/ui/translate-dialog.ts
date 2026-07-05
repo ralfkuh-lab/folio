@@ -54,11 +54,14 @@ function hasWhitelistedModel(config: AiConfig | null): boolean {
 }
 
 function syncMenuEnabled(): void {
+    const enabled = documentIsMarkdown && hasWhitelistedModel(configCache);
+    const button = $('tb-ai-translate') as HTMLButtonElement | null;
+    if (button) button.disabled = !enabled;
     safeInvoke(
         'menu_set_enabled',
         {
             id: 'edit.ai_translate',
-            enabled: documentIsMarkdown && hasWhitelistedModel(configCache),
+            enabled,
         },
         'menu_set_enabled edit.ai_translate',
         'debug',

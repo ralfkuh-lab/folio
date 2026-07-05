@@ -22,6 +22,7 @@ const config = {
 function buildDom(): void {
     document.body.className = 'kind-markdown';
     document.body.innerHTML = `
+        <button id="tb-ai-translate" disabled></button>
         <div id="ai-translate-dialog" hidden>
             <input type="checkbox" id="ai-translate-lang-en" />
             <input type="checkbox" id="ai-translate-lang-de" />
@@ -81,6 +82,33 @@ describe('translate-dialog', () => {
             modelId: 'mock',
         });
         expect(document.getElementById('ai-translate-dialog')!.hidden).toBe(true);
+        expect(handles.invoke).toHaveBeenCalledWith('menu_set_enabled', {
+            id: 'edit.ai_translate',
+            enabled: true,
+        });
+        expect((document.getElementById('tb-ai-translate') as HTMLButtonElement).disabled)
+            .toBe(false);
+    });
+
+    it('synchronisiert Menü und Toolbar-Button mit Dokumenttyp und KI-Konfiguration', async () => {
+        await vi.waitFor(() => {
+            expect((document.getElementById('tb-ai-translate') as HTMLButtonElement).disabled)
+                .toBe(false);
+        });
+
+        handles.invoke.mockClear();
+        handles.emitEvent('document:closed');
+        expect((document.getElementById('tb-ai-translate') as HTMLButtonElement).disabled)
+            .toBe(true);
+        expect(handles.invoke).toHaveBeenCalledWith('menu_set_enabled', {
+            id: 'edit.ai_translate',
+            enabled: false,
+        });
+
+        handles.invoke.mockClear();
+        handles.emitEvent('document:loaded', { kind: 'markdown' });
+        expect((document.getElementById('tb-ai-translate') as HTMLButtonElement).disabled)
+            .toBe(false);
         expect(handles.invoke).toHaveBeenCalledWith('menu_set_enabled', {
             id: 'edit.ai_translate',
             enabled: true,

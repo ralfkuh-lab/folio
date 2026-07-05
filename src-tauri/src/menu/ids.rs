@@ -10,6 +10,7 @@ pub(super) const FILE_RECENT_EMPTY: &str = "file.recent.empty";
 /// Prefix für dynamisch eingehängte Recent-Einträge: `file.recent.<index>`.
 pub(super) const FILE_RECENT_ITEM_PREFIX: &str = "file.recent.";
 pub(super) const FILE_RENAME: &str = "file.rename";
+pub(super) const FILE_EXPORT: &str = "file.export";
 pub(super) const FILE_CLOSE: &str = "file.close";
 pub(super) const FILE_QUIT: &str = "file.quit";
 pub(super) const EDIT_UNDO: &str = "edit.undo";

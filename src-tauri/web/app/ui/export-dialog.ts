@@ -238,6 +238,10 @@ export function initExportDialog(d: Deps): void {
 
     const tbExport = $('tb-export');
     if (tbExport) tbExport.addEventListener('click', openExportDialog);
+    const events = window.__TAURI__ && window.__TAURI__.event;
+    if (events && typeof events.listen === 'function') {
+        events.listen('menu:file_export', openExportDialog);
+    }
     const cancel = $('export-cancel');
     if (cancel) cancel.addEventListener('click', closeExportDialog);
     const save = $('export-save');

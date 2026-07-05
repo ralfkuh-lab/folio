@@ -109,6 +109,14 @@ describe('export-dialog', () => {
         expect(exportCalls(handles)).toBe(1);
     });
 
+    it('öffnet über file.export denselben Dialogpfad wie die Toolbar', async () => {
+        handles.emitEvent('menu:file_export');
+        await flush();
+
+        expect(document.getElementById('export-dialog')!.hidden).toBe(false);
+        expect(document.querySelectorAll('#export-cards .export-card')).toHaveLength(3);
+    });
+
     it('Enter nach dem Schliessen startet keinen Export mehr', async () => {
         await openDialog();
         document.getElementById('export-cancel')!.click();
