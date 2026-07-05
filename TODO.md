@@ -70,6 +70,21 @@
   KI-Funktionen erst nach konkretem Bedarf. (Chunking sehr großer Dokumente
   bewusst verworfen, 2026-07-05 — kein erwarteter Bedarf.)
 
+- **„Katalog aktualisieren" — Benennung/UX irreführend** (Befund
+  2026-07-05): Der Button (`#ai-catalog-refresh`, nur im Reiter
+  „KI-Modelle") lädt den globalen models.dev-Katalog
+  (`https://models.dev/api.json` → `ai-catalog.json`) und aktualisiert
+  damit **Anbieter- UND Modellliste** der vordefinierten Cloud-Provider
+  in einem Rutsch — nicht die Modelle *deiner* konfigurierten Provider
+  und nicht die lokalen Custom-Provider (die laufen über „Modelle
+  abrufen" / `ai_custom_models_fetch`). Der Name suggeriert fälschlich,
+  er ziehe die eigenen Modelllisten frisch. Fix: Tooltip/Untertitel
+  („Lädt den Anbieter-/Modellkatalog von models.dev") oder Umbenennung
+  in „models.dev-Katalog laden"; ggf. auch im Reiter „KI-Anbieter"
+  spiegeln, da er beide Listen speist. Pfade:
+  `settings-ai.ts:728-749`, `commands/ai.rs:41-53`,
+  `ai/catalog.rs:149-184`.
+
 - **Live-Preview Folgepunkte** (Hauptfeature 2026-05-22 implementiert,
   siehe `view/preview.ts`, Backend-Command `render_markdown_preview`):
   - **Adaptive Debounce für große Docs**: 150 ms ist bei >10k-Zeilen-MD
