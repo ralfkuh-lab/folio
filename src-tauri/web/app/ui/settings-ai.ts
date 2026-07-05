@@ -737,7 +737,7 @@ async function refreshCatalog(): Promise<void> {
         'KI-Katalog konnte nicht aktualisiert werden',
     );
     refresh.disabled = false;
-    refresh.textContent = 'Katalog aktualisieren';
+    refresh.textContent = 'Anbieter-/Modellkatalog aktualisieren';
     if (result.error) {
         setError('ai-models-error', result.error);
         return;

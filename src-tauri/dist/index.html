@@ -237,6 +237,7 @@
           <div class="settings-ai-toolbar">
             <input type="search" id="ai-provider-search" class="settings-input" placeholder="Anbieter suchen…" autocomplete="off" />
           </div>
+          <p class="settings-hint">Die vordefinierten Anbieter stammen aus dem <code>models.dev</code>-Katalog; aktualisieren lässt er sich im Reiter „KI-Modelle“.</p>
           <p id="ai-providers-error" class="settings-ai-error" hidden></p>
           <div id="ai-provider-list" class="settings-ai-list" aria-live="polite"></div>
         </section>
@@ -272,8 +273,9 @@
         <section class="settings-section">
           <div class="settings-ai-toolbar">
             <input type="search" id="ai-model-search" class="settings-input" placeholder="Provider oder Modell suchen…" autocomplete="off" />
-            <button type="button" id="ai-catalog-refresh" class="settings-ai-button">Katalog aktualisieren</button>
+            <button type="button" id="ai-catalog-refresh" class="settings-ai-button" title="Lädt den Anbieter- und Modellkatalog der vordefinierten Cloud-Provider neu von models.dev.">Anbieter-/Modellkatalog aktualisieren</button>
           </div>
+          <p class="settings-hint">Lädt Anbieter- und Modellliste der vordefinierten Cloud-Provider von <code>models.dev</code>. Modelle eigener Anbieter holst du im jeweiligen Anbieter über „Modelle abrufen“.</p>
           <p id="ai-catalog-updated" class="settings-hint"></p>
           <p id="ai-models-error" class="settings-ai-error" hidden></p>
           <div class="settings-row">
