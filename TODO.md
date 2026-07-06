@@ -1,5 +1,16 @@
 # TODO
 
+## Hohe Priorität
+
+- **Theme-System-Ausbau** (beschlossen 2026-07-06, vollständige Spec mit
+  Etappen-Checkliste in [`docs/spec-theme-system.md`](docs/spec-theme-system.md)):
+  In-App-Theme-CRUD + Monaco-Editor mit Live-Preview (eigener virtueller
+  Tab), Verzeichnis-Paketformat mit Deckblatt/Kopf-Fußzeile/Logo-Assets/
+  Frontmatter-Template-Variablen, 8 neue Built-in-Vorlagen, KI-Theme-Autor
+  (Draft→Review→Save über die bestehende KI-Infrastruktur). Etappen E1–E6;
+  PDF-Live-Seitenzahlen (CDP-Migration) und dynamischer Per-Export-KI-Modus
+  bewusst verschoben (siehe Spec).
+
 ## Mittlere Priorität
 
 - **Menu-Keybindings (Accelerators) greifen oft nicht**: Viele der nativen

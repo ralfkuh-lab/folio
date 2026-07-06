@@ -232,7 +232,8 @@ sonst lehnt Tauri den Build ab.
   selbstenthaltenen Inline-Styles (`InspiredGitHub`, bei `code: dark`
   `base16-ocean.dark`). Die App-View bleibt davon getrennt und nutzt weiter
   `view/code-highlight.ts`/Monaco; `render_body` bleibt ohne Backend-
-  Highlighting.
+  Highlighting. Geplanter Ausbau (In-App-Theme-Editor, Corporate-Design-
+  Paketformat, KI-Autor): [`docs/spec-theme-system.md`](docs/spec-theme-system.md).
 - **Image-View** (`view/image.ts`, Surface `#image-view-mount` in
   `dist/index.html`): `FileKind::Image` (png/jpg/jpeg/gif/webp/svg/
   bmp/ico/avif) wird read-only über `<img src={convertFileSrc(path)}>`
