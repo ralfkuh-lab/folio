@@ -90,7 +90,6 @@ pub(crate) fn data_uri(filename: &str, bytes: &[u8]) -> Result<String, String> {
 /// Laedt ein Asset aus `<theme_dir>/assets/<filename>` und gibt dessen
 /// data:-URI zurueck. Validiert Filename und Groesse; liest bytes und
 /// leitet an [`data_uri`] weiter.
-#[allow(dead_code)]
 pub(crate) fn load_asset(theme_dir: &Path, filename: &str) -> Result<String, String> {
     validate_asset_filename(filename)?;
     let path = theme_dir.join(ASSET_DIR).join(filename);
@@ -172,8 +171,44 @@ pub(crate) fn rewrite_asset_urls(css: &str, assets: &[(String, String)]) -> Stri
     .into_owned()
 }
 
+/// Sammelt `asset:`-Referenzen aus `src`-Attributen eines Template-
+/// Fragments. Quoted und unquoted Attribute werden akzeptiert.
+pub(crate) fn collect_template_asset_references(html: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    for caps in asset_src_regex().captures_iter(html) {
+        let Some(name) = capture_asset_name(&caps) else {
+            continue;
+        };
+        if !name.is_empty() && !names.iter().any(|known| known == name) {
+            names.push(name.to_string());
+        }
+    }
+    names
+}
+
+/// Ersetzt `src="asset:name"` (einschliesslich Quote-Varianten) durch
+/// die geladene data:-URI. Unbekannte Referenzen bleiben sichtbar
+/// unveraendert.
+pub(crate) fn rewrite_template_asset_sources(html: &str, assets: &[(String, String)]) -> String {
+    asset_src_regex()
+        .replace_all(html, |caps: &Captures| {
+            let Some(name) = capture_asset_name(caps) else {
+                return caps.get(0).unwrap().as_str().to_string();
+            };
+            if let Some((_, uri)) = assets.iter().find(|(known, _)| known == name) {
+                let prefix = caps
+                    .name("prefix")
+                    .map(|value| value.as_str())
+                    .unwrap_or("");
+                format!("{prefix}src=\"{uri}\"")
+            } else {
+                caps.get(0).unwrap().as_str().to_string()
+            }
+        })
+        .into_owned()
+}
+
 /// Liefert die data:-URI fuer das im Manifest genannte Logo-Asset oder
-#[allow(dead_code)]
 /// None, wenn kein Logo konfiguriert/verfuegbar ist. Fehler beim Laden
 /// werden geloggt und als None quittiert (Export geschieht dann ohne
 /// Logo), damit ein kaputtes Logo nicht den gesamten Export blockiert.
@@ -198,7 +233,26 @@ pub(crate) fn logo_data_uri(theme_dir: &Path, logo: Option<&str>) -> Option<Stri
 
 fn asset_url_regex() -> &'static Regex {
     static REGEX: OnceLock<Regex> = OnceLock::new();
-    REGEX.get_or_init(|| Regex::new(r"url\(\s*asset:([^)]+?)\s*\)").expect("asset url regex"))
+    REGEX.get_or_init(|| {
+        Regex::new(r#"url\(\s*["']?asset:([^)"']+?)["']?\s*\)"#).expect("asset url regex")
+    })
+}
+
+fn asset_src_regex() -> &'static Regex {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    REGEX.get_or_init(|| {
+        Regex::new(
+            r#"(?i)(?P<prefix>^|[\s<])src\s*=\s*(?:"\s*asset:([^"]+?)\s*"|'\s*asset:([^']+?)\s*'|asset:([^\s>]+))"#,
+        )
+        .expect("asset src regex")
+    })
+}
+
+fn capture_asset_name<'h>(caps: &Captures<'h>) -> Option<&'h str> {
+    caps.get(2)
+        .or_else(|| caps.get(3))
+        .or_else(|| caps.get(4))
+        .map(|value| value.as_str().trim())
 }
 
 #[cfg(test)]
@@ -327,8 +381,44 @@ mod tests {
             "watermark.svg".to_string(),
             "data:image/svg+xml;base64,W".to_string(),
         )];
-        let out = rewrite_asset_urls("a { b: url(  asset:watermark.svg  ) }", &assets);
-        assert_eq!("a { b: url(\"data:image/svg+xml;base64,W\") }", out);
+        for css in [
+            "a { b: url(  asset:watermark.svg  ) }",
+            "a { b: url(\"asset:watermark.svg\") }",
+            "a { b: url('asset:watermark.svg') }",
+        ] {
+            let refs = collect_asset_references(css);
+            assert_eq!(vec!["watermark.svg"], refs, "{css}");
+            let out = rewrite_asset_urls(css, &assets);
+            assert_eq!("a { b: url(\"data:image/svg+xml;base64,W\") }", out);
+        }
+    }
+
+    #[test]
+    fn template_asset_sources_are_collected_and_rewritten() {
+        let html = concat!(
+            "<img src=\"asset:cover.png\">",
+            "<img SRC='asset:mark.svg'>",
+            "<img src=asset:cover.png>",
+            "<img data-src=\"asset:ignored.png\">",
+        );
+        assert_eq!(
+            vec!["cover.png", "mark.svg"],
+            collect_template_asset_references(html)
+        );
+        let assets = vec![
+            (
+                "cover.png".to_string(),
+                "data:image/png;base64,C".to_string(),
+            ),
+            (
+                "mark.svg".to_string(),
+                "data:image/svg+xml;base64,M".to_string(),
+            ),
+        ];
+        let rewritten = rewrite_template_asset_sources(html, &assets);
+        assert_eq!(2, rewritten.matches("data:image/png;base64,C").count());
+        assert_eq!(1, rewritten.matches("data:image/svg+xml;base64,M").count());
+        assert!(rewritten.contains("data-src=\"asset:ignored.png\""));
     }
 
     #[test]

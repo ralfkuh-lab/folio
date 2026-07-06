@@ -3,7 +3,7 @@ import { applyThemeDraft, getCurrentThemeId } from './theme-editor';
 import { folioLog } from '../util/log';
 
 export type ThemeDraft = {
-    manifest: {
+    manifest?: {
         name: string;
         description: string;
         code: string;
@@ -13,7 +13,7 @@ export type ThemeDraft = {
         footer: boolean;
         hideInlineFrontmatter: boolean;
         formatVersion: number;
-    };
+    } | null;
     contentCss: string;
     darkCss?: string | null;
     pageCss?: string | null;
@@ -152,6 +152,15 @@ async function startGeneration(): Promise<void> {
         modelId,
     }).then((draft) => {
         setBusy(false);
+        const openThemeId = getCurrentThemeId();
+        if (!baseId || openThemeId !== baseId) {
+            folioLog.warn('theme-ai', 'KI-Theme-Draft wegen Theme-Wechsel verworfen', {
+                requestedThemeId: baseId,
+                openThemeId,
+            });
+            closeThemeAiDialog();
+            return;
+        }
         applyThemeDraft(draft);
         closeThemeAiDialog();
     }).catch((error) => {

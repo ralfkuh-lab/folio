@@ -26,6 +26,7 @@ let activePart: ThemePartName | null = null;
 let pendingParts: ThemeEditorParts | null = null;
 let pendingTheme: 'light' | 'dark' | null = null;
 let changeHandler: (() => void) | null = null;
+let lifecycleGeneration = 0;
 const entries = new Map<ThemePartName, PartEntry>();
 const cleanValues = new Map<ThemePartName, string>();
 
@@ -37,8 +38,9 @@ function ensureMonaco(): Promise<any> {
 }
 
 export function mount(elementId: string): Promise<void> {
+    const generation = ++lifecycleGeneration;
     return ensureMonaco().then((monaco) => {
-        if (!monaco) return;
+        if (!monaco || generation !== lifecycleGeneration) return;
         const element = document.getElementById(elementId);
         if (!element) {
             console.error(`[folio-theme-editor] mount target '${elementId}' not found`);
@@ -49,7 +51,7 @@ export function mount(elementId: string): Promise<void> {
             return;
         }
         const queuedParts = pendingParts;
-        dispose();
+        disposeCurrent();
         pendingParts = queuedParts;
         const isDark = document.documentElement.classList.contains('theme-dark')
             || pendingTheme === 'dark';
@@ -183,6 +185,11 @@ export function layout(): void {
 }
 
 export function dispose(): void {
+    lifecycleGeneration++;
+    disposeCurrent();
+}
+
+function disposeCurrent(): void {
     disposeModels();
     if (editor) {
         try { editor.dispose(); } catch { /* ignore */ }

@@ -7,9 +7,17 @@
   In-App-Theme-CRUD + Monaco-Editor mit Live-Preview (eigener virtueller
   Tab), Verzeichnis-Paketformat mit Deckblatt/Kopf-Fußzeile/Logo-Assets/
   Frontmatter-Template-Variablen, 8 neue Built-in-Vorlagen, KI-Theme-Autor
-  (Draft→Review→Save). Offen: manueller Windows-Smoke (Spec-Abschnitt
-  „Verifikation") und die bewusst verschobenen Punkte (PDF-Live-Seitenzahlen
-  via CDP, dynamischer Per-Export-KI-Modus).
+  (Draft→Review→Save). Zweitreview (codex, 2026-07-06) ist eingearbeitet:
+  CSS-Gate gehärtet (kein `<`, url()-Whitelist), nicht-destruktive Drafts,
+  Template-Asset-Einbettung, Logo-Soft-Fail, vollständiger Dirty-State u. a.
+  Offen: manueller Windows-Smoke (Spec-Abschnitt „Verifikation") und die
+  bewusst verschobenen Punkte (PDF-Live-Seitenzahlen via CDP, dynamischer
+  Per-Export-KI-Modus). Bewusst akzeptierte Review-Rest-Punkte:
+  Theme-Guards sind lexikalisch, Symlinks unter `themes/` können nach außen
+  zeigen (gleiche Trust-Stufe wie Custom-CSS, lokale Desktop-App);
+  Store-Updates haben ein winziges Sichtbarkeitsfenster (Reads laufen
+  lockless zwischen rename-out und rename-in); Template-Fallback-Datum
+  nutzt UTC statt lokaler Zeitzone (std-only, kein chrono).
 
 ## Mittlere Priorität
 

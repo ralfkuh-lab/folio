@@ -178,4 +178,38 @@ describe('theme-ai-dialog', () => {
 
         resolveGen(dummyDraft);
     });
+
+    it('discards a late draft when another theme is open', async () => {
+        let resolveGeneration: (value: typeof dummyDraft) => void = () => {};
+        tauri.invoke.mockImplementation((command: string) => {
+            if (command === 'ai_config_get') return Promise.resolve(aiConfig);
+            if (command === 'ai_catalog_get') return Promise.resolve(catalog);
+            if (command === 'ai_theme_author') {
+                return new Promise((resolve) => {
+                    resolveGeneration = resolve;
+                });
+            }
+            return Promise.resolve(undefined);
+        });
+
+        await openThemeAiDialog();
+        (document.getElementById('theme-ai-prompt') as HTMLTextAreaElement).value =
+            'Make it neon green';
+        document.getElementById('theme-ai-start')!.click();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        const themeEditor = await import('../../app/ui/theme-editor');
+        vi.mocked(themeEditor.getCurrentThemeId).mockReturnValue('anderes-theme');
+        resolveGeneration(dummyDraft);
+
+        await vi.waitFor(() => {
+            expect(document.getElementById('theme-ai-dialog')!.hidden).toBe(true);
+        });
+        expect(harness.surface.setParts).not.toHaveBeenCalled();
+        expect(tauri.invoke).toHaveBeenCalledWith('frontend_log', expect.objectContaining({
+            level: 'warn',
+            source: 'theme-ai',
+            message: 'KI-Theme-Draft wegen Theme-Wechsel verworfen',
+        }));
+    });
 });

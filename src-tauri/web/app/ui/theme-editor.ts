@@ -49,9 +49,11 @@ const PART_LABELS: Record<FolioThemePart, string> = {
     footer: 'footer.html',
 };
 const DEBOUNCE_MS = 150;
+const MAX_ASSET_BYTES = 5 * 1024 * 1024;
 
 let currentId: string | null = null;
 let currentFiles: ThemeFiles | null = null;
+let manifestDirty = false;
 let pendingTimer: number | null = null;
 let renderGen = 0;
 let closePromise: Promise<boolean> | null = null;
@@ -200,6 +202,13 @@ function renderAssetList(): void {
     if (logoName) logoName.textContent = logo || '(kein)';
 }
 
+function setAssetError(message: string | null): void {
+    const error = $('theme-editor-asset-error');
+    if (!error) return;
+    error.textContent = message || '';
+    error.hidden = !message;
+}
+
 function fileToBase64(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -219,6 +228,11 @@ function fileToBase64(file: File): Promise<string> {
 
 async function uploadAsset(file: File): Promise<void> {
     if (!currentId || !currentFiles) return;
+    setAssetError(null);
+    if (file.size > MAX_ASSET_BYTES) {
+        setAssetError('Das Asset darf höchstens 5 MB groß sein.');
+        return;
+    }
     const filename = file.name;
     if (!filename) return;
     let base64: string;
@@ -226,6 +240,7 @@ async function uploadAsset(file: File): Promise<void> {
         base64 = await fileToBase64(file);
     } catch (error) {
         folioLog.warn('theme-editor', 'logo base64 failed', { error: String(error) });
+        setAssetError(String(error));
         return;
     }
     let info: AssetInfo;
@@ -241,6 +256,7 @@ async function uploadAsset(file: File): Promise<void> {
             filename,
             error: String(error),
         });
+        setAssetError(String(error));
         return;
     }
     const existing = (currentFiles.assets || []).filter(
@@ -252,6 +268,7 @@ async function uploadAsset(file: File): Promise<void> {
     if (!currentFiles.manifest.logo) {
         currentFiles.manifest.logo = info.filename;
     }
+    manifestDirty = true;
     renderAssetList();
     syncDirtyUi();
     await renderPreviewNow();
@@ -275,26 +292,38 @@ async function removeAsset(filename: string): Promise<void> {
     if (currentFiles.manifest.logo === filename) {
         currentFiles.manifest.logo = null;
     }
+    manifestDirty = true;
     renderAssetList();
+    syncDirtyUi();
     await renderPreviewNow();
 }
 
 function setLogo(filename: string): void {
     if (!currentFiles) return;
+    if (currentFiles.manifest.logo === filename) return;
     currentFiles.manifest.logo = filename;
+    manifestDirty = true;
     renderAssetList();
+    syncDirtyUi();
     schedulePreview();
 }
 
 function clearLogo(): void {
     if (!currentFiles) return;
+    if (!currentFiles.manifest.logo) return;
     currentFiles.manifest.logo = null;
+    manifestDirty = true;
     renderAssetList();
+    syncDirtyUi();
     schedulePreview();
 }
 
+function isDirty(): boolean {
+    return !!editor()?.isDirty() || manifestDirty;
+}
+
 function syncDirtyUi(): void {
-    const dirty = !!editor()?.isDirty();
+    const dirty = isDirty();
     const save = $('theme-editor-save') as HTMLButtonElement | null;
     if (save) save.disabled = !dirty;
     refreshVirtualTabs();
@@ -378,6 +407,8 @@ export async function openThemeEditor(id: string): Promise<boolean> {
 
     currentId = id;
     currentFiles = files;
+    manifestDirty = false;
+    setAssetError(null);
     dialog.hidden = false;
     await surface.mount('theme-editor-mount');
     const parts = filesToParts(files);
@@ -394,7 +425,7 @@ export async function openThemeEditor(id: string): Promise<boolean> {
     registerVirtualTab({
         slug: 'theme-editor',
         label: () => '\ud83c\udfa8 ' + (currentFiles?.manifest.name || currentId || 'Theme'),
-        dirty: () => !!editor()?.isDirty(),
+        dirty: isDirty,
         onActivate: function () {
             const region = $('theme-editor-dialog');
             if (region) region.hidden = false;
@@ -415,6 +446,7 @@ export async function saveThemeEditor(): Promise<boolean> {
     try {
         await invoke('theme_write', { id: currentId, files });
         currentFiles = files;
+        manifestDirty = false;
         // Derselbe Part-Satz mit identischen Werten setzt in der Surface
         // nur die Clean-Baseline neu; Models und Undo-Stacks bleiben.
         surface.setParts(parts);
@@ -432,8 +464,7 @@ export async function saveThemeEditor(): Promise<boolean> {
 export function guardedClose(): Promise<boolean> {
     if (closePromise) return closePromise;
     closePromise = (async function () {
-        const surface = editor();
-        if (surface?.isDirty()) {
+        if (isDirty()) {
             const decision = await showUnsavedDialog();
             if (decision === 'cancel') return false;
             if (decision === 'save' && !await saveThemeEditor()) return false;
@@ -459,6 +490,8 @@ function finishClose(): void {
     if (dialog) dialog.hidden = true;
     currentId = null;
     currentFiles = null;
+    manifestDirty = false;
+    setAssetError(null);
     unregisterVirtualTab('theme-editor');
 }
 
@@ -505,6 +538,8 @@ export function initThemeEditor(): void {
                 const checked = (event.currentTarget as HTMLInputElement).checked;
                 (currentFiles.manifest as unknown as Record<string, unknown>)[key as string] =
                     checked;
+                manifestDirty = true;
+                syncDirtyUi();
                 refreshPartsFromManifest();
             });
     }
@@ -520,7 +555,7 @@ export function getCurrentThemeId(): string | null {
 }
 
 export function applyThemeDraft(draft: {
-    manifest: ThemeManifest;
+    manifest?: ThemeManifest | null;
     contentCss: string;
     darkCss?: string | null;
     pageCss?: string | null;
@@ -532,26 +567,25 @@ export function applyThemeDraft(draft: {
     if (!surface || !currentFiles) return;
 
     const originalParts = filesToParts(currentFiles);
+    const currentParts = surface.getAllParts();
 
-    currentFiles.manifest = {
-        ...currentFiles.manifest,
-        ...draft.manifest,
-    };
+    if (draft.manifest != null) {
+        currentFiles.manifest = {
+            ...currentFiles.manifest,
+            ...draft.manifest,
+        };
+        manifestDirty = true;
+    }
 
     const draftParts: FolioThemeParts = {
+        ...currentParts,
         content: draft.contentCss || '',
     };
-    if (draft.darkCss !== undefined) draftParts.dark = draft.darkCss || '';
-    if (draft.pageCss !== undefined) draftParts.page = draft.pageCss || '';
-    if (currentFiles.manifest.cover || draft.coverHtml != null) {
-        draftParts.cover = draft.coverHtml || '';
-    }
-    if (currentFiles.manifest.header || draft.headerHtml != null) {
-        draftParts.header = draft.headerHtml || '';
-    }
-    if (currentFiles.manifest.footer || draft.footerHtml != null) {
-        draftParts.footer = draft.footerHtml || '';
-    }
+    if (draft.darkCss != null) draftParts.dark = draft.darkCss;
+    if (draft.pageCss != null) draftParts.page = draft.pageCss;
+    if (draft.coverHtml != null) draftParts.cover = draft.coverHtml;
+    if (draft.headerHtml != null) draftParts.header = draft.headerHtml;
+    if (draft.footerHtml != null) draftParts.footer = draft.footerHtml;
 
     surface.setParts(draftParts, originalParts);
     syncManifestFlags(currentFiles.manifest);

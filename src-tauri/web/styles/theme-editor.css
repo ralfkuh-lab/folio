@@ -193,6 +193,11 @@ body.theme-editor-open .content-panes {
   color: var(--fg-muted);
 }
 
+.theme-editor-assets__error {
+  margin: 0;
+  color: var(--danger, #c62828);
+}
+
 .theme-editor-assets__hint code {
   color: var(--fg);
 }

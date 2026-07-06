@@ -46,17 +46,24 @@
 /*
  * Corporate-Design Export-Hilfen (Deckblatt, Kopf-/Fußzeile).
  *
- * Gelten nur im Print-Pfad. Die zugehoerigen DIVs werden von `wrap_html`
- * nur eingefuegt, wenn das Theme die jeweiligen Templates besitzt; am
- * Screen bleiben sie unsichtbar, im Print-Modus werden sie fixiert und
- * von Chromium pro Druckseite wiederholt. `@page :first { margin: 0 }` fuer
+ * Die zugehoerigen DIVs werden von `wrap_html` nur eingefuegt, wenn das
+ * Theme die jeweiligen Templates besitzt. Am Screen sind sie normale
+ * Vorschau-Bloecke, im Print-Modus werden sie fixiert und von Chromium
+ * pro Druckseite wiederholt. `@page :first { margin: 0 }` fuer
  * das Voll-Bleed-Deckblatt setzt `wrap_html` gezielt im HTML ein (nur
  * wenn ein Deckblatt existiert), damit Themes ohne Cover nicht ihre
  * Seitenraender verlieren.
  */
 .folio-cover { break-after: page; }
-.folio-running-header { display: none; }
-.folio-running-footer { display: none; }
+.folio-running-header,
+.folio-running-footer {
+  display: block;
+  position: static;
+  padding: 0.5rem 1rem;
+  color: #666;
+}
+.folio-running-header { border-bottom: 1px solid #ddd; }
+.folio-running-footer { border-top: 1px solid #ddd; }
 
 @media print {
   .folio-running-header,

@@ -51,7 +51,11 @@ pub fn render_theme_preview(
         theme_id,
         &content_css,
         page_css,
-        parts.manifest.logo.as_deref(),
+        [
+            parts.cover_html.as_deref(),
+            parts.header_html.as_deref(),
+            parts.footer_html.as_deref(),
+        ],
     );
     let content_css = theme::assets::rewrite_asset_urls(&content_css, &asset_pairs);
     let page_css = theme::assets::rewrite_asset_urls(page_css, &asset_pairs);
@@ -63,24 +67,27 @@ pub fn render_theme_preview(
         parts.manifest.hide_inline_frontmatter,
     ));
 
-    let logo_uri = parts.manifest.logo.as_deref().and_then(|name| {
-        asset_pairs
-            .iter()
-            .find(|(n, _)| n == name)
-            .map(|(_, u)| u.clone())
-    });
+    let logo_uri = load_preview_logo(theme_id, parts.manifest.logo.as_deref(), &asset_pairs);
     let context = theme::template::TemplateContext::from_markdown(markdown, None, logo_uri);
-    let cover =
-        render_optional_template(parts.cover_html.as_deref(), parts.manifest.cover, &context);
-    let header = render_optional_template(
-        parts.header_html.as_deref(),
-        parts.manifest.header,
-        &context,
+    let cover = rewrite_rendered_template(
+        render_optional_template(parts.cover_html.as_deref(), parts.manifest.cover, &context),
+        &asset_pairs,
     );
-    let footer = render_optional_template(
-        parts.footer_html.as_deref(),
-        parts.manifest.footer,
-        &context,
+    let header = rewrite_rendered_template(
+        render_optional_template(
+            parts.header_html.as_deref(),
+            parts.manifest.header,
+            &context,
+        ),
+        &asset_pairs,
+    );
+    let footer = rewrite_rendered_template(
+        render_optional_template(
+            parts.footer_html.as_deref(),
+            parts.manifest.footer,
+            &context,
+        ),
+        &asset_pairs,
     );
 
     let title = if parts.manifest.name.trim().is_empty() {
@@ -117,7 +124,11 @@ fn render_document_in(
             theme_dir,
             &content_css,
             &page_css,
-            package.manifest.logo.as_deref(),
+            [
+                package.cover_html.as_deref(),
+                package.header_html.as_deref(),
+                package.footer_html.as_deref(),
+            ],
         )?,
         None => Vec::new(),
     };
@@ -133,27 +144,33 @@ fn render_document_in(
         hide_inline,
     ));
 
-    let logo_uri = package.manifest.logo.as_deref().and_then(|name| {
-        asset_pairs
-            .iter()
-            .find(|(n, _)| n == name)
-            .map(|(_, u)| u.clone())
+    let logo_uri = package.dir.as_deref().and_then(|theme_dir| {
+        resolved_logo_uri(theme_dir, package.manifest.logo.as_deref(), &asset_pairs)
     });
     let context = theme::template::TemplateContext::from_markdown(markdown, path, logo_uri);
-    let cover = render_optional_template(
-        package.cover_html.as_deref(),
-        package.manifest.cover,
-        &context,
+    let cover = rewrite_rendered_template(
+        render_optional_template(
+            package.cover_html.as_deref(),
+            package.manifest.cover,
+            &context,
+        ),
+        &asset_pairs,
     );
-    let header = render_optional_template(
-        package.header_html.as_deref(),
-        package.manifest.header,
-        &context,
+    let header = rewrite_rendered_template(
+        render_optional_template(
+            package.header_html.as_deref(),
+            package.manifest.header,
+            &context,
+        ),
+        &asset_pairs,
     );
-    let footer = render_optional_template(
-        package.footer_html.as_deref(),
-        package.manifest.footer,
-        &context,
+    let footer = rewrite_rendered_template(
+        render_optional_template(
+            package.footer_html.as_deref(),
+            package.manifest.footer,
+            &context,
+        ),
+        &asset_pairs,
     );
 
     Ok(wrap_html(&WrapContext {
@@ -188,9 +205,9 @@ fn load_export_assets(
     theme_dir: &Path,
     content_css: &str,
     page_css: &str,
-    logo: Option<&str>,
+    templates: [Option<&str>; 3],
 ) -> Result<Vec<(String, String)>, String> {
-    let refs = collect_references(content_css, page_css, logo);
+    let refs = collect_references(content_css, page_css, templates);
     if refs.is_empty() {
         return Ok(Vec::new());
     }
@@ -201,9 +218,9 @@ fn load_preview_assets(
     theme_id: Option<&str>,
     content_css: &str,
     page_css: &str,
-    logo: Option<&str>,
+    templates: [Option<&str>; 3],
 ) -> Vec<(String, String)> {
-    let refs = collect_references(content_css, page_css, logo);
+    let refs = collect_references(content_css, page_css, templates);
     if refs.is_empty() {
         return Vec::new();
     }
@@ -217,16 +234,63 @@ fn load_preview_assets(
     theme::assets::load_assets(&theme_dir, &refs).unwrap_or_default()
 }
 
-fn collect_references(content_css: &str, page_css: &str, logo: Option<&str>) -> Vec<String> {
-    let mut refs = theme::assets::collect_asset_references(content_css);
-    refs.extend(theme::assets::collect_asset_references(page_css));
-    if let Some(logo) = logo {
-        let logo = logo.trim();
-        if !logo.is_empty() && !refs.iter().any(|n| n == logo) {
-            refs.push(logo.to_string());
+fn collect_references(
+    content_css: &str,
+    page_css: &str,
+    templates: [Option<&str>; 3],
+) -> Vec<String> {
+    let mut refs = Vec::new();
+    for name in theme::assets::collect_asset_references(content_css)
+        .into_iter()
+        .chain(theme::assets::collect_asset_references(page_css))
+        .chain(
+            templates
+                .into_iter()
+                .flatten()
+                .flat_map(theme::assets::collect_template_asset_references),
+        )
+    {
+        if !refs.iter().any(|known| known == &name) {
+            refs.push(name);
         }
     }
     refs
+}
+
+fn resolved_logo_uri(
+    theme_dir: &Path,
+    logo: Option<&str>,
+    assets: &[(String, String)],
+) -> Option<String> {
+    let filename = logo?.trim();
+    if filename.is_empty() {
+        return None;
+    }
+    assets
+        .iter()
+        .find(|(name, _)| name == filename)
+        .map(|(_, uri)| uri.clone())
+        .or_else(|| theme::assets::logo_data_uri(theme_dir, Some(filename)))
+}
+
+fn load_preview_logo(
+    theme_id: Option<&str>,
+    logo: Option<&str>,
+    assets: &[(String, String)],
+) -> Option<String> {
+    let id = theme_id.filter(|id| theme::valid_theme_id(id))?;
+    let theme_dir = persist::themes_dir().join(id);
+    if !theme_dir.is_dir() {
+        return None;
+    }
+    resolved_logo_uri(&theme_dir, logo, assets)
+}
+
+fn rewrite_rendered_template(
+    rendered: Option<String>,
+    assets: &[(String, String)],
+) -> Option<String> {
+    rendered.map(|html| theme::assets::rewrite_template_asset_sources(&html, assets))
 }
 
 struct WrapContext<'a> {
@@ -396,6 +460,17 @@ mod tests {
         assert!(html.contains("<style>"));
         assert!(html.contains("html, body"));
         assert!(html.contains(".markdown-body h1"));
+    }
+
+    #[test]
+    fn base_css_shows_running_elements_on_screen_and_fixes_them_for_print() {
+        assert!(BASE_CSS.contains(
+            ".folio-running-header,\n.folio-running-footer {\n  display: block;\n  position: static;"
+        ));
+        let (_, print) = BASE_CSS.rsplit_once("@media print").unwrap();
+        assert!(print.contains(".folio-running-header,"));
+        assert!(print.contains(".folio-running-footer"));
+        assert!(print.contains("position: fixed;"));
     }
 
     #[test]
@@ -675,9 +750,14 @@ mod tests {
             "<h1>{{title}}</h1><p>{{date}} · {{author}} · {{company}} · {{subtitle}}</p><div>{{logo}}</div>",
         )
         .unwrap();
-        fs::write(dir.join("header.html"), "<span>{{company}}</span>").unwrap();
+        fs::write(
+            dir.join("header.html"),
+            "<span>{{company}}</span><img src=\"asset:header.png\">",
+        )
+        .unwrap();
         fs::write(dir.join("footer.html"), "<span>{{author}}</span>").unwrap();
         fs::write(dir.join("assets/logo.png"), b"\x89PNG\r\n\x1a\nFAKELONG").unwrap();
+        fs::write(dir.join("assets/header.png"), b"HEADER").unwrap();
     }
 
     #[test]
@@ -714,6 +794,10 @@ mod tests {
         assert!(
             html.contains("<span>Acme</span>"),
             "company im header fehlt"
+        );
+        assert!(
+            html.contains("<img src=\"data:image/png;base64,SEVBREVS\">"),
+            "Template-Asset im Header wurde nicht eingebettet"
         );
         assert!(
             html.contains("<div class=\"folio-running-footer\">"),
@@ -777,6 +861,61 @@ mod tests {
             html.matches("data:image/png;base64,").count() >= 2,
             "data:-URI fehlt in css"
         );
+    }
+
+    #[test]
+    fn collect_references_deduplicates_across_css_and_templates() {
+        let refs = collect_references(
+            ".a { background: url(asset:shared.png) }",
+            ".b { content: url(\"asset:shared.png\") }",
+            [
+                Some("<img src=\"asset:shared.png\">"),
+                Some("<img src='asset:other.svg'>"),
+                Some("<img src=asset:shared.png>"),
+            ],
+        );
+        assert_eq!(vec!["shared.png", "other.svg"], refs);
+    }
+
+    #[test]
+    fn render_document_soft_fails_missing_or_invalid_manifest_logo() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("corp");
+        fs::create_dir_all(dir.join("assets")).unwrap();
+        fs::write(dir.join("content.css"), ".markdown-body {}").unwrap();
+        fs::write(dir.join("cover.html"), "<div>{{logo}}</div>").unwrap();
+
+        for logo in ["missing.png", "broken.txt"] {
+            fs::write(
+                dir.join("theme.json"),
+                format!(r#"{{"name":"Corp","cover":true,"logo":"{logo}"}}"#),
+            )
+            .unwrap();
+            if logo == "broken.txt" {
+                fs::write(dir.join("assets/broken.txt"), b"not an image").unwrap();
+            }
+            let html =
+                render_document_in("corp", "Bericht", None, "# Inhalt", temp.path()).unwrap();
+            assert!(html.contains("<section class=\"folio-cover\"><div></div></section>"));
+            assert!(!html.contains("alt=\"logo\""));
+        }
+    }
+
+    #[test]
+    fn render_document_keeps_css_asset_failures_hard() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("corp");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("theme.json"), r#"{"name":"Corp"}"#).unwrap();
+        fs::write(
+            dir.join("content.css"),
+            ".markdown-body { background: url(asset:missing.png); }",
+        )
+        .unwrap();
+
+        let error =
+            render_document_in("corp", "Bericht", None, "# Inhalt", temp.path()).unwrap_err();
+        assert!(error.contains("missing.png"), "{error}");
     }
 
     #[test]

@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ThemeDraft {
-    pub manifest: ThemeManifest,
+    pub manifest: Option<ThemeManifest>,
     pub content_css: String,
     pub dark_css: Option<String>,
     pub page_css: Option<String>,
@@ -145,12 +145,14 @@ pub fn validate_draft(raw: RawDraft, new_id: Option<&str>) -> Result<ThemeDraft,
         }
     }
 
-    let mut manifest = raw.manifest.unwrap_or_default();
-    // Feature-Flags an die tatsaechlich gelieferten Templates koppeln —
-    // ein Flag ohne Datei waere im Export ohnehin wirkungslos.
-    manifest.cover = manifest.cover && raw.cover_html.is_some();
-    manifest.header = manifest.header && raw.header_html.is_some();
-    manifest.footer = manifest.footer && raw.footer_html.is_some();
+    let manifest = raw.manifest.map(|mut manifest| {
+        // Feature-Flags an die tatsaechlich gelieferten Templates koppeln —
+        // ein Flag ohne Datei waere im Export ohnehin wirkungslos.
+        manifest.cover = manifest.cover && raw.cover_html.is_some();
+        manifest.header = manifest.header && raw.header_html.is_some();
+        manifest.footer = manifest.footer && raw.footer_html.is_some();
+        manifest
+    });
 
     Ok(ThemeDraft {
         manifest,
@@ -184,15 +186,33 @@ fn validate_css(css: &str, label: &str, require_content: bool) -> Result<(), Str
         return Err(format!("{label}: unausgewogene geschweifte Klammern"));
     }
     let lower = css.to_ascii_lowercase();
-    for needle in [
-        "@import",
-        "url(http",
-        "url( http",
-        "expression(",
-        "javascript:",
-    ] {
+    // Das CSS wird in <style>…</style> des Export-HTML interpoliert —
+    // ein '<' genuegt fuer den Ausbruch (</style><script>). KI-CSS
+    // braucht kein Markup, daher pauschal ablehnen (Zweitreview-Fund).
+    if lower.contains('<') {
+        return Err(format!("{label}: '<' ist in KI-CSS nicht erlaubt"));
+    }
+    for needle in ["@import", "expression(", "javascript:"] {
         if lower.contains(needle) {
             return Err(format!("{label}: verbotenes Muster '{needle}'"));
+        }
+    }
+    // url(...) als Whitelist statt Blacklist: url("http…), url( 'http…)
+    // etc. umgehen sonst den simplen Substring-Check. Erlaubt sind nur
+    // data:, asset: und Fragment-Referenzen.
+    for caps in css_url_regex().captures_iter(&lower) {
+        let target = caps
+            .get(1)
+            .unwrap()
+            .as_str()
+            .trim()
+            .trim_matches(|c| c == '"' || c == '\'')
+            .trim_start();
+        if !(target.starts_with("data:") || target.starts_with("asset:") || target.starts_with('#'))
+        {
+            return Err(format!(
+                "{label}: url() darf nur data:, asset: oder '#…' referenzieren"
+            ));
         }
     }
     if !lower.contains(".markdown-body") {
@@ -261,9 +281,27 @@ fn validate_attrs(attrs: &str, tag: &str, label: &str) -> Result<(), String> {
                 ));
             }
             "style" => {
-                for needle in ["url(http", "expression(", "javascript:", "@import"] {
+                for needle in ["expression(", "javascript:", "@import"] {
                     if lower.contains(needle) {
                         return Err(format!("{label}: verbotenes Muster '{needle}' in style"));
+                    }
+                }
+                // Gleiche url()-Whitelist wie in validate_css.
+                for caps in css_url_regex().captures_iter(&lower) {
+                    let target = caps
+                        .get(1)
+                        .unwrap()
+                        .as_str()
+                        .trim()
+                        .trim_matches(|c| c == '"' || c == '\'')
+                        .trim_start();
+                    if !(target.starts_with("data:")
+                        || target.starts_with("asset:")
+                        || target.starts_with('#'))
+                    {
+                        return Err(format!(
+                            "{label}: url() in style darf nur data:, asset: oder '#…' referenzieren"
+                        ));
                     }
                 }
             }
@@ -283,6 +321,11 @@ fn template_placeholder_captures(template: &str) -> Vec<String> {
 fn placeholder_regex() -> &'static regex::Regex {
     static REGEX: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     REGEX.get_or_init(|| regex::Regex::new(r"\{\{\s*([a-zA-Z]+)\s*\}\}").expect("placeholder"))
+}
+
+fn css_url_regex() -> &'static regex::Regex {
+    static REGEX: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    REGEX.get_or_init(|| regex::Regex::new(r"url\(([^)]*)").expect("css url"))
 }
 
 fn tag_regex() -> &'static regex::Regex {
@@ -333,6 +376,12 @@ mod tests {
     }
 
     #[test]
+    fn missing_manifest_stays_absent_in_validated_draft() {
+        let validated = validate_draft(raw(".markdown-body {}"), None).unwrap();
+        assert_eq!(None, validated.manifest);
+    }
+
+    #[test]
     fn gate_rejects_invalid_or_builtin_id() {
         assert!(validate_draft(raw(".markdown-body{}"), Some("../x")).is_err());
         assert!(validate_draft(raw(".markdown-body{}"), Some("clean")).is_err());
@@ -349,8 +398,22 @@ mod tests {
             ".markdown-body { background: url(http://evil/x.png); }",
             ".markdown-body { width: expression(alert(1)); }",
             ".markdown-body { background: url(javascript:alert(1)); }",
+            // Zweitreview-Funde: Style-Block-Ausbruch + Quote-/Whitespace-
+            // Varianten am alten Substring-Check vorbei.
+            ".markdown-body {} </style><script>alert(1)</script><style>",
+            ".markdown-body { background: url(\"https://evil/x\"); }",
+            ".markdown-body { background: url( 'http://evil/x' ); }",
+            ".markdown-body { background: url(//evil/x); }",
         ] {
             assert!(validate_draft(raw(bad), None).is_err(), "{bad}");
+        }
+        // Erlaubte url()-Formen bleiben erlaubt.
+        for ok in [
+            ".markdown-body { background: url(data:image/png;base64,AA); }",
+            ".markdown-body { background: url(\"asset:logo.png\"); }",
+            ".markdown-body { clip-path: url(#clip); }",
+        ] {
+            assert!(validate_draft(raw(ok), None).is_ok(), "{ok}");
         }
     }
 
@@ -402,7 +465,7 @@ mod tests {
             ..ThemeManifest::default()
         });
         let validated = validate_draft(draft, Some("corp-neu")).unwrap();
-        assert!(validated.manifest.cover);
+        assert!(validated.manifest.unwrap().cover);
     }
 
     #[test]
@@ -415,9 +478,10 @@ mod tests {
             ..ThemeManifest::default()
         });
         let validated = validate_draft(draft, None).unwrap();
-        assert!(!validated.manifest.cover);
-        assert!(!validated.manifest.header);
-        assert!(!validated.manifest.footer);
+        let manifest = validated.manifest.unwrap();
+        assert!(!manifest.cover);
+        assert!(!manifest.header);
+        assert!(!manifest.footer);
     }
 
     #[test]
