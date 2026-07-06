@@ -1,0 +1,22 @@
+.markdown-body {
+  --fg: #e5e5e5;
+  --muted: #888888;
+  --rule: #333333;
+  --rule-soft: #222222;
+  --accent: #ffffff;
+  --code-bg: #1c1c1c;
+  --quote-bg: #1c1c1c;
+  --quote-bar: #ffffff;
+  background: #111111;
+  color: var(--fg);
+}
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 { color: var(--accent); }
+.markdown-body a { color: var(--fg); }
+.markdown-body th { color: var(--accent); }
+.markdown-body img { filter: grayscale(100%) invert(8%); }
+.markdown-body img:hover { filter: invert(8%); }

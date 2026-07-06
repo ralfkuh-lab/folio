@@ -1,0 +1,11 @@
+html, body { background: #ffffff; }
+body { margin: 0; }
+
+@media print {
+  @page { size: A4; margin: 20mm 20mm 20mm 20mm; }
+  @page :first { margin: 0; }
+  .folio-cover {
+    break-after: page;
+    page-break-after: always;
+  }
+}

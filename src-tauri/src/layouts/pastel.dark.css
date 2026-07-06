@@ -1,0 +1,22 @@
+.markdown-body {
+  --fg: #e2def0;
+  --muted: #a39cb5;
+  --rule: #4f3b66;
+  --rule-soft: #2d223d;
+  --accent: #cfaef5;
+  --code-bg: #221a2e;
+  --quote-bg: #1c1426;
+  --quote-bar: #a78bfa;
+  background: #160f21;
+  color: var(--fg);
+}
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 { color: #f2eefc; }
+.markdown-body h1 { background: linear-gradient(120deg, #cfaef5, #f472b6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.markdown-body h3 { color: #cfaef5; }
+.markdown-body code { color: #f472b6; border-color: #4f3b66; }
+.markdown-body th { background: #2d223d; color: #f2eefc; }

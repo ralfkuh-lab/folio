@@ -1,0 +1,31 @@
+<div style="display: flex; flex-direction: column; justify-content: space-between; height: 100%; min-height: 250mm; padding: 25mm; font-family: 'Outfit', 'Inter', sans-serif; box-sizing: border-box; background: linear-gradient(135deg, #f5f3ff 0%, #ffffff 100%); position: relative; overflow: hidden;">
+  <div style="position: absolute; top: 0; left: 0; right: 0; height: 8px; background: linear-gradient(to right, #4f46e5, #8b5cf6);"></div>
+  
+  <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+    <div style="font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.15em; color: #4f46e5;">
+      {{company}}
+    </div>
+    <div style="max-height: 45px; max-width: 130px;">
+      {{logo}}
+    </div>
+  </div>
+  
+  <div style="flex-grow: 1; display: flex; flex-direction: column; justify-content: center; margin-top: 40mm; margin-bottom: 40mm;">
+    <h1 style="font-size: 44px; font-weight: 800; line-height: 1.15; color: #1e1b4b; margin: 0 0 24px; font-family: 'Outfit', 'Inter', sans-serif; letter-spacing: -0.03em;">
+      {{title}}
+    </h1>
+    <p style="font-size: 20px; font-weight: 400; color: #4f46e5; margin: 0; line-height: 1.5; font-family: 'Outfit', 'Inter', sans-serif;">
+      {{subtitle}}
+    </p>
+  </div>
+  
+  <div style="display: flex; justify-content: space-between; align-items: flex-end; width: 100%; border-top: 2px solid #e0e7ff; padding-top: 24px; font-size: 13px; color: #4f46e5; font-family: 'Inter', sans-serif;">
+    <div>
+      <span style="display: block; font-weight: 600; color: #1e1b4b; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.05em;">Erstellt von</span>
+      <span style="color: #4f46e5;">{{author}}</span>
+    </div>
+    <div style="font-weight: 500; color: #4f46e5;">
+      <span>{{date}}</span>
+    </div>
+  </div>
+</div>

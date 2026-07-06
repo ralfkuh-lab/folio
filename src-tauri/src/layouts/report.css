@@ -1,0 +1,96 @@
+/* name: Report */
+/* description: Formelles Report-Layout mit eleganten Serifenschriften und traditioneller Struktur. */
+.markdown-body, .markdown-body * { box-sizing: border-box; }
+.markdown-body {
+  --fg: #292524;
+  --muted: #57534e;
+  --rule: #d6d3d1;
+  --rule-soft: #e7e5e4;
+  --accent: #44403c;
+  --code-bg: #f5f5f4;
+  --quote-bg: #fafaf9;
+  --quote-bar: #78716c;
+  max-width: 760px;
+  margin: 50px auto;
+  padding: 0 40px 80px;
+  background: #fff;
+  font-family: Georgia, Cambria, "Times New Roman", Times, serif;
+  font-size: 17px;
+  line-height: 1.65;
+  color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+}
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 1.6em 0 0.6em;
+  color: #1c1917;
+}
+.markdown-body h1 {
+  font-size: 2.2em;
+  margin-top: 0.3em;
+  text-align: center;
+  border-bottom: 2px solid var(--accent);
+  padding-bottom: 0.4em;
+  margin-bottom: 1.2em;
+}
+.markdown-body h2 {
+  font-size: 1.5em;
+  margin-top: 1.6em;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 0.2em;
+}
+.markdown-body h3 { font-size: 1.25em; }
+.markdown-body h4 { font-size: 1.1em; }
+.markdown-body h5, .markdown-body h6 { font-size: 0.95em; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+.markdown-body p { margin: 0 0 1.2em; text-align: justify; }
+.markdown-body a { color: #854d0e; text-decoration: none; border-bottom: 1px dashed #a16207; }
+.markdown-body a:hover { color: #a16207; border-bottom-style: solid; }
+.markdown-body ul, .markdown-body ol { padding-left: 1.8em; margin: 0 0 1.2em; }
+.markdown-body li { margin: 0.4em 0; }
+.markdown-body blockquote {
+  margin: 1.5em 0;
+  padding: 0.6em 1.2em;
+  border-left: 3px solid var(--quote-bar);
+  background: var(--quote-bg);
+  color: var(--muted);
+  font-style: italic;
+}
+.markdown-body hr { border: 0; height: 1px; background: var(--rule); margin: 2.5em auto; width: 50%; }
+.markdown-body code {
+  font-family: "Courier New", Courier, monospace;
+  font-size: 0.88em;
+  background: var(--code-bg);
+  padding: 0.15em 0.35em;
+  border-radius: 3px;
+}
+.markdown-body pre {
+  background: var(--code-bg);
+  border-radius: 4px;
+  border: 1px solid var(--rule-soft);
+  padding: 1em 1.2em;
+  overflow-x: auto;
+  font-size: 0.88em;
+}
+.markdown-body pre code { background: transparent; padding: 0; border: none; }
+.markdown-body table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1.6em 0;
+  font-size: 0.95em;
+}
+.markdown-body th, .markdown-body td { border: 1px solid var(--rule); padding: 0.6em 0.8em; text-align: left; }
+.markdown-body th { font-weight: 700; background: var(--quote-bg); }
+.markdown-body img { max-width: 100%; height: auto; display: block; margin: 1.5em auto; border-radius: 2px; }
+.markdown-body .task-list-item { list-style: none; }
+.markdown-body .task-list-item input[type=checkbox] { margin-right: 0.4em; }
+@media print {
+  .markdown-body a { color: var(--fg); border-bottom: none; }
+  .markdown-body th, .markdown-body td { padding: 0.4em 0.6em; }
+}

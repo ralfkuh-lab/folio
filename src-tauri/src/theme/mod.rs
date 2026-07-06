@@ -408,6 +408,30 @@ mod tests {
     }
 
     #[test]
+    fn all_builtins_are_discovered_and_corporate_packages_have_templates() {
+        let temp = tempfile::tempdir().unwrap();
+        let themes = view_themes_in(temp.path());
+        let ids = themes
+            .iter()
+            .map(|theme| theme.id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(builtin::IDS, ids);
+
+        let packages = discover_in(temp.path());
+        for id in ["business", "brand"] {
+            let package = packages.iter().find(|package| package.id == id).unwrap();
+            assert!(package.dark_css.is_some(), "dark_css fehlt fuer {id}");
+            assert!(package.page_css.is_some(), "page_css fehlt fuer {id}");
+            assert!(package.cover_html.is_some(), "cover_html fehlt fuer {id}");
+            assert!(package.header_html.is_some(), "header_html fehlt fuer {id}");
+            assert!(package.footer_html.is_some(), "footer_html fehlt fuer {id}");
+            assert!(package.manifest.cover, "cover-Flag fehlt fuer {id}");
+            assert!(package.manifest.header, "header-Flag fehlt fuer {id}");
+            assert!(package.manifest.footer, "footer-Flag fehlt fuer {id}");
+        }
+    }
+
+    #[test]
     fn invalid_directory_theme_does_not_hide_valid_legacy_theme() {
         let temp = tempfile::tempdir().unwrap();
         let directory = temp.path().join("mine");

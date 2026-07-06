@@ -120,14 +120,18 @@ mod tests {
     use std::fs;
 
     #[test]
-    fn layouts_lists_three_defaults() {
+    fn layouts_lists_all_builtin_exports() {
         let temp = tempfile::tempdir().unwrap();
         let l = layouts_in(temp.path());
-        assert_eq!(3, l.len());
+        assert_eq!(11, l.len());
         let ids: Vec<&str> = l.iter().map(|x| x.id.as_str()).collect();
-        assert!(ids.contains(&"classic"));
-        assert!(ids.contains(&"clean"));
-        assert!(ids.contains(&"github"));
+        assert_eq!(
+            &[
+                "classic", "clean", "github", "business", "report", "minimal", "brand", "warm",
+                "tech", "contrast", "pastel",
+            ],
+            ids.as_slice()
+        );
         assert!(l.iter().all(|layout| !layout.custom));
     }
 
@@ -135,12 +139,20 @@ mod tests {
     fn view_themes_list_standard_and_layout_dark_flags() {
         let temp = tempfile::tempdir().unwrap();
         let themes = view_themes_in(temp.path());
-        assert_eq!(4, themes.len());
+        assert_eq!(12, themes.len());
         for (id, has_dark) in [
             ("standard", true),
             ("classic", false),
             ("clean", true),
             ("github", true),
+            ("business", true),
+            ("report", true),
+            ("minimal", true),
+            ("brand", true),
+            ("warm", true),
+            ("tech", true),
+            ("contrast", true),
+            ("pastel", true),
         ] {
             let theme = themes.iter().find(|theme| theme.id == id).unwrap();
             assert_eq!(has_dark, theme.has_dark, "has_dark fuer {id}");
@@ -246,13 +258,19 @@ mod tests {
         let view = view_themes_in(temp.path());
         let export = layouts_in(temp.path());
         assert_eq!(
-            vec!["standard", "classic", "clean", "github", "alpha", "zeta"],
+            vec![
+                "standard", "classic", "clean", "github", "business", "report", "minimal", "brand",
+                "warm", "tech", "contrast", "pastel", "alpha", "zeta",
+            ],
             view.iter()
                 .map(|theme| theme.id.as_str())
                 .collect::<Vec<_>>()
         );
         assert_eq!(
-            vec!["classic", "clean", "github", "alpha", "zeta"],
+            vec![
+                "classic", "clean", "github", "business", "report", "minimal", "brand", "warm",
+                "tech", "contrast", "pastel", "alpha", "zeta",
+            ],
             export
                 .iter()
                 .map(|theme| theme.id.as_str())

@@ -1,0 +1,27 @@
+.markdown-body {
+  --fg: #ffffff;
+  --muted: #cccccc;
+  --rule: #ffffff;
+  --rule-soft: #aaaaaa;
+  --accent: #ffffff;
+  --code-bg: #000000;
+  --quote-bg: #000000;
+  --quote-bar: #ffffff;
+  background: #000000;
+  color: var(--fg);
+}
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 { color: var(--accent); }
+.markdown-body a { color: #33ff33; }
+.markdown-body a:hover { color: #ffff33; }
+.markdown-body th { background: #333333; }
+.markdown-body blockquote { border-color: #ffffff; }
+.markdown-body code { border-color: #ffffff; }
+.markdown-body pre { border-color: #ffffff; }
+.markdown-body table { border-color: #ffffff; }
+.markdown-body th, .markdown-body td { border-color: #ffffff; }
+.markdown-body img { border-color: #ffffff; }

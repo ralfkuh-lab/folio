@@ -426,7 +426,7 @@ Command, debounced iframe-Preview + Dark-Toggle, Sample-Markdown.
 Frontend-Bundles neu bauen (`cd src-tauri/web && npm run build`), danach
 `cargo build` (frontendDist-Embed, sonst läuft die EXE mit altem Bundle).
 
-### E4 — Neue Built-ins (8) ⬜
+### E4 — Neue Built-ins (8) ✅
 
 Reine CSS-Addition + Registrierung + `business`/`brand`-Templates.
 Unabhängig von E2/E3, parallelisierbar.
