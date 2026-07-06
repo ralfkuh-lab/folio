@@ -226,9 +226,13 @@
         <section class="settings-section">
           <div class="settings-theme-heading">
             <h3 class="settings-section__title">Markdown-Themes</h3>
-            <button type="button" id="settings-theme-create" class="settings-ai-button">Neues Theme</button>
+            <div class="settings-theme-heading__actions">
+              <button type="button" id="settings-theme-import" class="settings-ai-button">Theme importieren…</button>
+              <button type="button" id="settings-theme-create" class="settings-ai-button">Neues Theme</button>
+            </div>
           </div>
           <p class="settings-hint">Das Theme gilt für die Markdown-Ansicht. Themes ohne Dunkel-Variante bleiben auch im dunklen App-Theme hell.</p>
+          <p id="settings-theme-error" class="settings-ai-error" hidden></p>
           <div id="settings-theme-list" class="settings-theme-list" role="radiogroup" aria-label="Markdown-Theme"></div>
           <p id="settings-theme-hint" class="settings-hint"></p>
         </section>

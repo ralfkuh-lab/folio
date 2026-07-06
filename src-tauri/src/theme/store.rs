@@ -249,7 +249,7 @@ fn clone_in(source_id: &str, new_id: &str, themes_dir: &Path) -> Result<ThemePac
     )
 }
 
-fn write_parts_in(
+pub(crate) fn write_parts_in(
     id: &str,
     parts: &ThemeParts,
     themes_dir: &Path,

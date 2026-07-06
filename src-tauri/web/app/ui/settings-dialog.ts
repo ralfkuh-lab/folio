@@ -248,6 +248,13 @@ function setThemeDialogError(message: string | null): void {
     error.hidden = !message;
 }
 
+function setThemeError(message: string | null): void {
+    var error = $('settings-theme-error');
+    if (!error) return;
+    error.textContent = message || '';
+    error.hidden = !message;
+}
+
 function populateThemeBaseOptions(selectedId?: string): void {
     var select = $('theme-create-base') as HTMLSelectElement | null;
     if (!select) return;
@@ -359,6 +366,29 @@ async function confirmThemeDelete(): Promise<void> {
     if (theme) await deleteTheme(theme);
 }
 
+async function exportTheme(theme: ViewThemeInfo): Promise<void> {
+    var invoke = getInvoke();
+    if (!invoke) return;
+    setThemeError(null);
+    try {
+        await invoke('theme_export', { id: theme.id });
+    } catch (err) {
+        setThemeError(String(err));
+    }
+}
+
+async function importTheme(): Promise<void> {
+    var invoke = getInvoke();
+    if (!invoke) return;
+    setThemeError(null);
+    try {
+        var imported = await invoke('theme_import');
+        if (imported) await refreshViewThemes();
+    } catch (err) {
+        setThemeError(String(err));
+    }
+}
+
 function renderViewThemes(themes: ViewThemeInfo[]): void {
     var list = $('settings-theme-list');
     if (!list) return;
@@ -425,6 +455,9 @@ function renderViewThemes(themes: ViewThemeInfo[]): void {
             }
             actions.appendChild(themeAction('Duplizieren', 'clone', theme, function () {
                 openThemeCreateDialog(theme);
+            }));
+            actions.appendChild(themeAction('Exportieren…', 'export', theme, function () {
+                exportTheme(theme);
             }));
             if (theme.custom) {
                 actions.appendChild(themeAction('Löschen', 'delete', theme, function () {
@@ -633,6 +666,7 @@ export function initSettingsDialog(): void {
     $('settings-theme-create')?.addEventListener('click', function () {
         openThemeCreateDialog();
     });
+    $('settings-theme-import')?.addEventListener('click', importTheme);
     $('theme-create-cancel')?.addEventListener('click', closeThemeCreateDialog);
     $('theme-create-form')?.addEventListener('submit', saveThemeCreateDialog);
     $('theme-create-dialog')?.addEventListener('keydown', function (event) {

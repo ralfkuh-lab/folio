@@ -752,6 +752,12 @@ body.settings-open .content-panes { display: none; }
 .settings-theme-heading .settings-section__title {
   flex: 1 1 auto;
 }
+.settings-theme-heading__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
 .settings-theme-card {
   width: 100%;
   display: flex;

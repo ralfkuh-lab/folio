@@ -449,7 +449,7 @@ E2E-Szenario `36_ai_theme_author.py` mit Mock-Provider
 (ThreadingHTTPServer + SSE, Muster `34_ai_translate.py` inkl.
 Provider-Setup/-Cleanup-Helpern).
 
-### E7 — Theme-Import/Export als `.mdtheme` ⬜ (nachbeauftragt 2026-07-07)
+### E7 — Theme-Import/Export als `.mdtheme` ✅ (nachbeauftragt 2026-07-07)
 
 **Format**: ein `.mdtheme` ist ein gewöhnliches ZIP mit dem
 Verzeichnis-Paketformat **1:1 an der Archiv-Wurzel** (`theme.json`

@@ -9,7 +9,9 @@ use crate::{
 };
 use base64::Engine;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use tauri::{AppHandle, Emitter, State};
+use tauri_plugin_dialog::{DialogExt, FilePath};
 
 const THEME_PREVIEW_SAMPLE: &str = r#"---
 title: Theme-Vorschau
@@ -213,6 +215,74 @@ pub async fn theme_asset_remove(
     emit_changed(&handle, &id, "asset-remove")
 }
 
+#[tauri::command]
+pub async fn theme_export(
+    id: String,
+    path: Option<String>,
+    state: State<'_, AppState>,
+    handle: AppHandle,
+) -> Result<Option<String>, String> {
+    let target_path = match path {
+        Some(path) if !path.trim().is_empty() => path,
+        _ => {
+            let selected = handle
+                .dialog()
+                .file()
+                .add_filter("Markdown Theme", &["mdtheme"])
+                .set_file_name(format!("{id}.mdtheme"))
+                .blocking_save_file()
+                .map(file_path_to_string)
+                .filter(|path| !path.is_empty());
+            let Some(selected) = selected else {
+                return Ok(None);
+            };
+            selected
+        }
+    };
+    {
+        let _guard = state
+            .theme_write
+            .lock()
+            .map_err(|_| "theme write lock poisoned".to_string())?;
+        theme::archive::export_theme(&id, Path::new(&target_path))?;
+    }
+    Ok(Some(target_path))
+}
+
+#[tauri::command]
+pub async fn theme_import(
+    path: Option<String>,
+    state: State<'_, AppState>,
+    handle: AppHandle,
+) -> Result<Option<LayoutInfo>, String> {
+    let source_path = match path {
+        Some(path) if !path.trim().is_empty() => path,
+        _ => {
+            let selected = handle
+                .dialog()
+                .file()
+                .add_filter("Markdown Theme", &["mdtheme"])
+                .blocking_pick_file()
+                .map(file_path_to_string)
+                .filter(|path| !path.is_empty());
+            let Some(selected) = selected else {
+                return Ok(None);
+            };
+            selected
+        }
+    };
+    let layout = {
+        let _guard = state
+            .theme_write
+            .lock()
+            .map_err(|_| "theme write lock poisoned".to_string())?;
+        let package = theme::archive::import_theme(Path::new(&source_path))?;
+        theme::layout_info(&package)
+    };
+    emit_changed(&handle, &layout.id, "import")?;
+    Ok(Some(layout))
+}
+
 fn emit_changed(handle: &AppHandle, id: &str, action: &str) -> Result<(), String> {
     handle
         .emit(
@@ -220,4 +290,10 @@ fn emit_changed(handle: &AppHandle, id: &str, action: &str) -> Result<(), String
             serde_json::json!({ "id": id, "action": action }),
         )
         .map_err(|error| error.to_string())
+}
+
+fn file_path_to_string(path: FilePath) -> String {
+    path.into_path()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }

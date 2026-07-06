@@ -47,7 +47,7 @@ impl ThemeManifest {
         self.code == "dark"
     }
 
-    fn normalize(mut self, id: &str, path: &Path) -> Self {
+    pub(crate) fn normalize(mut self, id: &str, path: &Path) -> Self {
         if self.name.trim().is_empty() {
             self.name = id.to_string();
         }

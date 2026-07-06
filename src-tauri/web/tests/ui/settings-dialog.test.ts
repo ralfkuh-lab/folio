@@ -54,6 +54,8 @@ function buildDom(): void {
                 </select>
             </div>
             <div role="tabpanel" data-settings-tab="themes" hidden>
+                <p id="settings-theme-error" hidden></p>
+                <button id="settings-theme-import" type="button">Theme importieren…</button>
                 <button id="settings-theme-create" type="button">Neues Theme</button>
                 <div id="settings-theme-list" role="radiogroup"></div>
                 <p id="settings-theme-hint"></p>
@@ -182,6 +184,16 @@ describe('settings-dialog', () => {
                 });
             }
             if (cmd === 'theme_delete') return Promise.resolve();
+            if (cmd === 'theme_export') return Promise.resolve('/tmp/meins.mdtheme');
+            if (cmd === 'theme_import') {
+                return Promise.resolve({
+                    id: 'importiert',
+                    name: 'Importiert',
+                    description: 'Aus Archiv',
+                    hasDark: true,
+                    custom: true,
+                });
+            }
             if (cmd === 'theme_preview_render') {
                 return Promise.resolve('<html><body>Preview</body></html>');
             }
@@ -346,11 +358,11 @@ describe('settings-dialog', () => {
         expect(Array.from(document.querySelectorAll(
             '[data-view-theme="classic"] [data-theme-action]',
         )).map((element) => (element as HTMLElement).dataset.themeAction))
-            .toEqual(['clone']);
+            .toEqual(['clone', 'export']);
         expect(Array.from(document.querySelectorAll(
             '[data-view-theme="meins"] [data-theme-action]',
         )).map((element) => (element as HTMLElement).dataset.themeAction))
-            .toEqual(['edit', 'clone', 'delete']);
+            .toEqual(['edit', 'clone', 'export', 'delete']);
 
         handles.invoke.mockClear();
         document.querySelector<HTMLButtonElement>(
@@ -379,6 +391,28 @@ describe('settings-dialog', () => {
         expect(handles.invoke).not.toHaveBeenCalledWith('settings_update', {
             patch: { viewTheme: 'classic' },
         });
+    });
+
+    it('importiert und exportiert Themes ohne Kartenauswahl', async () => {
+        openSettingsDialog();
+        await flush();
+        handles.invoke.mockClear();
+
+        document.querySelector<HTMLButtonElement>(
+            '[data-view-theme="classic"] [data-theme-action="export"]',
+        )!.click();
+        await flush();
+        expect(handles.invoke).toHaveBeenCalledWith('theme_export', { id: 'classic' });
+        expect(handles.invoke).not.toHaveBeenCalledWith('settings_update', {
+            patch: { viewTheme: 'classic' },
+        });
+
+        handles.invoke.mockClear();
+        document.getElementById('settings-theme-import')!.click();
+        await flush();
+        await flush();
+        expect(handles.invoke).toHaveBeenCalledWith('theme_import');
+        expect(handles.invoke).toHaveBeenCalledWith('view_themes');
     });
 
     it('dupliziert ein Basis-Theme und schreibt den Anzeigenamen', async () => {
