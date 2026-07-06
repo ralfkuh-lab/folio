@@ -53,8 +53,19 @@ function buildDom(): void {
                 </select>
             </div>
             <div role="tabpanel" data-settings-tab="themes" hidden>
+                <button id="settings-theme-create" type="button">Neues Theme</button>
                 <div id="settings-theme-list" role="radiogroup"></div>
                 <p id="settings-theme-hint"></p>
+                <div id="theme-create-dialog" hidden>
+                    <form id="theme-create-form">
+                        <input id="theme-create-id" />
+                        <input id="theme-create-name" />
+                        <select id="theme-create-base"></select>
+                        <p id="theme-create-error" hidden></p>
+                        <button id="theme-create-cancel" type="button">Abbrechen</button>
+                        <button id="theme-create-save" type="submit">Erstellen</button>
+                    </form>
+                </div>
             </div>
             <button id="settings-close"></button>
         </div>
@@ -106,6 +117,48 @@ describe('settings-dialog', () => {
             if (cmd === 'settings_update') {
                 return Promise.resolve({ ...settings, ...args.patch });
             }
+            if (cmd === 'theme_clone') {
+                return Promise.resolve({
+                    id: args.newId,
+                    name: 'Classic',
+                    description: 'Serifen',
+                    hasDark: false,
+                    custom: true,
+                });
+            }
+            if (cmd === 'theme_read') {
+                return Promise.resolve({
+                    manifest: {
+                        name: 'Classic',
+                        description: 'Serifen',
+                        code: 'light',
+                        logo: null,
+                        cover: false,
+                        header: false,
+                        footer: false,
+                        hideInlineFrontmatter: false,
+                        formatVersion: 1,
+                    },
+                    contentCss: '.markdown-body {}',
+                    darkCss: null,
+                    pageCss: null,
+                    coverHtml: null,
+                    headerHtml: null,
+                    footerHtml: null,
+                    assets: [],
+                    source: 'directory',
+                });
+            }
+            if (cmd === 'theme_write') {
+                return Promise.resolve({
+                    id: args.id,
+                    name: args.files.manifest.name,
+                    description: args.files.manifest.description,
+                    hasDark: false,
+                    custom: true,
+                });
+            }
+            if (cmd === 'theme_delete') return Promise.resolve();
             return Promise.resolve();
         });
         initSettingsDialog();
@@ -254,6 +307,96 @@ describe('settings-dialog', () => {
         });
         expect(favorite.getAttribute('aria-pressed')).toBe('false');
         expect(favorite.textContent).toBe('☆');
+    });
+
+    it('rendert Aktionen nach Theme-Quelle ohne Kartenauswahl', async () => {
+        openSettingsDialog();
+        await flush();
+
+        expect(document.querySelectorAll(
+            '#settings-theme-list > [data-view-theme="standard"] [data-theme-action]',
+        )).toHaveLength(0);
+        expect(Array.from(document.querySelectorAll(
+            '[data-view-theme="classic"] [data-theme-action]',
+        )).map((element) => (element as HTMLElement).dataset.themeAction))
+            .toEqual(['clone']);
+        expect(Array.from(document.querySelectorAll(
+            '[data-view-theme="meins"] [data-theme-action]',
+        )).map((element) => (element as HTMLElement).dataset.themeAction))
+            .toEqual(['edit', 'clone', 'delete']);
+
+        handles.invoke.mockClear();
+        document.querySelector<HTMLButtonElement>(
+            '[data-view-theme="meins"] [data-theme-action="edit"]',
+        )!.click();
+        expect(handles.invoke).not.toHaveBeenCalled();
+
+        document.querySelector<HTMLButtonElement>(
+            '[data-view-theme="classic"] [data-theme-action="clone"]',
+        )!.click();
+        expect(document.getElementById('theme-create-dialog')!.hidden).toBe(false);
+        expect((document.getElementById('theme-create-base') as HTMLSelectElement).value)
+            .toBe('classic');
+        expect(document.querySelector(
+            '#settings-theme-list > [data-view-theme="standard"]',
+        )!
+            .getAttribute('aria-checked')).toBe('true');
+        expect(handles.invoke).not.toHaveBeenCalledWith('settings_update', {
+            patch: { viewTheme: 'classic' },
+        });
+    });
+
+    it('dupliziert ein Basis-Theme und schreibt den Anzeigenamen', async () => {
+        openSettingsDialog();
+        await flush();
+        document.getElementById('settings-theme-create')!.click();
+        (document.getElementById('theme-create-id') as HTMLInputElement).value = 'firma';
+        (document.getElementById('theme-create-name') as HTMLInputElement).value = 'Firma';
+        (document.getElementById('theme-create-base') as HTMLSelectElement).value = 'classic';
+
+        handles.invoke.mockClear();
+        document.getElementById('theme-create-form')!
+            .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        await flush();
+        await flush();
+        await flush();
+
+        expect(handles.invoke).toHaveBeenCalledWith('theme_clone', {
+            sourceId: 'classic',
+            newId: 'firma',
+        });
+        expect(handles.invoke).toHaveBeenCalledWith('theme_read', { id: 'firma' });
+        expect(handles.invoke).toHaveBeenCalledWith('theme_write', {
+            id: 'firma',
+            files: expect.objectContaining({
+                manifest: expect.objectContaining({ name: 'Firma' }),
+            }),
+        });
+        expect(handles.invoke).toHaveBeenCalledWith('view_themes');
+        expect(document.getElementById('theme-create-dialog')!.hidden).toBe(true);
+    });
+
+    it('loescht Custom-Themes und aktualisiert bei themes:changed', async () => {
+        openSettingsDialog();
+        await flush();
+        handles.invoke.mockClear();
+
+        document.querySelector<HTMLButtonElement>(
+            '[data-view-theme="meins"] [data-theme-action="delete"]',
+        )!.click();
+        await flush();
+        await flush();
+
+        expect(handles.invoke).toHaveBeenCalledWith('theme_delete', { id: 'meins' });
+        expect(handles.invoke).toHaveBeenCalledWith('view_themes');
+        expect(handles.invoke).not.toHaveBeenCalledWith('settings_update', {
+            patch: { viewTheme: 'meins' },
+        });
+
+        handles.invoke.mockClear();
+        handles.emitEvent('themes:changed', { id: 'firma', action: 'write' });
+        await flush();
+        expect(handles.invoke).toHaveBeenCalledWith('view_themes');
     });
 
     it('setzt beim erneuten Öffnen auf Allgemein zurück', async () => {

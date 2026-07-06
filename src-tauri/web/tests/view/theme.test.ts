@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { installTauriMock, TauriMockHandles } from '../helpers';
-import { applyViewTheme } from '../../app/view/theme';
+import { applyViewTheme, initViewTheme } from '../../app/view/theme';
 
 describe('view/theme', () => {
     let handles: TauriMockHandles;
@@ -63,5 +63,19 @@ describe('view/theme', () => {
         expect(document.getElementById('view-theme-style')?.textContent).toBe('');
         expect(document.body.dataset.viewTheme).toBe('standard');
     });
-});
 
+    it('wendet das aktuelle Theme nach themes:changed erneut an', async () => {
+        handles.invoke.mockResolvedValue('.markdown-body { color: red; }');
+        await applyViewTheme('github');
+        handles.invoke.mockClear();
+        initViewTheme();
+
+        handles.emitEvent('themes:changed', { id: 'github', action: 'write' });
+        await Promise.resolve();
+
+        expect(handles.invoke).toHaveBeenCalledWith('view_theme_css', {
+            themeId: 'github',
+            dark: false,
+        });
+    });
+});

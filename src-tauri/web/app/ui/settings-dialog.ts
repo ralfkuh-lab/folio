@@ -198,6 +198,139 @@ function toggleThemeFavorite(themeId: string): void {
     patchSettings({ themeFavorites: favorites });
 }
 
+async function refreshViewThemes(): Promise<void> {
+    var invoke = getInvoke();
+    if (!invoke) return;
+    try {
+        var themes = await invoke('view_themes');
+        viewThemes = Array.isArray(themes) ? themes as ViewThemeInfo[] : [];
+        renderViewThemes(viewThemes);
+    } catch (err) {
+        console.error('view_themes failed', err);
+        folioLog.error('settings', 'view_themes failed', { error: String(err) });
+    }
+}
+
+function themeAction(
+    label: string,
+    action: string,
+    theme: ViewThemeInfo,
+    onClick: () => void,
+): HTMLButtonElement {
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'settings-theme-card__action';
+    button.dataset.themeAction = action;
+    button.dataset.themeId = theme.id;
+    button.textContent = label;
+    button.addEventListener('click', function (event) {
+        event.stopPropagation();
+        onClick();
+    });
+    button.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.stopPropagation();
+        }
+    });
+    return button;
+}
+
+function setThemeDialogError(message: string | null): void {
+    var error = $('theme-create-error');
+    if (!error) return;
+    error.textContent = message || '';
+    error.hidden = !message;
+}
+
+function populateThemeBaseOptions(selectedId?: string): void {
+    var select = $('theme-create-base') as HTMLSelectElement | null;
+    if (!select) return;
+    select.textContent = '';
+    viewThemes.filter(function (theme) {
+        return theme.id !== 'standard';
+    }).forEach(function (theme) {
+        var option = document.createElement('option');
+        option.value = theme.id;
+        option.textContent = theme.name;
+        select.appendChild(option);
+    });
+    var selected = selectedId || (viewThemes.some(function (theme) {
+        return theme.id === 'clean';
+    }) ? 'clean' : select.options[0]?.value);
+    if (selected) select.value = selected;
+}
+
+function openThemeCreateDialog(baseTheme?: ViewThemeInfo): void {
+    var dialog = $('theme-create-dialog');
+    var idInput = $('theme-create-id') as HTMLInputElement | null;
+    var nameInput = $('theme-create-name') as HTMLInputElement | null;
+    if (!dialog || !idInput || !nameInput) return;
+    idInput.value = baseTheme ? baseTheme.id + '-copy' : '';
+    nameInput.value = baseTheme ? baseTheme.name + ' Kopie' : '';
+    populateThemeBaseOptions(baseTheme?.id);
+    setThemeDialogError(null);
+    dialog.hidden = false;
+    idInput.focus();
+}
+
+function closeThemeCreateDialog(): void {
+    var dialog = $('theme-create-dialog');
+    if (dialog) dialog.hidden = true;
+    setThemeDialogError(null);
+}
+
+async function saveThemeCreateDialog(event: Event): Promise<void> {
+    event.preventDefault();
+    var invoke = getInvoke();
+    var idInput = $('theme-create-id') as HTMLInputElement | null;
+    var nameInput = $('theme-create-name') as HTMLInputElement | null;
+    var baseSelect = $('theme-create-base') as HTMLSelectElement | null;
+    if (!invoke || !idInput || !nameInput || !baseSelect) return;
+    var id = idInput.value.trim();
+    var name = nameInput.value.trim();
+    var sourceId = baseSelect.value;
+    if (!/^[a-z0-9][a-z0-9_-]*$/.test(id)) {
+        setThemeDialogError('ID: nur Kleinbuchstaben, Zahlen, - und _.');
+        return;
+    }
+    if (!name) {
+        setThemeDialogError('Anzeigename darf nicht leer sein.');
+        return;
+    }
+    if (!sourceId) {
+        setThemeDialogError('Bitte ein Basis-Theme wählen.');
+        return;
+    }
+    setThemeDialogError(null);
+    try {
+        await invoke('theme_clone', { sourceId, newId: id });
+        var files = await invoke('theme_read', { id });
+        if (files && files.manifest) {
+            files.manifest.name = name;
+            await invoke('theme_write', { id, files });
+        }
+        closeThemeCreateDialog();
+        await refreshViewThemes();
+    } catch (err) {
+        setThemeDialogError(String(err));
+    }
+}
+
+async function deleteTheme(theme: ViewThemeInfo): Promise<void> {
+    var invoke = getInvoke();
+    if (!invoke) return;
+    try {
+        await invoke('theme_delete', { id: theme.id });
+        await refreshViewThemes();
+    } catch (err) {
+        console.error('theme_delete failed', err);
+        folioLog.error('settings', 'theme_delete failed', {
+            themeId: theme.id,
+            error: String(err),
+        });
+    }
+}
+
 function renderViewThemes(themes: ViewThemeInfo[]): void {
     var list = $('settings-theme-list');
     if (!list) return;
@@ -254,6 +387,24 @@ function renderViewThemes(themes: ViewThemeInfo[]): void {
             entry.appendChild(favorite);
         }
         entry.appendChild(badges);
+        if (theme.id !== 'standard') {
+            var actions = document.createElement('span');
+            actions.className = 'settings-theme-card__actions';
+            if (theme.custom) {
+                actions.appendChild(themeAction('Bearbeiten', 'edit', theme, function () {
+                    // TODO(E3): Theme-Editor-Tab mit diesem Theme öffnen.
+                }));
+            }
+            actions.appendChild(themeAction('Duplizieren', 'clone', theme, function () {
+                openThemeCreateDialog(theme);
+            }));
+            if (theme.custom) {
+                actions.appendChild(themeAction('Löschen', 'delete', theme, function () {
+                    deleteTheme(theme);
+                }));
+            }
+            entry.appendChild(actions);
+        }
         entry.addEventListener('click', function () {
             patchSettings({ viewTheme: theme.id });
         });
@@ -453,6 +604,17 @@ export function initSettingsDialog(): void {
     });
     var closeBtn = $('settings-close');
     if (closeBtn) closeBtn.addEventListener('click', closeSettingsDialog);
+    $('settings-theme-create')?.addEventListener('click', function () {
+        openThemeCreateDialog();
+    });
+    $('theme-create-cancel')?.addEventListener('click', closeThemeCreateDialog);
+    $('theme-create-form')?.addEventListener('submit', saveThemeCreateDialog);
+    $('theme-create-dialog')?.addEventListener('keydown', function (event) {
+        if (event.key !== 'Escape') return;
+        event.preventDefault();
+        event.stopPropagation();
+        closeThemeCreateDialog();
+    });
     bindInputs();
     initSettingsAi();
 
@@ -468,6 +630,9 @@ export function initSettingsDialog(): void {
                 if (bootLanguage === null) bootLanguage = currentSettings.language;
                 applySettingsToForm(currentSettings);
             }
+        });
+        ev.listen('themes:changed', function () {
+            refreshViewThemes();
         });
         ev.listen('menu:edit_settings', function () {
             openSettingsDialog();

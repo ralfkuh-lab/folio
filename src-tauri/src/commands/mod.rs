@@ -8,5 +8,6 @@ pub mod file;
 pub mod icon;
 pub mod nav;
 pub mod tabs;
+pub mod theme;
 pub mod vault_cmd;
 pub mod workspace_cmd;

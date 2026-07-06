@@ -743,6 +743,15 @@ body.settings-open .content-panes { display: none; }
   flex-direction: column;
   gap: 7px;
 }
+.settings-theme-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.settings-theme-heading .settings-section__title {
+  flex: 1 1 auto;
+}
 .settings-theme-card {
   width: 100%;
   display: flex;
@@ -828,6 +837,30 @@ body.settings-open .content-panes { display: none; }
 .settings-theme-card__badge--custom {
   color: var(--accent);
   border-color: var(--accent);
+}
+.settings-theme-card__actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.settings-theme-card__action {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg-muted);
+  padding: 3px 6px;
+  font: inherit;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+.settings-theme-card__action:hover {
+  border-color: var(--accent);
+  color: var(--fg);
+}
+.settings-theme-card__action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 .settings-dialog__actions {
   display: flex;

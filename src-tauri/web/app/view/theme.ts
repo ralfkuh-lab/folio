@@ -59,5 +59,7 @@ export function initViewTheme(): void {
             || typeof settings.viewTheme !== 'string') return;
         applyViewTheme(settings.viewTheme);
     });
+    ev.listen('themes:changed', function () {
+        reapplyCurrentViewTheme();
+    });
 }
-

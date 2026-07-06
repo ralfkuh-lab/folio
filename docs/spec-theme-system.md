@@ -407,7 +407,7 @@ Präzedenzregeln, Manifest-Parse + Fallbacks, `export::*`-Oberfläche als
 Delegation. **Kein Render-Verhalten geändert.** Unit-Tests im
 tempdir-Stil (Vorlage: bestehende Tests in `export.rs`).
 
-### E2 — CRUD-Commands + Verwaltungs-UI ⬜
+### E2 — CRUD-Commands + Verwaltungs-UI 🔧 (Code fertig; E2E-Lauf 35/25/26/27 steht aus — laufende Folio-Instanz blockiert Xvfb-Suite)
 
 `commands/theme.rs` (`theme_read/write/delete/clone`), `theme_write`-Lock,
 `themes:changed`-Event, lib.rs-Registrierung. Frontend: Karten-Aktionen +
