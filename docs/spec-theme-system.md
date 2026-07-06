@@ -400,7 +400,7 @@ Registrierung: `BUILTIN_IDS`, `builtin_layouts()`, `layout_css_in`-/
 
 ## Etappen
 
-### E1 — Theme-Paketmodell + Discovery ⬜
+### E1 — Theme-Paketmodell + Discovery ✅
 
 `theme/`-Modul (mod/package/builtin), Dir+Legacy-Discovery mit
 Präzedenzregeln, Manifest-Parse + Fallbacks, `export::*`-Oberfläche als

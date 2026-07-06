@@ -33,3 +33,4 @@ src-tauri/dist/about/avatar-options/
 # Install-Iterationen. Pro Maschine separat anlegen:
 # `ln -s src-tauri/target/release/bundle/deb/Folio_<ver>_amd64.deb folio.deb`
 /folio.deb
+.herd/

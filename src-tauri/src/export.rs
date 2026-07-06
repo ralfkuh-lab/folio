@@ -1,375 +1,29 @@
-use crate::renderer;
+use crate::{renderer, theme};
 use regex::Regex;
-use serde::Serialize;
-use std::{
-    borrow::Cow,
-    fs, io,
-    path::{Path, PathBuf},
-    sync::OnceLock,
-};
+use std::{borrow::Cow, path::Path, sync::OnceLock};
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LayoutInfo {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub has_dark: bool,
-    pub custom: bool,
-}
+pub use crate::theme::LayoutInfo;
 
-const CLASSIC_CSS: &str = include_str!("layouts/classic.css");
-const CLEAN_CSS: &str = include_str!("layouts/clean.css");
-const GITHUB_CSS: &str = include_str!("layouts/github.css");
-const CLASSIC_PAGE_CSS: &str = include_str!("layouts/classic.page.css");
-const CLEAN_PAGE_CSS: &str = include_str!("layouts/clean.page.css");
-const GITHUB_PAGE_CSS: &str = include_str!("layouts/github.page.css");
-const CLEAN_DARK_CSS: &str = include_str!("layouts/clean.dark.css");
-const GITHUB_DARK_CSS: &str = include_str!("layouts/github.dark.css");
 const BASE_CSS: &str = include_str!("layouts/base.css");
-const DEFAULT_PAGE_CSS: &str = "html, body { background: #fff; }\nbody { margin: 0; }";
-const BUILTIN_IDS: &[&str] = &["standard", "classic", "clean", "github"];
-
-#[derive(Debug, Default, PartialEq, Eq)]
-struct ThemeMetadata {
-    name: Option<String>,
-    description: Option<String>,
-    code_dark: bool,
-}
-
-fn builtin_layouts() -> Vec<LayoutInfo> {
-    vec![
-        LayoutInfo {
-            id: "classic".to_string(),
-            name: "Classic".to_string(),
-            description: "Article-Look mit Serifen, A4-orientiert.".to_string(),
-            has_dark: false,
-            custom: false,
-        },
-        LayoutInfo {
-            id: "clean".to_string(),
-            name: "Clean".to_string(),
-            description: "Moderne, ruhige Sans-Serif-Optik.".to_string(),
-            has_dark: true,
-            custom: false,
-        },
-        LayoutInfo {
-            id: "github".to_string(),
-            name: "GitHub".to_string(),
-            description: "Stil angelehnt an die GitHub-Markdown-Vorschau.".to_string(),
-            has_dark: true,
-            custom: false,
-        },
-    ]
-}
 
 pub fn layouts() -> Vec<LayoutInfo> {
-    layouts_in(&crate::persist::themes_dir())
+    theme::layouts()
 }
 
 pub fn view_themes() -> Vec<LayoutInfo> {
-    view_themes_in(&crate::persist::themes_dir())
+    theme::view_themes()
 }
 
 pub fn custom_themes() -> Vec<LayoutInfo> {
-    custom_themes_in(&crate::persist::themes_dir())
-}
-
-fn layouts_in(dir: &Path) -> Vec<LayoutInfo> {
-    let mut layouts = builtin_layouts();
-    layouts.extend(custom_themes_in(dir));
-    layouts
-}
-
-fn view_themes_in(dir: &Path) -> Vec<LayoutInfo> {
-    let mut themes = Vec::new();
-    themes.push(standard_theme());
-    themes.extend(builtin_layouts());
-    themes.extend(custom_themes_in(dir));
-    themes
-}
-
-fn standard_theme() -> LayoutInfo {
-    LayoutInfo {
-        id: "standard".to_string(),
-        name: "Standard".to_string(),
-        description: "Die eingebaute Folio-Ansicht, folgt dem App-Theme.".to_string(),
-        has_dark: true,
-        custom: false,
-    }
-}
-
-fn custom_themes_in(dir: &Path) -> Vec<LayoutInfo> {
-    let entries = match fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Vec::new(),
-        Err(error) => {
-            tracing::warn!(
-                target: "folio::settings",
-                path = %dir.display(),
-                %error,
-                "Custom-Theme-Verzeichnis kann nicht gelesen werden"
-            );
-            return Vec::new();
-        }
-    };
-    let mut themes = Vec::new();
-    for entry in entries {
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(error) => {
-                tracing::warn!(
-                    target: "folio::settings",
-                    path = %dir.display(),
-                    %error,
-                    "Eintrag im Custom-Theme-Verzeichnis kann nicht gelesen werden"
-                );
-                continue;
-            }
-        };
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        let Some(file_name) = entry.file_name().to_str().map(str::to_string) else {
-            tracing::warn!(
-                target: "folio::settings",
-                path = %path.display(),
-                "Custom-Theme-Dateiname ist kein gueltiges UTF-8"
-            );
-            continue;
-        };
-        if !file_name.ends_with(".css")
-            || file_name.ends_with(".dark.css")
-            || file_name.ends_with(".page.css")
-        {
-            continue;
-        }
-        let id = file_name.trim_end_matches(".css");
-        if !valid_theme_id(id) {
-            tracing::warn!(
-                target: "folio::settings",
-                path = %path.display(),
-                "Custom-Theme hat eine ungueltige ID"
-            );
-            continue;
-        }
-        if BUILTIN_IDS.contains(&id) {
-            tracing::warn!(
-                target: "folio::settings",
-                theme_id = id,
-                path = %path.display(),
-                "Custom-Theme kollidiert mit einem eingebauten Theme und wird ignoriert"
-            );
-            continue;
-        }
-        let css = match fs::read_to_string(&path) {
-            Ok(css) => css,
-            Err(error) => {
-                tracing::warn!(
-                    target: "folio::settings",
-                    theme_id = id,
-                    path = %path.display(),
-                    %error,
-                    "Custom-Theme kann nicht gelesen werden"
-                );
-                continue;
-            }
-        };
-        let metadata = parse_theme_metadata(&css);
-        themes.push(LayoutInfo {
-            id: id.to_string(),
-            name: metadata.name.unwrap_or_else(|| id.to_string()),
-            description: metadata
-                .description
-                .unwrap_or_else(|| "Eigenes Theme".to_string()),
-            has_dark: dir.join(format!("{id}.dark.css")).is_file(),
-            custom: true,
-        });
-    }
-    themes.sort_by(|left, right| left.id.cmp(&right.id));
-    themes
-}
-
-fn parse_theme_metadata(css: &str) -> ThemeMetadata {
-    let mut metadata = ThemeMetadata::default();
-    for line in css.lines().take(10) {
-        let line = line.trim();
-        let Some(comment) = line
-            .strip_prefix("/*")
-            .and_then(|line| line.strip_suffix("*/"))
-        else {
-            continue;
-        };
-        let Some((key, value)) = comment.trim().split_once(':') else {
-            continue;
-        };
-        let key = key.trim();
-        let value = value.trim();
-        if key.eq_ignore_ascii_case("name") && !value.is_empty() {
-            metadata.name = Some(value.to_string());
-        } else if key.eq_ignore_ascii_case("description") && !value.is_empty() {
-            metadata.description = Some(value.to_string());
-        } else if key.eq_ignore_ascii_case("code") {
-            metadata.code_dark = match value.to_ascii_lowercase().as_str() {
-                "dark" => true,
-                "light" => false,
-                _ => {
-                    tracing::warn!(
-                        target: "folio::settings",
-                        value,
-                        "Unbekannter code-Metadatenwert im Custom-Theme; Light wird verwendet"
-                    );
-                    false
-                }
-            };
-        }
-    }
-    metadata
-}
-
-fn valid_theme_id(id: &str) -> bool {
-    // `:` mit abfangen: auf Windows waere `C:evil` ein laufwerks-
-    // relativer Pfad und `dir.join(..)` verliesse das Themes-Verzeichnis.
-    !id.is_empty()
-        && !id.contains('/')
-        && !id.contains('\\')
-        && !id.contains(':')
-        && !id.contains("..")
-        && !id.ends_with(".dark")
-        && !id.ends_with(".page")
+    theme::custom_themes()
 }
 
 pub fn layout_css(id: &str, dark: bool) -> Option<Cow<'static, str>> {
-    layout_css_in(id, dark, &crate::persist::themes_dir())
-}
-
-fn layout_css_in(id: &str, dark: bool, dir: &Path) -> Option<Cow<'static, str>> {
-    if !valid_theme_id(id) {
-        return None;
-    }
-    let (light, dark_override) = match id {
-        "classic" => (CLASSIC_CSS, None),
-        "clean" => (CLEAN_CSS, Some(CLEAN_DARK_CSS)),
-        "github" => (GITHUB_CSS, Some(GITHUB_DARK_CSS)),
-        "standard" => return None,
-        _ => return custom_layout_css_in(id, dark, dir).map(Cow::Owned),
-    };
-    match (dark, dark_override) {
-        (true, Some(override_css)) => Some(Cow::Owned(format!("{light}\n{override_css}"))),
-        _ => Some(Cow::Borrowed(light)),
-    }
+    theme::layout_css(id, dark)
 }
 
 pub fn view_theme_css(theme_id: &str, dark: bool) -> Result<Cow<'static, str>, String> {
-    view_theme_css_in(theme_id, dark, &crate::persist::themes_dir())
-}
-
-fn view_theme_css_in(theme_id: &str, dark: bool, dir: &Path) -> Result<Cow<'static, str>, String> {
-    if !valid_theme_id(theme_id) {
-        return Err(format!("Unbekanntes View-Theme: '{theme_id}'"));
-    }
-    if theme_id == "standard" {
-        return Ok(Cow::Borrowed(""));
-    }
-    layout_css_in(theme_id, dark, dir)
-        .ok_or_else(|| format!("Unbekanntes View-Theme: '{theme_id}'"))
-}
-
-fn custom_layout_css_in(id: &str, dark: bool, dir: &Path) -> Option<String> {
-    if !is_custom_theme_in(id, dir) {
-        return None;
-    }
-    let light_path = theme_path(dir, id, ".css")?;
-    let light = read_custom_css(&light_path, id)?;
-    if !dark {
-        return Some(light);
-    }
-    let dark_path = theme_path(dir, id, ".dark.css")?;
-    match fs::read_to_string(&dark_path) {
-        Ok(dark_override) => Some(format!("{light}\n{dark_override}")),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Some(light),
-        Err(error) => {
-            tracing::warn!(
-                target: "folio::settings",
-                theme_id = id,
-                path = %dark_path.display(),
-                %error,
-                "Dark-CSS eines Custom-Themes kann nicht gelesen werden"
-            );
-            None
-        }
-    }
-}
-
-fn read_custom_css(path: &Path, id: &str) -> Option<String> {
-    match fs::read_to_string(path) {
-        Ok(css) => Some(css),
-        Err(error) => {
-            tracing::warn!(
-                target: "folio::settings",
-                theme_id = id,
-                path = %path.display(),
-                %error,
-                "CSS eines Custom-Themes kann nicht gelesen werden"
-            );
-            None
-        }
-    }
-}
-
-fn is_custom_theme_in(id: &str, dir: &Path) -> bool {
-    valid_theme_id(id)
-        && !BUILTIN_IDS.contains(&id)
-        && theme_path(dir, id, ".css").is_some_and(|path| path.is_file())
-}
-
-fn theme_path(dir: &Path, id: &str, suffix: &str) -> Option<PathBuf> {
-    valid_theme_id(id).then(|| dir.join(format!("{id}{suffix}")))
-}
-
-fn layout_code_dark_in(id: &str, dir: &Path) -> bool {
-    if !valid_theme_id(id) || BUILTIN_IDS.contains(&id) || !is_custom_theme_in(id, dir) {
-        return false;
-    }
-    let Some(path) = theme_path(dir, id, ".css") else {
-        return false;
-    };
-    read_custom_css(&path, id)
-        .map(|css| parse_theme_metadata(&css).code_dark)
-        .unwrap_or(false)
-}
-
-fn page_css_in(id: &str, dir: &Path) -> Option<Cow<'static, str>> {
-    if !valid_theme_id(id) {
-        return None;
-    }
-    match id {
-        "classic" => Some(Cow::Borrowed(CLASSIC_PAGE_CSS)),
-        "clean" => Some(Cow::Borrowed(CLEAN_PAGE_CSS)),
-        "github" => Some(Cow::Borrowed(GITHUB_PAGE_CSS)),
-        "standard" => None,
-        _ if is_custom_theme_in(id, dir) => {
-            let path = theme_path(dir, id, ".page.css")?;
-            match fs::read_to_string(&path) {
-                Ok(css) => Some(Cow::Owned(css)),
-                Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                    Some(Cow::Borrowed(DEFAULT_PAGE_CSS))
-                }
-                Err(error) => {
-                    tracing::warn!(
-                        target: "folio::settings",
-                        theme_id = id,
-                        path = %path.display(),
-                        %error,
-                        "Page-CSS eines Custom-Themes kann nicht gelesen werden"
-                    );
-                    None
-                }
-            }
-        }
-        _ => None,
-    }
+    theme::view_theme_css(theme_id, dark)
 }
 
 pub fn render_document(layout_id: &str, title: &str, markdown: &str) -> Result<String, String> {
@@ -382,14 +36,14 @@ fn render_document_in(
     markdown: &str,
     dir: &Path,
 ) -> Result<String, String> {
-    let content_css = layout_css_in(layout_id, false, dir)
+    let content_css = theme::layout_css_in(layout_id, false, dir)
         .ok_or_else(|| format!("Unbekanntes Layout: '{layout_id}'"))?;
-    let page_css =
-        page_css_in(layout_id, dir).ok_or_else(|| format!("Unbekanntes Layout: '{layout_id}'"))?;
+    let page_css = theme::page_css_in(layout_id, dir)
+        .ok_or_else(|| format!("Unbekanntes Layout: '{layout_id}'"))?;
     let css = format!("{page_css}\n{content_css}");
     let body = strip_scroll_sync_attrs(&renderer::render_body_highlighted(
         markdown,
-        layout_code_dark_in(layout_id, dir),
+        theme::layout_code_dark_in(layout_id, dir),
     ));
     Ok(wrap_html(title, &css, &body))
 }
@@ -458,6 +112,12 @@ fn escape_html(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::theme::{
+        custom_themes_in, layout_css_in, layouts_in,
+        package::parse_legacy_metadata as parse_theme_metadata, view_theme_css_in, view_themes_in,
+        DEFAULT_PAGE_CSS,
+    };
+    use std::fs;
 
     #[test]
     fn layouts_lists_three_defaults() {
