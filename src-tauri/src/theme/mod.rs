@@ -1,4 +1,5 @@
 pub mod assets;
+pub mod author;
 pub mod builtin;
 pub mod package;
 pub mod service;

@@ -15,7 +15,8 @@ import { initImageDialog, openImageDialog } from './ui/image-dialog';
 import { initAboutDialog } from './ui/about-dialog';
 import { initTranslateDialog } from './ui/translate-dialog';
 import { initSettingsDialog } from './ui/settings-dialog';
-import { initThemeEditor } from './ui/theme-editor';
+import { initThemeEditor, openThemeEditor } from './ui/theme-editor';
+import { initThemeAiDialog } from './ui/theme-ai-dialog';
 import { attachPasteHandler } from './ui/paste-handler';
 import { applySplitMidFromBackend, initRails, setRailVisibility } from './ui/rails';
 import { initContextMenu } from './vault/context-menu';
@@ -68,6 +69,7 @@ const invoke = core ? core.invoke : null;
 // entfernen — siehe `docs/automation-contract.md`.
 if (invoke) window.__folioInvoke = invoke;
 window.openDocument = openDocument;
+(window as any).openThemeEditor = openThemeEditor;
 
 function $(id: string): HTMLElement | null { return document.getElementById(id); }
 
@@ -100,6 +102,7 @@ initAboutDialog();
 initTranslateDialog();
 initViewTheme();
 initThemeEditor();
+initThemeAiDialog();
 initSettingsDialog();
 attachPasteHandler(function (blob) {
     openImageDialog({ preloadedBlob: blob }).catch(function (err) {

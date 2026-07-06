@@ -80,7 +80,7 @@ export function mount(elementId: string): Promise<void> {
     });
 }
 
-export function setParts(parts: ThemeEditorParts): void {
+export function setParts(parts: ThemeEditorParts, cleanParts?: ThemeEditorParts): void {
     const normalized: ThemeEditorParts = {};
     for (const part of PART_ORDER) {
         if (Object.prototype.hasOwnProperty.call(parts, part)) {
@@ -101,13 +101,15 @@ export function setParts(parts: ThemeEditorParts): void {
             && entries.get(part)!.model.getValue() === normalized[part]);
     if (sameModels) {
         cleanValues.clear();
-        for (const part of keys) cleanValues.set(part, normalized[part] || '');
+        const baseForClean = cleanParts || normalized;
+        for (const part of keys) cleanValues.set(part, baseForClean[part] || '');
         notifyChange();
         return;
     }
 
     disposeModels();
     const monaco = getMonaco();
+    const baseForClean = cleanParts || normalized;
     for (const part of keys) {
         const model = monaco.editor.createModel(
             normalized[part] || '',
@@ -117,7 +119,7 @@ export function setParts(parts: ThemeEditorParts): void {
             notifyChange();
         });
         entries.set(part, { model, viewState: null, subscription });
-        cleanValues.set(part, normalized[part] || '');
+        cleanValues.set(part, baseForClean[part] || '');
     }
     activePart = entries.has('content') ? 'content' : keys[0] || null;
     if (activePart) editor.setModel(entries.get(activePart)!.model);

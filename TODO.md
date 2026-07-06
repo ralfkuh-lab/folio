@@ -2,16 +2,25 @@
 
 ## Hohe Priorität
 
-- **Theme-System-Ausbau** (beschlossen 2026-07-06, vollständige Spec mit
+- **Theme-System-Ausbau: E1–E6 UMGESETZT** (2026-07-06, Spec mit
   Etappen-Checkliste in [`docs/spec-theme-system.md`](docs/spec-theme-system.md)):
   In-App-Theme-CRUD + Monaco-Editor mit Live-Preview (eigener virtueller
   Tab), Verzeichnis-Paketformat mit Deckblatt/Kopf-Fußzeile/Logo-Assets/
   Frontmatter-Template-Variablen, 8 neue Built-in-Vorlagen, KI-Theme-Autor
-  (Draft→Review→Save über die bestehende KI-Infrastruktur). Etappen E1–E6;
-  PDF-Live-Seitenzahlen (CDP-Migration) und dynamischer Per-Export-KI-Modus
-  bewusst verschoben (siehe Spec).
+  (Draft→Review→Save). Offen: manueller Windows-Smoke (Spec-Abschnitt
+  „Verifikation") und die bewusst verschobenen Punkte (PDF-Live-Seitenzahlen
+  via CDP, dynamischer Per-Export-KI-Modus).
 
 ## Mittlere Priorität
+
+- **E2E `30_tabs_ui` einmalig flaky (2026-07-06)**: Im Voll-Lauf failte
+  einmal „Undo-Stack hat den Tab-Wechsel nicht ueberlebt"
+  ([`errors.md`](tests/e2e/artifacts/20260706-152530/errors.md)); Einzellauf
+  und zwei weitere Voll-Läufe grün. Plausible Ursache (async gewordener
+  Tab-Klick durch die Virtual-Tab-Registry) ist gehärtet: der Klick-Fast-Path
+  ohne aktive virtuelle Region ist wieder synchron (`state/tabs.ts`). Bei
+  erneutem Auftreten: Model-Cache-Restore in `editor/mount.ts` gegen den
+  `document:loaded`-Pfad race-analysieren.
 
 - **Menu-Keybindings (Accelerators) greifen oft nicht**: Viele der nativen
   Tauri-Menü-Accelerators (Ctrl+S Speichern, Ctrl+Z Undo, Ctrl+W Schließen,

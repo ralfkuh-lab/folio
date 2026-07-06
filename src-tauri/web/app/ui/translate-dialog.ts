@@ -2,6 +2,7 @@ import { syncEditorTextToStoreRequired } from '../state/document';
 import { getActiveTabId } from '../state/tabs';
 import { renderPreviewText } from '../view/preview';
 import { folioLog, safeInvoke } from '../util/log';
+import { populateModelPicker } from './ai-model-picker';
 
 type CatalogModel = { id: string; name?: string };
 type CatalogProvider = {
@@ -112,56 +113,10 @@ function setError(message: string | null): void {
     error.hidden = !message;
 }
 
-function providerName(
-    providerId: string,
-    provider: ProviderConfig,
-    catalog: CatalogResult,
-): string {
-    return provider.name || catalog.catalog[providerId]?.name || providerId;
-}
-
-function modelName(
-    providerId: string,
-    provider: ProviderConfig,
-    modelId: string,
-    catalog: CatalogResult,
-): string {
-    if (provider.custom) return provider.models?.[modelId]?.name || modelId;
-    return catalog.catalog[providerId]?.models?.[modelId]?.name || modelId;
-}
-
 function renderModels(config: AiConfig, catalog: CatalogResult): void {
     const modelSelect = select('ai-translate-model');
     if (!modelSelect) return;
-    modelSelect.textContent = '';
-    const choices: Array<{ value: string; label: string }> = [];
-    for (const [providerId, provider] of Object.entries(config.provider)) {
-        if (!provider.enabled) continue;
-        for (const modelId of new Set(provider.whitelist || [])) {
-            choices.push({
-                value: JSON.stringify([providerId, modelId]),
-                label: `${providerName(providerId, provider, catalog)} · ${modelName(
-                    providerId,
-                    provider,
-                    modelId,
-                    catalog,
-                )}`,
-            });
-        }
-    }
-    choices.sort((a, b) => a.label.localeCompare(b.label, 'de'));
-    for (const choice of choices) {
-        const option = document.createElement('option');
-        option.value = choice.value;
-        option.textContent = choice.label;
-        modelSelect.appendChild(option);
-    }
-    const preferred = config.defaultModel
-        ? JSON.stringify([config.defaultModel.provider, config.defaultModel.model])
-        : '';
-    modelSelect.value = choices.some((choice) => choice.value === preferred)
-        ? preferred
-        : choices[0]?.value || '';
+    populateModelPicker(modelSelect, config, catalog, { separator: ' · ' });
 }
 
 function applyRecentLanguages(config: AiConfig): void {

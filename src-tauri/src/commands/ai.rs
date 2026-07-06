@@ -8,6 +8,7 @@ use crate::{
     },
     file_kind::{classify, FileKind},
     state::AppState,
+    theme::author,
 };
 use reqwest::{StatusCode, Url};
 use serde::Deserialize;
@@ -387,6 +388,127 @@ pub async fn ai_translate_document(
 #[tauri::command]
 pub async fn ai_translate_cancel(state: State<'_, AppState>) -> Result<(), String> {
     state.ai_translate_cancel.store(true, Ordering::Release);
+    Ok(())
+}
+
+/// KI-Theme-Autor (Stufe 1, Spec E6): erzeugt einen NICHT persistierten
+/// [`author::ThemeDraft`] fuer die Editor-Buffer. Muster wie
+/// `ai_translate_document`: Active-Guard, cancellable Stream mit
+/// Event-Throttle, hartes Validierungs-Gate vor der Rueckgabe.
+#[tauri::command]
+pub async fn ai_theme_author(
+    prompt: String,
+    base_id: Option<String>,
+    provider_id: String,
+    model_id: String,
+    state: State<'_, AppState>,
+    handle: AppHandle,
+) -> Result<author::ThemeDraft, String> {
+    let _active = {
+        let mut active = state
+            .ai_theme_author_active
+            .lock()
+            .map_err(|_| "AI theme author lock poisoned".to_string())?;
+        if *active {
+            return Err("Es läuft bereits ein KI-Theme-Lauf.".to_string());
+        }
+        *active = true;
+        ActiveTranslation {
+            active: &state.ai_theme_author_active,
+        }
+    };
+    state.ai_theme_author_cancel.store(false, Ordering::Release);
+
+    let (base_url, api_key) = resolve_provider(state.inner(), &provider_id, &model_id)?;
+
+    let base = match base_id.as_deref().filter(|id| !id.trim().is_empty()) {
+        Some(id) => {
+            let package = crate::theme::package(id)
+                .ok_or_else(|| format!("Unbekanntes Basis-Theme: '{id}'"))?;
+            Some(author::BaseContext {
+                id: package.id,
+                content_css: package.content_css,
+                dark_css: package.dark_css,
+                page_css: package.page_css,
+                cover_html: package.cover_html,
+                header_html: package.header_html,
+                footer_html: package.footer_html,
+            })
+        }
+        None => None,
+    };
+
+    let messages = [
+        ChatMessage::system(author::system_prompt(base.as_ref())),
+        ChatMessage::user(prompt),
+    ];
+    let cancel = state.ai_theme_author_cancel.clone();
+    let mut last_emit = None;
+    let raw_response = client::chat_stream_cancellable(
+        &state.ai_http,
+        &base_url,
+        api_key.as_deref(),
+        &model_id,
+        &messages,
+        |accumulated| {
+            let now = Instant::now();
+            if last_emit
+                .is_some_and(|last: Instant| now.duration_since(last) < Duration::from_millis(150))
+            {
+                return;
+            }
+            last_emit = Some(now);
+            // Nur die Zeichenzahl streamen — das JSON ist erst nach dem
+            // Gate vertrauenswuerdig, Partial-Anzeige waere irrefuehrend.
+            let _ = handle.emit(
+                "ai:theme_stream",
+                serde_json::json!({ "chars": accumulated.chars().count() }),
+            );
+        },
+        || cancel.load(Ordering::Acquire),
+    )
+    .await;
+
+    let done = |ok: bool, error: Option<&str>| {
+        let _ = handle.emit(
+            "ai:theme_done",
+            serde_json::json!({ "ok": ok, "error": error }),
+        );
+    };
+
+    if matches!(raw_response, Err(client::ChatError::Cancelled))
+        || state.ai_theme_author_cancel.load(Ordering::Acquire)
+    {
+        done(false, Some("abgebrochen"));
+        return Err("KI-Theme-Lauf abgebrochen.".to_string());
+    }
+    let raw_response = match raw_response {
+        Ok(response) => response,
+        Err(error) => {
+            let message = error.to_string();
+            done(false, Some(&message));
+            return Err(message);
+        }
+    };
+
+    let draft = author::parse_draft(&raw_response)
+        .and_then(|raw| author::validate_draft(raw, None))
+        .inspect_err(|error| done(false, Some(error)))?;
+
+    tracing::info!(
+        target: "folio::ai",
+        provider_id,
+        model_id,
+        base = base_id.as_deref().unwrap_or(""),
+        "AI theme draft validated"
+    );
+    done(true, None);
+    Ok(draft)
+}
+
+#[tauri::command]
+pub async fn ai_theme_author_cancel(state: State<'_, AppState>) -> Result<(), String> {
+    state.ai_theme_author_cancel.store(true, Ordering::Release);
     Ok(())
 }
 

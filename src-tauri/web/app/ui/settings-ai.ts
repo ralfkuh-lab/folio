@@ -1,4 +1,5 @@
 import { folioLog, safeInvoke } from '../util/log';
+import { populateModelPicker } from './ai-model-picker';
 
 type CatalogModel = {
     id: string;
@@ -569,38 +570,11 @@ function modelRow(
 function renderDefaultModels(): void {
     const element = select('ai-default-model');
     if (!element || !aiConfig) return;
-    element.textContent = '';
-    const empty = document.createElement('option');
-    empty.value = '';
-    empty.textContent = '(keins)';
-    element.appendChild(empty);
-    const options: Array<{ value: string; label: string }> = [];
-    for (const [providerId, provider] of Object.entries(aiConfig.provider)) {
-        if (!provider.enabled) continue;
-        const models = new Map(configuredModels(providerId, provider));
-        for (const modelId of new Set(provider.whitelist || [])) {
-            const model = models.get(modelId);
-            options.push({
-                value: JSON.stringify([providerId, modelId]),
-                label: `${providerName(
-                    providerId,
-                    catalogResult?.catalog[providerId],
-                    provider,
-                )} — ${model?.name || modelId}`,
-            });
-        }
-    }
-    options.sort((a, b) => a.label.localeCompare(b.label, 'de'));
-    for (const optionData of options) {
-        const option = document.createElement('option');
-        option.value = optionData.value;
-        option.textContent = optionData.label;
-        element.appendChild(option);
-    }
-    const current = aiConfig.defaultModel;
-    element.value = current
-        ? JSON.stringify([current.provider, current.model])
-        : '';
+    populateModelPicker(element, aiConfig, catalogResult || { catalog: {} }, {
+        includeEmptyOption: true,
+        emptyOptionLabel: '(keins)',
+        separator: ' — ',
+    });
 }
 
 function renderModels(): void {

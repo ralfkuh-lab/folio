@@ -1,0 +1,119 @@
+#theme-ai-dialog[hidden] {
+  display: none;
+}
+
+#theme-ai-dialog {
+  position: absolute;
+  inset: 0;
+  z-index: 10050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.42);
+}
+
+.theme-ai-dialog__panel {
+  width: min(560px, 100%);
+  max-height: min(720px, 90%);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--fg);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.32);
+  padding: 20px;
+}
+
+.theme-ai-dialog__title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.theme-ai-dialog__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.theme-ai-dialog__label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.theme-ai-dialog__input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--rail-bg);
+  color: var(--fg);
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12px;
+}
+
+.theme-ai-dialog__input[type="textarea"],
+textarea.theme-ai-dialog__input {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.theme-ai-dialog__status {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 28px;
+  padding: 6px 10px;
+  border: 1px dashed var(--accent);
+  border-radius: 4px;
+  background: var(--rail-bg);
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.theme-ai-dialog__error {
+  margin: 0;
+  color: #c23d3d;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.theme-dark .theme-ai-dialog__error {
+  color: #ff8585;
+}
+
+.theme-ai-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.theme-ai-dialog__actions button {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--rail-bg);
+  color: var(--fg);
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.theme-ai-dialog__actions button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.theme-ai-dialog__actions button:disabled,
+.theme-ai-dialog__input:disabled {
+  cursor: default;
+  opacity: 0.65;
+}

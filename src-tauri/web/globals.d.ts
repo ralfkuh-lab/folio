@@ -75,7 +75,7 @@ type FolioThemeParts = Partial<Record<FolioThemePart, string>>;
 
 interface FolioThemeEditorSurface {
     mount(elementId: string): Promise<void>;
-    setParts(parts: FolioThemeParts): void;
+    setParts(parts: FolioThemeParts, cleanParts?: FolioThemeParts): void;
     showPart(part: FolioThemePart): boolean;
     getPart(part: FolioThemePart): string | null;
     getAllParts(): FolioThemeParts;
@@ -93,6 +93,7 @@ interface Window {
     __TAURI__?: TauriRuntime;
     __folioInvoke?: TauriCoreApi['invoke'];
     openDocument?: (path: string) => Promise<boolean>;
+    openThemeEditor?: (id: string) => Promise<boolean>;
     monaco?: any;
     require?: any;
 }

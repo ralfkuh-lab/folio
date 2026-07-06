@@ -349,8 +349,7 @@
       Dunkle Vorschau
     </label>
     <span class="theme-editor-toolbar__spacer"></span>
-    <!-- TODO(E6): KI-Theme-Autor anbinden. -->
-    <button type="button" id="theme-editor-ai" disabled>Mit KI anpassen…</button>
+    <button type="button" id="theme-editor-ai">Mit KI anpassen…</button>
     <button type="button" id="theme-editor-save" class="primary" disabled>Speichern</button>
     <button type="button" id="theme-editor-close">Schließen</button>
   </div>
@@ -383,6 +382,27 @@
       </div>
     </div>
     <iframe id="theme-editor-preview" sandbox="allow-same-origin" title="Theme-Vorschau"></iframe>
+  </div>
+  <div id="theme-ai-dialog" hidden>
+    <div class="theme-ai-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="theme-ai-title">
+      <div class="theme-ai-dialog__title" id="theme-ai-title">Mit KI anpassen</div>
+      <div class="theme-ai-dialog__section">
+        <label class="theme-ai-dialog__label" for="theme-ai-prompt">Prompt</label>
+        <textarea id="theme-ai-prompt" class="theme-ai-dialog__input" rows="4" placeholder="z. B. Ein elegantes Theme mit neongrünen Akzenten für Programmierer..." autocomplete="off"></textarea>
+      </div>
+      <div class="theme-ai-dialog__section">
+        <label class="theme-ai-dialog__label" for="theme-ai-model">Modell</label>
+        <select id="theme-ai-model" class="theme-ai-dialog__input"></select>
+      </div>
+      <div id="theme-ai-status" class="theme-ai-dialog__status" hidden>
+        <span id="theme-ai-status-text">Warte auf KI...</span>
+      </div>
+      <p id="theme-ai-error" class="theme-ai-dialog__error" hidden></p>
+      <div class="theme-ai-dialog__actions">
+        <button type="button" id="theme-ai-cancel">Abbrechen</button>
+        <button type="button" id="theme-ai-start" class="primary">Starten</button>
+      </div>
+    </div>
   </div>
 </div>
 </div>

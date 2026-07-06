@@ -8,6 +8,7 @@ import {
 import { getCleanText, getCurrentPath } from '../state/document';
 import { showUnsavedDialog } from './dialogs';
 import { folioLog } from '../util/log';
+import { openThemeAiDialog } from './theme-ai-dialog';
 
 type ThemeManifest = {
     name: string;
@@ -473,6 +474,9 @@ export function initThemeEditor(): void {
     $('theme-editor-save')?.addEventListener('click', function () {
         saveThemeEditor();
     });
+    $('theme-editor-ai')?.addEventListener('click', function () {
+        openThemeAiDialog();
+    });
     $('theme-editor-close')?.addEventListener('click', function () {
         guardedClose();
     });
@@ -509,4 +513,49 @@ export function initThemeEditor(): void {
         event.preventDefault();
         guardedClose();
     });
+}
+
+export function getCurrentThemeId(): string | null {
+    return currentId;
+}
+
+export function applyThemeDraft(draft: {
+    manifest: ThemeManifest;
+    contentCss: string;
+    darkCss?: string | null;
+    pageCss?: string | null;
+    coverHtml?: string | null;
+    headerHtml?: string | null;
+    footerHtml?: string | null;
+}): void {
+    const surface = editor();
+    if (!surface || !currentFiles) return;
+
+    const originalParts = filesToParts(currentFiles);
+
+    currentFiles.manifest = {
+        ...currentFiles.manifest,
+        ...draft.manifest,
+    };
+
+    const draftParts: FolioThemeParts = {
+        content: draft.contentCss || '',
+    };
+    if (draft.darkCss !== undefined) draftParts.dark = draft.darkCss || '';
+    if (draft.pageCss !== undefined) draftParts.page = draft.pageCss || '';
+    if (currentFiles.manifest.cover || draft.coverHtml != null) {
+        draftParts.cover = draft.coverHtml || '';
+    }
+    if (currentFiles.manifest.header || draft.headerHtml != null) {
+        draftParts.header = draft.headerHtml || '';
+    }
+    if (currentFiles.manifest.footer || draft.footerHtml != null) {
+        draftParts.footer = draft.footerHtml || '';
+    }
+
+    surface.setParts(draftParts, originalParts);
+    syncManifestFlags(currentFiles.manifest);
+    renderPartSwitcher(draftParts);
+    syncDirtyUi();
+    schedulePreview();
 }

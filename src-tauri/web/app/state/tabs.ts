@@ -194,10 +194,18 @@ export function renderTabs(payload: TabsPayload): void {
         });
         item.appendChild(close);
 
-        item.addEventListener('click', async function () {
-            if (activeVirtualSlug
-                && !await requestCloseVirtualTab(activeVirtualSlug)) return;
-            await activateTab(tab.id);
+        item.addEventListener('click', function () {
+            // Fast-Path bewusst synchron: ohne aktive virtuelle Region
+            // verhaelt sich der Klick exakt wie vor der Registry
+            // (E2E 30_tabs_ui zeigte einmalig eine Timing-Race, wenn der
+            // Wechsel hinter einer Promise-Kette haengt).
+            if (!activeVirtualSlug) {
+                activateTab(tab.id);
+                return;
+            }
+            requestCloseVirtualTab(activeVirtualSlug).then(function (closed) {
+                if (closed) activateTab(tab.id);
+            });
         });
         item.addEventListener('auxclick', function (event) {
             if (event.button !== 1) return;

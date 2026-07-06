@@ -407,7 +407,7 @@ Präzedenzregeln, Manifest-Parse + Fallbacks, `export::*`-Oberfläche als
 Delegation. **Kein Render-Verhalten geändert.** Unit-Tests im
 tempdir-Stil (Vorlage: bestehende Tests in `export.rs`).
 
-### E2 — CRUD-Commands + Verwaltungs-UI 🔧 (Code fertig; E2E-Lauf 35/25/26/27 steht aus — laufende Folio-Instanz blockiert Xvfb-Suite)
+### E2 — CRUD-Commands + Verwaltungs-UI ✅
 
 `commands/theme.rs` (`theme_read/write/delete/clone`), `theme_write`-Lock,
 `themes:changed`-Event, lib.rs-Registrierung. Frontend: Karten-Aktionen +
@@ -416,7 +416,7 @@ tempdir-Stil (Vorlage: bestehende Tests in `export.rs`).
 `35_theme_crud.py` (via `__folioInvoke`; Custom-Themes sind echte Dateien
 unter `<config>/folio/themes/` → **finally-Cleanup** zwingend).
 
-### E3 — Theme-Editor als virtueller Tab 🔧 (Code fertig; E2E-Verifikation steht mit E2 aus)
+### E3 — Theme-Editor als virtueller Tab ✅
 
 Virtual-Tab-Registry in `state/tabs.ts` (+ Kompat-Wrapper + jsdom-Tests),
 `FolioThemeEditor`-Surface (Model-pro-Part, Dirty-Tracking, shell.ts-
@@ -431,7 +431,7 @@ Frontend-Bundles neu bauen (`cd src-tauri/web && npm run build`), danach
 Reine CSS-Addition + Registrierung + `business`/`brand`-Templates.
 Unabhängig von E2/E3, parallelisierbar.
 
-### E5 — Template + Cover + Assets 🔧 (Code fertig; E2E-Verifikation inkl. Szenario 34 steht aus)
+### E5 — Template + Cover + Assets ✅
 
 Platzhalter-Engine + `TemplateContext` (Frontmatter-Aliasse, injizierbares
 Datum), data-URI-Assets + `theme_asset_add/remove` + Logo-Upload-UI,
@@ -440,7 +440,7 @@ Fixed-Header/Footer (ohne Live-Seitenzahl), `hideInlineFrontmatter`,
 base.css-Print-Regeln, File-Switcher dynamisch (HTML-Parts).
 Inklusive Vorab-Refactor `resolve_provider` (E2E 34 als Gate).
 
-### E6 — KI-Theme-Autor ⬜
+### E6 — KI-Theme-Autor ✅
 
 `theme/author.rs`, `ai_theme_author(_cancel)` + State-Guards, Streaming-
 Events, Validierungs-Gate, `ai-model-picker.ts`-Extraktion (Translate-
