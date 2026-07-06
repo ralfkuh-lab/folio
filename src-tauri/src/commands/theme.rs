@@ -3,10 +3,11 @@ use crate::{
     theme::{
         self,
         package::{ThemeManifest, ThemePackage, ThemeSource},
-        store::{self, ThemeParts},
+        store::{self, AssetInfo, ThemeParts},
         LayoutInfo,
     },
 };
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 
@@ -33,14 +34,6 @@ fn main() {
 }
 ```
 "#;
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AssetInfo {
-    pub filename: String,
-    pub size: u64,
-    pub mime: String,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -104,9 +97,11 @@ pub async fn theme_read(id: String, state: State<'_, AppState>) -> Result<ThemeF
         .theme_write
         .lock()
         .map_err(|_| "theme write lock poisoned".to_string())?;
-    theme::package(&id)
+    let mut files = theme::package(&id)
         .map(ThemeFiles::from)
-        .ok_or_else(|| format!("Unbekanntes Theme: '{id}'"))
+        .ok_or_else(|| format!("Unbekanntes Theme: '{id}'"))?;
+    files.assets = store::list_assets(&id);
+    Ok(files)
 }
 
 #[tauri::command]
@@ -168,13 +163,54 @@ pub async fn theme_preview_render(
     markdown: Option<String>,
     parts: ThemeWriteFiles,
     dark: bool,
+    theme_id: Option<String>,
 ) -> Result<String, String> {
     let markdown = markdown.as_deref().unwrap_or(THEME_PREVIEW_SAMPLE);
     Ok(crate::export::render_theme_preview(
         markdown,
         &ThemeParts::from(parts),
         dark,
+        theme_id.as_deref(),
     ))
+}
+
+#[tauri::command]
+pub async fn theme_asset_add(
+    id: String,
+    filename: String,
+    bytes_base64: String,
+    state: State<'_, AppState>,
+    handle: AppHandle,
+) -> Result<AssetInfo, String> {
+    let info = {
+        let _guard = state
+            .theme_write
+            .lock()
+            .map_err(|_| "theme write lock poisoned".to_string())?;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(bytes_base64.as_bytes())
+            .map_err(|error| format!("Asset-Bytes konnten nicht dekodiert werden: {error}"))?;
+        store::asset_add(&id, &filename, &bytes)?
+    };
+    emit_changed(&handle, &id, "asset-add")?;
+    Ok(info)
+}
+
+#[tauri::command]
+pub async fn theme_asset_remove(
+    id: String,
+    filename: String,
+    state: State<'_, AppState>,
+    handle: AppHandle,
+) -> Result<(), String> {
+    {
+        let _guard = state
+            .theme_write
+            .lock()
+            .map_err(|_| "theme write lock poisoned".to_string())?;
+        store::asset_remove(&id, &filename)?;
+    }
+    emit_changed(&handle, &id, "asset-remove")
 }
 
 fn emit_changed(handle: &AppHandle, id: &str, action: &str) -> Result<(), String> {

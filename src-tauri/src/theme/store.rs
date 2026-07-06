@@ -1,4 +1,5 @@
 use super::{
+    assets::{self, mime_for_extension},
     builtin,
     package::{ThemeManifest, ThemePackage, ThemeSource},
 };
@@ -51,6 +52,135 @@ pub fn delete(id: &str) -> Result<(), String> {
 
 pub fn clone(source_id: &str, new_id: &str) -> Result<ThemePackage, String> {
     clone_in(source_id, new_id, &persist::themes_dir())
+}
+
+/// Dateiinfo eines Theme-Assets (Dateiname, Byte-Groesse, MIME).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetInfo {
+    pub filename: String,
+    pub size: u64,
+    pub mime: String,
+}
+
+/// Liefert die Assets-Liste eines Theme-Verzeichnisses (Dateiname und
+/// Groesse). Verzeichnis fehlt -> leer; nicht validierbare Dateinamen
+/// werden uebersprungen.
+pub fn list_assets_in(id: &str, themes_dir: &Path) -> Vec<AssetInfo> {
+    let mut out = Vec::new();
+    let assets_dir = themes_dir.join(id).join("assets");
+    let entries = match fs::read_dir(&assets_dir) {
+        Ok(e) => e,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return out,
+        Err(error) => {
+            tracing::warn!(
+                target: "folio::settings",
+                path = %assets_dir.display(),
+                %error,
+                "Assets-Verzeichnis kann nicht gelesen werden"
+            );
+            return out;
+        }
+    };
+    for entry in entries.flatten() {
+        let file_type = match entry.file_type() {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        if !file_type.is_file() {
+            continue;
+        }
+        let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+            continue;
+        };
+        if assets::validate_asset_filename(&name).is_err() {
+            continue;
+        }
+        let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+        let mime = mime_for_extension(&name)
+            .unwrap_or("application/octet-stream")
+            .to_string();
+        out.push(AssetInfo {
+            filename: name,
+            size,
+            mime,
+        });
+    }
+    out.sort_by(|a, b| a.filename.cmp(&b.filename));
+    out
+}
+
+pub fn list_assets(id: &str) -> Vec<AssetInfo> {
+    list_assets_in(id, &persist::themes_dir())
+}
+
+/// Atomares Schreiben eines Asset-Bytes in `<theme>/assets/<filename>`.
+/// Validiert MIME via Extension und das 5-MB-Limit; ein laengerer Name
+/// oder Pfadseparatoren fuehrt zu einem Fehler.
+pub fn asset_add_in(
+    id: &str,
+    filename: &str,
+    bytes: &[u8],
+    themes_dir: &Path,
+) -> Result<AssetInfo, String> {
+    validate_writable_id(id)?;
+    let package_dir = themes_dir.join(id);
+    if package_dir.join("theme.json").is_file() {
+        assets::validate_asset_filename(filename)?;
+        assets::data_uri(filename, bytes)?; // validiert MIME + Groesse
+        let assets_dir = package_dir.join("assets");
+        fs::create_dir_all(&assets_dir).map_err(|error| {
+            format!(
+                "Assets-Verzeichnis '{}' kann nicht angelegt werden: {error}",
+                assets_dir.display()
+            )
+        })?;
+        let target = assets_dir.join(filename);
+        let tmp = tempfile::Builder::new()
+            .prefix(".folio-asset-")
+            .suffix(".tmp")
+            .tempfile_in(&assets_dir)
+            .map_err(|error| format!("Tempfile anlegen fehlgeschlagen: {error}"))?;
+        fs::write(tmp.path(), bytes)
+            .map_err(|error| format!("Asset schreiben fehlgeschlagen: {error}"))?;
+        tmp.persist(&target)
+            .map_err(|error| format!("Asset umbenennen fehlgeschlagen: {error}"))?;
+        let size = bytes.len() as u64;
+        let mime = assets::mime_for_extension(filename)
+            .ok_or_else(|| format!("Asset-Datei '{filename}' hat eine nicht unterstuetzte Endung"))?
+            .to_string();
+        Ok(AssetInfo {
+            filename: filename.to_string(),
+            size,
+            mime,
+        })
+    } else {
+        Err(format!(
+            "Verzeichnis-Theme '{id}' existiert nicht; Assets koennen nur an Verzeichnis-Themes angehaengt werden"
+        ))
+    }
+}
+
+pub fn asset_add(id: &str, filename: &str, bytes: &[u8]) -> Result<AssetInfo, String> {
+    asset_add_in(id, filename, bytes, &persist::themes_dir())
+}
+
+pub fn asset_remove_in(id: &str, filename: &str, themes_dir: &Path) -> Result<(), String> {
+    validate_writable_id(id)?;
+    assets::validate_asset_filename(filename)?;
+    let path = themes_dir.join(id).join("assets").join(filename);
+    match fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!(
+            "Asset '{}' kann nicht geloescht werden: {error}",
+            path.display()
+        )),
+    }
+}
+
+pub fn asset_remove(id: &str, filename: &str) -> Result<(), String> {
+    asset_remove_in(id, filename, &persist::themes_dir())
 }
 
 fn create_in(id: &str, parts: &ThemeParts, themes_dir: &Path) -> Result<ThemePackage, String> {

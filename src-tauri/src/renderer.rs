@@ -20,16 +20,32 @@ use syntect::{
 };
 
 pub fn render_body(markdown: &str) -> String {
-    render_body_with_highlighter(markdown, None)
+    render_body_with_highlighter(markdown, None, false)
 }
 
 pub fn render_body_highlighted(markdown: &str, dark: bool) -> String {
-    render_body_with_highlighter(markdown, Some(syntect_adapter(dark)))
+    render_body_with_highlighter(markdown, Some(syntect_adapter(dark)), false)
+}
+
+/// Wie [`render_body_highlighted`], unterstuetzt zusaetzlich das
+/// Unterdruecken des inline Frontmatter-`<aside>` (Corporate-Design:
+/// Metadaten erscheinen auf dem Deckblatt, nicht im Body).
+pub fn render_body_highlighted_in(
+    markdown: &str,
+    dark: bool,
+    hide_inline_frontmatter: bool,
+) -> String {
+    render_body_with_highlighter(
+        markdown,
+        Some(syntect_adapter(dark)),
+        hide_inline_frontmatter,
+    )
 }
 
 fn render_body_with_highlighter(
     markdown: &str,
     syntax_highlighter: Option<&dyn SyntaxHighlighterAdapter>,
+    hide_inline_frontmatter: bool,
 ) -> String {
     let frontmatter = frontmatter::extract(markdown);
     let preprocessed = heading_anchor::convert_inline_anchors_in_headings(&frontmatter.body);
@@ -52,7 +68,10 @@ fn render_body_with_highlighter(
         normalize_tasklist_html(&String::from_utf8(body_html).expect("comrak emits UTF-8 HTML"));
     let body_html = add_data_line_attributes(&body_html, frontmatter.body_start_line);
 
-    let mut html = frontmatter::render_html(&frontmatter.entries);
+    let mut html = String::new();
+    if !hide_inline_frontmatter {
+        html.push_str(&frontmatter::render_html(&frontmatter.entries));
+    }
     html.push_str(&body_html);
     if !body_html.is_empty() {
         html.push('\n');

@@ -1,4 +1,4 @@
-use crate::{renderer, theme};
+use crate::{persist, renderer, theme};
 use regex::Regex;
 use std::{borrow::Cow, path::Path, sync::OnceLock};
 
@@ -26,46 +26,264 @@ pub fn view_theme_css(theme_id: &str, dark: bool) -> Result<Cow<'static, str>, S
     theme::view_theme_css(theme_id, dark)
 }
 
-pub fn render_document(layout_id: &str, title: &str, markdown: &str) -> Result<String, String> {
-    render_document_in(layout_id, title, markdown, &crate::persist::themes_dir())
+pub fn render_document(
+    layout_id: &str,
+    title: &str,
+    path: Option<&str>,
+    markdown: &str,
+) -> Result<String, String> {
+    render_document_in(layout_id, title, path, markdown, &persist::themes_dir())
 }
 
 pub fn render_theme_preview(
     markdown: &str,
     parts: &theme::store::ThemeParts,
     dark: bool,
+    theme_id: Option<&str>,
 ) -> String {
     let content_css = match (dark, parts.dark_css.as_deref()) {
         (true, Some(dark_css)) => format!("{}\n{dark_css}", parts.content_css),
         _ => parts.content_css.clone(),
     };
     let page_css = parts.page_css.as_deref().unwrap_or(theme::DEFAULT_PAGE_CSS);
+
+    let asset_pairs = load_preview_assets(
+        theme_id,
+        &content_css,
+        page_css,
+        parts.manifest.logo.as_deref(),
+    );
+    let content_css = theme::assets::rewrite_asset_urls(&content_css, &asset_pairs);
+    let page_css = theme::assets::rewrite_asset_urls(page_css, &asset_pairs);
     let css = format!("{page_css}\n{content_css}");
-    let body = strip_scroll_sync_attrs(&renderer::render_body_highlighted(markdown, dark));
+
+    let body = strip_scroll_sync_attrs(&renderer::render_body_highlighted_in(
+        markdown,
+        dark,
+        parts.manifest.hide_inline_frontmatter,
+    ));
+
+    let logo_uri = parts.manifest.logo.as_deref().and_then(|name| {
+        asset_pairs
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, u)| u.clone())
+    });
+    let context = theme::template::TemplateContext::from_markdown(markdown, None, logo_uri);
+    let cover =
+        render_optional_template(parts.cover_html.as_deref(), parts.manifest.cover, &context);
+    let header = render_optional_template(
+        parts.header_html.as_deref(),
+        parts.manifest.header,
+        &context,
+    );
+    let footer = render_optional_template(
+        parts.footer_html.as_deref(),
+        parts.manifest.footer,
+        &context,
+    );
+
     let title = if parts.manifest.name.trim().is_empty() {
         "Theme-Vorschau"
     } else {
         &parts.manifest.name
     };
-    wrap_html(title, &css, &body)
+    wrap_html(&WrapContext {
+        title,
+        css: &css,
+        body_html: &body,
+        cover_html: cover.as_deref(),
+        header_html: header.as_deref(),
+        footer_html: footer.as_deref(),
+    })
 }
 
 fn render_document_in(
     layout_id: &str,
     title: &str,
+    path: Option<&str>,
     markdown: &str,
     dir: &Path,
 ) -> Result<String, String> {
+    let package = theme::package_in(layout_id, dir)
+        .ok_or_else(|| format!("Unbekanntes Layout: '{layout_id}'"))?;
     let content_css = theme::layout_css_in(layout_id, false, dir)
         .ok_or_else(|| format!("Unbekanntes Layout: '{layout_id}'"))?;
     let page_css = theme::page_css_in(layout_id, dir)
         .ok_or_else(|| format!("Unbekanntes Layout: '{layout_id}'"))?;
+
+    let asset_pairs = match package.dir.as_deref() {
+        Some(theme_dir) => load_export_assets(
+            theme_dir,
+            &content_css,
+            &page_css,
+            package.manifest.logo.as_deref(),
+        )?,
+        None => Vec::new(),
+    };
+    let content_css = theme::assets::rewrite_asset_urls(&content_css, &asset_pairs);
+    let page_css = theme::assets::rewrite_asset_urls(&page_css, &asset_pairs);
     let css = format!("{page_css}\n{content_css}");
-    let body = strip_scroll_sync_attrs(&renderer::render_body_highlighted(
+
+    let dark = theme::layout_code_dark_in(layout_id, dir);
+    let hide_inline = package.manifest.hide_inline_frontmatter;
+    let body = strip_scroll_sync_attrs(&renderer::render_body_highlighted_in(
         markdown,
-        theme::layout_code_dark_in(layout_id, dir),
+        dark,
+        hide_inline,
     ));
-    Ok(wrap_html(title, &css, &body))
+
+    let logo_uri = package.manifest.logo.as_deref().and_then(|name| {
+        asset_pairs
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, u)| u.clone())
+    });
+    let context = theme::template::TemplateContext::from_markdown(markdown, path, logo_uri);
+    let cover = render_optional_template(
+        package.cover_html.as_deref(),
+        package.manifest.cover,
+        &context,
+    );
+    let header = render_optional_template(
+        package.header_html.as_deref(),
+        package.manifest.header,
+        &context,
+    );
+    let footer = render_optional_template(
+        package.footer_html.as_deref(),
+        package.manifest.footer,
+        &context,
+    );
+
+    Ok(wrap_html(&WrapContext {
+        title,
+        css: &css,
+        body_html: &body,
+        cover_html: cover.as_deref(),
+        header_html: header.as_deref(),
+        footer_html: footer.as_deref(),
+    }))
+}
+
+/// Deckblatt/Kopf-/Fuesser nur dann rendern, wenn Manifest-Flag UND
+/// Template-Datei vorhanden sind. `flag=false` oder `template=None`
+/// liefern `None`, sodass [`wrap_html`] das jeweilige Element weglasst.
+fn render_optional_template(
+    template: Option<&str>,
+    flag: bool,
+    context: &theme::template::TemplateContext,
+) -> Option<String> {
+    if flag {
+        template.map(|t| context.render(t))
+    } else {
+        None
+    }
+}
+
+/// Sammelt Asset-Referenzen (Cover-Header/Footer + url(asset:...))
+/// und laedt die benoetigten Assets ueber [`theme::assets::load_assets`].
+/// Liefert `(filename, data_uri)`-Paare fuer [`theme::assets::rewrite_asset_urls`].
+fn load_export_assets(
+    theme_dir: &Path,
+    content_css: &str,
+    page_css: &str,
+    logo: Option<&str>,
+) -> Result<Vec<(String, String)>, String> {
+    let refs = collect_references(content_css, page_css, logo);
+    if refs.is_empty() {
+        return Ok(Vec::new());
+    }
+    theme::assets::load_assets(theme_dir, &refs)
+}
+
+fn load_preview_assets(
+    theme_id: Option<&str>,
+    content_css: &str,
+    page_css: &str,
+    logo: Option<&str>,
+) -> Vec<(String, String)> {
+    let refs = collect_references(content_css, page_css, logo);
+    if refs.is_empty() {
+        return Vec::new();
+    }
+    let Some(id) = theme_id.filter(|id| theme::valid_theme_id(id)) else {
+        return Vec::new();
+    };
+    let theme_dir = persist::themes_dir().join(id);
+    if !theme_dir.is_dir() {
+        return Vec::new();
+    }
+    theme::assets::load_assets(&theme_dir, &refs).unwrap_or_default()
+}
+
+fn collect_references(content_css: &str, page_css: &str, logo: Option<&str>) -> Vec<String> {
+    let mut refs = theme::assets::collect_asset_references(content_css);
+    refs.extend(theme::assets::collect_asset_references(page_css));
+    if let Some(logo) = logo {
+        let logo = logo.trim();
+        if !logo.is_empty() && !refs.iter().any(|n| n == logo) {
+            refs.push(logo.to_string());
+        }
+    }
+    refs
+}
+
+struct WrapContext<'a> {
+    title: &'a str,
+    css: &'a str,
+    body_html: &'a str,
+    cover_html: Option<&'a str>,
+    header_html: Option<&'a str>,
+    footer_html: Option<&'a str>,
+}
+
+fn wrap_html(ctx: &WrapContext) -> String {
+    let title_escaped = escape_html(ctx.title);
+    // `@page :first { margin: 0 }` nur, wenn ein Deckblatt existiert;
+    // ohne Deckblatt wuerde die Regel sonst auf jeder ersten Druckseite
+    // die Raender wegnehmen.
+    let page_first = ctx
+        .cover_html
+        .map(|_| "@page :first { margin: 0; }\n")
+        .unwrap_or("");
+    // Seiten- und Content-CSS zuerst, Base-CSS danach: Base liefert
+    // Print-Defaults fuer alle Export-Layouts.
+    let base = BASE_CSS;
+    let mut body = String::new();
+    if let Some(header) = ctx.header_html {
+        body.push_str("<div class=\"folio-running-header\">");
+        body.push_str(header);
+        body.push_str("</div>\n");
+    }
+    if let Some(footer) = ctx.footer_html {
+        body.push_str("<div class=\"folio-running-footer\">");
+        body.push_str(footer);
+        body.push_str("</div>\n");
+    }
+    if let Some(cover) = ctx.cover_html {
+        body.push_str("<section class=\"folio-cover\">");
+        body.push_str(cover);
+        body.push_str("</section>\n");
+    }
+    body.push_str("<article class=\"markdown-body\">");
+    body.push_str(ctx.body_html);
+    body.push_str("</article>\n");
+    format!(
+        "<!doctype html>\n\
+<html lang=\"de\">\n\
+<head>\n\
+<meta charset=\"utf-8\">\n\
+<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
+<title>{title_escaped}</title>\n\
+<style>\n{page_first}{css}\n{base}\n</style>\n\
+</head>\n\
+<body>\n\
+{body}\
+</body>\n\
+</html>\n",
+        css = ctx.css,
+    )
 }
 
 pub fn derive_title(path: Option<&str>) -> String {
@@ -78,29 +296,6 @@ pub fn derive_title(path: Option<&str>) -> String {
 
 pub fn derive_default_filename(path: Option<&str>) -> String {
     format!("{}.html", derive_title(path))
-}
-
-fn wrap_html(title: &str, css: &str, body_html: &str) -> String {
-    let title_escaped = escape_html(title);
-    // Seiten- und Content-CSS zuerst, Base-CSS danach: Base liefert
-    // Print-Defaults fuer alle Export-Layouts.
-    let base = BASE_CSS;
-    format!(
-        "<!doctype html>\n\
-<html lang=\"de\">\n\
-<head>\n\
-<meta charset=\"utf-8\">\n\
-<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
-<title>{title_escaped}</title>\n\
-<style>\n{css}\n{base}\n</style>\n\
-</head>\n\
-<body>\n\
-<article class=\"markdown-body\">\n\
-{body_html}\
-</article>\n\
-</body>\n\
-</html>\n"
-    )
 }
 
 fn strip_scroll_sync_attrs(html: &str) -> String {
@@ -195,7 +390,7 @@ mod tests {
 
     #[test]
     fn render_document_includes_title_and_body() {
-        let html = render_document("clean", "Hallo Welt", "# Hallo").unwrap();
+        let html = render_document("clean", "Hallo Welt", None, "# Hallo").unwrap();
         assert!(html.contains("<title>Hallo Welt</title>"));
         assert!(html.contains(r#"<h1 id="hallo">Hallo</h1>"#));
         assert!(html.contains("<style>"));
@@ -205,8 +400,13 @@ mod tests {
 
     #[test]
     fn render_document_highlights_builtin_code_and_strips_scroll_sync_attributes() {
-        let html =
-            render_document("github", "Code", "```rust\nfn main() {}\n```\n\nDanach").unwrap();
+        let html = render_document(
+            "github",
+            "Code",
+            None,
+            "```rust\nfn main() {}\n```\n\nDanach",
+        )
+        .unwrap();
         assert!(html.contains(r#"class="language-rust""#), "{html}");
         assert!(html.contains(r#"<span style="#), "{html}");
         assert!(html.contains("#a71d5d"), "{html}");
@@ -216,9 +416,9 @@ mod tests {
 
     #[test]
     fn render_document_each_layout_loads_distinct_css() {
-        let classic = render_document("classic", "T", "x").unwrap();
-        let clean = render_document("clean", "T", "x").unwrap();
-        let github = render_document("github", "T", "x").unwrap();
+        let classic = render_document("classic", "T", None, "x").unwrap();
+        let clean = render_document("clean", "T", None, "x").unwrap();
+        let github = render_document("github", "T", None, "x").unwrap();
         assert_ne!(classic, clean);
         assert_ne!(clean, github);
         assert_ne!(classic, github);
@@ -226,7 +426,7 @@ mod tests {
 
     #[test]
     fn render_unknown_layout_errors() {
-        assert!(render_document("bogus", "Test", "# Hello").is_err());
+        assert!(render_document("bogus", "Test", None, "# Hello").is_err());
     }
 
     #[test]
@@ -244,13 +444,13 @@ mod tests {
             footer_html: None,
         };
 
-        let light = render_theme_preview("# Titel", &parts, false);
+        let light = render_theme_preview("# Titel", &parts, false, None);
         assert!(light.contains("light-marker"));
         assert!(!light.contains("dark-marker"));
         assert!(light.contains("preview-marker"));
         assert!(light.contains("<title>Vorschau</title>"));
 
-        let dark = render_theme_preview("# Titel", &parts, true);
+        let dark = render_theme_preview("# Titel", &parts, true, None);
         assert!(dark.contains("light-marker"));
         assert!(dark.contains("dark-marker"));
     }
@@ -278,7 +478,7 @@ mod tests {
 
     #[test]
     fn render_document_escapes_title() {
-        let html = render_document("clean", "<bad>", "x").unwrap();
+        let html = render_document("clean", "<bad>", None, "x").unwrap();
         assert!(html.contains("<title>&lt;bad&gt;</title>"));
     }
 
@@ -410,7 +610,7 @@ mod tests {
         )
         .unwrap();
 
-        let html = render_document_in("mine", "Custom", "# Hallo", temp.path()).unwrap();
+        let html = render_document_in("mine", "Custom", None, "# Hallo", temp.path()).unwrap();
         assert!(html.contains(DEFAULT_PAGE_CSS));
         assert!(html.contains("#123456"));
 
@@ -419,7 +619,7 @@ mod tests {
             "html, body { background: papayawhip; }",
         )
         .unwrap();
-        let html = render_document_in("mine", "Custom", "# Hallo", temp.path()).unwrap();
+        let html = render_document_in("mine", "Custom", None, "# Hallo", temp.path()).unwrap();
         assert!(html.contains("background: papayawhip"));
         assert!(!html.contains(DEFAULT_PAGE_CSS));
     }
@@ -439,12 +639,271 @@ mod tests {
         .unwrap();
         let markdown = "```rust\nfn main() {}\n```";
 
-        let dark = render_document_in("dark-code", "Dark", markdown, temp.path()).unwrap();
+        let dark = render_document_in("dark-code", "Dark", None, markdown, temp.path()).unwrap();
         assert!(dark.contains("#b48ead"), "{dark}");
         assert!(!dark.contains("#a71d5d"), "{dark}");
 
-        let light = render_document_in("light-code", "Light", markdown, temp.path()).unwrap();
+        let light = render_document_in("light-code", "Light", None, markdown, temp.path()).unwrap();
         assert!(light.contains("#a71d5d"), "{light}");
         assert!(!light.contains("#b48ead"), "{light}");
+    }
+
+    /// Schreibt ein minimales Verzeichnis-Theme inkl. Manifest, Cover-, Header-,
+    /// Footer-Template und Logo-Asset.
+    fn write_corporate_theme(temp: &tempfile::TempDir, hide_inline_frontmatter: bool) {
+        let dir = temp.path().join("corp");
+        fs::create_dir_all(&dir).unwrap();
+        fs::create_dir_all(dir.join("assets")).unwrap();
+        let manifest = if hide_inline_frontmatter {
+            r#"{"name":"Corporate","cover":true,"header":true,"footer":true,"logo":"logo.png","hideInlineFrontmatter":true}"#
+        } else {
+            r#"{"name":"Corporate","cover":true,"header":true,"footer":true,"logo":"logo.png"}"#
+        };
+        fs::write(dir.join("theme.json"), manifest).unwrap();
+        fs::write(
+            dir.join("content.css"),
+            ".markdown-body .marker { background: url(asset:logo.png); }\n:has(x) { }",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("page.css"),
+            ".page { marker: url(asset:logo.png); }",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("cover.html"),
+            "<h1>{{title}}</h1><p>{{date}} · {{author}} · {{company}} · {{subtitle}}</p><div>{{logo}}</div>",
+        )
+        .unwrap();
+        fs::write(dir.join("header.html"), "<span>{{company}}</span>").unwrap();
+        fs::write(dir.join("footer.html"), "<span>{{author}}</span>").unwrap();
+        fs::write(dir.join("assets/logo.png"), b"\x89PNG\r\n\x1a\nFAKELONG").unwrap();
+    }
+
+    #[test]
+    fn render_document_emits_cover_header_footer_with_resolved_placeholders() {
+        let temp = tempfile::tempdir().unwrap();
+        write_corporate_theme(&temp, false);
+        let markdown = "---\ntitle: Bericht\ndate: 01.01.2024\nauthor: Anna\ncompany: Acme\nsubtitle: Ui\n---\n# Inhalt\n\nText\n";
+
+        let html = render_document_in(
+            "corp",
+            "Bericht",
+            Some("/p/bericht.md"),
+            markdown,
+            temp.path(),
+        )
+        .unwrap();
+
+        assert!(
+            html.contains("<section class=\"folio-cover\">"),
+            "cover wrapper fehlt: {html}"
+        );
+        assert!(
+            html.contains("<h1>Bericht</h1>"),
+            "titel im cover nicht substituiert"
+        );
+        assert!(
+            html.contains("01.01.2024 · Anna · Acme · Ui"),
+            "platzhalterwerte fehlen"
+        );
+        assert!(
+            html.contains("<div class=\"folio-running-header\">"),
+            "header wrapper fehlt"
+        );
+        assert!(
+            html.contains("<span>Acme</span>"),
+            "company im header fehlt"
+        );
+        assert!(
+            html.contains("<div class=\"folio-running-footer\">"),
+            "footer wrapper fehlt"
+        );
+        assert!(html.contains("<span>Anna</span>"), "author im footer fehlt");
+        // {{logo}} expandiert zu <img src="data:..."> — nie escapet.
+        assert!(
+            html.contains("<img src=\"data:image/png;base64,"),
+            "logo-data-uri fehlt"
+        );
+        assert!(html.contains("alt=\"logo\">"), "logo alt fehlt");
+        // @page :first wird nur injiziert, weil ein Deckblatt existiert.
+        assert!(
+            html.contains("@page :first { margin: 0; }"),
+            "@page :first fehlt"
+        );
+        // Frontmatter-<aside> im Body nur ohne hideInlineFrontmatter.
+        assert!(
+            html.contains("<aside class=\"frontmatter\">"),
+            "frontmatter aside fehlt (no-hide)"
+        );
+    }
+
+    #[test]
+    fn render_document_hide_inline_frontmatter_drops_side_and_keeps_placeholders() {
+        let temp = tempfile::tempdir().unwrap();
+        write_corporate_theme(&temp, true);
+        let markdown = "---\ntitle: Bericht\ndate: 01.01.2024\nauthor: Anna\ncompany: Acme\n---\n# Inhalt\n\nText\n";
+
+        let html = render_document_in(
+            "corp",
+            "Bericht",
+            Some("/p/bericht.md"),
+            markdown,
+            temp.path(),
+        )
+        .unwrap();
+        assert!(
+            !html.contains("<aside class=\"frontmatter\">"),
+            "frontmatter-duplikat nicht unterdrueckt"
+        );
+        assert!(
+            html.contains("<h1>Bericht</h1>"),
+            "titel im cover fehlt trotz hide-inline"
+        );
+    }
+
+    #[test]
+    fn render_document_rewrites_asset_urls_in_content_and_page_css() {
+        let temp = tempfile::tempdir().unwrap();
+        write_corporate_theme(&temp, true);
+        let html = render_document_in("corp", "Bericht", None, "# Hai", temp.path()).unwrap();
+        // Beide css-vorkommen von `url(asset:logo.png)` muessen zu data:-URIs rewrites
+        // geworden sein; `url(asset:...)` darf nirgends mehr vorkommen.
+        assert!(
+            !html.contains("asset:logo.png"),
+            "asset:url wurde nicht rewrites: {html}"
+        );
+        assert!(
+            html.matches("data:image/png;base64,").count() >= 2,
+            "data:-URI fehlt in css"
+        );
+    }
+
+    #[test]
+    fn render_document_without_cover_template_omits_first_page_rule() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("corp");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("theme.json"), r#"{"name":"Corp"}"#).unwrap();
+        fs::write(dir.join("content.css"), ".markdown-body { color: x; }").unwrap();
+        fs::write(dir.join("page.css"), "body { margin: 0; }").unwrap();
+        // cover.html existiert NICHT — flag false implizit.
+        let html = render_document_in("corp", "B", None, "# x", temp.path()).unwrap();
+        assert!(
+            !html.contains("@page :first { margin: 0; }"),
+            "@page :first sollte nicht injiziert werden"
+        );
+        assert!(
+            !html.contains("<section class=\"folio-cover\">"),
+            "cover sollte ohne template fehlen"
+        );
+        assert!(
+            !html.contains("<div class=\"folio-running-header\">"),
+            "header sollte ohne template fehlen"
+        );
+    }
+
+    #[test]
+    fn render_document_manifest_flag_false_skips_cover_even_with_file_present() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("corp");
+        fs::create_dir_all(&dir).unwrap();
+        // cover.html vorhanden, Flag aber false — Frontmatter陶醉 duerfen nicht raus.
+        fs::write(
+            dir.join("theme.json"),
+            r#"{"name":"Corp","cover":false,"hideInlineFrontmatter":false}"#,
+        )
+        .unwrap();
+        fs::write(dir.join("content.css"), ".markdown-body { color: x; }").unwrap();
+        fs::write(dir.join("cover.html"), "<h1>{{title}}</h1>").unwrap();
+        let html = render_document_in("corp", "B", None, "# x", temp.path()).unwrap();
+        assert!(
+            !html.contains("<section class=\"folio-cover\">"),
+            "cover trotz Flag=false emittiert"
+        );
+        assert!(
+            !html.contains("@page :first { margin: 0; }"),
+            "@page :first trotz Flag=false emittiert"
+        );
+    }
+}
+
+#[cfg(test)]
+mod asset_tests {
+    use crate::theme::store;
+    use std::fs;
+
+    fn write_minimal_theme(temp: &tempfile::TempDir) {
+        let dir = temp.path().join("mine");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("theme.json"), "{}").unwrap();
+        fs::write(dir.join("content.css"), ".markdown-body {}").unwrap();
+    }
+
+    #[test]
+    fn asset_add_writes_directory_lists_and_removes() {
+        let temp = tempfile::tempdir().unwrap();
+        write_minimal_theme(&temp);
+
+        let info = store::asset_add_in("mine", "logo.png", b"PNG", temp.path()).unwrap();
+        assert_eq!(
+            info,
+            store::AssetInfo {
+                filename: "logo.png".to_string(),
+                size: 3,
+                mime: "image/png".to_string(),
+            }
+        );
+        let listed = store::list_assets_in("mine", temp.path());
+        assert_eq!(1, listed.len());
+        assert_eq!("logo.png", listed[0].filename);
+        assert!(temp.path().join("mine/assets/logo.png").is_file());
+
+        store::asset_remove_in("mine", "logo.png", temp.path()).unwrap();
+        assert!(store::list_assets_in("mine", temp.path()).is_empty());
+        // Remove missing ist idempotent.
+        store::asset_remove_in("mine", "logo.png", temp.path()).unwrap();
+    }
+
+    #[test]
+    fn asset_add_rejects_unknown_extension() {
+        let temp = tempfile::tempdir().unwrap();
+        write_minimal_theme(&temp);
+        assert!(store::asset_add_in("mine", "logo.txt", b"x", temp.path()).is_err());
+        assert!(store::list_assets_in("mine", temp.path()).is_empty());
+    }
+
+    #[test]
+    fn asset_add_rejects_filename_traversal_and_absolute_paths() {
+        let temp = tempfile::tempdir().unwrap();
+        write_minimal_theme(&temp);
+        for bad in [
+            "../escape.png",
+            "a/b.png",
+            r"a\b.png",
+            "C:evil.png",
+            ".hidden.png",
+            "a..b.png",
+        ] {
+            let err = store::asset_add_in("mine", bad, b"x", temp.path()).unwrap_err();
+            assert!(!err.is_empty(), "{bad} sollte abgelehnt werden");
+        }
+    }
+
+    #[test]
+    fn asset_add_rejects_builtin_ids_and_missing_theme_dir() {
+        let temp = tempfile::tempdir().unwrap();
+        assert!(store::asset_add_in("clean", "logo.png", b"x", temp.path()).is_err());
+        // Theme "ghost-theme" ist nicht gegen waering, es wird abgelehnt\ (gueltig kann aber) — hier exists it nicht:
+        assert!(store::asset_add_in("ghost-theme", "logo.png", b"x", temp.path()).is_err());
+    }
+
+    #[test]
+    fn asset_add_enforces_per_asset_byte_limit() {
+        let temp = tempfile::tempdir().unwrap();
+        write_minimal_theme(&temp);
+        let big = vec![0u8; crate::theme::assets::MAX_ASSET_BYTES + 1];
+        let err = store::asset_add_in("mine", "big.png", &big, temp.path()).unwrap_err();
+        assert!(err.contains("Maximum"), "{err}");
     }
 }

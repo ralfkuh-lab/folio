@@ -42,3 +42,31 @@
   /* Block-Elemente nicht über Seitenumbrüche zerreißen. */
   .markdown-body pre, .markdown-body blockquote { break-inside: avoid; }
 }
+
+/*
+ * Corporate-Design Export-Hilfen (Deckblatt, Kopf-/Fußzeile).
+ *
+ * Gelten nur im Print-Pfad. Die zugehoerigen DIVs werden von `wrap_html`
+ * nur eingefuegt, wenn das Theme die jeweiligen Templates besitzt; am
+ * Screen bleiben sie unsichtbar, im Print-Modus werden sie fixiert und
+ * von Chromium pro Druckseite wiederholt. `@page :first { margin: 0 }` fuer
+ * das Voll-Bleed-Deckblatt setzt `wrap_html` gezielt im HTML ein (nur
+ * wenn ein Deckblatt existiert), damit Themes ohne Cover nicht ihre
+ * Seitenraender verlieren.
+ */
+.folio-cover { break-after: page; }
+.folio-running-header { display: none; }
+.folio-running-footer { display: none; }
+
+@media print {
+  .folio-running-header,
+  .folio-running-footer {
+    display: block;
+    position: fixed;
+    left: 0;
+    right: 0;
+    z-index: 5;
+  }
+  .folio-running-header { top: 0; }
+  .folio-running-footer { bottom: 0; }
+}

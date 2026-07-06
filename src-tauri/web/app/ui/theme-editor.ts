@@ -29,8 +29,14 @@ type ThemeFiles = {
     coverHtml?: string | null;
     headerHtml?: string | null;
     footerHtml?: string | null;
-    assets: unknown[];
+    assets: AssetInfo[];
     source: string;
+};
+
+type AssetInfo = {
+    filename: string;
+    size: number;
+    mime: string;
 };
 
 const PART_LABELS: Record<FolioThemePart, string> = {
@@ -101,6 +107,7 @@ function partsToWriteFiles(parts: FolioThemeParts): ThemeFiles | null {
 function renderPartSwitcher(parts: FolioThemeParts): void {
     const select = $('theme-editor-part') as HTMLSelectElement | null;
     if (!select) return;
+    const previous = select.value as FolioThemePart | '';
     select.textContent = '';
     for (const part of Object.keys(PART_LABELS) as FolioThemePart[]) {
         if (!hasPart(parts, part)) continue;
@@ -109,7 +116,180 @@ function renderPartSwitcher(parts: FolioThemeParts): void {
         option.textContent = PART_LABELS[part];
         select.appendChild(option);
     }
-    select.value = 'content';
+    // Previous Part bleiben aktiv, solange er noch existiert.
+    if (previous && hasPart(parts, previous as FolioThemePart)) {
+        select.value = previous;
+    } else {
+        select.value = 'content';
+    }
+}
+
+function refreshPartsFromManifest(): void {
+    const surface = editor();
+    if (!surface || !currentFiles) return;
+    const current = surface.getAllParts();
+    const manifest = currentFiles.manifest;
+    const desired: FolioThemeParts = { ...current };
+    // Cover/Header/Footer nur aktivieren, wenn der Flag gerade angeschaltet
+    // wurde; nie destruktiv entfernen (User könnte den Buffer behalten
+    // wollen). Undo-Stacks fuer bestehende Parts bleiben erhalten, weil
+    // setParts bei identischen Werten frueh zurueckkehrt.
+    if (manifest.cover && !hasPart(desired, 'cover')) {
+        desired.cover = currentFiles.coverHtml || '';
+    }
+    if (manifest.header && !hasPart(desired, 'header')) {
+        desired.header = currentFiles.headerHtml || '';
+    }
+    if (manifest.footer && !hasPart(desired, 'footer')) {
+        desired.footer = currentFiles.footerHtml || '';
+    }
+    const grew = Object.keys(desired).length !== Object.keys(current).length;
+    if (grew) surface.setParts(desired);
+    renderPartSwitcher(desired);
+    schedulePreview();
+}
+
+function syncManifestFlags(manifest: ThemeManifest): void {
+    const cover = $('theme-editor-flag-cover') as HTMLInputElement | null;
+    const header = $('theme-editor-flag-header') as HTMLInputElement | null;
+    const footer = $('theme-editor-flag-footer') as HTMLInputElement | null;
+    const hideFm = $('theme-editor-flag-hide-fm') as HTMLInputElement | null;
+    if (cover) cover.checked = !!manifest.cover;
+    if (header) header.checked = !!manifest.header;
+    if (footer) footer.checked = !!manifest.footer;
+    if (hideFm) hideFm.checked = !!manifest.hideInlineFrontmatter;
+}
+
+function formatSize(bytes: number): string {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
+    return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+function renderAssetList(): void {
+    const list = $('theme-editor-asset-list');
+    const logoName = $('theme-editor-logo-name');
+    if (!list || !currentFiles) return;
+    const assets = currentFiles.assets || [];
+    const logo = currentFiles.manifest.logo || null;
+    list.textContent = '';
+    for (const asset of assets) {
+        const li = document.createElement('li');
+        if (asset.filename === logo) li.classList.add('is-logo');
+        const label = document.createElement('span');
+        label.textContent = asset.filename + ' · ' + formatSize(asset.size);
+        li.appendChild(label);
+        const actions = document.createElement('span');
+        const useAsLogo = document.createElement('button');
+        useAsLogo.type = 'button';
+        useAsLogo.className = 'link-button';
+        useAsLogo.textContent = 'als Logo';
+        useAsLogo.addEventListener('click', () => setLogo(asset.filename));
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'theme-editor-assets__remove';
+        remove.textContent = '×';
+        remove.title = 'Asset entfernen';
+        remove.addEventListener('click', () => removeAsset(asset.filename));
+        actions.appendChild(useAsLogo);
+        actions.appendChild(remove);
+        li.appendChild(actions);
+        list.appendChild(li);
+    }
+    if (logoName) logoName.textContent = logo || '(kein)';
+}
+
+function fileToBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const result = reader.result;
+            if (typeof result !== 'string') {
+                reject(new Error('FileReader liefert keinen Data-URI'));
+                return;
+            }
+            const comma = result.indexOf(',');
+            resolve(comma >= 0 ? result.slice(comma + 1) : '');
+        };
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+    });
+}
+
+async function uploadAsset(file: File): Promise<void> {
+    if (!currentId || !currentFiles) return;
+    const filename = file.name;
+    if (!filename) return;
+    let base64: string;
+    try {
+        base64 = await fileToBase64(file);
+    } catch (error) {
+        folioLog.warn('theme-editor', 'logo base64 failed', { error: String(error) });
+        return;
+    }
+    let info: AssetInfo;
+    try {
+        info = await invoke<AssetInfo>('theme_asset_add', {
+            id: currentId,
+            filename,
+            bytesBase64: base64,
+        });
+    } catch (error) {
+        folioLog.warn('theme-editor', 'theme_asset_add failed', {
+            id: currentId,
+            filename,
+            error: String(error),
+        });
+        return;
+    }
+    const existing = (currentFiles.assets || []).filter(
+        (a) => a.filename !== info.filename,
+    );
+    existing.push(info);
+    currentFiles.assets = existing;
+    // Erstes Asset ohne Logo wird automatisch zum Logo.
+    if (!currentFiles.manifest.logo) {
+        currentFiles.manifest.logo = info.filename;
+    }
+    renderAssetList();
+    syncDirtyUi();
+    await renderPreviewNow();
+}
+
+async function removeAsset(filename: string): Promise<void> {
+    if (!currentId || !currentFiles) return;
+    try {
+        await invoke('theme_asset_remove', { id: currentId, filename });
+    } catch (error) {
+        folioLog.warn('theme-editor', 'theme_asset_remove failed', {
+            id: currentId,
+            filename,
+            error: String(error),
+        });
+        return;
+    }
+    currentFiles.assets = (currentFiles.assets || []).filter(
+        (a) => a.filename !== filename,
+    );
+    if (currentFiles.manifest.logo === filename) {
+        currentFiles.manifest.logo = null;
+    }
+    renderAssetList();
+    await renderPreviewNow();
+}
+
+function setLogo(filename: string): void {
+    if (!currentFiles) return;
+    currentFiles.manifest.logo = filename;
+    renderAssetList();
+    schedulePreview();
+}
+
+function clearLogo(): void {
+    if (!currentFiles) return;
+    currentFiles.manifest.logo = null;
+    renderAssetList();
+    schedulePreview();
 }
 
 function syncDirtyUi(): void {
@@ -161,6 +341,7 @@ async function runPreview(generation: number): Promise<void> {
             markdown,
             parts: files,
             dark,
+            themeId: currentId,
         });
     } catch (error) {
         folioLog.warn('theme-editor', 'theme_preview_render failed', {
@@ -206,6 +387,8 @@ export async function openThemeEditor(id: string): Promise<boolean> {
         schedulePreview();
     });
     renderPartSwitcher(parts);
+    syncManifestFlags(files.manifest);
+    renderAssetList();
     syncDirtyUi();
     registerVirtualTab({
         slug: 'theme-editor',
@@ -293,6 +476,34 @@ export function initThemeEditor(): void {
     $('theme-editor-close')?.addEventListener('click', function () {
         guardedClose();
     });
+    const fileInput = $('theme-editor-logo-input') as HTMLInputElement | null;
+    if (fileInput) {
+        fileInput.addEventListener('change', function (event) {
+            const target = event.currentTarget as HTMLInputElement;
+            const file = target.files && target.files[0];
+            target.value = '';
+            if (file) uploadAsset(file);
+        });
+    }
+    $('theme-editor-logo-clear')?.addEventListener('click', function () {
+        clearLogo();
+    });
+    const flags: Array<[string, keyof ThemeManifest]> = [
+        ['theme-editor-flag-cover', 'cover'],
+        ['theme-editor-flag-header', 'header'],
+        ['theme-editor-flag-footer', 'footer'],
+        ['theme-editor-flag-hide-fm', 'hideInlineFrontmatter'],
+    ];
+    for (const [id, key] of flags) {
+        (document.getElementById(id) as HTMLInputElement | null)
+            ?.addEventListener('change', function (event) {
+                if (!currentFiles) return;
+                const checked = (event.currentTarget as HTMLInputElement).checked;
+                (currentFiles.manifest as unknown as Record<string, unknown>)[key as string] =
+                    checked;
+                refreshPartsFromManifest();
+            });
+    }
     document.addEventListener('keydown', function (event) {
         if (event.key !== 'Escape' || !isVirtualTabActive('theme-editor')) return;
         event.preventDefault();

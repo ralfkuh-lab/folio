@@ -1,7 +1,9 @@
+pub mod assets;
 pub mod builtin;
 pub mod package;
 pub mod service;
 pub mod store;
+pub mod template;
 
 use crate::persist;
 use package::{ThemePackage, ThemeSource};

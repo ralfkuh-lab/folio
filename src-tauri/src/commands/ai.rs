@@ -258,29 +258,7 @@ pub async fn ai_translate_document(
         (path, store.text.clone())
     };
 
-    let (base_url, api_key) = {
-        let config = config_data(state.inner())?;
-        let catalog = catalog::load().catalog;
-        let provider = config
-            .provider
-            .get(&provider_id)
-            .ok_or_else(|| format!("KI-Provider '{provider_id}' ist nicht konfiguriert."))?;
-        if !provider.enabled {
-            return Err(format!("KI-Provider '{provider_id}' ist nicht aktiviert."));
-        }
-        if !provider.whitelist.iter().any(|id| id == &model_id) {
-            return Err(format!(
-                "Modell '{model_id}' ist für Provider '{provider_id}' nicht freigeschaltet."
-            ));
-        }
-        let base_url = provider_base_url(&config, &catalog, &provider_id)?;
-        let key = state
-            .ai_auth
-            .lock()
-            .map_err(|_| "AI auth lock poisoned".to_string())?
-            .get_key(&provider_id);
-        (base_url, key)
-    };
+    let (base_url, api_key) = resolve_provider(state.inner(), &provider_id, &model_id)?;
 
     mutate_config(state.inner(), |service| {
         service.recent_languages_set(languages.clone())
@@ -505,6 +483,40 @@ fn provider_base_url(
     endpoint
         .map(str::to_string)
         .ok_or_else(|| format!("Provider '{provider_id}' hat keinen bekannten Endpoint."))
+}
+
+/// Liefert `(base_url, api_key)` fuer einen freigeschalteten Provider +
+/// Modell. Validiert Provider aktiviert, Modell aus der Whitelist, und
+/// loest die Base-URL via [`provider_base_url`]. Geteilt zwischen
+/// Uebersetzung (`ai_translate_document`) und dem kuenftigen KI-Theme-
+/// Autor (E6). Reiner Refactor: Verhalten bleibt identisch zur vorher
+/// inline aufgeloesten Variante.
+fn resolve_provider(
+    state: &AppState,
+    provider_id: &str,
+    model_id: &str,
+) -> Result<(String, Option<String>), String> {
+    let config = config_data(state)?;
+    let catalog = catalog::load().catalog;
+    let provider = config
+        .provider
+        .get(provider_id)
+        .ok_or_else(|| format!("KI-Provider '{provider_id}' ist nicht konfiguriert."))?;
+    if !provider.enabled {
+        return Err(format!("KI-Provider '{provider_id}' ist nicht aktiviert."));
+    }
+    if !provider.whitelist.iter().any(|id| id == model_id) {
+        return Err(format!(
+            "Modell '{model_id}' ist für Provider '{provider_id}' nicht freigeschaltet."
+        ));
+    }
+    let base_url = provider_base_url(&config, &catalog, provider_id)?;
+    let key = state
+        .ai_auth
+        .lock()
+        .map_err(|_| "AI auth lock poisoned".to_string())?
+        .get_key(provider_id);
+    Ok((base_url, key))
 }
 
 fn normalize_languages(languages: Vec<String>) -> Result<Vec<String>, String> {

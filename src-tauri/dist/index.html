@@ -355,7 +355,33 @@
     <button type="button" id="theme-editor-close">Schließen</button>
   </div>
   <div class="theme-editor-body">
-    <div id="theme-editor-mount"></div>
+    <div class="theme-editor-left">
+      <div id="theme-editor-mount"></div>
+      <div id="theme-editor-assets" class="theme-editor-assets">
+        <div class="theme-editor-assets__head"><strong>Manifest</strong></div>
+        <div class="theme-editor-flags">
+          <label><input type="checkbox" id="theme-editor-flag-cover" /> Cover</label>
+          <label><input type="checkbox" id="theme-editor-flag-header" /> Kopfzeile</label>
+          <label><input type="checkbox" id="theme-editor-flag-footer" /> Fußzeile</label>
+          <label class="theme-editor-flags__full">
+            <input type="checkbox" id="theme-editor-flag-hide-fm" />
+            Frontmatter im Body verbergen
+          </label>
+        </div>
+        <div class="theme-editor-assets__head">
+          <strong>Assets</strong>
+          <label class="theme-editor-assets__upload" title="Asset hinzufügen; das erste Bild wird als Logo verwendet">
+            <input type="file" id="theme-editor-logo-input" accept=".png,.jpg,.jpeg,.gif,.webp,.avif,.svg,.bmp,.ico" />
+            <span>＋ Hochladen</span>
+          </label>
+        </div>
+        <ul id="theme-editor-asset-list" class="theme-editor-assets__list"></ul>
+        <p class="theme-editor-assets__hint">Manifest-Logo:
+          <code id="theme-editor-logo-name">(kein)</code>
+          <button type="button" id="theme-editor-logo-clear" class="link-button">zurücksetzen</button>
+        </p>
+      </div>
+    </div>
     <iframe id="theme-editor-preview" sandbox="allow-same-origin" title="Theme-Vorschau"></iframe>
   </div>
 </div>

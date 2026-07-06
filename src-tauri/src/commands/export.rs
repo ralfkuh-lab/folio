@@ -35,7 +35,7 @@ pub async fn export_render(
 ) -> Result<String, String> {
     let (path, text) = current_document(&state)?;
     let title = export::derive_title(path.as_deref());
-    export::render_document(&layout_id, &title, &text)
+    export::render_document(&layout_id, &title, path.as_deref(), &text)
 }
 
 #[tauri::command]
@@ -46,7 +46,7 @@ pub async fn export_html(
 ) -> Result<(), String> {
     let (path, text) = current_document(&state)?;
     let title = export::derive_title(path.as_deref());
-    let html = export::render_document(&layout_id, &title, &text)?;
+    let html = export::render_document(&layout_id, &title, path.as_deref(), &text)?;
     fs::write(&target_path, html).map_err(|e| e.to_string())
 }
 
@@ -58,7 +58,7 @@ pub async fn export_pdf(
 ) -> Result<(), String> {
     let (path, text) = current_document(&state)?;
     let title = export::derive_title(path.as_deref());
-    let html = export::render_document(&layout_id, &title, &text)?;
+    let html = export::render_document(&layout_id, &title, path.as_deref(), &text)?;
     let source_dir = path
         .as_deref()
         .and_then(|p| Path::new(p).parent())

@@ -18,7 +18,7 @@ fn renders_simple_pdf_via_headless_chromium() {
     let target = temp.path().join("smoke.pdf");
 
     let markdown = "# Hallo Folio\n\nDies ist ein **Smoke-Test** für den PDF-Export.\n\n- Liste\n- Mit Punkten\n";
-    let html = export::render_document("clean", "Smoke", markdown).expect("render html");
+    let html = export::render_document("clean", "Smoke", None, markdown).expect("render html");
 
     pdf_export::render_pdf(&html, Some(temp.path()), &target).expect("render pdf");
 
@@ -48,7 +48,7 @@ fn renders_long_code_lines_pdf_in_all_layouts() {
 
     for layout in &["classic", "clean", "github"] {
         let target = temp.path().join(format!("code-{layout}.pdf"));
-        let html = export::render_document(layout, "Code", markdown).expect("render html");
+        let html = export::render_document(layout, "Code", None, markdown).expect("render html");
         pdf_export::render_pdf(&html, Some(temp.path()), &target).expect("render pdf");
         assert!(target.exists(), "{layout}: PDF nicht erzeugt");
     }
@@ -73,7 +73,8 @@ fn renders_wide_table_pdf_in_all_layouts() {
 
     for layout in &["classic", "clean", "github"] {
         let target = temp.path().join(format!("table-{layout}.pdf"));
-        let html = export::render_document(layout, "Tabellen-Test", markdown).expect("render html");
+        let html =
+            export::render_document(layout, "Tabellen-Test", None, markdown).expect("render html");
         pdf_export::render_pdf(&html, Some(temp.path()), &target).expect("render pdf");
         assert!(target.exists(), "{layout}: PDF nicht erzeugt");
         let size = fs::metadata(&target).expect("metadata").len();

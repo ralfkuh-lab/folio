@@ -22,6 +22,27 @@ function buildDom(): void {
             <button id="theme-editor-save" disabled>Speichern</button>
             <button id="theme-editor-close">Schließen</button>
             <div id="theme-editor-mount"></div>
+            <div id="theme-editor-assets" class="theme-editor-assets">
+                <div class="theme-editor-assets__head"><strong>Manifest</strong></div>
+                <div class="theme-editor-flags">
+                    <label><input type="checkbox" id="theme-editor-flag-cover" /> Cover</label>
+                    <label><input type="checkbox" id="theme-editor-flag-header" /> Kopfzeile</label>
+                    <label><input type="checkbox" id="theme-editor-flag-footer" /> Fußzeile</label>
+                    <label><input type="checkbox" id="theme-editor-flag-hide-fm" /> Frontmatter verbergen</label>
+                </div>
+                <div class="theme-editor-assets__head">
+                    <strong>Assets</strong>
+                    <label class="theme-editor-assets__upload">
+                        <input type="file" id="theme-editor-logo-input" accept="image/*" />
+                        <span>＋ Hochladen</span>
+                    </label>
+                </div>
+                <ul id="theme-editor-asset-list" class="theme-editor-assets__list"></ul>
+                <p class="theme-editor-assets__hint">
+                    Logo: <code id="theme-editor-logo-name">(kein)</code>
+                    <button type="button" id="theme-editor-logo-clear" class="link-button">zurücksetzen</button>
+                </p>
+            </div>
             <iframe id="theme-editor-preview"></iframe>
         </div>
         <div id="unsaved-dialog" hidden>
@@ -189,5 +210,120 @@ describe('ui/theme-editor', () => {
             expect(document.querySelector('.tab-theme-editor')).toBeNull();
         });
         expect(harness.surface.dispose).toHaveBeenCalled();
+    });
+
+    it('syncs manifest flags and toggling cover adds the part to the editor', async () => {
+        const { initThemeEditor, openThemeEditor } =
+            await import('../../app/ui/theme-editor');
+        initThemeEditor();
+        await openThemeEditor('firma');
+
+        const cover = document.getElementById('theme-editor-flag-cover') as HTMLInputElement;
+        const header = document.getElementById('theme-editor-flag-header') as HTMLInputElement;
+        expect(cover.checked).toBe(true);
+        expect(header.checked).toBe(false);
+        const initialOptionsCount = (document.getElementById('theme-editor-part') as HTMLSelectElement).options.length;
+
+        header.checked = true;
+        header.dispatchEvent(new Event('change'));
+
+        expect(harness.surface.setParts).toHaveBeenCalledWith(expect.objectContaining({
+            content: '.markdown-body { color: blue; }',
+            header: '',
+        }));
+        const afterOptionsCount = (document.getElementById('theme-editor-part') as HTMLSelectElement).options.length;
+        expect(afterOptionsCount).toBe(initialOptionsCount + 1);
+    });
+
+    it('uploads an asset, appends it to the list and preselects as logo', async () => {
+        const { initThemeEditor, openThemeEditor } =
+            await import('../../app/ui/theme-editor');
+        initThemeEditor();
+        tauri.invoke.mockImplementation((command: string, args: any) => {
+            if (command === 'theme_read') return Promise.resolve(themeFiles());
+            if (command === 'theme_preview_render') return Promise.resolve('<html></html>');
+            if (command === 'theme_asset_add') {
+                return Promise.resolve({
+                    filename: args.filename,
+                    size: 12,
+                    mime: 'image/png',
+                });
+            }
+            return Promise.resolve(undefined);
+        });
+        await openThemeEditor('firma');
+
+        const input = document.getElementById('theme-editor-logo-input') as HTMLInputElement;
+        const file = new File([new Uint8Array([1, 2, 3, 4])], 'logo.png', { type: 'image/png' });
+        Object.defineProperty(input, 'files', { value: [file], configurable: true });
+        input.dispatchEvent(new Event('change'));
+        await vi.waitFor(() => {
+            expect(tauri.invoke).toHaveBeenCalledWith('theme_asset_add', expect.objectContaining({
+                id: 'firma',
+                filename: 'logo.png',
+            }));
+        });
+        await vi.waitFor(() => {
+            const list = document.getElementById('theme-editor-asset-list')!;
+            expect(list.querySelectorAll('li').length).toBe(1);
+            expect(list.querySelector('li.is-logo')).not.toBeNull();
+            expect((document.getElementById('theme-editor-logo-name') as HTMLElement).textContent)
+                .toBe('logo.png');
+        });
+    });
+
+    it('removes an asset via the remove button and clears logo if matched', async () => {
+        const { initThemeEditor, openThemeEditor } =
+            await import('../../app/ui/theme-editor');
+        initThemeEditor();
+        const baseFiles = themeFiles();
+        baseFiles.assets = [
+            { filename: 'logo.png', size: 12, mime: 'image/png' },
+            { filename: 'watermark.svg', size: 200, mime: 'image/svg+xml' },
+        ];
+        baseFiles.manifest.logo = 'logo.png';
+        tauri.invoke.mockImplementation((command: string) => {
+            if (command === 'theme_read') return Promise.resolve(baseFiles);
+            if (command === 'theme_preview_render') return Promise.resolve('<html></html>');
+            return Promise.resolve(undefined);
+        });
+        await openThemeEditor('firma');
+
+        const list = document.getElementById('theme-editor-asset-list')!;
+        expect(list.querySelectorAll('li').length).toBe(2);
+        const removeLogo = list.querySelector('li.is-logo .theme-editor-assets__remove') as HTMLButtonElement;
+        removeLogo.click();
+        await vi.waitFor(() => {
+            expect(tauri.invoke).toHaveBeenCalledWith('theme_asset_remove', {
+                id: 'firma',
+                filename: 'logo.png',
+            });
+        });
+        await vi.waitFor(() => {
+            expect(document.getElementById('theme-editor-asset-list')!.querySelectorAll('li').length).toBe(1);
+            expect((document.getElementById('theme-editor-logo-name') as HTMLElement).textContent)
+                .toBe('(kein)');
+        });
+    });
+
+    it('clears the manifest logo via the reset button only', async () => {
+        const { initThemeEditor, openThemeEditor } =
+            await import('../../app/ui/theme-editor');
+        initThemeEditor();
+        const baseFiles = themeFiles();
+        baseFiles.assets = [{ filename: 'logo.png', size: 12, mime: 'image/png' }];
+        baseFiles.manifest.logo = 'logo.png';
+        tauri.invoke.mockImplementation((command: string) => {
+            if (command === 'theme_read') return Promise.resolve(baseFiles);
+            if (command === 'theme_preview_render') return Promise.resolve('<html></html>');
+            return Promise.resolve(undefined);
+        });
+        await openThemeEditor('firma');
+
+        document.getElementById('theme-editor-logo-clear')!.click();
+        expect((document.getElementById('theme-editor-logo-name') as HTMLElement).textContent)
+            .toBe('(kein)');
+        expect(document.getElementById('theme-editor-asset-list')!.querySelectorAll('li').length)
+            .toBe(1);
     });
 });

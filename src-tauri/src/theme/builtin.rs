@@ -203,6 +203,9 @@ fn package(
             cover,
             header,
             footer,
+            // Deckblatt-Themes zeigen die Metadaten auf dem Cover — das
+            // Inline-Frontmatter-<aside> im Body waere eine Doppelung.
+            hide_inline_frontmatter: cover,
             ..ThemeManifest::default()
         },
         source: ThemeSource::Builtin,

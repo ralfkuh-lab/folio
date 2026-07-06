@@ -431,7 +431,7 @@ Frontend-Bundles neu bauen (`cd src-tauri/web && npm run build`), danach
 Reine CSS-Addition + Registrierung + `business`/`brand`-Templates.
 Unabhängig von E2/E3, parallelisierbar.
 
-### E5 — Template + Cover + Assets ⬜
+### E5 — Template + Cover + Assets 🔧 (Code fertig; E2E-Verifikation inkl. Szenario 34 steht aus)
 
 Platzhalter-Engine + `TemplateContext` (Frontmatter-Aliasse, injizierbares
 Datum), data-URI-Assets + `theme_asset_add/remove` + Logo-Upload-UI,
