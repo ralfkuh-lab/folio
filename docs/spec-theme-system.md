@@ -449,6 +449,48 @@ E2E-Szenario `36_ai_theme_author.py` mit Mock-Provider
 (ThreadingHTTPServer + SSE, Muster `34_ai_translate.py` inkl.
 Provider-Setup/-Cleanup-Helpern).
 
+### E7 — Theme-Import/Export als `.mdtheme` ⬜ (nachbeauftragt 2026-07-07)
+
+**Format**: ein `.mdtheme` ist ein gewöhnliches ZIP mit dem
+Verzeichnis-Paketformat **1:1 an der Archiv-Wurzel** (`theme.json`
+Pflicht, `content.css` Pflicht, optional `content.dark.css`, `page.css`,
+`cover.html`, `header.html`, `footer.html`, `assets/<datei>`), kein
+Unterordner, kein neues Schema — `formatVersion` im Manifest trägt die
+Kompatibilität. Umbenennen in `.zip` macht es manuell inspizierbar.
+
+- **Export**: `theme_export(id, path?) -> Option<String>` — ohne `path`
+  Save-Dialog (`blocking_save_file`-Muster aus `commands/export.rs`,
+  Filter `*.mdtheme`, Default `<id>.mdtheme`), mit `path` direkt
+  (Automation/E2E — native Dialoge sind in Xvfb unerreichbar);
+  schreibt das ZIP atomar (tempfile + persist). Auch Built-ins sind
+  exportierbar (materialisiert wie `theme_clone`) — als Weitergabe-Basis.
+- **Import**: `theme_import(path?) -> Option<LayoutInfo>` — ohne `path`
+  Open-Dialog, mit `path` direkt (Automation/E2E); danach das
+  **Import-Gate** (Grenzübertritt, analog KI-Gate):
+  - Eintrags-Whitelist: exakt die bekannten Dateinamen +
+    `assets/<name>` mit `validate_asset_filename`; alles andere →
+    Fehler. Keine Verzeichnis-Traversal-Namen (Zip-Slip), keine
+    absoluten Pfade, nur reguläre Dateien (keine Symlink-Einträge).
+  - Zip-Bomb-Schutz: entpackte Gesamtgröße hart gedeckelt (32 MB),
+    pro Asset das bestehende 5-MB-Limit; Text-Parts je max 2 MB.
+  - Manifest wird geparst + `normalize`d; `formatVersion` > aktuell →
+    Fehler mit klarer Meldung.
+  - Ziel-ID: Slug aus Dateinamen (`valid_theme_id`-bereinigt);
+    Kollision → `-2`/`-3`-Suffix statt Überschreiben.
+  - Schreiben ausschließlich über den bestehenden atomaren
+    `store::write_parts_in`-Pfad + Assets einzeln validiert —
+    danach `themes:changed`.
+- **UI** (Settings → Markdown-Themes): Karten-Aktion „Exportieren…“
+  (alle außer `standard`), Button „Theme importieren…“ neben
+  „Neues Theme“. Erfolg → Liste refresht via `themes:changed`;
+  Import-Fehler in bestehender Fehlerdarstellung.
+- **Dependency**: `zip`-Crate (ohne Default-Features, `deflate`).
+- **Tests**: Rust-Unit (Roundtrip Export→Import inkl. Assets,
+  Zip-Slip-Eintrag, überlange Einträge, unbekannte Datei, Symlink-
+  Eintrag, formatVersion-Zukunft, Kollisions-Suffix), jsdom
+  (Buttons/Refresh), E2E `37_theme_import_export.py` (Roundtrip über
+  Temp-Datei, finally-Cleanup).
+
 ## Bewusst verschoben
 
 - **Live-Seitenzahlen im PDF** (User-Entscheid 2026-07-06): Chromiums
