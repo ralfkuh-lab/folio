@@ -416,7 +416,7 @@ tempdir-Stil (Vorlage: bestehende Tests in `export.rs`).
 `35_theme_crud.py` (via `__folioInvoke`; Custom-Themes sind echte Dateien
 unter `<config>/folio/themes/` → **finally-Cleanup** zwingend).
 
-### E3 — Theme-Editor als virtueller Tab ⬜
+### E3 — Theme-Editor als virtueller Tab 🔧 (Code fertig; E2E-Verifikation steht mit E2 aus)
 
 Virtual-Tab-Registry in `state/tabs.ts` (+ Kompat-Wrapper + jsdom-Tests),
 `FolioThemeEditor`-Surface (Model-pro-Part, Dirty-Tracking, shell.ts-

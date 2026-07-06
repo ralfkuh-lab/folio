@@ -56,6 +56,7 @@ import {
     undo,
 } from './text';
 import * as codeView from './view-code';
+import * as themeEditor from './theme-editor';
 
 (window as any).FolioEditor = {
     mount,
@@ -102,4 +103,18 @@ import * as codeView from './view-code';
     layout: codeView.layout,
     dispose: codeView.dispose,
     isMounted: codeView.isMounted,
+};
+
+// Dritte Surface: editierbare Theme-Paketteile mit Model-pro-Part.
+(window as any).FolioThemeEditor = {
+    mount: themeEditor.mount,
+    setParts: themeEditor.setParts,
+    showPart: themeEditor.showPart,
+    getPart: themeEditor.getPart,
+    getAllParts: themeEditor.getAllParts,
+    isDirty: themeEditor.isDirty,
+    onChange: themeEditor.onChange,
+    setTheme: themeEditor.setTheme,
+    dispose: themeEditor.dispose,
+    layout: themeEditor.layout,
 };

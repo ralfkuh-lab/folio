@@ -70,9 +70,26 @@ interface FolioCodeViewSurface {
     isMounted(): boolean;
 }
 
+type FolioThemePart = 'content' | 'dark' | 'page' | 'cover' | 'header' | 'footer';
+type FolioThemeParts = Partial<Record<FolioThemePart, string>>;
+
+interface FolioThemeEditorSurface {
+    mount(elementId: string): Promise<void>;
+    setParts(parts: FolioThemeParts): void;
+    showPart(part: FolioThemePart): boolean;
+    getPart(part: FolioThemePart): string | null;
+    getAllParts(): FolioThemeParts;
+    isDirty(): boolean;
+    onChange(handler: (() => void) | null): void;
+    setTheme(mode: 'light' | 'dark'): void;
+    dispose(): void;
+    layout(): void;
+}
+
 interface Window {
     FolioEditor?: FolioEditorSurface;
     FolioCodeView?: FolioCodeViewSurface;
+    FolioThemeEditor?: FolioThemeEditorSurface;
     __TAURI__?: TauriRuntime;
     __folioInvoke?: TauriCoreApi['invoke'];
     openDocument?: (path: string) => Promise<boolean>;

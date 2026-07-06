@@ -10,9 +10,14 @@
    und beim Boot via menu::build anwenden. */
 
 import { applyLogLevelFromSettings, folioLog } from '../util/log';
-import { configureSettingsTab, setSettingsTabOpen } from '../state/tabs';
+import {
+    configureSettingsTab,
+    isVirtualTabActive,
+    setSettingsTabOpen,
+} from '../state/tabs';
 import { applyViewTheme } from '../view/theme';
 import { initSettingsAi } from './settings-ai';
+import { openThemeEditor } from './theme-editor';
 
 type SettingsLanguage = 'de' | 'en';
 export type DefaultViewMode = 'view' | 'edit' | 'current';
@@ -62,6 +67,7 @@ let currentSettings: SettingsData | null = null;
 let bootLanguage: SettingsLanguage | null = null;
 let keydownHandler: ((e: KeyboardEvent) => void) | null = null;
 let viewThemes: ViewThemeInfo[] = [];
+let pendingDeleteTheme: ViewThemeInfo | null = null;
 
 function $(id: string): HTMLElement | null { return document.getElementById(id); }
 
@@ -311,6 +317,7 @@ async function saveThemeCreateDialog(event: Event): Promise<void> {
         }
         closeThemeCreateDialog();
         await refreshViewThemes();
+        await openThemeEditor(id);
     } catch (err) {
         setThemeDialogError(String(err));
     }
@@ -329,6 +336,27 @@ async function deleteTheme(theme: ViewThemeInfo): Promise<void> {
             error: String(err),
         });
     }
+}
+
+function openThemeDeleteDialog(theme: ViewThemeInfo): void {
+    pendingDeleteTheme = theme;
+    var dialog = $('theme-delete-dialog');
+    var text = $('theme-delete-text');
+    if (text) text.textContent = 'Theme „' + theme.name + '“ wirklich löschen?';
+    if (dialog) dialog.hidden = false;
+    $('theme-delete-cancel')?.focus();
+}
+
+function closeThemeDeleteDialog(): void {
+    pendingDeleteTheme = null;
+    var dialog = $('theme-delete-dialog');
+    if (dialog) dialog.hidden = true;
+}
+
+async function confirmThemeDelete(): Promise<void> {
+    var theme = pendingDeleteTheme;
+    closeThemeDeleteDialog();
+    if (theme) await deleteTheme(theme);
 }
 
 function renderViewThemes(themes: ViewThemeInfo[]): void {
@@ -392,7 +420,7 @@ function renderViewThemes(themes: ViewThemeInfo[]): void {
             actions.className = 'settings-theme-card__actions';
             if (theme.custom) {
                 actions.appendChild(themeAction('Bearbeiten', 'edit', theme, function () {
-                    // TODO(E3): Theme-Editor-Tab mit diesem Theme öffnen.
+                    openThemeEditor(theme.id);
                 }));
             }
             actions.appendChild(themeAction('Duplizieren', 'clone', theme, function () {
@@ -400,7 +428,7 @@ function renderViewThemes(themes: ViewThemeInfo[]): void {
             }));
             if (theme.custom) {
                 actions.appendChild(themeAction('Löschen', 'delete', theme, function () {
-                    deleteTheme(theme);
+                    openThemeDeleteDialog(theme);
                 }));
             }
             entry.appendChild(actions);
@@ -455,7 +483,7 @@ function installKeydownHandler(): void {
     keydownHandler = function (e: KeyboardEvent) {
         // Nur Escape: Enter-Close war Modal-Semantik — in der Settings-
         // REGION wuerde es Enter in Formularfeldern kapern.
-        if (e.key === 'Escape') {
+        if (e.key === 'Escape' && isVirtualTabActive('settings')) {
             e.preventDefault();
             closeSettingsDialog();
         }
@@ -503,7 +531,6 @@ function showSettingsRegion(dlg: HTMLElement): void {
     dlg.hidden = false;
     // Blendet die .content-panes aus (CSS) — Settings bekommen die
     // gesamte Inhaltsflaeche; der virtuelle Leisten-Tab zeigt den Modus.
-    document.body.classList.add('settings-open');
     setSettingsTabOpen(true);
     installKeydownHandler();
 }
@@ -515,7 +542,6 @@ export function closeSettingsDialog(): void {
         document.removeEventListener('keydown', keydownHandler);
         keydownHandler = null;
     }
-    document.body.classList.remove('settings-open');
     setSettingsTabOpen(false);
     var dlg = $('settings-dialog');
     if (!dlg || dlg.hidden) return;
@@ -614,6 +640,14 @@ export function initSettingsDialog(): void {
         event.preventDefault();
         event.stopPropagation();
         closeThemeCreateDialog();
+    });
+    $('theme-delete-cancel')?.addEventListener('click', closeThemeDeleteDialog);
+    $('theme-delete-confirm')?.addEventListener('click', confirmThemeDelete);
+    $('theme-delete-dialog')?.addEventListener('keydown', function (event) {
+        if (event.key !== 'Escape') return;
+        event.preventDefault();
+        event.stopPropagation();
+        closeThemeDeleteDialog();
     });
     bindInputs();
     initSettingsAi();

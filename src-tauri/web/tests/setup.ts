@@ -19,6 +19,7 @@ beforeEach(() => {
     };
     delete (window as any).FolioEditor;
     delete (window as any).FolioCodeView;
+    delete (window as any).FolioThemeEditor;
     delete (window as any).__folioInvoke;
     delete (window as any).openDocument;
 });

@@ -30,6 +30,26 @@ pub fn render_document(layout_id: &str, title: &str, markdown: &str) -> Result<S
     render_document_in(layout_id, title, markdown, &crate::persist::themes_dir())
 }
 
+pub fn render_theme_preview(
+    markdown: &str,
+    parts: &theme::store::ThemeParts,
+    dark: bool,
+) -> String {
+    let content_css = match (dark, parts.dark_css.as_deref()) {
+        (true, Some(dark_css)) => format!("{}\n{dark_css}", parts.content_css),
+        _ => parts.content_css.clone(),
+    };
+    let page_css = parts.page_css.as_deref().unwrap_or(theme::DEFAULT_PAGE_CSS);
+    let css = format!("{page_css}\n{content_css}");
+    let body = strip_scroll_sync_attrs(&renderer::render_body_highlighted(markdown, dark));
+    let title = if parts.manifest.name.trim().is_empty() {
+        "Theme-Vorschau"
+    } else {
+        &parts.manifest.name
+    };
+    wrap_html(title, &css, &body)
+}
+
 fn render_document_in(
     layout_id: &str,
     title: &str,
@@ -207,6 +227,32 @@ mod tests {
     #[test]
     fn render_unknown_layout_errors() {
         assert!(render_document("bogus", "Test", "# Hello").is_err());
+    }
+
+    #[test]
+    fn theme_preview_uses_unsaved_parts_and_dark_override() {
+        let parts = crate::theme::store::ThemeParts {
+            manifest: crate::theme::package::ThemeManifest {
+                name: "Vorschau".to_string(),
+                ..crate::theme::package::ThemeManifest::default()
+            },
+            content_css: ".markdown-body { color: light-marker; }".to_string(),
+            dark_css: Some(".markdown-body { color: dark-marker; }".to_string()),
+            page_css: Some("body { margin: preview-marker; }".to_string()),
+            cover_html: None,
+            header_html: None,
+            footer_html: None,
+        };
+
+        let light = render_theme_preview("# Titel", &parts, false);
+        assert!(light.contains("light-marker"));
+        assert!(!light.contains("dark-marker"));
+        assert!(light.contains("preview-marker"));
+        assert!(light.contains("<title>Vorschau</title>"));
+
+        let dark = render_theme_preview("# Titel", &parts, true);
+        assert!(dark.contains("light-marker"));
+        assert!(dark.contains("dark-marker"));
     }
 
     #[test]

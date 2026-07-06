@@ -15,6 +15,7 @@ import { initImageDialog, openImageDialog } from './ui/image-dialog';
 import { initAboutDialog } from './ui/about-dialog';
 import { initTranslateDialog } from './ui/translate-dialog';
 import { initSettingsDialog } from './ui/settings-dialog';
+import { initThemeEditor } from './ui/theme-editor';
 import { attachPasteHandler } from './ui/paste-handler';
 import { applySplitMidFromBackend, initRails, setRailVisibility } from './ui/rails';
 import { initContextMenu } from './vault/context-menu';
@@ -98,6 +99,7 @@ initImageDialog({ getCurrentPath, showStatus });
 initAboutDialog();
 initTranslateDialog();
 initViewTheme();
+initThemeEditor();
 initSettingsDialog();
 attachPasteHandler(function (blob) {
     openImageDialog({ preloadedBlob: blob }).catch(function (err) {

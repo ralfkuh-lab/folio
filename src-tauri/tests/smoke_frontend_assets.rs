@@ -28,6 +28,10 @@ fn editor_bundle_leaves_folio_editor_on_window() {
         "editor bundle must publish the shell API on window.FolioEditor"
     );
     assert!(
+        bundle.contains("window.FolioThemeEditor="),
+        "editor bundle must publish the theme editor API on window.FolioThemeEditor"
+    );
+    assert!(
         !bundle.trim_start().starts_with("var FolioEditor="),
         "esbuild --global-name overwrites window.FolioEditor with undefined for this bundle"
     );

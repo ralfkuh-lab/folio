@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installTauriMock, TauriMockHandles } from '../helpers';
 import {
     closeSettingsDialog,
     initSettingsDialog,
     openSettingsDialog,
 } from '../../app/ui/settings-dialog';
+import { guardedClose } from '../../app/ui/theme-editor';
 
 const settings = {
     language: 'de',
@@ -66,8 +67,18 @@ function buildDom(): void {
                         <button id="theme-create-save" type="submit">Erstellen</button>
                     </form>
                 </div>
+                <div id="theme-delete-dialog" hidden>
+                    <p id="theme-delete-text"></p>
+                    <button id="theme-delete-cancel" type="button">Abbrechen</button>
+                    <button id="theme-delete-confirm" type="button">Löschen</button>
+                </div>
             </div>
             <button id="settings-close"></button>
+        </div>
+        <div id="theme-editor-dialog" hidden>
+            <div id="theme-editor-mount"></div>
+            <iframe id="theme-editor-preview"></iframe>
+            <button id="theme-editor-save" disabled></button>
         </div>
     `;
 }
@@ -83,6 +94,18 @@ describe('settings-dialog', () => {
         closeSettingsDialog();
         handles = installTauriMock();
         buildDom();
+        (window as any).FolioThemeEditor = {
+            mount: vi.fn().mockResolvedValue(undefined),
+            setParts: vi.fn(),
+            showPart: vi.fn().mockReturnValue(true),
+            getPart: vi.fn(),
+            getAllParts: vi.fn().mockReturnValue({ content: '.markdown-body {}' }),
+            isDirty: vi.fn().mockReturnValue(false),
+            onChange: vi.fn(),
+            setTheme: vi.fn(),
+            dispose: vi.fn(),
+            layout: vi.fn(),
+        };
         handles.invoke.mockImplementation((cmd: string, args?: any) => {
             if (cmd === 'settings_get') return Promise.resolve(settings);
             if (cmd === 'view_themes') {
@@ -159,12 +182,16 @@ describe('settings-dialog', () => {
                 });
             }
             if (cmd === 'theme_delete') return Promise.resolve();
+            if (cmd === 'theme_preview_render') {
+                return Promise.resolve('<html><body>Preview</body></html>');
+            }
             return Promise.resolve();
         });
         initSettingsDialog();
     });
 
-    afterEach(() => {
+    afterEach(async () => {
+        await guardedClose();
         closeSettingsDialog();
     });
 
@@ -329,8 +356,16 @@ describe('settings-dialog', () => {
         document.querySelector<HTMLButtonElement>(
             '[data-view-theme="meins"] [data-theme-action="edit"]',
         )!.click();
-        expect(handles.invoke).not.toHaveBeenCalled();
+        await flush();
+        expect(handles.invoke).toHaveBeenCalledWith('theme_read', { id: 'meins' });
+        expect(handles.invoke).not.toHaveBeenCalledWith('settings_update', {
+            patch: { viewTheme: 'meins' },
+        });
 
+        await guardedClose();
+        openSettingsDialog();
+        await flush();
+        handles.invoke.mockClear();
         document.querySelector<HTMLButtonElement>(
             '[data-view-theme="classic"] [data-theme-action="clone"]',
         )!.click();
@@ -384,6 +419,12 @@ describe('settings-dialog', () => {
         document.querySelector<HTMLButtonElement>(
             '[data-view-theme="meins"] [data-theme-action="delete"]',
         )!.click();
+        expect(document.getElementById('theme-delete-dialog')!.hidden).toBe(false);
+        expect(document.getElementById('theme-delete-text')!.textContent)
+            .toContain('Mein Theme');
+        expect(handles.invoke).not.toHaveBeenCalledWith('theme_delete', { id: 'meins' });
+
+        document.getElementById('theme-delete-confirm')!.click();
         await flush();
         await flush();
 

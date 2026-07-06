@@ -249,6 +249,16 @@
             </div>
           </form>
         </div>
+        <div id="theme-delete-dialog" class="settings-ai-overlay" hidden>
+          <div class="settings-ai-dialog" role="dialog" aria-modal="true" aria-labelledby="theme-delete-title">
+            <h3 id="theme-delete-title">Theme löschen</h3>
+            <p id="theme-delete-text">Theme wirklich löschen?</p>
+            <div class="settings-ai-dialog__actions">
+              <button type="button" id="theme-delete-cancel">Abbrechen</button>
+              <button type="button" id="theme-delete-confirm" class="danger">Löschen</button>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="settings-dialog__tabpanel settings-ai-panel" id="settings-panel-ki-anbieter" role="tabpanel" aria-labelledby="settings-tab-ki-anbieter" data-settings-tab="ki-anbieter" hidden>
         <section class="settings-section">
@@ -329,6 +339,24 @@
     <div class="settings-dialog__actions">
       <button type="button" id="settings-close" class="primary">Schließen</button>
     </div>
+  </div>
+</div>
+<div id="theme-editor-dialog" hidden>
+  <div class="theme-editor-toolbar">
+    <select id="theme-editor-part" class="settings-input" aria-label="Theme-Datei"></select>
+    <label class="theme-editor-toolbar__toggle">
+      <input type="checkbox" id="theme-editor-dark" />
+      Dunkle Vorschau
+    </label>
+    <span class="theme-editor-toolbar__spacer"></span>
+    <!-- TODO(E6): KI-Theme-Autor anbinden. -->
+    <button type="button" id="theme-editor-ai" disabled>Mit KI anpassen…</button>
+    <button type="button" id="theme-editor-save" class="primary" disabled>Speichern</button>
+    <button type="button" id="theme-editor-close">Schließen</button>
+  </div>
+  <div class="theme-editor-body">
+    <div id="theme-editor-mount"></div>
+    <iframe id="theme-editor-preview" sandbox="allow-same-origin" title="Theme-Vorschau"></iframe>
   </div>
 </div>
 </div>

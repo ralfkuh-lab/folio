@@ -30,21 +30,92 @@ export function getActiveTabId(): number | null {
     return active ? active.id : null;
 }
 
-// Virtueller "Einstellungen"-Tab (VS-Code-Muster): kein Backend-Tab,
-// nur ein Leisten-Eintrag, solange die Settings-Region offen ist.
-// Callbacks statt Direktimport von settings-dialog.ts (Import-Zyklus).
-let settingsTabOpen = false;
+export interface VirtualTab {
+    slug: string;
+    label: () => string;
+    dirty?: () => boolean;
+    onActivate: () => void;
+    onClose: () => void | boolean | Promise<void | boolean>;
+}
+
+const virtualTabs = new Map<string, VirtualTab>();
+let activeVirtualSlug: string | null = null;
 let settingsTabHooks: { onActivate: () => void; onClose: () => void } | null = null;
+
+function syncVirtualRegionClasses(): void {
+    document.body.classList.toggle('settings-open', activeVirtualSlug === 'settings');
+    document.body.classList.toggle('theme-editor-open', activeVirtualSlug === 'theme-editor');
+}
+
+export function registerVirtualTab(tab: VirtualTab, activate = true): void {
+    virtualTabs.set(tab.slug, tab);
+    if (activate) activeVirtualSlug = tab.slug;
+    syncVirtualRegionClasses();
+    renderTabs(current);
+    if (activate) tab.onActivate();
+}
+
+export function unregisterVirtualTab(slug: string): void {
+    if (!virtualTabs.delete(slug)) return;
+    if (activeVirtualSlug === slug) activeVirtualSlug = null;
+    syncVirtualRegionClasses();
+    renderTabs(current);
+}
+
+export function activateVirtualTab(slug: string): boolean {
+    const tab = virtualTabs.get(slug);
+    if (!tab) return false;
+    activeVirtualSlug = slug;
+    syncVirtualRegionClasses();
+    renderTabs(current);
+    tab.onActivate();
+    return true;
+}
+
+export function refreshVirtualTabs(): void {
+    renderTabs(current);
+}
+
+export function isVirtualTabActive(slug: string): boolean {
+    return activeVirtualSlug === slug;
+}
+
+async function requestCloseVirtualTab(slug: string): Promise<boolean> {
+    const tab = virtualTabs.get(slug);
+    if (!tab) return true;
+    const result = await tab.onClose();
+    if (result === false) return false;
+    // Hooks entfernen ihren Tab regulaer selbst. Defensive Bereinigung,
+    // falls ein einfacher Callback nur seine Region geschlossen hat.
+    if (virtualTabs.has(slug)) unregisterVirtualTab(slug);
+    return true;
+}
 
 export function configureSettingsTab(hooks: { onActivate: () => void; onClose: () => void }): void {
     settingsTabHooks = hooks;
+    if (virtualTabs.has('settings')) {
+        registerVirtualTab({
+            slug: 'settings',
+            label: () => '\u2699 Einstellungen',
+            onActivate: hooks.onActivate,
+            onClose: hooks.onClose,
+        }, activeVirtualSlug === 'settings');
+    }
 }
 
 /** Von settings-dialog.ts bei open/close gerufen; rendert die Leiste neu. */
 export function setSettingsTabOpen(open: boolean): void {
-    if (settingsTabOpen === open) return;
-    settingsTabOpen = open;
-    renderTabs(current);
+    if (!open) {
+        unregisterVirtualTab('settings');
+        return;
+    }
+    if (!settingsTabHooks) return;
+    registerVirtualTab({
+        slug: 'settings',
+        label: () => '\u2699 Einstellungen',
+        onActivate: settingsTabHooks.onActivate,
+        onClose: settingsTabHooks.onClose,
+    });
 }
 
 function invoke(command: string, args?: Record<string, unknown>): Promise<any> {
@@ -80,7 +151,7 @@ export function renderTabs(payload: TabsPayload): void {
     const bar = document.getElementById('tab-bar');
     if (!bar) return;
 
-    const visible = settingsTabOpen
+    const visible = virtualTabs.size > 0
         || (current.tabs.length > 0
             && !(current.tabs.length === 1 && !current.tabs[0].path));
     bar.hidden = !visible;
@@ -89,13 +160,11 @@ export function renderTabs(payload: TabsPayload): void {
     for (const tab of current.tabs) {
         if (!tab.path) continue;
         const item = document.createElement('div');
-        // Bei offener Settings-Region ist der virtuelle Tab "aktiv" —
-        // Dokument-Tabs verlieren solange ihre aktive Markierung.
-        item.className = 'tab-item' + (tab.active && !settingsTabOpen ? ' active' : '');
+        item.className = 'tab-item' + (tab.active && !activeVirtualSlug ? ' active' : '');
         item.dataset.tabId = String(tab.id);
         item.title = tab.path;
         item.setAttribute('role', 'tab');
-        const selected = tab.active && !settingsTabOpen;
+        const selected = tab.active && !activeVirtualSlug;
         item.setAttribute('aria-selected', selected ? 'true' : 'false');
         item.tabIndex = selected ? 0 : -1;
 
@@ -125,9 +194,10 @@ export function renderTabs(payload: TabsPayload): void {
         });
         item.appendChild(close);
 
-        item.addEventListener('click', function () {
-            if (settingsTabOpen && settingsTabHooks) settingsTabHooks.onClose();
-            activateTab(tab.id);
+        item.addEventListener('click', async function () {
+            if (activeVirtualSlug
+                && !await requestCloseVirtualTab(activeVirtualSlug)) return;
+            await activateTab(tab.id);
         });
         item.addEventListener('auxclick', function (event) {
             if (event.button !== 1) return;
@@ -137,39 +207,48 @@ export function renderTabs(payload: TabsPayload): void {
         bar.appendChild(item);
     }
 
-    if (settingsTabOpen) {
+    for (const virtual of virtualTabs.values()) {
+        const selected = activeVirtualSlug === virtual.slug;
         const item = document.createElement('div');
-        item.className = 'tab-item tab-settings active';
-        item.dataset.tabId = 'settings';
-        item.title = 'Einstellungen';
+        item.className = 'tab-item tab-' + virtual.slug + (selected ? ' active' : '');
+        item.dataset.tabId = virtual.slug;
+        item.title = virtual.label();
         item.setAttribute('role', 'tab');
-        item.setAttribute('aria-selected', 'true');
-        item.tabIndex = 0;
+        item.setAttribute('aria-selected', selected ? 'true' : 'false');
+        item.tabIndex = selected ? 0 : -1;
 
         const label = document.createElement('span');
         label.className = 'tab-title';
-        label.textContent = '\u2699 Einstellungen';
+        label.textContent = virtual.label();
         item.appendChild(label);
+
+        if (virtual.dirty?.()) {
+            const dirty = document.createElement('span');
+            dirty.className = 'tab-dirty';
+            dirty.textContent = '•';
+            dirty.setAttribute('aria-label', 'Ungespeicherte Änderungen');
+            item.appendChild(dirty);
+        }
 
         const close = document.createElement('button');
         close.className = 'tab-close';
         close.type = 'button';
-        close.title = 'Einstellungen schließen';
-        close.setAttribute('aria-label', 'Einstellungen schließen');
+        close.title = virtual.label() + ' schließen';
+        close.setAttribute('aria-label', virtual.label() + ' schließen');
         close.textContent = '×';
-        close.addEventListener('click', function (event) {
+        close.addEventListener('click', async function (event) {
             event.stopPropagation();
-            if (settingsTabHooks) settingsTabHooks.onClose();
+            await requestCloseVirtualTab(virtual.slug);
         });
         item.appendChild(close);
 
         item.addEventListener('click', function () {
-            if (settingsTabHooks) settingsTabHooks.onActivate();
+            activateVirtualTab(virtual.slug);
         });
-        item.addEventListener('auxclick', function (event) {
+        item.addEventListener('auxclick', async function (event) {
             if (event.button !== 1) return;
             event.preventDefault();
-            if (settingsTabHooks) settingsTabHooks.onClose();
+            await requestCloseVirtualTab(virtual.slug);
         });
         bar.appendChild(item);
     }

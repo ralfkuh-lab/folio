@@ -10,6 +10,30 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 
+const THEME_PREVIEW_SAMPLE: &str = r#"---
+title: Theme-Vorschau
+author: Folio
+---
+
+# Überschrift 1
+
+## Überschrift 2
+
+Ein Absatz mit **Fettdruck**, *Kursivschrift* und `Inline-Code`.
+
+> Ein Blockzitat für typografische Details.
+
+| Spalte A | Spalte B |
+| --- | --- |
+| Alpha | Beta |
+
+```rust
+fn main() {
+    println!("Theme-Vorschau");
+}
+```
+"#;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AssetInfo {
@@ -137,6 +161,20 @@ pub async fn theme_clone(
     };
     emit_changed(&handle, &new_id, "clone")?;
     Ok(layout)
+}
+
+#[tauri::command]
+pub async fn theme_preview_render(
+    markdown: Option<String>,
+    parts: ThemeWriteFiles,
+    dark: bool,
+) -> Result<String, String> {
+    let markdown = markdown.as_deref().unwrap_or(THEME_PREVIEW_SAMPLE);
+    Ok(crate::export::render_theme_preview(
+        markdown,
+        &ThemeParts::from(parts),
+        dark,
+    ))
 }
 
 fn emit_changed(handle: &AppHandle, id: &str, action: &str) -> Result<(), String> {
