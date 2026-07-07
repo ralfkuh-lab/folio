@@ -41,6 +41,67 @@ pub fn render_theme_preview(
     dark: bool,
     theme_id: Option<&str>,
 ) -> String {
+    let title = if parts.manifest.name.trim().is_empty() {
+        "Theme-Vorschau"
+    } else {
+        &parts.manifest.name
+    };
+    render_theme_parts_in(
+        markdown,
+        title,
+        None,
+        parts,
+        dark,
+        theme_id,
+        &persist::themes_dir(),
+    )
+}
+
+pub fn render_theme_draft(
+    markdown: &str,
+    title: &str,
+    path: Option<&str>,
+    parts: &theme::store::ThemeParts,
+    base_theme_id: Option<&str>,
+) -> String {
+    render_theme_draft_in(
+        markdown,
+        title,
+        path,
+        parts,
+        base_theme_id,
+        &persist::themes_dir(),
+    )
+}
+
+fn render_theme_draft_in(
+    markdown: &str,
+    title: &str,
+    path: Option<&str>,
+    parts: &theme::store::ThemeParts,
+    base_theme_id: Option<&str>,
+    themes_dir: &Path,
+) -> String {
+    render_theme_parts_in(
+        markdown,
+        title,
+        path,
+        parts,
+        parts.manifest.code_is_dark(),
+        base_theme_id,
+        themes_dir,
+    )
+}
+
+fn render_theme_parts_in(
+    markdown: &str,
+    title: &str,
+    path: Option<&str>,
+    parts: &theme::store::ThemeParts,
+    dark: bool,
+    theme_id: Option<&str>,
+    themes_dir: &Path,
+) -> String {
     let content_css = match (dark, parts.dark_css.as_deref()) {
         (true, Some(dark_css)) => format!("{}\n{dark_css}", parts.content_css),
         _ => parts.content_css.clone(),
@@ -60,6 +121,7 @@ pub fn render_theme_preview(
             parts.header_html.as_deref(),
             parts.footer_html.as_deref(),
         ],
+        themes_dir,
     );
     let content_css = theme::assets::rewrite_asset_urls(&content_css, &asset_pairs);
     let page_css = theme::assets::rewrite_asset_urls(page_css, &asset_pairs);
@@ -71,8 +133,14 @@ pub fn render_theme_preview(
         parts.manifest.hide_inline_frontmatter,
     ));
 
-    let logo_uri = load_preview_logo(theme_id, parts.manifest.logo.as_deref(), &asset_pairs);
-    let context = theme::template::TemplateContext::from_markdown(markdown, None, logo_uri);
+    let logo_uri = load_preview_logo(
+        theme_id,
+        parts.manifest.logo.as_deref(),
+        &asset_pairs,
+        themes_dir,
+    );
+    let mut context = theme::template::TemplateContext::from_markdown(markdown, path, logo_uri);
+    context.title = title.to_string();
     let cover = rewrite_rendered_template(
         render_optional_template(parts.cover_html.as_deref(), parts.manifest.cover, &context),
         &asset_pairs,
@@ -94,11 +162,6 @@ pub fn render_theme_preview(
         &asset_pairs,
     );
 
-    let title = if parts.manifest.name.trim().is_empty() {
-        "Theme-Vorschau"
-    } else {
-        &parts.manifest.name
-    };
     wrap_html(&WrapContext {
         title,
         css: &css,
@@ -223,6 +286,7 @@ fn load_preview_assets(
     content_css: &str,
     page_css: &str,
     templates: [Option<&str>; 3],
+    themes_dir: &Path,
 ) -> Vec<(String, String)> {
     let refs = theme::assets::collect_references(content_css, page_css, templates);
     if refs.is_empty() {
@@ -231,7 +295,7 @@ fn load_preview_assets(
     let Some(id) = theme_id.filter(|id| theme::valid_theme_id(id)) else {
         return Vec::new();
     };
-    let theme_dir = persist::themes_dir().join(id);
+    let theme_dir = themes_dir.join(id);
     if !theme_dir.is_dir() {
         return Vec::new();
     }
@@ -258,9 +322,10 @@ fn load_preview_logo(
     theme_id: Option<&str>,
     logo: Option<&str>,
     assets: &[(String, String)],
+    themes_dir: &Path,
 ) -> Option<String> {
     let id = theme_id.filter(|id| theme::valid_theme_id(id))?;
-    let theme_dir = persist::themes_dir().join(id);
+    let theme_dir = themes_dir.join(id);
     if !theme_dir.is_dir() {
         return None;
     }
@@ -509,6 +574,44 @@ mod tests {
         let dark = render_theme_preview("# Titel", &parts, true, None);
         assert!(dark.contains("light-marker"));
         assert!(dark.contains("dark-marker"));
+    }
+
+    #[test]
+    fn draft_render_uses_title_dark_mode_and_base_assets() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temp.path().join("base/assets")).unwrap();
+        fs::write(temp.path().join("base/assets/font.woff2"), b"font").unwrap();
+        let parts = crate::theme::store::ThemeParts {
+            manifest: crate::theme::package::ThemeManifest {
+                name: "Draft".to_string(),
+                code: "dark".to_string(),
+                header: true,
+                ..crate::theme::package::ThemeManifest::default()
+            },
+            content_css: "@font-face { font-family: Draft; src: url(asset:font.woff2); }\n\
+                .markdown-body { color: light-marker; }"
+                .to_string(),
+            dark_css: Some(".markdown-body { color: dark-marker; }".to_string()),
+            page_css: Some("body { margin: draft-page; }".to_string()),
+            cover_html: None,
+            header_html: Some("<div>{{title}}</div>".to_string()),
+            footer_html: None,
+        };
+
+        let html = render_theme_draft_in(
+            "# Dokument",
+            "Export Titel",
+            Some("/tmp/export-test.md"),
+            &parts,
+            Some("base"),
+            temp.path(),
+        );
+
+        assert!(html.contains("<title>Export Titel</title>"));
+        assert!(html.contains("dark-marker"));
+        assert!(html.contains("draft-page"));
+        assert!(html.contains("data:font/woff2;base64"));
+        assert!(html.contains("<div>Export Titel</div>"));
     }
 
     #[test]

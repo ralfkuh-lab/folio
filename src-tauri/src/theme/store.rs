@@ -461,6 +461,20 @@ mod tests {
     }
 
     #[test]
+    fn create_rejects_existing_theme_id() {
+        let temp = tempfile::tempdir().unwrap();
+        create_in("mine", &parts("Mine", "light"), temp.path()).unwrap();
+
+        let error = create_in("mine", &parts("Mine 2", "dark"), temp.path()).unwrap_err();
+
+        assert!(error.contains("bereits vergeben"), "{error}");
+        assert_eq!(
+            "light",
+            fs::read_to_string(temp.path().join("mine/content.css")).unwrap()
+        );
+    }
+
+    #[test]
     fn write_preserves_assets_and_clone_materializes_builtin_templates() {
         let temp = tempfile::tempdir().unwrap();
         create_in("mine", &parts("Mine", "one"), temp.path()).unwrap();

@@ -399,6 +399,7 @@ pub async fn ai_translate_cancel(state: State<'_, AppState>) -> Result<(), Strin
 pub async fn ai_theme_author(
     prompt: String,
     base_id: Option<String>,
+    with_document: Option<bool>,
     provider_id: String,
     model_id: String,
     state: State<'_, AppState>,
@@ -437,9 +438,28 @@ pub async fn ai_theme_author(
         }
         None => None,
     };
+    let document_context = if with_document.unwrap_or(false) {
+        let markdown = {
+            let tabs = state
+                .tabs
+                .lock()
+                .map_err(|_| "tabs lock poisoned".to_string())?;
+            let store = &tabs.active().document_store;
+            if store.path.is_none() {
+                return Err("Kein Dokument geöffnet.".to_string());
+            }
+            store.text.clone()
+        };
+        Some(author::document_excerpt(&markdown))
+    } else {
+        None
+    };
 
     let messages = [
-        ChatMessage::system(author::system_prompt(base.as_ref())),
+        ChatMessage::system(author::system_prompt(
+            base.as_ref(),
+            document_context.as_deref(),
+        )),
         ChatMessage::user(prompt),
     ];
     let cancel = state.ai_theme_author_cancel.clone();
@@ -500,6 +520,7 @@ pub async fn ai_theme_author(
         provider_id,
         model_id,
         base = base_id.as_deref().unwrap_or(""),
+        with_document = with_document.unwrap_or(false),
         "AI theme draft validated"
     );
     done(true, None);

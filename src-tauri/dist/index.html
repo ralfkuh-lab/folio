@@ -500,11 +500,53 @@
       <button type="button" data-format="html" class="active">HTML</button>
       <button type="button" data-format="pdf">PDF</button>
     </div>
+    <details id="export-ai-section" class="export-ai">
+      <summary>✨ KI-Layout für dieses Dokument</summary>
+      <div class="export-ai__body">
+        <label for="export-ai-prompt">Prompt</label>
+        <textarea id="export-ai-prompt" rows="3" placeholder="Layout-Stil, Zielgruppe, visuelle Richtung"></textarea>
+        <div class="export-ai__grid">
+          <label>
+            Basis-Theme
+            <select id="export-ai-base"></select>
+          </label>
+          <label>
+            Modell
+            <select id="export-ai-model"></select>
+          </label>
+        </div>
+        <p class="export-ai__cost">Jeder Lauf sendet das Dokument an den gewählten Anbieter und verursacht Kosten.</p>
+        <p id="export-ai-error" class="settings-ai-error" hidden></p>
+        <div class="export-ai__status" id="export-ai-status">Bereit.</div>
+        <div class="export-ai__actions">
+          <button type="button" id="export-ai-start" class="primary">Starten</button>
+          <button type="button" id="export-ai-cancel" disabled>Abbrechen</button>
+        </div>
+        <div id="export-ai-draft-actions" class="export-ai__actions" hidden>
+          <button type="button" id="export-ai-regenerate">Neu generieren</button>
+          <button type="button" id="export-ai-save-theme">Als Theme speichern…</button>
+        </div>
+      </div>
+    </details>
     <div class="export-dialog__cards" id="export-cards"></div>
     <div class="export-dialog__actions">
       <button type="button" id="export-cancel">Abbrechen</button>
       <button type="button" id="export-save" class="primary" disabled>Speichern…</button>
     </div>
+  </div>
+  <div id="export-ai-save-dialog" class="settings-ai-overlay" hidden>
+    <form id="export-ai-save-form" class="settings-ai-dialog" role="dialog" aria-modal="true" aria-labelledby="export-ai-save-title">
+      <h3 id="export-ai-save-title">KI-Entwurf als Theme speichern</h3>
+      <label for="export-ai-save-id">ID-Slug</label>
+      <input type="text" id="export-ai-save-id" class="settings-input" autocomplete="off" spellcheck="false" />
+      <label for="export-ai-save-name">Anzeigename</label>
+      <input type="text" id="export-ai-save-name" class="settings-input" autocomplete="off" />
+      <p id="export-ai-save-error" class="settings-ai-error" hidden></p>
+      <div class="settings-ai-actions">
+        <button type="button" id="export-ai-save-cancel">Abbrechen</button>
+        <button type="submit" id="export-ai-save-submit" class="primary">Speichern</button>
+      </div>
+    </form>
   </div>
 </div>
 <div id="ai-translate-dialog" hidden>

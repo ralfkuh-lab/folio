@@ -14,8 +14,11 @@
   explizite View-Auswahl statt Klick=Anwenden, Name/Beschreibung-Edit).
   Windows-Smoke ist erledigt (2026-07-07). Fonts sind Theme-Bestandteile
   (fontBody/fontMono/fontSize im Manifest, wirken in View + Export +
-  Previews; @font-face-Assets auch in der View). **Als Nächstes geplant**:
-  E10 dynamischer Per-Export-KI-Modus (Plan vom 2026-07-07).
+  Previews; @font-face-Assets auch in der View). E10 (dynamischer
+  Per-Export-KI-Modus) ist ebenfalls umgesetzt: „✨ KI-Layout für dieses
+  Dokument" im Export-Dialog erzeugt einen transienten, dokumentbezogenen
+  Draft (Streaming/Abbruch, Live-Preview-Karte, Export via
+  export_html_draft/export_pdf_draft, optional „Als Theme speichern").
   Bewusst verschoben bleiben: PDF-Live-Seitenzahlen via CDP,
   Theme-ID-Rename (nur Anzeigename ist editierbar).
   Bewusst akzeptierte Review-Rest-Punkte:

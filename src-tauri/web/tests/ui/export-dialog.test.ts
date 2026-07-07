@@ -24,9 +24,31 @@ function buildDom(): void {
                 <button data-format="html"></button>
                 <button data-format="pdf"></button>
             </div>
+            <details id="export-ai-section">
+                <summary>KI</summary>
+                <textarea id="export-ai-prompt"></textarea>
+                <select id="export-ai-base"></select>
+                <select id="export-ai-model"></select>
+                <p id="export-ai-error" hidden></p>
+                <div id="export-ai-status"></div>
+                <button id="export-ai-start"></button>
+                <button id="export-ai-cancel"></button>
+                <div id="export-ai-draft-actions" hidden>
+                    <button id="export-ai-regenerate"></button>
+                    <button id="export-ai-save-theme"></button>
+                </div>
+            </details>
             <div id="export-cards"></div>
             <button id="export-save"></button>
             <button id="export-cancel"></button>
+            <div id="export-ai-save-dialog" hidden>
+                <form id="export-ai-save-form">
+                    <input id="export-ai-save-id" />
+                    <input id="export-ai-save-name" />
+                    <p id="export-ai-save-error" hidden></p>
+                    <button id="export-ai-save-cancel" type="button"></button>
+                </form>
+            </div>
         </div>
     `;
     document.body.className = 'kind-markdown';
@@ -53,11 +75,51 @@ function setupInvokeResponses(handles: TauriMockHandles): void {
                 return Promise.resolve({ themeFavorites });
             case 'export_render':
                 return Promise.resolve('<html></html>');
+            case 'export_render_draft':
+                return Promise.resolve('<html><title>draft</title></html>');
             case 'pick_export_target':
                 return Promise.resolve('/tmp/out.html');
             case 'export_html':
             case 'export_pdf':
+            case 'export_html_draft':
+            case 'export_pdf_draft':
+            case 'theme_create':
                 return Promise.resolve();
+            case 'ai_config_get':
+                return Promise.resolve({
+                    provider: {
+                        mock: {
+                            enabled: true,
+                            name: 'Mock',
+                            whitelist: ['model'],
+                        },
+                    },
+                    defaultModel: { provider: 'mock', model: 'model' },
+                });
+            case 'ai_catalog_get':
+                return Promise.resolve({
+                    catalog: {
+                        mock: {
+                            id: 'mock',
+                            name: 'Mock',
+                            models: { model: { id: 'model', name: 'Model' } },
+                        },
+                    },
+                });
+            case 'ai_theme_author':
+                return Promise.resolve({
+                    manifest: {
+                        name: 'Draft Layout',
+                        description: 'AI',
+                        code: 'light',
+                        cover: false,
+                        header: false,
+                        footer: false,
+                        hideInlineFrontmatter: false,
+                        formatVersion: 1,
+                    },
+                    contentCss: '.markdown-body { color: red; }',
+                });
             default:
                 return Promise.resolve();
         }
@@ -66,6 +128,10 @@ function setupInvokeResponses(handles: TauriMockHandles): void {
 
 function exportCalls(handles: TauriMockHandles): number {
     return handles.invoke.mock.calls.filter((c) => c[0] === 'pick_export_target').length;
+}
+
+function calls(handles: TauriMockHandles, cmd: string): any[][] {
+    return handles.invoke.mock.calls.filter((c) => c[0] === cmd);
 }
 
 async function openDialog(): Promise<void> {
@@ -181,5 +247,59 @@ describe('export-dialog', () => {
         expect(moreCards.hidden).toBe(false);
         expect(handles.invoke.mock.calls.filter((c) => c[0] === 'export_render'))
             .toHaveLength(3);
+    });
+
+    it('injiziert nach KI-Generierung eine auswählbare Draft-Karte', async () => {
+        await openDialog();
+        (document.getElementById('export-ai-prompt') as HTMLTextAreaElement).value =
+            'Ein Layout für diesen Bericht';
+
+        document.getElementById('export-ai-start')!.click();
+        await flush();
+
+        const draftCard = document.getElementById('export-ai-draft-card') as HTMLElement;
+        expect(draftCard).toBeTruthy();
+        expect(draftCard.dataset.layoutId).toBe('__folio_export_ai_draft');
+        expect(draftCard.classList.contains('selected')).toBe(true);
+        expect(calls(handles, 'ai_theme_author')[0][1]).toMatchObject({
+            withDocument: true,
+            providerId: 'mock',
+            modelId: 'model',
+        });
+        expect(calls(handles, 'export_render_draft')).toHaveLength(1);
+    });
+
+    it('routet Speichern bei selektiertem KI-Entwurf auf Draft-Export', async () => {
+        await openDialog();
+        (document.getElementById('export-ai-prompt') as HTMLTextAreaElement).value =
+            'Ein Layout für diesen Bericht';
+        document.getElementById('export-ai-start')!.click();
+        await flush();
+
+        document.getElementById('export-save')!.click();
+        await flush();
+
+        expect(calls(handles, 'export_html_draft')).toHaveLength(1);
+        expect(calls(handles, 'export_html')).toHaveLength(0);
+        expect(calls(handles, 'export_html_draft')[0][1]).toMatchObject({
+            targetPath: '/tmp/out.html',
+            parts: {
+                contentCss: '.markdown-body { color: red; }',
+            },
+        });
+    });
+
+    it('verwirft den KI-Draft beim Schliessen des Exportdialogs', async () => {
+        await openDialog();
+        (document.getElementById('export-ai-prompt') as HTMLTextAreaElement).value =
+            'Ein Layout für diesen Bericht';
+        document.getElementById('export-ai-start')!.click();
+        await flush();
+        expect(document.getElementById('export-ai-draft-card')).toBeTruthy();
+
+        document.getElementById('export-cancel')!.click();
+
+        expect(document.getElementById('export-ai-draft-card')).toBeNull();
+        expect(document.getElementById('export-dialog')!.hidden).toBe(true);
     });
 });

@@ -220,6 +220,93 @@
   opacity: 0.5;
   cursor: default;
 }
+.export-ai {
+  margin: 0 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--rail-bg);
+}
+.export-ai summary {
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+.export-ai__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 10px 10px;
+  font-size: 12px;
+}
+.export-ai textarea,
+.export-ai select,
+.export-ai input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  padding: 6px 8px;
+  font: inherit;
+}
+.export-ai textarea {
+  resize: vertical;
+  min-height: 70px;
+}
+.export-ai__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.export-ai__grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--fg-muted);
+}
+.export-ai__cost {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 11.5px;
+}
+.export-ai__status {
+  color: var(--fg-muted);
+  font-size: 11.5px;
+}
+.export-ai__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.export-ai__actions[hidden] {
+  display: none;
+}
+.export-ai__actions button {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  padding: 5px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+.export-ai__actions button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: white;
+}
+.export-ai__actions button:disabled,
+.export-ai textarea:disabled,
+.export-ai select:disabled,
+.export-ai input:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+.export-ai-card {
+  background: color-mix(in srgb, var(--accent) 10%, var(--rail-bg));
+}
 
 /* About-Dialog */
 #about-dialog[hidden] { display: none; }

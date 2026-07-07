@@ -1,3 +1,11 @@
+import {
+    EXPORT_AI_DRAFT_ID,
+    clearExportAiDraft,
+    exportAiDraftSave,
+    initExportAi,
+    prepareExportAiOpen,
+} from './export-ai';
+
 /* Export-Dialog: HTML/PDF-Format-Wahl + Layout-Karten mit Iframe-Preview.
    Aufruf via Toolbar (tb-export). Abhaengig vom Document-State
    (currentPath, syncEditorTextToStore) und Statusbar (showStatus), die
@@ -175,6 +183,7 @@ function openExportDialog(): void {
         const cards = $('export-cards');
         const initiallySelected = renderLayoutCards(cards, layouts, favoriteIds);
         selectLayoutCard(initiallySelected);
+        prepareExportAiOpen(layouts);
         $('export-dialog').hidden = false;
         // Defensive: bei Re-Open ohne Close (z. B. Doppelklick auf
         // tb-export) den alten Handler abraeumen, sonst leakt er —
@@ -210,6 +219,7 @@ function closeExportDialog(): void {
     // Sonst wuerde ein verbliebener Keydown-Handler (oder der naechste
     // Enter-Druck nach Re-Open-Fehler) mit dem alten Layout exportieren.
     selectedLayoutId = null;
+    clearExportAiDraft();
     const cards = $('export-cards');
     if (cards) cards.innerHTML = '';
 }
@@ -218,11 +228,18 @@ function doExportSave(): void {
     if (!selectedLayoutId) return;
     const fmt = selectedExportFormat;
     const defaultName = fileBaseName(deps.getCurrentPath()) + '.' + fmt;
-    const cmd = (fmt === 'pdf') ? 'export_pdf' : 'export_html';
     invoke('pick_export_target', { defaultName, format: fmt })
         .then(function (targetPath) {
             if (!targetPath) return;
             deps.showStatus('Export läuft…');
+            if (selectedLayoutId === EXPORT_AI_DRAFT_ID) {
+                return exportAiDraftSave(fmt, targetPath).then(function (handled) {
+                    if (!handled) return;
+                    closeExportDialog();
+                    deps.showStatus('Exportiert: ' + targetPath);
+                });
+            }
+            const cmd = (fmt === 'pdf') ? 'export_pdf' : 'export_html';
             return invoke(cmd, { layoutId: selectedLayoutId, targetPath })
                 .then(function () {
                     closeExportDialog();
@@ -235,6 +252,12 @@ function doExportSave(): void {
 
 export function initExportDialog(d: Deps): void {
     deps = d;
+    initExportAi({
+        invoke,
+        showStatus: function (message) { deps.showStatus(message); },
+        selectDraftCard: function () { selectLayoutCard(EXPORT_AI_DRAFT_ID); },
+        isDraftSelected: function () { return selectedLayoutId === EXPORT_AI_DRAFT_ID; },
+    });
 
     const tbExport = $('tb-export');
     if (tbExport) tbExport.addEventListener('click', openExportDialog);

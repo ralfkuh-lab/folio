@@ -1,7 +1,9 @@
+use crate::commands::theme::ThemeWriteFiles;
 use crate::export::{self, LayoutInfo};
 use crate::pdf_export;
 use crate::settings::ExportDirMode;
 use crate::state::AppState;
+use crate::theme::store::ThemeParts;
 use std::borrow::Cow;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -39,6 +41,23 @@ pub async fn export_render(
 }
 
 #[tauri::command]
+pub async fn export_render_draft(
+    parts: ThemeWriteFiles,
+    base_theme_id: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let (path, text) = current_document(&state)?;
+    let title = export::derive_title(path.as_deref());
+    Ok(render_draft_html(
+        &text,
+        &title,
+        path.as_deref(),
+        parts,
+        base_theme_id.as_deref(),
+    ))
+}
+
+#[tauri::command]
 pub async fn export_html(
     layout_id: String,
     target_path: String,
@@ -51,6 +70,25 @@ pub async fn export_html(
 }
 
 #[tauri::command]
+pub async fn export_html_draft(
+    parts: ThemeWriteFiles,
+    base_theme_id: Option<String>,
+    target_path: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let (path, text) = current_document(&state)?;
+    let title = export::derive_title(path.as_deref());
+    let html = render_draft_html(
+        &text,
+        &title,
+        path.as_deref(),
+        parts,
+        base_theme_id.as_deref(),
+    );
+    fs::write(&target_path, html).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn export_pdf(
     layout_id: String,
     target_path: String,
@@ -59,6 +97,29 @@ pub async fn export_pdf(
     let (path, text) = current_document(&state)?;
     let title = export::derive_title(path.as_deref());
     let html = export::render_document(&layout_id, &title, path.as_deref(), &text)?;
+    let source_dir = path
+        .as_deref()
+        .and_then(|p| Path::new(p).parent())
+        .map(|p| p.to_path_buf());
+    pdf_export::render_pdf(&html, source_dir.as_deref(), Path::new(&target_path))
+}
+
+#[tauri::command]
+pub async fn export_pdf_draft(
+    parts: ThemeWriteFiles,
+    base_theme_id: Option<String>,
+    target_path: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let (path, text) = current_document(&state)?;
+    let title = export::derive_title(path.as_deref());
+    let html = render_draft_html(
+        &text,
+        &title,
+        path.as_deref(),
+        parts,
+        base_theme_id.as_deref(),
+    );
     let source_dir = path
         .as_deref()
         .and_then(|p| Path::new(p).parent())
@@ -143,6 +204,22 @@ fn current_document(state: &State<'_, AppState>) -> Result<(Option<String>, Stri
         return Err("Kein Dokument geöffnet.".into());
     }
     Ok((store.path.clone(), store.text.clone()))
+}
+
+fn render_draft_html(
+    markdown: &str,
+    title: &str,
+    path: Option<&str>,
+    parts: ThemeWriteFiles,
+    base_theme_id: Option<&str>,
+) -> String {
+    export::render_theme_draft(
+        markdown,
+        title,
+        path,
+        &ThemeParts::from(parts),
+        base_theme_id,
+    )
 }
 
 fn file_path_to_string(path: FilePath) -> String {

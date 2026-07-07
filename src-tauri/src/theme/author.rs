@@ -52,10 +52,12 @@ pub struct BaseContext {
     pub footer_html: Option<String>,
 }
 
+const DOCUMENT_EXCERPT_CHARS: usize = 12_000;
+
 /// System-Prompt = Format-Contract. Die Regeln stehen im Prompt UND
 /// werden nachgelagert vom Gate erzwungen — der Schutz haengt nicht an
 /// der Prompt-Disziplin des Modells.
-pub fn system_prompt(base: Option<&BaseContext>) -> String {
+pub fn system_prompt(base: Option<&BaseContext>, document_context: Option<&str>) -> String {
     let mut prompt = String::from(
         "Du bist ein Theme-Autor fuer den Markdown-Viewer folio. \
          Antworte AUSSCHLIESSLICH mit einem einzigen JSON-Objekt, ohne \
@@ -80,6 +82,14 @@ pub fn system_prompt(base: Option<&BaseContext>) -> String {
          - Du erzeugst keine Binaerassets; referenziere Logos nur ueber \
            {{logo}} oder url(asset:<vorhandene datei>).",
     );
+    if let Some(document) = document_context.filter(|document| !document.trim().is_empty()) {
+        prompt.push_str(
+            "\n\nDokument-Kontext: Gestalte das Theme passend zu Struktur \
+             und Inhalt dieses Dokuments; kopiere den Dokumentinhalt NICHT \
+             in die Theme-Dateien.\n\n=== Dokumentauszug ===\n",
+        );
+        prompt.push_str(document);
+    }
     if let Some(base) = base {
         prompt.push_str(&format!(
             "\n\nVerfeinerungs-Modus: Basis ist das bestehende Theme \
@@ -100,6 +110,79 @@ pub fn system_prompt(base: Option<&BaseContext>) -> String {
         }
     }
     prompt
+}
+
+pub fn document_excerpt(markdown: &str) -> String {
+    let (frontmatter, body) = split_frontmatter(markdown);
+    let (prefix, truncated) = first_chars(body, DOCUMENT_EXCERPT_CHARS);
+    if !truncated && frontmatter.is_none() {
+        return markdown.to_string();
+    }
+    if !truncated {
+        return match frontmatter {
+            Some(frontmatter) => format!("{frontmatter}{body}"),
+            None => body.to_string(),
+        };
+    }
+
+    let mut out = String::new();
+    if let Some(frontmatter) = frontmatter {
+        out.push_str(frontmatter);
+    }
+    out.push_str(&prefix);
+    out.push_str("\n\n[Dokument gekuerzt]\n");
+    let headings = heading_skeleton(markdown);
+    if !headings.is_empty() {
+        out.push_str("\nHeading-Skelett:\n");
+        out.push_str(&headings);
+    }
+    out
+}
+
+fn split_frontmatter(markdown: &str) -> (Option<&str>, &str) {
+    let Some(rest) = markdown.strip_prefix("---\n") else {
+        return (None, markdown);
+    };
+    let mut offset = 4;
+    for line in rest.split_inclusive('\n') {
+        offset += line.len();
+        if line.trim_end_matches(['\r', '\n']) == "---" {
+            return (Some(&markdown[..offset]), &markdown[offset..]);
+        }
+    }
+    (None, markdown)
+}
+
+fn first_chars(input: &str, limit: usize) -> (String, bool) {
+    let mut iter = input.char_indices();
+    for _ in 0..limit {
+        if iter.next().is_none() {
+            return (input.to_string(), false);
+        }
+    }
+    match iter.next() {
+        Some((idx, _)) => (input[..idx].to_string(), true),
+        None => (input.to_string(), false),
+    }
+}
+
+fn heading_skeleton(markdown: &str) -> String {
+    markdown
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim_start();
+            let hashes = trimmed.chars().take_while(|c| *c == '#').count();
+            if !(1..=6).contains(&hashes) {
+                return None;
+            }
+            let rest = trimmed.get(hashes..)?;
+            if !rest.starts_with(' ') {
+                return None;
+            }
+            Some(trimmed.to_string())
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Parst die Modell-Antwort als JSON; tolerant gegenueber einem
@@ -526,10 +609,35 @@ mod tests {
             header_html: None,
             footer_html: None,
         };
-        let prompt = system_prompt(Some(&base));
+        let prompt = system_prompt(Some(&base), None);
         assert!(prompt.contains("Verfeinerungs-Modus"));
         assert!(prompt.contains("--accent: #123"));
         assert!(prompt.contains("=== page.css ==="));
         assert!(!prompt.contains("=== cover.html ==="));
+    }
+
+    #[test]
+    fn document_excerpt_keeps_frontmatter_and_adds_heading_skeleton_when_truncated() {
+        let markdown = format!(
+            "---\ntitle: Export Pitch\nauthor: Ada\n---\n\n# Start\n{}\n## Details\n{}",
+            "a".repeat(12_050),
+            "b".repeat(100)
+        );
+
+        let excerpt = document_excerpt(&markdown);
+
+        assert!(excerpt.starts_with("---\ntitle: Export Pitch\nauthor: Ada\n---"));
+        assert!(excerpt.contains("[Dokument gekuerzt]"));
+        assert!(excerpt.contains("Heading-Skelett:\n# Start\n## Details"));
+        assert!(excerpt.len() < markdown.len());
+    }
+
+    #[test]
+    fn system_prompt_includes_document_context_instruction() {
+        let prompt = system_prompt(None, Some("# Bericht\n\nInhalt"));
+
+        assert!(prompt.contains("Dokument-Kontext"));
+        assert!(prompt.contains("kopiere den Dokumentinhalt NICHT"));
+        assert!(prompt.contains("# Bericht"));
     }
 }

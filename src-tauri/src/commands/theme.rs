@@ -126,6 +126,25 @@ pub async fn theme_write(
 }
 
 #[tauri::command]
+pub async fn theme_create(
+    id: String,
+    files: ThemeWriteFiles,
+    state: State<'_, AppState>,
+    handle: AppHandle,
+) -> Result<LayoutInfo, String> {
+    let layout = {
+        let _guard = state
+            .theme_write
+            .lock()
+            .map_err(|_| "theme write lock poisoned".to_string())?;
+        let package = store::create(&id, &ThemeParts::from(files))?;
+        theme::layout_info(&package)
+    };
+    emit_changed(&handle, &id, "create")?;
+    Ok(layout)
+}
+
+#[tauri::command]
 pub async fn theme_delete(
     id: String,
     state: State<'_, AppState>,

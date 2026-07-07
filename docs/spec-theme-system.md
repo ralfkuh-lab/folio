@@ -654,7 +654,7 @@ View-Asset-Rewrite, Archiv-Roundtrip mit Font-Feldern); jsdom
 `__folioInvoke('theme_write', …)` schreiben und `view_theme_css`
 asserten (rein API-basiert, Xvfb-sicher).
 
-### E10 — Dynamischer Per-Export-KI-Modus, „Stufe 2" (nachbeauftragt 2026-07-07)
+### E10 — Dynamischer Per-Export-KI-Modus, „Stufe 2" ✅ (nachbeauftragt 2026-07-07)
 
 Löst den „Bewusst verschoben"-Punkt „Dynamischer KI-Export (Stufe 2)"
 ein: ein KI-Lauf pro Export, der ein **dokumentspezifisches, transientes
