@@ -377,6 +377,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::theme::theme_delete,
             commands::theme::theme_clone,
             commands::theme::theme_preview_render,
+            commands::theme::theme_preview_saved,
             commands::theme::theme_asset_add,
             commands::theme::theme_asset_remove,
             commands::theme::theme_export,

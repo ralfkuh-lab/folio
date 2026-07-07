@@ -491,7 +491,7 @@ Kompatibilität. Umbenennen in `.zip` macht es manuell inspizierbar.
   (Buttons/Refresh), E2E `37_theme_import_export.py` (Roundtrip über
   Temp-Datei, finally-Cleanup).
 
-### E8 — Settings-Theme-Browser: Master-Detail, explizite Auswahl, Name-Edit (nachbeauftragt 2026-07-07)
+### E8 — Settings-Theme-Browser: Master-Detail, explizite Auswahl, Name-Edit ✅ (nachbeauftragt 2026-07-07)
 
 Behebt vier UI-Schmerzen (User-Feedback 2026-07-07): Klick auf einen
 Listeneintrag wendet das View-Theme sofort an; keine visuelle Vorschau in

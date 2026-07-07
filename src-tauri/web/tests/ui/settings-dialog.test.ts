@@ -57,7 +57,8 @@ function buildDom(): void {
                 <p id="settings-theme-error" hidden></p>
                 <button id="settings-theme-import" type="button">Theme importieren…</button>
                 <button id="settings-theme-create" type="button">Neues Theme</button>
-                <div id="settings-theme-list" role="radiogroup"></div>
+                <div id="settings-theme-list" role="listbox"></div>
+                <aside id="settings-theme-detail" tabindex="-1"></aside>
                 <p id="settings-theme-hint"></p>
                 <div id="theme-create-dialog" hidden>
                     <form id="theme-create-form">
@@ -91,10 +92,22 @@ function flush(): Promise<void> {
 
 describe('settings-dialog', () => {
     let handles: TauriMockHandles;
+    let observedPreviews: Element[];
+    let intersect: ((entries: Array<{ isIntersecting: boolean; target: Element }>) => void) | null;
 
     beforeEach(() => {
         closeSettingsDialog();
         handles = installTauriMock();
+        observedPreviews = [];
+        intersect = null;
+        (window as any).IntersectionObserver = vi.fn(function (callback) {
+            intersect = callback;
+            return {
+                observe: vi.fn((element: Element) => observedPreviews.push(element)),
+                unobserve: vi.fn(),
+                disconnect: vi.fn(),
+            };
+        });
         buildDom();
         (window as any).FolioThemeEditor = {
             mount: vi.fn().mockResolvedValue(undefined),
@@ -197,6 +210,9 @@ describe('settings-dialog', () => {
             if (cmd === 'theme_preview_render') {
                 return Promise.resolve('<html><body>Preview</body></html>');
             }
+            if (cmd === 'theme_preview_saved') {
+                return Promise.resolve(`<html><body>${args.themeId} Preview</body></html>`);
+            }
             return Promise.resolve();
         });
         initSettingsDialog();
@@ -283,7 +299,7 @@ describe('settings-dialog', () => {
         expect(diagnosePanel.hidden).toBe(false);
     });
 
-    it('rendert den Theme-Tab und persistiert die Auswahl', async () => {
+    it('rendert den Theme-Tab, Kartenklick oeffnet Detail und Verwenden persistiert', async () => {
         openSettingsDialog();
         await flush();
         document.getElementById('settings-tab-themes')!.click();
@@ -302,16 +318,27 @@ describe('settings-dialog', () => {
             .toContain('/home/test/.config/folio/themes');
         expect(document.querySelector<HTMLElement>(
             '#settings-theme-list [data-view-theme="standard"]',
-        )!.getAttribute('aria-checked')).toBe('true');
+        )!.getAttribute('aria-selected')).toBe('true');
 
+        handles.invoke.mockClear();
         classic.click();
         await flush();
+        await flush();
 
+        expect(classic.classList.contains('selected')).toBe(true);
+        expect(classic.getAttribute('aria-selected')).toBe('true');
+        expect(document.getElementById('settings-theme-detail')!.textContent)
+            .toContain('Classic');
+        expect(handles.invoke).toHaveBeenCalledWith('theme_read', { id: 'classic' });
+        expect(handles.invoke).not.toHaveBeenCalledWith('settings_update', {
+            patch: { viewTheme: 'classic' },
+        });
+
+        document.getElementById('settings-theme-use')!.click();
+        await flush();
         expect(handles.invoke).toHaveBeenCalledWith('settings_update', {
             patch: { viewTheme: 'classic' },
         });
-        expect(classic.classList.contains('selected')).toBe(true);
-        expect(classic.getAttribute('aria-checked')).toBe('true');
     });
 
     it('rendert Favoriten-Sterne und toggelt nur die Favoritenliste', async () => {
@@ -334,8 +361,6 @@ describe('settings-dialog', () => {
         expect(handles.invoke).not.toHaveBeenCalledWith('settings_update', {
             patch: { viewTheme: 'classic' },
         });
-        expect(document.querySelector('#settings-theme-list [data-view-theme="standard"]')!
-            .getAttribute('aria-checked')).toBe('true');
         expect(favorite.getAttribute('aria-pressed')).toBe('true');
         expect(favorite.getAttribute('aria-label')).toBe('Favorit entfernen');
         expect(favorite.textContent).toBe('★');
@@ -348,25 +373,34 @@ describe('settings-dialog', () => {
         expect(favorite.textContent).toBe('☆');
     });
 
-    it('rendert Aktionen nach Theme-Quelle ohne Kartenauswahl', async () => {
+    it('rendert Aktionen im Detail nach Theme-Quelle ohne Kartenauswahl', async () => {
         openSettingsDialog();
         await flush();
 
         expect(document.querySelectorAll(
             '#settings-theme-list > [data-view-theme="standard"] [data-theme-action]',
         )).toHaveLength(0);
+        expect(document.querySelectorAll(
+            '#settings-theme-list [data-theme-action]',
+        )).toHaveLength(0);
+
+        document.querySelector<HTMLElement>('[data-view-theme="classic"]')!.click();
+        await flush();
         expect(Array.from(document.querySelectorAll(
-            '[data-view-theme="classic"] [data-theme-action]',
+            '#settings-theme-detail [data-theme-action]',
         )).map((element) => (element as HTMLElement).dataset.themeAction))
             .toEqual(['clone', 'export']);
+
+        document.querySelector<HTMLElement>('[data-view-theme="meins"]')!.click();
+        await flush();
         expect(Array.from(document.querySelectorAll(
-            '[data-view-theme="meins"] [data-theme-action]',
+            '#settings-theme-detail [data-theme-action]',
         )).map((element) => (element as HTMLElement).dataset.themeAction))
             .toEqual(['edit', 'clone', 'export', 'delete']);
 
         handles.invoke.mockClear();
         document.querySelector<HTMLButtonElement>(
-            '[data-view-theme="meins"] [data-theme-action="edit"]',
+            '#settings-theme-detail [data-theme-action="edit"]',
         )!.click();
         await flush();
         expect(handles.invoke).toHaveBeenCalledWith('theme_read', { id: 'meins' });
@@ -377,9 +411,11 @@ describe('settings-dialog', () => {
         await guardedClose();
         openSettingsDialog();
         await flush();
+        document.querySelector<HTMLElement>('[data-view-theme="classic"]')!.click();
+        await flush();
         handles.invoke.mockClear();
         document.querySelector<HTMLButtonElement>(
-            '[data-view-theme="classic"] [data-theme-action="clone"]',
+            '#settings-theme-detail [data-theme-action="clone"]',
         )!.click();
         expect(document.getElementById('theme-create-dialog')!.hidden).toBe(false);
         expect((document.getElementById('theme-create-base') as HTMLSelectElement).value)
@@ -387,7 +423,7 @@ describe('settings-dialog', () => {
         expect(document.querySelector(
             '#settings-theme-list > [data-view-theme="standard"]',
         )!
-            .getAttribute('aria-checked')).toBe('true');
+            .getAttribute('aria-selected')).toBe('false');
         expect(handles.invoke).not.toHaveBeenCalledWith('settings_update', {
             patch: { viewTheme: 'classic' },
         });
@@ -396,10 +432,12 @@ describe('settings-dialog', () => {
     it('importiert und exportiert Themes ohne Kartenauswahl', async () => {
         openSettingsDialog();
         await flush();
+        document.querySelector<HTMLElement>('[data-view-theme="classic"]')!.click();
+        await flush();
         handles.invoke.mockClear();
 
         document.querySelector<HTMLButtonElement>(
-            '[data-view-theme="classic"] [data-theme-action="export"]',
+            '#settings-theme-detail [data-theme-action="export"]',
         )!.click();
         await flush();
         expect(handles.invoke).toHaveBeenCalledWith('theme_export', { id: 'classic' });
@@ -448,10 +486,12 @@ describe('settings-dialog', () => {
     it('loescht Custom-Themes und aktualisiert bei themes:changed', async () => {
         openSettingsDialog();
         await flush();
+        document.querySelector<HTMLElement>('[data-view-theme="meins"]')!.click();
+        await flush();
         handles.invoke.mockClear();
 
         document.querySelector<HTMLButtonElement>(
-            '[data-view-theme="meins"] [data-theme-action="delete"]',
+            '#settings-theme-detail [data-theme-action="delete"]',
         )!.click();
         expect(document.getElementById('theme-delete-dialog')!.hidden).toBe(false);
         expect(document.getElementById('theme-delete-text')!.textContent)
@@ -472,6 +512,85 @@ describe('settings-dialog', () => {
         handles.emitEvent('themes:changed', { id: 'firma', action: 'write' });
         await flush();
         expect(handles.invoke).toHaveBeenCalledWith('view_themes');
+    });
+
+    it('bearbeitet Name und Beschreibung im Theme-Detail', async () => {
+        openSettingsDialog();
+        await flush();
+        document.querySelector<HTMLElement>('[data-view-theme="meins"]')!.click();
+        await flush();
+
+        document.getElementById('settings-theme-detail-edit-name')!.click();
+        const name = document.getElementById(
+            'settings-theme-detail-name-input',
+        ) as HTMLInputElement;
+        const description = document.getElementById(
+            'settings-theme-detail-description-input',
+        ) as HTMLInputElement;
+        name.value = 'Mein Theme Neu';
+        description.value = 'Neue Beschreibung';
+
+        handles.invoke.mockClear();
+        document.getElementById('settings-theme-detail-save-name')!.click();
+        await flush();
+        await flush();
+
+        expect(handles.invoke).toHaveBeenCalledWith('theme_read', { id: 'meins' });
+        expect(handles.invoke).toHaveBeenCalledWith('theme_write', {
+            id: 'meins',
+            files: expect.objectContaining({
+                manifest: expect.objectContaining({
+                    name: 'Mein Theme Neu',
+                    description: 'Neue Beschreibung',
+                }),
+            }),
+        });
+    });
+
+    it('laedt Karten-Previews lazy per IntersectionObserver', async () => {
+        openSettingsDialog();
+        await flush();
+        expect(observedPreviews.length).toBeGreaterThan(0);
+        const classicFrame = document.querySelector<HTMLIFrameElement>(
+            '[data-view-theme="classic"] .settings-theme-card__preview iframe',
+        )!;
+
+        handles.invoke.mockClear();
+        intersect?.([{ isIntersecting: true, target: classicFrame }]);
+        await flush();
+
+        expect(handles.invoke).toHaveBeenCalledWith('theme_preview_saved', {
+            themeId: 'classic',
+            dark: false,
+        });
+        expect(classicFrame.srcdoc).toContain('classic Preview');
+    });
+
+    it('navigiert mit wiederholtem ArrowDown ab der fokussierten Karte weiter', async () => {
+        openSettingsDialog();
+        await flush();
+        document.getElementById('settings-tab-themes')!.click();
+        const cards = Array.from(
+            document.querySelectorAll<HTMLElement>('#settings-theme-list [data-view-theme]'),
+        );
+        const selectedIndex = cards.findIndex((card) =>
+            card.getAttribute('aria-selected') === 'true',
+        );
+        const first = cards[(selectedIndex + 1) % cards.length];
+        const second = cards[(selectedIndex + 2) % cards.length];
+        const selected = cards[selectedIndex];
+
+        selected.focus();
+        selected.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'ArrowDown',
+            bubbles: true,
+        }));
+        expect(document.activeElement).toBe(first);
+        first.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'ArrowDown',
+            bubbles: true,
+        }));
+        expect(document.activeElement).toBe(second);
     });
 
     it('setzt beim erneuten Öffnen auf Allgemein zurück', async () => {

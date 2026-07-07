@@ -24,6 +24,12 @@ function buildDom(): void {
             <div id="theme-editor-mount"></div>
             <div id="theme-editor-assets" class="theme-editor-assets">
                 <div class="theme-editor-assets__head"><strong>Manifest</strong></div>
+                <div class="theme-editor-manifest-fields">
+                    <label for="theme-editor-manifest-name">Name</label>
+                    <input id="theme-editor-manifest-name" />
+                    <label for="theme-editor-manifest-description">Beschreibung</label>
+                    <input id="theme-editor-manifest-description" />
+                </div>
                 <div class="theme-editor-flags">
                     <label><input type="checkbox" id="theme-editor-flag-cover" /> Cover</label>
                     <label><input type="checkbox" id="theme-editor-flag-header" /> Kopfzeile</label>
@@ -151,6 +157,11 @@ describe('ui/theme-editor', () => {
         ).map((option) => option.value)).toEqual(['content', 'dark', 'cover']);
         expect(document.querySelector('.tab-theme-editor .tab-title')!.textContent)
             .toContain('Firma');
+        expect((document.getElementById('theme-editor-manifest-name') as HTMLInputElement).value)
+            .toBe('Firma');
+        expect((document.getElementById(
+            'theme-editor-manifest-description',
+        ) as HTMLInputElement).value).toBe('Corporate');
         expect(document.body.classList.contains('theme-editor-open')).toBe(true);
         expect(tauri.invoke).toHaveBeenCalledWith(
             'theme_preview_render',
@@ -242,6 +253,43 @@ describe('ui/theme-editor', () => {
         expect(await saveThemeEditor()).toBe(true);
         expect((document.getElementById('theme-editor-save') as HTMLButtonElement).disabled)
             .toBe(true);
+    });
+
+    it('refreshes clean manifest text fields after external theme changes', async () => {
+        const { initThemeEditor, openThemeEditor } =
+            await import('../../app/ui/theme-editor');
+        initThemeEditor();
+        const initial = themeFiles();
+        const changed = themeFiles();
+        changed.manifest.name = 'Firma Neu';
+        changed.manifest.description = 'Extern geändert';
+        tauri.invoke.mockImplementation((command: string) => {
+            if (command === 'theme_read') {
+                return Promise.resolve(
+                    tauri.invoke.mock.calls.filter(([cmd]) => cmd === 'theme_read').length <= 1
+                        ? initial
+                        : changed,
+                );
+            }
+            if (command === 'theme_preview_render') return Promise.resolve('<html></html>');
+            return Promise.resolve(undefined);
+        });
+
+        await openThemeEditor('firma');
+        const setPartsCalls = harness.surface.setParts.mock.calls.length;
+        tauri.emitEvent('themes:changed', { id: 'firma', action: 'write' });
+
+        await vi.waitFor(() => {
+            expect((document.getElementById(
+                'theme-editor-manifest-name',
+            ) as HTMLInputElement).value).toBe('Firma Neu');
+            expect((document.getElementById(
+                'theme-editor-manifest-description',
+            ) as HTMLInputElement).value).toBe('Extern geändert');
+        });
+        expect(document.querySelector('.tab-theme-editor .tab-title')!.textContent)
+            .toContain('Firma Neu');
+        expect(harness.surface.setParts.mock.calls.length).toBe(setPartsCalls);
     });
 
     it('uploads an asset, appends it to the list and preselects as logo', async () => {

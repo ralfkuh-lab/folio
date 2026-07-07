@@ -2,17 +2,21 @@
 
 ## Hohe Priorität
 
-- **Theme-System-Ausbau: E1–E6 UMGESETZT** (2026-07-06, Spec mit
-  Etappen-Checkliste in [`docs/spec-theme-system.md`](docs/spec-theme-system.md)):
+- **Theme-System-Ausbau: E1–E8 UMGESETZT** (E1–E7 2026-07-06/07, E8
+  Settings-Theme-Browser 2026-07-07; Spec mit Etappen-Checkliste in
+  [`docs/spec-theme-system.md`](docs/spec-theme-system.md)):
   In-App-Theme-CRUD + Monaco-Editor mit Live-Preview (eigener virtueller
   Tab), Verzeichnis-Paketformat mit Deckblatt/Kopf-Fußzeile/Logo-Assets/
   Frontmatter-Template-Variablen, 8 neue Built-in-Vorlagen, KI-Theme-Autor
-  (Draft→Review→Save). Zweitreview (codex, 2026-07-06) ist eingearbeitet:
-  CSS-Gate gehärtet (kein `<`, url()-Whitelist), nicht-destruktive Drafts,
-  Template-Asset-Einbettung, Logo-Soft-Fail, vollständiger Dirty-State u. a.
-  Offen: manueller Windows-Smoke (Spec-Abschnitt „Verifikation") und die
-  bewusst verschobenen Punkte (PDF-Live-Seitenzahlen via CDP, dynamischer
-  Per-Export-KI-Modus). Bewusst akzeptierte Review-Rest-Punkte:
+  (Draft→Review→Save), Import/Export als `.mdtheme`, Settings-Theme-Browser
+  (Master-Detail mit Live-Vorschauen, Detail-Einsicht auch für Built-ins,
+  explizite View-Auswahl statt Klick=Anwenden, Name/Beschreibung-Edit).
+  Windows-Smoke ist erledigt (2026-07-07). **Als Nächstes geplant**:
+  E9 Fonts als Theme-Bestandteile (fontBody/fontMono/fontSize im Manifest),
+  E10 dynamischer Per-Export-KI-Modus (Plan vom 2026-07-07).
+  Bewusst verschoben bleiben: PDF-Live-Seitenzahlen via CDP,
+  Theme-ID-Rename (nur Anzeigename ist editierbar).
+  Bewusst akzeptierte Review-Rest-Punkte:
   Theme-Guards sind lexikalisch, Symlinks unter `themes/` können nach außen
   zeigen (gleiche Trust-Stufe wie Custom-CSS, lokale Desktop-App);
   Store-Updates haben ein winziges Sichtbarkeitsfenster (Reads laufen

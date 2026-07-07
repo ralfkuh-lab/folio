@@ -223,18 +223,20 @@
         </section>
       </div>
       <div class="settings-dialog__tabpanel" id="settings-panel-themes" role="tabpanel" aria-labelledby="settings-tab-themes" data-settings-tab="themes" hidden>
-        <section class="settings-section">
-          <div class="settings-theme-heading">
+        <section class="settings-theme-browser">
+          <div class="settings-theme-browser__header">
             <h3 class="settings-section__title">Markdown-Themes</h3>
-            <div class="settings-theme-heading__actions">
-              <button type="button" id="settings-theme-import" class="settings-ai-button">Theme importieren…</button>
-              <button type="button" id="settings-theme-create" class="settings-ai-button">Neues Theme</button>
+            <div class="settings-theme-browser__actions">
+              <button type="button" id="settings-theme-import" class="settings-theme-button">Theme importieren…</button>
+              <button type="button" id="settings-theme-create" class="settings-theme-button primary">Neues Theme</button>
             </div>
           </div>
-          <p class="settings-hint">Das Theme gilt für die Markdown-Ansicht. Themes ohne Dunkel-Variante bleiben auch im dunklen App-Theme hell.</p>
-          <p id="settings-theme-error" class="settings-ai-error" hidden></p>
-          <div id="settings-theme-list" class="settings-theme-list" role="radiogroup" aria-label="Markdown-Theme"></div>
-          <p id="settings-theme-hint" class="settings-hint"></p>
+          <div class="settings-theme-browser__body">
+            <div id="settings-theme-list" class="settings-theme-list" role="listbox" aria-label="Markdown-Theme"></div>
+            <aside id="settings-theme-detail" class="settings-theme-detail" tabindex="-1" aria-live="polite"></aside>
+          </div>
+          <p id="settings-theme-error" class="settings-ai-error settings-theme-browser__error" hidden></p>
+          <p id="settings-theme-hint" class="settings-hint settings-theme-browser__hint"></p>
         </section>
         <div id="theme-create-dialog" class="settings-ai-overlay" hidden>
           <form id="theme-create-form" class="settings-ai-dialog" role="dialog" aria-modal="true" aria-labelledby="theme-create-title">
@@ -362,6 +364,12 @@
       <div id="theme-editor-mount"></div>
       <div id="theme-editor-assets" class="theme-editor-assets">
         <div class="theme-editor-assets__head"><strong>Manifest</strong></div>
+        <div class="theme-editor-manifest-fields">
+          <label for="theme-editor-manifest-name">Name</label>
+          <input type="text" id="theme-editor-manifest-name" class="settings-input" autocomplete="off" />
+          <label for="theme-editor-manifest-description">Beschreibung</label>
+          <input type="text" id="theme-editor-manifest-description" class="settings-input" autocomplete="off" />
+        </div>
         <div class="theme-editor-flags">
           <label><input type="checkbox" id="theme-editor-flag-cover" /> Cover</label>
           <label><input type="checkbox" id="theme-editor-flag-header" /> Kopfzeile</label>

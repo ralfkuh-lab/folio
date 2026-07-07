@@ -177,6 +177,22 @@ pub async fn theme_preview_render(
 }
 
 #[tauri::command]
+pub async fn theme_preview_saved(theme_id: String, dark: bool) -> Result<String, String> {
+    render_saved_theme_preview(&theme_id, dark)
+}
+
+fn render_saved_theme_preview(theme_id: &str, dark: bool) -> Result<String, String> {
+    let package =
+        theme::package(theme_id).ok_or_else(|| format!("Unbekanntes Theme: '{theme_id}'"))?;
+    Ok(crate::export::render_theme_preview(
+        THEME_PREVIEW_SAMPLE,
+        &ThemeParts::from(&package),
+        dark,
+        Some(theme_id),
+    ))
+}
+
+#[tauri::command]
 pub async fn theme_asset_add(
     id: String,
     filename: String,
@@ -296,4 +312,30 @@ fn file_path_to_string(path: FilePath) -> String {
     path.into_path()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::render_saved_theme_preview;
+
+    #[test]
+    fn saved_preview_renders_builtin_theme() {
+        let html = render_saved_theme_preview("clean", true).unwrap();
+        assert!(html.contains("Theme-Vorschau"));
+        assert!(html.contains("Überschrift 1"));
+        assert!(html.contains("<style>"));
+    }
+
+    #[test]
+    fn saved_preview_rejects_unknown_theme() {
+        let error = render_saved_theme_preview("gibtsnicht", false).unwrap_err();
+        assert!(error.contains("Unbekanntes Theme"));
+    }
+
+    #[test]
+    fn saved_preview_renders_standard_neutrally() {
+        let html = render_saved_theme_preview("standard", false).unwrap();
+        assert!(html.contains("Folio-Export"));
+        assert!(html.contains("Theme-Vorschau"));
+    }
 }

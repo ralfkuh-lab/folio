@@ -153,14 +153,46 @@ function refreshPartsFromManifest(): void {
 }
 
 function syncManifestFlags(manifest: ThemeManifest): void {
+    const name = $('theme-editor-manifest-name') as HTMLInputElement | null;
+    const description = $('theme-editor-manifest-description') as HTMLInputElement | null;
     const cover = $('theme-editor-flag-cover') as HTMLInputElement | null;
     const header = $('theme-editor-flag-header') as HTMLInputElement | null;
     const footer = $('theme-editor-flag-footer') as HTMLInputElement | null;
     const hideFm = $('theme-editor-flag-hide-fm') as HTMLInputElement | null;
+    if (name) name.value = manifest.name || '';
+    if (description) description.value = manifest.description || '';
     if (cover) cover.checked = !!manifest.cover;
     if (header) header.checked = !!manifest.header;
     if (footer) footer.checked = !!manifest.footer;
     if (hideFm) hideFm.checked = !!manifest.hideInlineFrontmatter;
+}
+
+function syncManifestTextInputs(manifest: ThemeManifest): void {
+    const name = $('theme-editor-manifest-name') as HTMLInputElement | null;
+    const description = $('theme-editor-manifest-description') as HTMLInputElement | null;
+    if (name) name.value = manifest.name || '';
+    if (description) description.value = manifest.description || '';
+}
+
+async function refreshManifestTextFromThemeChange(event: any): Promise<void> {
+    const payload = (event && event.payload) || {};
+    if (!currentId || payload.id !== currentId || manifestDirty) return;
+    let files: ThemeFiles;
+    try {
+        files = await invoke<ThemeFiles>('theme_read', { id: currentId });
+    } catch (error) {
+        folioLog.warn('theme-editor', 'theme_read after themes:changed failed', {
+            id: currentId,
+            error: String(error),
+        });
+        return;
+    }
+    if (!currentFiles || !currentId || payload.id !== currentId || manifestDirty) return;
+    currentFiles.manifest.name = files.manifest.name;
+    currentFiles.manifest.description = files.manifest.description;
+    syncManifestTextInputs(currentFiles.manifest);
+    refreshVirtualTabs();
+    schedulePreview();
 }
 
 function formatSize(bytes: number): string {
@@ -531,6 +563,22 @@ export function initThemeEditor(): void {
         ['theme-editor-flag-footer', 'footer'],
         ['theme-editor-flag-hide-fm', 'hideInlineFrontmatter'],
     ];
+    const textFields: Array<[string, keyof ThemeManifest]> = [
+        ['theme-editor-manifest-name', 'name'],
+        ['theme-editor-manifest-description', 'description'],
+    ];
+    for (const [id, key] of textFields) {
+        (document.getElementById(id) as HTMLInputElement | null)
+            ?.addEventListener('input', function (event) {
+                if (!currentFiles) return;
+                const value = (event.currentTarget as HTMLInputElement).value;
+                (currentFiles.manifest as unknown as Record<string, unknown>)[key as string] =
+                    value;
+                manifestDirty = true;
+                syncDirtyUi();
+                if (key === 'name') schedulePreview();
+            });
+    }
     for (const [id, key] of flags) {
         (document.getElementById(id) as HTMLInputElement | null)
             ?.addEventListener('change', function (event) {
@@ -548,6 +596,12 @@ export function initThemeEditor(): void {
         event.preventDefault();
         guardedClose();
     });
+    const ev = window.__TAURI__ && window.__TAURI__.event;
+    if (ev && typeof ev.listen === 'function') {
+        ev.listen('themes:changed', function (event: any) {
+            refreshManifestTextFromThemeChange(event);
+        });
+    }
 }
 
 export function getCurrentThemeId(): string | null {
