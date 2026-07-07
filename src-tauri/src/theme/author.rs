@@ -86,7 +86,10 @@ pub fn system_prompt(base: Option<&BaseContext>, document_context: Option<&str>)
         prompt.push_str(
             "\n\nDokument-Kontext: Gestalte das Theme passend zu Struktur \
              und Inhalt dieses Dokuments; kopiere den Dokumentinhalt NICHT \
-             in die Theme-Dateien.\n\n=== Dokumentauszug ===\n",
+             in die Theme-Dateien. Beginnt das Dokument mit einem \
+             Frontmatter-Block, setze bevorzugt hideInlineFrontmatter: true \
+             und zeige die Titeldaten stattdessen ueber ein Cover \
+             ({{title}}/{{author}}/{{date}}).\n\n=== Dokumentauszug ===\n",
         );
         prompt.push_str(document);
     }
@@ -638,6 +641,7 @@ mod tests {
 
         assert!(prompt.contains("Dokument-Kontext"));
         assert!(prompt.contains("kopiere den Dokumentinhalt NICHT"));
+        assert!(prompt.contains("hideInlineFrontmatter: true"));
         assert!(prompt.contains("# Bericht"));
     }
 }
