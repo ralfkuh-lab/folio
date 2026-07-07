@@ -654,6 +654,82 @@ View-Asset-Rewrite, Archiv-Roundtrip mit Font-Feldern); jsdom
 `__folioInvoke('theme_write', …)` schreiben und `view_theme_css`
 asserten (rein API-basiert, Xvfb-sicher).
 
+### E10 — Dynamischer Per-Export-KI-Modus, „Stufe 2" (nachbeauftragt 2026-07-07)
+
+Löst den „Bewusst verschoben"-Punkt „Dynamischer KI-Export (Stufe 2)"
+ein: ein KI-Lauf pro Export, der ein **dokumentspezifisches, transientes
+Theme** erzeugt. Andockstelle ist wie geplant der Draft→Preview→Confirm-
+Pfad aus E6 — der Draft wird nur nicht gespeichert, sondern direkt zum
+Rendern verwendet.
+
+**Backend**:
+
+1. **`ai_theme_author` erweitern** (kein neuer Command): optionaler
+   Parameter `withDocument: bool` (Default false). Bei `true` liest das
+   Backend das aktive Dokument selbst aus `state.tabs` (Muster
+   `current_document` in `commands/export.rs`) — das Markdown geht nicht
+   durchs Frontend; Active-Guard, Cancel (`ai_theme_author_cancel`) und
+   Streaming (`ai:theme_stream`) bleiben unverändert.
+   - `author.rs`: optionaler Dokument-Kontext-Abschnitt im
+     `system_prompt` („Gestalte das Theme passend zu Struktur und Inhalt
+     dieses Dokuments; kopiere den Dokumentinhalt NICHT in die
+     Theme-Dateien"). Kürzung über Helper `document_excerpt(markdown)`:
+     Frontmatter + erste ~12 000 Zeichen + bei Kürzung ein
+     Heading-Skelett (alle Überschriften) als Struktur-Hinweis.
+     Begründung: für Gestaltung zählen Frontmatter, Gliederung und
+     Inhaltstyp, nicht der Volltext; die Obergrenze schützt
+     Kontextfenster und Kosten.
+2. **Transientes Rendern/Exportieren** in `commands/export.rs`
+   (Parts-Wire-Format = `ThemeWriteFiles`, wie `theme_preview_render`):
+   - `export_render_draft(parts, base_theme_id?)` → Preview-HTML fürs
+     Dialog-iframe.
+   - `export_html_draft(parts, base_theme_id?, target_path)` und
+     `export_pdf_draft(…)` → Export mit ungespeichertem Draft.
+   - Implementierung: `export.rs::render_theme_preview` zu einer
+     gemeinsamen Kernfunktion refactoren, die zusätzlich `title` und
+     `path` (für `TemplateContext`/relative Bilder) übernimmt;
+     `render_theme_preview` wird dünner Wrapper. Dark aus
+     `parts.manifest` (`code: dark`), Titel via `derive_title`,
+     `base_theme_id` erlaubt Asset-Auflösung, wenn der Draft auf einem
+     bestehenden Dir-Theme basiert (`load_preview_assets`-Pfad).
+     Kein zusätzliches Gate: die Parts kommen aus dem bereits
+     `validate_draft`-geprüften `ThemeDraft`; Trust-Stufe wie
+     `theme_write` (User exportiert eigenes Dokument mit eigenem CSS).
+3. **„Als Theme speichern"**: neuer dünner Command
+   `theme_create(id, files)` über `store::create` — der hat im
+   Gegensatz zu `write` den Kollisions-Check — plus `themes:changed`.
+
+**Frontend** — neues Modul `web/app/ui/export-ai.ts`, initialisiert aus
+`export-dialog.ts` (der Dialog selbst bleibt schlank):
+
+- Aufklappbarer Abschnitt **„✨ KI-Layout für dieses Dokument"** unter
+  den Format-Buttons: Prompt-Textarea, optionales Basis-Theme-Select,
+  Modell-Picker (`populateModelPicker` aus `ai-model-picker.ts`),
+  statischer Kostenhinweis („Jeder Lauf sendet das Dokument an den
+  gewählten Anbieter und verursacht Kosten"), Start/Abbrechen.
+- Streaming-Status über `ai:theme_stream` (chars-Zähler) + Done-Event,
+  Cancel — 1:1 das Muster aus `theme-ai-dialog.ts`.
+- Nach validiertem Draft: synthetische Karte **„KI-Entwurf"** oben in
+  `#export-cards` mit Live-Preview (`export_render_draft` → srcdoc),
+  selektierbar wie normale Karten; `doExportSave` routet bei
+  selektiertem Draft auf `export_html_draft`/`export_pdf_draft`.
+  Buttons „Neu generieren" und „Als Theme speichern…" (kleines Overlay
+  ID+Name, Muster `theme-create-dialog` → `theme_create`, danach ist
+  das Theme regulär wählbar). Draft-State lebt im Modul und wird bei
+  `closeExportDialog` verworfen.
+
+**Kompatibilität**: keine — Drafts sind transient, kein Persistenzformat
+ändert sich.
+
+**Tests**: Rust-Unit (excerpt-Kürzung inkl. Heading-Skelett,
+Draft-Render mit Titel/Dark/Assets, `theme_create`-Kollision), jsdom
+(export-ai: Karten-Injektion, Routing von `doExportSave`, Verwerfen bei
+Close), E2E `39_export_ai_draft.py` mit Mock-Provider (SSE-Muster aus
+`34_ai_translate.py`/`36_ai_theme_author.py`; Export über
+`export_html_draft` mit explizitem `target_path` — native Dialoge sind
+in Xvfb unerreichbar; View-Mode explizit setzen; finally-Cleanup für
+Temp-Dateien und ggf. gespeicherte Themes).
+
 ## Bewusst verschoben
 
 - **Live-Seitenzahlen im PDF** (User-Entscheid 2026-07-06): Chromiums
@@ -668,11 +744,8 @@ asserten (rein API-basiert, Xvfb-sicher).
   `pageNumber`/`totalPages` kommen erst mit dieser Etappe in die
   Whitelist. Kopf-/Fußzeilen selbst (Logo, statischer Text) funktionieren
   schon über den `position:fixed`-Pfad (E5).
-- **Dynamischer KI-Export (Stufe 2)**: KI-Lauf pro Export (LLM erzeugt
-  HTML/CSS dokumentspezifisch). Andockstelle ist der
-  Draft/Preview/Confirm-Pfad aus E6; nichts in dieser Spec blockiert das.
-  Geplant als E10 (nach E9 „Fonts als Theme-Bestandteile", damit der
-  KI-Prompt-Contract nur einmal angefasst wird).
+- ~~**Dynamischer KI-Export (Stufe 2)**~~ → als **E10** umgesetzt
+  (siehe Etappen-Abschnitt).
 - **Theme-ID-Rename** (Entscheid 2026-07-07, mit E8): Es gibt bewusst
   keinen `theme_rename`-Command. Die ID ist nur im Create-Dialog sichtbar
   und danach reine Adresse (Verzeichnisname); editierbar ist der
