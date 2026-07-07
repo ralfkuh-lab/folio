@@ -7,7 +7,11 @@
 //! Analog zum `mask::unmask`-Gate der Uebersetzung gilt: Verstoesse sind
 //! Fehler, keine stille Uebernahme.
 
-use super::{builtin, package::ThemeManifest, template, valid_theme_id};
+use super::{
+    builtin,
+    package::{validate_manifest_fonts, ThemeManifest},
+    template, valid_theme_id,
+};
 use serde::{Deserialize, Serialize};
 
 /// Nicht persistiertes Ergebnis des KI-Autors, geht als Command-Return
@@ -57,7 +61,8 @@ pub fn system_prompt(base: Option<&BaseContext>) -> String {
          Antworte AUSSCHLIESSLICH mit einem einzigen JSON-Objekt, ohne \
          Erklaertext. Felder (alle optional ausser contentCss): \
          manifest {name, description, code: \"light\"|\"dark\", logo, \
-         cover, header, footer, hideInlineFrontmatter}, contentCss, \
+         cover, header, footer, hideInlineFrontmatter, fontBody, fontMono, \
+         fontSize}, contentCss, \
          darkCss, pageCss, coverHtml, headerHtml, footerHtml.\n\
          Regeln:\n\
          - Alle CSS-Selektoren sind strikt auf .markdown-body gescopt.\n\
@@ -70,6 +75,8 @@ pub fn system_prompt(base: Option<&BaseContext>) -> String {
            footer, h1-h3, p, span, img, table, tr, td, br, strong, em).\n\
          - Kein <script>, keine on*-Attribute, keine externen URLs, kein \
            @import; img-src nur data:image/... oder asset:<datei>.\n\
+         - fontBody/fontMono sind CSS-Font-Family-Strings ohne { } < > ; @ \
+           und ohne url(...); fontSize ist Zahl plus px, pt, em, rem oder %.\n\
          - Du erzeugst keine Binaerassets; referenziere Logos nur ueber \
            {{logo}} oder url(asset:<vorhandene datei>).",
     );
@@ -153,6 +160,9 @@ pub fn validate_draft(raw: RawDraft, new_id: Option<&str>) -> Result<ThemeDraft,
         manifest.footer = manifest.footer && raw.footer_html.is_some();
         manifest
     });
+    if let Some(manifest) = manifest.as_ref() {
+        validate_manifest_fonts(manifest)?;
+    }
 
     Ok(ThemeDraft {
         manifest,
@@ -425,6 +435,27 @@ mod tests {
         let mut draft = raw(".markdown-body {}");
         draft.page_css = Some("body {".to_string());
         assert!(validate_draft(draft, None).is_err());
+    }
+
+    #[test]
+    fn gate_rejects_invalid_manifest_font_fields() {
+        for (field, value) in [
+            ("fontBody", "Inter; body { color: red }"),
+            ("fontMono", "url(asset:mono.woff2)"),
+            ("fontSize", "calc(1rem + 1px)"),
+        ] {
+            let mut draft = raw(".markdown-body {}");
+            let mut manifest = ThemeManifest::default();
+            match field {
+                "fontBody" => manifest.font_body = Some(value.to_string()),
+                "fontMono" => manifest.font_mono = Some(value.to_string()),
+                "fontSize" => manifest.font_size = Some(value.to_string()),
+                _ => unreachable!(),
+            }
+            draft.manifest = Some(manifest);
+            let err = validate_draft(draft, None).unwrap_err();
+            assert!(err.contains(field), "{field}: {err}");
+        }
     }
 
     #[test]

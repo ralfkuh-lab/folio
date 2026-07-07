@@ -463,6 +463,9 @@ mod tests {
                 name: "Roundtrip".to_string(),
                 description: "Test".to_string(),
                 logo: Some("logo.png".to_string()),
+                font_body: Some("Inter, system-ui, sans-serif".to_string()),
+                font_mono: Some("ui-monospace, monospace".to_string()),
+                font_size: Some("15px".to_string()),
                 ..ThemeManifest::default()
             },
             content_css: ".markdown-body { color: red; }".to_string(),
@@ -512,6 +515,15 @@ mod tests {
 
         assert_eq!("imported-theme", imported.id);
         assert_eq!("Roundtrip", imported.manifest.name);
+        assert_eq!(
+            Some("Inter, system-ui, sans-serif"),
+            imported.manifest.font_body.as_deref()
+        );
+        assert_eq!(
+            Some("ui-monospace, monospace"),
+            imported.manifest.font_mono.as_deref()
+        );
+        assert_eq!(Some("15px"), imported.manifest.font_size.as_deref());
         assert_eq!(
             Some(".markdown-body { color: white; }"),
             imported.dark_css.as_deref()

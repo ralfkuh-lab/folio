@@ -31,6 +31,10 @@ pub(crate) fn mime_for_extension(filename: &str) -> Option<&'static str> {
         "svg" => Some("image/svg+xml"),
         "bmp" => Some("image/bmp"),
         "ico" => Some("image/x-icon"),
+        "woff2" => Some("font/woff2"),
+        "woff" => Some("font/woff"),
+        "ttf" => Some("font/ttf"),
+        "otf" => Some("font/otf"),
         _ => None,
     }
 }
@@ -153,6 +157,31 @@ pub(crate) fn collect_asset_references(css: &str) -> Vec<String> {
     names
 }
 
+/// Sammelt Asset-Referenzen aus Content-CSS, Page-CSS und optionalen
+/// Templates in stabiler Erstfund-Reihenfolge.
+pub(crate) fn collect_references(
+    content_css: &str,
+    page_css: &str,
+    templates: [Option<&str>; 3],
+) -> Vec<String> {
+    let mut refs = Vec::new();
+    for name in collect_asset_references(content_css)
+        .into_iter()
+        .chain(collect_asset_references(page_css))
+        .chain(
+            templates
+                .into_iter()
+                .flatten()
+                .flat_map(collect_template_asset_references),
+        )
+    {
+        if !refs.iter().any(|known| known == &name) {
+            refs.push(name);
+        }
+    }
+    refs
+}
+
 /// Ersetzt `url(asset:name)` durch `url("data:...")`. Nur Namen, die in
 /// der ubergebenen Asset-Map vorhanden sind (also im eigenen Theme-Ordner
 /// gelegen), werden ersetzt — fremde/fehlende bleiben als `url(asset:...)`
@@ -271,6 +300,10 @@ mod tests {
             ("g.webp", "image/webp"),
             ("h.bmp", "image/bmp"),
             ("i.gif", "image/gif"),
+            ("j.woff2", "font/woff2"),
+            ("k.woff", "font/woff"),
+            ("l.ttf", "font/ttf"),
+            ("m.otf", "font/otf"),
         ] {
             assert_eq!(Some(expected), mime_for_extension(name), "{name}");
         }

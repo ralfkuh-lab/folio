@@ -45,6 +45,10 @@ pub fn render_theme_preview(
         (true, Some(dark_css)) => format!("{}\n{dark_css}", parts.content_css),
         _ => parts.content_css.clone(),
     };
+    let content_css = match theme::font_css(&parts.manifest) {
+        Some(font_css) => format!("{content_css}\n{font_css}"),
+        None => content_css,
+    };
     let page_css = parts.page_css.as_deref().unwrap_or(theme::DEFAULT_PAGE_CSS);
 
     let asset_pairs = load_preview_assets(
@@ -207,7 +211,7 @@ fn load_export_assets(
     page_css: &str,
     templates: [Option<&str>; 3],
 ) -> Result<Vec<(String, String)>, String> {
-    let refs = collect_references(content_css, page_css, templates);
+    let refs = theme::assets::collect_references(content_css, page_css, templates);
     if refs.is_empty() {
         return Ok(Vec::new());
     }
@@ -220,7 +224,7 @@ fn load_preview_assets(
     page_css: &str,
     templates: [Option<&str>; 3],
 ) -> Vec<(String, String)> {
-    let refs = collect_references(content_css, page_css, templates);
+    let refs = theme::assets::collect_references(content_css, page_css, templates);
     if refs.is_empty() {
         return Vec::new();
     }
@@ -232,29 +236,6 @@ fn load_preview_assets(
         return Vec::new();
     }
     theme::assets::load_assets(&theme_dir, &refs).unwrap_or_default()
-}
-
-fn collect_references(
-    content_css: &str,
-    page_css: &str,
-    templates: [Option<&str>; 3],
-) -> Vec<String> {
-    let mut refs = Vec::new();
-    for name in theme::assets::collect_asset_references(content_css)
-        .into_iter()
-        .chain(theme::assets::collect_asset_references(page_css))
-        .chain(
-            templates
-                .into_iter()
-                .flatten()
-                .flat_map(theme::assets::collect_template_asset_references),
-        )
-    {
-        if !refs.iter().any(|known| known == &name) {
-            refs.push(name);
-        }
-    }
-    refs
 }
 
 fn resolved_logo_uri(
@@ -865,7 +846,7 @@ mod tests {
 
     #[test]
     fn collect_references_deduplicates_across_css_and_templates() {
-        let refs = collect_references(
+        let refs = theme::assets::collect_references(
             ".a { background: url(asset:shared.png) }",
             ".b { content: url(\"asset:shared.png\") }",
             [

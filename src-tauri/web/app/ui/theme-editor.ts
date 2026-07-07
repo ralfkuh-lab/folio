@@ -19,6 +19,9 @@ type ThemeManifest = {
     header: boolean;
     footer: boolean;
     hideInlineFrontmatter: boolean;
+    fontBody?: string | null;
+    fontMono?: string | null;
+    fontSize?: string | null;
     formatVersion: number;
 };
 
@@ -155,12 +158,18 @@ function refreshPartsFromManifest(): void {
 function syncManifestFlags(manifest: ThemeManifest): void {
     const name = $('theme-editor-manifest-name') as HTMLInputElement | null;
     const description = $('theme-editor-manifest-description') as HTMLInputElement | null;
+    const fontBody = $('theme-editor-manifest-font-body') as HTMLInputElement | null;
+    const fontMono = $('theme-editor-manifest-font-mono') as HTMLInputElement | null;
+    const fontSize = $('theme-editor-manifest-font-size') as HTMLInputElement | null;
     const cover = $('theme-editor-flag-cover') as HTMLInputElement | null;
     const header = $('theme-editor-flag-header') as HTMLInputElement | null;
     const footer = $('theme-editor-flag-footer') as HTMLInputElement | null;
     const hideFm = $('theme-editor-flag-hide-fm') as HTMLInputElement | null;
     if (name) name.value = manifest.name || '';
     if (description) description.value = manifest.description || '';
+    if (fontBody) fontBody.value = manifest.fontBody || '';
+    if (fontMono) fontMono.value = manifest.fontMono || '';
+    if (fontSize) fontSize.value = manifest.fontSize || '';
     if (cover) cover.checked = !!manifest.cover;
     if (header) header.checked = !!manifest.header;
     if (footer) footer.checked = !!manifest.footer;
@@ -170,8 +179,14 @@ function syncManifestFlags(manifest: ThemeManifest): void {
 function syncManifestTextInputs(manifest: ThemeManifest): void {
     const name = $('theme-editor-manifest-name') as HTMLInputElement | null;
     const description = $('theme-editor-manifest-description') as HTMLInputElement | null;
+    const fontBody = $('theme-editor-manifest-font-body') as HTMLInputElement | null;
+    const fontMono = $('theme-editor-manifest-font-mono') as HTMLInputElement | null;
+    const fontSize = $('theme-editor-manifest-font-size') as HTMLInputElement | null;
     if (name) name.value = manifest.name || '';
     if (description) description.value = manifest.description || '';
+    if (fontBody) fontBody.value = manifest.fontBody || '';
+    if (fontMono) fontMono.value = manifest.fontMono || '';
+    if (fontSize) fontSize.value = manifest.fontSize || '';
 }
 
 async function refreshManifestTextFromThemeChange(event: any): Promise<void> {
@@ -190,6 +205,9 @@ async function refreshManifestTextFromThemeChange(event: any): Promise<void> {
     if (!currentFiles || !currentId || payload.id !== currentId || manifestDirty) return;
     currentFiles.manifest.name = files.manifest.name;
     currentFiles.manifest.description = files.manifest.description;
+    currentFiles.manifest.fontBody = files.manifest.fontBody || null;
+    currentFiles.manifest.fontMono = files.manifest.fontMono || null;
+    currentFiles.manifest.fontSize = files.manifest.fontSize || null;
     syncManifestTextInputs(currentFiles.manifest);
     refreshVirtualTabs();
     schedulePreview();
@@ -566,17 +584,25 @@ export function initThemeEditor(): void {
     const textFields: Array<[string, keyof ThemeManifest]> = [
         ['theme-editor-manifest-name', 'name'],
         ['theme-editor-manifest-description', 'description'],
+        ['theme-editor-manifest-font-body', 'fontBody'],
+        ['theme-editor-manifest-font-mono', 'fontMono'],
+        ['theme-editor-manifest-font-size', 'fontSize'],
     ];
     for (const [id, key] of textFields) {
         (document.getElementById(id) as HTMLInputElement | null)
             ?.addEventListener('input', function (event) {
                 if (!currentFiles) return;
-                const value = (event.currentTarget as HTMLInputElement).value;
+                const rawValue = (event.currentTarget as HTMLInputElement).value;
+                const value = key === 'name' || key === 'description'
+                    ? rawValue
+                    : rawValue.trim() || null;
                 (currentFiles.manifest as unknown as Record<string, unknown>)[key as string] =
                     value;
                 manifestDirty = true;
                 syncDirtyUi();
-                if (key === 'name') schedulePreview();
+                if (key === 'name' || key === 'fontBody' || key === 'fontMono' || key === 'fontSize') {
+                    schedulePreview();
+                }
             });
     }
     for (const [id, key] of flags) {

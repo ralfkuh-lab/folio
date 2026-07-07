@@ -29,6 +29,12 @@ function buildDom(): void {
                     <input id="theme-editor-manifest-name" />
                     <label for="theme-editor-manifest-description">Beschreibung</label>
                     <input id="theme-editor-manifest-description" />
+                    <label for="theme-editor-manifest-font-body">Body-Font</label>
+                    <input id="theme-editor-manifest-font-body" />
+                    <label for="theme-editor-manifest-font-mono">Mono-Font</label>
+                    <input id="theme-editor-manifest-font-mono" />
+                    <label for="theme-editor-manifest-font-size">Schriftgröße</label>
+                    <input id="theme-editor-manifest-font-size" />
                 </div>
                 <div class="theme-editor-flags">
                     <label><input type="checkbox" id="theme-editor-flag-cover" /> Cover</label>
@@ -98,6 +104,9 @@ function themeFiles() {
             header: false,
             footer: false,
             hideInlineFrontmatter: false,
+            fontBody: null,
+            fontMono: null,
+            fontSize: null,
             formatVersion: 1,
         },
         contentCss: '.markdown-body { color: blue; }',
@@ -253,6 +262,44 @@ describe('ui/theme-editor', () => {
         expect(await saveThemeEditor()).toBe(true);
         expect((document.getElementById('theme-editor-save') as HTMLButtonElement).disabled)
             .toBe(true);
+    });
+
+    it('edits manifest font fields and marks the editor dirty', async () => {
+        const { initThemeEditor, openThemeEditor, saveThemeEditor } =
+            await import('../../app/ui/theme-editor');
+        initThemeEditor();
+        await openThemeEditor('firma');
+        tauri.invoke.mockClear();
+
+        const bodyFont = document.getElementById(
+            'theme-editor-manifest-font-body',
+        ) as HTMLInputElement;
+        const monoFont = document.getElementById(
+            'theme-editor-manifest-font-mono',
+        ) as HTMLInputElement;
+        const fontSize = document.getElementById(
+            'theme-editor-manifest-font-size',
+        ) as HTMLInputElement;
+        bodyFont.value = 'Inter, system-ui, sans-serif';
+        bodyFont.dispatchEvent(new Event('input'));
+        monoFont.value = 'ui-monospace, monospace';
+        monoFont.dispatchEvent(new Event('input'));
+        fontSize.value = '15px';
+        fontSize.dispatchEvent(new Event('input'));
+
+        expect((document.getElementById('theme-editor-save') as HTMLButtonElement).disabled)
+            .toBe(false);
+        await saveThemeEditor();
+        expect(tauri.invoke).toHaveBeenCalledWith('theme_write', {
+            id: 'firma',
+            files: expect.objectContaining({
+                manifest: expect.objectContaining({
+                    fontBody: 'Inter, system-ui, sans-serif',
+                    fontMono: 'ui-monospace, monospace',
+                    fontSize: '15px',
+                }),
+            }),
+        });
     });
 
     it('refreshes clean manifest text fields after external theme changes', async () => {

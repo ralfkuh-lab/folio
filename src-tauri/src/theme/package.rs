@@ -1,7 +1,9 @@
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{
     fs, io,
     path::{Path, PathBuf},
+    sync::OnceLock,
 };
 
 const MANIFEST_FILE: &str = "theme.json";
@@ -23,6 +25,9 @@ pub struct ThemeManifest {
     pub header: bool,
     pub footer: bool,
     pub hide_inline_frontmatter: bool,
+    pub font_body: Option<String>,
+    pub font_mono: Option<String>,
+    pub font_size: Option<String>,
     pub format_version: u32,
 }
 
@@ -37,6 +42,9 @@ impl Default for ThemeManifest {
             header: false,
             footer: false,
             hide_inline_frontmatter: false,
+            font_body: None,
+            font_mono: None,
+            font_size: None,
             format_version: 1,
         }
     }
@@ -77,8 +85,98 @@ impl ThemeManifest {
             );
             self.format_version = 1;
         }
+        self.font_body = normalize_font_field(
+            id,
+            path,
+            "fontBody",
+            self.font_body.take(),
+            validate_font_family,
+        );
+        self.font_mono = normalize_font_field(
+            id,
+            path,
+            "fontMono",
+            self.font_mono.take(),
+            validate_font_family,
+        );
+        self.font_size = normalize_font_field(
+            id,
+            path,
+            "fontSize",
+            self.font_size.take(),
+            validate_font_size,
+        );
         self
     }
+}
+
+fn normalize_font_field(
+    id: &str,
+    path: &Path,
+    field: &str,
+    value: Option<String>,
+    validate: fn(&str) -> Result<String, String>,
+) -> Option<String> {
+    let value = value?;
+    match validate(&value) {
+        Ok(value) => Some(value),
+        Err(error) => {
+            tracing::warn!(
+                target: "folio::settings",
+                theme_id = id,
+                path = %path.display(),
+                field,
+                %error,
+                "Ungueltiges Font-Feld im Theme-Manifest wird ignoriert"
+            );
+            None
+        }
+    }
+}
+
+pub(crate) fn validate_manifest_fonts(manifest: &ThemeManifest) -> Result<(), String> {
+    if let Some(value) = manifest.font_body.as_deref() {
+        validate_font_family(value).map_err(|error| format!("fontBody: {error}"))?;
+    }
+    if let Some(value) = manifest.font_mono.as_deref() {
+        validate_font_family(value).map_err(|error| format!("fontMono: {error}"))?;
+    }
+    if let Some(value) = manifest.font_size.as_deref() {
+        validate_font_size(value).map_err(|error| format!("fontSize: {error}"))?;
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_font_family(value: &str) -> Result<String, String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err("darf nicht leer sein".to_string());
+    }
+    // '\' und '(' pauschal verbieten: CSS-Unicode-Escapes wie `ur\6c(`
+    // wuerden sonst die url(-Pruefung umgehen, und ohne '(' ist keine
+    // CSS-Funktion formulierbar. Legitime font-family-Werte brauchen
+    // beides nie.
+    if let Some(forbidden) = trimmed
+        .chars()
+        .find(|c| matches!(c, '{' | '}' | '<' | '>' | ';' | '@' | '\\' | '(' | ')'))
+    {
+        return Err(format!("enthaelt verbotenes Zeichen '{forbidden}'"));
+    }
+    Ok(trimmed.to_string())
+}
+
+pub(crate) fn validate_font_size(value: &str) -> Result<String, String> {
+    let trimmed = value.trim();
+    if font_size_regex().is_match(trimmed) {
+        Ok(trimmed.to_string())
+    } else {
+        Err("muss dem Muster Zahl + px|pt|em|rem|% entsprechen".to_string())
+    }
+}
+
+fn font_size_regex() -> &'static Regex {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    REGEX.get_or_init(|| Regex::new(r"^\d+(\.\d+)?(px|pt|em|rem|%)$").expect("font size regex"))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

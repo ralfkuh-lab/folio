@@ -2,8 +2,9 @@
 
 ## Hohe Priorität
 
-- **Theme-System-Ausbau: E1–E8 UMGESETZT** (E1–E7 2026-07-06/07, E8
-  Settings-Theme-Browser 2026-07-07; Spec mit Etappen-Checkliste in
+- **Theme-System-Ausbau: E1–E9 UMGESETZT** (E1–E7 2026-07-06/07, E8
+  Settings-Theme-Browser + E9 Font-Manifest-Felder 2026-07-07; Spec mit
+  Etappen-Checkliste in
   [`docs/spec-theme-system.md`](docs/spec-theme-system.md)):
   In-App-Theme-CRUD + Monaco-Editor mit Live-Preview (eigener virtueller
   Tab), Verzeichnis-Paketformat mit Deckblatt/Kopf-Fußzeile/Logo-Assets/
@@ -11,8 +12,9 @@
   (Draft→Review→Save), Import/Export als `.mdtheme`, Settings-Theme-Browser
   (Master-Detail mit Live-Vorschauen, Detail-Einsicht auch für Built-ins,
   explizite View-Auswahl statt Klick=Anwenden, Name/Beschreibung-Edit).
-  Windows-Smoke ist erledigt (2026-07-07). **Als Nächstes geplant**:
-  E9 Fonts als Theme-Bestandteile (fontBody/fontMono/fontSize im Manifest),
+  Windows-Smoke ist erledigt (2026-07-07). Fonts sind Theme-Bestandteile
+  (fontBody/fontMono/fontSize im Manifest, wirken in View + Export +
+  Previews; @font-face-Assets auch in der View). **Als Nächstes geplant**:
   E10 dynamischer Per-Export-KI-Modus (Plan vom 2026-07-07).
   Bewusst verschoben bleiben: PDF-Live-Seitenzahlen via CDP,
   Theme-ID-Rename (nur Anzeigename ist editierbar).
@@ -80,8 +82,8 @@
 
 - **Settings-Ausbau — Reste** (das Theme-System ist komplett: Tab-
   Control + Etappen 3a View-Theme-Auswahl, 3b Custom-Themes, 3c
-  Favoriten, 3d Export-Code-Highlighting via syntect):
-  - Fonts als Theme-Bestandteile (Body-Font, Mono-Font, Schriftgröße).
+  Favoriten, 3d Export-Code-Highlighting via syntect; Fonts als
+  Theme-Bestandteile sind seit E9 umgesetzt):
   - Kleinere offene Ausbaustufen aus dem alten Settings-Eintrag:
     **macOS-Terminal-Wahl** (`open_terminal_at` öffnet fix
     `Terminal.app`); **Theme-Reihe als Aggregations-UI** (Persistenz

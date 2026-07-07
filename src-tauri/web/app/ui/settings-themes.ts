@@ -20,6 +20,9 @@ type ThemeManifest = {
     header: boolean;
     footer: boolean;
     hideInlineFrontmatter: boolean;
+    fontBody?: string | null;
+    fontMono?: string | null;
+    fontSize?: string | null;
     formatVersion: number;
 };
 
@@ -548,6 +551,21 @@ function renderDetail(): void {
         meta.appendChild(note);
     }
     detail.appendChild(meta);
+    if (detailFiles) {
+        var fontItems = [
+            ['Body', detailFiles.manifest.fontBody],
+            ['Mono', detailFiles.manifest.fontMono],
+            ['Größe', detailFiles.manifest.fontSize],
+        ].filter(function (item) { return !!item[1]; });
+        if (fontItems.length) {
+            var fonts = document.createElement('p');
+            fonts.className = 'settings-theme-detail__fonts';
+            fonts.textContent = fontItems.map(function (item) {
+                return item[0] + ': ' + item[1];
+            }).join(' · ');
+            detail.appendChild(fonts);
+        }
+    }
 
     var preview = document.createElement('div');
     preview.className = 'settings-theme-detail__preview';

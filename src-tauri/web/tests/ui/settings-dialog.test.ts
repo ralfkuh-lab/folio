@@ -175,6 +175,9 @@ describe('settings-dialog', () => {
                         header: false,
                         footer: false,
                         hideInlineFrontmatter: false,
+                        fontBody: args?.id === 'meins' ? 'Inter, system-ui, sans-serif' : null,
+                        fontMono: args?.id === 'meins' ? 'ui-monospace, monospace' : null,
+                        fontSize: args?.id === 'meins' ? '15px' : null,
                         formatVersion: 1,
                     },
                     contentCss: '.markdown-body {}',
@@ -545,6 +548,19 @@ describe('settings-dialog', () => {
                 }),
             }),
         });
+    });
+
+    it('zeigt gesetzte Fonts in der Theme-Detailansicht read-only an', async () => {
+        openSettingsDialog();
+        await flush();
+        document.querySelector<HTMLElement>('[data-view-theme="meins"]')!.click();
+        await flush();
+
+        const detail = document.getElementById('settings-theme-detail')!;
+        expect(detail.textContent).toContain('Body: Inter, system-ui, sans-serif');
+        expect(detail.textContent).toContain('Mono: ui-monospace, monospace');
+        expect(detail.textContent).toContain('Größe: 15px');
+        expect(document.getElementById('settings-theme-detail-name-input')).toBeNull();
     });
 
     it('laedt Karten-Previews lazy per IntersectionObserver', async () => {

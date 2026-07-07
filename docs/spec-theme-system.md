@@ -589,7 +589,7 @@ IntersectionObserver-Stub); neues E2E `38_theme_browser.py` (Detail via
 pollen; View-Mode explizit setzen; Screenshot mit `POST /sync/render`).
 Bestehende Theme-Szenarien 25/26/27/35/37 laufen API-basiert weiter.
 
-### E9 — Fonts als Theme-Bestandteile (nachbeauftragt 2026-07-07)
+### E9 — Fonts als Theme-Bestandteile ✅ (nachbeauftragt 2026-07-07)
 
 Drei optionale, **flache Manifest-Felder** in `theme.json`: `fontBody`,
 `fontMono`, `fontSize` (`Option<String>`, serde camelCase, Default

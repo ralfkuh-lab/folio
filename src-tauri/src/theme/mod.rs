@@ -8,7 +8,7 @@ pub mod store;
 pub mod template;
 
 use crate::persist;
-use package::{ThemePackage, ThemeSource};
+use package::{validate_font_family, validate_font_size, ThemeManifest, ThemePackage, ThemeSource};
 use serde::Serialize;
 pub use service::{ThemeData, ThemeService};
 use std::{borrow::Cow, collections::HashSet, fs, io, path::Path};
@@ -84,8 +84,22 @@ pub(crate) fn view_theme_css_in(
     if theme_id == "standard" {
         return Ok(Cow::Borrowed(""));
     }
-    layout_css_in(theme_id, dark, dir)
-        .ok_or_else(|| format!("Unbekanntes View-Theme: '{theme_id}'"))
+    let package =
+        package_in(theme_id, dir).ok_or_else(|| format!("Unbekanntes View-Theme: '{theme_id}'"))?;
+    let css = content_css(&package, dark);
+    let css = match package.dir.as_deref() {
+        Some(theme_dir) => {
+            let refs = assets::collect_references(&css, "", [None, None, None]);
+            if refs.is_empty() {
+                css
+            } else {
+                let asset_pairs = assets::load_assets(theme_dir, &refs)?;
+                assets::rewrite_asset_urls(&css, &asset_pairs)
+            }
+        }
+        None => css,
+    };
+    Ok(Cow::Owned(css))
 }
 
 pub(crate) fn layout_code_dark_in(id: &str, dir: &Path) -> bool {
@@ -117,9 +131,52 @@ pub(crate) fn valid_theme_id(id: &str) -> bool {
 }
 
 fn content_css(package: &ThemePackage, dark: bool) -> String {
-    match (dark, package.dark_css.as_deref()) {
+    let css = match (dark, package.dark_css.as_deref()) {
         (true, Some(dark_css)) => format!("{}\n{dark_css}", package.content_css),
         _ => package.content_css.clone(),
+    };
+    match font_css(&package.manifest) {
+        Some(font_css) => format!("{css}\n{font_css}"),
+        None => css,
+    }
+}
+
+pub fn font_css(manifest: &ThemeManifest) -> Option<String> {
+    let mut body = Vec::new();
+    if let Some(font_body) = manifest
+        .font_body
+        .as_deref()
+        .and_then(|value| validate_font_family(value).ok())
+    {
+        body.push(format!("font-family: {font_body};"));
+    }
+    if let Some(font_size) = manifest
+        .font_size
+        .as_deref()
+        .and_then(|value| validate_font_size(value).ok())
+    {
+        body.push(format!("font-size: {font_size};"));
+    }
+    let mut css = String::new();
+    if !body.is_empty() {
+        css.push_str(".markdown-body { ");
+        css.push_str(&body.join(" "));
+        css.push_str(" }\n");
+    }
+    if let Some(font_mono) = manifest
+        .font_mono
+        .as_deref()
+        .and_then(|value| validate_font_family(value).ok())
+    {
+        css.push_str(".markdown-body code, .markdown-body pre, .markdown-body kbd,\n");
+        css.push_str(".markdown-body samp, .markdown-body tt { font-family: ");
+        css.push_str(&font_mono);
+        css.push_str("; }\n");
+    }
+    if css.is_empty() {
+        None
+    } else {
+        Some(css.trim_end().to_string())
     }
 }
 
@@ -259,6 +316,112 @@ fn warn_collision(id: &str, path: &Path, winner: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn font_css_handles_partial_and_full_manifest_fields() {
+        assert_eq!(None, font_css(&ThemeManifest::default()));
+
+        let body = ThemeManifest {
+            font_body: Some("Georgia, serif".to_string()),
+            font_size: Some("16px".to_string()),
+            ..ThemeManifest::default()
+        };
+        let css = font_css(&body).unwrap();
+        assert!(css.contains(".markdown-body { font-family: Georgia, serif; font-size: 16px; }"));
+        assert!(!css.contains("code,"));
+
+        let mono = ThemeManifest {
+            font_mono: Some("ui-monospace, monospace".to_string()),
+            ..ThemeManifest::default()
+        };
+        let css = font_css(&mono).unwrap();
+        assert!(css.contains(
+            ".markdown-body samp, .markdown-body tt { font-family: ui-monospace, monospace; }"
+        ));
+    }
+
+    #[test]
+    fn font_manifest_sanitizer_accepts_and_rejects_expected_values() {
+        let manifest = ThemeManifest {
+            font_body: Some("Inter, system-ui, sans-serif".to_string()),
+            font_mono: Some("\"JetBrains Mono\", ui-monospace".to_string()),
+            font_size: Some("1.05rem".to_string()),
+            ..ThemeManifest::default()
+        };
+        assert!(package::validate_manifest_fonts(&manifest).is_ok());
+
+        for (field, value) in [
+            ("font_body", "Inter; body { color: red }"),
+            ("font_body", "url(asset:font.woff2)"),
+            ("font_mono", "@font-face"),
+            ("font_mono", "Mono <script>"),
+            ("font_body", r"ur\6c(asset:font.woff2)"),
+            ("font_body", r"url\28 http://evil"),
+            ("font_mono", r"Mono\7d body"),
+            ("font_size", "calc(1rem + 1px)"),
+            ("font_size", "12 px"),
+        ] {
+            let mut manifest = ThemeManifest::default();
+            match field {
+                "font_body" => manifest.font_body = Some(value.to_string()),
+                "font_mono" => manifest.font_mono = Some(value.to_string()),
+                "font_size" => manifest.font_size = Some(value.to_string()),
+                _ => unreachable!(),
+            }
+            assert!(
+                package::validate_manifest_fonts(&manifest).is_err(),
+                "{field}={value}"
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_font_manifest_fields_are_dropped_on_load() {
+        let temp = tempfile::tempdir().unwrap();
+        let directory = temp.path().join("badfonts");
+        fs::create_dir(&directory).unwrap();
+        fs::write(
+            directory.join("theme.json"),
+            r#"{
+                "name": "Bad Fonts",
+                "description": "Invalid",
+                "fontBody": "Inter; body { color: red }",
+                "fontMono": "url(asset:mono.woff2)",
+                "fontSize": "calc(1rem + 1px)"
+            }"#,
+        )
+        .unwrap();
+        fs::write(directory.join("content.css"), ".markdown-body {}").unwrap();
+
+        let package = package_in("badfonts", temp.path()).unwrap();
+        assert_eq!(None, package.manifest.font_body);
+        assert_eq!(None, package.manifest.font_mono);
+        assert_eq!(None, package.manifest.font_size);
+    }
+
+    #[test]
+    fn view_theme_css_rewrites_font_face_asset_urls() {
+        let temp = tempfile::tempdir().unwrap();
+        let directory = temp.path().join("fonty");
+        fs::create_dir(&directory).unwrap();
+        fs::create_dir(directory.join("assets")).unwrap();
+        fs::write(
+            directory.join("theme.json"),
+            r#"{"name":"Fonty","description":"Fonts"}"#,
+        )
+        .unwrap();
+        fs::write(
+            directory.join("content.css"),
+            r#"@font-face { font-family: "Inter"; src: url(asset:inter.woff2); }
+.markdown-body { font-family: "Inter"; }"#,
+        )
+        .unwrap();
+        fs::write(directory.join("assets/inter.woff2"), b"font-bytes").unwrap();
+
+        let css = view_theme_css_in("fonty", false, temp.path()).unwrap();
+        assert!(css.contains("data:font/woff2;base64,"));
+        assert!(!css.contains("asset:inter.woff2"));
+    }
 
     #[test]
     fn directory_themes_are_discovered_and_override_legacy() {

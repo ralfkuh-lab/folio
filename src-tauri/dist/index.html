@@ -369,6 +369,30 @@
           <input type="text" id="theme-editor-manifest-name" class="settings-input" autocomplete="off" />
           <label for="theme-editor-manifest-description">Beschreibung</label>
           <input type="text" id="theme-editor-manifest-description" class="settings-input" autocomplete="off" />
+          <label for="theme-editor-manifest-font-body">Body-Font</label>
+          <input type="text" id="theme-editor-manifest-font-body" class="settings-input" autocomplete="off" list="theme-editor-font-body-options" />
+          <label for="theme-editor-manifest-font-mono">Mono-Font</label>
+          <input type="text" id="theme-editor-manifest-font-mono" class="settings-input" autocomplete="off" list="theme-editor-font-mono-options" />
+          <label for="theme-editor-manifest-font-size">Schriftgröße</label>
+          <input type="text" id="theme-editor-manifest-font-size" class="settings-input" autocomplete="off" list="theme-editor-font-size-options" />
+          <datalist id="theme-editor-font-body-options">
+            <option value="system-ui, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif"></option>
+            <option value="Georgia, &quot;Times New Roman&quot;, serif"></option>
+            <option value="Inter, system-ui, sans-serif"></option>
+            <option value="Arial, Helvetica, sans-serif"></option>
+          </datalist>
+          <datalist id="theme-editor-font-mono-options">
+            <option value="ui-monospace, SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, monospace"></option>
+            <option value="&quot;JetBrains Mono&quot;, ui-monospace, monospace"></option>
+            <option value="&quot;Fira Code&quot;, ui-monospace, monospace"></option>
+          </datalist>
+          <datalist id="theme-editor-font-size-options">
+            <option value="14px"></option>
+            <option value="15px"></option>
+            <option value="16px"></option>
+            <option value="1rem"></option>
+            <option value="11pt"></option>
+          </datalist>
         </div>
         <div class="theme-editor-flags">
           <label><input type="checkbox" id="theme-editor-flag-cover" /> Cover</label>
@@ -382,7 +406,7 @@
         <div class="theme-editor-assets__head">
           <strong>Assets</strong>
           <label class="theme-editor-assets__upload" title="Asset hinzufügen; das erste Bild wird als Logo verwendet">
-            <input type="file" id="theme-editor-logo-input" accept=".png,.jpg,.jpeg,.gif,.webp,.avif,.svg,.bmp,.ico" />
+            <input type="file" id="theme-editor-logo-input" accept=".png,.jpg,.jpeg,.gif,.webp,.avif,.svg,.bmp,.ico,.woff2,.woff,.ttf,.otf" />
             <span>＋ Hochladen</span>
           </label>
         </div>

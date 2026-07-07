@@ -1,5 +1,7 @@
 """Funktionaler Test fuer benutzerdefinierte Markdown-Themes."""
 
+import json
+import shutil
 import time
 from pathlib import Path
 
@@ -8,6 +10,13 @@ from lib.api import ApiError
 
 LIGHT_MARKER = "#12ab34"
 DARK_MARKER = "#ba21dc"
+FONT_STACK = "Inter, system-ui, sans-serif"
+
+
+def _eval(ctx, js: str):
+    response = ctx.api.eval(js, timeout_ms=10_000)
+    ctx.expect(response.get("ok") is True, f"/eval schlug fehl: {response!r}")
+    return response.get("value")
 
 
 def _theme_state(ctx) -> dict:
@@ -47,6 +56,7 @@ def run(ctx):
     themes_dir = _themes_dir(ctx)
     light_path = themes_dir / "e2etheme.css"
     dark_path = themes_dir / "e2etheme.dark.css"
+    package_dir = themes_dir / "e2etheme"
 
     try:
         with ctx.step("Custom-Theme zur Laufzeit anlegen"):
@@ -73,6 +83,26 @@ def run(ctx):
             state = _poll_css(ctx, "e2etheme", DARK_MARKER)
             ctx.expect(DARK_MARKER in (state.get("css") or ""), f"theme state={state!r}")
 
+        with ctx.step("Manifest-Font wird in View-CSS angehaengt"):
+            files = _eval(ctx, "window.__folioInvoke('theme_read', { id: 'e2etheme' })")
+            files["manifest"]["fontBody"] = FONT_STACK
+            _eval(
+                ctx,
+                """window.__folioInvoke("theme_write", %s)"""
+                % json.dumps(
+                    {"id": "e2etheme", "files": files},
+                    ensure_ascii=False,
+                ),
+            )
+            css = _eval(
+                ctx,
+                "window.__folioInvoke('view_theme_css', { themeId: 'e2etheme', dark: false })",
+            )
+            ctx.expect(
+                f"font-family: {FONT_STACK};" in (css or ""),
+                f"Font-CSS fehlt: {css!r}",
+            )
+
         with ctx.step("Traversal-ID wird abgelehnt"):
             try:
                 ctx.api.settings_set({"viewTheme": "../evil"})
@@ -80,6 +110,7 @@ def run(ctx):
             except ApiError as error:
                 ctx.expect(400 <= error.status < 500, f"HTTP-Status={error.status}")
     finally:
+        shutil.rmtree(package_dir, ignore_errors=True)
         light_path.unlink(missing_ok=True)
         dark_path.unlink(missing_ok=True)
         ctx.api.settings_set({"viewTheme": "standard"})
