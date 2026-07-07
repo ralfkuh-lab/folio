@@ -589,6 +589,71 @@ IntersectionObserver-Stub); neues E2E `38_theme_browser.py` (Detail via
 pollen; View-Mode explizit setzen; Screenshot mit `POST /sync/render`).
 Bestehende Theme-Szenarien 25/26/27/35/37 laufen API-basiert weiter.
 
+### E9 — Fonts als Theme-Bestandteile (nachbeauftragt 2026-07-07)
+
+Drei optionale, **flache Manifest-Felder** in `theme.json`: `fontBody`,
+`fontMono`, `fontSize` (`Option<String>`, serde camelCase, Default
+`None`). Bewusst Manifest-Felder statt CSS-Konvention: ohne CSS-Parsing
+in UI-Feldern editierbar, vom KI-Autor deterministisch setzbar, eng
+validierbar, rein additiv (Built-ins bleiben unangetastet mit `None`).
+
+**Wirkmechanik**: neuer Helper `theme::font_css(&ThemeManifest) ->
+Option<String>`, erzeugt bei mindestens einem gesetzten Feld:
+
+```css
+.markdown-body { font-family: <fontBody>; font-size: <fontSize>; }
+.markdown-body code, .markdown-body pre, .markdown-body kbd,
+.markdown-body samp, .markdown-body tt { font-family: <fontMono>; }
+```
+
+Angehängt **nach** dem content_css an genau zwei Stellen: (1)
+`theme::content_css()` in `theme/mod.rs` — wirkt damit automatisch in
+View (`view_theme_css`) und Export (`render_document_in` via
+`layout_css_in`); (2) `export::render_theme_preview` (arbeitet direkt
+auf `parts.content_css`) — wirkt im Theme-Editor-Preview und den
+E8-Browserkarten. Built-ins setzen `font-family` mit gleicher
+Spezifität; „später gewinnt" überstimmt sauber. **Bewusste Grenze**:
+Themes mit eigenem Heading-Font behalten diesen — der Override gilt für
+Body+Code, nicht für Headings.
+
+**Validierung**: in `ThemeManifest::normalize` beim Laden (warn +
+`None`-Fallback), hart als Fehler im KI-Gate: `fontSize` gegen
+`^\d+(\.\d+)?(px|pt|em|rem|%)$`; Font-Family-Strings verbieten
+`{ } < > ; @` und `url(` (Injection-Schutz analog `validate_css`).
+
+**Eingebettete Fonts**: `theme/assets.rs::mime_for_extension` +
+woff2/woff/ttf/otf (5-MB-Limit bleibt); Asset-Upload-`accept`-Liste in
+`index.html` erweitern. Export funktioniert damit automatisch
+(`collect_asset_references`/`rewrite_asset_urls` scannen `url(asset:)`
+bereits). **View-Lücke schließen**: `view_theme_css` macht heute kein
+`asset:`-Rewrite — `@font-face { src: url(asset:…) }` würde nur im
+Export greifen. `theme::view_theme_css_in` bekommt das Rewrite
+(Referenzen sammeln + data-URI); die Sammel-Helper aus `export.rs`
+wandern dafür nach `theme::assets` (kein Modul-Zyklus).
+
+**UI**: drei Inputs im Manifest-Panel des Theme-Editors (Body-Font,
+Mono-Font, Schriftgröße; `<input list>` mit datalist gängiger
+Font-Stacks), `manifestDirty`-Pattern, Preview via `schedulePreview()`.
+Editierbar **nur** im Editor; die E8-Detailansicht zeigt gesetzte Fonts
+read-only (Badge/Zeile).
+
+**KI-Autor**: `author.rs::system_prompt` erwähnt die drei Felder;
+`validate_draft` validiert sie mit demselben Sanitizer; `parse_draft`
+braucht nichts (serde default).
+
+**Kompatibilität**: nichts zu tun — `ThemeManifest` ist
+`#[serde(default)]` ohne `deny_unknown_fields`, `.mdtheme`-Import
+toleriert die Felder in beide Richtungen; alte folio-Versionen
+ignorieren sie still. **formatVersion bleibt 1** (ein Bump würde
+funktionierende Archive in alten Versionen hart ablehnen).
+
+**Tests**: Rust-Unit (font_css-Generierung, Sanitizer,
+View-Asset-Rewrite, Archiv-Roundtrip mit Font-Feldern); jsdom
+(Editor-Inputs, Read-only-Anzeige im Detail); E2E: Erweiterung
+`26_custom_theme.py` — Theme mit `fontBody` via
+`__folioInvoke('theme_write', …)` schreiben und `view_theme_css`
+asserten (rein API-basiert, Xvfb-sicher).
+
 ## Bewusst verschoben
 
 - **Live-Seitenzahlen im PDF** (User-Entscheid 2026-07-06): Chromiums
