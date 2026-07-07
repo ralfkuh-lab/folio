@@ -491,6 +491,104 @@ Kompatibilität. Umbenennen in `.zip` macht es manuell inspizierbar.
   (Buttons/Refresh), E2E `37_theme_import_export.py` (Roundtrip über
   Temp-Datei, finally-Cleanup).
 
+### E8 — Settings-Theme-Browser: Master-Detail, explizite Auswahl, Name-Edit (nachbeauftragt 2026-07-07)
+
+Behebt vier UI-Schmerzen (User-Feedback 2026-07-07): Klick auf einen
+Listeneintrag wendet das View-Theme sofort an; keine visuelle Vorschau in
+den Settings (der Export-Dialog kann das besser); Built-ins sind nicht
+einsehbar (nur via Clone-Umweg); der Anzeigename ist nach dem Anlegen
+nicht mehr änderbar.
+
+**Layout** — Master-Detail im Vollflächen-Panel `settings-panel-themes`
+(`src-tauri/dist/index.html`, heutiger Block Z. 225–264 wird ersetzt;
+Create-/Delete-Overlays bleiben):
+
+```
+┌─ Panel „Markdown-Themes" ──────────────────────────────────────────┐
+│ Markdown-Themes                [Theme importieren…] [Neues Theme]  │
+│ ┌─ Karten-Grid (scrollt, ~55 %) ─┐ ┌─ Detail (sticky, ~45 %) ────┐ │
+│ │ ┌───────────┐ ┌───────────┐    │ │ Clean               ✎  ★   │ │
+│ │ │ mini-     │ │ mini-     │    │ │ „Moderne, ruhige …"         │ │
+│ │ │ preview-  │ │ preview-  │    │ │ [Built-in] [Hell/Dunkel]    │ │
+│ │ │ iframe    │ │ iframe    │    │ │ ┌─────────────────────────┐ │ │
+│ │ └───────────┘ └───────────┘    │ │ │  große Vorschau         │ │ │
+│ │ Standard      Clean  ★         │ │ │  (iframe, live)         │ │ │
+│ │ ● Aktiv                        │ │ └─────────────────────────┘ │ │
+│ │ ┌───────────┐ ┌───────────┐    │ │ Dunkel (●──)  ← Toggle      │ │
+│ │ │ GitHub …  │ │ Business …│    │ │ Datei: [content.css ▾]      │ │
+│ │ └───────────┘ └───────────┘    │ │ ┌─────────────────────────┐ │ │
+│ │  … weitere Karten …            │ │ │ <pre> read-only Inhalt  │ │ │
+│ │                                │ │ └─────────────────────────┘ │ │
+│ │                                │ │ [✔ Als Ansicht verwenden]   │ │
+│ │                                │ │ [Bearbeiten] [Duplizieren]  │ │
+│ │                                │ │ [Exportieren…] [Löschen]    │ │
+│ └────────────────────────────────┘ └─────────────────────────────┘ │
+│ Fehlerzeile (#settings-theme-error) · Themes-Dir-Hint              │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+**Interaktionsmodell**:
+
+- **Karten-Klick = Detail öffnen, nie anwenden.** Die View-Theme-Auswahl
+  läuft ausschließlich über den Button **„Als Ansicht verwenden"** in der
+  Detailansicht (`patchSettings({ viewTheme: id })` wie bisher; die
+  Backend-Validierung in `settings_update` bleibt unverändert). Das
+  aktive Theme trägt auf der Karte einen „● Aktiv"-Badge; im Detail wird
+  der Button zu „Wird verwendet ✓" (disabled). Favoriten-Stern bleibt
+  auf der Karte (Export-Favoriten sind von der View-Auswahl unabhängig).
+- ARIA: Grid `role="listbox"` + `aria-selected` für die Detail-Selektion
+  (ersetzt das heutige `radiogroup`, dessen Radio-Semantik zur
+  Klick=Auswahl-Logik gehörte). Pfeiltasten navigieren, Enter öffnet das
+  Detail.
+- **Detailansicht für ALLE Themes inkl. Built-ins**: `theme_read(id)`
+  funktioniert bereits für Built-ins — kein neuer Read-Command. Anzeige:
+  Parts-`<select>` (nur vorhandene Parts: content.css / content.dark.css /
+  page.css / cover.html / header.html / footer.html) + `<pre>` read-only
+  mit Mono-Font. Bewusst **kein Monaco** im Detail (Monaco bleibt dem
+  Editor-Tab vorbehalten, Architektur-Entscheidung 3).
+- **Vorschau**: neuer Command `theme_preview_saved(theme_id, dark) ->
+  Result<String, String>` in `commands/theme.rs`: lädt `theme::package`,
+  baut `ThemeParts` und rendert `export::render_theme_preview` mit dem
+  vorhandenen `THEME_PREVIEW_SAMPLE` (Fallback-Sample von
+  `theme_preview_render`) — funktioniert damit ohne offenes Dokument.
+  Karten-iframes laden **lazy** per `IntersectionObserver`; Ergebnis-Cache
+  `Map<themeId|dark, html>` im Modul, invalidiert bei `themes:changed`.
+  iframes `sandbox` + `pointer-events: none` + `transform: scale(…)`
+  (Vorlage `.export-card__preview` in `dialogs.css`). Detail-Vorschau:
+  derselbe Command, großer iframe, Dark-Umschalter als Toggle-Switch.
+- **Toggle-Switch shared**: `makeToggle()` aus `settings-ai.ts` in ein
+  gemeinsames Modul extrahieren (z. B. `ui/controls.ts`); `settings-ai.ts`
+  importiert von dort. CSS `.settings-ai-switch` ist bereits global.
+- **`standard`**: Vorschau rendert neutral über `BASE_CSS`; Karte + Detail
+  zeigen den Hinweis „Folgt dem App-Theme · nur Ansicht, kein
+  Export-Layout"; wie heute ohne Favoriten-/Export-/Clone-/Edit-Aktionen.
+- **Name/Beschreibung ändern** (nur `custom`-Themes):
+  - Detailansicht: Stift-Icon neben dem Namen → Inline-Input →
+    `theme_read` + `manifest.name`/`description` setzen + `theme_write`
+    (Muster `saveThemeCreateDialog`); `themes:changed` refresht Liste,
+    Detail und Editor-Tab-Label.
+  - Theme-Editor: Name- + Beschreibung-Inputs im Manifest-Panel
+    (`manifestDirty`-Pattern); das Virtual-Tab-Label zieht über die
+    `label()`-Closure automatisch nach.
+
+**Modul-Extraktion**: Der Theme-Anteil von `settings-dialog.ts` wandert in
+ein neues Modul `ui/settings-themes.ts` (`initSettingsThemes()` analog
+`initSettingsAi()`) — die Datei ist mit 725 Zeilen zu groß, und der
+Theme-Anteil wächst deutlich. Styles in neues
+`styles/settings-themes.css` (in `styles/index.css` registrieren); die
+alten `.settings-theme-*`-Blöcke verlassen `dialogs.css`.
+
+**Kompatibilität**: keine Datenmigration; `viewTheme`/`themeFavorites`
+unverändert. Die einzige Semantik-Änderung (kein Instant-Apply) ist rein
+frontendseitig.
+
+**Tests**: jsdom `settings-dialog.test.ts` umbauen (Klick=Detail statt
+Klick=Auswahl, „Verwenden"-Button-Pfad, Name-Edit, Lazy-Preview mit
+IntersectionObserver-Stub); neues E2E `38_theme_browser.py` (Detail via
+`POST /eval` öffnen, „Verwenden" klicken, `viewTheme` über die Settings-API
+pollen; View-Mode explizit setzen; Screenshot mit `POST /sync/render`).
+Bestehende Theme-Szenarien 25/26/27/35/37 laufen API-basiert weiter.
+
 ## Bewusst verschoben
 
 - **Live-Seitenzahlen im PDF** (User-Entscheid 2026-07-06): Chromiums
@@ -508,6 +606,17 @@ Kompatibilität. Umbenennen in `.zip` macht es manuell inspizierbar.
 - **Dynamischer KI-Export (Stufe 2)**: KI-Lauf pro Export (LLM erzeugt
   HTML/CSS dokumentspezifisch). Andockstelle ist der
   Draft/Preview/Confirm-Pfad aus E6; nichts in dieser Spec blockiert das.
+  Geplant als E10 (nach E9 „Fonts als Theme-Bestandteile", damit der
+  KI-Prompt-Contract nur einmal angefasst wird).
+- **Theme-ID-Rename** (Entscheid 2026-07-07, mit E8): Es gibt bewusst
+  keinen `theme_rename`-Command. Die ID ist nur im Create-Dialog sichtbar
+  und danach reine Adresse (Verzeichnisname); editierbar ist der
+  Anzeigename im Manifest (E8). Ein ID-Rename bräuchte Verzeichnis-Rename
+  unter dem `theme_write`-Lock plus Migration von `settings.viewTheme` +
+  `settings.themeFavorites` plus Behandlung offener Editor-Tabs — viel
+  Risiko ohne sichtbaren Nutzen. Falls doch je nötig: Andockstelle wäre
+  `store::rename_in` (fs::rename + Kollisions-Check) + Settings-Patch +
+  `themes:changed`.
 
 ## Risiken
 
