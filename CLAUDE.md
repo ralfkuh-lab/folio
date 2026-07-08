@@ -251,8 +251,12 @@ sonst lehnt Tauri den Build ab.
   zwingt beim Open via `document_service::apply_default_mode` auf
   View-Mode. `document_store::load_opaque(path)` setzt nur den Pfad,
   ohne die Datei zu lesen — keine MB-großen Bytes ins Memory, keine
-  Encoding-Detection. Image-Watcher ist heute nicht angeschlossen;
-  externe Änderungen erfordern einen Re-Open.
+  Encoding-Detection, startet aber den Datei-Watcher (`watch_non_fatal`):
+  externe Änderungen laufen über die bestehende
+  `document:external_changed`-Kette; das Frontend remountet bei
+  `kind-image` nur das Bild (`reloadImageView`, Cache-Buster
+  `?v=<Date.now()>` in `mountImageView`) statt den Text-Reload-Pfad
+  zu nehmen.
 - **Editor-Sprache (Monaco)**: zweite, unabhängige Klassifikation neben
   `FileKind` — `editor_language(path)` in `file_kind.rs` liefert eine
   Monaco-Sprach-ID (`markdown`, `json`, `typescript`, …, Default

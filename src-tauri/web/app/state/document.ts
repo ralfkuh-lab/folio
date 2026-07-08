@@ -14,7 +14,7 @@ import { setTocList, rewriteRelativeAssets } from '../view/markdown';
 import { highlightCodeBlocks } from '../view/code-highlight';
 import { addCodeCopyButtons } from '../view/code-copy';
 import { clearHtmlView, HtmlFinder, isHtmlDocument, mountHtmlView } from '../view/html';
-import { clearImageView, isImageDocument, mountImageView } from '../view/image';
+import { clearImageView, isImageDocument, mountImageView, reloadImageView } from '../view/image';
 import { invalidatePreview } from '../view/preview';
 import { clearMarkdownHeadingMap, setMarkdownHeadingMap } from '../view/scroll-sync';
 import { setVaultActive } from '../vault/tree';
@@ -429,6 +429,14 @@ export function initDocumentState(d: Deps): void {
         const data = (event && event.payload) || {};
         if (!currentPath) return;
         if (data.path && data.path !== currentPath) return;
+        // Image-Branch VOR dem Text-Reload-Pfad: fuer Bilder den
+        // reload_document-Command niemals aufrufen (der wuerde Binary
+        // als Text lesen). Nutze vorhandenen kind-Mechanismus
+        // (body.kind-image via applyDocKind), keine neue Heuristik.
+        if (document.body.classList.contains('kind-image')) {
+            reloadImageView();
+            return;
+        }
         if (isDirty) {
             showStatus('Datei extern geändert (ungespeicherte Änderungen) — Reload via Save oder Verwerfen');
             return;

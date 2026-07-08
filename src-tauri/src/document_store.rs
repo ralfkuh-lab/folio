@@ -108,15 +108,18 @@ impl DocumentStore {
     /// "Open" fuer nicht-textuelle Dateien (Bilder o.ae.). Setzt den
     /// Store auf den Pfad, ohne den Inhalt zu lesen — das Frontend
     /// rendert das Bild ueber `convertFileSrc` direkt von Disk.
-    /// Aequivalent zu `load`, aber ohne `read_and_decode` und ohne
-    /// `watch` (Bild-Reloads sind aktuell nicht implementiert; bei
-    /// externer Aenderung muss der User die Datei neu oeffnen).
+    /// Aequivalent zu `load`, aber ohne `read_and_decode`. Ruft
+    /// watch_non_fatal, damit die bestehende external_changed-Kette
+    /// (DocumentStore + state.rs + Frontend document:external_changed)
+    /// auch fuer Image-View Live-Reload bei externen Aenderungen
+    /// funktioniert.
     pub fn load_opaque(&mut self, path: &str) -> io::Result<LoadedDocument> {
         self.path = Some(path.to_string());
         self.text = String::new();
         self.clean_text = String::new();
         self.is_dirty = false;
         // line_ending/had_bom unveraendert — sie betreffen nur Text-Saves.
+        self.watch_non_fatal(path);
         let loaded = LoadedDocument {
             path: path.to_string(),
             text: String::new(),
@@ -316,6 +319,9 @@ impl DocumentStore {
         }
     }
 
+    /// Interner Watcher-Setup (notify non-recursive auf exact path).
+    /// Wird von load/load_inner, save_as, rename und jetzt auch
+    /// load_opaque (fuer Image-View Live-Reload) aufgerufen.
     fn watch(&mut self, path: &str) -> io::Result<()> {
         // Stop any previous watcher thread by dropping its sender.
         self.watcher = None;

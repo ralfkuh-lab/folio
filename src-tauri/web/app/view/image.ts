@@ -20,11 +20,10 @@ export function isImageDocument(kind: string): boolean {
     return kind === 'image';
 }
 
-/** Setzt den Image-Container auf das Bild unter `path`. Bei Reload mit
- *  demselben Pfad wird `src` neu zugewiesen — der Browser laedt das Bild
- *  bei externer Aenderung dadurch nicht automatisch neu (Image-Watcher
- *  ist heute nicht angeschlossen, ein expliziter Re-Open via Vault-Klick
- *  reicht). */
+/** Setzt den Image-Container auf das Bild unter `path`. Beim Setzen
+ *  der src wird ein Cache-Buster `?v=<Date.now()>` angehaengt, damit
+ *  der Browser das Bild auch bei externer Aenderung (oder Re-Mount
+ *  eines inaktiven Tabs) frisch von Disk laedt. */
 export function mountImageView(path: string): void {
     const mount = document.getElementById('image-view-mount');
     if (!mount) return;
@@ -49,6 +48,10 @@ export function mountImageView(path: string): void {
         mount.textContent = lastError;
         return;
     }
+    // Cache-Buster: jeder mount (inkl. reloadImageView) erzwingt frischen
+    // Fetch vom FS. Date.now() reicht; kein mtime-Roundtrip noetig.
+    const sep = src.indexOf('?') >= 0 ? '&' : '?';
+    src = src + sep + 'v=' + Date.now();
     const img = document.createElement('img');
     img.alt = path;
     img.draggable = false;
@@ -59,6 +62,15 @@ export function mountImageView(path: string): void {
     };
     img.src = src;
     mount.appendChild(img);
+}
+
+/** Laedt das aktuell gemountete Bild neu (remount mit neuem Buster).
+ *  Wird vom document:external_changed-Handler fuer kind=image aufgerufen.
+ *  Deckt auch Re-Aktivierung inaktiver Tabs ab. */
+export function reloadImageView(): void {
+    if (currentPath) {
+        mountImageView(currentPath);
+    }
 }
 
 /** Entfernt das gerenderte Bild. Wird beim Wechsel auf ein anderes

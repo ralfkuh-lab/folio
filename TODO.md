@@ -191,11 +191,8 @@
 
 - **Image-View Folgepunkte** (Hauptfeature 2026-05-21 implementiert,
   siehe `view/image.ts`, `file_kind.rs::FileKind::Image`,
-  `document_store.rs::load_opaque`):
-  - **Image-Watcher**: heute keine Live-Reaktion auf externe Änderungen
-    am offenen Bild. Analog zu `DocumentStore::watch` einen
-    File-Watcher für den Image-Pfad, der bei FS-Change das `<img>` neu
-    lädt (Cache-Buster `?v=<mtime>` an die `convertFileSrc`-URL).
+  `document_store.rs::load_opaque`; Image-Watcher/Live-Reload bei
+  externen Änderungen ist seit 2026-07-08 umgesetzt):
   - **Zoom / Pan** für große Bilder. Heute wird via `max-width/max-height`
     proportional runterskaliert; ein Mausrad-Zoom + Drag-Pan wäre
     sinnvoll. Achtung: muss mit `<img>` und CSS-Transform laufen, da
