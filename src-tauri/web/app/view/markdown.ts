@@ -15,6 +15,16 @@ function post(msg: any): void {
     }
 }
 
+function linkFromEventTarget(target: EventTarget | null): HTMLAnchorElement | null {
+    let el = target as HTMLElement | null;
+    while (el && el.tagName !== 'A') el = el.parentElement;
+    return el as HTMLAnchorElement | null;
+}
+
+function postLinkClick(href: string, newTab: boolean): void {
+    post({ type: 'linkClick', href, newTab });
+}
+
 // ----- TOC-API (vom document:loaded und navigation:changed gerufen) -----
 
 export function setTocActive(slug: string): void {
@@ -380,18 +390,30 @@ export function initMarkdownView(deps?: { requestSaveIfDirty?: () => Promise<boo
     // Edits wuerde der Backend-Load-Pfad in events::navigation::link_click
     // sonst die offenen Aenderungen ueberschreiben (analog openDocument).
     contentEl.addEventListener('click', function (e: MouseEvent) {
-        let el = e.target as HTMLElement;
-        while (el && el.tagName !== 'A') el = el.parentElement;
+        const el = linkFromEventTarget(e.target);
         if (!el) return;
         const href = el.getAttribute('href');
         if (href === null) return;
         e.preventDefault();
-        const send = function () { post({ type: 'linkClick', href }); };
-        if (requestSaveIfDirtyDep) {
+        const newTab = e.ctrlKey || e.metaKey;
+        const send = function () { postLinkClick(href, false); };
+        if (newTab) {
+            postLinkClick(href, true);
+        } else if (requestSaveIfDirtyDep) {
             requestSaveIfDirtyDep().then(function (ok) { if (ok) send(); });
         } else {
             send();
         }
+    }, true);
+
+    contentEl.addEventListener('auxclick', function (e: MouseEvent) {
+        if (e.button !== 1) return;
+        const el = linkFromEventTarget(e.target);
+        if (!el) return;
+        const href = el.getAttribute('href');
+        if (href === null) return;
+        e.preventDefault();
+        postLinkClick(href, true);
     }, true);
 
     // TOC-Click → Backend-Event (navigation:toc_click → setTocActive).

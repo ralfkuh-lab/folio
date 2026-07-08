@@ -32,10 +32,35 @@ pub(super) fn bool_field(payload: &Value, field: &str) -> Result<bool, String> {
         .ok_or_else(|| format!("event payload missing bool field: {field}"))
 }
 
+pub(super) fn optional_bool_field(payload: &Value, field: &str) -> Result<bool, String> {
+    match payload.get(field) {
+        Some(value) => value
+            .as_bool()
+            .ok_or_else(|| format!("event payload invalid bool field: {field}")),
+        None => Ok(false),
+    }
+}
+
 pub(super) fn usize_field(payload: &Value, field: &str) -> Result<usize, String> {
     payload
         .get(field)
         .and_then(Value::as_u64)
         .and_then(|value| usize::try_from(value).ok())
         .ok_or_else(|| format!("event payload missing unsigned integer field: {field}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn optional_bool_field_defaults_missing_to_false() {
+        assert!(!optional_bool_field(&json!({}), "newTab").unwrap());
+    }
+
+    #[test]
+    fn optional_bool_field_reads_true() {
+        assert!(optional_bool_field(&json!({ "newTab": true }), "newTab").unwrap());
+    }
 }

@@ -7,7 +7,12 @@ use crate::state::AppState;
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_shell::ShellExt;
 
-pub(super) fn link_click(href: String, state: &AppState, handle: &AppHandle) -> Result<(), String> {
+pub(super) fn link_click(
+    href: String,
+    new_tab: bool,
+    state: &AppState,
+    handle: &AppHandle,
+) -> Result<(), String> {
     let current_file = state
         .tabs
         .lock()
@@ -29,6 +34,13 @@ pub(super) fn link_click(href: String, state: &AppState, handle: &AppHandle) -> 
                 .map_err(|error| error.to_string())
         }
         LinkAction::Navigate { path, anchor } => {
+            if new_tab {
+                let transition =
+                    crate::commands::tabs::open(state, handle, path).map_err(String::from)?;
+                return crate::commands::tabs::emit_navigation_changed(handle, &transition, None)
+                    .map_err(String::from);
+            }
+
             // Anker-only-Links (gleicher Pfad) ueberspringen Disk-IO und
             // Vault-Set-Active; sonst rauschen Scroll/Editor-State weg.
             let outcome = document_service::open(

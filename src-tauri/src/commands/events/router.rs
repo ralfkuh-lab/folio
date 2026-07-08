@@ -21,7 +21,9 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter};
 
 use super::navigation;
-use super::payload::{bool_field, number_field, payload_type, string_field, usize_field};
+use super::payload::{
+    bool_field, number_field, optional_bool_field, payload_type, string_field, usize_field,
+};
 use super::vault;
 
 pub fn route_shell_event(
@@ -31,7 +33,12 @@ pub fn route_shell_event(
 ) -> Result<(), String> {
     let event_type = payload_type(payload)?;
     match event_type {
-        "linkClick" => navigation::link_click(string_field(payload, "href")?, state, handle),
+        "linkClick" => navigation::link_click(
+            string_field(payload, "href")?,
+            optional_bool_field(payload, "newTab")?,
+            state,
+            handle,
+        ),
         "visibleHeading" => navigation::visible_heading(
             payload
                 .get("id")
