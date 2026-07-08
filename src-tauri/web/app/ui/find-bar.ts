@@ -1,6 +1,7 @@
-/* Find-Bar (HTML in der Shell, FolioEditor / ViewFinder liefern Logik).
-   Im Edit-Mode bedient sie Monaco (via window.FolioEditor); im View-Mode
-   den passenden DOM-Sucher (Markdown-View oder HTML-iframe).
+/* Find-Bar (HTML in der Shell, FolioEditor / ViewFinder / FolioCodeView
+   liefern Logik). Im Edit-Mode bedient sie Monaco (via window.FolioEditor);
+   im View-Mode den passenden Sucher (Markdown-DOM, HTML-iframe oder
+   Read-Only-Code-View).
 
    ensureEditorMounted + focusEditor kommen aus dem Editor-Shell und
    werden per init injiziert (statt frueher window.focusEditor — die
@@ -29,6 +30,20 @@ const INPUT_DEBOUNCE_MS = 150;
 function isEditMode(): boolean { return document.body.classList.contains('edit-mode'); }
 function isSplitMode(): boolean { return document.body.classList.contains('split-mode'); }
 function isHtmlPreviewMode(): boolean { return document.body.classList.contains('html-preview-mode'); }
+function isTextKind(): boolean { return document.body.classList.contains('kind-text'); }
+function isCodeViewMode(): boolean {
+    return isTextKind() && !isEditMode() && !isSplitMode() && !isHtmlPreviewMode();
+}
+
+const CodeViewFinder = {
+    openFind: function (seed?: string): void { if (window.FolioCodeView) window.FolioCodeView.openFind(seed); },
+    closeFind: function (): void { if (window.FolioCodeView) window.FolioCodeView.closeFind(); },
+    setFindTerm: function (term: string): void { if (window.FolioCodeView) window.FolioCodeView.setFindTerm(term); },
+    setFindOptions: function (opts: any): void { if (window.FolioCodeView) window.FolioCodeView.setFindOptions(opts); },
+    findNext: function (): void { if (window.FolioCodeView) window.FolioCodeView.findNext(); },
+    findPrev: function (): void { if (window.FolioCodeView) window.FolioCodeView.findPrev(); },
+    setSuppressActive: function (on: boolean): void { if (window.FolioCodeView) window.FolioCodeView.setSuppressActive(on); },
+};
 
 function makeSplitFinder(viewFinder: any): any {
     return {
@@ -58,14 +73,26 @@ function makeSplitFinder(viewFinder: any): any {
 
 const SplitFinder = makeSplitFinder(ViewFinder);
 const SplitHtmlFinder = makeSplitFinder(HtmlFinder);
+const SplitCodeFinder = makeSplitFinder(CodeViewFinder);
 
 function getFinder(): any {
     if (isEditMode()) return window.FolioEditor;
-    if (isSplitMode()) return isHtmlPreviewMode() ? SplitHtmlFinder : SplitFinder;
-    return isHtmlPreviewMode() ? HtmlFinder : ViewFinder;
+    if (isSplitMode()) {
+        if (isHtmlPreviewMode()) return SplitHtmlFinder;
+        return isTextKind() ? SplitCodeFinder : SplitFinder;
+    }
+    if (isHtmlPreviewMode()) return HtmlFinder;
+    return isCodeViewMode() ? CodeViewFinder : ViewFinder;
 }
 
 function isOpen(): boolean { return bar.classList.contains('open'); }
+
+function closeAllFinders(): void {
+    if (window.FolioEditor) window.FolioEditor.closeFind();
+    if (ViewFinder) ViewFinder.closeFind();
+    if (HtmlFinder) HtmlFinder.closeFind();
+    if (window.FolioCodeView) window.FolioCodeView.closeFind();
+}
 
 function doOpen(initial?: string): void {
     bar.classList.add('open');
@@ -102,9 +129,7 @@ function close(): void {
     // Beide Finder closen — robust gegen Mode-Switch-Race: SetEditMode laeuft im
     // Edit→View-Wechsel vor CloseEditorFind, sonst wuerde getFinder() den falschen
     // Finder treffen und die Edit-Highlights blieben haengen.
-    if (window.FolioEditor) window.FolioEditor.closeFind();
-    if (ViewFinder) ViewFinder.closeFind();
-    if (HtmlFinder) HtmlFinder.closeFind();
+    closeAllFinders();
     if (isEditMode() && focusEditorDep) focusEditorDep();
 }
 
@@ -123,6 +148,14 @@ function pickSeed(arg?: string): string {
     return lastTermMemo;
 }
 
+function flushPendingInputTerm(): void {
+    if (!inputDebounce) return;
+    clearTimeout(inputDebounce);
+    inputDebounce = null;
+    const f = getFinder();
+    if (f) f.setFindTerm(input.value);
+}
+
 export function findNext(lastTerm?: string): void {
     const seed = pickSeed(lastTerm);
     if (!bar.classList.contains('open')) { open(seed); return; }
@@ -130,6 +163,7 @@ export function findNext(lastTerm?: string): void {
         if (seed) { input.value = seed; const f0 = getFinder(); if (f0) f0.openFind(seed); }
         else { input.focus(); input.select(); return; }
     }
+    flushPendingInputTerm();
     const f = getFinder(); if (f) f.findNext();
 }
 
@@ -140,6 +174,7 @@ export function findPrev(lastTerm?: string): void {
         if (seed) { input.value = seed; const f0 = getFinder(); if (f0) f0.openFind(seed); }
         else { input.focus(); input.select(); return; }
     }
+    flushPendingInputTerm();
     const f = getFinder(); if (f) f.findPrev();
 }
 
@@ -150,9 +185,7 @@ export function findPrev(lastTerm?: string): void {
 export function afterModeSwitch(): void {
     setTimeout(function () {
         if (bar.classList.contains('open')) {
-            if (window.FolioEditor) window.FolioEditor.closeFind();
-            if (ViewFinder) ViewFinder.closeFind();
-            if (HtmlFinder) HtmlFinder.closeFind();
+            closeAllFinders();
             const f = getFinder();
             if (f) {
                 f.setFindOptions({
@@ -165,6 +198,28 @@ export function afterModeSwitch(): void {
             input.select();
         } else if (isEditMode() && focusEditorDep) {
             focusEditorDep();
+        }
+    }, 0);
+}
+
+export function afterDocumentSwitch(): void {
+    setTimeout(function () {
+        if (!bar) return;
+        if (!bar.classList.contains('open')) return;
+        const activeBefore = document.activeElement as HTMLElement | null;
+        closeAllFinders();
+        const f = getFinder();
+        if (f) {
+            f.setFindOptions({
+                caseSensitive: caseChk.checked,
+                wholeWord: wordChk.checked,
+            });
+            f.openFind(input.value);
+        }
+        if (activeBefore && activeBefore !== document.body
+            && document.contains(activeBefore)
+            && typeof activeBefore.focus === 'function') {
+            activeBefore.focus();
         }
     }, 0);
 }
@@ -201,6 +256,7 @@ export function initFindBar(deps: {
     input.addEventListener('keydown', function (e: KeyboardEvent) {
         if (e.key === 'Enter') {
             e.preventDefault();
+            flushPendingInputTerm();
             const f = getFinder(); if (!f) return;
             if (e.shiftKey) f.findPrev(); else f.findNext();
         } else if (e.key === 'Escape') {
@@ -230,26 +286,13 @@ export function initFindBar(deps: {
 
     // Strg+F und F3 muessen vor Monaco greifen, sonst schluckt Monacos
     // eingebauter Find-Widget die Tasten im Editor-Fokus. capture:true +
-    // stopPropagation deckt sowohl Editor- als auch View-/Vault-Fokus ab.
-    //
-    // Ausnahme: Code-View (Read-Only Monaco im View-Mode bei kind=text)
-    // bekommt sein eigenes Find-Widget — wir lassen Strg+F durch, damit
-    // Monaco dort wie gewohnt sucht. Die globale Folio-Find-Bar wuerde
-    // sonst aufgehen, ohne den Code-View-Inhalt zu durchsuchen.
-    function isCodeViewActive(): boolean {
-        const body = document.body;
-        return body.classList.contains('kind-text')
-            && !body.classList.contains('edit-mode')
-            && !body.classList.contains('html-preview-mode');
-    }
+    // stopPropagation deckt Editor-, Code-View-, View- und Vault-Fokus ab.
     document.addEventListener('keydown', function (e: KeyboardEvent) {
         if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
-            if (isCodeViewActive()) return;
             e.preventDefault();
             e.stopPropagation();
             openEditorFind('');
         } else if (e.key === 'F3') {
-            if (isCodeViewActive()) return;
             e.preventDefault();
             e.stopPropagation();
             if (e.shiftKey) findPrev(); else findNext();
@@ -265,7 +308,7 @@ export function initFindBar(deps: {
 
     window.addEventListener('folio-find-state', function (e: CustomEvent) {
         const s = e.detail || {};
-        if (isSplitMode() && s.source === 'view') return;
+        if (isSplitMode() && s.source !== 'editor') return;
         if (!s.term && !input.value) { counter.textContent = ''; return; }
         if (typeof s.total !== 'number' || s.total === 0) {
             counter.textContent = (input.value || s.term) ? '0/0' : '';

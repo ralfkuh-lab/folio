@@ -333,10 +333,12 @@ sonst lehnt Tauri den Build ab.
   `viewAutoFormat`, default an) — keine JSON-Sonderbehandlung.
   Sprachen ohne registrierten Formatter zeigen den Rohinhalt; ebenso
   wenn das Setting aus ist. Theme-Sync laeuft ueber `setEditorTheme`
-  (in `editor/shell.ts`), das beide Surfaces aktualisiert. Code-View
-  hat sein eigenes Find-Widget (Strg+F) — die Folio-Find-Bar
-  uebersetzt den Capture-Listener bei `kind=text + !edit-mode` an
-  Monaco. **Beide Monaco-Instanzen teilen einen einzigen AMD-Loader**
+  (in `editor/shell.ts`), das beide Surfaces aktualisiert. Die
+  Folio-Find-Bar bedient den Code-View ueber eine zweite Monaco-
+  Find-Controller-Instanz (`window.FolioCodeView.openFind/...`);
+  Strg+F/F3 werden global von der Folio-Find-Bar abgefangen, Monacos
+  internes Code-View-Find-Widget ist kein Nutzerpfad mehr.
+  **Beide Monaco-Instanzen teilen einen einzigen AMD-Loader**
   ueber `editor/mount.ts::whenMonacoLoaded` — `loadMonaco()` wird
   exakt einmal beim Bundle-Init gerufen. Wer Monaco erweitert oder
   Worker konfiguriert, muss beide Pfade beruecksichtigen.
@@ -351,13 +353,13 @@ sonst lehnt Tauri den Build ab.
   (`#html-marker-lane` in `dist/index.html`, CSS in `content.css`)
   zeigt Treffer-Positionen analog zu `#view-marker-lane` im Markdown-
   View; Koordinaten werden relativ zum iframe-`scrollingElement`
-  berechnet. Im **Split-Mode** routet `SplitHtmlFinder` (erzeugt von
-  `makeSplitFinder(HtmlFinder)` in `find-bar.ts`) die Suche an
-  **Editor + HtmlFinder** gleichzeitig — analog zu `SplitFinder` für
-  Markdown. `getFinder()` in `find-bar.ts` entscheidet:
-  `isEditMode()` → FolioEditor, `isSplitMode()` →
-  SplitHtmlFinder/SplitFinder je nach `isHtmlPreviewMode()`,
-  sonst → HtmlFinder/ViewFinder.
+  berechnet. Im **Split-Mode** routen `SplitHtmlFinder`,
+  `SplitCodeFinder` und `SplitFinder` (erzeugt von `makeSplitFinder(...)`
+  in `find-bar.ts`) die Suche an **Editor + View-Seite** gleichzeitig;
+  die View-Seite zeigt passive Highlights ohne aktiven Treffer. `getFinder()`
+  in `find-bar.ts` entscheidet: `isEditMode()` → FolioEditor,
+  `isSplitMode()` → SplitHtmlFinder/SplitCodeFinder/SplitFinder je nach
+  Dokumenttyp, sonst → HtmlFinder/CodeViewFinder/ViewFinder.
 - **MonacoEnvironment.getWorkerUrl**: in `editor/mount.ts::loadMonaco`
   wird vor `require.config(...)` ein Worker-Bootstrap via `data:`-URI
   registriert (`origin + /monaco/vs/base/worker/workerMain.js`). Ohne

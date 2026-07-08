@@ -68,6 +68,13 @@ interface FolioCodeViewSurface {
     layout(): void;
     dispose(): void;
     isMounted(): boolean;
+    openFind(initialTerm?: string): void;
+    closeFind(): void;
+    setFindOptions(opts: Record<string, unknown>): void;
+    setFindTerm(term: string): void;
+    findNext(): void;
+    findPrev(): void;
+    setSuppressActive(on: boolean): void;
 }
 
 type FolioThemePart = 'content' | 'dark' | 'page' | 'cover' | 'header' | 'footer';

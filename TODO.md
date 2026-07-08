@@ -38,6 +38,11 @@
   ohne aktive virtuelle Region ist wieder synchron (`state/tabs.ts`). Bei
   erneutem Auftreten: Model-Cache-Restore in `editor/mount.ts` gegen den
   `document:loaded`-Pfad race-analysieren.
+  - **Update 2026-07-08**: erneut einmal im Voll-Lauf gefailt
+    ([`errors.md`](tests/e2e/artifacts/20260708-115623/errors.md)),
+    danach 3× Einzellauf und 1× Voll-Lauf grün. Muster unverändert
+    (Volllauf-only-Flaky); die Race-Analyse aus dem Ursprungseintrag
+    bleibt der nächste Schritt.
 
 - **Menu-Keybindings (Accelerators) greifen oft nicht**: Viele der nativen
   Tauri-Menü-Accelerators (Ctrl+S Speichern, Ctrl+Z Undo, Ctrl+W Schließen,
@@ -98,6 +103,25 @@
   „Neues Fenster"-Command (Tauri-Multi-Window) für echtes
   Nebeneinander; Monaco-Model-Cache ohne Cap (bei sehr vielen Tabs
   LRU erwägen).
+
+- **Suche — offene Audit-Befunde** (Read-only-Audit 2026-07-08, voller
+  Bericht in `notes/find-audit.md`; die kritischen Befunde — Code-View-
+  Find, Dokumentwechsel-Invalidierung, Chunk-Match-Verlust, Geister-
+  Decorations, Debounce-Race — sind gefixt):
+  - Marker-Lane-Berechnung macht Layout-Thrashing bei Tausenden
+    Treffern (`markdown.ts`/`html.ts`, `getBoundingClientRect` pro
+    Treffer bei jeder Navigation) — Positionen cachen.
+  - Monaco-Finder sucht synchron per `indexOf` über den ganzen Text —
+    bei sehr großen Dateien blockierend; `model.findMatches` oder
+    Match-Cap erwägen.
+  - HTML-Split: iframe aktualisiert nur beim Save → Editor- und
+    iframe-Highlights divergieren nach Tipp-Eingaben.
+  - Ctrl+F mit Editor-Selektion: Treffer werden markiert/gezählt, aber
+    das Find-Bar-Input bleibt leer (Selektion nicht ins Input gespiegelt).
+  - Find-Bar öffnet auch bei Bild-/Binary-Kind (funktionslos „0/0") —
+    dort gar nicht erst reagieren.
+  - `POST /find/text` kann keine Optionen (`caseSensitive`/`wholeWord`)
+    mitgeben — nutzt stillen Checkbox-Zustand, nicht deterministisch.
 
 ## Niedrige Priorität
 

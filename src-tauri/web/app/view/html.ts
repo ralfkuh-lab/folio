@@ -450,28 +450,43 @@ function buildWalker(doc: Document, root: Element): TreeWalker {
 
 function collectRangesAsync(doc: Document, root: Element, regex: RegExp, myToken: number, done: () => void): void {
     const walker = buildWalker(doc, root);
+    let resumeNode: Node | null = null;
+    let resumeLastIndex = 0;
+    function scanNode(node: Node, batchStart: number): boolean {
+        const text = node.nodeValue || '';
+        if (!text) {
+            resumeNode = null;
+            resumeLastIndex = 0;
+            return false;
+        }
+        regex.lastIndex = resumeNode === node ? resumeLastIndex : 0;
+        let m: RegExpExecArray;
+        while ((m = regex.exec(text))) {
+            if (m[0].length === 0) { regex.lastIndex++; continue; }
+            const r = doc.createRange();
+            r.setStart(node, m.index);
+            r.setEnd(node, m.index + m[0].length);
+            rangesArr.push(r);
+            if (matchHL) matchHL.add(r);
+            if (rangesArr.length - batchStart >= CHUNK_SIZE) {
+                resumeNode = node;
+                resumeLastIndex = regex.lastIndex;
+                dispatchProgress(rangesArr.length);
+                setTimeout(step, 0);
+                return true;
+            }
+        }
+        resumeNode = null;
+        resumeLastIndex = 0;
+        return false;
+    }
     function step(): void {
         if (myToken !== searchToken) return;
         const batchStart = rangesArr.length;
+        if (resumeNode && scanNode(resumeNode, batchStart)) return;
         let node: Node;
         while ((node = walker.nextNode())) {
-            const text = node.nodeValue || '';
-            if (!text) continue;
-            regex.lastIndex = 0;
-            let m: RegExpExecArray;
-            while ((m = regex.exec(text))) {
-                if (m[0].length === 0) { regex.lastIndex++; continue; }
-                const r = doc.createRange();
-                r.setStart(node, m.index);
-                r.setEnd(node, m.index + m[0].length);
-                rangesArr.push(r);
-                if (matchHL) matchHL.add(r);
-                if (rangesArr.length - batchStart >= CHUNK_SIZE) {
-                    dispatchProgress(rangesArr.length);
-                    setTimeout(step, 0);
-                    return;
-                }
-            }
+            if (scanNode(node, batchStart)) return;
         }
         done();
     }

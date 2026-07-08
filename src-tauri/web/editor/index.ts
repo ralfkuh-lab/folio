@@ -103,6 +103,13 @@ import * as themeEditor from './theme-editor';
     layout: codeView.layout,
     dispose: codeView.dispose,
     isMounted: codeView.isMounted,
+    openFind: codeView.openFind,
+    closeFind: codeView.closeFind,
+    setFindOptions: codeView.setFindOptions,
+    setFindTerm: codeView.setFindTerm,
+    findNext: codeView.findNext,
+    findPrev: codeView.findPrev,
+    setSuppressActive: codeView.setSuppressActive,
 };
 
 // Dritte Surface: editierbare Theme-Paketteile mit Model-pro-Part.

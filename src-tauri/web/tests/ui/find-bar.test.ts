@@ -47,6 +47,20 @@ function installFolioEditorSpy() {
     return spy;
 }
 
+function installCodeViewSpy() {
+    const spy = {
+        setFindOptions: vi.fn(),
+        openFind: vi.fn(),
+        closeFind: vi.fn(),
+        setFindTerm: vi.fn(),
+        findNext: vi.fn(),
+        findPrev: vi.fn(),
+        setSuppressActive: vi.fn(),
+    };
+    (window as any).FolioCodeView = spy;
+    return spy;
+}
+
 function buildDom(): void {
     document.body.innerHTML = `
         <div id="find-bar">
@@ -68,10 +82,14 @@ function buildDom(): void {
 beforeEach(() => {
     installTauriMock();
     buildDom();
+    delete (window as any).FolioEditor;
+    delete (window as any).FolioCodeView;
     viewFinder.setFindOptions.mockClear();
     viewFinder.openFind.mockClear();
     viewFinder.closeFind.mockClear();
     viewFinder.setFindTerm.mockClear();
+    viewFinder.findNext.mockClear();
+    viewFinder.findPrev.mockClear();
     htmlFinder.setFindOptions.mockClear();
     htmlFinder.openFind.mockClear();
     htmlFinder.closeFind.mockClear();
@@ -146,6 +164,43 @@ describe('ui/find-bar — open path', () => {
         expect(document.getElementById('find-bar')!.classList.contains('open')).toBe(true);
         expect(htmlFinder.openFind).toHaveBeenCalledWith('');
     });
+
+    it('kind-text view-mode uses FolioCodeView finder', async () => {
+        const codeSpy = installCodeViewSpy();
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: vi.fn().mockResolvedValue(true),
+            focusEditor: vi.fn(),
+        });
+        document.body.classList.add('kind-text');
+
+        findBar.openEditorFind('needle');
+
+        expect(codeSpy.openFind).toHaveBeenCalledWith('needle');
+        expect(viewFinder.openFind).not.toHaveBeenCalled();
+        expect(htmlFinder.openFind).not.toHaveBeenCalled();
+    });
+
+    it('split kind-text drives editor and CodeView with passive highlights', async () => {
+        const folioSpy = installFolioEditorSpy();
+        const codeSpy = installCodeViewSpy();
+        const ensureMounted = vi.fn().mockResolvedValue(true);
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: ensureMounted,
+            focusEditor: vi.fn(),
+        });
+        document.body.classList.add('kind-text', 'split-mode');
+
+        findBar.openEditorFind('shared');
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(ensureMounted).toHaveBeenCalledWith('');
+        expect(folioSpy.openFind).toHaveBeenCalledWith('shared');
+        expect(codeSpy.setSuppressActive).toHaveBeenCalledWith(true);
+        expect(codeSpy.openFind).toHaveBeenCalledWith('shared');
+    });
 });
 
 describe('ui/find-bar — term persistence', () => {
@@ -201,5 +256,117 @@ describe('ui/find-bar — close path', () => {
         expect(viewFinder.closeFind).toHaveBeenCalled();
         expect(htmlFinder.closeFind).toHaveBeenCalled();
         expect(folioSpy.closeFind).toHaveBeenCalled();
+    });
+});
+
+describe('ui/find-bar — shortcuts', () => {
+    it('Ctrl+F opens Folio find bar in code view instead of bypassing', async () => {
+        const codeSpy = installCodeViewSpy();
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: vi.fn().mockResolvedValue(true),
+            focusEditor: vi.fn(),
+        });
+        document.body.classList.add('kind-text');
+
+        const event = new KeyboardEvent('keydown', {
+            key: 'f',
+            ctrlKey: true,
+            bubbles: true,
+            cancelable: true,
+        });
+        document.dispatchEvent(event);
+
+        expect(event.defaultPrevented).toBe(true);
+        expect(document.getElementById('find-bar')!.classList.contains('open')).toBe(true);
+        expect(codeSpy.openFind).toHaveBeenCalledWith('');
+    });
+
+    it('F3 in code view uses Folio find next', async () => {
+        const codeSpy = installCodeViewSpy();
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: vi.fn().mockResolvedValue(true),
+            focusEditor: vi.fn(),
+        });
+        document.body.classList.add('kind-text');
+        findBar.openEditorFind('needle');
+        codeSpy.findNext.mockClear();
+
+        const event = new KeyboardEvent('keydown', {
+            key: 'F3',
+            bubbles: true,
+            cancelable: true,
+        });
+        document.dispatchEvent(event);
+
+        expect(event.defaultPrevented).toBe(true);
+        expect(codeSpy.findNext).toHaveBeenCalled();
+    });
+});
+
+describe('ui/find-bar — pending input navigation', () => {
+    it('Enter flushes pending debounce term before findNext', async () => {
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: vi.fn().mockResolvedValue(true),
+            focusEditor: vi.fn(),
+        });
+        findBar.openEditorFind('old');
+        viewFinder.setFindTerm.mockClear();
+        viewFinder.findNext.mockClear();
+
+        const input = document.getElementById('find-input') as HTMLInputElement;
+        input.value = 'new';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'Enter',
+            bubbles: true,
+            cancelable: true,
+        }));
+
+        expect(viewFinder.setFindTerm).toHaveBeenCalledWith('new');
+        expect(viewFinder.findNext).toHaveBeenCalled();
+        expect(viewFinder.setFindTerm.mock.invocationCallOrder[0])
+            .toBeLessThan(viewFinder.findNext.mock.invocationCallOrder[0]);
+    });
+});
+
+describe('ui/find-bar — document switch', () => {
+    it('afterDocumentSwitch reopens current finder with existing term without focusing input', async () => {
+        const codeSpy = installCodeViewSpy();
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: vi.fn().mockResolvedValue(true),
+            focusEditor: vi.fn(),
+        });
+        document.body.classList.add('kind-text');
+        findBar.openEditorFind('persist');
+        codeSpy.openFind.mockClear();
+        codeSpy.closeFind.mockClear();
+        (document.getElementById('find-input') as HTMLInputElement).blur();
+
+        findBar.afterDocumentSwitch();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(codeSpy.closeFind).toHaveBeenCalled();
+        expect(codeSpy.openFind).toHaveBeenCalledWith('persist');
+        expect(document.activeElement).not.toBe(document.getElementById('find-input'));
+    });
+
+    it('afterDocumentSwitch is no-op when bar is closed', async () => {
+        const codeSpy = installCodeViewSpy();
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: vi.fn().mockResolvedValue(true),
+            focusEditor: vi.fn(),
+        });
+        document.body.classList.add('kind-text');
+
+        findBar.afterDocumentSwitch();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(codeSpy.openFind).not.toHaveBeenCalled();
+        expect(codeSpy.closeFind).not.toHaveBeenCalled();
     });
 });

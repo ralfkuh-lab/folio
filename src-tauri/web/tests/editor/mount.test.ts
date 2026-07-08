@@ -7,6 +7,8 @@ type MockModel = {
     undoDepth: number;
     getValue(): string;
     getLanguageId(): string;
+    getPositionAt(offset: number): { lineNumber: number; column: number };
+    getOffsetAt(pos: { lineNumber: number; column: number }): number;
     dispose(): void;
     isDisposed(): boolean;
 };
@@ -14,6 +16,7 @@ type MockModel = {
 function createMonacoMock() {
     const models: MockModel[] = [];
     let editorInstance: any;
+    let decorationSeq = 0;
 
     function createModel(value: string, language: string): MockModel {
         const model: MockModel = {
@@ -23,6 +26,19 @@ function createMonacoMock() {
             undoDepth: 0,
             getValue() { return this.value; },
             getLanguageId() { return this.language; },
+            getPositionAt(offset: number) {
+                const before = this.value.slice(0, offset).split('\n');
+                return {
+                    lineNumber: before.length,
+                    column: before[before.length - 1].length + 1,
+                };
+            },
+            getOffsetAt(pos: { lineNumber: number; column: number }) {
+                const lines = this.value.split('\n');
+                let offset = 0;
+                for (let i = 0; i < pos.lineNumber - 1; i++) offset += lines[i].length + 1;
+                return offset + pos.column - 1;
+            },
             dispose() { this.disposed = true; },
             isDisposed() { return this.disposed; },
         };
@@ -31,9 +47,19 @@ function createMonacoMock() {
     }
 
     const monaco = {
+        Range: vi.fn(function Range(
+            startLineNumber: number,
+            startColumn: number,
+            endLineNumber: number,
+            endColumn: number,
+        ) {
+            return { startLineNumber, startColumn, endLineNumber, endColumn };
+        }),
         KeyMod: { CtrlCmd: 1, Shift: 2 },
         KeyCode: { KeyF: 10, KeyS: 11, F3: 12 },
         editor: {
+            OverviewRulerLane: { Center: 2 },
+            MinimapPosition: { Inline: 1 },
             createModel: vi.fn(createModel),
             setModelLanguage: vi.fn((model: MockModel, language: string) => {
                 model.language = language;
@@ -48,9 +74,17 @@ function createMonacoMock() {
                     getModel: vi.fn(() => model),
                     setModel: vi.fn((next: MockModel | null) => { model = next; }),
                     getValue: vi.fn(() => model ? model.value : ''),
+                    getPosition: vi.fn(() => ({ lineNumber: 1, column: 1 })),
+                    getSelection: vi.fn(() => null),
                     setValue: vi.fn((value: string) => {
                         if (model) model.value = value;
                     }),
+                    deltaDecorations: vi.fn((_oldIds: string[], decorations: any[]) => {
+                        return decorations.map(() => 'd' + decorationSeq++);
+                    }),
+                    setPosition: vi.fn(),
+                    revealPositionInCenterIfOutsideViewport: vi.fn(),
+                    focus: vi.fn(),
                     saveViewState: vi.fn(() => ({ cursor: model && model.value })),
                     restoreViewState: vi.fn(),
                     addCommand: vi.fn(),
@@ -197,5 +231,32 @@ describe('editor/mount tab model cache', () => {
         // ANDERER Inhalt — der neue Text muss im Editor landen.
         mount.setDocument(20, '/tmp/b.md', 'doc b', 'markdown');
         expect(mock.getEditor().getValue()).toBe('doc b');
+    });
+
+    it('clears current find decorations before swapping tab models', async () => {
+        const mock = createMonacoMock();
+        (window as any).monaco = mock.monaco;
+        const mount = await import('../../editor/mount');
+        const find = await import('../../editor/find');
+        await mount.mount('editor-mount', 'alpha alpha');
+
+        mount.setDocument(1, '/tmp/a.md', 'alpha alpha', 'markdown');
+        find.openFind('alpha');
+        const editor = mock.getEditor();
+        expect(editor.deltaDecorations).toHaveBeenCalledWith([], expect.any(Array));
+
+        editor.deltaDecorations.mockClear();
+        editor.setModel.mockClear();
+        mount.setDocument(2, '/tmp/b.md', 'beta alpha', 'markdown');
+        expect(editor.deltaDecorations).toHaveBeenCalledWith(expect.arrayContaining(['d0', 'd1']), []);
+        expect(editor.deltaDecorations.mock.invocationCallOrder[0])
+            .toBeLessThan(editor.setModel.mock.invocationCallOrder[0]);
+
+        editor.deltaDecorations.mockClear();
+        editor.setModel.mockClear();
+        mount.setDocument(1, '/tmp/a.md', 'alpha alpha', 'markdown');
+        expect(editor.deltaDecorations).toHaveBeenCalledWith(expect.arrayContaining(['d2']), []);
+        expect(editor.deltaDecorations.mock.invocationCallOrder[0])
+            .toBeLessThan(editor.setModel.mock.invocationCallOrder[0]);
     });
 });

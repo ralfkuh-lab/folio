@@ -4,7 +4,7 @@
 // Text-/Selection-Manipulationen leben in `text.ts`.
 
 import { attachEditorListeners } from './events';
-import { hasActiveTerm, recomputeMatches } from './find';
+import { clearFindDecorations, hasActiveTerm, recomputeMatches } from './find';
 import { post } from './bridge';
 import {
     disposeEditor,
@@ -360,6 +360,7 @@ function doSetDocument(
     }
 
     withProgrammaticWrite(() => {
+        clearFindDecorations();
         editor.setModel(target!.model);
     });
     activeTabId = tabId;

@@ -10,7 +10,10 @@ Arbeitsdoku.
 - `window.FolioEditor` kommt aus `src-tauri/web/editor/index.ts` und ist
   die Monaco-Editor-Surface für `app.bundle.js`.
 - `window.FolioCodeView` stellt die read-only Monaco-Instanz für
-  Nicht-Markdown-Dateien im View-Mode bereit.
+  Nicht-Markdown-Dateien im View-Mode bereit. Die gemeinsame Folio-
+  Find-Bar routet `POST /find/text`, Toolbar-/Menüsuche und DOM-
+  Shortcuts auch auf diese Surface; Treffer werden über denselben
+  `folio-find-state`-Pfad wie Editor/View-Suche gemeldet.
 - `window.__TAURI__` kommt von der Tauri-Runtime.
 - `window.__folioInvoke` und `window.openDocument` bleiben als bewusste
   DevTools-Debug-Surface erhalten.

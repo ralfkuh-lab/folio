@@ -10,11 +10,22 @@
 
 import { whenMonacoLoaded } from './mount';
 import { getMonaco, setMonaco } from './state';
+import { createFindController } from './find';
 
 let editor: any = null;
 let model: any = null;
 let mountedElementId: string | null = null;
 let pendingTheme: 'light' | 'dark' | null = null;
+
+const codeFind = createFindController({
+    getEditor: function () { return editor; },
+    getMonaco,
+    source: 'code-view',
+});
+
+function recomputeFindIfActive(): void {
+    if (codeFind.hasActiveTerm()) codeFind.recomputeMatches(false);
+}
 
 function ensureMonaco(): Promise<any> {
     return whenMonacoLoaded().then(() => {
@@ -59,11 +70,13 @@ function runAutoFormat(language: string): void {
                 .catch(function () { /* ignore */ })
                 .finally(function () {
                     if (editor) editor.updateOptions({ readOnly: true });
+                    recomputeFindIfActive();
                 });
         } catch {
             // Sprach-Worker noch nicht hoch, Formatter nicht registriert,
             // o.ae. — best effort, nicht eskalieren.
             if (editor) editor.updateOptions({ readOnly: true });
+            recomputeFindIfActive();
         }
     }, 50);
 }
@@ -82,6 +95,7 @@ export function mount(elementId: string, text: string, language: string, options
         if (editor && mountedElementId === elementId) {
             // Re-Use: vorhandene Instanz auf neuen Text/Lang updaten.
             applyContent(text, language);
+            recomputeFindIfActive();
             if (autoFormat) runAutoFormat(language || 'plaintext');
             return;
         }
@@ -116,6 +130,7 @@ export function mount(elementId: string, text: string, language: string, options
             monaco.editor.setTheme(pendingTheme === 'dark' ? 'vs-dark' : 'vs');
             pendingTheme = null;
         }
+        recomputeFindIfActive();
         if (autoFormat) runAutoFormat(language || 'plaintext');
     });
 }
@@ -142,6 +157,7 @@ function applyContent(text: string, language: string): void {
     // Beim Inhalt-Update scrollen wir zurueck nach oben — der User soll
     // jede neue Datei "von vorn" sehen.
     editor.setScrollTop(0);
+    recomputeFindIfActive();
 }
 
 export function setText(text: string, language: string, options?: MountOptions): void {
@@ -151,6 +167,7 @@ export function setText(text: string, language: string, options?: MountOptions):
     }
     const autoFormat = !!(options && options.autoFormat);
     applyContent(text, language);
+    recomputeFindIfActive();
     if (autoFormat) runAutoFormat(language || 'plaintext');
 }
 
@@ -168,6 +185,7 @@ export function layout(): void {
 }
 
 export function dispose(): void {
+    codeFind.closeFind();
     disposeInternal();
 }
 
@@ -186,3 +204,11 @@ function disposeInternal(): void {
 export function isMounted(): boolean {
     return !!editor;
 }
+
+export const openFind = codeFind.openFind;
+export const closeFind = codeFind.closeFind;
+export const setFindTerm = codeFind.setFindTerm;
+export const setFindOptions = codeFind.setFindOptions;
+export const findNext = codeFind.findNext;
+export const findPrev = codeFind.findPrev;
+export const setSuppressActive = codeFind.setSuppressActive;

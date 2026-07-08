@@ -10,7 +10,7 @@
    document:loaded setzt zuerst den State und rendert danach die passende
    View: Markdown-HTML, HTML-iframe oder read-only Code-View. */
 
-import { setTocList, rewriteRelativeAssets, ViewFinder } from '../view/markdown';
+import { setTocList, rewriteRelativeAssets } from '../view/markdown';
 import { highlightCodeBlocks } from '../view/code-highlight';
 import { addCodeCopyButtons } from '../view/code-copy';
 import { clearHtmlView, HtmlFinder, isHtmlDocument, mountHtmlView } from '../view/html';
@@ -20,6 +20,7 @@ import { clearMarkdownHeadingMap, setMarkdownHeadingMap } from '../view/scroll-s
 import { setVaultActive } from '../vault/tree';
 import { setEditorLanguageDisplay } from '../ui/language-picker';
 import { syncCheatsheetMenu } from '../ui/cheatsheet';
+import { afterDocumentSwitch } from '../ui/find-bar';
 import { showUnsavedDialog } from '../ui/dialogs';
 import { isEditorMounted, loadEditorText } from '../editor/shell';
 import { getCachedSettings } from '../ui/settings-dialog';
@@ -407,22 +408,8 @@ export function initDocumentState(d: Deps): void {
         }
         setVaultActive(data.path || '');
 
-        // 3. Such-Highlights restaurieren — gehen im View-Mode beim
-        // innerHTML-Replace verloren.
-        const bar = document.getElementById('find-bar');
-        if (bar && bar.classList.contains('open')
-            && !document.body.classList.contains('edit-mode')) {
-            const input = document.getElementById('find-input') as HTMLInputElement;
-            if (input && input.value) {
-                setTimeout(function () {
-                    if (document.body.classList.contains('html-preview-mode')) {
-                        HtmlFinder.setFindTerm(input.value);
-                    } else {
-                        ViewFinder.setFindTerm(input.value);
-                    }
-                }, 0);
-            }
-        }
+        // 3. Such-Highlights/Counter auf das neue Dokument umhaengen.
+        afterDocumentSwitch();
     });
 
     listen('document:dirty_changed', function (event: any) {
