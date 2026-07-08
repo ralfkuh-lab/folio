@@ -130,16 +130,12 @@ pub fn focus_existing_tab(
     handle: &AppHandle,
     path: &str,
 ) -> Result<Option<TabTransition>, TabError> {
-    let normalized = path.replace('\\', "/");
     let other = {
         let tabs = state
             .tabs
             .lock()
             .map_err(|_| TabError::Internal("tabs lock poisoned".into()))?;
-        match tabs.find_by_path(&normalized) {
-            Some(id) if !tabs.is_active(id) => Some(id),
-            _ => None,
-        }
+        tab_to_focus_for_path(&tabs, path)
     };
     match other {
         Some(id) => {
@@ -149,6 +145,15 @@ pub fn focus_existing_tab(
         }
         None => Ok(None),
     }
+}
+
+fn tab_to_focus_for_path(tabs: &crate::tab_manager::TabManager, path: &str) -> Option<u64> {
+    let normalized = path.replace('\\', "/");
+    if tabs.active().document_path() == Some(normalized.as_str()) {
+        return None;
+    }
+    tabs.find_by_path(&normalized)
+        .filter(|id| !tabs.is_active(*id))
 }
 
 pub fn activate(state: &AppState, handle: &AppHandle, id: u64) -> Result<TabTransition, TabError> {
@@ -438,4 +443,34 @@ pub async fn tab_activate(
 #[tauri::command]
 pub async fn tabs_list(state: State<'_, AppState>) -> Result<TabsPayload, String> {
     list(&state).map_err(String::from)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tab_manager::TabManager;
+
+    #[test]
+    fn tab_to_focus_for_path_returns_other_tab_with_matching_path() {
+        let mut tabs = TabManager::new();
+        tabs.active_mut().document_store.path = Some("/notes/source.md".into());
+        let target_id = tabs.add_tab();
+        tabs.active_mut().document_store.path = Some("/notes/target.md".into());
+        assert!(tabs.activate(1));
+
+        assert_eq!(
+            Some(target_id),
+            tab_to_focus_for_path(&tabs, r"\notes\target.md")
+        );
+    }
+
+    #[test]
+    fn tab_to_focus_for_path_keeps_active_tab_for_anchor_only_path() {
+        let mut tabs = TabManager::new();
+        tabs.active_mut().document_store.path = Some("/notes/source.md".into());
+        tabs.add_tab();
+        tabs.active_mut().document_store.path = Some("/notes/source.md".into());
+
+        assert_eq!(None, tab_to_focus_for_path(&tabs, "/notes/source.md"));
+    }
 }

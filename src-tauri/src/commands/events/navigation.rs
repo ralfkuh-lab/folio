@@ -41,6 +41,13 @@ pub(super) fn link_click(
                     .map_err(String::from);
             }
 
+            if crate::commands::tabs::focus_existing_tab(state, handle, &path)
+                .map_err(String::from)?
+                .is_some()
+            {
+                return Ok(());
+            }
+
             // Anker-only-Links (gleicher Pfad) ueberspringen Disk-IO und
             // Vault-Set-Active; sonst rauschen Scroll/Editor-State weg.
             let outcome = document_service::open(
