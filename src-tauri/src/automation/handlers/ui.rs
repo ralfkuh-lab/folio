@@ -344,7 +344,11 @@ pub(in crate::automation) async fn post_find_text(
     emit(
         &context,
         "editor:set_find_term",
-        serde_json::json!({ "term": payload.term }),
+        serde_json::json!({
+            "term": payload.term,
+            "caseSensitive": payload.case_sensitive,
+            "wholeWord": payload.whole_word,
+        }),
     )?;
     ok()
 }

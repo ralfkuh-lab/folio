@@ -146,4 +146,24 @@ describe('editor/find createFindController', () => {
         expect(finalCall.oldIds).toEqual([]);
         expect(finalCall.decorations).toHaveLength(1);
     });
+
+    it('openFind seeds term from editor selection when no initialTerm (Ctrl+F with selection)', async () => {
+        const { createFindController } = await import('../../editor/find');
+        const harness = createHarness('hello world hello');
+        // selection covering first "hello"
+        harness.editor.getSelection = vi.fn(() => ({
+            isEmpty: () => false,
+            getStartPosition: () => ({ lineNumber: 1, column: 1 }),
+            getEndPosition: () => ({ lineNumber: 1, column: 6 }),
+        }));
+        const controller = createFindController({
+            getEditor: () => harness.editor,
+            getMonaco: () => harness.monaco,
+            source: 'editor',
+        });
+
+        // open without initial (as keydown + bar does) → seeds
+        controller.openFind('');
+        expect(lastState()).toMatchObject({ source: 'editor', term: 'hello', total: 2, active: 0 });
+    });
 });

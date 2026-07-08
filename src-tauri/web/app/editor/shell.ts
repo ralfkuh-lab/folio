@@ -203,7 +203,10 @@ export function initEditorShell(d: Deps): void {
     });
     listen('editor:set_find_term', function (event: any) {
         const data = event && event.payload || {};
-        setEditorFindTerm(data.term || '');
+        setEditorFindTerm(data.term || '', {
+            caseSensitive: typeof data.caseSensitive === 'boolean' ? data.caseSensitive : undefined,
+            wholeWord: typeof data.wholeWord === 'boolean' ? data.wholeWord : undefined,
+        });
     });
 
     // ----- Listener-Fusion -----

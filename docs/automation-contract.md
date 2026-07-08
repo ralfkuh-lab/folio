@@ -156,6 +156,16 @@ inaktiven Tabs ist kein Frontend-Dokumentwechsel nötig (`acked: false`,
 `requestId: null`). Unbekannte IDs liefern HTTP 404, Dirty-Reject HTTP 409
 und ungültige oder nicht existente Dateipfade HTTP 400.
 
+### Find
+
+- `POST /find` öffnet die Find-Bar (ohne Term/Optionen).
+- `POST /find/text { "term": "Suchbegriff", "caseSensitive": true, "wholeWord": false }`
+  öffnet die Find-Bar, setzt den Term und (optional) die Flags `caseSensitive`/`wholeWord`
+  deterministisch. Fehlende optionale Felder ändern den UI-Checkbox-Zustand nicht
+  (Kompatibilität). Der Aufruf emittiert `editor:open_find` dann `editor:set_find_term`
+  mit dem vollen Payload; kein Ack (wie andere reine UI-Öffner). Die Find-Bar
+  ignoriert Aufrufe bei `kind-image`/`kind-binary`.
+
 ### Security-Gates (Middleware `security_guard`)
 
 Alle Requests durchlaufen vier Prüfungen (`automation/middleware.rs`):

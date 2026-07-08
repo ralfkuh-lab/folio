@@ -35,6 +35,11 @@ function isCodeViewMode(): boolean {
     return isTextKind() && !isEditMode() && !isSplitMode() && !isHtmlPreviewMode();
 }
 
+function isSearchableKind(): boolean {
+    const body = document.body;
+    return !body.classList.contains('kind-image') && !body.classList.contains('kind-binary');
+}
+
 const CodeViewFinder = {
     openFind: function (seed?: string): void { if (window.FolioCodeView) window.FolioCodeView.openFind(seed); },
     closeFind: function (): void { if (window.FolioCodeView) window.FolioCodeView.closeFind(); },
@@ -112,6 +117,7 @@ function doOpen(initial?: string): void {
 }
 
 function open(initial?: string): void {
+    if (!isSearchableKind()) return;
     if (isEditMode() || isSplitMode()) {
         ensureEditorMountedDep('').then(function (ok: boolean) {
             if (!ok) return;
@@ -136,10 +142,23 @@ function close(): void {
 export function openEditorFind(initialTerm?: string): void { open(initialTerm); }
 export function closeEditorFind(): void { close(); }
 
-export function setEditorFindTerm(term: string): void {
+export function setEditorFindTerm(term: string, options?: { caseSensitive?: boolean; wholeWord?: boolean }): void {
     input.value = term || '';
-    if (!isOpen()) open(term || '');
-    else { const f = getFinder(); if (f) f.setFindTerm(term || ''); }
+    const opts = options || {};
+    if (typeof opts.caseSensitive === 'boolean') caseChk.checked = opts.caseSensitive;
+    if (typeof opts.wholeWord === 'boolean') wordChk.checked = opts.wholeWord;
+    if (!isOpen()) {
+        open(term || '');
+    } else {
+        const f = getFinder();
+        if (f) {
+            const patch: any = {};
+            if (typeof opts.caseSensitive === 'boolean') patch.caseSensitive = opts.caseSensitive;
+            if (typeof opts.wholeWord === 'boolean') patch.wholeWord = opts.wholeWord;
+            if (Object.keys(patch).length > 0) f.setFindOptions(patch);
+            f.setFindTerm(term || '');
+        }
+    }
 }
 
 function pickSeed(arg?: string): string {
@@ -157,6 +176,7 @@ function flushPendingInputTerm(): void {
 }
 
 export function findNext(lastTerm?: string): void {
+    if (!isSearchableKind()) return;
     const seed = pickSeed(lastTerm);
     if (!bar.classList.contains('open')) { open(seed); return; }
     if (!input.value) {
@@ -168,6 +188,7 @@ export function findNext(lastTerm?: string): void {
 }
 
 export function findPrev(lastTerm?: string): void {
+    if (!isSearchableKind()) return;
     const seed = pickSeed(lastTerm);
     if (!bar.classList.contains('open')) { open(seed); return; }
     if (!input.value) {
@@ -206,6 +227,10 @@ export function afterDocumentSwitch(): void {
     setTimeout(function () {
         if (!bar) return;
         if (!bar.classList.contains('open')) return;
+        if (!isSearchableKind()) {
+            close();
+            return;
+        }
         const activeBefore = document.activeElement as HTMLElement | null;
         closeAllFinders();
         const f = getFinder();
@@ -295,19 +320,29 @@ export function initFindBar(deps: {
         } else if (e.key === 'F3') {
             e.preventDefault();
             e.stopPropagation();
-            if (e.shiftKey) findPrev(); else findNext();
+            if (isSearchableKind()) {
+                if (e.shiftKey) findPrev(); else findNext();
+            }
         }
     }, { capture: true });
 
     window.addEventListener('folio-find-shortcut', function (e: CustomEvent) {
         const command = e.detail && e.detail.command;
-        if (command === 'open') openEditorFind('');
-        else if (command === 'next') findNext();
-        else if (command === 'prev') findPrev();
+        if (command === 'open') {
+            if (isSearchableKind()) openEditorFind('');
+        } else if (command === 'next') {
+            findNext();
+        } else if (command === 'prev') {
+            findPrev();
+        }
     });
 
     window.addEventListener('folio-find-state', function (e: CustomEvent) {
         const s = e.detail || {};
+        if (typeof s.term === 'string' && s.term.length > 0 && !input.value) {
+            input.value = s.term;
+            lastTermMemo = s.term;
+        }
         if (isSplitMode() && s.source !== 'editor') return;
         if (!s.term && !input.value) { counter.textContent = ''; return; }
         if (typeof s.total !== 'number' || s.total === 0) {

@@ -370,3 +370,126 @@ describe('ui/find-bar — document switch', () => {
         expect(codeSpy.closeFind).not.toHaveBeenCalled();
     });
 });
+
+describe('ui/find-bar — image/binary gating (audit fix)', () => {
+    it('openEditorFind does nothing and does not open bar on kind-image', async () => {
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: vi.fn().mockResolvedValue(true),
+            focusEditor: vi.fn(),
+        });
+        document.body.classList.add('kind-image');
+
+        findBar.openEditorFind('anything');
+
+        expect(document.getElementById('find-bar')!.classList.contains('open')).toBe(false);
+        expect(viewFinder.openFind).not.toHaveBeenCalled();
+    });
+
+    it('openEditorFind does nothing on kind-binary', async () => {
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: vi.fn().mockResolvedValue(true),
+            focusEditor: vi.fn(),
+        });
+        document.body.classList.add('kind-binary');
+
+        findBar.openEditorFind('x');
+
+        expect(document.getElementById('find-bar')!.classList.contains('open')).toBe(false);
+    });
+
+    it('afterDocumentSwitch closes bar when switching to kind-image', async () => {
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: vi.fn().mockResolvedValue(true),
+            focusEditor: vi.fn(),
+        });
+        document.body.classList.add('kind-text');
+        findBar.openEditorFind('term');
+        await Promise.resolve();
+
+        document.body.classList.remove('kind-text');
+        document.body.classList.add('kind-image');
+        findBar.afterDocumentSwitch();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(document.getElementById('find-bar')!.classList.contains('open')).toBe(false);
+    });
+
+    it('F3 does not invoke findNext on non-searchable kind', async () => {
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: vi.fn().mockResolvedValue(true),
+            focusEditor: vi.fn(),
+        });
+        document.body.classList.add('kind-image');
+
+        const event = new KeyboardEvent('keydown', { key: 'F3', bubbles: true, cancelable: true });
+        document.dispatchEvent(event);
+
+        // should have prevented (as capture handler) but not acted
+        expect(event.defaultPrevented).toBe(true);
+        expect(viewFinder.findNext).not.toHaveBeenCalled();
+    });
+});
+
+describe('ui/find-bar — setEditorFindTerm with automation options (audit fix)', () => {
+    it('setEditorFindTerm(term, opts) sets checkboxes and passes options to finder when open', async () => {
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: vi.fn().mockResolvedValue(true),
+            focusEditor: vi.fn(),
+        });
+        findBar.openEditorFind('t');
+        await Promise.resolve();
+        viewFinder.setFindOptions.mockClear();
+        viewFinder.setFindTerm.mockClear();
+
+        const caseEl = document.getElementById('find-case') as HTMLInputElement;
+        const wordEl = document.getElementById('find-word') as HTMLInputElement;
+        findBar.setEditorFindTerm('t2', { caseSensitive: true, wholeWord: true });
+
+        expect(caseEl.checked).toBe(true);
+        expect(wordEl.checked).toBe(true);
+        expect(viewFinder.setFindOptions).toHaveBeenCalledWith({ caseSensitive: true, wholeWord: true });
+        expect(viewFinder.setFindTerm).toHaveBeenCalledWith('t2');
+    });
+
+    it('setEditorFindTerm(term, {caseSensitive}) leaves other option untouched', async () => {
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: vi.fn().mockResolvedValue(true),
+            focusEditor: vi.fn(),
+        });
+        findBar.openEditorFind('t');
+        await Promise.resolve();
+        (document.getElementById('find-word') as HTMLInputElement).checked = true;
+        viewFinder.setFindOptions.mockClear();
+
+        findBar.setEditorFindTerm('t', { caseSensitive: false });
+
+        const caseEl = document.getElementById('find-case') as HTMLInputElement;
+        expect(caseEl.checked).toBe(false);
+        expect((document.getElementById('find-word') as HTMLInputElement).checked).toBe(true);
+    });
+});
+
+describe('ui/find-bar — selection seed mirrored to input (audit fix)', () => {
+    it('folio-find-state with term fills empty input (for Monaco selection seed on Ctrl+F)', async () => {
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: vi.fn().mockResolvedValue(true),
+            focusEditor: vi.fn(),
+        });
+        // simulate open without term (as keydown does)
+        findBar.openEditorFind('');
+        const inputEl = document.getElementById('find-input') as HTMLInputElement;
+        expect(inputEl.value).toBe('');
+
+        // controller publishes state with seeded term (no source filter here)
+        window.dispatchEvent(new CustomEvent('folio-find-state', { detail: { term: 'selectedText', total: 2, active: 0 } }));
+
+        expect(inputEl.value).toBe('selectedText');
+    });
+});

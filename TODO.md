@@ -107,7 +107,8 @@
 - **Suche — offene Audit-Befunde** (Read-only-Audit 2026-07-08, voller
   Bericht in `notes/find-audit.md`; die kritischen Befunde — Code-View-
   Find, Dokumentwechsel-Invalidierung, Chunk-Match-Verlust, Geister-
-  Decorations, Debounce-Race — sind gefixt):
+  Decorations, Debounce-Race — sind gefixt; Ctrl+F-Selektion, Bild/Binary-Gate
+  und Automation-Optionen für /find/text ebenfalls (2026-07-08)):
   - Marker-Lane-Berechnung macht Layout-Thrashing bei Tausenden
     Treffern (`markdown.ts`/`html.ts`, `getBoundingClientRect` pro
     Treffer bei jeder Navigation) — Positionen cachen.
@@ -116,12 +117,6 @@
     Match-Cap erwägen.
   - HTML-Split: iframe aktualisiert nur beim Save → Editor- und
     iframe-Highlights divergieren nach Tipp-Eingaben.
-  - Ctrl+F mit Editor-Selektion: Treffer werden markiert/gezählt, aber
-    das Find-Bar-Input bleibt leer (Selektion nicht ins Input gespiegelt).
-  - Find-Bar öffnet auch bei Bild-/Binary-Kind (funktionslos „0/0") —
-    dort gar nicht erst reagieren.
-  - `POST /find/text` kann keine Optionen (`caseSensitive`/`wholeWord`)
-    mitgeben — nutzt stillen Checkbox-Zustand, nicht deterministisch.
 
 ## Niedrige Priorität
 

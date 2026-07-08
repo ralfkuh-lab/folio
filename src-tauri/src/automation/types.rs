@@ -186,8 +186,13 @@ pub(super) struct TocActivateRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(super) struct FindTextRequest {
     pub(super) term: String,
+    #[serde(default)]
+    pub(super) case_sensitive: Option<bool>,
+    #[serde(default)]
+    pub(super) whole_word: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -374,6 +379,24 @@ mod phase0_request_tests {
     fn split_request_deserializes_percent() {
         let req: SplitRequest = serde_json::from_str(r#"{"percent":65.5}"#).unwrap();
         assert_eq!(65.5, req.percent);
+    }
+
+    #[test]
+    fn find_text_request_deserializes_term_and_camel_options() {
+        let req: FindTextRequest =
+            serde_json::from_str(r#"{"term":"foo","caseSensitive":true,"wholeWord":false}"#)
+                .unwrap();
+        assert_eq!("foo", req.term);
+        assert_eq!(Some(true), req.case_sensitive);
+        assert_eq!(Some(false), req.whole_word);
+    }
+
+    #[test]
+    fn find_text_request_options_optional_and_default_none() {
+        let req: FindTextRequest = serde_json::from_str(r#"{"term":"bar"}"#).unwrap();
+        assert_eq!("bar", req.term);
+        assert!(req.case_sensitive.is_none());
+        assert!(req.whole_word.is_none());
     }
 
     #[test]
