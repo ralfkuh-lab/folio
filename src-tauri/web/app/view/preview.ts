@@ -24,6 +24,7 @@
 import { setTocList, rewriteRelativeAssets, ViewFinder } from './markdown';
 import { highlightCodeBlocks } from './code-highlight';
 import { addCodeCopyButtons } from './code-copy';
+import { renderMermaidBlocks } from './mermaid';
 import { afterMarkdownPreviewRender, setMarkdownHeadingMap } from './scroll-sync';
 import { folioLog } from '../util/log';
 
@@ -152,6 +153,7 @@ function applyToDom(
     // aus alten Render-Passes ignoriert.
     highlightCodeBlocks(body);
     addCodeCopyButtons(body);
+    renderMermaidBlocks(body);
     setTocList(result.tocHtml);
     setMarkdownHeadingMap(result.headingMap || []);
 

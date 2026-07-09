@@ -13,6 +13,7 @@ import { ackHandler } from '../automation/events';
 import { cheatsheetSyncMode, syncCheatsheetMenu } from '../ui/cheatsheet';
 import { afterModeSwitch as findBarAfterModeSwitch, openEditorFind, setEditorFindTerm } from '../ui/find-bar';
 import { highlightCodeBlocks } from '../view/code-highlight';
+import { renderMermaidBlocks } from '../view/mermaid';
 import { flushPreviewRender } from '../view/preview';
 import { reapplyCurrentViewTheme } from '../view/theme';
 import { folioLog, safeInvoke } from '../util/log';
@@ -272,7 +273,10 @@ export function initEditorShell(d: Deps): void {
             // nutzt das aktive Monaco-Theme, also muessen wir nach dem Switch
             // einmal komplett durch (data-folio-source bewahrt den Plaintext).
             const mdBody = document.querySelector('#view-region .markdown-body');
-            if (mdBody) highlightCodeBlocks(mdBody as HTMLElement);
+            if (mdBody) {
+                highlightCodeBlocks(mdBody as HTMLElement);
+                renderMermaidBlocks(mdBody as HTMLElement);
+            }
             // Theme-Submenue-Haekchen synchron halten — egal ueber welchen Pfad
             // der Wechsel kam (Menue, Statusbar-Button, Init).
             safeInvoke('menu_set_checked', { id: 'view.theme.light', checked: mode === 'light' }, 'menu_set_checked view.theme.light', 'debug');

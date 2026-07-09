@@ -13,6 +13,7 @@
 import { setTocList, rewriteRelativeAssets } from '../view/markdown';
 import { highlightCodeBlocks } from '../view/code-highlight';
 import { addCodeCopyButtons } from '../view/code-copy';
+import { renderMermaidBlocks } from '../view/mermaid';
 import { clearHtmlView, HtmlFinder, isHtmlDocument, mountHtmlView } from '../view/html';
 import { clearImageView, isImageDocument, mountImageView, reloadImageView } from '../view/image';
 import { invalidatePreview } from '../view/preview';
@@ -294,6 +295,7 @@ function renderDocumentPayload(data: any): void {
             rewriteRelativeAssets(body as HTMLElement, path);
             highlightCodeBlocks(body as HTMLElement);
             addCodeCopyButtons(body as HTMLElement);
+            renderMermaidBlocks(body as HTMLElement);
         }
     }
     document.body.classList.toggle('html-preview-mode', isHtml);
@@ -369,6 +371,7 @@ export function initDocumentState(d: Deps): void {
                 rewriteRelativeAssets(body as HTMLElement, data.path || '');
                 highlightCodeBlocks(body as HTMLElement);
                 addCodeCopyButtons(body as HTMLElement);
+                renderMermaidBlocks(body as HTMLElement);
             }
         }
         if (isHtml) {

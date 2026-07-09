@@ -30,6 +30,8 @@
 
 ## Mittlere Priorität
 
+- **Mermaid im HTML-/PDF-Export**: Aktuell nur In-App-View (View/Split/Live-Preview) rendert ```mermaid```-Fences zu SVG (Frontend, Lazy-Bundle). Export (HTML/PDF) zeigt weiterhin den Code-Block (bewusst in dieser Etappe). Folgepunkt: Backend-seitig mit syntect oder eigenem Renderer in Export-Templates einbinden.
+
 - **E2E `30_tabs_ui` einmalig flaky (2026-07-06)**: Im Voll-Lauf failte
   einmal „Undo-Stack hat den Tab-Wechsel nicht ueberlebt"
   ([`errors.md`](tests/e2e/artifacts/20260706-152530/errors.md)); Einzellauf

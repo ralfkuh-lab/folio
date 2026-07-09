@@ -43,11 +43,17 @@ cargo tauri build                   # Linux: deb + rpm + appimage in target/rele
 cargo tauri build --bundles deb     # einzelnes Bundle-Target
 ```
 
-Frontend-Bundles (`app.bundle.js`, `app.css`, `editor.bundle.js`) sind
-eingecheckt und müssen nur neu gebaut werden, wenn die jeweiligen Quellen
-geändert wurden: `cd src-tauri/web && npm install && npm run build`.
+Frontend-Bundles (`app.bundle.js`, `app.css`, `editor.bundle.js`,
+`mermaid.bundle.js`) sind eingecheckt und müssen nur neu gebaut werden,
+wenn die jeweiligen Quellen geändert wurden:
+`cd src-tauri/web && npm install && npm run build`.
 Outputs landen in `../dist/`. Reihenfolge im `package.json`-Build-Script:
-monaco-copy → editor.bundle → app.bundle → app.css.
+monaco-copy → editor.bundle → app.bundle → mermaid.bundle → app.css.
+**Achtung beim Testen gegen das Release-Binary**: Tauri bettet `dist/`
+zur Compile-Zeit ins Binary ein — nach einem Bundle-Rebuild sieht ein
+bereits gebautes `target/release/folio` die Änderung NICHT; erst
+`cargo build --release` (bzw. der run-e2e.sh-Wrapper, der das immer tut)
+liefert den neuen Frontend-Stand aus.
 
 Im HTML werden die Bundles in dieser Reihenfolge geladen
 (`monaco/loader.js` → `editor.bundle.js` → `app.bundle.js`), ohne
@@ -205,6 +211,15 @@ sonst lehnt Tauri den Build ab.
   wird der aktuelle Editor-Stand live aus Monaco geholt, statt den am
   Schedule-Zeitpunkt closure-captured Text — robust gegen
   verlorengegangene `editorTextChanged`-Events.
+- **Mermaid** (`view/mermaid.ts` + `mermaid/index.ts`): ```mermaid`-Fences
+  werden nur in der App-View (View/Split/Live-Preview) per Frontend-Post-
+  Prozessor zu SVG-Diagrammen (`<div class="mermaid-diagram">`). Eigenes
+  Lazy-Bundle (`dist/mermaid.bundle.js`, via Script-Injection beim ersten
+  Vorkommen; analog whenMonacoLoaded). Idempotenz per (source+theme)-Cache,
+  Theme-Re-Render, DOM-Connected-Race-Schutz, Fehler → Pre + .mermaid-error
+  (stray SVGs von mermaid v11 werden aufgeraeumt). Export (HTML/PDF) bleibt
+  bewusst bei Code-Block (Folgepunkt). `renderMermaidBlocks` wird parallel
+  zu `highlightCodeBlocks` an denselben Stellen gerufen.
 - **View-Themes** (`view/theme.ts`, Backend-Commands `view_themes` /
   `view_theme_css`): Theme-CSS ist immer auf `.markdown-body` gescopt
   und wird ueber `#view-theme-style` als letztes Element in `head`

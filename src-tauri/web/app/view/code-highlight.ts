@@ -164,7 +164,14 @@ export function highlightCodeBlocks(root: HTMLElement | null): void {
         return;
     }
     ensureMonarchJson();
-    const blocks = root.querySelectorAll('pre > code[class*="language-"]');
+    // language-mermaid wird von Mermaid selbst gerendert — hier ausschliessen,
+    // um redundante colorize-Arbeit zu vermeiden (und exakte Klasse pruefen).
+    const allBlocks = root.querySelectorAll('pre > code[class*="language-"]');
+    const blocks: Element[] = [];
+    allBlocks.forEach((b) => {
+        if ((b as HTMLElement).classList.contains('language-mermaid')) return;
+        blocks.push(b);
+    });
     folioLog.debug('view', 'highlightCodeBlocks start', { blocks: blocks.length });
     blocks.forEach((block, index) => {
         const raw = extractLang(block);
