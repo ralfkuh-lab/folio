@@ -7,7 +7,10 @@ pub struct BranchInfo {
     pub detached: bool,
 }
 
-/// Aktiver Branch, wenn `dir` selbst ein Git-Repo-Root ist, sonst None.
+/// Aktiver Branch des Repos, zu dem `dir` gehört, sonst None. Wie
+/// `git rev-parse`: liegt in `dir` selbst kein `.git`, wird die
+/// Verzeichniskette nach oben durchsucht (gepinnte Unterverzeichnisse
+/// eines Repos zeigen so den Branch des umgebenden Repos).
 /// detached = true nur bei purem Hex-SHA (Detached HEAD); Tags und andere
 /// Refs zählen als nicht-detached.
 pub fn branch_of(dir: &Path) -> Option<BranchInfo> {
@@ -17,20 +20,32 @@ pub fn branch_of(dir: &Path) -> Option<BranchInfo> {
 }
 
 /// Gibt das aufgelöste Git-Verzeichnis zurück, das die HEAD-Datei enthält
-/// (für normale Repos: `<dir>/.git`; für Worktrees: der aus `gitdir:`
-/// aufgelöste Pfad). None, wenn `dir` kein Git-Root ist.
+/// (für normale Repos: `<repo-root>/.git`; für Worktrees: der aus `gitdir:`
+/// aufgelöste Pfad). Sucht ab `dir` aufwärts bis zum Dateisystem-Root;
+/// None, wenn kein Ancestor ein Git-Root ist.
 pub fn head_dir(dir: &Path) -> Option<PathBuf> {
+    dir.ancestors().find_map(head_dir_at)
+}
+
+/// Wie `head_dir`, aber ohne Aufstieg: prüft nur `dir` selbst.
+/// Ein `.git` ohne HEAD-Datei zählt nicht als Repo (wie bei git selbst) —
+/// der Aufstieg in `head_dir` läuft dann weiter.
+fn head_dir_at(dir: &Path) -> Option<PathBuf> {
     let git = dir.join(".git");
     if !git.exists() {
         return None;
     }
-    if git.is_dir() {
-        Some(git)
+    let resolved = if git.is_dir() {
+        git
     } else if git.is_file() {
         // Worktree oder Submodule: "gitdir: <pfad>"
         let content = fs::read_to_string(&git).ok()?;
-        let gd = parse_gitdir(&content, dir)?;
-        Some(gd)
+        parse_gitdir(&content, dir)?
+    } else {
+        return None;
+    };
+    if resolved.join("HEAD").is_file() {
+        Some(resolved)
     } else {
         None
     }
@@ -182,6 +197,41 @@ mod tests {
     fn branch_of_no_git() {
         let tmp = TempDir::new().unwrap();
         assert_eq!(branch_of(tmp.path()), None);
+    }
+
+    #[test]
+    fn branch_of_subdirectory_walks_up() {
+        let tmp = TempDir::new().unwrap();
+        let gitdir = tmp.path().join(".git");
+        fs::create_dir(&gitdir).unwrap();
+        fs::write(gitdir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        let sub = tmp.path().join("docs").join("notes");
+        fs::create_dir_all(&sub).unwrap();
+        assert_eq!(
+            branch_of(&sub),
+            Some(BranchInfo {
+                label: "main".to_string(),
+                detached: false
+            })
+        );
+        assert_eq!(head_dir(&sub), Some(gitdir));
+    }
+
+    #[test]
+    fn head_dir_prefers_nearest_ancestor() {
+        // Verschachtelte Repos: das innere .git gewinnt (wie git rev-parse).
+        let tmp = TempDir::new().unwrap();
+        let outer_git = tmp.path().join(".git");
+        fs::create_dir(&outer_git).unwrap();
+        fs::write(outer_git.join("HEAD"), "ref: refs/heads/outer\n").unwrap();
+        let inner = tmp.path().join("inner");
+        let inner_git = inner.join(".git");
+        fs::create_dir_all(&inner_git).unwrap();
+        fs::write(inner_git.join("HEAD"), "ref: refs/heads/inner\n").unwrap();
+        let sub = inner.join("src");
+        fs::create_dir(&sub).unwrap();
+        assert_eq!(head_dir(&sub), Some(inner_git));
+        assert_eq!(branch_of(&sub).unwrap().label, "inner");
     }
 
     #[test]

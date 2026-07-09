@@ -112,6 +112,9 @@ def run(ctx):
     (git_dir / ".git").mkdir()
     (git_dir / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
     git_str = str(git_dir)
+    sub_dir = git_dir / "docs"
+    sub_dir.mkdir()
+    sub_str = str(sub_dir)
 
     try:
         with ctx.step("pin fake-git-dir → Badge mit main + --main Klasse"):
@@ -150,6 +153,24 @@ def run(ctx):
                 "Badge-Text nicht auf feature/x aktualisiert (GitHeadWatcher)",
             )
 
+        with ctx.step("pin repo-SUBDIR → Badge via Walk-up zum Repo-Root"):
+            ctx.api.workspace_pin(sub_str, is_directory=True)
+            state = _poll_for(ctx, lambda s: (sub_str, True) in _pinned_paths(s))
+            sub_badge_sel = (
+                f'#vault-tree li.node[data-path="{sub_str}"] .git-branch'
+            )
+            snap = ctx.api.dom(sub_badge_sel, timeout_ms=2000)
+            ctx.expect(
+                snap.get("exists"),
+                f"git-branch Badge am Subdir nicht gefunden via dom: {snap}",
+            )
+            txt = (snap.get("textContent") or "").strip()
+            ctx.expect(
+                txt == "feature/x",
+                f"Subdir-Badge feature/x erwartet, got txt={txt!r}",
+            )
+            ctx.api.workspace_unpin(sub_str)
+
         with ctx.step("cleanup unpin git dir"):
             ctx.api.workspace_unpin(git_str)
             state = _poll_for(
@@ -161,9 +182,10 @@ def run(ctx):
                 f"Git-Dir nach Unpin noch gepinnt: {_pinned_paths(state)}",
             )
     finally:
-        try:
-            ctx.api.workspace_unpin(git_str)
-        except Exception:
-            pass
+        for cleanup_path in (sub_str, git_str):
+            try:
+                ctx.api.workspace_unpin(cleanup_path)
+            except Exception:
+                pass
         import shutil
         shutil.rmtree(git_tmp, ignore_errors=True)
