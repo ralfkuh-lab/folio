@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 use tauri::AppHandle;
-use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 const DIALOG_TITLE: &str = "Markdown-Icon-Integration";
 
@@ -33,11 +33,41 @@ fn notify(handle: &AppHandle, body: impl Into<String>, kind: MessageDialogKind) 
         .blocking_show();
 }
 
+/// Erklaert die Funktion und holt eine Bestaetigung ein, bevor etwas
+/// passiert — der Menuepunkt ist leicht versehentlich getroffen, und
+/// ohne Erklaerung weiss ein normaler Benutzer nicht, was dahinter
+/// steckt. Liefert true nur bei explizitem "Einrichten".
+fn confirm_icon_integration(handle: &AppHandle) -> bool {
+    handle
+        .dialog()
+        .message(
+            "Diese Funktion richtet das Folio-Icon fuer Markdown-Dateien \
+             (.md) im Linux-Datei-Manager ein.\n\n\
+             Dazu wird ein mitgeliefertes Skript ausgefuehrt, das einen \
+             Per-User-Override im aktiven Icon-Theme anlegt (ohne sudo, \
+             nur im eigenen Home) und anschliessend den Datei-Manager \
+             neu startet, damit das Icon sichtbar wird.\n\n\
+             Jetzt einrichten?",
+        )
+        .title(DIALOG_TITLE)
+        .kind(MessageDialogKind::Info)
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "Einrichten".to_string(),
+            "Abbrechen".to_string(),
+        ))
+        .blocking_show()
+}
+
 /// Fuehrt `install-folio-icons.sh` aus und meldet Erfolg/Fehler per
-/// Message-Dialog. Blockiert (das Skript startet u. a. `nemo-desktop`
-/// neu) — der Aufrufer muss das in einen eigenen Thread auslagern, weil
-/// der Menue-Dispatch auf dem Main-Thread laeuft.
+/// Message-Dialog. Vorher Erklaer-/Bestaetigungsdialog (siehe
+/// [`confirm_icon_integration`]). Blockiert (das Skript startet u. a.
+/// `nemo-desktop` neu) — der Aufrufer muss das in einen eigenen Thread
+/// auslagern, weil der Menue-Dispatch auf dem Main-Thread laeuft.
 pub fn run_icon_integration(handle: &AppHandle) {
+    if !confirm_icon_integration(handle) {
+        tracing::debug!(target: "folio::menu", "icon integration: vom user abgebrochen");
+        return;
+    }
     let Some(script) = find_script() else {
         tracing::error!(
             target: "folio::menu",
