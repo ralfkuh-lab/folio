@@ -157,6 +157,8 @@ sonst lehnt Tauri den Build ab.
   die eigene `.row` des Root-Items (nicht aus verschachtelten Pin-Ordner-
   Kindern), Drop-**Ziel** der gesamte Subtree. Persistenz unverändert
   über `workspace_reorder_pinned`. Kein `draggable`-Attribut mehr.
+- **Gitignore-Dimming im Vault**: Ignorierte Dateien/Verzeichnisse (Pins + Kinder aufgeklappter Ordner) bekommen `ignored`-Klasse auf `li.node`; nur eigene Row wird via `> .row` CSS gedimmt (opacity 0.55). Nutzt `ignore`-Crate (nur GitignoreBuilder + matched_path_or_any_parents; kein WalkBuilder, kein git-Binary, kein neuer Watcher — bestehende expand/refresh + VaultWatcher reichen). `repo_root` aus git_branch. Recent-Liste bleibt unberührt.
+- **main-Badge-Farbe**: `git-branch--main` (und dark) jetzt `var(--rail-accent)` statt `--rail-fg-muted` (Detached bleibt rot, Feature-Branches bernstein) — Unterscheidbarkeit zum Dimming.
 - **Dateityp-Klassifizierung**: zentral in `file_kind.rs`
   (`FileKind::{Markdown, Text, Image, Binary}`, `classify(path)`).
   `read_file` und `document:loaded` liefern `kind` ans Frontend; das

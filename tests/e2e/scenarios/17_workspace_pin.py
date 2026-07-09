@@ -171,6 +171,42 @@ def run(ctx):
             )
             ctx.api.workspace_unpin(sub_str)
 
+        with ctx.step("gitignore + expand + dimming check (no screenshot)"):
+            # .gitignore + test files im Fake-Repo anlegen (bestehender Block)
+            (git_dir / ".gitignore").write_text("ignored.md\n")
+            (git_dir / "ignored.md").write_text("# ignored by git\n")
+            (git_dir / "normal.md").write_text("# not ignored\n")
+            # expand via Klick auf .row (trigert toggleDir + expand-dir)
+            row_sel = f'#vault-tree li.node[data-path="{git_str}"] > .row'
+            ctx.api.click(row_sel, ack_timeout_ms=1500)
+            # Kinder rendern via Backend + DOM-Update poll
+            ign_path = str(git_dir / "ignored.md").replace("\\", "/")
+            norm_path = str(git_dir / "normal.md").replace("\\", "/")
+            ign_sel = f'#vault-tree li.node[data-path="{ign_path}"]'
+            norm_sel = f'#vault-tree li.node[data-path="{norm_path}"]'
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                if ctx.api.dom(ign_sel).get("exists"):
+                    break
+                time.sleep(0.05)
+            ign = ctx.api.dom(ign_sel, timeout_ms=1000)
+            norm = ctx.api.dom(norm_sel, timeout_ms=1000)
+            ign_cls = ((ign.get("attributes") or {}).get("class") or "")
+            norm_cls = ((norm.get("attributes") or {}).get("class") or "")
+            ctx.expect(
+                ign.get("exists") and "ignored" in ign_cls,
+                f"ignored.md muss Klasse ignored haben: {ign}",
+            )
+            ctx.expect(
+                norm.get("exists") and "ignored" not in norm_cls,
+                f"normal.md darf keine ignored-Klasse haben: {norm}",
+            )
+            ign_title = ((ign.get("attributes") or {}).get("title") or "")
+            ctx.expect(
+                "gitignored" in ign_title,
+                f"title von ignored.md muss gitignored enthalten: {ign_title!r}",
+            )
+
         with ctx.step("cleanup unpin git dir"):
             ctx.api.workspace_unpin(git_str)
             state = _poll_for(

@@ -27,10 +27,19 @@ pub fn head_dir(dir: &Path) -> Option<PathBuf> {
     dir.ancestors().find_map(head_dir_at)
 }
 
+/// Liefert den Worktree-Root (Ancestor, bei dem `head_dir_at` trifft),
+/// d.h. das Verzeichnis mit dem `.git` (oder gitdir-Link). Nicht das
+/// interne Git-Verzeichnis. Wird von git_ignore::matcher_for genutzt.
+pub fn repo_root(dir: &Path) -> Option<PathBuf> {
+    dir.ancestors()
+        .find(|a| head_dir_at(a).is_some())
+        .map(|p| p.to_path_buf())
+}
+
 /// Wie `head_dir`, aber ohne Aufstieg: prüft nur `dir` selbst.
 /// Ein `.git` ohne HEAD-Datei zählt nicht als Repo (wie bei git selbst) —
 /// der Aufstieg in `head_dir` läuft dann weiter.
-fn head_dir_at(dir: &Path) -> Option<PathBuf> {
+pub(crate) fn head_dir_at(dir: &Path) -> Option<PathBuf> {
     let git = dir.join(".git");
     if !git.exists() {
         return None;

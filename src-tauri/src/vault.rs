@@ -251,9 +251,15 @@ impl Vault {
                 .cmp(&ia.is_directory)
                 .then_with(|| display_name(pa).cmp(&display_name(pb)))
         });
+        let matcher = crate::git_ignore::matcher_for(Path::new(path));
         Ok(entries
             .iter()
-            .map(|(path, info)| self.item_html(&path.to_string_lossy(), info, None))
+            .map(|(p, info)| {
+                let ignored = matcher
+                    .as_ref()
+                    .is_some_and(|m| m.is_ignored(p, info.is_directory));
+                self.item_html(&p.to_string_lossy(), info, None, ignored)
+            })
             .collect())
     }
 
@@ -303,6 +309,7 @@ impl Vault {
         original_path: &str,
         info: &EntryInfo,
         branch: Option<&crate::git_branch::BranchInfo>,
+        ignored: bool,
     ) -> String {
         // Bei .lnk-Shortcuts navigieren wir zum aufgelösten Ziel; die
         // Beschriftung verliert die `.lnk`-Endung (analog Explorer).
@@ -334,6 +341,9 @@ impl Vault {
         }
         if info.is_link {
             classes.push_str(" link");
+        }
+        if ignored {
+            classes.push_str(" ignored");
         }
         let kind = if is_directory { "dir" } else { "file" };
         let caret_class = if is_directory {
@@ -408,11 +418,15 @@ impl Vault {
         // Hover. Bei Branch wird zweite Zeile "Branch: <name>" angehaengt
         // (vor Escapen mit \n; escape_attr belaesst \n, Browser rendert
         // Zeilenumbruch im Tooltip). data-path bleibt reiner Pfad.
-        let title = if let Some(bi) = branch {
+        // Bei ignored: zusaetzliche Zeile "gitignored".
+        let mut title = if let Some(bi) = branch {
             format!("{}\nBranch: {}", nav_path, bi.label)
         } else {
             nav_path.clone()
         };
+        if ignored {
+            title.push_str("\ngitignored");
+        }
         format!(
             r#"<li class="{classes}" data-kind="{kind}"{exec_attr} data-path="{datapath}" title="{title}"><div class="row"><span class="{caret_class}">▾</span>{icon_html}<span class="label">{name}</span>{branch_html}</div><ul class="{children_class}">{children}</ul></li>"#,
             datapath = escape_attr(&nav_path),
@@ -464,7 +478,14 @@ impl Vault {
                 } else {
                     None
                 };
-                self.item_html(&item.path, &info, branch.as_ref())
+                // Matcher fuer Elternverzeichnis des Pins (damit .gitignores
+                // bis zum Parent-Level greifen) und Pin selbst matchen.
+                let parent = path.parent().unwrap_or(path);
+                let matcher = crate::git_ignore::matcher_for(parent);
+                let ignored = matcher
+                    .as_ref()
+                    .is_some_and(|m| m.is_ignored(path, info.is_directory));
+                self.item_html(&item.path, &info, branch.as_ref(), ignored)
             })
             .collect::<String>();
         empty_placeholder(html)
@@ -481,7 +502,7 @@ impl Vault {
                 } else {
                     EntryInfo::plain(false)
                 };
-                self.item_html(&item.path, &info, None)
+                self.item_html(&item.path, &info, None, false)
             })
             .collect::<String>();
         empty_placeholder(html)
@@ -558,8 +579,25 @@ mod tests {
     fn active_item_gets_active_class() {
         let mut vault = Vault::new();
         vault.set_active(Some("/tmp/a.md".into()));
-        let html = vault.item_html("/tmp/a.md", &EntryInfo::plain(false), None);
+        let html = vault.item_html("/tmp/a.md", &EntryInfo::plain(false), None, false);
         assert!(html.contains("node active"));
+    }
+
+    #[test]
+    fn ignored_true_adds_class_and_gitignored_to_title() {
+        let html = Vault::new().item_html("/tmp/ign.md", &EntryInfo::plain(false), None, true);
+        assert!(html.contains("node ignored"));
+        // \n stays literal in the attr (no html-escape for LF in escape_attr)
+        assert!(html.contains("/tmp/ign.md\ngitignored"));
+        // also with branch
+        let bi = crate::git_branch::BranchInfo {
+            label: "main".into(),
+            detached: false,
+        };
+        let html2 = Vault::new().item_html("/tmp/ign", &EntryInfo::plain(true), Some(&bi), true);
+        assert!(html2.contains("node ignored"));
+        assert!(html2.contains("gitignored"));
+        assert!(html2.contains("Branch: main"));
     }
 
     #[cfg(unix)]
@@ -573,8 +611,12 @@ mod tests {
         let plain_path = temp.path().join("notes.txt");
         std::fs::write(&plain_path, b"hi").unwrap();
 
-        let exec_html =
-            Vault::new().item_html(&exec_path.to_string_lossy(), &EntryInfo::plain(false), None);
+        let exec_html = Vault::new().item_html(
+            &exec_path.to_string_lossy(),
+            &EntryInfo::plain(false),
+            None,
+            false,
+        );
         assert!(exec_html.contains(r#"data-exec="1""#));
 
         // Nicht-ausfuehrbare Datei traegt das Attribut nicht.
@@ -582,6 +624,7 @@ mod tests {
             &plain_path.to_string_lossy(),
             &EntryInfo::plain(false),
             None,
+            false,
         );
         assert!(!plain_html.contains("data-exec"));
     }
@@ -593,7 +636,7 @@ mod tests {
             is_link: true,
             target: None,
         };
-        let html = Vault::new().item_html("/tmp/junction", &info, None);
+        let html = Vault::new().item_html("/tmp/junction", &info, None, false);
         assert!(html.contains("class=\"node link\""));
         assert!(html.contains(r#"data-kind="dir""#));
     }
@@ -605,7 +648,7 @@ mod tests {
             is_link: true,
             target: Some(PathBuf::from("/real/target")),
         };
-        let html = Vault::new().item_html("/tmp/Shortcut.lnk", &info, None);
+        let html = Vault::new().item_html("/tmp/Shortcut.lnk", &info, None, false);
         assert!(html.contains(r#"data-path="/real/target""#));
         assert!(html.contains("<span class=\"label\">Shortcut</span>"));
         assert!(html.contains("class=\"node link\""));
@@ -618,7 +661,7 @@ mod tests {
             is_link: true,
             target: Some(PathBuf::from("/real/notes.md")),
         };
-        let html = Vault::new().item_html("/tmp/Notes.lnk", &info, None);
+        let html = Vault::new().item_html("/tmp/Notes.lnk", &info, None, false);
         assert!(html.contains(r#"data-ext="md""#));
     }
 
@@ -680,7 +723,7 @@ mod tests {
 
     #[test]
     fn directories_render_caret_and_child_container() {
-        let html = Vault::new().item_html("/tmp/dir", &EntryInfo::plain(true), None);
+        let html = Vault::new().item_html("/tmp/dir", &EntryInfo::plain(true), None, false);
         assert!(html.contains(r#"data-kind="dir""#));
         assert!(html.contains(r#"class="caret""#));
         assert!(html.contains(r#"class="children collapsed""#));

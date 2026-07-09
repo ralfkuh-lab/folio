@@ -201,6 +201,16 @@ body.pin-dragging * {
   box-shadow: inset 0 -2px 0 var(--rail-accent);
 }
 
+/* Gitignorierte Eintraege: gedimmt (Konvention wie VS Code/JetBrains).
+   Nur eigene .row dimmen (> .row), NICHT Subtree — Kinder eines
+   ignorierten Ordners sind selbst als ignored markiert (via
+   matched_path_or_any_parents), doppeltes Dimmen waere falsch. */
+.vault-region li.node.ignored > .row .label,
+.vault-region li.node.ignored > .row .icon,
+.vault-region li.node.ignored > .row .git-branch {
+  opacity: 0.55;
+}
+
 /* Git-Branch-Badge nur hinter Top-Level-Pins (folgt Label-Flex, Ellipsis bei echtem Platzmangel). */
 .vault-region .git-branch {
   flex: 0 1 auto;
@@ -218,12 +228,13 @@ body.pin-dragging * {
 html.theme-dark .vault-region .git-branch {
   color: #d29922;
 }
-/* main/master: Ruhezustand, gedämpft. Die Dark-Regel ist noetig, weil
-   `html.theme-dark .vault-region .git-branch` (Bernstein) spezifischer
-   ist als die Modifier-Klasse allein und sonst auch main einfaerbt. */
+/* main/master: Ruhezustand, Akzentblau (nicht muted), damit es sich
+   vom neuen Ignored-Dimming (0.55 opacity auf grey-ish) unterscheidet.
+   Die Dark-Regel ist noetig, weil `html.theme-dark .vault-region .git-branch`
+   (Bernstein) spezifischer ist als die Modifier-Klasse allein. */
 .vault-region .git-branch--main,
 html.theme-dark .vault-region .git-branch--main {
-  color: var(--rail-fg-muted);
+  color: var(--rail-accent);
 }
 /* Detached HEAD: Warnzustand, rot */
 .vault-region .git-branch--detached {

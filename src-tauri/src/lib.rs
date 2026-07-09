@@ -10,6 +10,7 @@ pub mod file_kind;
 pub mod file_resolver;
 pub mod frontmatter;
 pub mod git_branch;
+pub mod git_ignore;
 pub mod heading_anchor;
 pub mod link_interceptor;
 pub mod logging;
