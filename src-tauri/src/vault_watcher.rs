@@ -310,6 +310,21 @@ impl GitHeadWatcher {
 }
 
 fn has_head_path(event: &Event) -> bool {
+    // Nur schreibende Aenderungen zaehlen: notify mappt auch reine
+    // Lese-Zugriffe (IN_OPEN/IN_ACCESS/IN_CLOSE_NOWRITE) auf
+    // EventKind::Access. Externe Tools (Shell-Prompts, herdr, IDEs)
+    // pollen .git/HEAD lesend im Sekundentakt — ohne diesen Filter
+    // wird jeder Read zum vault:refresh-Full-Rebuild (5-Hz-Sturm:
+    // Dauer-CPU proportional zur Baumgroesse + verschluckte Klicks,
+    // weil innerHTML-Replace mitten in der Pointer-Sequenz landet).
+    // Git selbst ersetzt HEAD via write/rename → Modify/Create decken
+    // echte Branch-Wechsel ab.
+    if !matches!(
+        event.kind,
+        EventKind::Create(_) | EventKind::Remove(_) | EventKind::Modify(_)
+    ) {
+        return false;
+    }
     event
         .paths
         .iter()
@@ -472,6 +487,36 @@ mod tests {
         assert!(!w.watched.is_empty());
         w.sync(vec![]).unwrap();
         assert!(w.watched.is_empty());
+    }
+
+    #[test]
+    fn git_head_read_does_not_fire() {
+        // Regression: notify mappt Lese-Zugriffe (IN_ACCESS/IN_OPEN/
+        // IN_CLOSE_NOWRITE) auf EventKind::Access. Externe HEAD-Poller
+        // (Shell-Prompt, herdr) duerfen keinen vault:refresh ausloesen.
+        if !fs_notify_available() {
+            eprintln!("fs notify nicht verfuegbar, Test geskippt");
+            return;
+        }
+        let temp = TempDir::new().unwrap();
+        let gitdir = temp.path().join(".git");
+        fs::create_dir(&gitdir).unwrap();
+        fs::write(gitdir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+
+        let (cb, fired) = make_git_callback();
+        let mut w = GitHeadWatcher::new();
+        w.set_callback(cb);
+        w.sync(vec![gitdir.clone()]).unwrap();
+
+        for _ in 0..5 {
+            let _ = fs::read_to_string(gitdir.join("HEAD")).unwrap();
+            thread::sleep(Duration::from_millis(50));
+        }
+        thread::sleep(Duration::from_millis(500));
+        assert!(
+            !*fired.lock().unwrap(),
+            "HEAD read fired GitHeadWatcher callback (Access-Events nicht gefiltert)"
+        );
     }
 
     #[test]

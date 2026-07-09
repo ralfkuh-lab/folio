@@ -410,4 +410,23 @@ describe('vault/tree — pinned items pointer-drag reordering', () => {
         row('/pinned/b.md').dispatchEvent(pe('click'));
         expect(openDocument).toHaveBeenCalledWith('/pinned/b.md');
     });
+
+    it('a jittery click (movement but no drop target) still opens', async () => {
+        buildPinnedVaultDom();
+        const tree = await import('../../app/vault/tree');
+        const openDocument = vi.fn();
+        tree.initVaultTree({ openDocument });
+        tree.setVaultPinned(`
+            <li class="node" data-kind="file" data-path="/pinned/a.md"><div class="row"></div></li>
+        `);
+
+        // Bewegung ueber dem Threshold, aber Release ohne Drop-Marker:
+        // frueher wurde der Folge-Klick geschluckt, jetzt zaehlt er.
+        row('/pinned/a.md').dispatchEvent(pe('pointerdown'));
+        document.dispatchEvent(pe('pointermove', { clientY: 15 }));
+        expect(document.querySelector('.node.dragging')).not.toBeNull();
+        document.dispatchEvent(pe('pointerup', { clientY: 15 }));
+        row('/pinned/a.md').dispatchEvent(pe('click'));
+        expect(openDocument).toHaveBeenCalledWith('/pinned/a.md');
+    });
 });

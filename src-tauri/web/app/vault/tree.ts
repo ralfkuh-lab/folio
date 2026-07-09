@@ -419,7 +419,11 @@ export function initVaultTree(d: Deps): void {
     // ohne Capture ist e.target waehrend pointermove das Element unter
     // dem Cursor (normales Hit-Testing) — genau das, was wir zur
     // Drop-Ziel-Bestimmung brauchen, und in jsdom testbar.
-    const DRAG_THRESHOLD_PX = 4; // unterscheidet Klick (oeffnen) von Drag
+    // Unterscheidet Klick (oeffnen) von Drag. 8 px statt frueher 4: bei
+    // hochaufloesenden Maeusen/zittriger Hand akkumuliert ein normaler
+    // Klick leicht >= 4 px zwischen pointerdown und pointerup und wurde
+    // dann faelschlich als Drag gewertet (Klick verschluckt).
+    const DRAG_THRESHOLD_PX = 8;
 
     function getDirectPinnedItem(target: HTMLElement | null): HTMLElement | null {
         let el: HTMLElement | null = target;
@@ -521,6 +525,13 @@ export function initVaultTree(d: Deps): void {
         const afterTarget = ROOT.querySelector('.drop-over-after') as HTMLElement | null;
         endPinDrag();
         if (!wasActive) return;
+        const targetItem = beforeTarget || afterTarget;
+        // Den Folge-Klick nur schlucken, wenn wirklich umsortiert wurde.
+        // Ein aktiver Drag OHNE Drop-Ziel ist praktisch immer ein
+        // Wackel-Klick (Bewegung ueber dem eigenen Item) — der muss als
+        // normaler Klick durchgehen, sonst reagiert die Row gefuehlt
+        // "gar nicht" und der User klickt mehrfach.
+        if (!targetItem) return;
         suppressNextClick = true;
         // Endet der Drag ausserhalb der Vault-Region, dispatcht der
         // Browser den Folge-Klick auf den gemeinsamen Ancestor — der
@@ -529,10 +540,7 @@ export function initVaultTree(d: Deps): void {
         // Der echte synthetische Klick kommt vor dem Timer-Fire
         // (Input-Queue vor Timer-Queue), danach wird entwaffnet.
         window.setTimeout(function () { suppressNextClick = false; }, 0);
-        const targetItem = beforeTarget || afterTarget;
-        if (targetItem) {
-            commitPinReorder(draggedEl, targetItem, !!beforeTarget);
-        }
+        commitPinReorder(draggedEl, targetItem, !!beforeTarget);
     });
 
     document.addEventListener('pointercancel', function (e: PointerEvent) {
