@@ -77,3 +77,17 @@
   .folio-running-header { top: 0; }
   .folio-running-footer { bottom: 0; }
 }
+
+/* Mermaid-Diagramme im Export (vorgerenderte SVGs aus Frontend, immer light).
+   render_body_highlighted_in setzt sie (mit mermaid_svgs) in div.mermaid-diagram
+   ein; ohne SVG bleibt der Code-Block stehen. Kein woertliches Tag-Markup in
+   diesem Kommentar — der landet inline im Export-HTML. */
+.mermaid-diagram {
+  display: flex;
+  justify-content: center;
+  margin: 1em 0;
+}
+.mermaid-diagram svg {
+  max-width: 100%;
+  height: auto;
+}

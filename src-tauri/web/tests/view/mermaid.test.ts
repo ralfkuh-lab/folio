@@ -254,4 +254,20 @@ describe('view/mermaid', () => {
         // Da wir keine zweite echte Render gestartet haben, erwarten wir dass innerHTML nicht das stale ist.
         expect(diag!.innerHTML).not.toContain('stale');
     });
+
+    it('renderMermaidForExport erhaelt Reihenfolge, mappt Fehler zu null, erzwingt light, liefert source-pairs', async () => {
+        const good = 'flowchart TD\nA-->B';
+        const bad = 'flowchart LR\nX --> [broken';
+        // Override spy for this test (beforeEach sets default resolved)
+        renderSpy
+            .mockResolvedValueOnce('<svg id="good"></svg>')
+            .mockRejectedValueOnce(new Error('parse error at ...'));
+        const res = await mod.renderMermaidForExport([good, bad]);
+        expect(res).toEqual([
+            { source: good, svg: '<svg id="good"></svg>' },
+            { source: bad, svg: null },
+        ]);
+        expect(renderSpy).toHaveBeenCalledWith(good, false);
+        expect(renderSpy).toHaveBeenCalledWith(bad, false);
+    });
 });

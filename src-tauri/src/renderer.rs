@@ -19,12 +19,22 @@ use syntect::{
     util::LinesWithEndings,
 };
 
+/// Entry fuer mermaid Export: paart die exakte Source (zum Index-Match via Literal)
+/// mit dem (optionalen, vorgerenderten) SVG. Wird vom Frontend via
+/// renderMermaidForExport erzeugt und als mermaidSvgs an die Export-Commands
+/// uebergeben. Source-Identitaet verhindert falsche Zuordnung bei Dokument-Aenderungen.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct MermaidSvgEntry {
+    pub source: String,
+    pub svg: Option<String>,
+}
+
 pub fn render_body(markdown: &str) -> String {
-    render_body_with_highlighter(markdown, None, false)
+    render_body_with_highlighter(markdown, None, false, None)
 }
 
 pub fn render_body_highlighted(markdown: &str, dark: bool) -> String {
-    render_body_with_highlighter(markdown, Some(syntect_adapter(dark)), false)
+    render_body_with_highlighter(markdown, Some(syntect_adapter(dark)), false, None)
 }
 
 /// Wie [`render_body_highlighted`], unterstuetzt zusaetzlich das
@@ -34,11 +44,13 @@ pub fn render_body_highlighted_in(
     markdown: &str,
     dark: bool,
     hide_inline_frontmatter: bool,
+    mermaid_svgs: Option<Vec<MermaidSvgEntry>>,
 ) -> String {
     render_body_with_highlighter(
         markdown,
         Some(syntect_adapter(dark)),
         hide_inline_frontmatter,
+        mermaid_svgs,
     )
 }
 
@@ -46,6 +58,7 @@ fn render_body_with_highlighter(
     markdown: &str,
     syntax_highlighter: Option<&dyn SyntaxHighlighterAdapter>,
     hide_inline_frontmatter: bool,
+    mermaid_svgs: Option<Vec<MermaidSvgEntry>>,
 ) -> String {
     let frontmatter = frontmatter::extract(markdown);
     let preprocessed = heading_anchor::convert_inline_anchors_in_headings(&frontmatter.body);
@@ -54,6 +67,24 @@ fn render_body_with_highlighter(
     let options = markdown_options();
     let root = parse_document(&arena, &preprocessed, &options);
     let heading_ids = collect_and_apply_explicit_heading_ids(root);
+
+    // Beim eigenen Parse die Mermaid-Literale sammeln (gemeinsam mit
+    // collect_mermaid_sources / find_mermaid_blocks). Wird fuer
+    // source-basierte Identitaet im Ersetzungsschritt benoetigt.
+    let mermaid_literals: Vec<String> = if mermaid_svgs.is_some() {
+        find_mermaid_blocks(root)
+            .into_iter()
+            .map(|node| {
+                if let NodeValue::CodeBlock(ref cb) = node.data.borrow().value {
+                    cb.literal.clone()
+                } else {
+                    String::new()
+                }
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
 
     let heading_adapter = FolioHeadingAdapter::new(heading_ids);
     let mut plugins = Plugins::default();
@@ -67,6 +98,12 @@ fn render_body_with_highlighter(
     let body_html =
         normalize_tasklist_html(&String::from_utf8(body_html).expect("comrak emits UTF-8 HTML"));
     let body_html = add_data_line_attributes(&body_html, frontmatter.body_start_line);
+
+    let body_html = if let Some(ref entries) = mermaid_svgs {
+        replace_mermaid_blocks_in_html(&body_html, entries, &mermaid_literals)
+    } else {
+        body_html
+    };
 
     let mut html = String::new();
     if !hide_inline_frontmatter {
@@ -276,6 +313,154 @@ fn explicit_id_regex() -> &'static Regex {
         Regex::new(r"(?s)^(?P<text>.*?)[ \t]*\{#(?P<id>[^}\s]+)\}[ \t]*$")
             .expect("explicit heading ID regex must compile")
     })
+}
+
+fn is_mermaid_info(info: &str) -> bool {
+    // Exakt CASE-SENSITIVER First-Token-Vergleich (konsistent zu
+    // Frontend classList.contains('language-mermaid') und comrak's
+    // language- Klassenbildung). "Mermaid" oder "mermaid\tmeta" werden
+    // korrekt behandelt; Tabs/Space als Separator via split_whitespace.
+    info.split_whitespace().next() == Some("mermaid")
+}
+
+fn find_mermaid_blocks<'a>(root: &'a AstNode<'a>) -> Vec<&'a AstNode<'a>> {
+    let mut blocks = Vec::new();
+    for node in root.descendants() {
+        if let NodeValue::CodeBlock(ref cb) = node.data.borrow().value {
+            if cb.fenced && is_mermaid_info(&cb.info) {
+                blocks.push(node);
+            }
+        }
+    }
+    blocks
+}
+
+/// Sammelt die Quelltexte aller ```mermaid / ~~~mermaid -Fences (Dokument-Reihenfolge).
+/// Nutzt exakt dieselbe comrak-Parse-Logik + Erkennung wie der Ersetzungsschritt
+/// im Export. Frontmatter wird abgeschnitten,
+/// indented Code und Inline-Code ignoriert, ~~~-Varianten eingeschlossen.
+pub fn collect_mermaid_sources(markdown: &str) -> Vec<String> {
+    let frontmatter = frontmatter::extract(markdown);
+    let preprocessed = heading_anchor::convert_inline_anchors_in_headings(&frontmatter.body);
+
+    let arena = Arena::new();
+    let options = markdown_options();
+    let root = parse_document(&arena, &preprocessed, &options);
+
+    find_mermaid_blocks(root)
+        .into_iter()
+        .map(|node| {
+            if let NodeValue::CodeBlock(ref cb) = node.data.borrow().value {
+                cb.literal.clone()
+            } else {
+                String::new()
+            }
+        })
+        .collect()
+}
+
+/// Prueft ob ein SVG fuer den Mermaid-Export akzeptiert wird (Security-Gate).
+/// Muss mit "<svg" (trimmed) beginnen und darf kein "<script" (ci) enthalten.
+/// Defense-in-Depth: Automation-Caller sind auf demselben Trust-Level wie
+/// /eval (koennen beliebiges JS ausfuehren); das Gate schuetzt das
+/// exportierte Artefakt (kein vollstaendiger Sanitizer, XML-Parse waere Overkill).
+fn is_valid_mermaid_svg(svg: &str) -> bool {
+    let t = svg.trim_start();
+    t.starts_with("<svg") && !t.to_ascii_lowercase().contains("<script")
+}
+
+fn mermaid_code_open_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        // Anker auf Tag-Sequenz <pre...><code...class="language-mermaid"...>
+        // statt nacktem class-String + rfind. Robust gegen Attrs/Quotes.
+        Regex::new(r#"<pre[^>]*>\s*<code[^>]*class="language-mermaid"[^>]*>"#)
+            .expect("mermaid code open regex must compile")
+    })
+}
+
+/// Ersetzt Mermaid-Bloecke im Export-HTML. Nutzt source-Identitaet (nicht
+/// blinden Index): ersetzt nur wenn literals[i] == entry.source UND svg
+/// vorhanden UND valid (security gate). Sonst Fallback auf Code-Block.
+/// Verwendet Regex fuer robustes Ankern der <pre><code class=...> Sequenz.
+fn replace_mermaid_blocks_in_html(
+    html: &str,
+    entries: &[MermaidSvgEntry],
+    literals: &[String],
+) -> String {
+    let mut result = String::with_capacity(html.len());
+    let mut pos = 0usize;
+    let mut i = 0usize;
+
+    let re = mermaid_code_open_regex();
+
+    while let Some(mat) = re.find(&html[pos..]) {
+        let match_start = pos + mat.start();
+        let after_open = pos + mat.end();
+
+        // Schliesse bis </code></pre> (robust, auch bei Whitespace/Attrs)
+        let code_end = match html[after_open..].find("</code>") {
+            Some(c) => after_open + c + 7,
+            None => {
+                pos = after_open;
+                continue;
+            }
+        };
+        let pre_close = match html[code_end..].find("</pre>") {
+            Some(e) => code_end + e + 6,
+            None => {
+                pos = code_end;
+                continue;
+            }
+        };
+
+        result.push_str(&html[pos..match_start]);
+
+        let lit = literals.get(i).map(|s| s.as_str()).unwrap_or("");
+        let entry = entries.get(i);
+
+        let do_replace = if let Some(e) = entry {
+            e.source == lit && e.svg.as_ref().is_some_and(|s| is_valid_mermaid_svg(s))
+        } else {
+            false
+        };
+
+        if do_replace {
+            if let Some(svg) = entry.and_then(|e| e.svg.as_ref()) {
+                result.push_str(r#"<div class="mermaid-diagram">"#);
+                result.push_str(svg);
+                result.push_str("</div>");
+            } else {
+                result.push_str(&html[match_start..pre_close]);
+            }
+        } else {
+            if let Some(e) = entry {
+                if e.source != lit {
+                    // Source-Identitaet mismatch (Stale/Shift) -> bewusst Fallback, nie falsches SVG
+                    tracing::warn!(
+                        target: "folio::ipc",
+                        index = i,
+                        "mermaid svg source mismatch; falling back to code block"
+                    );
+                } else if let Some(s) = &e.svg {
+                    if !is_valid_mermaid_svg(s) {
+                        tracing::warn!(
+                            target: "folio::ipc",
+                            index = i,
+                            "invalid mermaid svg rejected (missing <svg or contains <script); falling back"
+                        );
+                    }
+                }
+            }
+            result.push_str(&html[match_start..pre_close]);
+        }
+
+        pos = pre_close;
+        i += 1;
+    }
+
+    result.push_str(&html[pos..]);
+    result
 }
 
 /// Markdig-compatible tasklist HTML normalisation.
@@ -688,5 +873,58 @@ mod tests {
             "<ul><li>Outer<ol><li><input type=\"checkbox\" disabled=\"\" /> Task</li></ol></li></ul>",
         );
         assert!(!html.contains("contains-task-list"));
+    }
+
+    #[test]
+    fn collect_mermaid_sources_finds_fences_and_ignores_indented_and_non_mermaid() {
+        let md = "# Doc\n\n```mermaid\nflow A-->B\n```\n\n~~~mermaid\nC-->D\n~~~\n\n    indented\n\n```rust\nfn x(){}\n```\n\nText `inline mermaid` here.";
+        let srcs = collect_mermaid_sources(md);
+        assert_eq!(srcs.len(), 2);
+        assert!(srcs[0].contains("flow A-->B"));
+        assert!(srcs[1].contains("C-->D"));
+    }
+
+    #[test]
+    fn collect_and_replace_is_case_sensitive_and_first_token_only() {
+        // Divergenz-Fix: nur exakt "mermaid" als first token (case sens)
+        let md = "```Mermaid\nbad\n```\n\n```mermaid\nok\n```\n\n```mermaid\tmeta\nwithmeta\n```";
+        let srcs = collect_mermaid_sources(md);
+        assert_eq!(
+            srcs.len(),
+            2,
+            "only lowercase mermaid and mermaid+meta count"
+        );
+        assert!(srcs[0].contains("ok"));
+        assert!(srcs[1].contains("withmeta"));
+
+        // Render mit passendem Entry fuer zweiten (case mismatch erster bleibt code)
+        let entry_ok = MermaidSvgEntry {
+            source: srcs[0].clone(),
+            svg: Some("<svg id=\"ok\"/>".to_string()),
+        };
+        let entry_meta = MermaidSvgEntry {
+            source: srcs[1].clone(),
+            svg: Some("<svg id=\"meta\"/>".to_string()),
+        };
+        let html = crate::export::render_document(
+            "clean",
+            "T",
+            None,
+            md,
+            Some(vec![entry_ok, entry_meta]),
+        )
+        .unwrap();
+        // korrekte (lowercase + meta) erhalten svg; wrong-case "Mermaid" blieb Code (nicht in entries)
+        assert!(html.contains(r#"<div class="mermaid-diagram"><svg id="ok"/></div>"#));
+        assert!(html.contains(r#"<div class="mermaid-diagram"><svg id="meta"/></div>"#));
+        // wrong-case block source appears (as code fallback), not replaced
+        assert!(html.contains("bad"));
+    }
+
+    #[test]
+    fn collect_mermaid_sources_strips_frontmatter() {
+        let md = "---\ntitle: X\n---\n\n```mermaid\ngraph\n```\n";
+        let srcs = collect_mermaid_sources(md);
+        assert_eq!(srcs.len(), 1);
     }
 }

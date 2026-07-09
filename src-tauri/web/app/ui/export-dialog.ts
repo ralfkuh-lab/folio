@@ -4,7 +4,9 @@ import {
     exportAiDraftSave,
     initExportAi,
     prepareExportAiOpen,
+    setExportMermaidSvgs,
 } from './export-ai';
+import { renderMermaidForExport, type MermaidSvgEntry } from '../view/mermaid';
 
 /* Export-Dialog: HTML/PDF-Format-Wahl + Layout-Karten mit Iframe-Preview.
    Aufruf via Toolbar (tb-export). Abhaengig vom Document-State
@@ -33,6 +35,7 @@ let deps: Deps = null;
 let selectedLayoutId: string | null = null;
 let selectedExportFormat: 'html' | 'pdf' = 'html';
 let exportKeydownHandler: ((e: KeyboardEvent) => void) | null = null;
+let currentMermaidSvgs: MermaidSvgEntry[] | null = null;
 
 function $(id: string): HTMLElement | null { return document.getElementById(id); }
 
@@ -90,7 +93,9 @@ export function splitLayoutsByFavorites(
 function loadLayoutPreview(card: HTMLElement, layoutId: string): void {
     if (card.dataset.previewLoaded === 'true') return;
     card.dataset.previewLoaded = 'true';
-    invoke('export_render', { layoutId }).then(function (html) {
+    const payload: any = { layoutId };
+    if (currentMermaidSvgs) payload.mermaidSvgs = currentMermaidSvgs;
+    invoke('export_render', payload).then(function (html) {
         const iframe = card.querySelector('iframe');
         if (iframe && typeof html === 'string') (iframe as HTMLIFrameElement).srcdoc = html;
     }).catch(function () { /* ignore */ });
@@ -174,12 +179,22 @@ function openExportDialog(): void {
     const sync = (document.body.classList.contains('edit-mode') && deps.getCurrentPath())
         ? deps.syncEditorTextToStore() : Promise.resolve();
     sync.then(function () {
-        return Promise.all([invoke('export_layouts'), invoke('settings_get')]);
-    }).then(function (result: [ExportLayout[], { themeFavorites?: string[] }]) {
+        return Promise.all([invoke('export_layouts'), invoke('settings_get'), invoke('export_mermaid_sources')]);
+    }).then(async function (result: [ExportLayout[], { themeFavorites?: string[] }, unknown]) {
         const layouts = Array.isArray(result[0]) ? result[0] : [];
         const settings = result[1];
         const favoriteIds = settings && Array.isArray(settings.themeFavorites)
             ? settings.themeFavorites : [];
+        const sources = Array.isArray(result[2]) ? (result[2] as string[]) : [];
+        currentMermaidSvgs = null;
+        if (sources.length > 0) {
+            try {
+                currentMermaidSvgs = await renderMermaidForExport(sources);
+            } catch (e) {
+                currentMermaidSvgs = sources.map((source) => ({ source, svg: null }));
+            }
+        }
+        setExportMermaidSvgs(currentMermaidSvgs);
         const cards = $('export-cards');
         const initiallySelected = renderLayoutCards(cards, layouts, favoriteIds);
         selectLayoutCard(initiallySelected);
@@ -219,6 +234,8 @@ function closeExportDialog(): void {
     // Sonst wuerde ein verbliebener Keydown-Handler (oder der naechste
     // Enter-Druck nach Re-Open-Fehler) mit dem alten Layout exportieren.
     selectedLayoutId = null;
+    currentMermaidSvgs = null;
+    setExportMermaidSvgs(null);
     clearExportAiDraft();
     const cards = $('export-cards');
     if (cards) cards.innerHTML = '';
@@ -240,7 +257,9 @@ function doExportSave(): void {
                 });
             }
             const cmd = (fmt === 'pdf') ? 'export_pdf' : 'export_html';
-            return invoke(cmd, { layoutId: selectedLayoutId, targetPath })
+            const payload: any = { layoutId: selectedLayoutId, targetPath };
+            if (currentMermaidSvgs) payload.mermaidSvgs = currentMermaidSvgs;
+            return invoke(cmd, payload)
                 .then(function () {
                     closeExportDialog();
                     deps.showStatus('Exportiert: ' + targetPath);

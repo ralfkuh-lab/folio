@@ -31,19 +31,27 @@ pub async fn view_theme_css(theme_id: String, dark: bool) -> Result<String, Stri
 }
 
 #[tauri::command]
+pub async fn export_mermaid_sources(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    let (_, text) = current_document(&state)?;
+    Ok(crate::renderer::collect_mermaid_sources(&text))
+}
+
+#[tauri::command]
 pub async fn export_render(
     layout_id: String,
+    mermaid_svgs: Option<Vec<crate::renderer::MermaidSvgEntry>>,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     let (path, text) = current_document(&state)?;
     let title = export::derive_title(path.as_deref());
-    export::render_document(&layout_id, &title, path.as_deref(), &text)
+    export::render_document(&layout_id, &title, path.as_deref(), &text, mermaid_svgs)
 }
 
 #[tauri::command]
 pub async fn export_render_draft(
     parts: ThemeWriteFiles,
     base_theme_id: Option<String>,
+    mermaid_svgs: Option<Vec<crate::renderer::MermaidSvgEntry>>,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     let (path, text) = current_document(&state)?;
@@ -54,6 +62,7 @@ pub async fn export_render_draft(
         path.as_deref(),
         parts,
         base_theme_id.as_deref(),
+        mermaid_svgs,
     ))
 }
 
@@ -61,11 +70,12 @@ pub async fn export_render_draft(
 pub async fn export_html(
     layout_id: String,
     target_path: String,
+    mermaid_svgs: Option<Vec<crate::renderer::MermaidSvgEntry>>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let (path, text) = current_document(&state)?;
     let title = export::derive_title(path.as_deref());
-    let html = export::render_document(&layout_id, &title, path.as_deref(), &text)?;
+    let html = export::render_document(&layout_id, &title, path.as_deref(), &text, mermaid_svgs)?;
     fs::write(&target_path, html).map_err(|e| e.to_string())
 }
 
@@ -74,6 +84,7 @@ pub async fn export_html_draft(
     parts: ThemeWriteFiles,
     base_theme_id: Option<String>,
     target_path: String,
+    mermaid_svgs: Option<Vec<crate::renderer::MermaidSvgEntry>>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let (path, text) = current_document(&state)?;
@@ -84,6 +95,7 @@ pub async fn export_html_draft(
         path.as_deref(),
         parts,
         base_theme_id.as_deref(),
+        mermaid_svgs,
     );
     fs::write(&target_path, html).map_err(|e| e.to_string())
 }
@@ -92,11 +104,12 @@ pub async fn export_html_draft(
 pub async fn export_pdf(
     layout_id: String,
     target_path: String,
+    mermaid_svgs: Option<Vec<crate::renderer::MermaidSvgEntry>>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let (path, text) = current_document(&state)?;
     let title = export::derive_title(path.as_deref());
-    let html = export::render_document(&layout_id, &title, path.as_deref(), &text)?;
+    let html = export::render_document(&layout_id, &title, path.as_deref(), &text, mermaid_svgs)?;
     let source_dir = path
         .as_deref()
         .and_then(|p| Path::new(p).parent())
@@ -109,6 +122,7 @@ pub async fn export_pdf_draft(
     parts: ThemeWriteFiles,
     base_theme_id: Option<String>,
     target_path: String,
+    mermaid_svgs: Option<Vec<crate::renderer::MermaidSvgEntry>>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let (path, text) = current_document(&state)?;
@@ -119,6 +133,7 @@ pub async fn export_pdf_draft(
         path.as_deref(),
         parts,
         base_theme_id.as_deref(),
+        mermaid_svgs,
     );
     let source_dir = path
         .as_deref()
@@ -212,6 +227,7 @@ fn render_draft_html(
     path: Option<&str>,
     parts: ThemeWriteFiles,
     base_theme_id: Option<&str>,
+    mermaid_svgs: Option<Vec<crate::renderer::MermaidSvgEntry>>,
 ) -> String {
     export::render_theme_draft(
         markdown,
@@ -219,6 +235,7 @@ fn render_draft_html(
         path,
         &ThemeParts::from(parts),
         base_theme_id,
+        mermaid_svgs,
     )
 }
 

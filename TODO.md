@@ -2,6 +2,14 @@
 
 ## Hohe Priorität
 
+- **E2E-Run 2026-07-09 17:35: 1 Fehler** — Details in
+  [`tests/e2e/artifacts/20260709-173427/errors.md`](tests/e2e/artifacts/20260709-173427/errors.md). Run-Report:
+  [`tests/e2e/artifacts/20260709-173427/report.md`](tests/e2e/artifacts/20260709-173427/report.md).
+
+- **E2E-Run 2026-07-09 17:32: 1 Fehler** — Details in
+  [`tests/e2e/artifacts/20260709-173220/errors.md`](tests/e2e/artifacts/20260709-173220/errors.md). Run-Report:
+  [`tests/e2e/artifacts/20260709-173220/report.md`](tests/e2e/artifacts/20260709-173220/report.md).
+
 - **Theme-System-Ausbau: E1–E9 UMGESETZT** (E1–E7 2026-07-06/07, E8
   Settings-Theme-Browser + E9 Font-Manifest-Felder 2026-07-07; Spec mit
   Etappen-Checkliste in
@@ -29,8 +37,6 @@
   nutzt UTC statt lokaler Zeitzone (std-only, kein chrono).
 
 ## Mittlere Priorität
-
-- **Mermaid im HTML-/PDF-Export**: Aktuell nur In-App-View (View/Split/Live-Preview) rendert ```mermaid```-Fences zu SVG (Frontend, Lazy-Bundle). Export (HTML/PDF) zeigt weiterhin den Code-Block (bewusst in dieser Etappe). Folgepunkt: Backend-seitig mit syntect oder eigenem Renderer in Export-Templates einbinden.
 
 - **E2E `30_tabs_ui` einmalig flaky (2026-07-06)**: Im Voll-Lauf failte
   einmal „Undo-Stack hat den Tab-Wechsel nicht ueberlebt"

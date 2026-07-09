@@ -315,3 +315,41 @@ export async function renderMermaidBlocks(root: HTMLElement | null): Promise<voi
         })();
     }
 }
+
+export type MermaidSvgEntry = { source: string; svg: string | null };
+
+/**
+ * Rendert eine Liste von Mermaid-Quellen fuer den Export (immer light/default Theme).
+ * Liefert Paare {source, svg} zurueck (source-Identitaet fuer Backend-Match).
+ * Bei Render-Fehler svg=null (Backend faellt dann auf Code-Block zurueck).
+ */
+export async function renderMermaidForExport(sources: string[]): Promise<MermaidSvgEntry[]> {
+    if (sources.length === 0) {
+        return [];
+    }
+    let api: any;
+    try {
+        api = await ensureMermaidLoaded();
+    } catch (e) {
+        folioLog.warn('mermaid', 'Mermaid-Bundle für Export konnte nicht geladen werden', { error: String(e) });
+        return sources.map((source) => ({ source, svg: null }));
+    }
+    const results: MermaidSvgEntry[] = [];
+    for (const source of sources) {
+        try {
+            // Export verwendet IMMER die light Variante.
+            const svg = await api.render(source, false);
+            results.push({ source, svg });
+        } catch (err) {
+            cleanupStrayMermaidLater();
+            folioLog.warn('mermaid', 'Mermaid Export-Render fehlgeschlagen', { error: String(err) });
+            results.push({ source, svg: null });
+        }
+    }
+    return results;
+}
+
+// Expose fuer E2E (/eval in 43_mermaid_export.py). Wird NICHT fuer normale
+// App-View oder Dialog-Logik benoetigt.
+(window as any).__renderMermaidForExport = renderMermaidForExport;
+

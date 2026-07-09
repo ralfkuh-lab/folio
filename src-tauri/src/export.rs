@@ -31,8 +31,16 @@ pub fn render_document(
     title: &str,
     path: Option<&str>,
     markdown: &str,
+    mermaid_svgs: Option<Vec<renderer::MermaidSvgEntry>>,
 ) -> Result<String, String> {
-    render_document_in(layout_id, title, path, markdown, &persist::themes_dir())
+    render_document_in(
+        layout_id,
+        title,
+        path,
+        markdown,
+        &persist::themes_dir(),
+        mermaid_svgs,
+    )
 }
 
 pub fn render_theme_preview(
@@ -54,6 +62,7 @@ pub fn render_theme_preview(
         dark,
         theme_id,
         &persist::themes_dir(),
+        None,
     )
 }
 
@@ -63,6 +72,7 @@ pub fn render_theme_draft(
     path: Option<&str>,
     parts: &theme::store::ThemeParts,
     base_theme_id: Option<&str>,
+    mermaid_svgs: Option<Vec<renderer::MermaidSvgEntry>>,
 ) -> String {
     render_theme_draft_in(
         markdown,
@@ -71,6 +81,7 @@ pub fn render_theme_draft(
         parts,
         base_theme_id,
         &persist::themes_dir(),
+        mermaid_svgs,
     )
 }
 
@@ -81,6 +92,7 @@ fn render_theme_draft_in(
     parts: &theme::store::ThemeParts,
     base_theme_id: Option<&str>,
     themes_dir: &Path,
+    mermaid_svgs: Option<Vec<renderer::MermaidSvgEntry>>,
 ) -> String {
     render_theme_parts_in(
         markdown,
@@ -90,9 +102,11 @@ fn render_theme_draft_in(
         parts.manifest.code_is_dark(),
         base_theme_id,
         themes_dir,
+        mermaid_svgs,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_theme_parts_in(
     markdown: &str,
     title: &str,
@@ -101,6 +115,7 @@ fn render_theme_parts_in(
     dark: bool,
     theme_id: Option<&str>,
     themes_dir: &Path,
+    mermaid_svgs: Option<Vec<renderer::MermaidSvgEntry>>,
 ) -> String {
     let content_css = match (dark, parts.dark_css.as_deref()) {
         (true, Some(dark_css)) => format!("{}\n{dark_css}", parts.content_css),
@@ -131,6 +146,7 @@ fn render_theme_parts_in(
         markdown,
         dark,
         parts.manifest.hide_inline_frontmatter,
+        mermaid_svgs,
     ));
 
     let logo_uri = load_preview_logo(
@@ -178,6 +194,7 @@ fn render_document_in(
     path: Option<&str>,
     markdown: &str,
     dir: &Path,
+    mermaid_svgs: Option<Vec<renderer::MermaidSvgEntry>>,
 ) -> Result<String, String> {
     let package = theme::package_in(layout_id, dir)
         .ok_or_else(|| format!("Unbekanntes Layout: '{layout_id}'"))?;
@@ -209,6 +226,7 @@ fn render_document_in(
         markdown,
         dark,
         hide_inline,
+        mermaid_svgs,
     ));
 
     let logo_uri = package.dir.as_deref().and_then(|theme_dir| {
@@ -500,7 +518,7 @@ mod tests {
 
     #[test]
     fn render_document_includes_title_and_body() {
-        let html = render_document("clean", "Hallo Welt", None, "# Hallo").unwrap();
+        let html = render_document("clean", "Hallo Welt", None, "# Hallo", None).unwrap();
         assert!(html.contains("<title>Hallo Welt</title>"));
         assert!(html.contains(r#"<h1 id="hallo">Hallo</h1>"#));
         assert!(html.contains("<style>"));
@@ -526,6 +544,7 @@ mod tests {
             "Code",
             None,
             "```rust\nfn main() {}\n```\n\nDanach",
+            None,
         )
         .unwrap();
         assert!(html.contains(r#"class="language-rust""#), "{html}");
@@ -537,9 +556,9 @@ mod tests {
 
     #[test]
     fn render_document_each_layout_loads_distinct_css() {
-        let classic = render_document("classic", "T", None, "x").unwrap();
-        let clean = render_document("clean", "T", None, "x").unwrap();
-        let github = render_document("github", "T", None, "x").unwrap();
+        let classic = render_document("classic", "T", None, "x", None).unwrap();
+        let clean = render_document("clean", "T", None, "x", None).unwrap();
+        let github = render_document("github", "T", None, "x", None).unwrap();
         assert_ne!(classic, clean);
         assert_ne!(clean, github);
         assert_ne!(classic, github);
@@ -547,7 +566,7 @@ mod tests {
 
     #[test]
     fn render_unknown_layout_errors() {
-        assert!(render_document("bogus", "Test", None, "# Hello").is_err());
+        assert!(render_document("bogus", "Test", None, "# Hello", None).is_err());
     }
 
     #[test]
@@ -605,6 +624,7 @@ mod tests {
             &parts,
             Some("base"),
             temp.path(),
+            None,
         );
 
         assert!(html.contains("<title>Export Titel</title>"));
@@ -637,7 +657,7 @@ mod tests {
 
     #[test]
     fn render_document_escapes_title() {
-        let html = render_document("clean", "<bad>", None, "x").unwrap();
+        let html = render_document("clean", "<bad>", None, "x", None).unwrap();
         assert!(html.contains("<title>&lt;bad&gt;</title>"));
     }
 
@@ -769,7 +789,8 @@ mod tests {
         )
         .unwrap();
 
-        let html = render_document_in("mine", "Custom", None, "# Hallo", temp.path()).unwrap();
+        let html =
+            render_document_in("mine", "Custom", None, "# Hallo", temp.path(), None).unwrap();
         assert!(html.contains(DEFAULT_PAGE_CSS));
         assert!(html.contains("#123456"));
 
@@ -778,7 +799,8 @@ mod tests {
             "html, body { background: papayawhip; }",
         )
         .unwrap();
-        let html = render_document_in("mine", "Custom", None, "# Hallo", temp.path()).unwrap();
+        let html =
+            render_document_in("mine", "Custom", None, "# Hallo", temp.path(), None).unwrap();
         assert!(html.contains("background: papayawhip"));
         assert!(!html.contains(DEFAULT_PAGE_CSS));
     }
@@ -798,11 +820,13 @@ mod tests {
         .unwrap();
         let markdown = "```rust\nfn main() {}\n```";
 
-        let dark = render_document_in("dark-code", "Dark", None, markdown, temp.path()).unwrap();
+        let dark =
+            render_document_in("dark-code", "Dark", None, markdown, temp.path(), None).unwrap();
         assert!(dark.contains("#b48ead"), "{dark}");
         assert!(!dark.contains("#a71d5d"), "{dark}");
 
-        let light = render_document_in("light-code", "Light", None, markdown, temp.path()).unwrap();
+        let light =
+            render_document_in("light-code", "Light", None, markdown, temp.path(), None).unwrap();
         assert!(light.contains("#a71d5d"), "{light}");
         assert!(!light.contains("#b48ead"), "{light}");
     }
@@ -856,6 +880,7 @@ mod tests {
             Some("/p/bericht.md"),
             markdown,
             temp.path(),
+            None,
         )
         .unwrap();
 
@@ -918,6 +943,7 @@ mod tests {
             Some("/p/bericht.md"),
             markdown,
             temp.path(),
+            None,
         )
         .unwrap();
         assert!(
@@ -934,7 +960,7 @@ mod tests {
     fn render_document_rewrites_asset_urls_in_content_and_page_css() {
         let temp = tempfile::tempdir().unwrap();
         write_corporate_theme(&temp, true);
-        let html = render_document_in("corp", "Bericht", None, "# Hai", temp.path()).unwrap();
+        let html = render_document_in("corp", "Bericht", None, "# Hai", temp.path(), None).unwrap();
         // Beide css-vorkommen von `url(asset:logo.png)` muessen zu data:-URIs rewrites
         // geworden sein; `url(asset:...)` darf nirgends mehr vorkommen.
         assert!(
@@ -979,7 +1005,7 @@ mod tests {
                 fs::write(dir.join("assets/broken.txt"), b"not an image").unwrap();
             }
             let html =
-                render_document_in("corp", "Bericht", None, "# Inhalt", temp.path()).unwrap();
+                render_document_in("corp", "Bericht", None, "# Inhalt", temp.path(), None).unwrap();
             assert!(html.contains("<section class=\"folio-cover\"><div></div></section>"));
             assert!(!html.contains("alt=\"logo\""));
         }
@@ -998,7 +1024,7 @@ mod tests {
         .unwrap();
 
         let error =
-            render_document_in("corp", "Bericht", None, "# Inhalt", temp.path()).unwrap_err();
+            render_document_in("corp", "Bericht", None, "# Inhalt", temp.path(), None).unwrap_err();
         assert!(error.contains("missing.png"), "{error}");
     }
 
@@ -1011,7 +1037,7 @@ mod tests {
         fs::write(dir.join("content.css"), ".markdown-body { color: x; }").unwrap();
         fs::write(dir.join("page.css"), "body { margin: 0; }").unwrap();
         // cover.html existiert NICHT — flag false implizit.
-        let html = render_document_in("corp", "B", None, "# x", temp.path()).unwrap();
+        let html = render_document_in("corp", "B", None, "# x", temp.path(), None).unwrap();
         assert!(
             !html.contains("@page :first { margin: 0; }"),
             "@page :first sollte nicht injiziert werden"
@@ -1039,7 +1065,7 @@ mod tests {
         .unwrap();
         fs::write(dir.join("content.css"), ".markdown-body { color: x; }").unwrap();
         fs::write(dir.join("cover.html"), "<h1>{{title}}</h1>").unwrap();
-        let html = render_document_in("corp", "B", None, "# x", temp.path()).unwrap();
+        let html = render_document_in("corp", "B", None, "# x", temp.path(), None).unwrap();
         assert!(
             !html.contains("<section class=\"folio-cover\">"),
             "cover trotz Flag=false emittiert"
@@ -1047,6 +1073,104 @@ mod tests {
         assert!(
             !html.contains("@page :first { margin: 0; }"),
             "@page :first trotz Flag=false emittiert"
+        );
+    }
+
+    #[test]
+    fn render_document_replaces_mermaid_with_svg_div_and_drops_language_mermaid() {
+        let md = "```mermaid\nflowchart TD\nA-->B\n```";
+        let svg = "<svg data-test=\"m1\"><rect/></svg>";
+        let sources = renderer::collect_mermaid_sources(md);
+        let entry = renderer::MermaidSvgEntry {
+            source: sources[0].clone(),
+            svg: Some(svg.to_string()),
+        };
+        let html = render_document("clean", "M", None, md, Some(vec![entry])).unwrap();
+        assert!(html
+            .contains(r#"<div class="mermaid-diagram"><svg data-test="m1"><rect/></svg></div>"#));
+        assert!(!html.contains("language-mermaid"));
+        assert!(!html.contains("flowchart TD")); // source not in output
+    }
+
+    #[test]
+    fn render_document_mermaid_index_match_only_second_replaced() {
+        let md = "```mermaid\nA-->B\n```\n\n```mermaid\nC-->D\n```";
+        let svg2 = "<svg id=\"second\"></svg>";
+        let sources = renderer::collect_mermaid_sources(md);
+        let entry2 = renderer::MermaidSvgEntry {
+            source: sources[1].clone(),
+            svg: Some(svg2.to_string()),
+        };
+        let html = render_document(
+            "clean",
+            "M",
+            None,
+            md,
+            Some(vec![
+                renderer::MermaidSvgEntry {
+                    source: sources[0].clone(),
+                    svg: None,
+                },
+                entry2,
+            ]),
+        )
+        .unwrap();
+        // first remains code block (explicit None svg)
+        assert!(html.contains(r#"class="language-mermaid""#));
+        assert!(html.contains("A--") && html.contains("B"));
+        // second replaced
+        assert!(html.contains(r#"<div class="mermaid-diagram"><svg id="second"></svg></div>"#));
+        // count of mermaid classes ==1 (only the fallback one)
+        assert_eq!(html.matches("language-mermaid").count(), 1);
+    }
+
+    #[test]
+    fn render_document_mermaid_source_mismatch_falls_back_to_code() {
+        let md = "```mermaid\nA-->B\n```";
+        // Falsche Source -> trotz svg kein Replace (source identity gate)
+        let wrong = renderer::MermaidSvgEntry {
+            source: "WRONG SOURCE".to_string(),
+            svg: Some("<svg id=\"wrong\"/>".to_string()),
+        };
+        let html = render_document("clean", "M", None, md, Some(vec![wrong])).unwrap();
+        // diagram class selector is in CSS always; check no *inserted* mermaid div with our svg
+        assert!(
+            html.contains(r#"class="language-mermaid""#),
+            "mismatch must fallback to code block"
+        );
+        assert!(
+            !html.contains(r#"<svg id="wrong""#),
+            "mismatch svg must not be embedded"
+        );
+        assert!(
+            html.contains("A-->B") || html.contains("A--&gt;B"),
+            "source of code block should be present"
+        );
+    }
+
+    #[test]
+    fn render_document_mermaid_svgs_none_keeps_code_blocks_like_before() {
+        let md = "```mermaid\nflowchart LR\nX\n```";
+        let html_none = render_document("github", "M", None, md, None).unwrap();
+        let html_empty = render_document("github", "M", None, md, Some(vec![])).unwrap();
+        for h in [&html_none, &html_empty] {
+            assert!(
+                h.contains(r#"class="language-mermaid""#),
+                "should keep mermaid code when no svgs"
+            );
+            assert!(h.contains("flowchart LR"));
+        }
+    }
+
+    #[test]
+    fn render_document_non_mermaid_rust_stays_colored() {
+        let md = "```rust\nfn main(){}\n```";
+        // mermaidSvgs provided but no mermaid blocks -> rust stays highlighted
+        let html = render_document("clean", "C", None, md, Some(vec![])).unwrap();
+        assert!(html.contains(r#"class="language-rust""#));
+        assert!(
+            html.contains("#a71d5d") || html.contains("span style"),
+            "syntect coloring present"
         );
     }
 }

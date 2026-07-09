@@ -30,9 +30,14 @@ def run(ctx):
     with ctx.step("Rust-Fence bleibt pre code.language-rust (kein Mermaid)"):
         r = ctx.api.dom(".markdown-body pre code.language-rust")
         ctx.expect(r.get("exists") is True, f"rust code block fehlt: {r}")
-        # Mermaid-Block selbst darf kein pre mehr sein (wurde ersetzt)
+        # Die Fixture enthaelt einen validen UND einen kaputten Mermaid-
+        # Block (fuer den Export-Fallback in 43): der valide wird durch
+        # div.mermaid-diagram ersetzt (Step oben), der kaputte bleibt
+        # bewusst als pre stehen und traegt einen .mermaid-error-Hinweis.
         mpre = ctx.api.dom(".markdown-body pre code.language-mermaid")
-        ctx.expect(mpre.get("exists") is not True, "mermaid pre sollte durch div ersetzt sein")
+        ctx.expect(mpre.get("exists") is True, "kaputter mermaid-Block sollte als pre bleiben")
+        merr = ctx.api.dom(".markdown-body .mermaid-error", timeout_ms=3000)
+        ctx.expect(merr.get("exists") is True, f"mermaid-error-Hinweis fehlt: {merr}")
 
     with ctx.step("console.errors leer"):
         errs = ctx.api.console_errors(clear=False)

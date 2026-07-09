@@ -1,6 +1,6 @@
 # Mermaid E2E Fixture
 
-Nur fuer Szenario 42 — Flowchart + Gegenprobe Rust.
+Nur fuer Szenario 42 (In-App) und 43 (Export). Flowchart + kaputter Block + Rust-Gegenprobe.
 
 ```mermaid
 flowchart TD
@@ -16,4 +16,11 @@ Rust-Block muss als Code-Block bleiben:
 fn main() {
     println!("kein mermaid");
 }
+```
+
+Kaputter Block (fuer Export-Fallback-Test in 43):
+
+```mermaid
+flowchart LR
+    A --> ???[
 ```

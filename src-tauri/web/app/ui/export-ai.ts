@@ -1,5 +1,6 @@
 import { populateModelPicker, AiConfig, CatalogResult } from './ai-model-picker';
 import { folioLog } from '../util/log';
+import type { MermaidSvgEntry } from '../view/mermaid';
 
 export const EXPORT_AI_DRAFT_ID = '__folio_export_ai_draft';
 
@@ -57,6 +58,11 @@ let deps: Deps | null = null;
 let busy = false;
 let draftFiles: ThemeWriteFiles | null = null;
 let draftBaseThemeId: string | null = null;
+let currentMermaidSvgs: MermaidSvgEntry[] | null = null;
+
+export function setExportMermaidSvgs(svgs: MermaidSvgEntry[] | null): void {
+    currentMermaidSvgs = svgs;
+}
 
 function $(id: string): HTMLElement | null {
     return document.getElementById(id);
@@ -201,10 +207,12 @@ async function renderDraftPreview(): Promise<void> {
     const iframe = document.querySelector<HTMLIFrameElement>('#export-ai-draft-card iframe');
     if (!iframe) return;
     try {
-        const html = await deps.invoke<string>('export_render_draft', {
+        const payload: any = {
             parts: draftFiles,
             baseThemeId: draftBaseThemeId,
-        });
+        };
+        if (currentMermaidSvgs) payload.mermaidSvgs = currentMermaidSvgs;
+        const html = await deps.invoke<string>('export_render_draft', payload);
         iframe.srcdoc = html;
     } catch (error) {
         folioLog.warn('export-ai', 'Draft-Preview fehlgeschlagen', {
@@ -364,6 +372,7 @@ export function clearExportAiDraft(): void {
     busy = false;
     draftFiles = null;
     draftBaseThemeId = null;
+    currentMermaidSvgs = null;
     document.getElementById('export-ai-draft-card')?.remove();
     const actions = $('export-ai-draft-actions');
     if (actions) actions.hidden = true;
@@ -375,11 +384,13 @@ export function clearExportAiDraft(): void {
 export async function exportAiDraftSave(format: ExportFormat, targetPath: string): Promise<boolean> {
     if (!deps || !draftFiles || !deps.isDraftSelected()) return false;
     const cmd = format === 'pdf' ? 'export_pdf_draft' : 'export_html_draft';
-    await deps.invoke(cmd, {
+    const payload: any = {
         parts: draftFiles,
         baseThemeId: draftBaseThemeId,
         targetPath,
-    });
+    };
+    if (currentMermaidSvgs) payload.mermaidSvgs = currentMermaidSvgs;
+    await deps.invoke(cmd, payload);
     return true;
 }
 

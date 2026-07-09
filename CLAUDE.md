@@ -217,8 +217,13 @@ sonst lehnt Tauri den Build ab.
   Lazy-Bundle (`dist/mermaid.bundle.js`, via Script-Injection beim ersten
   Vorkommen; analog whenMonacoLoaded). Idempotenz per (source+theme)-Cache,
   Theme-Re-Render, DOM-Connected-Race-Schutz, Fehler → Pre + .mermaid-error
-  (stray SVGs von mermaid v11 werden aufgeraeumt). Export (HTML/PDF) bleibt
-  bewusst bei Code-Block (Folgepunkt). `renderMermaidBlocks` wird parallel
+  (stray SVGs von mermaid v11 werden aufgeraeumt). Export (HTML/PDF): Frontend
+  rendert via `renderMermaidForExport` (immer light) vor; Command
+  `export_mermaid_sources` (comrak-basiert) + gemeinsame Erkennungsfunktion
+  liefert Quellen; Export-Commands erhalten optionales `mermaidSvgs`;
+  Backend ersetzt i-ten Block durch `<div class="mermaid-diagram">svg</div>`
+  (None → Code-Block-Fallback). Index-Match, Light-only, Theme-Editor-Vorschau
+  (ohne Dialog-Kontext) bleibt Code-Block. `renderMermaidBlocks` wird parallel
   zu `highlightCodeBlocks` an denselben Stellen gerufen.
 - **View-Themes** (`view/theme.ts`, Backend-Commands `view_themes` /
   `view_theme_css`): Theme-CSS ist immer auf `.markdown-body` gescopt

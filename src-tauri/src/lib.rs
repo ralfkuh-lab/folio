@@ -417,6 +417,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::export::export_html_draft,
             commands::export::export_pdf,
             commands::export::export_pdf_draft,
+            commands::export::export_mermaid_sources,
             commands::export::pick_export_target,
             commands::icon::file_icon_data_uri,
             commands::icon::file_icons_batch,
