@@ -318,12 +318,16 @@ export function initTranslateDialog(): void {
     const events = window.__TAURI__ && window.__TAURI__.event;
     if (events && typeof events.listen === 'function') {
         events.listen('menu:edit_ai_translate', () => void openTranslateDialog());
-        events.listen('document:loaded', (event: any) => {
-            documentIsMarkdown = event?.payload?.kind === 'markdown';
+        // Die Events dienen nur als Trigger; der Markdown-Status kommt aus
+        // der Body-Klasse, die der seq-geguardete document:loaded-Handler
+        // in state/document.ts pflegt — rohe Payload-Auswertung hier waere
+        // ungeschuetzt gegen stale Events (Review-Befund 2026-07-09).
+        events.listen('document:loaded', () => {
+            documentIsMarkdown = document.body.classList.contains('kind-markdown');
             syncMenuEnabled();
         });
         events.listen('document:closed', () => {
-            documentIsMarkdown = false;
+            documentIsMarkdown = document.body.classList.contains('kind-markdown');
             syncMenuEnabled();
         });
         events.listen('ai:translate_stream', (event: any) => {

@@ -42,6 +42,9 @@ vi.mock('../../app/editor/shell', () => ({
     isEditorMounted: vi.fn().mockReturnValue(false),
     loadEditorText: vi.fn(),
 }));
+vi.mock('../../app/state/tabs', () => ({
+    getActiveTabId: vi.fn(),
+}));
 
 let tauri: TauriMockHandles;
 
@@ -314,5 +317,166 @@ describe('state/document — document:loaded listener', () => {
         );
         expect(codeView.mount).not.toHaveBeenCalled();
         expect(codeView.dispose).toHaveBeenCalled();
+    });
+});
+
+describe('state/document — lifecycle seq guards (spec)', () => {
+    async function initAndLoadWithSeq(seq: number, path = '/tmp/doc.md', text = 'content') {
+        const docMod = await import('../../app/state/document');
+        const tabsMod = await import('../../app/state/tabs');
+        vi.mocked(tabsMod.getActiveTabId).mockReturnValue(1);
+        docMod.initDocumentState({ setActiveMode: vi.fn() });
+        tauri.emitEvent('document:loaded', {
+            path,
+            kind: 'markdown',
+            text,
+            content: '',
+            tocHtml: '',
+            seq,
+            tabId: 1,
+        });
+        return docMod;
+    }
+
+    beforeEach(() => {
+        // ensure fresh modules for each subtest
+        vi.clearAllMocks();
+    });
+
+    it('verwirft saved mit aelterer seq (cleanText bleibt unveraendert)', async () => {
+        const docMod = await initAndLoadWithSeq(10, '/tmp/a.md', 'original');
+        expect(docMod.getCleanText()).toBe('original');
+
+        tauri.emitEvent('document:saved', {
+            path: '/tmp/a.md',
+            text: 'from-old-save',
+            seq: 9,
+            tabId: 1,
+        });
+        expect(docMod.getCleanText()).toBe('original'); // stale verworfen
+
+        tauri.emitEvent('document:saved', {
+            path: '/tmp/a.md',
+            text: 'fresh-save',
+            seq: 11,
+            tabId: 1,
+        });
+        expect(docMod.getCleanText()).toBe('fresh-save');
+    });
+
+    it('verwirft dirty_changed mit aelterer seq', async () => {
+        const docMod = await initAndLoadWithSeq(20);
+        expect(docMod.getIsDirty()).toBe(false);
+
+        tauri.emitEvent('document:dirty_changed', { is_dirty: true, seq: 19, tabId: 1 });
+        expect(docMod.getIsDirty()).toBe(false);
+
+        tauri.emitEvent('document:dirty_changed', { is_dirty: true, seq: 21, tabId: 1 });
+        expect(docMod.getIsDirty()).toBe(true);
+    });
+
+    it('verwirft closed mit aelterer seq (state bleibt)', async () => {
+        const docMod = await initAndLoadWithSeq(30);
+        expect(docMod.getCurrentPath()).toBe('/tmp/doc.md');
+
+        tauri.emitEvent('document:closed', { seq: 29, tabId: 1 });
+        expect(docMod.getCurrentPath()).toBe('/tmp/doc.md');
+
+        tauri.emitEvent('document:closed', { seq: 31, tabId: 1 });
+        expect(docMod.getCurrentPath()).toBeNull();
+    });
+
+    it('dirty_changed mit fremder tabId wird verworfen; ohne oder passend angewandt', async () => {
+        // Referenz fuer "passend" ist der zuletzt GELADENE Tab (tabId 1 aus
+        // initAndLoadWithSeq), NICHT getActiveTabId() — die tabs:changed-
+        // Sicht hinkt bei Tab-Aktivierung hinterher (Emit-Reihenfolge
+        // loaded -> dirty -> tabs:changed).
+        const docMod = await initAndLoadWithSeq(40);
+        const tabsMod = await import('../../app/state/tabs');
+        vi.mocked(tabsMod.getActiveTabId).mockReturnValue(42);
+
+        // fremd (weder geladener Tab noch sonstwas Passendes)
+        tauri.emitEvent('document:dirty_changed', { is_dirty: true, seq: 41, tabId: 99 });
+        expect(docMod.getIsDirty()).toBe(false);
+
+        // ohne tabId -> anwenden
+        tauri.emitEvent('document:dirty_changed', { is_dirty: true, seq: 42 });
+        expect(docMod.getIsDirty()).toBe(true);
+
+        // passend = zuletzt geladener Tab
+        tauri.emitEvent('document:dirty_changed', { is_dirty: false, seq: 43, tabId: 1 });
+        expect(docMod.getIsDirty()).toBe(false);
+    });
+
+    it('verworfenes Fremd-Event rueckt die Sequenz NICHT vor (last-applied-Semantik)', async () => {
+        // codex-Review-Befund: ein per tabId verworfenes dirty darf die
+        // Lifecycle-Sequenz nicht vorruecken — sonst wuerde ein danach
+        // zugestelltes legitimes Event mit kleinerer seq unterdrueckt.
+        const docMod = await initAndLoadWithSeq(60); // laedt tab 1, seq 60
+        tauri.emitEvent('document:dirty_changed', { is_dirty: true, seq: 65, tabId: 99 });
+        expect(docMod.getIsDirty()).toBe(false); // verworfen
+        // Legitimes Event mit seq zwischen 60 und 65 muss noch anwenden.
+        tauri.emitEvent('document:dirty_changed', { is_dirty: true, seq: 62, tabId: 1 });
+        expect(docMod.getIsDirty()).toBe(true);
+    });
+
+    it('dirty_changed des frisch aktivierten Tabs wird angewandt, obwohl tabs:changed noch aussteht', async () => {
+        // Aktivierungs-Sequenz aus commands/tabs.rs: loaded(tab 2) ->
+        // dirty_changed(tab 2) -> tabs:changed. getActiveTabId() liefert
+        // zu diesem Zeitpunkt noch den ALTEN Tab — das dirty des neuen
+        // Tabs darf trotzdem nicht als "fremd" verworfen werden.
+        const docMod = await initAndLoadWithSeq(50); // laedt tab 1
+        const tabsMod = await import('../../app/state/tabs');
+        vi.mocked(tabsMod.getActiveTabId).mockReturnValue(1); // tabs:changed haengt
+
+        tauri.emitEvent('document:loaded', {
+            path: '/tmp/zwei.md',
+            kind: 'markdown',
+            text: 'tab zwei',
+            content: '',
+            tocHtml: '',
+            seq: 51,
+            tabId: 2,
+        });
+        tauri.emitEvent('document:dirty_changed', { is_dirty: true, seq: 52, tabId: 2 });
+        expect(docMod.getIsDirty()).toBe(true);
+    });
+
+    it('bestehende Events ohne seq bleiben kompatibel (Alt-Pfad)', async () => {
+        const docMod = await import('../../app/state/document');
+        docMod.initDocumentState({ setActiveMode: vi.fn() });
+        tauri.emitEvent('document:loaded', { path: '/tmp/no-seq.md', kind: 'text', text: 'no-seq', content: '', tocHtml: '' });
+        expect(docMod.getCurrentPath()).toBe('/tmp/no-seq.md');
+        tauri.emitEvent('document:dirty_changed', { is_dirty: true });
+        expect(docMod.getIsDirty()).toBe(true);
+        tauri.emitEvent('document:saved', { path: '/tmp/no-seq.md', text: 'saved-no-seq' });
+        expect(docMod.getCleanText()).toBe('saved-no-seq');
+        tauri.emitEvent('document:closed', {});
+        expect(docMod.getCurrentPath()).toBeNull();
+    });
+
+    it('Szenario: loaded(5) -> closed(6) -> verspaetetes loaded(4/5) verworfen; loaded(7) nach closed wird angewandt', async () => {
+        const docMod = await import('../../app/state/document');
+        const tabsMod = await import('../../app/state/tabs');
+        vi.mocked(tabsMod.getActiveTabId).mockReturnValue(1);
+        docMod.initDocumentState({ setActiveMode: vi.fn() });
+
+        tauri.emitEvent('document:loaded', { path: '/p.md', text: 'v5', seq: 5, tabId: 1 });
+        expect(docMod.getCleanText()).toBe('v5');
+
+        tauri.emitEvent('document:closed', { seq: 6, tabId: 1 });
+        expect(docMod.getCurrentPath()).toBeNull();
+
+        // verspaetetes altes loaded
+        tauri.emitEvent('document:loaded', { path: '/p.md', text: 'stale4', seq: 4, tabId: 1 });
+        expect(docMod.getCurrentPath()).toBeNull();
+
+        tauri.emitEvent('document:loaded', { path: '/p.md', text: 'stale5', seq: 5, tabId: 1 });
+        expect(docMod.getCurrentPath()).toBeNull();
+
+        // neues nach close
+        tauri.emitEvent('document:loaded', { path: '/q.md', text: 'v7', seq: 7, tabId: 1 });
+        expect(docMod.getCurrentPath()).toBe('/q.md');
+        expect(docMod.getCleanText()).toBe('v7');
     });
 });

@@ -97,6 +97,10 @@ describe('translate-dialog', () => {
         });
 
         handles.invoke.mockClear();
+        // Quelle des Markdown-Status ist seit dem Lifecycle-seq-Review die
+        // Body-Klasse (gepflegt vom geguardeten state/document.ts-Handler),
+        // nicht mehr der rohe Event-Payload — Tests spiegeln das.
+        document.body.classList.remove('kind-markdown');
         handles.emitEvent('document:closed');
         expect((document.getElementById('tb-ai-translate') as HTMLButtonElement).disabled)
             .toBe(true);
@@ -106,6 +110,7 @@ describe('translate-dialog', () => {
         });
 
         handles.invoke.mockClear();
+        document.body.classList.add('kind-markdown');
         handles.emitEvent('document:loaded', { kind: 'markdown' });
         expect((document.getElementById('tb-ai-translate') as HTMLButtonElement).disabled)
             .toBe(false);

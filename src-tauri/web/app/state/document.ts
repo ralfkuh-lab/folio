@@ -26,6 +26,7 @@ import { showUnsavedDialog } from '../ui/dialogs';
 import { isEditorMounted, loadEditorText } from '../editor/shell';
 import { getCachedSettings } from '../ui/settings-dialog';
 import { folioLog, safeInvoke } from '../util/log';
+import { getActiveTabId } from './tabs';
 // getCachedSettings wird im FolioCodeView-Mount-Pfad weiter genutzt
 // (autoFormat-Flag); der Default-Mode-Switch laeuft jetzt im Backend
 // (document_service::open). Frontend-Resolver entfernt — sonst doppelter
@@ -39,9 +40,23 @@ let deps: Deps = null;
 let currentPath: string | null = null;
 let cleanText = '';
 let isDirty = false;
-// Hoechste bereits angewandte document:loaded-Sequenznummer (Stale-Guard,
-// siehe Listener in initDocumentState).
-let lastLoadedSeq = 0;
+// Hoechste bereits angewandte Sequenznummer ueber ALLE document:*-Lifecycle-Events
+// (loaded/closed/saved/dirty_changed). Gemeinsamer monotoner Counter im Backend.
+let lastLifecycleSeq = 0;
+// Tab-ID des zuletzt angewandten document:loaded. WICHTIG als primaere
+// Referenz fuer die tabId-Validierung von saved/dirty_changed: das Backend
+// emittiert bei Tab-Aktivierung loaded -> dirty_changed -> tabs:changed —
+// getActiveTabId() (gespeist aus tabs:changed) hinkt also hinterher und
+// wuerde das legitime dirty des frisch aktivierten Tabs als "fremd"
+// verwerfen. loaded kommt per seq-Ordnung garantiert vor seinem dirty.
+let lastLoadedTabId: number | null = null;
+
+/** Erwartete Tab-ID fuer saved/dirty_changed-Validierung: primaer der
+ *  zuletzt geladene Tab, Fallback auf die tabs:changed-Sicht. */
+function expectedLifecycleTabId(): number | null {
+    if (lastLoadedTabId !== null) return lastLoadedTabId;
+    return getActiveTabId();
+}
 
 function invoke(cmd: string, args?: any): Promise<any> {
     return window.__TAURI__.core.invoke(cmd, args);
@@ -52,6 +67,38 @@ function $(id: string): HTMLElement | null { return document.getElementById(id);
 export function getCurrentPath(): string | null { return currentPath; }
 export function getCleanText(): string { return cleanText; }
 export function getIsDirty(): boolean { return isDirty; }
+
+/** Gemeinsamer Stale-Check fuer alle vier document:*-Lifecycle-Events.
+ *  Reiner Vergleich OHNE Seiteneffekt — die Sequenz rueckt erst
+ *  commitLifecycleSeq() vor, und zwar NUR fuer tatsaechlich angewandte
+ *  Events (nach allen Validierungen). Sonst wuerde ein per tabId
+ *  verworfenes Fremd-Event die Sequenz vorruecken und spaetere legitime
+ *  Events mit kleinerer seq unterdruecken ("last APPLIED"-Semantik).
+ *  Events ohne seq (Alt-Pfade, Tests) laufen durch. Reihenfolge-Semantik:
+ *  dirty_changed ist hochfrequent — ein loaded mit kleinerer seq NACH einem
+ *  angewandten dirty wird korrekt verworfen (fruehere Lifecycle-Phase).
+ */
+function isStaleLifecycleEvent(data: any): boolean {
+    if (typeof data.seq !== 'number') return false;
+    if (data.seq <= lastLifecycleSeq) {
+        folioLog.debug('document', 'stale lifecycle event verworfen', {
+            seq: data.seq,
+            lastApplied: lastLifecycleSeq,
+            path: data.path || '',
+            tabId: data.tabId,
+        });
+        return true;
+    }
+    return false;
+}
+
+/** Rueckt die Lifecycle-Sequenz vor — aufrufen NACHDEM ein Event alle
+ *  Validierungen passiert hat und angewandt wird. */
+function commitLifecycleSeq(data: any): void {
+    if (typeof data.seq === 'number' && data.seq > lastLifecycleSeq) {
+        lastLifecycleSeq = data.seq;
+    }
+}
 
 function fileFullName(p: string | null): string | null {
     if (!p) return null;
@@ -334,23 +381,8 @@ export function initDocumentState(d: Deps): void {
     listen('document:loaded', function (event: any) {
         const data = (event && event.payload) || {};
 
-        // Stale-Guard: das Backend nummeriert alle document:loaded-Emits
-        // monoton (seq). Ein Event, das NACH einem neueren verarbeitet
-        // wuerde, ist per Definition veraltet — es darf weder cleanText/
-        // UI noch Monacos Model anfassen (der Same-Tab-Pfad in
-        // editor/mount.ts wuerde bei Textabweichung setValue ausfuehren
-        // und damit den Undo-Stack still loeschen; E2E-Flake 30_tabs_ui).
-        if (typeof data.seq === 'number') {
-            if (data.seq <= lastLoadedSeq) {
-                folioLog.debug('document', 'stale document:loaded verworfen', {
-                    seq: data.seq,
-                    lastApplied: lastLoadedSeq,
-                    path: data.path || '',
-                });
-                return;
-            }
-            lastLoadedSeq = data.seq;
-        }
+        if (isStaleLifecycleEvent(data)) return;
+        commitLifecycleSeq(data);
 
         // Pending Live-Preview-Renders verwerfen — sonst koennte eine
         // verspaetete Antwort aus dem alten Dirty-Text den frischen
@@ -360,6 +392,7 @@ export function initDocumentState(d: Deps): void {
         // 1. State-Setup
         currentPath = data.path || null;
         cleanText = data.text || '';
+        lastLoadedTabId = typeof data.tabId === 'number' ? data.tabId : null;
         markDirty(false);
         setReloadButtonPending(false);
         setStatusPath(data.path || 'Bereit', false);
@@ -437,7 +470,24 @@ export function initDocumentState(d: Deps): void {
     });
 
     listen('document:dirty_changed', function (event: any) {
-        const dirty = event && event.payload && (event.payload.is_dirty || event.payload.isDirty);
+        const data = (event && event.payload) || {};
+        if (isStaleLifecycleEvent(data)) return;
+        // tabId-Validierung: nur fuer saved/dirty_changed; loaded/closed
+        // duerfen nicht gefiltert werden (loaded wechselt aktiv, closed
+        // raeumt). Referenz ist expectedLifecycleTabId() — NICHT direkt
+        // getActiveTabId(), siehe Kommentar an lastLoadedTabId.
+        if (typeof data.tabId === 'number') {
+            const expected = expectedLifecycleTabId();
+            if (expected !== null && data.tabId !== expected) {
+                folioLog.debug('document', 'document:dirty_changed von fremdem Tab verworfen', {
+                    tabId: data.tabId,
+                    expected,
+                });
+                return;
+            }
+        }
+        commitLifecycleSeq(data);
+        const dirty = data.is_dirty || data.isDirty;
         markDirty(!!dirty);
     });
 
@@ -480,9 +530,12 @@ export function initDocumentState(d: Deps): void {
     // Editor, "Bereit"-Statusbar, kein Word-Count.
     listen('document:closed', function (event: any) {
         const data = (event && event.payload) || {};
+        if (isStaleLifecycleEvent(data)) return;
+        commitLifecycleSeq(data);
         invalidatePreview();
         currentPath = null;
         cleanText = '';
+        lastLoadedTabId = null;
         markDirty(false);
         setReloadButtonPending(false);
         if (window.FolioEditor && typeof window.FolioEditor.closeDocument === 'function'
@@ -513,6 +566,20 @@ export function initDocumentState(d: Deps): void {
 
     listen('document:saved', function (event: any) {
         const data = (event && event.payload) || {};
+        if (isStaleLifecycleEvent(data)) return;
+        // tabId-Validierung nur fuer saved (und dirty) — Referenz wie dort
+        // expectedLifecycleTabId(), nicht die nachlaufende tabs:changed-Sicht.
+        if (typeof data.tabId === 'number') {
+            const expected = expectedLifecycleTabId();
+            if (expected !== null && data.tabId !== expected) {
+                folioLog.debug('document', 'document:saved von fremdem Tab verworfen', {
+                    tabId: data.tabId,
+                    expected,
+                });
+                return;
+            }
+        }
+        commitLifecycleSeq(data);
         // Kanonischer Render kommt im Payload — pending Preview-Renders aus
         // dem Pre-Save-Dirty-Text duerfen den nicht ueberschreiben.
         invalidatePreview();

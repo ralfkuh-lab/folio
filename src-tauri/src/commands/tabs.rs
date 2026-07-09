@@ -241,7 +241,7 @@ pub fn activate(state: &AppState, handle: &AppHandle, id: u64) -> Result<TabTran
             handle
                 .emit(
                     "document:dirty_changed",
-                    serde_json::json!({ "is_dirty": dirty, "tabId": tab_id }),
+                    serde_json::json!({ "is_dirty": dirty, "tabId": tab_id, "seq": crate::state::next_doc_seq() }),
                 )
                 .map_err(|error| TabError::Internal(error.to_string()))?;
             crate::automation::wait::signal_document_loaded(handle.state::<AppState>().inner());
@@ -323,7 +323,7 @@ fn emit_active_document(state: &AppState, handle: &AppHandle) -> Result<(), TabE
         handle
             .emit(
                 "document:dirty_changed",
-                serde_json::json!({ "is_dirty": dirty, "tabId": id }),
+                serde_json::json!({ "is_dirty": dirty, "tabId": id, "seq": crate::state::next_doc_seq() }),
             )
             .map_err(|error| TabError::Internal(error.to_string()))?;
         crate::automation::wait::signal_document_loaded(handle.state::<AppState>().inner());
@@ -335,7 +335,10 @@ fn emit_active_document(state: &AppState, handle: &AppHandle) -> Result<(), TabE
 
 fn emit_document_closed(handle: &AppHandle, id: u64) -> Result<(), TabError> {
     handle
-        .emit("document:closed", serde_json::json!({ "tabId": id }))
+        .emit(
+            "document:closed",
+            serde_json::json!({ "tabId": id, "seq": crate::state::next_doc_seq() }),
+        )
         .map_err(|error| TabError::Internal(error.to_string()))
 }
 

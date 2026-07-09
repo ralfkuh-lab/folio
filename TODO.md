@@ -48,18 +48,6 @@
   auftrat, ist der Beweis statistisch: bei erneutem Auftreten trennt
   die neue Frontend-Assertion die beiden Mechanismen sauber.
 
-- **Dokument-Lifecycle-Events vollstaendig sequenzieren** (codex-Review
-  des Flake-Fixes, 2026-07-09): die `seq`-Haertung deckt nur
-  `document:loaded` ab. Offen bleiben stale `document:closed` (ein vor
-  dem Close emittiertes, danach zugestelltes loaded liefe durch, weil
-  keine neuere loaded-seq dazwischen liegt), `document:dirty_changed`
-  (ignoriert `tabId` — ein verspaetetes Clean eines alten Tabs kann den
-  aktuellen Dirty-State/Save-Button verfaelschen) und `document:saved`
-  (gleiche Klasse, nur UI-Konsistenz). Sauber waere eine gemeinsame
-  Lifecycle-Revision fuer loaded/closed/saved/dirty_changed plus
-  tabId-Validierung im Frontend. Kein akuter Fehler bekannt — bewusst
-  vom Flake-Fix getrennt gehalten.
-
 - **Menu-Keybindings (Accelerators) greifen oft nicht**: Viele der nativen
   Tauri-Menü-Accelerators (Ctrl+S Speichern, Ctrl+Z Undo, Ctrl+W Schließen,
   Ctrl+1/2/3 Mode, …) feuern nicht zuverlässig — User-Bericht 2026-05-19.

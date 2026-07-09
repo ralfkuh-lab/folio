@@ -76,6 +76,13 @@ sonst lehnt Tauri den Build ab.
   treibt den Roundtrip aktiv (Debounce + Generation-Token-
   Invalidierung in `view/preview.ts`); das passt nicht ins
   Push-Event-Modell der kanonischen `document:loaded`/`saved`-Pfade.
+- **Document-Lifecycle-Events**: gemeinsamer monotoner seq-Counter
+  (`next_doc_seq` in state.rs) fuer `document:loaded|closed|saved|dirty_changed`.
+  Frontend (`state/document.ts`) verwirft via `isStaleLifecycleEvent` alle
+  Events mit seq <= lastApplied (inkl. cross-Tab-Races); zusaetzlich
+  tabId-Validierung fuer saved/dirty_changed gegen `getActiveTabId()`.
+  loaded/closed werden nur per seq geschuetzt. Alt-Payloads ohne seq
+  laufen durch.
 - **Automation-API**: nur Loopback. Keine externen Bind-Adressen.
   Security-Middleware (`automation/middleware.rs::security_guard`):
   Host-Header-Allowlist (gegen DNS-Rebinding), Origin-Allowlist (nur

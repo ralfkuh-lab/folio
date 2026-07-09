@@ -13,7 +13,7 @@ use crate::{
     workspace::Workspace,
 };
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
@@ -248,7 +248,7 @@ impl AppState {
                 move |is_dirty| {
                     let _ = app.emit(
                         "document:dirty_changed",
-                        serde_json::json!({ "is_dirty": is_dirty, "tabId": tab_id }),
+                        serde_json::json!({ "is_dirty": is_dirty, "tabId": tab_id, "seq": next_doc_seq() }),
                     );
                     Self::schedule_tabs_changed(app.clone());
                     if !is_dirty {
@@ -276,6 +276,7 @@ impl AppState {
                             "tocHtml": toc::render_html(&toc_entries),
                             "headingMap": crate::commands::editor::heading_map(&toc_entries),
                             "tabId": tab_id,
+                            "seq": next_doc_seq(),
                         }),
                     );
                     Self::schedule_tabs_changed(app.clone());
@@ -353,15 +354,7 @@ impl AppState {
         path: &str,
         text: &str,
     ) -> Result<(), String> {
-        // Monoton steigende Sequenznummer ueber ALLE document:loaded-Emits.
-        // Das Frontend verwirft Events mit aelterer seq als der zuletzt
-        // angewandten: ein verspaetet zugestelltes/dupliziertes loaded darf
-        // weder Monacos Model (setValue killt den Undo-Stack still, weil
-        // withProgrammaticWrite den Sync unterdrueckt) noch cleanText/UI
-        // auf einen alten Stand zuruecksetzen. Hintergrund: E2E-Flake
-        // 30_tabs_ui ("Undo-Stack hat den Tab-Wechsel nicht ueberlebt").
-        static LOADED_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-        let seq = LOADED_SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let seq = next_doc_seq();
         let toc_entries = toc::extract(text);
         app.emit(
             "document:loaded",
@@ -379,4 +372,16 @@ impl AppState {
         )
         .map_err(|error| error.to_string())
     }
+}
+
+/// Gemeinsamer monotoner Sequenzzähler für ALLE vier document:*-Lifecycle-Events
+/// (loaded, closed, saved, dirty_changed). Wird im Frontend als Stale-Guard
+/// verwendet: Events mit seq <= lastApplied werden verworfen (sichert gegen
+/// Reordering/Duplikate über Tab-Wechsel und asynchrone Callbacks).
+/// Relaxed reicht für Ticket-Vergabe; SeqCst für Konsistenz mit vorherigem
+/// loaded-Pfad.
+static DOC_LIFECYCLE_SEQ: AtomicU64 = AtomicU64::new(1);
+
+pub(crate) fn next_doc_seq() -> u64 {
+    DOC_LIFECYCLE_SEQ.fetch_add(1, Ordering::SeqCst)
 }

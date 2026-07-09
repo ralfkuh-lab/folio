@@ -7,18 +7,23 @@ use tauri::{AppHandle, Emitter, State};
 /// Dirty-Prompt liegt im Frontend (vor dem Aufruf), nicht hier.
 #[tauri::command]
 pub async fn close_document(state: State<'_, AppState>, handle: AppHandle) -> Result<(), String> {
-    state
-        .tabs
-        .lock()
-        .map_err(|_| "tabs lock poisoned".to_string())?
-        .active_mut()
-        .document_store
-        .close();
+    let closed_id = {
+        let mut tabs = state
+            .tabs
+            .lock()
+            .map_err(|_| "tabs lock poisoned".to_string())?;
+        let id = tabs.active().id;
+        tabs.active_mut().document_store.close();
+        id
+    };
     if let Ok(mut vault) = state.vault.lock() {
         vault.set_active(None);
     }
     handle
-        .emit("document:closed", serde_json::json!({}))
+        .emit(
+            "document:closed",
+            serde_json::json!({ "tabId": closed_id, "seq": crate::state::next_doc_seq() }),
+        )
         .map_err(|error| error.to_string())?;
     AppState::emit_tabs_changed(&handle)
 }
