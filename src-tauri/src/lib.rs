@@ -9,6 +9,7 @@ pub mod file_icon;
 pub mod file_kind;
 pub mod file_resolver;
 pub mod frontmatter;
+pub mod git_branch;
 pub mod heading_anchor;
 pub mod link_interceptor;
 pub mod logging;

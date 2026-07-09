@@ -253,7 +253,7 @@ impl Vault {
         });
         Ok(entries
             .iter()
-            .map(|(path, info)| self.item_html(&path.to_string_lossy(), info))
+            .map(|(path, info)| self.item_html(&path.to_string_lossy(), info, None))
             .collect())
     }
 
@@ -298,7 +298,7 @@ impl Vault {
         self.expanded_dirs.iter().cloned().collect()
     }
 
-    fn item_html(&self, original_path: &str, info: &EntryInfo) -> String {
+    fn item_html(&self, original_path: &str, info: &EntryInfo, branch: Option<&str>) -> String {
         // Bei .lnk-Shortcuts navigieren wir zum aufgelösten Ziel; die
         // Beschriftung verliert die `.lnk`-Endung (analog Explorer).
         // Pfade auf Forward-Slashes normalisieren — egal ob aus
@@ -383,12 +383,21 @@ impl Vault {
         } else {
             ""
         };
+        let branch_html = if let Some(b) = branch {
+            if b.is_empty() {
+                String::new()
+            } else {
+                format!(r#"<span class="git-branch">{}</span>"#, escape_html(b))
+            }
+        } else {
+            String::new()
+        };
         // title-Attribut: vollstaendiger Pfad als Browser-Tooltip beim
         // Hover. Wichtig fuer Datei-Namen, die im Tree gekuerzt werden,
         // und damit der User auf einen Blick sieht, woher ein Pin oder
         // Recent-Eintrag stammt.
         format!(
-            r#"<li class="{classes}" data-kind="{kind}"{exec_attr} data-path="{path}" title="{path}"><div class="row"><span class="{caret_class}">▾</span>{icon_html}<span class="label">{name}</span></div><ul class="{children_class}">{children}</ul></li>"#,
+            r#"<li class="{classes}" data-kind="{kind}"{exec_attr} data-path="{path}" title="{path}"><div class="row"><span class="{caret_class}">▾</span>{icon_html}<span class="label">{name}</span>{branch_html}</div><ul class="{children_class}">{children}</ul></li>"#,
             path = escape_attr(&nav_path),
             name = escape_html(&label_name),
         )
@@ -432,7 +441,12 @@ impl Vault {
                 } else {
                     EntryInfo::plain(item.is_directory)
                 };
-                self.item_html(&item.path, &info)
+                let branch = if info.is_directory && path.exists() {
+                    crate::git_branch::branch_of(path)
+                } else {
+                    None
+                };
+                self.item_html(&item.path, &info, branch.as_deref())
             })
             .collect::<String>();
         empty_placeholder(html)
@@ -449,7 +463,7 @@ impl Vault {
                 } else {
                     EntryInfo::plain(false)
                 };
-                self.item_html(&item.path, &info)
+                self.item_html(&item.path, &info, None)
             })
             .collect::<String>();
         empty_placeholder(html)
@@ -526,7 +540,7 @@ mod tests {
     fn active_item_gets_active_class() {
         let mut vault = Vault::new();
         vault.set_active(Some("/tmp/a.md".into()));
-        let html = vault.item_html("/tmp/a.md", &EntryInfo::plain(false));
+        let html = vault.item_html("/tmp/a.md", &EntryInfo::plain(false), None);
         assert!(html.contains("node active"));
     }
 
@@ -542,12 +556,15 @@ mod tests {
         std::fs::write(&plain_path, b"hi").unwrap();
 
         let exec_html =
-            Vault::new().item_html(&exec_path.to_string_lossy(), &EntryInfo::plain(false));
+            Vault::new().item_html(&exec_path.to_string_lossy(), &EntryInfo::plain(false), None);
         assert!(exec_html.contains(r#"data-exec="1""#));
 
         // Nicht-ausfuehrbare Datei traegt das Attribut nicht.
-        let plain_html =
-            Vault::new().item_html(&plain_path.to_string_lossy(), &EntryInfo::plain(false));
+        let plain_html = Vault::new().item_html(
+            &plain_path.to_string_lossy(),
+            &EntryInfo::plain(false),
+            None,
+        );
         assert!(!plain_html.contains("data-exec"));
     }
 
@@ -558,7 +575,7 @@ mod tests {
             is_link: true,
             target: None,
         };
-        let html = Vault::new().item_html("/tmp/junction", &info);
+        let html = Vault::new().item_html("/tmp/junction", &info, None);
         assert!(html.contains("class=\"node link\""));
         assert!(html.contains(r#"data-kind="dir""#));
     }
@@ -570,7 +587,7 @@ mod tests {
             is_link: true,
             target: Some(PathBuf::from("/real/target")),
         };
-        let html = Vault::new().item_html("/tmp/Shortcut.lnk", &info);
+        let html = Vault::new().item_html("/tmp/Shortcut.lnk", &info, None);
         assert!(html.contains(r#"data-path="/real/target""#));
         assert!(html.contains("<span class=\"label\">Shortcut</span>"));
         assert!(html.contains("class=\"node link\""));
@@ -583,7 +600,7 @@ mod tests {
             is_link: true,
             target: Some(PathBuf::from("/real/notes.md")),
         };
-        let html = Vault::new().item_html("/tmp/Notes.lnk", &info);
+        let html = Vault::new().item_html("/tmp/Notes.lnk", &info, None);
         assert!(html.contains(r#"data-ext="md""#));
     }
 
@@ -645,9 +662,56 @@ mod tests {
 
     #[test]
     fn directories_render_caret_and_child_container() {
-        let html = Vault::new().item_html("/tmp/dir", &EntryInfo::plain(true));
+        let html = Vault::new().item_html("/tmp/dir", &EntryInfo::plain(true), None);
         assert!(html.contains(r#"data-kind="dir""#));
         assert!(html.contains(r#"class="caret""#));
         assert!(html.contains(r#"class="children collapsed""#));
+    }
+
+    #[test]
+    fn pinned_git_dir_renders_branch_badge_only_for_git_root() {
+        let temp = TempDir::new().unwrap();
+        let mut workspace = Workspace::load_from(temp.path().join("workspace.json"));
+
+        // Non-git pinned dir -> no badge
+        let non_git = temp.path().join("plaindir");
+        fs::create_dir(&non_git).unwrap();
+        workspace
+            .pin(non_git.to_string_lossy().into_owned(), true)
+            .unwrap();
+
+        // Git root pinned dir -> badge
+        let git_dir = temp.path().join("myrepo");
+        fs::create_dir(&git_dir).unwrap();
+        let git = git_dir.join(".git");
+        fs::create_dir(&git).unwrap();
+        fs::write(git.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        workspace
+            .pin(git_dir.to_string_lossy().into_owned(), true)
+            .unwrap();
+
+        let html = Vault::new().pinned_children_html(&workspace);
+        // non-git has no git-branch span
+        assert!(
+            !html.contains(r#"class="git-branch""#)
+                || html.matches(r#"class="git-branch""#).count() == 1
+        );
+        // the git one has it with main, and only in pinned section output
+        assert!(html.contains(r#"<span class="git-branch">main</span>"#));
+        // ensure recent has none (scope)
+        // (no recent set, but placeholder ok)
+    }
+
+    #[test]
+    fn pinned_non_git_dir_has_no_branch_span() {
+        let temp = TempDir::new().unwrap();
+        let mut workspace = Workspace::load_from(temp.path().join("workspace.json"));
+        let d = temp.path().join("docs");
+        fs::create_dir(&d).unwrap();
+        workspace
+            .pin(d.to_string_lossy().into_owned(), true)
+            .unwrap();
+        let html = Vault::new().pinned_children_html(&workspace);
+        assert!(!html.contains("git-branch"));
     }
 }
