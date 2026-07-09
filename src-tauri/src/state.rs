@@ -353,6 +353,15 @@ impl AppState {
         path: &str,
         text: &str,
     ) -> Result<(), String> {
+        // Monoton steigende Sequenznummer ueber ALLE document:loaded-Emits.
+        // Das Frontend verwirft Events mit aelterer seq als der zuletzt
+        // angewandten: ein verspaetet zugestelltes/dupliziertes loaded darf
+        // weder Monacos Model (setValue killt den Undo-Stack still, weil
+        // withProgrammaticWrite den Sync unterdrueckt) noch cleanText/UI
+        // auf einen alten Stand zuruecksetzen. Hintergrund: E2E-Flake
+        // 30_tabs_ui ("Undo-Stack hat den Tab-Wechsel nicht ueberlebt").
+        static LOADED_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let seq = LOADED_SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let toc_entries = toc::extract(text);
         app.emit(
             "document:loaded",
@@ -365,6 +374,7 @@ impl AppState {
                 "tocHtml": toc::render_html(&toc_entries),
                 "headingMap": crate::commands::editor::heading_map(&toc_entries),
                 "tabId": tab_id,
+                "seq": seq,
             }),
         )
         .map_err(|error| error.to_string())

@@ -2,14 +2,6 @@
 
 ## Hohe Priorität
 
-- **E2E-Run 2026-07-09 17:35: 1 Fehler** — Details in
-  [`tests/e2e/artifacts/20260709-173427/errors.md`](tests/e2e/artifacts/20260709-173427/errors.md). Run-Report:
-  [`tests/e2e/artifacts/20260709-173427/report.md`](tests/e2e/artifacts/20260709-173427/report.md).
-
-- **E2E-Run 2026-07-09 17:32: 1 Fehler** — Details in
-  [`tests/e2e/artifacts/20260709-173220/errors.md`](tests/e2e/artifacts/20260709-173220/errors.md). Run-Report:
-  [`tests/e2e/artifacts/20260709-173220/report.md`](tests/e2e/artifacts/20260709-173220/report.md).
-
 - **Theme-System-Ausbau: E1–E9 UMGESETZT** (E1–E7 2026-07-06/07, E8
   Settings-Theme-Browser + E9 Font-Manifest-Felder 2026-07-07; Spec mit
   Etappen-Checkliste in
@@ -38,19 +30,35 @@
 
 ## Mittlere Priorität
 
-- **E2E `30_tabs_ui` einmalig flaky (2026-07-06)**: Im Voll-Lauf failte
-  einmal „Undo-Stack hat den Tab-Wechsel nicht ueberlebt"
-  ([`errors.md`](tests/e2e/artifacts/20260706-152530/errors.md)); Einzellauf
-  und zwei weitere Voll-Läufe grün. Plausible Ursache (async gewordener
-  Tab-Klick durch die Virtual-Tab-Registry) ist gehärtet: der Klick-Fast-Path
-  ohne aktive virtuelle Region ist wieder synchron (`state/tabs.ts`). Bei
-  erneutem Auftreten: Model-Cache-Restore in `editor/mount.ts` gegen den
-  `document:loaded`-Pfad race-analysieren.
-  - **Update 2026-07-08**: erneut einmal im Voll-Lauf gefailt
-    ([`errors.md`](tests/e2e/artifacts/20260708-115623/errors.md)),
-    danach 3× Einzellauf und 1× Voll-Lauf grün. Muster unverändert
-    (Volllauf-only-Flaky); die Race-Analyse aus dem Ursprungseintrag
-    bleibt der nächste Schritt.
+- **E2E `30_tabs_ui` flaky — Fix 2026-07-09, Beobachtung offen**: dreimal
+  im Voll-Lauf gefailt („Undo-Stack hat den Tab-Wechsel nicht ueberlebt",
+  2026-07-06/08/09), nie im Einzellauf. Race-Analyse (codex+agy+Claude):
+  zwei komplementäre Mechanismen derselben Klasse — (a) die Test-Polls
+  lesen den Backend-Store, der beim `tab_activate` sofort umschaltet,
+  während Monacos Model-Swap asynchron folgt (ein zu früh eintreffendes
+  `undo` träfe das falsche Model); (b) ein verspätet zugestelltes
+  `document:loaded` nimmt bei bereits aktivem Tab den Same-Tab-Pfad in
+  `editor/mount.ts` und löscht via `setValue` still den Undo-Stack
+  (`withProgrammaticWrite` unterdrückt den Backend-Sync — Frontend und
+  Store divergieren dann unbemerkt). Fix: `document:loaded` trägt eine
+  monotone `seq`; `state/document.ts` verwirft veraltete/duplizierte
+  Events (Produkt-Härtung gegen b, vitest-Abdeckung), und Szenario 30
+  pollt vor dem Undo das FRONTEND-Model auf den Marker
+  (Sync-Barriere gegen a). Da der Flake nur ~1x pro Dutzend Voll-Läufe
+  auftrat, ist der Beweis statistisch: bei erneutem Auftreten trennt
+  die neue Frontend-Assertion die beiden Mechanismen sauber.
+
+- **Dokument-Lifecycle-Events vollstaendig sequenzieren** (codex-Review
+  des Flake-Fixes, 2026-07-09): die `seq`-Haertung deckt nur
+  `document:loaded` ab. Offen bleiben stale `document:closed` (ein vor
+  dem Close emittiertes, danach zugestelltes loaded liefe durch, weil
+  keine neuere loaded-seq dazwischen liegt), `document:dirty_changed`
+  (ignoriert `tabId` — ein verspaetetes Clean eines alten Tabs kann den
+  aktuellen Dirty-State/Save-Button verfaelschen) und `document:saved`
+  (gleiche Klasse, nur UI-Konsistenz). Sauber waere eine gemeinsame
+  Lifecycle-Revision fuer loaded/closed/saved/dirty_changed plus
+  tabId-Validierung im Frontend. Kein akuter Fehler bekannt — bewusst
+  vom Flake-Fix getrennt gehalten.
 
 - **Menu-Keybindings (Accelerators) greifen oft nicht**: Viele der nativen
   Tauri-Menü-Accelerators (Ctrl+S Speichern, Ctrl+Z Undo, Ctrl+W Schließen,

@@ -101,6 +101,24 @@ def run(ctx):
             ctx.expect(marker.strip() in restored, "Editor-Text ging beim Tab-Wechsel verloren")
             ctx.expect(ctx.api.state().get("dirty") is True, "Dirty-State ging verloren")
 
+            # Frontend-Sync-Barriere (Flake-Haertung 2026-07-09): die
+            # State-Polls oben lesen den BACKEND-Store, der beim
+            # tab_activate sofort umschaltet — Monacos Model-Swap laeuft
+            # asynchron hinterher. Ein undo, das VOR dem Swap ankommt,
+            # traefe das falsche Model. Deshalb erst pollen, bis auch das
+            # Frontend-Model den Marker traegt.
+            def _frontend_has_marker():
+                resp = ctx.api.eval(
+                    "window.FolioEditor && window.FolioEditor.getText()"
+                )
+                text = resp.get("value") or ""
+                return marker.strip() in text
+
+            ctx.expect(
+                bool(_poll(ctx, _frontend_has_marker)),
+                "Frontend-Model hat den Marker nach Tab-Wechsel nicht (Model-Swap ausgeblieben?)",
+            )
+
             ctx.api.editor_command("undo")
 
             # editorTextChanged synct den Store asynchron (IPC) — pollen

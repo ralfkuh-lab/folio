@@ -39,6 +39,9 @@ let deps: Deps = null;
 let currentPath: string | null = null;
 let cleanText = '';
 let isDirty = false;
+// Hoechste bereits angewandte document:loaded-Sequenznummer (Stale-Guard,
+// siehe Listener in initDocumentState).
+let lastLoadedSeq = 0;
 
 function invoke(cmd: string, args?: any): Promise<any> {
     return window.__TAURI__.core.invoke(cmd, args);
@@ -330,6 +333,24 @@ export function initDocumentState(d: Deps): void {
     // Reihenfolge: State zuerst, dann UI-Rendering.
     listen('document:loaded', function (event: any) {
         const data = (event && event.payload) || {};
+
+        // Stale-Guard: das Backend nummeriert alle document:loaded-Emits
+        // monoton (seq). Ein Event, das NACH einem neueren verarbeitet
+        // wuerde, ist per Definition veraltet — es darf weder cleanText/
+        // UI noch Monacos Model anfassen (der Same-Tab-Pfad in
+        // editor/mount.ts wuerde bei Textabweichung setValue ausfuehren
+        // und damit den Undo-Stack still loeschen; E2E-Flake 30_tabs_ui).
+        if (typeof data.seq === 'number') {
+            if (data.seq <= lastLoadedSeq) {
+                folioLog.debug('document', 'stale document:loaded verworfen', {
+                    seq: data.seq,
+                    lastApplied: lastLoadedSeq,
+                    path: data.path || '',
+                });
+                return;
+            }
+            lastLoadedSeq = data.seq;
+        }
 
         // Pending Live-Preview-Renders verwerfen — sonst koennte eine
         // verspaetete Antwort aus dem alten Dirty-Text den frischen

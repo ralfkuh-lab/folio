@@ -154,6 +154,73 @@ describe('state/document — document:loaded listener', () => {
         expect(document.getElementById('status-path')!.textContent).toBe('/tmp/example.md');
     });
 
+    it('verwirft stale document:loaded mit aelterer seq (Undo-Stack-Schutz)', async () => {
+        const docMod = await import('../../app/state/document');
+        const shellMod = await import('../../app/editor/shell');
+        const loadEditorTextMock = vi.mocked(shellMod.loadEditorText);
+        loadEditorTextMock.mockClear();
+        docMod.initDocumentState({ setActiveMode: vi.fn() });
+
+        tauri.emitEvent('document:loaded', {
+            path: '/tmp/neu.md',
+            kind: 'markdown',
+            text: 'neuer Stand',
+            content: '',
+            tocHtml: '',
+            seq: 7,
+        });
+        expect(docMod.getCurrentPath()).toBe('/tmp/neu.md');
+        expect(docMod.getCleanText()).toBe('neuer Stand');
+        expect(loadEditorTextMock).toHaveBeenCalledTimes(1);
+
+        // Verspaetet zugestelltes Event mit aelterer seq: darf NICHTS anfassen —
+        // insbesondere loadEditorText nicht erreichen (der Weg zu
+        // FolioEditor.setDocument -> doSetText -> setValue, der den
+        // Undo-Stack loeschen wuerde).
+        tauri.emitEvent('document:loaded', {
+            path: '/tmp/alt.md',
+            kind: 'markdown',
+            text: 'alter Stand',
+            content: '',
+            tocHtml: '',
+            seq: 6,
+        });
+        expect(docMod.getCurrentPath()).toBe('/tmp/neu.md');
+        expect(docMod.getCleanText()).toBe('neuer Stand');
+        expect(loadEditorTextMock).toHaveBeenCalledTimes(1);
+
+        // Gleiche seq (Duplikat) ebenfalls verwerfen.
+        tauri.emitEvent('document:loaded', {
+            path: '/tmp/dup.md',
+            kind: 'markdown',
+            text: 'duplikat',
+            content: '',
+            tocHtml: '',
+            seq: 7,
+        });
+        expect(docMod.getCurrentPath()).toBe('/tmp/neu.md');
+
+        // Neuere seq wird normal angewandt; Events OHNE seq (Alt-Pfad)
+        // bleiben kompatibel.
+        tauri.emitEvent('document:loaded', {
+            path: '/tmp/neuer.md',
+            kind: 'markdown',
+            text: 'noch neuer',
+            content: '',
+            tocHtml: '',
+            seq: 8,
+        });
+        expect(docMod.getCurrentPath()).toBe('/tmp/neuer.md');
+        tauri.emitEvent('document:loaded', {
+            path: '/tmp/ohne-seq.md',
+            kind: 'markdown',
+            text: 'ohne seq',
+            content: '',
+            tocHtml: '',
+        });
+        expect(docMod.getCurrentPath()).toBe('/tmp/ohne-seq.md');
+    });
+
     it('document:closed clears state + body-class falls back to kind-unknown', async () => {
         const docMod = await import('../../app/state/document');
         docMod.initDocumentState({ setActiveMode: vi.fn() });
