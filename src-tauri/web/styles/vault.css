@@ -218,8 +218,11 @@ body.pin-dragging * {
 html.theme-dark .vault-region .git-branch {
   color: #d29922;
 }
-/* main/master: Ruhezustand, gedämpft */
-.vault-region .git-branch--main {
+/* main/master: Ruhezustand, gedämpft. Die Dark-Regel ist noetig, weil
+   `html.theme-dark .vault-region .git-branch` (Bernstein) spezifischer
+   ist als die Modifier-Klasse allein und sonst auch main einfaerbt. */
+.vault-region .git-branch--main,
+html.theme-dark .vault-region .git-branch--main {
   color: var(--rail-fg-muted);
 }
 /* Detached HEAD: Warnzustand, rot */
