@@ -146,6 +146,12 @@ Forward-Slashes normalisiert.
 - `POST /tabs/close_all {}` verwirft alle Dirty-Zustände und hinterlässt
   genau einen aktiven, leeren Tab. Der Endpunkt ist ausschließlich für
   E2E-Isolation vorgesehen.
+- `POST /tabs/reorder { "ids": [3, 1, 2] }` sortiert die Dokument-Tabs
+  (nur IDs dokumenttragender Tabs) exakt in die angegebene Reihenfolge
+  um. Muss eine Permutation aller aktuellen Dokument-Tab-IDs sein,
+  sonst 400. Virtuelle Tabs (Settings, Theme-Editor) sind ausgenommen
+  und kein Drop-Ziel. Kein Ack-Response (reiner Order-Change, tabs:changed
+  wird emittiert und persistiert die Session).
 
 Open, Aktivierung und das Schließen des aktiven Tabs antworten im
 Ack-Format `{ ok, acked, requestId, tab }`. Das Ack kommt über das

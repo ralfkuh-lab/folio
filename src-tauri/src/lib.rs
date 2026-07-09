@@ -441,6 +441,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::tabs::tab_close,
             commands::tabs::tab_activate,
             commands::tabs::tabs_list,
+            commands::tabs::tab_reorder,
             commands::events::shell_event,
             commands::events::editor_event,
             commands::workspace_cmd::workspace_pin,

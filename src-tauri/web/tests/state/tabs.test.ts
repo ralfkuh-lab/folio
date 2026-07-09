@@ -180,3 +180,195 @@ describe('state/tabs', () => {
         expect(document.body.classList.contains('theme-editor-open')).toBe(false);
     });
 });
+
+describe('state/tabs — pointer drag reorder (8px threshold, only real reorder swallows click)', () => {
+    // jsdom PointerEvent mock pattern 1:1 from vault/tree.test.ts
+    function pe(type: string, opts: Record<string, any> = {}): any {
+        const ev = new Event(type, { bubbles: true, cancelable: true }) as any;
+        Object.assign(ev, { button: 0, pointerId: 1, clientX: 0, clientY: 0 }, opts);
+        return ev;
+    }
+
+    const RECT_80 = () => ({ top: 0, bottom: 20, left: 0, right: 80, width: 80, height: 20 } as any);
+
+    function renderTwoDocs() {
+        const { renderTabs } = require('../../app/state/tabs'); // sync after reset? use dynamic in its
+        // better: caller does import
+    }
+
+    it('sub-threshold movement does not start drag', async () => {
+        tauri.invoke.mockImplementation((command: string) => {
+            if (command === 'tabs_list') {
+                return Promise.resolve({
+                    activeIndex: 0,
+                    tabs: [
+                        { id: 10, path: '/a.md', dirty: false, active: true },
+                        { id: 11, path: '/b.md', dirty: false, active: false },
+                    ],
+                });
+            }
+            return Promise.resolve(undefined);
+        });
+        const tabsMod = await import('../../app/state/tabs');
+        tabsMod.initTabs();
+        await vi.waitFor(() => {
+            expect(document.querySelector('[data-tab-id="10"]')).not.toBeNull();
+        });
+
+        const itemA = document.querySelector('[data-tab-id="10"]') as HTMLElement;
+        itemA.dispatchEvent(pe('pointerdown', { clientX: 0, clientY: 0 }));
+        document.dispatchEvent(pe('pointermove', { clientX: 3, clientY: 1 })); // dist < 8
+
+        expect(document.querySelector('.tab-item.dragging')).toBeNull();
+        expect(tauri.invoke).not.toHaveBeenCalledWith('tab_reorder', expect.anything());
+    });
+
+    it('real drag over neighbor reorders DOM, calls tab_reorder with new id order, swallows follow click', async () => {
+        tauri.invoke.mockImplementation((command: string) => {
+            if (command === 'tabs_list') {
+                return Promise.resolve({
+                    activeIndex: 0,
+                    tabs: [
+                        { id: 10, path: '/a.md', dirty: false, active: true },
+                        { id: 11, path: '/b.md', dirty: false, active: false },
+                    ],
+                });
+            }
+            return Promise.resolve(undefined);
+        });
+        const tabsMod = await import('../../app/state/tabs');
+        tabsMod.initTabs();
+        await vi.waitFor(() => {
+            expect(document.querySelector('[data-tab-id="10"]')).not.toBeNull();
+        });
+
+        // cancel any stale drag states left by prior tests (shared document listeners + closed-over tabDrag)
+        document.dispatchEvent(pe('pointercancel', { pointerId: 1 }));
+        document.dispatchEvent(pe('pointercancel', { pointerId: 2 }));
+        document.body.classList.remove('tab-dragging');
+        const itemA = document.querySelector('[data-tab-id="10"]') as HTMLElement;
+        const itemB = document.querySelector('[data-tab-id="11"]') as HTMLElement;
+        itemB.getBoundingClientRect = RECT_80;
+
+        itemA.dispatchEvent(pe('pointerdown'));
+        document.dispatchEvent(pe('pointermove', { clientX: 20, clientY: 0 })); // exceed 8px -> active
+        expect(itemA.classList.contains('dragging')).toBe(true);
+        expect(document.body.classList.contains('tab-dragging')).toBe(true);
+
+        itemB.dispatchEvent(pe('pointermove', { clientX: 50, clientY: 0 })); // right half of B -> after
+        expect(itemB.classList.contains('drop-over-after')).toBe(true);
+
+        document.dispatchEvent(pe('pointerup', { clientX: 50, clientY: 0 }));
+
+        // DOM reordered: B then A
+        const children = Array.from(document.querySelectorAll('#tab-bar .tab-item'));
+        expect((children[0] as HTMLElement).dataset.tabId).toBe('11');
+        expect((children[1] as HTMLElement).dataset.tabId).toBe('10');
+
+        expect(tauri.invoke).toHaveBeenCalledWith('tab_reorder', { ids: [11, 10] });
+
+        // follow synthetic click must be swallowed (no activate)
+        tauri.invoke.mockClear();
+        itemA.dispatchEvent(pe('click'));
+        expect(tauri.invoke).not.toHaveBeenCalledWith('tab_activate', expect.anything());
+    });
+
+    it('drag start on .tab-close does not arm drag', async () => {
+        tauri.invoke.mockImplementation((command: string) => {
+            if (command === 'tabs_list') {
+                return Promise.resolve({
+                    activeIndex: 0,
+                    tabs: [
+                        { id: 10, path: '/a.md', dirty: false, active: true },
+                        { id: 11, path: '/b.md', dirty: false, active: false },
+                    ],
+                });
+            }
+            return Promise.resolve(undefined);
+        });
+        const tabsMod = await import('../../app/state/tabs');
+        tabsMod.initTabs();
+        await vi.waitFor(() => {
+            expect(document.querySelector('[data-tab-id="10"]')).not.toBeNull();
+        });
+
+        const closeA = document.querySelector('[data-tab-id="10"] .tab-close') as HTMLElement;
+        closeA.dispatchEvent(pe('pointerdown'));
+        document.dispatchEvent(pe('pointermove', { clientX: 30, clientY: 0 }));
+
+        expect(document.querySelector('.tab-item.dragging')).toBeNull();
+    });
+
+    it('virtual tab is neither drag source nor drop target', async () => {
+        tauri.invoke.mockImplementation((command: string) => {
+            if (command === 'tabs_list') {
+                return Promise.resolve({
+                    activeIndex: 0,
+                    tabs: [
+                        { id: 10, path: '/a.md', dirty: false, active: true },
+                    ],
+                });
+            }
+            return Promise.resolve(undefined);
+        });
+        const tabsMod = await import('../../app/state/tabs');
+        tabsMod.initTabs();
+        await vi.waitFor(() => {
+            expect(document.querySelector('[data-tab-id="10"]')).not.toBeNull();
+        });
+        tabsMod.registerVirtualTab({
+            slug: 'settings',
+            label: () => '⚙ Einstellungen',
+            onActivate: vi.fn(),
+            onClose: vi.fn(),
+        });
+
+        const virt = document.querySelector('.tab-settings') as HTMLElement;
+        virt.dispatchEvent(pe('pointerdown'));
+        document.dispatchEvent(pe('pointermove', { clientX: 30 }));
+
+        expect(document.querySelector('.tab-item.dragging')).toBeNull();
+
+        // also a doc drag should not target the virtual
+        const docItem = document.querySelector('[data-tab-id="10"]') as HTMLElement;
+        docItem.dispatchEvent(pe('pointerdown'));
+        document.dispatchEvent(pe('pointermove', { clientX: 9, clientY: 0 })); // active
+        virt.getBoundingClientRect = RECT_80;
+        virt.dispatchEvent(pe('pointermove', { clientX: 10 }));
+        // since getDoc returns null for virtual, no marker should be on it
+        expect(virt.classList.contains('drop-over-before')).toBe(false);
+        expect(virt.classList.contains('drop-over-after')).toBe(false);
+    });
+
+    it('jitter click (threshold crossed but no drop target) still activates', async () => {
+        tauri.invoke.mockImplementation((command: string) => {
+            if (command === 'tabs_list') {
+                return Promise.resolve({
+                    activeIndex: 0,
+                    tabs: [{ id: 42, path: '/only.md', dirty: false, active: false }],
+                });
+            }
+            return Promise.resolve(undefined);
+        });
+        const tabsMod = await import('../../app/state/tabs');
+        tabsMod.initTabs();
+        await vi.waitFor(() => {
+            expect(document.querySelector('[data-tab-id="42"]')).not.toBeNull();
+        });
+
+        document.dispatchEvent(pe('pointercancel', { pointerId: 1 }));
+        document.dispatchEvent(pe('pointercancel', { pointerId: 2 }));
+        const item = document.querySelector('[data-tab-id="42"]') as HTMLElement;
+        item.dispatchEvent(pe('pointerdown', { clientX: 0, clientY: 0 }));
+        document.dispatchEvent(pe('pointermove', { clientX: 10, clientY: 0 })); // active drag
+        // release over same item -> no other target -> no suppress
+        document.dispatchEvent(pe('pointerup', { clientX: 5, clientY: 0 }));
+
+        tauri.invoke.mockClear();
+        item.dispatchEvent(pe('click'));
+        // the click handler in render does activateTab which does invoke('tab_activate')
+        await vi.waitFor(() => {
+            expect(tauri.invoke).toHaveBeenCalledWith('tab_activate', { id: 42 });
+        });
+    });
+});

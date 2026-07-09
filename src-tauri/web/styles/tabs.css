@@ -74,3 +74,21 @@
   margin-left: auto;
   border-left: 1px solid var(--border);
 }
+
+/* Tab-Drag-Reorder visuals (Pointer, analog zu pin-dragging in vault.css) */
+.tab-item.dragging {
+  opacity: 0.4;
+}
+body.tab-dragging,
+body.tab-dragging * {
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grabbing !important;
+}
+/* Horizontal insert markers (left/right inset, 90deg rotation of the vertical pin markers) */
+#tab-bar .tab-item.drop-over-before {
+  box-shadow: inset 2px 0 0 var(--rail-accent);
+}
+#tab-bar .tab-item.drop-over-after {
+  box-shadow: inset -2px 0 0 var(--rail-accent);
+}

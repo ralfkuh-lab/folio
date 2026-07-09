@@ -10,6 +10,9 @@ pub enum TabError {
     UnknownId(u64),
     DirtyRejected(u64),
     InvalidPath(String),
+    /// Ungueltige Aufruf-Argumente (z. B. Reorder-IDs, die keine exakte
+    /// Permutation der aktuellen Tabs sind) — Automation mappt auf 400.
+    InvalidArgument(String),
     Internal(String),
 }
 
@@ -21,6 +24,7 @@ impl std::fmt::Display for TabError {
                 write!(f, "tab {id} has unsaved changes; discard is required")
             }
             Self::InvalidPath(path) => write!(f, "invalid file path: {path}"),
+            Self::InvalidArgument(message) => f.write_str(message),
             Self::Internal(message) => f.write_str(message),
         }
     }
@@ -51,6 +55,22 @@ fn normalized_file_path(path: String) -> Result<String, TabError> {
 
 pub fn list(state: &AppState) -> Result<TabsPayload, TabError> {
     state.tabs_payload().map_err(TabError::Internal)
+}
+
+pub fn reorder(state: &AppState, handle: &AppHandle, ids: Vec<u64>) -> Result<(), TabError> {
+    {
+        let mut tabs = state
+            .tabs
+            .lock()
+            .map_err(|_| TabError::Internal("tabs lock poisoned".into()))?;
+        if !tabs.reorder(&ids) {
+            return Err(TabError::InvalidArgument(
+                "invalid reorder: ids must be exact permutation of current document tabs".into(),
+            ));
+        }
+    }
+    AppState::emit_tabs_changed(handle).map_err(TabError::Internal)?;
+    Ok(())
 }
 
 pub fn open(state: &AppState, handle: &AppHandle, path: String) -> Result<TabTransition, TabError> {
@@ -446,6 +466,15 @@ pub async fn tab_activate(
 #[tauri::command]
 pub async fn tabs_list(state: State<'_, AppState>) -> Result<TabsPayload, String> {
     list(&state).map_err(String::from)
+}
+
+#[tauri::command]
+pub async fn tab_reorder(
+    ids: Vec<u64>,
+    state: State<'_, AppState>,
+    handle: AppHandle,
+) -> Result<(), String> {
+    reorder(&state, &handle, ids).map_err(String::from)
 }
 
 #[cfg(test)]

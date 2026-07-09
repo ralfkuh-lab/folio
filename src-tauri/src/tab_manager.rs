@@ -295,6 +295,57 @@ impl TabManager {
         tab.navigation.navigate(path, None);
         Ok(Some(loaded))
     }
+
+    /// Reorders the tabs vec to exactly match the given id sequence.
+    /// `ids` must be an exact permutation of the current tab IDs (same
+    /// count, no foreign/missing/dup ids). Returns false on validation
+    /// failure (state unchanged). On success the active tab (by ID)
+    /// keeps its identity; its index is updated to the new position.
+    /// Only used for document tabs (virtual tabs live only in frontend).
+    pub fn reorder(&mut self, ids: &[u64]) -> bool {
+        if ids.len() != self.tabs.len() {
+            return false;
+        }
+        let id_to_idx: std::collections::HashMap<u64, usize> = self
+            .tabs
+            .iter()
+            .enumerate()
+            .map(|(i, t)| (t.id, i))
+            .collect();
+        if id_to_idx.len() != ids.len() {
+            return false; // dups in current (should not happen)
+        }
+        let mut seen = std::collections::HashSet::new();
+        for &id in ids {
+            if !id_to_idx.contains_key(&id) || !seen.insert(id) {
+                return false;
+            }
+        }
+        if seen.len() != id_to_idx.len() {
+            return false;
+        }
+
+        let active_id = self.active().id;
+        let mut old_tabs = std::mem::take(&mut self.tabs);
+        let mut new_tabs: Vec<Tab> = Vec::with_capacity(ids.len());
+        for &id in ids {
+            if let Some(pos) = old_tabs.iter().position(|t| t.id == id) {
+                new_tabs.push(old_tabs.remove(pos));
+            } else {
+                // should not reach due to prior checks
+                self.tabs = old_tabs; // restore to avoid broken state
+                return false;
+            }
+        }
+        self.tabs = new_tabs;
+
+        if let Some(new_idx) = self.tabs.iter().position(|t| t.id == active_id) {
+            self.active = new_idx;
+        } else {
+            self.active = 0;
+        }
+        true
+    }
 }
 
 #[cfg(test)]
@@ -516,5 +567,69 @@ mod tests {
                 .map(|entry| entry.absolute_path.as_str()),
             Some(normalized.as_str())
         );
+    }
+
+    #[test]
+    fn reorder_valid_permutation_updates_vec_and_preserves_active_by_id() {
+        let mut manager = TabManager::new();
+        manager.active_mut().document_store.path = Some("/a.md".into());
+        let id_b = manager.add_tab();
+        manager.active_mut().document_store.path = Some("/b.md".into());
+        let _c = manager.add_tab();
+        manager.active_mut().document_store.path = Some("/c.md".into());
+        let _d = manager.add_tab();
+        manager.active_mut().document_store.path = Some("/d.md".into());
+        // active is d=4
+        assert!(manager.activate(id_b)); // activate b=2
+
+        let ids: Vec<u64> = manager.tabs().iter().map(|t| t.id).collect();
+        assert_eq!(vec![1u64, 2, 3, 4], ids);
+
+        // reorder to c, a, d, b  (ids 3,1,4,2)
+        let new_order = vec![3, 1, 4, 2];
+        assert!(manager.reorder(&new_order));
+        let after: Vec<u64> = manager.tabs().iter().map(|t| t.id).collect();
+        assert_eq!(vec![3u64, 1, 4, 2], after);
+        assert_eq!(manager.active().id, 2); // still b
+        assert_eq!(manager.active_index(), 3);
+
+        // session payload reflects new doc order + active index in filtered (all docs)
+        let (paths, act_idx) = manager.session_state();
+        assert_eq!(paths, vec!["/c.md", "/a.md", "/d.md", "/b.md"]);
+        assert_eq!(act_idx, Some(3));
+    }
+
+    #[test]
+    fn reorder_rejects_non_permutations() {
+        let mut manager = TabManager::new();
+        manager.active_mut().document_store.path = Some("/x.md".into());
+        manager.add_tab();
+        manager.active_mut().document_store.path = Some("/y.md".into());
+
+        assert!(!manager.reorder(&[1, 2, 3])); // too long
+        assert!(!manager.reorder(&[1])); // too short
+        assert!(!manager.reorder(&[99, 2])); // foreign
+        assert!(!manager.reorder(&[1, 1])); // dup
+        assert!(!manager.reorder(&[2, 1, 1])); // len mismatch + dup
+                                               // state unchanged
+        assert_eq!(manager.tabs().len(), 2);
+        assert_eq!(manager.active().id, 2);
+    }
+
+    #[test]
+    fn reorder_active_remains_after_reorder_and_session_index_is_correct() {
+        let mut manager = TabManager::new();
+        manager.active_mut().document_store.path = Some("/p1.md".into());
+        let id2 = manager.add_tab();
+        manager.active_mut().document_store.path = Some("/p2.md".into());
+        let id3 = manager.add_tab();
+        manager.active_mut().document_store.path = Some("/p3.md".into());
+        assert!(manager.activate(id2));
+
+        assert!(manager.reorder(&[id3, id2, 1]));
+        assert_eq!(manager.active().id, id2);
+        let (paths, act) = manager.session_state();
+        assert_eq!(paths, vec!["/p3.md", "/p2.md", "/p1.md"]);
+        assert_eq!(act, Some(1));
     }
 }

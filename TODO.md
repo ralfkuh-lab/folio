@@ -2,6 +2,26 @@
 
 ## Hohe Priorität
 
+- **E2E-Run 2026-07-09 22:44: 1 Fehler** — Details in
+  [`tests/e2e/artifacts/20260709-224254/errors.md`](tests/e2e/artifacts/20260709-224254/errors.md). Run-Report:
+  [`tests/e2e/artifacts/20260709-224254/report.md`](tests/e2e/artifacts/20260709-224254/report.md).
+
+- **E2E-Run 2026-07-09 22:42: 1 Fehler** — Details in
+  [`tests/e2e/artifacts/20260709-224044/errors.md`](tests/e2e/artifacts/20260709-224044/errors.md). Run-Report:
+  [`tests/e2e/artifacts/20260709-224044/report.md`](tests/e2e/artifacts/20260709-224044/report.md).
+
+- **E2E-Run 2026-07-09 22:34: 1 Fehler** — Details in
+  [`tests/e2e/artifacts/20260709-223425/errors.md`](tests/e2e/artifacts/20260709-223425/errors.md). Run-Report:
+  [`tests/e2e/artifacts/20260709-223425/report.md`](tests/e2e/artifacts/20260709-223425/report.md).
+
+- **E2E-Run 2026-07-09 22:33: 1 Fehler** — Details in
+  [`tests/e2e/artifacts/20260709-223338/errors.md`](tests/e2e/artifacts/20260709-223338/errors.md). Run-Report:
+  [`tests/e2e/artifacts/20260709-223338/report.md`](tests/e2e/artifacts/20260709-223338/report.md).
+
+- **E2E-Run 2026-07-09 22:31: 1 Fehler** — Details in
+  [`tests/e2e/artifacts/20260709-223130/errors.md`](tests/e2e/artifacts/20260709-223130/errors.md). Run-Report:
+  [`tests/e2e/artifacts/20260709-223130/report.md`](tests/e2e/artifacts/20260709-223130/report.md).
+
 - **Theme-System-Ausbau: E1–E9 UMGESETZT** (E1–E7 2026-07-06/07, E8
   Settings-Theme-Browser + E9 Font-Manifest-Felder 2026-07-07; Spec mit
   Etappen-Checkliste in
@@ -102,8 +122,7 @@
     bleibt in `theme.rs`/`theme_get`/`theme_set`).
 
 - **Tabs — Folgepunkte** (Kernfeature 2026-07-04 komplett, siehe
-  [`docs/spec-multi-tabs.md`](docs/spec-multi-tabs.md)): Tab-Drag-
-  Reorder (Pointer-Muster aus `vault/tree.ts` als Vorlage); optional
+  [`docs/spec-multi-tabs.md`](docs/spec-multi-tabs.md)): optional
   „Neues Fenster"-Command (Tauri-Multi-Window) für echtes
   Nebeneinander; Monaco-Model-Cache ohne Cap (bei sehr vielen Tabs
   LRU erwägen).

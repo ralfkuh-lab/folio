@@ -31,6 +31,11 @@ pub(in crate::automation) struct TabCloseRequest {
     discard: bool,
 }
 
+#[derive(Debug, Deserialize)]
+pub(in crate::automation) struct TabReorderRequest {
+    ids: Vec<u64>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(in crate::automation) struct TabMutationResponse {
@@ -95,6 +100,16 @@ pub(in crate::automation) async fn post_close_all(
     respond_after_frontend(context, transition, options).await
 }
 
+pub(in crate::automation) async fn post_reorder(
+    AxumState(context): AxumState<AutomationContext>,
+    payload: Result<Json<TabReorderRequest>, JsonRejection>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let Json(payload) = json_payload(payload)?;
+    let state = context.app_handle.state::<AppState>();
+    tabs::reorder(&state, &context.app_handle, payload.ids).map_err(api_error)?;
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
 async fn respond_after_frontend(
     context: AutomationContext,
     transition: TabTransition,
@@ -128,6 +143,7 @@ fn api_error(error: TabError) -> ApiError {
         TabError::UnknownId(_) => ApiError::not_found(error.to_string()),
         TabError::DirtyRejected(_) => ApiError::conflict(error.to_string()),
         TabError::InvalidPath(_) => ApiError::bad_request(error.to_string()),
+        TabError::InvalidArgument(_) => ApiError::bad_request(error.to_string()),
         TabError::Internal(_) => ApiError::internal(error.to_string()),
     }
 }

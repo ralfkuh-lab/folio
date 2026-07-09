@@ -330,9 +330,15 @@ sonst lehnt Tauri den Build ab.
   Menue, Fenster-X) prueft `TabManager::any_dirty()`; das Frontend
   fragt jeden dirty Tab einzeln ab (`confirmAllDirtyTabs`).
   Shortcuts: Ctrl+Tab/Ctrl+Shift+Tab (Wechsel), Ctrl+W (schliessen).
-  Automation: `GET /tabs`, `POST /tabs/open|close|activate|close_all`
+  Automation: `GET /tabs`, `POST /tabs/open|close|activate|close_all|reorder`
   (Letzteres fuer E2E-Isolation — Tab-Szenarien raeumen damit im
   finally auf), `/state.tabs`.
+  Tab-Drag-Reorder: Pointer-basiert exakt wie Pin-Reorder (vault/tree.ts),
+  DRAG_THRESHOLD_PX=8 (quadratisch), Klick-Schlucken NUR bei echtem
+  Reorder (Drop-Ziel), bewusst kein setPointerCapture. Backend:
+  TabManager::reorder + tab_reorder + POST /tabs/reorder (nur
+  Dokument-Tabs; virtuelle Tabs frontend-only ausgenommen). Reorder
+  triggert emit_tabs_changed (inkl. Session-Persistenz).
   **Settings als virtueller Tab**: `#settings-dialog` ist kein Modal
   mehr, sondern eine Vollflaechen-Region in der `.content-region`
   (`body.settings-open` blendet die `.content-panes` aus). Der

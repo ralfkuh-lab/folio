@@ -7,7 +7,7 @@ import {
     requestSaveIfDirty,
     syncEditorTextToStore,
 } from './document';
-import { folioLog } from '../util/log';
+import { folioLog, safeInvoke } from '../util/log';
 
 export interface TabSummary {
     id: number;
@@ -155,6 +155,10 @@ export function renderTabs(payload: TabsPayload): void {
         || (current.tabs.length > 0
             && !(current.tabs.length === 1 && !current.tabs[0].path));
     bar.hidden = !visible;
+    // Horizontale Scroll-Position der Leiste ueber den Re-Render erhalten
+    // (tabs:changed nach Reorder/Aktivierung wuerde sonst nach links
+    // springen, wenn viele Tabs offen sind).
+    const prevScrollLeft = bar.scrollLeft;
     bar.replaceChildren();
 
     for (const tab of current.tabs) {
@@ -269,6 +273,10 @@ export function renderTabs(payload: TabsPayload): void {
                 .map(function (tab) { return tab.id; }),
         );
     }
+
+    if (prevScrollLeft > 0) {
+        bar.scrollLeft = prevScrollLeft;
+    }
 }
 
 export async function activateTab(id: number): Promise<boolean> {
@@ -363,22 +371,184 @@ export function activateRelativeTab(direction: 1 | -1): Promise<boolean> {
     return activateTab(tabs[next].id);
 }
 
+// ----- Tab Drag Reorder (Pointer-basiert, exakt wie vault/tree.ts) -----
+// Nur Dokument-Tabs (data-tab-id numerisch). Virtuelle Tabs weder Quelle
+// noch Ziel. 8px Threshold (quadratisch), kein setPointerCapture.
+// Folge-Klick wird NUR bei echtem Reorder (Drop-Ziel vorhanden) geschluckt.
+const DRAG_THRESHOLD_PX = 8;
+
+let tabDrag: {
+    item: HTMLElement;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    active: boolean;
+} | null = null;
+let suppressNextClick = false;
+
+function getDocTabItem(target: HTMLElement | null): HTMLElement | null {
+    let el: HTMLElement | null = target;
+    while (el && el.id !== 'tab-bar') {
+        if (el.classList && el.classList.contains('tab-item')) {
+            const idstr = el.dataset.tabId;
+            const n = idstr ? Number(idstr) : NaN;
+            if (Number.isFinite(n)) {
+                // numeric id => document tab (virtuals use slugs like "settings")
+                return el;
+            }
+            return null;
+        }
+        el = el.parentElement;
+    }
+    return null;
+}
+
+function clearTabDropMarkers(): void {
+    const marks = document.querySelectorAll('#tab-bar .drop-over-before, #tab-bar .drop-over-after');
+    marks.forEach(function (el) { el.classList.remove('drop-over-before', 'drop-over-after'); });
+}
+
+function endTabDrag(): void {
+    if (tabDrag) {
+        tabDrag.item.classList.remove('dragging');
+        tabDrag = null;
+    }
+    document.body.classList.remove('tab-dragging');
+    clearTabDropMarkers();
+}
+
+function commitTabReorder(draggedEl: HTMLElement, targetItem: HTMLElement, isBefore: boolean): void {
+    const bar = document.getElementById('tab-bar');
+    if (!bar || draggedEl.parentElement !== bar || draggedEl === targetItem) return;
+    if (isBefore) {
+        bar.insertBefore(draggedEl, targetItem);
+    } else {
+        bar.insertBefore(draggedEl, targetItem.nextSibling);
+    }
+    // collect new order from the (optimistically reordered) DOM doc tabs
+    const newIds: number[] = [];
+    const items = bar.querySelectorAll('.tab-item');
+    for (let i = 0; i < items.length; i++) {
+        const tid = (items[i] as HTMLElement).dataset.tabId;
+        const n = tid ? Number(tid) : NaN;
+        if (Number.isFinite(n)) newIds.push(n);
+    }
+    if (newIds.length > 0) {
+        safeInvoke('tab_reorder', { ids: newIds }, 'tab_reorder');
+    }
+}
+
+function setupTabDragListeners(): void {
+    const bar = document.getElementById('tab-bar');
+    if (!bar) return;
+
+    bar.addEventListener('pointerdown', function (e: PointerEvent) {
+        if (e.button !== 0) return;
+        suppressNextClick = false;
+        const item = getDocTabItem(e.target as HTMLElement);
+        if (!item) return;
+        // do not arm drag if pointerdown started on the close button
+        const close = (e.target as HTMLElement).closest('.tab-close');
+        if (close) return;
+        tabDrag = {
+            item: item,
+            pointerId: e.pointerId,
+            startX: e.clientX,
+            startY: e.clientY,
+            active: false,
+        };
+    });
+
+    document.addEventListener('pointermove', function (e: PointerEvent) {
+        if (!tabDrag || e.pointerId !== tabDrag.pointerId) return;
+
+        if (!tabDrag.active) {
+            const dx = e.clientX - tabDrag.startX;
+            const dy = e.clientY - tabDrag.startY;
+            if (dx * dx + dy * dy < DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) return;
+            tabDrag.active = true;
+            tabDrag.item.classList.add('dragging');
+            document.body.classList.add('tab-dragging');
+        }
+        e.preventDefault(); // prevent text selection during drag
+
+        let targetItem = getDocTabItem(e.target as HTMLElement);
+        let forceAfter = false;
+        if (!targetItem) {
+            // Drop im leeren Bereich der Tab-Leiste HINTER dem letzten
+            // Dokument-Tab: als "nach dem letzten Tab" behandeln (Spec).
+            const bar = document.getElementById('tab-bar');
+            if (bar && bar.contains(e.target as Node)) {
+                const docTabs = bar.querySelectorAll<HTMLElement>('.tab-item[data-tab-id]');
+                const last = docTabs.length ? docTabs[docTabs.length - 1] : null;
+                if (last && e.clientX > last.getBoundingClientRect().right) {
+                    targetItem = last;
+                    forceAfter = true;
+                }
+            }
+        }
+        clearTabDropMarkers();
+        if (!targetItem || targetItem === tabDrag.item) return;
+        if (forceAfter) {
+            targetItem.classList.add('drop-over-after');
+            return;
+        }
+        const rect = targetItem.getBoundingClientRect();
+        const isBefore = (e.clientX - rect.left) < (rect.width / 2);
+        targetItem.classList.add(isBefore ? 'drop-over-before' : 'drop-over-after');
+    });
+
+    document.addEventListener('pointerup', function (e: PointerEvent) {
+        if (!tabDrag || e.pointerId !== tabDrag.pointerId) return;
+        const draggedEl = tabDrag.item;
+        const wasActive = tabDrag.active;
+        const beforeTarget = document.querySelector('#tab-bar .drop-over-before') as HTMLElement | null;
+        const afterTarget = document.querySelector('#tab-bar .drop-over-after') as HTMLElement | null;
+        endTabDrag();
+        if (!wasActive) return;
+        const targetItem = beforeTarget || afterTarget;
+        // swallow follow-up click ONLY if we had a real drop target (real reorder)
+        if (!targetItem) return;
+        suppressNextClick = true;
+        window.setTimeout(function () { suppressNextClick = false; }, 0);
+        commitTabReorder(draggedEl, targetItem, !!beforeTarget);
+    });
+
+    document.addEventListener('pointercancel', function (e: PointerEvent) {
+        if (!tabDrag || e.pointerId !== tabDrag.pointerId) return;
+        endTabDrag();
+    });
+
+    // Capture-phase swallow on the bar itself (analog to REGION in tree.ts).
+    // Ensures the synthetic click following a real reorder is eaten.
+    bar.addEventListener('click', function (e: MouseEvent) {
+        if (suppressNextClick) {
+            suppressNextClick = false;
+            e.stopImmediatePropagation();
+            e.preventDefault();
+        }
+    }, true);
+}
+
 export function initTabs(): void {
     const runtime = window.__TAURI__;
-    if (!runtime || !runtime.event || !runtime.core) return;
+    if (runtime && runtime.event && runtime.core) {
+        runtime.event.listen('tabs:changed', function (event: any) {
+            eventRevision++;
+            renderTabs((event && event.payload) || {});
+        });
 
-    runtime.event.listen('tabs:changed', function (event: any) {
-        eventRevision++;
-        renderTabs((event && event.payload) || {});
-    });
+        // Beim Boot kann das Backend-Event bereits vor der Listener-
+        // Registrierung gelaufen sein. Die Revision verhindert, dass eine
+        // spaete Listen-Antwort ein juengeres Event wieder ueberschreibt.
+        const revisionAtRequest = eventRevision;
+        invoke('tabs_list').then(function (payload) {
+            if (eventRevision === revisionAtRequest) renderTabs(payload || {});
+        }).catch(function (error) {
+            folioLog.warn('tabs', 'tabs_list failed', { error: String(error) });
+        });
+    }
 
-    // Beim Boot kann das Backend-Event bereits vor der Listener-
-    // Registrierung gelaufen sein. Die Revision verhindert, dass eine
-    // spaete Listen-Antwort ein juengeres Event wieder ueberschreibt.
-    const revisionAtRequest = eventRevision;
-    invoke('tabs_list').then(function (payload) {
-        if (eventRevision === revisionAtRequest) renderTabs(payload || {});
-    }).catch(function (error) {
-        folioLog.warn('tabs', 'tabs_list failed', { error: String(error) });
-    });
+    // Drag listeners are pure DOM (work in tests too); attach always if bar exists.
+    setupTabDragListeners();
 }
