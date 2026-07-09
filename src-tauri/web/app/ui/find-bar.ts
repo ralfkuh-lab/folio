@@ -345,12 +345,13 @@ export function initFindBar(deps: {
         }
         if (isSplitMode() && s.source !== 'editor') return;
         if (!s.term && !input.value) { counter.textContent = ''; return; }
+        const totalStr = (s.capped ? '5000+' : (typeof s.total === 'number' ? s.total : 0));
         if (typeof s.total !== 'number' || s.total === 0) {
             counter.textContent = (input.value || s.term) ? '0/0' : '';
         } else if (s.scanning || s.active < 0) {
-            counter.textContent = '…/' + s.total;
+            counter.textContent = '…/' + totalStr;
         } else {
-            counter.textContent = (s.active + 1) + '/' + s.total;
+            counter.textContent = (s.active + 1) + '/' + totalStr;
         }
     });
 }

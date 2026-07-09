@@ -14,7 +14,7 @@ import { setTocList, rewriteRelativeAssets } from '../view/markdown';
 import { highlightCodeBlocks } from '../view/code-highlight';
 import { addCodeCopyButtons } from '../view/code-copy';
 import { renderMermaidBlocks } from '../view/mermaid';
-import { clearHtmlView, HtmlFinder, isHtmlDocument, mountHtmlView } from '../view/html';
+import { clearHtmlView, HtmlFinder, invalidateHtmlLive, isHtmlDocument, mountHtmlView } from '../view/html';
 import { clearImageView, isImageDocument, mountImageView, reloadImageView } from '../view/image';
 import { invalidatePreview } from '../view/preview';
 import { clearMarkdownHeadingMap, setMarkdownHeadingMap } from '../view/scroll-sync';
@@ -388,6 +388,7 @@ export function initDocumentState(d: Deps): void {
         // verspaetete Antwort aus dem alten Dirty-Text den frischen
         // kanonischen Render aus dem document:loaded ueberschreiben.
         invalidatePreview();
+        invalidateHtmlLive();
 
         // 1. State-Setup
         currentPath = data.path || null;
@@ -533,6 +534,7 @@ export function initDocumentState(d: Deps): void {
         if (isStaleLifecycleEvent(data)) return;
         commitLifecycleSeq(data);
         invalidatePreview();
+        invalidateHtmlLive();
         currentPath = null;
         cleanText = '';
         lastLoadedTabId = null;
@@ -583,6 +585,7 @@ export function initDocumentState(d: Deps): void {
         // Kanonischer Render kommt im Payload — pending Preview-Renders aus
         // dem Pre-Save-Dirty-Text duerfen den nicht ueberschreiben.
         invalidatePreview();
+        invalidateHtmlLive();
         cleanText = data.text || editorText();
         markDirty(false);
         setReloadButtonPending(false);

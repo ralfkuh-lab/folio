@@ -22,4 +22,13 @@ beforeEach(() => {
     delete (window as any).FolioThemeEditor;
     delete (window as any).__folioInvoke;
     delete (window as any).openDocument;
+
+    // Polyfill ResizeObserver (used by marker lane cache invalidation on content/iframe)
+    if (typeof (window as any).ResizeObserver === 'undefined') {
+        (window as any).ResizeObserver = class {
+            constructor(_cb: any) {}
+            observe() {}
+            disconnect() {}
+        };
+    }
 });

@@ -108,19 +108,9 @@
   Nebeneinander; Monaco-Model-Cache ohne Cap (bei sehr vielen Tabs
   LRU erwägen).
 
-- **Suche — offene Audit-Befunde** (Read-only-Audit 2026-07-08, voller
-  Bericht in `notes/find-audit.md`; die kritischen Befunde — Code-View-
-  Find, Dokumentwechsel-Invalidierung, Chunk-Match-Verlust, Geister-
-  Decorations, Debounce-Race — sind gefixt; Ctrl+F-Selektion, Bild/Binary-Gate
-  und Automation-Optionen für /find/text ebenfalls (2026-07-08)):
-  - Marker-Lane-Berechnung macht Layout-Thrashing bei Tausenden
-    Treffern (`markdown.ts`/`html.ts`, `getBoundingClientRect` pro
-    Treffer bei jeder Navigation) — Positionen cachen.
-  - Monaco-Finder sucht synchron per `indexOf` über den ganzen Text —
-    bei sehr großen Dateien blockierend; `model.findMatches` oder
-    Match-Cap erwägen.
-  - HTML-Split: iframe aktualisiert nur beim Save → Editor- und
-    iframe-Highlights divergieren nach Tipp-Eingaben.
+- **Suche — Audit-Befunde 2/4/5** (notes/find-audit.md): Marker-Lane-Cache+rAF (Befund 2),
+  Monaco `findMatches`+Cap (Befund 4), HTML-Split-Live-Debounce+Gen+Scroll (Befund 5)
+  2026-07-09 umgesetzt (vitest + Gates). Fruehere Befunde (inkl. 1/3/6+) bereits geloest.
 
 ## Niedrige Priorität
 

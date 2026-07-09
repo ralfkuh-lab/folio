@@ -3,21 +3,65 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 type Pos = { lineNumber: number; column: number };
 
 function createModel(value: string) {
+    const computePos = (offset: number): Pos => {
+        const before = value.slice(0, offset).split('\n');
+        return {
+            lineNumber: before.length,
+            column: before[before.length - 1].length + 1,
+        };
+    };
+    const computeOffset = (pos: Pos): number => {
+        const lines = value.split('\n');
+        let offset = 0;
+        for (let i = 0; i < pos.lineNumber - 1; i++) offset += lines[i].length + 1;
+        return offset + pos.column - 1;
+    };
     return {
         value,
         getValue: vi.fn(() => value),
-        getPositionAt: vi.fn((offset: number): Pos => {
-            const before = value.slice(0, offset).split('\n');
-            return {
-                lineNumber: before.length,
-                column: before[before.length - 1].length + 1,
-            };
-        }),
-        getOffsetAt: vi.fn((pos: Pos): number => {
-            const lines = value.split('\n');
-            let offset = 0;
-            for (let i = 0; i < pos.lineNumber - 1; i++) offset += lines[i].length + 1;
-            return offset + pos.column - 1;
+        getPositionAt: vi.fn(computePos),
+        getOffsetAt: vi.fn(computeOffset),
+        findMatches: vi.fn((
+            searchString: string,
+            _searchOnlyEditable: boolean,
+            _isRegex: boolean,
+            matchCase: boolean,
+            wordSeparators: string | null,
+            _captureMatches: boolean,
+            limitResultCount = 5000,
+        ): any[] => {
+            if (!searchString) return [];
+            const searchTerm = matchCase ? searchString : searchString.toLowerCase();
+            const searchText = matchCase ? value : value.toLowerCase();
+            const res: any[] = [];
+            let pos = 0;
+            const useWhole = wordSeparators != null;
+            function isWordChar(ch: string): boolean { return /[\p{L}\p{N}_]/u.test(ch); }
+            function isWholeWordHit(t: string, from: number, to: number): boolean {
+                if (from > 0 && isWordChar(t.charAt(from - 1))) return false;
+                if (to < t.length && isWordChar(t.charAt(to))) return false;
+                return true;
+            }
+            while (true) {
+                const idx = searchText.indexOf(searchTerm, pos);
+                if (idx === -1) break;
+                const end = idx + searchString.length;
+                if (!useWhole || isWholeWordHit(value, idx, end)) {
+                    const startP = computePos(idx);
+                    const endP = computePos(end);
+                    res.push({
+                        range: {
+                            startLineNumber: startP.lineNumber,
+                            startColumn: startP.column,
+                            endLineNumber: endP.lineNumber,
+                            endColumn: endP.column,
+                        },
+                    });
+                    if (res.length >= limitResultCount) break;
+                }
+                pos = end;
+            }
+            return res;
         }),
     };
 }
@@ -165,5 +209,47 @@ describe('editor/find createFindController', () => {
         // open without initial (as keydown + bar does) → seeds
         controller.openFind('');
         expect(lastState()).toMatchObject({ source: 'editor', term: 'hello', total: 2, active: 0 });
+    });
+
+    it('findMatches equivalence for case/wholeWord against prior indexOf expectations', async () => {
+        const { createFindController } = await import('../../editor/find');
+        const harness = createHarness('alpha alphabet Alpha alpha_1 alpha');
+        const controller = createFindController({
+            getEditor: () => harness.editor,
+            getMonaco: () => harness.monaco,
+            source: 'code-view',
+        });
+
+        controller.setFindOptions({ wholeWord: true, caseSensitive: false });
+        controller.openFind('alpha');
+        expect(lastState()).toMatchObject({ total: 3, active: 0 });
+
+        controller.setFindOptions({ caseSensitive: true, wholeWord: true });
+        controller.setFindTerm('alpha');
+        expect(lastState()).toMatchObject({ total: 2, active: 0 });
+
+        controller.setFindOptions({ caseSensitive: false, wholeWord: false });
+        controller.setFindTerm('alpha');
+        expect(lastState()).toMatchObject({ total: 5, active: 0 });
+        // NOTE: Monaco findMatches semantics are mocked here (via harness);
+        // real behavioral equivalence for wholeWord/case is carried by the
+        // E2E find scenarios (06, 40, etc.).
+    });
+
+    it('caps matches at 5000 and flags capped for counter', async () => {
+        const { createFindController } = await import('../../editor/find');
+        // ~5100 matches, non-overlapping
+        const text = ' needle'.repeat(5100);
+        const harness = createHarness(text);
+        const controller = createFindController({
+            getEditor: () => harness.editor,
+            getMonaco: () => harness.monaco,
+            source: 'editor',
+        });
+
+        controller.openFind('needle');
+        const st = lastState();
+        expect(st.total).toBe(5000);
+        expect(st.capped).toBe(true);
     });
 });

@@ -17,6 +17,7 @@ Dieser Bericht dokumentiert Lücken, Bugs und Optimierungspotenziale in den Such
 * **Symptom aus User-Sicht**: Wenn eine Suche Tausende von Treffern liefert (z. B. Suche nach einem einzelnen Buchstaben), friert die UI bei jedem Druck auf F3 / Klick auf "Next" kurzzeitig ein.
 * **Schweregrad**: Mittel
 * **Fix-Skizze**: Die Marker-Positionen (`getBoundingClientRect()`) einmalig berechnen und cachen, solange sich Layout/Scroll-Höhe nicht verändern, anstatt sie bei jeder Treffernavigation für alle Treffer synchron neu abzufragen.
+* **Status**: GEFIXT 2026-07-09 (Cache + rAF-Batching >500 in markdown.ts + html.ts)
 
 ---
 
@@ -33,6 +34,7 @@ Dieser Bericht dokumentiert Lücken, Bugs und Optimierungspotenziale in den Such
 * **Symptom aus User-Sicht**: Beim Bearbeiten und Suchen in sehr großen Textdateien im Edit-Mode blockiert die Eingabe in die Suchzeile den Browser/Tauri-Prozess, da der Monaco-Finder komplett synchron sucht.
 * **Schweregrad**: Mittel
 * **Fix-Skizze**: Die maximale Anzahl an Matches begrenzen (z. B. auf 2000) oder auf Monacos optimiertes internes Suchwerkzeug (`model.findMatches`) zurückgreifen, anstatt manuell per `indexOf` über den gesamten String zu iterieren.
+* **Status**: GEFIXT 2026-07-09 (model.findMatches + 5000-Cap + "5000+"-Anzeige in editor/find.ts + find-bar.ts)
 
 ---
 
@@ -41,6 +43,7 @@ Dieser Bericht dokumentiert Lücken, Bugs und Optimierungspotenziale in den Such
 * **Symptom aus User-Sicht**: Im Split-Mode einer HTML-Datei aktualisiert sich der Preview-Iframe nur beim Speichern (Strg+S). Tippt der User Text ein und sucht danach, weichen die Highlights im Iframe von den Highlights im Editor ab und passen nicht mehr zum geschriebenen Text.
 * **Schweregrad**: Mittel
 * **Fix-Skizze**: Textänderungen im HTML-Editor debouncen und den Iframe via `mountHtmlView` aktualisieren, gefolgt von einem Aufruf von `HtmlFinder.refresh()` nach dem Laden des Iframes.
+* **Status**: GEFIXT 2026-07-09 (debounce + Gen-Token + Scroll-Erhalt + invalidate nach preview.ts-Muster in html.ts + wiring in document/main)
 
 ---
 

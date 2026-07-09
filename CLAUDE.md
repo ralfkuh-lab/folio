@@ -218,6 +218,9 @@ sonst lehnt Tauri den Build ab.
   wird der aktuelle Editor-Stand live aus Monaco geholt, statt den am
   Schedule-Zeitpunkt closure-captured Text — robust gegen
   verlorengegangene `editorTextChanged`-Events.
+  Analoges Muster (debounce 150 ms + renderGen + invalidate + KEIN isDirty-Gate +
+  Scroll-Erhalt) gilt seit 2026-07-09 auch fuer HTML-Split-Live-Update
+  (`html.ts`: scheduleHtmlLiveUpdate + run + mount + post-load HtmlFinder.refresh).
 - **Mermaid** (`view/mermaid.ts` + `mermaid/index.ts`): ```mermaid`-Fences
   werden nur in der App-View (View/Split/Live-Preview) per Frontend-Post-
   Prozessor zu SVG-Diagrammen (`<div class="mermaid-diagram">`). Eigenes

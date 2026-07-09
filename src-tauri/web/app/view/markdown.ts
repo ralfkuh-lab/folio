@@ -107,6 +107,19 @@ let findOpts = { caseSensitive: false, wholeWord: false };
 let searchToken = 0;
 let suppressActive = false;
 
+// Marker-Lane Cache (Befund 2): Positionen (als Fraction 0..1) einmal
+// pro Term/Doc/Layout berechnen; Navigation (setActive) verwendet Cache
+// und ruft kein getBoundingClientRect. Bei >500 Matches: rAF-Batching
+// der Erstberechnung (Lane bleibt leer waehrend Aufbau).
+let markerFractions: number[] = [];
+let markerCacheValid = false;
+
+// Resize handling via ResizeObserver on #view-content + inner content
+// (covers split-drag, TOC toggle affecting container size, image/font load
+// growing scrollHeight). No shared global flag with html.ts. Teardown on close.
+let markerResizeObserver: ResizeObserver | null = null;
+let markerResizeDebounceTimer: number | null = null;
+
 function ensureHighlights(): void {
     if (!hasHighlightAPI) return;
     if (!matchHL) { matchHL = new (window as any).Highlight(); (CSS as any).highlights.set('folio-find', matchHL); }
@@ -123,29 +136,139 @@ function clearLane(): void {
     while (lane.firstChild) lane.removeChild(lane.firstChild);
 }
 
+function invalidateMarkerCache(): void {
+    markerCacheValid = false;
+    markerFractions = [];
+}
+
+function scheduleMarkerRecompute(): void {
+    if (markerResizeDebounceTimer) window.clearTimeout(markerResizeDebounceTimer);
+    markerResizeDebounceTimer = window.setTimeout(function () {
+        markerResizeDebounceTimer = null;
+        if (currentTerm && rangesArr.length > 0) {
+            computeMarkerPositionsSync();
+            updateMarkers();
+        } else {
+            invalidateMarkerCache();
+        }
+    }, 120);
+}
+
+function teardownMarkerResizeObserver(): void {
+    if (markerResizeObserver) {
+        markerResizeObserver.disconnect();
+        markerResizeObserver = null;
+    }
+    if (markerResizeDebounceTimer) {
+        window.clearTimeout(markerResizeDebounceTimer);
+        markerResizeDebounceTimer = null;
+    }
+}
+
+function setupMarkerResizeObserver(): void {
+    teardownMarkerResizeObserver();
+    const container = getContent();
+    if (!container) return;
+
+    markerResizeObserver = new ResizeObserver(() => scheduleMarkerRecompute());
+    markerResizeObserver.observe(container);
+
+    // Also observe inner content element so scrollHeight growth (images, fonts, TOC changes etc.)
+    // triggers recompute even without container box size change.
+    const inner = getRoot();
+    if (inner) {
+        try { markerResizeObserver.observe(inner); } catch (_) { /* detached or cross */ }
+    }
+}
+
+function computeMarkerPositionsSync(): void {
+    const lane = getLane();
+    const content = getContent();
+    markerFractions = [];
+    if (!lane || !content || rangesArr.length === 0) {
+        markerCacheValid = true;
+        return;
+    }
+    const totalH = content.scrollHeight;
+    if (totalH <= 0) {
+        markerCacheValid = true;
+        return;
+    }
+    const contentTop = content.getBoundingClientRect().top;
+    const scrollTop = content.scrollTop;
+    const laneH = Math.max(1, lane.clientHeight);
+    for (let i = 0; i < rangesArr.length; i++) {
+        const rect = rangesArr[i].getBoundingClientRect();
+        const pos = scrollTop + (rect.top - contentTop);
+        const frac = totalH > 0 ? (pos / totalH) : 0;
+        markerFractions.push(frac);
+    }
+    markerCacheValid = true;
+}
+
+function computeMarkerPositionsAsync(onDone?: () => void): void {
+    const lane = getLane();
+    const content = getContent();
+    markerFractions = [];
+    if (!lane || !content || rangesArr.length === 0) {
+        markerCacheValid = true;
+        if (onDone) onDone();
+        return;
+    }
+    const totalH = content.scrollHeight;
+    if (totalH <= 0) {
+        markerCacheValid = true;
+        if (onDone) onDone();
+        return;
+    }
+    const contentTop = content.getBoundingClientRect().top;
+    const scrollTop = content.scrollTop;
+    const laneHAtTime = Math.max(1, lane.clientHeight); // only for bucketing during build
+    const BATCH = 500;
+    let i = 0;
+    const myTokenAtStart = searchToken;
+    function step(): void {
+        if (myTokenAtStart !== searchToken) return; // term changed, abort
+        const end = Math.min(i + BATCH, rangesArr.length);
+        for (; i < end; i++) {
+            const rect = rangesArr[i].getBoundingClientRect();
+            const pos = scrollTop + (rect.top - contentTop);
+            const frac = totalH > 0 ? (pos / totalH) : 0;
+            markerFractions.push(frac);
+        }
+        if (i < rangesArr.length) {
+            requestAnimationFrame(step);
+        } else {
+            markerCacheValid = true;
+            if (onDone) onDone();
+        }
+    }
+    // During async build: lane stays empty (no intermediate dots).
+    requestAnimationFrame(step);
+}
+
 function updateMarkers(): void {
     const lane = getLane();
     const content = getContent();
     if (!lane) return;
     clearLane();
     if (!content || rangesArr.length === 0) return;
-    const totalH = content.scrollHeight;
+    if (!markerCacheValid || markerFractions.length !== rangesArr.length) {
+        // Fallback (should not normally hit after research): compute sync
+        computeMarkerPositionsSync();
+    }
+    if (!markerCacheValid || markerFractions.length === 0) return;
+    const totalH = content.scrollHeight; // may have changed; frac is relative
     if (totalH <= 0) return;
-    // Read-Phase: alle Range-Top-Positionen lesen, ohne DOM-Mutation
-    // dazwischen. Trennt Reads von Writes (1 Layout-Reflow statt N).
-    const contentTop = content.getBoundingClientRect().top;
-    const scrollTop = content.scrollTop;
-    // Bucketing: maximal 1 Marker pro Pixelreihe der Lane.
     const laneH = Math.max(1, lane.clientHeight);
     const seen = new Uint8Array(laneH);
-    let activePixel = -1;
     const pixels: number[] = [];
+    let activePixel = -1;
     for (let i = 0; i < rangesArr.length; i++) {
-        const rect = rangesArr[i].getBoundingClientRect();
-        const pos = scrollTop + (rect.top - contentTop);
-        const px = Math.max(0, Math.min(laneH - 1, Math.round((pos / totalH) * laneH)));
-        if (i === activeIdx) activePixel = px;
-        if (!seen[px]) { seen[px] = 1; pixels.push(px); }
+        const f = markerFractions[i] || 0;
+        const p = Math.max(0, Math.min(laneH - 1, Math.round(f * laneH)));
+        if (i === activeIdx) activePixel = p;
+        if (!seen[p]) { seen[p] = 1; pixels.push(p); }
     }
     const frag = document.createDocumentFragment();
     for (let j = 0; j < pixels.length; j++) {
@@ -164,6 +287,7 @@ function clearMarks(): void {
     if (activeHL) activeHL.clear();
     rangesArr = [];
     activeIdx = -1;
+    invalidateMarkerCache();
     clearLane();
 }
 
@@ -290,6 +414,7 @@ function setActive(idx: number): void {
 
 function research(): void {
     clearMarks();
+    setupMarkerResizeObserver();
     const myToken = ++searchToken;
     if (!currentTerm) { dispatchState(); return; }
     const root = getRoot(); if (!root) { dispatchState(); return; }
@@ -297,8 +422,18 @@ function research(): void {
     ensureHighlights();
     collectRangesAsync(root, regex, myToken, function () {
         if (myToken !== searchToken) return;
-        if (rangesArr.length > 0) setActive(0);
-        else { updateMarkers(); dispatchState(); }
+        if (rangesArr.length > 0) {
+            if (rangesArr.length > 500) {
+                computeMarkerPositionsAsync(function () { setActive(0); });
+                // lane remains empty until async done + setActive
+            } else {
+                computeMarkerPositionsSync();
+                setActive(0);
+            }
+        } else {
+            updateMarkers();
+            dispatchState();
+        }
     });
 }
 
@@ -311,6 +446,7 @@ export const ViewFinder = {
         // Token-Bump cancelt eventuell noch laufende async Chunks aus einer
         // vorherigen Suche, bevor clearMarks die Treffer abraeumt.
         searchToken++;
+        teardownMarkerResizeObserver();
         clearMarks();
         currentTerm = '';
         // Nicht nur der Split-Wrapper (find-bar.ts) ruft closeFind —

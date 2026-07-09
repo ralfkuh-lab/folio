@@ -28,6 +28,7 @@ import {
     scrollViewTo,
 } from './view/markdown';
 import { initPreview } from './view/preview';
+import { initHtmlLiveUpdate } from './view/html';
 import { initViewTheme, reapplyCurrentViewTheme } from './view/theme';
 import { initCodeCopy } from './view/code-copy';
 import { initMarkdownScrollSync, syncViewSlugToEditor, tocClickToEditor } from './view/scroll-sync';
@@ -116,6 +117,7 @@ initAutomationEvents();
 initTabs();
 initDocumentState({ setActiveMode });
 initPreview({ getCurrentPath });
+initHtmlLiveUpdate();
 initCodeCopy();
 initMarkdownScrollSync();
 initHtmlScrollSync();

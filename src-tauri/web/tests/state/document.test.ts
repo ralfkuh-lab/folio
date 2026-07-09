@@ -25,6 +25,9 @@ vi.mock('../../app/view/html', () => ({
         return kind === 'text' && ((language || '').toLowerCase() === 'html' || /\.(html|htm)$/i.test(path || ''));
     }),
     mountHtmlView: vi.fn(),
+    invalidateHtmlLive: vi.fn(),
+    scheduleHtmlLiveUpdate: vi.fn(),
+    initHtmlLiveUpdate: vi.fn(),
 }));
 vi.mock('../../app/vault/tree', () => ({
     setVaultActive: vi.fn(),

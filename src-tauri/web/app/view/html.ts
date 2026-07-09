@@ -20,6 +20,24 @@ let findOpts = { caseSensitive: false, wholeWord: false };
 let searchToken = 0;
 let suppressActive = false;
 
+// Marker-Lane Cache (Befund 2) — siehe markdown.ts fuer Begruendung.
+let markerFractions: number[] = [];
+let markerCacheValid = false;
+
+// ResizeObserver on iframe + inner scrolling content (covers split, TOC,
+// image loads etc.). Separate from markdown.ts (no shared global).
+let markerResizeObserver: ResizeObserver | null = null;
+let markerResizeDebounceTimer: number | null = null;
+
+// Live-Update fuer HTML-Split (Befund 5): debounced 150 ms via
+// folio-editor-text-updated, mit Gen-Token + Scroll-Erhalt (analog
+// view/preview.ts). KEIN isDirty-Gate.
+const HTML_LIVE_DEBOUNCE = 150;
+let htmlLiveGen = 0;
+let htmlLiveTimer: number | null = null;
+let pendingHtmlScrollRestore: number | null = null;
+let pendingHtmlRestoreGen: number | null = null;
+
 function post(msg: any): void {
     if (window.__TAURI__ && window.__TAURI__.event) {
         window.__TAURI__.event.emit('shell:event', msg);
@@ -265,6 +283,7 @@ export function mountHtmlView(
     // installierte Bridge-<script> laeuft.
     iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts');
     iframe.onload = function () {
+        tryRestorePendingHtmlScroll();
         HtmlFinder.refresh();
         if (onIframeLoadedCallback) {
             const doc = iframeDoc();
@@ -285,6 +304,8 @@ export function clearHtmlView(): void {
     }
     removeMessageListener();
     HtmlFinder.closeFind();
+    teardownMarkerResizeObserver();
+    invalidateHtmlLive();
     beforeLinkClick = null;
     currentPath = '';
     currentIframe = null;
@@ -329,6 +350,94 @@ export function iframeDoc(): Document | null {
     try { return iframe.contentDocument; } catch (_) { return null; }
 }
 
+function getCurrentHtmlScroll(): number {
+    const d = iframeDoc();
+    if (!d) return 0;
+    const se = d.scrollingElement || d.documentElement;
+    return se ? se.scrollTop || 0 : 0;
+}
+
+function gateHtmlSplitLive(): boolean {
+    const b = document.body;
+    return b.classList.contains('split-mode') && b.classList.contains('html-preview-mode');
+}
+
+function currentEditorText(): string | null {
+    const ed: any = (window as any).FolioEditor;
+    if (!ed) return null;
+    if (typeof ed.hasEditor === 'function' && !ed.hasEditor()) return null;
+    if (typeof ed.getText === 'function') return ed.getText();
+    return null;
+}
+
+function tryRestorePendingHtmlScroll(): void {
+    if (pendingHtmlScrollRestore == null) return;
+    const expectedGen = pendingHtmlRestoreGen;
+    const toRestore = pendingHtmlScrollRestore;
+    const d = iframeDoc();
+    if (!d) return;
+    const se = d.scrollingElement || d.documentElement;
+    if (!se) {
+        pendingHtmlScrollRestore = null;
+        pendingHtmlRestoreGen = null;
+        return;
+    }
+    // rAF: DOM nach srcdoc-Settle abwarten (Layout + erste Paint)
+    requestAnimationFrame(function () {
+        if (pendingHtmlRestoreGen === expectedGen && pendingHtmlScrollRestore != null) {
+            try { se.scrollTop = toRestore; } catch (_) { /* ignore */ }
+            if (pendingHtmlRestoreGen === expectedGen) {
+                pendingHtmlScrollRestore = null;
+                pendingHtmlRestoreGen = null;
+            }
+        }
+    });
+}
+
+export function invalidateHtmlLive(): void {
+    htmlLiveGen++;
+    if (htmlLiveTimer != null) {
+        window.clearTimeout(htmlLiveTimer);
+        htmlLiveTimer = null;
+    }
+    // Clear pending scroll too — prevents stale scroll restore leaking
+    // across document:loaded/saved/closed into canonical or next doc.
+    pendingHtmlScrollRestore = null;
+    pendingHtmlRestoreGen = null;
+}
+
+export function scheduleHtmlLiveUpdate(text: string): void {
+    if (!gateHtmlSplitLive()) return;
+    if (htmlLiveTimer != null) {
+        window.clearTimeout(htmlLiveTimer);
+    }
+    htmlLiveTimer = window.setTimeout(function () {
+        htmlLiveTimer = null;
+        const latest = currentEditorText();
+        runHtmlLiveRender(latest != null ? latest : text);
+    }, HTML_LIVE_DEBOUNCE);
+}
+
+function runHtmlLiveRender(text: string): void {
+    const myGen = ++htmlLiveGen;
+    const preScroll = getCurrentHtmlScroll();
+    pendingHtmlScrollRestore = preScroll;
+    pendingHtmlRestoreGen = myGen;
+    // Reuse existing mount (sets srcdoc + onload which does refresh + our restore)
+    const path = currentPath || '';
+    // beforeLinkClick may be set; pass what we have (mount tolerates)
+    mountHtmlView('html-view-frame', text, path, beforeLinkClick || undefined);
+    // onload (patched inside mount) will restore scroll (gen-checked) + HtmlFinder.refresh()
+}
+
+export function initHtmlLiveUpdate(): void {
+    window.addEventListener('folio-editor-text-updated', function (e: Event) {
+        const detail = (e as CustomEvent).detail;
+        const text = typeof detail === 'string' ? detail : String(detail || '');
+        scheduleHtmlLiveUpdate(text);
+    });
+}
+
 function ensureHighlights(doc: Document): void {
     const win: any = doc.defaultView;
     if (!win || !win.CSS || !win.CSS.highlights || typeof win.Highlight !== 'function') return;
@@ -358,11 +467,143 @@ function clearLane(): void {
     while (lane.firstChild) lane.removeChild(lane.firstChild);
 }
 
+function invalidateMarkerCache(): void {
+    markerCacheValid = false;
+    markerFractions = [];
+}
+
+function scheduleMarkerRecompute(): void {
+    if (markerResizeDebounceTimer) window.clearTimeout(markerResizeDebounceTimer);
+    markerResizeDebounceTimer = window.setTimeout(function () {
+        markerResizeDebounceTimer = null;
+        if (currentTerm && rangesArr.length > 0) {
+            computeMarkerPositionsSync();
+            updateMarkers();
+        } else {
+            invalidateMarkerCache();
+        }
+    }, 120);
+}
+
+function teardownMarkerResizeObserver(): void {
+    if (markerResizeObserver) {
+        markerResizeObserver.disconnect();
+        markerResizeObserver = null;
+    }
+    if (markerResizeDebounceTimer) {
+        window.clearTimeout(markerResizeDebounceTimer);
+        markerResizeDebounceTimer = null;
+    }
+}
+
+function setupMarkerResizeObserver(): void {
+    teardownMarkerResizeObserver();
+    // Observe the iframe container (catches layout changes from split drag, TOC etc.)
+    const iframeEl = document.getElementById('html-view-frame') as HTMLElement | null;
+    if (iframeEl) {
+        markerResizeObserver = new ResizeObserver(() => scheduleMarkerRecompute());
+        markerResizeObserver.observe(iframeEl);
+    }
+    // Observe inner scrolling content for height growth (images etc.)
+    const d = iframeDoc();
+    if (d) {
+        const se = d.scrollingElement || d.documentElement || d.body;
+        if (se && markerResizeObserver) {
+            try { markerResizeObserver.observe(se as Element); } catch (_) { /* ignore */ }
+        }
+    }
+}
+
+function computeMarkerPositionsSync(): void {
+    const lane = getHtmlLane();
+    markerFractions = [];
+    if (!lane || rangesArr.length === 0) {
+        markerCacheValid = true;
+        return;
+    }
+    const doc = iframeDoc();
+    if (!doc) {
+        markerCacheValid = true;
+        return;
+    }
+    const scrollEl = doc.scrollingElement || doc.documentElement;
+    if (!scrollEl) {
+        markerCacheValid = true;
+        return;
+    }
+    const totalH = scrollEl.scrollHeight;
+    if (totalH <= 0) {
+        markerCacheValid = true;
+        return;
+    }
+    const scrollTop = scrollEl.scrollTop;
+    for (let i = 0; i < rangesArr.length; i++) {
+        const rect = rangesArr[i].getBoundingClientRect();
+        const pos = scrollTop + rect.top;
+        const frac = totalH > 0 ? (pos / totalH) : 0;
+        markerFractions.push(frac);
+    }
+    markerCacheValid = true;
+}
+
+function computeMarkerPositionsAsync(onDone?: () => void): void {
+    const lane = getHtmlLane();
+    markerFractions = [];
+    if (!lane || rangesArr.length === 0) {
+        markerCacheValid = true;
+        if (onDone) onDone();
+        return;
+    }
+    const doc = iframeDoc();
+    if (!doc) {
+        markerCacheValid = true;
+        if (onDone) onDone();
+        return;
+    }
+    const scrollEl = doc.scrollingElement || doc.documentElement;
+    if (!scrollEl) {
+        markerCacheValid = true;
+        if (onDone) onDone();
+        return;
+    }
+    const totalH = scrollEl.scrollHeight;
+    if (totalH <= 0) {
+        markerCacheValid = true;
+        if (onDone) onDone();
+        return;
+    }
+    const scrollTop = scrollEl.scrollTop;
+    const BATCH = 500;
+    let i = 0;
+    const myTokenAtStart = searchToken;
+    function step(): void {
+        if (myTokenAtStart !== searchToken) return;
+        const end = Math.min(i + BATCH, rangesArr.length);
+        for (; i < end; i++) {
+            const rect = rangesArr[i].getBoundingClientRect();
+            const pos = scrollTop + rect.top;
+            const frac = totalH > 0 ? (pos / totalH) : 0;
+            markerFractions.push(frac);
+        }
+        if (i < rangesArr.length) {
+            requestAnimationFrame(step);
+        } else {
+            markerCacheValid = true;
+            if (onDone) onDone();
+        }
+    }
+    requestAnimationFrame(step);
+}
+
 function updateMarkers(): void {
     const lane = getHtmlLane();
     if (!lane) return;
     clearLane();
     if (rangesArr.length === 0) return;
+    if (!markerCacheValid || markerFractions.length !== rangesArr.length) {
+        computeMarkerPositionsSync();
+    }
+    if (!markerCacheValid || markerFractions.length === 0) return;
     const doc = iframeDoc();
     if (!doc) return;
     const scrollEl = doc.scrollingElement || doc.documentElement;
@@ -371,15 +612,13 @@ function updateMarkers(): void {
     if (totalH <= 0) return;
     const laneH = Math.max(1, lane.clientHeight);
     const seen = new Uint8Array(laneH);
-    let activePixel = -1;
     const pixels: number[] = [];
-    const scrollTop = scrollEl.scrollTop;
+    let activePixel = -1;
     for (let i = 0; i < rangesArr.length; i++) {
-        const rect = rangesArr[i].getBoundingClientRect();
-        const pos = scrollTop + rect.top;
-        const px = Math.max(0, Math.min(laneH - 1, Math.round((pos / totalH) * laneH)));
-        if (i === activeIdx) activePixel = px;
-        if (!seen[px]) { seen[px] = 1; pixels.push(px); }
+        const f = markerFractions[i] || 0;
+        const p = Math.max(0, Math.min(laneH - 1, Math.round(f * laneH)));
+        if (i === activeIdx) activePixel = p;
+        if (!seen[p]) { seen[p] = 1; pixels.push(p); }
     }
     const frag = document.createDocumentFragment();
     for (let j = 0; j < pixels.length; j++) {
@@ -397,6 +636,7 @@ function clearMarks(): void {
     if (activeHL) activeHL.clear();
     rangesArr = [];
     activeIdx = -1;
+    invalidateMarkerCache();
     clearLane();
 }
 
@@ -527,6 +767,7 @@ function setActive(idx: number): void {
 
 function research(): void {
     clearMarks();
+    setupMarkerResizeObserver();
     const myToken = ++searchToken;
     if (!currentTerm) { dispatchState(); return; }
     const doc = iframeDoc();
@@ -537,8 +778,17 @@ function research(): void {
     ensureHighlights(doc);
     collectRangesAsync(doc, root, regex, myToken, function () {
         if (myToken !== searchToken) return;
-        if (rangesArr.length > 0) setActive(0);
-        else { updateMarkers(); dispatchState(); }
+        if (rangesArr.length > 0) {
+            if (rangesArr.length > 500) {
+                computeMarkerPositionsAsync(function () { setActive(0); });
+            } else {
+                computeMarkerPositionsSync();
+                setActive(0);
+            }
+        } else {
+            updateMarkers();
+            dispatchState();
+        }
     });
 }
 
@@ -549,6 +799,7 @@ export const HtmlFinder = {
     },
     closeFind: function (): void {
         searchToken++;
+        teardownMarkerResizeObserver();
         clearMarks();
         currentTerm = '';
         // Reset wie in markdown.ts::ViewFinder.closeFind — close()/

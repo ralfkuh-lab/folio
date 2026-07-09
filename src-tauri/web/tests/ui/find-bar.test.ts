@@ -31,6 +31,12 @@ vi.mock('../../app/view/markdown', () => ({
 }));
 vi.mock('../../app/view/html', () => ({
     HtmlFinder: htmlFinder,
+    invalidateHtmlLive: vi.fn(),
+    scheduleHtmlLiveUpdate: vi.fn(),
+    initHtmlLiveUpdate: vi.fn(),
+    mountHtmlView: vi.fn(),
+    clearHtmlView: vi.fn(),
+    isHtmlDocument: vi.fn(() => false),
 }));
 
 // window.FolioEditor stellt der Test selbst — Surface-Spy fuer Edit-Mode.

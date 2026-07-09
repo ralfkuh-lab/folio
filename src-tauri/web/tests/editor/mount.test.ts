@@ -41,6 +41,24 @@ function createMonacoMock() {
             },
             dispose() { this.disposed = true; },
             isDisposed() { return this.disposed; },
+            findMatches(term: string, _a?: any, _b?: any, _c?: any, _d?: any, _e?: any, _lim = 5000) {
+                // minimal impl to keep find-decoration tests working (case-insens contains)
+                if (!term || !this.value) return [];
+                const t = this.value.toLowerCase();
+                const s = term.toLowerCase();
+                const res: any[] = [];
+                let p = 0;
+                while (true) {
+                    const i = t.indexOf(s, p);
+                    if (i < 0) break;
+                    const startP = this.getPositionAt(i);
+                    const endP = this.getPositionAt(i + term.length);
+                    res.push({ range: { startLineNumber: startP.lineNumber, startColumn: startP.column, endLineNumber: endP.lineNumber, endColumn: endP.column } });
+                    if (res.length >= _lim) break;
+                    p = i + term.length;
+                }
+                return res;
+            },
         };
         models.push(model);
         return model;

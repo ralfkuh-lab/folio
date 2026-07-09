@@ -15,6 +15,7 @@ interface FindStateSnapshot {
     total: number;
     active: number;
     matches: FindMatch[];
+    capped?: boolean;
 }
 
 interface FindControllerOptions {
@@ -75,27 +76,52 @@ export function createFindController(opts: FindControllerOptions): FindControlle
 
         const term = findState.term;
         if (!term) {
-            findState = { term: '', total: 0, active: -1, matches: [] };
+            findState = { term: '', total: 0, active: -1, matches: [], capped: false };
             clearDecorations();
             publishFindState();
             return;
         }
 
-        const text = model.getValue();
-        const matches: FindMatch[] = [];
-
-        const searchTerm = findOptions.caseSensitive ? term : term.toLowerCase();
-        const searchText = findOptions.caseSensitive ? text : text.toLowerCase();
-        let pos = 0;
-        while (true) {
-            const idx = searchText.indexOf(searchTerm, pos);
-            if (idx === -1) break;
-            const end = idx + term.length;
-            if (!findOptions.wholeWord || isWholeWordHit(text, idx, end)) {
-                matches.push({ from: idx, to: end });
+        // Use Monaco's optimized model.findMatches (Befund 4).
+        // wholeWord: pass separators from options (or default) so that
+        // Monaco applies word-boundary logic; behavior matched to prior
+        // custom impl via vitest equivalence.
+        let wordSeparators: string | null = null;
+        if (findOptions.wholeWord) {
+            try {
+                const edOpt = monaco.editor && monaco.editor.EditorOption;
+                if (edOpt && edOpt.wordSeparators && typeof editor.getOption === 'function') {
+                    wordSeparators = editor.getOption(edOpt.wordSeparators);
+                }
+            } catch (_) { /* fallthrough */ }
+            if (!wordSeparators) {
+                wordSeparators = '~!@#$%^&*()-=+[{]}\\|;:\'",.<>/?';
             }
-            pos = end;
         }
+
+        const rawMatches: any[] = model.findMatches(
+            term,
+            false, // searchOnlyEditableRange
+            false, // isRegex
+            !!findOptions.caseSensitive,
+            wordSeparators,
+            false, // captureMatches
+            5000,  // limitResultCount
+        ) || [];
+
+        const matches: FindMatch[] = [];
+        for (let i = 0; i < rawMatches.length; i++) {
+            const rm = rawMatches[i];
+            const r = rm && rm.range;
+            if (!r) continue;
+            const startPos = { lineNumber: r.startLineNumber, column: r.startColumn };
+            const endPos = { lineNumber: r.endLineNumber, column: r.endColumn };
+            const from = model.getOffsetAt(startPos);
+            const to = model.getOffsetAt(endPos);
+            matches.push({ from, to });
+        }
+
+        const capped = rawMatches.length >= 5000;
 
         const cursorPos = editor.getPosition && editor.getPosition();
         const cursorOffset = cursorPos ? model.getOffsetAt(cursorPos) : 0;
@@ -108,7 +134,7 @@ export function createFindController(opts: FindControllerOptions): FindControlle
         }
         if (suppressActive) active = -1;
 
-        findState = { term, total: matches.length, active, matches };
+        findState = { term, total: matches.length, active, matches, capped };
         applyDecorations();
         if (!suppressActive && revealActive && active >= 0) scrollMatchIntoView(matches[active]);
         publishFindState();
@@ -179,12 +205,13 @@ export function createFindController(opts: FindControllerOptions): FindControlle
     }
 
     function publishFindState(): void {
-        const detail = {
+        const detail: any = {
             source: opts.source,
             term: findState.term,
             total: findState.total,
             active: findState.active,
         };
+        if (findState.capped) detail.capped = true;
         if (opts.postToBridge) post({ type: 'editorFindState', ...detail });
         try {
             window.dispatchEvent(new CustomEvent('folio-find-state', { detail }));
@@ -219,7 +246,7 @@ export function createFindController(opts: FindControllerOptions): FindControlle
 
     function closeFind(): void {
         const editor = opts.getEditor();
-        findState = { term: '', total: 0, active: -1, matches: [] };
+        findState = { term: '', total: 0, active: -1, matches: [], capped: false };
         suppressActive = false;
         publishFindState();
         clearDecorations();
