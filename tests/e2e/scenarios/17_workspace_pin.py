@@ -101,3 +101,69 @@ def run(ctx):
             dir_str not in [p for (p, _) in _pinned_paths(state)],
             f"Directory nach Cleanup-Unpin noch in pinned: {_pinned_paths(state)}",
         )
+
+    # ----- Git-Branch-Badge + Live-Update (Spec v2) -------------------
+    # Fake-Repo mit .git/HEAD manuell, pin, Badge via /dom pruefen,
+    # HEAD aendern, auf Update poll (validiert GitHeadWatcher E2E).
+    # Cleanup in finally. Keine Screenshots.
+    git_tmp = Path(tempfile.mkdtemp(prefix="folio-e2e-gitbranch-"))
+    git_dir = git_tmp / "myrepo"
+    git_dir.mkdir()
+    (git_dir / ".git").mkdir()
+    (git_dir / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
+    git_str = str(git_dir)
+
+    try:
+        with ctx.step("pin fake-git-dir → Badge mit main + --main Klasse"):
+            ctx.api.workspace_pin(git_str, is_directory=True)
+            state = _poll_for(ctx, lambda s: (git_str, True) in _pinned_paths(s))
+            ctx.expect(
+                (git_str, True) in _pinned_paths(state),
+                f"Git-Dir nicht gepinnt: {_pinned_paths(state)}",
+            )
+
+            badge_sel = f'#vault-tree li.node[data-path="{git_str}"] .git-branch'
+            snap = ctx.api.dom(badge_sel, timeout_ms=2000)
+            ctx.expect(
+                snap.get("exists"),
+                f"git-branch Badge nicht gefunden via dom: {snap}",
+            )
+            txt = (snap.get("textContent") or "").strip()
+            cls = ((snap.get("attributes") or {}).get("class") or "")
+            ctx.expect(
+                txt == "main" and "git-branch--main" in cls,
+                f"Badge main/--main erwartet, got txt={txt!r} cls={cls!r}",
+            )
+
+        with ctx.step("HEAD rewrite → live update auf feature/x (Poll >=4s)"):
+            (git_dir / ".git" / "HEAD").write_text("ref: refs/heads/feature/x\n")
+            deadline = time.monotonic() + 4.5
+            updated = False
+            while time.monotonic() < deadline:
+                snap = ctx.api.dom(badge_sel, timeout_ms=1000)
+                if (snap.get("textContent") or "").strip() == "feature/x":
+                    updated = True
+                    break
+                time.sleep(0.1)
+            ctx.expect(
+                updated,
+                "Badge-Text nicht auf feature/x aktualisiert (GitHeadWatcher)",
+            )
+
+        with ctx.step("cleanup unpin git dir"):
+            ctx.api.workspace_unpin(git_str)
+            state = _poll_for(
+                ctx,
+                lambda s: git_str not in [p for (p, _) in _pinned_paths(s)],
+            )
+            ctx.expect(
+                git_str not in [p for (p, _) in _pinned_paths(state)],
+                f"Git-Dir nach Unpin noch gepinnt: {_pinned_paths(state)}",
+            )
+    finally:
+        try:
+            ctx.api.workspace_unpin(git_str)
+        except Exception:
+            pass
+        import shutil
+        shutil.rmtree(git_tmp, ignore_errors=True)

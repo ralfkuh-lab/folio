@@ -9,7 +9,7 @@ use crate::{
     theme::ThemeService,
     toc,
     vault::Vault,
-    vault_watcher::VaultWatcher,
+    vault_watcher::{GitHeadWatcher, VaultWatcher},
     workspace::Workspace,
 };
 use std::collections::{HashMap, VecDeque};
@@ -66,6 +66,7 @@ pub struct AppState {
     pub ai_theme_author_active: Mutex<bool>,
     pub vault: Mutex<Vault>,
     pub vault_watcher: Mutex<VaultWatcher>,
+    pub git_head_watcher: Mutex<GitHeadWatcher>,
     pub link_interceptor: LinkInterceptor,
     pub automation: Mutex<AutomationUiState>,
     pub cli_open_path: Mutex<Option<String>>,
@@ -127,6 +128,7 @@ impl AppState {
             ai_theme_author_active: Mutex::new(false),
             vault: Mutex::new(Vault::new()),
             vault_watcher: Mutex::new(VaultWatcher::new()),
+            git_head_watcher: Mutex::new(GitHeadWatcher::new()),
             link_interceptor: LinkInterceptor::new(),
             automation: Mutex::new(AutomationUiState {
                 theme: initial_theme,

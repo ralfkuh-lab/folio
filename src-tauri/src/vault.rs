@@ -298,7 +298,12 @@ impl Vault {
         self.expanded_dirs.iter().cloned().collect()
     }
 
-    fn item_html(&self, original_path: &str, info: &EntryInfo, branch: Option<&str>) -> String {
+    fn item_html(
+        &self,
+        original_path: &str,
+        info: &EntryInfo,
+        branch: Option<&crate::git_branch::BranchInfo>,
+    ) -> String {
         // Bei .lnk-Shortcuts navigieren wir zum aufgelösten Ziel; die
         // Beschriftung verliert die `.lnk`-Endung (analog Explorer).
         // Pfade auf Forward-Slashes normalisieren — egal ob aus
@@ -383,22 +388,35 @@ impl Vault {
         } else {
             ""
         };
-        let branch_html = if let Some(b) = branch {
-            if b.is_empty() {
+        let branch_html = if let Some(bi) = branch {
+            if bi.label.is_empty() {
                 String::new()
             } else {
-                format!(r#"<span class="git-branch">{}</span>"#, escape_html(b))
+                let cls = if bi.label == "main" || bi.label == "master" {
+                    "git-branch git-branch--main"
+                } else if bi.detached {
+                    "git-branch git-branch--detached"
+                } else {
+                    "git-branch"
+                };
+                format!(r#"<span class="{}">{}</span>"#, cls, escape_html(&bi.label))
             }
         } else {
             String::new()
         };
         // title-Attribut: vollstaendiger Pfad als Browser-Tooltip beim
-        // Hover. Wichtig fuer Datei-Namen, die im Tree gekuerzt werden,
-        // und damit der User auf einen Blick sieht, woher ein Pin oder
-        // Recent-Eintrag stammt.
+        // Hover. Bei Branch wird zweite Zeile "Branch: <name>" angehaengt
+        // (vor Escapen mit \n; escape_attr belaesst \n, Browser rendert
+        // Zeilenumbruch im Tooltip). data-path bleibt reiner Pfad.
+        let title = if let Some(bi) = branch {
+            format!("{}\nBranch: {}", nav_path, bi.label)
+        } else {
+            nav_path.clone()
+        };
         format!(
-            r#"<li class="{classes}" data-kind="{kind}"{exec_attr} data-path="{path}" title="{path}"><div class="row"><span class="{caret_class}">▾</span>{icon_html}<span class="label">{name}</span>{branch_html}</div><ul class="{children_class}">{children}</ul></li>"#,
-            path = escape_attr(&nav_path),
+            r#"<li class="{classes}" data-kind="{kind}"{exec_attr} data-path="{datapath}" title="{title}"><div class="row"><span class="{caret_class}">▾</span>{icon_html}<span class="label">{name}</span>{branch_html}</div><ul class="{children_class}">{children}</ul></li>"#,
+            datapath = escape_attr(&nav_path),
+            title = escape_attr(&title),
             name = escape_html(&label_name),
         )
     }
@@ -446,7 +464,7 @@ impl Vault {
                 } else {
                     None
                 };
-                self.item_html(&item.path, &info, branch.as_deref())
+                self.item_html(&item.path, &info, branch.as_ref())
             })
             .collect::<String>();
         empty_placeholder(html)
@@ -696,8 +714,8 @@ mod tests {
             !html.contains(r#"class="git-branch""#)
                 || html.matches(r#"class="git-branch""#).count() == 1
         );
-        // the git one has it with main, and only in pinned section output
-        assert!(html.contains(r#"<span class="git-branch">main</span>"#));
+        // the git one has main with --main modifier class
+        assert!(html.contains(r#"<span class="git-branch git-branch--main">main</span>"#));
         // ensure recent has none (scope)
         // (no recent set, but placeholder ok)
     }
@@ -713,5 +731,56 @@ mod tests {
             .unwrap();
         let html = Vault::new().pinned_children_html(&workspace);
         assert!(!html.contains("git-branch"));
+    }
+
+    #[test]
+    fn pinned_git_branch_classes_and_tooltip() {
+        let temp = TempDir::new().unwrap();
+        let mut workspace = Workspace::load_from(temp.path().join("workspace.json"));
+
+        // feature branch -> base class
+        let feat = temp.path().join("featrepo");
+        fs::create_dir(&feat).unwrap();
+        let g = feat.join(".git");
+        fs::create_dir(&g).unwrap();
+        fs::write(g.join("HEAD"), "ref: refs/heads/feature/x\n").unwrap();
+        workspace
+            .pin(feat.to_string_lossy().into_owned(), true)
+            .unwrap();
+
+        // detached -> --detached
+        let det = temp.path().join("detrepo");
+        fs::create_dir(&det).unwrap();
+        let gd = det.join(".git");
+        fs::create_dir(&gd).unwrap();
+        fs::write(
+            gd.join("HEAD"),
+            "0f1e2d3c4b5a69788796a5b4c3d2e1f0a9b8c7d6\n",
+        )
+        .unwrap();
+        workspace
+            .pin(det.to_string_lossy().into_owned(), true)
+            .unwrap();
+
+        let html = Vault::new().pinned_children_html(&workspace);
+
+        // feature: base class, no --main/--detached
+        assert!(html.contains(r#"<span class="git-branch">feature/x</span>"#));
+        assert!(!html.contains("git-branch--main"));
+        // detached: modifier
+        assert!(html.contains(r#"<span class="git-branch git-branch--detached">0f1e2d3</span>"#));
+
+        // tooltip for feature contains literal \nBranch:
+        let feat_path = feat.to_string_lossy().replace('\\', "/");
+        let expected_title_part = format!("{}\nBranch: feature/x", feat_path);
+        // after escape_attr the \n stays in the attr value inside the html string
+        assert!(
+            html.contains("\nBranch: feature/x"),
+            "tooltip missing branch line: {}",
+            html
+        );
+        // data-path is pure path, no \n
+        assert!(html.contains(&format!(r#"data-path="{}""#, feat_path)));
+        assert!(!html.contains(&format!(r#"data-path="{}"#, expected_title_part)));
     }
 }

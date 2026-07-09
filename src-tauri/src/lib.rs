@@ -223,6 +223,32 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
                     watcher.set_enabled(enabled);
                 }
             }
+            // GitHeadWatcher analog: Callback emittiert vault:refresh (via shared
+            // Helper), initial sync mit Head-Dirs der gepinnten Git-Roots.
+            // Kein neues Setting; nutzt vaultAutoRefresh.
+            {
+                let handle = app.handle().clone();
+                let callback: crate::vault_watcher::GitHeadCallback =
+                    std::sync::Arc::new(move || {
+                        let st = handle.state::<crate::state::AppState>();
+                        let _ = crate::commands::workspace_cmd::emit_vault_refresh(
+                            st.inner(),
+                            &handle,
+                        );
+                    });
+                let enabled = state
+                    .settings
+                    .lock()
+                    .map(|s| s.data().vault_auto_refresh)
+                    .unwrap_or(true);
+                if let Ok(mut watcher) = state.git_head_watcher.lock() {
+                    watcher.set_callback(callback);
+                    watcher.set_enabled(enabled);
+                }
+                // Boot-Sync ueber den gemeinsamen Helper (Head-Dirs der
+                // gepinnten Git-Roots; bei disabled ein No-op).
+                crate::commands::workspace_cmd::sync_git_head_watcher(state.inner());
+            }
             // Recent-Submenü beim Boot mit den aktuellen workspace.recent
             // füllen — sonst zeigt es bis zur ersten Änderung "(keine
             // Einträge)".

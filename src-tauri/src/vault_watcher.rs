@@ -182,6 +182,146 @@ impl Drop for VaultWatcher {
     }
 }
 
+// ---------------------------------------------------------------------------
+// GitHeadWatcher: NonRecursive-Watch auf aufgelöste .git/ (HEAD-Container)
+// der gepinnten Git-Roots. Feuert bei Aenderungen an HEAD (Branch-Wechsel/
+// Checkout) einen vault:refresh. Ignoriert index/refs-Geraeusche.
+// ---------------------------------------------------------------------------
+
+pub type GitHeadCallback = Arc<dyn Fn() + Send + Sync>;
+
+pub struct GitHeadWatcher {
+    watcher: Option<RecommendedWatcher>,
+    watched: HashSet<PathBuf>,
+    tx: Option<mpsc::Sender<()>>,
+    callback: Option<GitHeadCallback>,
+    enabled: bool,
+}
+
+impl Default for GitHeadWatcher {
+    fn default() -> Self {
+        Self {
+            watcher: None,
+            watched: HashSet::new(),
+            tx: None,
+            callback: None,
+            enabled: true,
+        }
+    }
+}
+
+impl GitHeadWatcher {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn set_callback(&mut self, callback: GitHeadCallback) {
+        self.callback = Some(callback);
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    pub fn set_enabled(&mut self, enabled: bool) {
+        if self.enabled == enabled {
+            return;
+        }
+        self.enabled = enabled;
+        if !enabled {
+            self.dispose_all();
+        }
+    }
+
+    /// Diff-basiertes Syncen der Watches auf genau die uebergebenen
+    /// aufgeloesten Git-HEAD-Verzeichnisse (NonRecursive). Wird bei
+    /// Boot, Pin/Unpin und vaultAutoRefresh-Toggle gerufen.
+    pub fn sync(&mut self, gitdirs: Vec<PathBuf>) -> io::Result<()> {
+        if !self.enabled {
+            return Ok(());
+        }
+        let new_set: HashSet<PathBuf> = gitdirs
+            .into_iter()
+            .map(|p| PathBuf::from(p.to_string_lossy().replace('\\', "/")))
+            .collect();
+
+        let to_unwatch: Vec<PathBuf> = self.watched.difference(&new_set).cloned().collect();
+        for entry in to_unwatch {
+            if let Some(watcher) = self.watcher.as_mut() {
+                let _ = watcher.unwatch(&entry);
+            }
+            self.watched.remove(&entry);
+        }
+
+        let to_watch: Vec<PathBuf> = new_set.difference(&self.watched).cloned().collect();
+        if !to_watch.is_empty() && self.watcher.is_none() {
+            self.spawn_watcher()?;
+        }
+        for entry in to_watch {
+            if let Some(watcher) = self.watcher.as_mut() {
+                watcher
+                    .watch(&entry, RecursiveMode::NonRecursive)
+                    .map_err(io::Error::other)?;
+                self.watched.insert(entry);
+            }
+        }
+        if self.watched.is_empty() {
+            self.dispose_all();
+        }
+        Ok(())
+    }
+
+    fn dispose_all(&mut self) {
+        self.watcher = None;
+        self.tx = None;
+        self.watched.clear();
+    }
+
+    fn spawn_watcher(&mut self) -> io::Result<()> {
+        let (tx, rx) = mpsc::channel::<()>();
+        self.tx = Some(tx.clone());
+        let callback = self.callback.clone();
+        thread::spawn(move || {
+            while let Ok(()) = rx.recv() {
+                // Debounce 200ms analog VaultWatcher
+                while rx.recv_timeout(Duration::from_millis(200)).is_ok() {}
+                if let Some(callback) = &callback {
+                    callback();
+                }
+            }
+        });
+        let tx_for_watcher = tx;
+        let watcher = RecommendedWatcher::new(
+            move |result: notify::Result<Event>| {
+                let Ok(event) = result else {
+                    return;
+                };
+                if !has_head_path(&event) {
+                    return;
+                }
+                let _ = tx_for_watcher.send(());
+            },
+            Config::default(),
+        )
+        .map_err(io::Error::other)?;
+        self.watcher = Some(watcher);
+        Ok(())
+    }
+}
+
+fn has_head_path(event: &Event) -> bool {
+    event
+        .paths
+        .iter()
+        .any(|p| p.file_name() == Some(std::ffi::OsStr::new("HEAD")))
+}
+
+impl Drop for GitHeadWatcher {
+    fn drop(&mut self) {
+        self.dispose_all();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -277,5 +417,95 @@ mod tests {
         w.watch(temp.path().to_string_lossy().as_ref()).unwrap();
         fs::write(temp.path().join("new.md"), "hello").unwrap();
         assert!(wait_for_event(&sink), "no event received within deadline");
+    }
+
+    // --- GitHeadWatcher tests (analog zu VaultWatcher, mit fs_notify guard) ---
+
+    fn make_git_callback() -> (GitHeadCallback, Arc<StdMutex<bool>>) {
+        let fired = Arc::new(StdMutex::new(false));
+        let fired_clone = fired.clone();
+        let cb: GitHeadCallback = Arc::new(move || {
+            *fired_clone.lock().unwrap() = true;
+        });
+        (cb, fired)
+    }
+
+    fn wait_for_git_fire(fired: &Arc<StdMutex<bool>>) -> bool {
+        let deadline = std::time::Instant::now() + Duration::from_secs(4);
+        while std::time::Instant::now() < deadline {
+            if *fired.lock().unwrap() {
+                return true;
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+        false
+    }
+
+    #[test]
+    fn git_head_disabled_is_noop() {
+        let temp = TempDir::new().unwrap();
+        let gitdir = temp.path().join(".git");
+        fs::create_dir(&gitdir).unwrap();
+        fs::write(gitdir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+
+        let (cb, fired) = make_git_callback();
+        let mut w = GitHeadWatcher::new();
+        w.set_callback(cb);
+        w.set_enabled(false);
+        w.sync(vec![gitdir.clone()]).unwrap();
+        fs::write(gitdir.join("HEAD"), "ref: refs/heads/other\n").unwrap();
+        thread::sleep(Duration::from_millis(500));
+        assert!(!*fired.lock().unwrap());
+    }
+
+    #[test]
+    fn git_head_sync_empty_disposes() {
+        let temp = TempDir::new().unwrap();
+        let gitdir = temp.path().join(".git");
+        fs::create_dir(&gitdir).unwrap();
+        fs::write(gitdir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+
+        let (cb, _f) = make_git_callback();
+        let mut w = GitHeadWatcher::new();
+        w.set_callback(cb);
+        w.sync(vec![gitdir.clone()]).unwrap();
+        assert!(!w.watched.is_empty());
+        w.sync(vec![]).unwrap();
+        assert!(w.watched.is_empty());
+    }
+
+    #[test]
+    fn git_head_write_fires_but_index_does_not() {
+        if !fs_notify_available() {
+            eprintln!("fs notify nicht verfuegbar, Test geskippt");
+            return;
+        }
+        let temp = TempDir::new().unwrap();
+        let gitdir = temp.path().join(".git");
+        fs::create_dir(&gitdir).unwrap();
+        fs::write(gitdir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+
+        let (cb, fired) = make_git_callback();
+        let mut w = GitHeadWatcher::new();
+        w.set_callback(cb);
+        w.sync(vec![gitdir.clone()]).unwrap();
+
+        // HEAD change must fire
+        *fired.lock().unwrap() = false;
+        fs::write(gitdir.join("HEAD"), "ref: refs/heads/feature/x\n").unwrap();
+        assert!(
+            wait_for_git_fire(&fired),
+            "HEAD write did not fire GitHeadWatcher callback"
+        );
+
+        // index write must NOT fire (reset flag and write)
+        *fired.lock().unwrap() = false;
+        fs::write(gitdir.join("index"), "dummy").unwrap();
+        // give it a moment; should stay false
+        thread::sleep(Duration::from_millis(300));
+        assert!(
+            !*fired.lock().unwrap(),
+            "index write must not fire GitHeadWatcher"
+        );
     }
 }

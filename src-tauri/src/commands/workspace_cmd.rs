@@ -14,7 +14,8 @@ pub async fn workspace_pin(
         .map_err(|_| "workspace lock poisoned".to_string())?
         .pin(path, is_directory)
         .map_err(|error| error.to_string())?;
-    emit_vault_refresh(&state, &handle)
+    sync_git_head_watcher(state.inner());
+    emit_vault_refresh(state.inner(), &handle)
 }
 
 #[tauri::command]
@@ -29,7 +30,8 @@ pub async fn workspace_unpin(
         .map_err(|_| "workspace lock poisoned".to_string())?
         .unpin(&path)
         .map_err(|error| error.to_string())?;
-    emit_vault_refresh(&state, &handle)
+    sync_git_head_watcher(state.inner());
+    emit_vault_refresh(state.inner(), &handle)
 }
 
 #[tauri::command]
@@ -44,7 +46,7 @@ pub async fn workspace_reorder_pinned(
         .map_err(|_| "workspace lock poisoned".to_string())?
         .reorder_pinned(paths)
         .map_err(|error| error.to_string())?;
-    emit_vault_refresh(&state, &handle)
+    emit_vault_refresh(state.inner(), &handle)
 }
 
 #[tauri::command]
@@ -60,7 +62,7 @@ pub async fn workspace_add_recent(
         .add_recent(path)
         .map_err(|error| error.to_string())?;
     crate::menu::refresh_recent_from_workspace(&handle);
-    emit_vault_refresh(&state, &handle)
+    emit_vault_refresh(state.inner(), &handle)
 }
 
 #[tauri::command]
@@ -76,7 +78,7 @@ pub async fn workspace_remove_recent(
         .remove_recent(&path)
         .map_err(|error| error.to_string())?;
     crate::menu::refresh_recent_from_workspace(&handle);
-    emit_vault_refresh(&state, &handle)
+    emit_vault_refresh(state.inner(), &handle)
 }
 
 #[tauri::command]
@@ -120,7 +122,33 @@ pub async fn workspace_set_image_dir(
         .map_err(|error| error.to_string())
 }
 
-fn emit_vault_refresh(state: &State<'_, AppState>, handle: &AppHandle) -> Result<(), String> {
+pub(crate) fn sync_git_head_watcher(state: &AppState) {
+    // Sammelt die Head-Dirs aller gepinnten Git-Roots und synct den
+    // GitHeadWatcher. Der Watcher selbst ist bei disabled ein No-op,
+    // Aufrufer duerfen also bedingungslos syncen (settings schaltet
+    // vorher explizit set_enabled).
+    let gitdirs: Vec<std::path::PathBuf> = state
+        .workspace
+        .lock()
+        .map(|ws| {
+            ws.pinned()
+                .iter()
+                .filter_map(|item| {
+                    if item.is_directory {
+                        crate::git_branch::head_dir(std::path::Path::new(&item.path))
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    if let Ok(mut w) = state.git_head_watcher.lock() {
+        let _ = w.sync(gitdirs);
+    }
+}
+
+pub(crate) fn emit_vault_refresh(state: &AppState, handle: &AppHandle) -> Result<(), String> {
     let workspace = state
         .workspace
         .lock()

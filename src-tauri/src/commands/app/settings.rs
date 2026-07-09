@@ -59,6 +59,12 @@ pub(crate) fn update_settings(
     // erst beim naechsten Expand wirksam wird.
     if changed.contains(&"vaultAutoRefresh") {
         sync_vault_watcher(state, data.vault_auto_refresh);
+        // Erst enable/disable schalten, dann Collect+Sync ueber den
+        // gemeinsamen Helper (disabled ⇒ sync ist No-op).
+        if let Ok(mut w) = state.git_head_watcher.lock() {
+            w.set_enabled(data.vault_auto_refresh);
+        }
+        crate::commands::workspace_cmd::sync_git_head_watcher(state);
     }
     if changed.contains(&"logLevel") {
         crate::logging::set_level(data.log_level);

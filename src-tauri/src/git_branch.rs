@@ -1,19 +1,36 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BranchInfo {
+    pub label: String,
+    pub detached: bool,
+}
+
 /// Aktiver Branch, wenn `dir` selbst ein Git-Repo-Root ist, sonst None.
-pub fn branch_of(dir: &Path) -> Option<String> {
+/// detached = true nur bei purem Hex-SHA (Detached HEAD); Tags und andere
+/// Refs zählen als nicht-detached.
+pub fn branch_of(dir: &Path) -> Option<BranchInfo> {
+    let gitdir = head_dir(dir)?;
+    let head_path = gitdir.join("HEAD");
+    read_head(&head_path)
+}
+
+/// Gibt das aufgelöste Git-Verzeichnis zurück, das die HEAD-Datei enthält
+/// (für normale Repos: `<dir>/.git`; für Worktrees: der aus `gitdir:`
+/// aufgelöste Pfad). None, wenn `dir` kein Git-Root ist.
+pub fn head_dir(dir: &Path) -> Option<PathBuf> {
     let git = dir.join(".git");
     if !git.exists() {
         return None;
     }
     if git.is_dir() {
-        read_head(&git.join("HEAD"))
+        Some(git)
     } else if git.is_file() {
         // Worktree oder Submodule: "gitdir: <pfad>"
         let content = fs::read_to_string(&git).ok()?;
-        let gitdir = parse_gitdir(&content, dir)?;
-        read_head(&gitdir.join("HEAD"))
+        let gd = parse_gitdir(&content, dir)?;
+        Some(gd)
     } else {
         None
     }
@@ -35,27 +52,39 @@ fn parse_gitdir(content: &str, base: &Path) -> Option<PathBuf> {
     }
 }
 
-fn read_head(head_path: &Path) -> Option<String> {
+fn read_head(head_path: &Path) -> Option<BranchInfo> {
     let s = fs::read_to_string(head_path).ok()?;
     let s = s.trim();
     if let Some(branch) = s.strip_prefix("ref: refs/heads/") {
         if !branch.is_empty() {
-            return Some(branch.to_string());
+            return Some(BranchInfo {
+                label: branch.to_string(),
+                detached: false,
+            });
         }
     } else if let Some(rest) = s.strip_prefix("ref:") {
         let after = rest.trim();
         if !after.is_empty() {
-            // letztes Segment oder ganzer Rest
+            // letztes Segment oder ganzer Rest (z.B. Tags)
             if let Some(last) = after.rsplit('/').next() {
                 if !last.is_empty() {
-                    return Some(last.to_string());
+                    return Some(BranchInfo {
+                        label: last.to_string(),
+                        detached: false,
+                    });
                 }
             }
-            return Some(after.to_string());
+            return Some(BranchInfo {
+                label: after.to_string(),
+                detached: false,
+            });
         }
     } else if s.len() >= 7 && s.chars().take(7).all(|c| c.is_ascii_hexdigit()) {
         // Detached HEAD: erste 7 Zeichen
-        return Some(s[..7].to_string());
+        return Some(BranchInfo {
+            label: s[..7].to_string(),
+            detached: true,
+        });
     }
     None
 }
@@ -71,7 +100,13 @@ mod tests {
         let gitdir = tmp.path().join(".git");
         fs::create_dir(&gitdir).unwrap();
         fs::write(gitdir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
-        assert_eq!(branch_of(tmp.path()), Some("main".to_string()));
+        assert_eq!(
+            branch_of(tmp.path()),
+            Some(BranchInfo {
+                label: "main".to_string(),
+                detached: false
+            })
+        );
     }
 
     #[test]
@@ -80,7 +115,13 @@ mod tests {
         let gitdir = tmp.path().join(".git");
         fs::create_dir(&gitdir).unwrap();
         fs::write(gitdir.join("HEAD"), "ref: refs/heads/feature/x\n").unwrap();
-        assert_eq!(branch_of(tmp.path()), Some("feature/x".to_string()));
+        assert_eq!(
+            branch_of(tmp.path()),
+            Some(BranchInfo {
+                label: "feature/x".to_string(),
+                detached: false
+            })
+        );
     }
 
     #[test]
@@ -93,9 +134,10 @@ mod tests {
             "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678\n",
         )
         .unwrap();
-        let b = branch_of(tmp.path()).unwrap();
-        assert_eq!(b.len(), 7);
-        assert!(b.chars().all(|c| c.is_ascii_hexdigit()));
+        let bi = branch_of(tmp.path()).unwrap();
+        assert_eq!(bi.label.len(), 7);
+        assert!(bi.label.chars().all(|c| c.is_ascii_hexdigit()));
+        assert!(bi.detached);
     }
 
     #[test]
@@ -108,7 +150,13 @@ mod tests {
         fs::write(real_git.join("HEAD"), "ref: refs/heads/dev\n").unwrap();
         // .git as file with relative gitdir
         fs::write(work.join(".git"), "gitdir: ../real.git\n").unwrap();
-        assert_eq!(branch_of(&work), Some("dev".to_string()));
+        assert_eq!(
+            branch_of(&work),
+            Some(BranchInfo {
+                label: "dev".to_string(),
+                detached: false
+            })
+        );
     }
 
     #[test]
@@ -121,7 +169,13 @@ mod tests {
         fs::write(real_git.join("HEAD"), "ref: refs/heads/main\n").unwrap();
         let abs = real_git.to_string_lossy().replace('\\', "/");
         fs::write(work.join(".git"), format!("gitdir: {}\n", abs)).unwrap();
-        assert_eq!(branch_of(&work), Some("main".to_string()));
+        assert_eq!(
+            branch_of(&work),
+            Some(BranchInfo {
+                label: "main".to_string(),
+                detached: false
+            })
+        );
     }
 
     #[test]
@@ -138,7 +192,79 @@ mod tests {
         fs::write(gitdir.join("HEAD"), "").unwrap();
         assert_eq!(branch_of(tmp.path()), None);
         fs::write(gitdir.join("HEAD"), "ref: refs/tags/v1.0\n").unwrap();
-        // other ref -> last segment
-        assert_eq!(branch_of(tmp.path()), Some("v1.0".to_string()));
+        // other ref -> last segment, not detached
+        assert_eq!(
+            branch_of(tmp.path()),
+            Some(BranchInfo {
+                label: "v1.0".to_string(),
+                detached: false
+            })
+        );
+    }
+
+    #[test]
+    fn head_dir_normal_and_detached() {
+        let tmp = TempDir::new().unwrap();
+        let gitdir = tmp.path().join(".git");
+        fs::create_dir(&gitdir).unwrap();
+        fs::write(gitdir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        assert_eq!(head_dir(tmp.path()), Some(gitdir.clone()));
+
+        // detached still returns the gitdir
+        fs::write(
+            gitdir.join("HEAD"),
+            "deadbeef1234567890abcdef1234567890abcdef\n",
+        )
+        .unwrap();
+        assert_eq!(head_dir(tmp.path()), Some(gitdir));
+    }
+
+    #[test]
+    fn head_dir_gitdir_file() {
+        let tmp = TempDir::new().unwrap();
+        let work = tmp.path().join("work");
+        fs::create_dir(&work).unwrap();
+        let real_git = tmp.path().join("real.git");
+        fs::create_dir(&real_git).unwrap();
+        fs::write(real_git.join("HEAD"), "ref: refs/heads/dev\n").unwrap();
+        fs::write(work.join(".git"), "gitdir: ../real.git\n").unwrap();
+        // parse_gitdir keeps lexical join for relatives (no clean); match that
+        let expected = work.join("../real.git");
+        assert_eq!(head_dir(&work), Some(expected));
+    }
+
+    #[test]
+    fn head_dir_no_git() {
+        let tmp = TempDir::new().unwrap();
+        assert_eq!(head_dir(tmp.path()), None);
+    }
+
+    #[test]
+    fn detached_flag_only_for_hex() {
+        let tmp = TempDir::new().unwrap();
+        let gitdir = tmp.path().join(".git");
+        fs::create_dir(&gitdir).unwrap();
+
+        // ref heads -> not detached
+        fs::write(gitdir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        let bi = branch_of(tmp.path()).unwrap();
+        assert!(!bi.detached);
+        assert_eq!(bi.label, "main");
+
+        // tag ref -> not detached
+        fs::write(gitdir.join("HEAD"), "ref: refs/tags/v1.2.3\n").unwrap();
+        let bi = branch_of(tmp.path()).unwrap();
+        assert!(!bi.detached);
+        assert_eq!(bi.label, "v1.2.3");
+
+        // hex -> detached
+        fs::write(
+            gitdir.join("HEAD"),
+            "1234567890abcdef1234567890abcdef12345678\n",
+        )
+        .unwrap();
+        let bi = branch_of(tmp.path()).unwrap();
+        assert!(bi.detached);
+        assert_eq!(bi.label.len(), 7);
     }
 }

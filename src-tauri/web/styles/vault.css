@@ -201,18 +201,31 @@ body.pin-dragging * {
   box-shadow: inset 0 -2px 0 var(--rail-accent);
 }
 
-/* Git-Branch-Badge nur hinter Top-Level-Pins (dezent, folgt Label-Flex). */
+/* Git-Branch-Badge nur hinter Top-Level-Pins (folgt Label-Flex, Ellipsis bei echtem Platzmangel). */
 .vault-region .git-branch {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
   margin-left: 6px;
   position: relative;
   top: 2px;              /* gleiche Grundlinie wie .label */
   font-size: 11px;
-  color: var(--rail-accent);
-  opacity: 0.85;
   white-space: nowrap;
-  max-width: 9em;
   overflow: hidden;
   text-overflow: ellipsis;
   pointer-events: none;
+  color: #9a6700; /* Basisfall: Arbeits-Branch (feature/, fix/, ...) — Bernstein */
+}
+html.theme-dark .vault-region .git-branch {
+  color: #d29922;
+}
+/* main/master: Ruhezustand, gedämpft */
+.vault-region .git-branch--main {
+  color: var(--rail-fg-muted);
+}
+/* Detached HEAD: Warnzustand, rot */
+.vault-region .git-branch--detached {
+  color: #d1242f;
+}
+html.theme-dark .vault-region .git-branch--detached {
+  color: #f85149;
 }

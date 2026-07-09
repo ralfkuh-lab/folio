@@ -426,6 +426,8 @@ pub(in crate::automation) async fn post_workspace_pin(
             .map_err(|_| ApiError::internal("vault lock poisoned"))?;
         vault.compute_refresh_delta(&workspace)
     };
+    // Sync GitHeadWatcher on pin (new git root may appear) — use shared helper
+    crate::commands::workspace_cmd::sync_git_head_watcher(state.inner());
     let (request_id, receiver) = ack::register(state.inner()).map_err(ApiError::internal)?;
     let mut event_payload =
         serde_json::to_value(delta).map_err(|e| ApiError::internal(e.to_string()))?;
@@ -464,6 +466,8 @@ pub(in crate::automation) async fn post_workspace_unpin(
             .map_err(|_| ApiError::internal("vault lock poisoned"))?;
         vault.compute_refresh_delta(&workspace)
     };
+    // Sync GitHeadWatcher on unpin (git root may be removed) — use shared helper
+    crate::commands::workspace_cmd::sync_git_head_watcher(state.inner());
     let (request_id, receiver) = ack::register(state.inner()).map_err(ApiError::internal)?;
     let mut event_payload =
         serde_json::to_value(delta).map_err(|e| ApiError::internal(e.to_string()))?;
