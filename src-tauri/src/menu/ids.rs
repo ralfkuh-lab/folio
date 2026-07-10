@@ -17,6 +17,7 @@ pub(super) const EDIT_UNDO: &str = "edit.undo";
 pub(super) const EDIT_REDO: &str = "edit.redo";
 pub(super) const EDIT_FIND: &str = "edit.find";
 pub(super) const EDIT_AI_TRANSLATE: &str = "edit.ai_translate";
+pub(super) const EDIT_AI_ACTIONS: &str = "edit.ai_actions";
 pub(super) const EDIT_SETTINGS: &str = "edit.settings";
 pub(super) const VIEW_MODE_VIEW: &str = "view.mode.view";
 pub(super) const VIEW_MODE_EDIT: &str = "view.mode.edit";

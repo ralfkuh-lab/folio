@@ -89,6 +89,9 @@ pub fn build(handle: &AppHandle, lang: &str) -> tauri::Result<Menu<Wry>> {
     let item_ai_translate = MenuItemBuilder::with_id(ids::EDIT_AI_TRANSLATE, l.edit_ai_translate)
         .enabled(false)
         .build(handle)?;
+    let item_ai_actions = MenuItemBuilder::with_id(ids::EDIT_AI_ACTIONS, l.edit_ai_actions)
+        .enabled(false)
+        .build(handle)?;
     // edit.settings: Cross-Platform-Konvention. macOS-User erwarten den
     // Eintrag spaeter im App-Menue (Folio → Einstellungen) — wenn das
     // einzieht, hier neu verdrahten.
@@ -101,6 +104,7 @@ pub fn build(handle: &AppHandle, lang: &str) -> tauri::Result<Menu<Wry>> {
         .item(&PredefinedMenuItem::separator(handle)?)
         .item(&item_find)
         .item(&item_ai_translate)
+        .item(&item_ai_actions)
         .item(&PredefinedMenuItem::separator(handle)?)
         .item(&item_settings)
         .build()?;

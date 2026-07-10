@@ -14,6 +14,7 @@
 @import "./settings-themes.css";
 @import "./theme-editor.css";
 @import "./translate-dialog.css";
+@import "./ai-actions-dialog.css";
 @import "./theme-ai-dialog.css";
 @import "./overlays.css";
 @import "./scrollbar.css";

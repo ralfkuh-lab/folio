@@ -14,6 +14,7 @@ import { initExportDialog } from './ui/export-dialog';
 import { initImageDialog, openImageDialog } from './ui/image-dialog';
 import { initAboutDialog } from './ui/about-dialog';
 import { initTranslateDialog } from './ui/translate-dialog';
+import { initAiActionsDialog } from './ui/ai-actions-dialog';
 import { initSettingsDialog } from './ui/settings-dialog';
 import { initThemeEditor, openThemeEditor } from './ui/theme-editor';
 import { initThemeAiDialog } from './ui/theme-ai-dialog';
@@ -101,6 +102,7 @@ initExportDialog({
 initImageDialog({ getCurrentPath, showStatus });
 initAboutDialog();
 initTranslateDialog();
+initAiActionsDialog();
 initViewTheme();
 initThemeEditor();
 initThemeAiDialog();

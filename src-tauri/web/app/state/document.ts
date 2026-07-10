@@ -184,6 +184,21 @@ export function syncEditorTextToStoreRequired(): Promise<unknown> {
     return invoke('editor_text_changed', { text: editorText() });
 }
 
+/** Aktueller Editor-Stand (bzw. cleanText, solange kein Editor gemountet ist). */
+export function getEditorText(): string {
+    return editorText();
+}
+
+/**
+ * Tab-gebundener Sync für KI-Aktionen (Spec docs/spec-ki-actions.md):
+ * schreibt den EINGEFRORENEN Snapshot gezielt in den Quell-Tab statt in
+ * den gerade aktiven — das Backend lehnt ab, wenn der Tab nicht mehr
+ * existiert oder das Dokument Lone-CR-Zeilenenden hat.
+ */
+export function syncEditorTextToStoreForTab(tabId: number, text: string): Promise<unknown> {
+    return invoke('editor_text_changed', { text, tabId });
+}
+
 export function saveCurrent(): Promise<boolean> {
     return syncEditorTextToStore().then(function () {
         return invoke('editor_save_requested');
