@@ -30,6 +30,9 @@ export type AiReviewContext = {
 type ReviewState = AiReviewContext & { edited: boolean };
 
 let review: ReviewState | null = null;
+// Generation gegen Late-Mount/-Apply nach Close (Review-Befund):
+// jede open/close-Transition invalidiert laufende Fortsetzungen.
+let reviewGeneration = 0;
 
 function $(id: string): HTMLElement | null {
     return document.getElementById(id);
@@ -59,9 +62,24 @@ export function embedSelectionResult(
 export function firstDiffOffset(before: string, after: string): number {
     const max = Math.min(before.length, after.length);
     for (let index = 0; index < max; index += 1) {
-        if (before.charCodeAt(index) !== after.charCodeAt(index)) return index;
+        if (before.charCodeAt(index) !== after.charCodeAt(index)) {
+            return backOffLowSurrogate(after, index);
+        }
     }
-    return before.length === after.length ? 0 : max;
+    return before.length === after.length ? 0 : backOffLowSurrogate(after, max);
+}
+
+/** Fällt der Offset auf ein Low-Surrogate, einen Schritt zurück — der
+ *  Cursor darf kein Surrogatpaar zerschneiden. */
+function backOffLowSurrogate(text: string, index: number): number {
+    if (index > 0 && index < text.length) {
+        const code = text.charCodeAt(index);
+        const previous = text.charCodeAt(index - 1);
+        if (code >= 0xdc00 && code <= 0xdfff && previous >= 0xd800 && previous <= 0xdbff) {
+            return index - 1;
+        }
+    }
+    return index;
 }
 
 export function isAiReviewOpen(): boolean {
@@ -97,6 +115,7 @@ export async function openAiDiffReview(context: AiReviewContext): Promise<void> 
         return;
     }
     review = { ...context, edited: false };
+    const generation = ++reviewGeneration;
     region.hidden = false;
     const title = $('ai-diff-title');
     if (title) title.textContent = `✨ KI-Review — ${context.actionName}`;
@@ -108,6 +127,10 @@ export async function openAiDiffReview(context: AiReviewContext): Promise<void> 
         slug: 'ai-diff',
         label: () => '✨ KI-Review',
         dirty: () => !!review?.edited,
+        // Klick auf einen Dokument-Tab deaktiviert die Review nur —
+        // sonst wäre der „Quelle aktivieren"-Guard-Schritt nicht ohne
+        // Verwerfen erreichbar (Review-Befund).
+        keepOnDocTabClick: true,
         onActivate: () => {
             const diff = window.FolioDiffView;
             if (diff) {
@@ -119,6 +142,12 @@ export async function openAiDiffReview(context: AiReviewContext): Promise<void> 
     });
 
     await diffView.mount('ai-diff-mount');
+    if (generation !== reviewGeneration || !review) {
+        // Review wurde während des (ersten) Monaco-Loads geschlossen —
+        // keine unsichtbare Instanz zurücklassen.
+        diffView.dispose();
+        return;
+    }
     const modified = embedSelectionResult(
         context.originalFull,
         context.selection,
@@ -131,6 +160,7 @@ export async function openAiDiffReview(context: AiReviewContext): Promise<void> 
 }
 
 function closeReview(): void {
+    reviewGeneration += 1;
     const region = $('ai-diff-region');
     if (region) region.hidden = true;
     const diffView = window.FolioDiffView;
@@ -141,6 +171,10 @@ function closeReview(): void {
     review = null;
     unregisterVirtualTab('ai-diff');
     reportReviewState(false, false);
+    // Fokus zurück in den Dokumenteditor (Fokus-Policy der Spec).
+    if (window.FolioEditor && typeof window.FolioEditor.focus === 'function') {
+        window.FolioEditor.focus();
+    }
 }
 
 /** Verwerfen mit Bestätigung, wenn der User im Review editiert hat. */
@@ -175,38 +209,57 @@ export async function confirmAiReviewForQuit(): Promise<boolean> {
     return true;
 }
 
-async function applyReview(): Promise<void> {
-    if (!review) return;
-    // Dreistufiger Guard (Spec): existiert → aktiv → Snapshot.
-    if (!hasDocumentTab(review.sourceTabId)) {
+/** Dreistufiger Guard (Spec): existiert → aktiv → Snapshot. Liefert
+ *  false, wenn Apply (noch) nicht erlaubt ist. */
+function applyGuardsPass(context: ReviewState): boolean {
+    if (!hasDocumentTab(context.sourceTabId)) {
         setHint('Der Quell-Tab wurde geschlossen — Übernehmen ist nicht mehr möglich.');
         const apply = $('ai-diff-apply') as HTMLButtonElement | null;
         if (apply) apply.disabled = true;
-        return;
+        return false;
     }
-    if (getActiveTabId() !== review.sourceTabId) {
+    if (getActiveTabId() !== context.sourceTabId) {
         setHint('Bitte zuerst den Quell-Tab aktivieren.');
-        return;
+        return false;
     }
-    if (getEditorText() !== review.originalFull) {
+    return true;
+}
+
+async function applyReview(): Promise<void> {
+    const context = review;
+    if (!context) return;
+    const generation = reviewGeneration;
+    if (!applyGuardsPass(context)) return;
+    if (getEditorText() !== context.originalFull) {
+        const apply = $('ai-diff-apply') as HTMLButtonElement | null;
+        const discard = $('ai-diff-discard') as HTMLButtonElement | null;
+        if (apply) apply.disabled = true;
+        if (discard) discard.disabled = true;
         const ok = await showConfirmDialog(
             'Das Dokument wurde zwischenzeitlich geändert — Ersetzen überschreibt diese Änderungen.',
             { title: 'KI-Review', okLabel: 'Trotzdem ersetzen' },
         );
+        if (apply) apply.disabled = false;
+        if (discard) discard.disabled = false;
         if (!ok) return;
+        // Nach dem await ALLE Guards wiederholen — während des Dialogs
+        // kann der User Tab gewechselt/geschlossen oder die Review
+        // anderweitig beendet haben (Review-Befund).
+        if (generation !== reviewGeneration || review !== context) return;
+        if (!applyGuardsPass(context)) return;
     }
     const diffView = window.FolioDiffView;
     const editorSurface = window.FolioEditor;
     if (!diffView || !editorSurface) return;
     const modified = diffView.getModified();
-    const cursor = firstDiffOffset(review.originalFull, modified);
+    const cursor = firstDiffOffset(context.originalFull, modified);
     editorSurface.applyReplace({
         fullText: modified,
         selectionStart: cursor,
         selectionLength: 0,
     });
     folioLog.info('ai-review', 'KI-Ergebnis übernommen', {
-        runId: review.runId,
+        runId: context.runId,
         chars: [...modified].length,
     });
     closeReview();

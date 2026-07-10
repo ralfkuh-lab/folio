@@ -16,6 +16,8 @@ let mountedElementId: string | null = null;
 let pendingTheme: 'light' | 'dark' | null = null;
 let modifiedListener: any = null;
 let changeCallback: (() => void) | null = null;
+let resizeObserver: ResizeObserver | null = null;
+let sideBySide = true;
 
 function ensureMonaco(): Promise<any> {
     return whenMonacoLoaded().then(() => {
@@ -55,7 +57,7 @@ export function mount(elementId: string): Promise<void> {
         const isDark = document.documentElement.classList.contains('theme-dark')
             || pendingTheme === 'dark';
         // Side-by-side nur bei ausreichender Breite; darunter Inline-Diff.
-        const sideBySide = el.clientWidth === 0 || el.clientWidth >= 900;
+        sideBySide = el.clientWidth === 0 || el.clientWidth >= 900;
         editor = monaco.editor.createDiffEditor(el, {
             theme: isDark ? 'vs-dark' : 'vs',
             automaticLayout: true,
@@ -73,6 +75,19 @@ export function mount(elementId: string): Promise<void> {
         if (pendingTheme) {
             monaco.editor.setTheme(pendingTheme === 'dark' ? 'vs-dark' : 'vs');
             pendingTheme = null;
+        }
+        // Breitenabhängige Darstellung auch bei späteren Resizes
+        // nachziehen (900-px-Schwelle, Spec).
+        if (typeof ResizeObserver !== 'undefined') {
+            resizeObserver = new ResizeObserver(() => {
+                if (!editor) return;
+                const wide = el.clientWidth >= 900;
+                if (wide !== sideBySide) {
+                    sideBySide = wide;
+                    editor.updateOptions({ renderSideBySide: wide });
+                }
+            });
+            resizeObserver.observe(el);
         }
     });
 }
@@ -134,6 +149,10 @@ export function dispose(): void {
 
 function disposeInternal(): void {
     changeCallback = null;
+    if (resizeObserver) {
+        try { resizeObserver.disconnect(); } catch { /* ignore */ }
+        resizeObserver = null;
+    }
     disposeModels();
     if (editor) {
         try { editor.dispose(); } catch { /* ignore */ }

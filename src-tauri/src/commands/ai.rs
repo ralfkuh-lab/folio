@@ -24,7 +24,7 @@ use std::{
     time::Duration,
     time::Instant,
 };
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 /// RAII-Guard fuer den exklusiven KI-Job-Slot: gibt den Slot in jedem
 /// Ausgang (auch bei `?`/frühem Return) wieder frei.
@@ -640,17 +640,20 @@ pub async fn ai_action_template_delete(id: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Frontend meldet den Zustand der KI-Diff-Review (offen + editiert),
-/// damit die Quit-Gates sie wie einen dirty Tab behandeln koennen.
+/// Frontend meldet den Zustand der KI-Diff-Review. Die Quit-Gates
+/// reagieren PESSIMISTISCH schon auf "offen" (nicht erst auf
+/// "editiert"): der Edited-Status entsteht frontendseitig und erreicht
+/// das Backend nur fire-and-forget — ein Quit unmittelbar nach dem
+/// ersten Edit darf nicht am Race vorbeirutschen. Der Frontend-
+/// Handshake bestaetigt eine UNeditierte Review ohnehin lautlos.
 #[tauri::command]
 pub async fn ai_review_state_set(
     open: bool,
     dirty: bool,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    state
-        .ai_review_dirty
-        .store(open && dirty, Ordering::Release);
+    let _ = dirty; // Teil des Vertrags, backendseitig bewusst ungenutzt.
+    state.ai_review_dirty.store(open, Ordering::Release);
     Ok(())
 }
 
@@ -683,6 +686,11 @@ pub async fn ai_action_run(
     // === Preflight: laeuft komplett VOR der Guard-Annahme. Fehler hier
     // gehen nur ueber den Command-Return — kein Started, kein Done. ===
     actions::validate_slug(&request.suffix, "Datei-Suffix")?;
+    if let Some(action_id) = request.action_id.as_deref() {
+        // Verhindert freie Strings im Log (Redaction-Vertrag) —
+        // action_id ist reine Korrelation, kein Inhaltstransport.
+        actions::validate_slug(action_id, "Aktions-Kürzel")?;
+    }
     if request.prompt.trim().is_empty() {
         return Err("Der Prompt darf nicht leer sein.".to_string());
     }
@@ -778,6 +786,10 @@ pub async fn ai_action_run(
                 "ai:action_done",
                 serde_json::json!({ "runId": run_id, "ok": ok, "error": error }),
             );
+            // POST /wait { event: "ai.action.done" } — genau-einmal-Pfad.
+            if let Some(state) = handle.try_state::<crate::state::AppState>() {
+                crate::automation::wait::signal_ai_action_done(&state);
+            }
         }
     };
     if let Err(error) = handle.emit(
@@ -993,53 +1005,68 @@ async fn run_action_new_file(
         ));
     }
 
-    // Ownership-Check unmittelbar vor dem Erfolgs-Write: hat der User den
-    // Ziel-Tab editiert oder die Datei gefüllt, wird NIE überschrieben —
-    // Conflict-Fallback reserviert stattdessen eine frische Datei.
-    let ownership_intact = target_still_owned(state, tab_id, &path);
-    let (final_path, final_tab_id, final_normalized) = if ownership_intact {
-        (path.clone(), tab_id, normalized_path.clone())
-    } else {
-        tracing::warn!(
-            target: "folio::ai",
-            run_id,
-            path = %path.display(),
-            "AI action target was modified during the run; falling back to a fresh reservation"
-        );
-        // Verwaiste Alt-Reservierung mit aufräumen, soweit sie noch dem
-        // Lauf gehört (Tab bereits zu + Datei leer → nur Datei löschen).
-        cleanup_action_target(state, handle, tab_id, &path);
-        let fallback = match reserve_derived_file(&request.source_path, &request.suffix) {
-            Ok(path) => path,
-            Err(error) => return Err(fail(error, &done)),
-        };
-        let fallback_normalized = fallback.to_string_lossy().replace('\\', "/");
-        let transition =
-            match crate::commands::tabs::open(state, handle, fallback_normalized.clone()) {
-                Ok(transition) => transition,
-                Err(error) => {
-                    remove_derived_file(&fallback);
-                    return Err(fail(error.to_string(), &done));
-                }
-            };
-        let fallback_tab = transition.tab.id;
-        if let Err(error) =
-            crate::commands::tabs::emit_navigation_changed(handle, &transition, None)
-        {
-            cleanup_action_target(state, handle, fallback_tab, &fallback);
-            return Err(fail(error.to_string(), &done));
+    // Erfolgs-Finalisierung: Ownership-Check, Write und Tab-Reload laufen
+    // ATOMAR unter dem Tabs-Lock (finalize_action_file) — ein zwischen
+    // Check und Write eintreffender `editor_text_changed` kann keine
+    // User-Edits mehr verdrängen (Review-Befund Check-then-Act).
+    let final_normalized = match finalize_action_file(state, tab_id, &path, &normalized_path, &text)
+    {
+        Err(error) => {
+            cleanup_action_target(state, handle, tab_id, &path);
+            return Err(fail(error, &done));
         }
-        (fallback, fallback_tab, fallback_normalized)
+        Ok(FinalizeResult::Written) => normalized_path.clone(),
+        Ok(FinalizeResult::TabClosed) => {
+            // Bewusster User-Close des Ziel-Tabs = Abbruchwunsch —
+            // KEIN Conflict-Fallback (Review-Konsensbefund: sonst
+            // taucht das Ergebnis unerwartet wieder auf). Cleanup
+            // löscht nur die leere Reservierung (Datei mit vom User
+            // gespeichertem Inhalt bleibt erhalten).
+            cleanup_action_target(state, handle, tab_id, &path);
+            done(false, Some("abgebrochen"));
+            return Err("KI-Aktion abgebrochen (Ziel-Tab geschlossen).".to_string());
+        }
+        Ok(FinalizeResult::Conflict) => {
+            tracing::warn!(
+                target: "folio::ai",
+                run_id,
+                path = %path.display(),
+                "AI action target was modified during the run; falling back to a fresh reservation"
+            );
+            let fallback = match reserve_derived_file(&request.source_path, &request.suffix) {
+                Ok(path) => path,
+                Err(error) => return Err(fail(error, &done)),
+            };
+            let fallback_normalized = fallback.to_string_lossy().replace('\\', "/");
+            let transition =
+                match crate::commands::tabs::open(state, handle, fallback_normalized.clone()) {
+                    Ok(transition) => transition,
+                    Err(error) => {
+                        remove_derived_file(&fallback);
+                        return Err(fail(error.to_string(), &done));
+                    }
+                };
+            let fallback_tab = transition.tab.id;
+            if let Err(error) =
+                crate::commands::tabs::emit_navigation_changed(handle, &transition, None)
+            {
+                cleanup_action_target(state, handle, fallback_tab, &fallback);
+                return Err(fail(error.to_string(), &done));
+            }
+            match finalize_action_file(state, fallback_tab, &fallback, &fallback_normalized, &text)
+            {
+                Ok(FinalizeResult::Written) => {}
+                Ok(_) | Err(_) => {
+                    cleanup_action_target(state, handle, fallback_tab, &fallback);
+                    return Err(fail(
+                        "Die Ausweich-Zieldatei konnte nicht geschrieben werden.".to_string(),
+                        &done,
+                    ));
+                }
+            }
+            fallback_normalized
+        }
     };
-
-    if let Err(error) = write_derived_file(&final_path, text.as_bytes()) {
-        cleanup_action_target(state, handle, final_tab_id, &final_path);
-        return Err(fail(error, &done));
-    }
-    if let Err(error) = reload_derived_tab(state, final_tab_id, &final_normalized) {
-        cleanup_action_target(state, handle, final_tab_id, &final_path);
-        return Err(fail(error, &done));
-    }
 
     tracing::info!(
         target: "folio::ai",
@@ -1052,6 +1079,53 @@ async fn run_action_new_file(
         run_id,
         path: final_normalized,
     })
+}
+
+enum FinalizeResult {
+    Written,
+    Conflict,
+    TabClosed,
+}
+
+/// Ownership-geprüfte Finalisierung unter EINEM Tabs-Lock: Dirty-Check,
+/// Leer-Check der Datei, `fs::write` und Store-Reload passieren ohne
+/// Fenster für einen parallel eintreffenden `editor_text_changed`
+/// (der denselben Lock braucht). Das verbleibende Restfenster ist der
+/// Frontend-seitige Monaco-Zustand — bewusst akzeptiert (Spec).
+fn finalize_action_file(
+    state: &AppState,
+    tab_id: u64,
+    path: &Path,
+    normalized: &str,
+    text: &str,
+) -> Result<FinalizeResult, String> {
+    let mut tabs = state
+        .tabs
+        .lock()
+        .map_err(|_| "tabs lock poisoned".to_string())?;
+    let active = tabs.is_active(tab_id);
+    let Some(tab) = tabs.tab_mut(tab_id) else {
+        return Ok(FinalizeResult::TabClosed);
+    };
+    if tab.document_store.is_dirty {
+        return Ok(FinalizeResult::Conflict);
+    }
+    let file_empty = std::fs::metadata(path)
+        .map(|meta| meta.len() == 0)
+        .unwrap_or(false);
+    if !file_empty {
+        return Ok(FinalizeResult::Conflict);
+    }
+    write_derived_file(path, text.as_bytes())?;
+    if active {
+        tab.document_store.load(normalized)
+    } else {
+        tab.document_store.load_silent(normalized)
+    }
+    .map_err(|error| {
+        format!("Zieldatei '{normalized}' konnte nicht neu geladen werden: {error}")
+    })?;
+    Ok(FinalizeResult::Written)
 }
 
 /// Gemeinsames Streaming mit 150-ms-Event-Throttle (Muster der
@@ -1087,58 +1161,63 @@ async fn stream_chat(
     .await
 }
 
-/// Ownership-Regel der Spec: die Reservierung gehört dem Lauf nur,
-/// solange der Ziel-Tab nicht dirty ist und die Datei noch leer.
-fn target_still_owned(state: &AppState, tab_id: u64, path: &Path) -> bool {
-    let tab_clean = state
-        .tabs
-        .lock()
-        .map(|tabs| {
-            tabs.tab(tab_id)
-                .map(|tab| !tab.document_store.is_dirty)
-                .unwrap_or(false)
-        })
-        .unwrap_or(false);
-    let file_empty = std::fs::metadata(path)
-        .map(|meta| meta.len() == 0)
-        .unwrap_or(false);
-    tab_clean && file_empty
-}
-
-/// Cleanup für den NewFile-Pfad: Datei nur im Reservierungszustand
-/// (leer) löschen; Tab nur discarden, wenn er existiert und der User
-/// ihn nicht editiert hat. Ist der Tab bereits zu (User-Close während
-/// des Streams), wird nur die leere Datei entfernt. Alles andere
-/// bleibt dem User erhalten (warn-Log).
+/// Cleanup für den NewFile-Pfad: der Tab wird mit `DirtyPolicy::Reject`
+/// geschlossen — der Dirty-Check passiert damit atomar im Close selbst
+/// (kein Check-then-Act; Review-Befund). Danach wird die Datei nur im
+/// Reservierungszustand (leer) gelöscht; hat der User gespeichert oder
+/// die Datei anderweitig gefüllt, bleibt sie erhalten (warn-Log).
 fn cleanup_action_target(state: &AppState, handle: &AppHandle, tab_id: u64, path: &Path) {
+    match crate::commands::tabs::close(
+        state,
+        handle,
+        tab_id,
+        crate::document_service::DirtyPolicy::Reject,
+    ) {
+        Ok(transition) => {
+            if let Err(error) =
+                crate::commands::tabs::emit_navigation_changed(handle, &transition, None)
+            {
+                tracing::warn!(
+                    target: "folio::ai",
+                    %error,
+                    tab_id,
+                    "failed to emit navigation after derived-tab cleanup"
+                );
+            }
+        }
+        Err(crate::commands::tabs::TabError::DirtyRejected(_)) => {
+            tracing::warn!(
+                target: "folio::ai",
+                tab_id,
+                path = %path.display(),
+                "AI action cleanup: target tab was modified by the user; keeping tab and file"
+            );
+            return;
+        }
+        Err(crate::commands::tabs::TabError::UnknownId(_)) => {
+            // Tab bereits zu (User-Close) — nur die Datei aufräumen.
+        }
+        Err(error) => {
+            tracing::warn!(
+                target: "folio::ai",
+                %error,
+                tab_id,
+                "failed to close incomplete derived tab"
+            );
+        }
+    }
     let file_empty = std::fs::metadata(path)
         .map(|meta| meta.len() == 0)
         .unwrap_or(false);
-    if !file_empty {
+    if file_empty {
+        remove_derived_file(path);
+    } else {
         tracing::warn!(
             target: "folio::ai",
             tab_id,
             path = %path.display(),
             "AI action cleanup skipped: target file is no longer empty"
         );
-        return;
-    }
-    let tab_dirty = state
-        .tabs
-        .lock()
-        .ok()
-        .map(|tabs| tabs.tab(tab_id).map(|tab| tab.document_store.is_dirty));
-    match tab_dirty {
-        Some(Some(false)) => cleanup_derived_tab(state, handle, tab_id, path),
-        Some(None) => remove_derived_file(path),
-        _ => {
-            tracing::warn!(
-                target: "folio::ai",
-                tab_id,
-                path = %path.display(),
-                "AI action cleanup skipped: target tab was modified by the user"
-            );
-        }
     }
 }
 
@@ -1319,7 +1398,7 @@ fn reserve_derived_file(source_path: &str, suffix: &str) -> Result<PathBuf, Stri
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(error) => {
                 return Err(format!(
-                    "Übersetzungsdatei '{}' konnte nicht angelegt werden: {error}",
+                    "Zieldatei '{}' konnte nicht angelegt werden: {error}",
                     path.display()
                 ));
             }
@@ -1331,7 +1410,7 @@ fn reserve_derived_file(source_path: &str, suffix: &str) -> Result<PathBuf, Stri
 fn write_derived_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
     std::fs::write(path, bytes).map_err(|error| {
         format!(
-            "Übersetzungsdatei '{}' konnte nicht geschrieben werden: {error}",
+            "Zieldatei '{}' konnte nicht geschrieben werden: {error}",
             path.display()
         )
     })
@@ -1345,19 +1424,14 @@ fn reload_derived_tab(state: &AppState, tab_id: u64, path: &str) -> Result<(), S
     let active = tabs.is_active(tab_id);
     let tab = tabs
         .tab_mut(tab_id)
-        .ok_or_else(|| format!("translation tab {tab_id} no longer exists"))?;
+        .ok_or_else(|| format!("derived-file tab {tab_id} no longer exists"))?;
     if active {
         tab.document_store.load(path)
     } else {
         tab.document_store.load_silent(path)
     }
     .map(|_| ())
-    .map_err(|error| {
-        format!(
-            "Übersetzungsdatei '{}' konnte nicht neu geladen werden: {error}",
-            path
-        )
-    })
+    .map_err(|error| format!("Zieldatei '{path}' konnte nicht neu geladen werden: {error}"))
 }
 
 fn remove_derived_file(path: &Path) {
@@ -1367,7 +1441,7 @@ fn remove_derived_file(path: &Path) {
                 target: "folio::ai",
                 path = %path.display(),
                 %error,
-                "failed to remove incomplete translation file"
+                "failed to remove incomplete derived file"
             );
         }
     }
@@ -1389,7 +1463,7 @@ fn cleanup_derived_tab(state: &AppState, handle: &AppHandle, tab_id: u64, path: 
                     target: "folio::ai",
                     %error,
                     tab_id,
-                    "failed to emit navigation after translation cleanup"
+                    "failed to emit navigation after derived-tab cleanup"
                 );
             }
         }
@@ -1398,7 +1472,7 @@ fn cleanup_derived_tab(state: &AppState, handle: &AppHandle, tab_id: u64, path: 
                 target: "folio::ai",
                 %error,
                 tab_id,
-                "failed to close incomplete translation tab"
+                "failed to close incomplete derived tab"
             );
         }
     }

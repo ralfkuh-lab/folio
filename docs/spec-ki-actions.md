@@ -566,6 +566,22 @@ aktiviert es.
   automation-contract.md, CLAUDE.md-Abschnitt, README-Feature-Zeile,
   TODO-Folgepunkte.
 
+## Bewusst akzeptierte Restfenster (Parallel-Review 2026-07-10)
+
+- **Quit ohne dirty Tab während eines Laufs** beendet direkt (kein
+  Bestätigungsdialog) — `RunEvent::Exit` cancelt den Lauf und wartet
+  ≤2 s aufs Cleanup. Ein zusätzliches Quit-Gate auf `ai_job_active`
+  ist bewusst nicht v1.
+- **Frontend-seitiges Monaco-Restfenster** bei der Erfolgs-
+  Finalisierung: Dirty-Check + Write + Reload laufen atomar unter dem
+  Tabs-Lock (`finalize_action_file`); ein exakt gleichzeitiger
+  Tastendruck im Ziel-Tab, dessen `editor_text_changed` erst nach dem
+  Reload eintrifft, bleibt theoretisch möglich (Millisekunden).
+- **Review-Open-Meldung fire-and-forget**: das Quit-Gate reagiert
+  pessimistisch schon auf „Review offen" (nicht erst „editiert"),
+  womit das Edit-Race entschärft ist; das verbleibende Fenster ist
+  der IPC-Roundtrip des Open-Reports direkt nach Review-Öffnung.
+
 ## Bewusst nicht in v1
 
 - Nicht-Markdown-Dateien (Code/Text) als Quelle.

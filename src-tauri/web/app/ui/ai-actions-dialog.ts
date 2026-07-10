@@ -57,6 +57,10 @@ let currentRequestId: string | null = null;
 let currentRunId: number | null = null;
 let currentActionName = '';
 let abortRequested = false;
+// Ziel-Tab des laufenden NewFile-Laufs (aus dem ersten Stream-Event):
+// verschwindet er aus der Tab-Leiste, cancelt das Frontend den Lauf
+// (Review-Konsensbefund — Close des Ziel-Tabs ist ein Abbruchwunsch).
+let currentTargetTabId: number | null = null;
 
 // Favoriten (Etappe A4a): geordnete Template-IDs + Hash-Pinning für
 // Custom-Templates (Spec: geänderte Disk-Templates führen im
@@ -429,13 +433,16 @@ function closeDialog(): void {
     source = null;
 }
 
-export async function openAiActionsDialog(): Promise<void> {
+export async function openAiActionsDialog(preselectId?: string): Promise<void> {
     const dialog = $('ai-actions-dialog');
     if (!dialog || state === 'running') return;
     const generation = ++openGeneration;
     state = 'loading';
     setError(null);
-    setBusy(false);
+    // Loading-Zustand sichtbar machen: Dialog sofort zeigen, Eingaben
+    // sperren, nur Abbrechen bleibt bedienbar (setBusy-Ausnahme).
+    setBusy(true);
+    dialog.hidden = false;
 
     // Quelle einfrieren: Tab, Pfad, Snapshot, Hash, Selektion.
     const tabId = getActiveTabId();
@@ -470,12 +477,15 @@ export async function openAiActionsDialog(): Promise<void> {
         const modelSelect = $('ai-actions-model') as HTMLSelectElement | null;
         if (modelSelect) populateModelPicker(modelSelect, config, catalog, { separator: ' · ' });
         renderActionList();
-        applySelection(templates.find((template) => template.builtin)?.id || CUSTOM_ENTRY_ID);
+        const preselect = preselectId && templateById(preselectId)
+            ? preselectId
+            : templates.find((template) => template.builtin)?.id || CUSTOM_ENTRY_ID;
+        applySelection(preselect);
         syncScopeRow();
         if (!modelSelect?.value) setError('Kein freigeschaltetes Modell verfügbar.');
 
         state = 'ready';
-        dialog.hidden = false;
+        setBusy(false);
         ($('ai-actions-prompt') as HTMLTextAreaElement | null)?.focus();
     } catch (error) {
         if (generation !== openGeneration) return;
@@ -483,7 +493,7 @@ export async function openAiActionsDialog(): Promise<void> {
             error: String(error),
         });
         state = 'ready';
-        dialog.hidden = false;
+        setBusy(false);
         setError(String(error));
     }
 }
@@ -497,8 +507,10 @@ function currentScopePayload(): { start: number; length: number } | null {
 async function startAction(): Promise<void> {
     if (!source) return;
     const promptField = $('ai-actions-prompt') as HTMLTextAreaElement | null;
-    const prompt = (promptField?.value || '').trim();
-    if (!prompt) {
+    // Transparenz-Regel: gesendet wird EXAKT der sichtbare Prompt —
+    // trim() dient nur der Leerpruefung.
+    const prompt = promptField?.value || '';
+    if (!prompt.trim()) {
         setError('Der Prompt darf nicht leer sein.');
         return;
     }
@@ -527,22 +539,40 @@ async function startAction(): Promise<void> {
         return;
     }
 
-    setError(null);
-    setBusy(true);
-    try {
-        await syncEditorTextToStoreForTab(source.tabId, source.text);
-    } catch (error) {
-        setBusy(false);
-        setError(String(error));
-        return;
-    }
-
     const template = selectedTemplate();
     const replaceRadio = $('ai-actions-target-replace') as HTMLInputElement | null;
     const target: 'new-file' | 'replace' = replaceRadio?.checked ? 'replace' : 'new-file';
     if (target === 'replace' && isAiReviewOpen()) {
         setError('Erst die offene KI-Review abschließen.');
+        return;
+    }
+
+    setError(null);
+    setBusy(true);
+    // Quelle LOKAL festhalten und den Zustandsautomaten VOR dem ersten
+    // await auf 'running' stellen — ein Abbrechen-Klick während des
+    // Syncs kann `source` sonst nullen (Review-Befund) und closeDialog
+    // ist ab hier gesperrt.
+    const requestSource = source;
+    const scope = currentScopePayload();
+    state = 'running';
+    try {
+        await syncEditorTextToStoreForTab(requestSource.tabId, requestSource.text);
+    } catch (error) {
+        state = 'ready';
         setBusy(false);
+        setError(String(error));
+        return;
+    }
+    // Revalidierung NACH dem Sync, unmittelbar vor dem Invoke: der Sync
+    // hat den Snapshot tab-gebunden verankert; hat sich der Editor
+    // währenddessen bewegt, darf der Lauf nicht starten.
+    if (getActiveTabId() !== requestSource.tabId
+        || getCurrentPath() !== requestSource.path
+        || getEditorText() !== requestSource.text) {
+        state = 'ready';
+        setBusy(false);
+        setError('Das Dokument wurde während des Starts geändert — bitte erneut starten.');
         return;
     }
     dispatchRun({
@@ -553,8 +583,8 @@ async function startAction(): Promise<void> {
         target,
         masking: effectiveMasking(),
         suffix: effectiveSuffix(),
-        scope: currentScopePayload(),
-        requestSource: source,
+        scope,
+        requestSource,
         reopenOnError: true,
     });
 }
@@ -580,6 +610,7 @@ function dispatchRun(params: RunParams): void {
     currentRunId = null;
     abortRequested = false;
     currentActionName = template?.name || 'Eigener Prompt';
+    currentTargetTabId = null;
     state = 'running';
     const dialog = $('ai-actions-dialog');
     if (dialog) dialog.hidden = true;
@@ -631,9 +662,22 @@ function dispatchRun(params: RunParams): void {
             state = 'ready';
             setError(String(error));
         } else {
-            updateStatusText(`✕ ${actionName}: ${String(error)}`);
+            showErrorStatus(`✕ ${actionName}: ${String(error)}`);
         }
     });
+}
+
+/** Nichtmodaler Fehlerstatus für die Direktausführung: Statusleiste
+ *  sichtbar lassen, Abbrechen-Button wird zum Schließen-Button. */
+function showErrorStatus(text: string): void {
+    const status = $('ai-action-status');
+    if (status) status.hidden = false;
+    updateStatusText(text);
+    const cancel = $('ai-action-status-cancel') as HTMLButtonElement | null;
+    if (cancel) {
+        cancel.disabled = false;
+        cancel.textContent = 'Schließen';
+    }
 }
 
 /** Quellkontext frisch einfrieren (für die Direktausführung). */
@@ -661,44 +705,43 @@ export async function runFavoriteAction(id: string): Promise<void> {
     closeFavMenu();
     const config = configCache;
     const defaultModel = config?.defaultModel;
-    let template = templateById(id);
-    if (!template) {
-        // Liste ggf. veraltet (Popover ohne vorherigen Dialog-Open).
-        try {
-            templates = await invoke<ActionTemplate[]>('ai_actions_list');
-        } catch {
-            templates = [];
-        }
-        template = templateById(id);
+    // Templates beim Klick IMMER frisch laden — die Disk-Datei kann sich
+    // seit dem Popover-Render geändert haben (Hash-Pinning-Vertrag).
+    try {
+        templates = await invoke<ActionTemplate[]>('ai_actions_list');
+    } catch (error) {
+        showErrorStatus(`✕ ${String(error)}`);
+        return;
     }
+    const template = templateById(id);
     if (!template) return;
     if (!defaultModel?.provider || !defaultModel?.model) {
-        await openAiActionsDialog();
+        await openAiActionsDialog(id);
         return;
     }
     if (!template.builtin) {
+        // Fail-closed: OHNE gespeicherten Pin oder bei Abweichung läuft
+        // ein Custom-Template nie blind — Dialog mit Vorlage vorbefüllt.
         const pinned = favoriteHashes[id];
         const current = await templateContentHash(template);
-        if (pinned && pinned !== current) {
-            folioLog.info('ai-actions', 'Favoriten-Hash weicht ab — öffne Dialog', { id });
-            await openAiActionsDialog();
+        if (!pinned || pinned !== current) {
+            folioLog.info('ai-actions', 'Favoriten-Pin fehlt/weicht ab — öffne Dialog', { id });
+            await openAiActionsDialog(id);
             return;
         }
     }
     if (template.target === 'replace' && isAiReviewOpen()) {
-        updateStatusText('Erst die offene KI-Review abschließen.');
-        const status = $('ai-action-status');
-        if (status) status.hidden = false;
+        showErrorStatus('Erst die offene KI-Review abschließen.');
         return;
     }
     const requestSource = await freezeSource();
     if (!requestSource) return;
+    state = 'running';
     try {
         await syncEditorTextToStoreForTab(requestSource.tabId, requestSource.text);
     } catch (error) {
-        folioLog.warn('ai-actions', 'Sync für Direktausführung fehlgeschlagen', {
-            error: String(error),
-        });
+        state = 'closed';
+        showErrorStatus(`✕ ${template.name}: ${String(error)}`);
         return;
     }
     const useSelection = !!requestSource.selection && template.scope !== 'document';
@@ -727,6 +770,10 @@ function finishRun(): void {
 
 function requestCancel(): void {
     const button = $('ai-action-status-cancel') as HTMLButtonElement | null;
+    if (button && button.textContent === 'Schließen') {
+        hideStatus();
+        return;
+    }
     if (button) {
         button.disabled = true;
         button.textContent = 'Bricht ab…';
@@ -867,13 +914,21 @@ async function submitSaveTemplate(): Promise<void> {
         return;
     }
     const replaceRadio = $('ai-actions-target-replace') as HTMLInputElement | null;
+    // Scope aus der sichtbaren Wahl ableiten: "Ganzes Dokument" wird
+    // fest gespeichert, "Selektion" adaptiv als 'auto'; ohne sichtbare
+    // Scope-Zeile erbt das Template den Scope der Ausgangsvorlage.
+    const scopeRow = $('ai-actions-scope-row');
+    const documentRadio = $('ai-actions-scope-document') as HTMLInputElement | null;
+    const scope: ActionTemplate['scope'] = scopeRow && !scopeRow.hidden
+        ? (documentRadio?.checked ? 'document' : 'auto')
+        : (selectedTemplate()?.scope ?? 'auto');
     const template: ActionTemplate = {
         id,
         name,
         description: '',
         prompt,
         masking: effectiveMasking(),
-        scope: 'auto',
+        scope,
         target: replaceRadio?.checked ? 'replace' : 'new-file',
         suffix: id,
         builtin: false,
@@ -983,6 +1038,7 @@ export function initAiActionsDialog(): void {
         events.listen('ai:action_stream', (event: any) => {
             const data = event?.payload || {};
             if (currentRunId === null || data.runId !== currentRunId) return;
+            if (typeof data.tabId === 'number') currentTargetTabId = data.tabId;
             const chars = Number(data.chars) || 0;
             updateStatusText(
                 `✨ ${currentActionName} · ${chars.toLocaleString('de-DE')} Zeichen`,
@@ -997,6 +1053,19 @@ export function initAiActionsDialog(): void {
             const data = event?.payload || {};
             if (currentRunId === null || data.runId !== currentRunId) return;
             if (data.ok) updateStatusText(`✓ ${currentActionName}`);
+        });
+        // Ziel-Tab-Close während des Streams = Abbruchwunsch des Users.
+        events.listen('tabs:changed', (event: any) => {
+            if (currentRunId === null || currentTargetTabId === null) return;
+            const tabs = event?.payload?.tabs;
+            if (!Array.isArray(tabs)) return;
+            const stillOpen = tabs.some((tab: any) => tab?.id === currentTargetTabId);
+            if (!stillOpen) {
+                const runId = currentRunId;
+                currentTargetTabId = null;
+                folioLog.info('ai-actions', 'Ziel-Tab geschlossen — breche Lauf ab', { runId });
+                invoke<void>('ai_action_cancel', { runId }).catch(() => {});
+            }
         });
     }
     void refreshAiActionsAvailability();

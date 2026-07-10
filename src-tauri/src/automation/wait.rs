@@ -43,6 +43,7 @@ pub const KNOWN_EVENTS: &[&str] = &[
     "document.loaded",
     "document.saved",
     "document.dirty_clean",
+    "ai.action.done",
 ];
 
 pub fn is_known(event: &str) -> bool {
@@ -67,7 +68,9 @@ pub fn already_satisfied(state: &AppState, event: &str) -> bool {
             .lock()
             .map(|tabs| !tabs.active().document_store.is_dirty)
             .unwrap_or(false),
-        "document.loaded" | "document.saved" => recently_emitted(state, event, RECENT_EVENT_TTL_MS),
+        "document.loaded" | "document.saved" | "ai.action.done" => {
+            recently_emitted(state, event, RECENT_EVENT_TTL_MS)
+        }
         _ => false,
     }
 }
@@ -173,6 +176,12 @@ pub fn signal_document_loaded(state: &AppState) {
 /// Convenience-Funktion fuer den `document:saved`-Callback.
 pub fn signal_document_saved(state: &AppState) {
     signal(state, "document.saved");
+}
+
+/// Convenience-Funktion fuer den genau-einmaligen Done-Pfad der
+/// KI-Aktionen (`ai:action_done`).
+pub fn signal_ai_action_done(state: &AppState) {
+    signal(state, "ai.action.done");
 }
 
 /// Wird aus dem `dirty_changed`-Callback gerufen — feuert nur, wenn

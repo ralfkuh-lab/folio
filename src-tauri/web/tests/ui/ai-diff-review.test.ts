@@ -94,6 +94,10 @@ describe('ai-diff-review Einbettung + Cursor (reine Funktionen)', () => {
         expect(firstDiffOffset('gleich', 'gleich')).toBe(0);
         expect(firstDiffOffset('😀a', '😀b')).toBe(2);
         expect(firstDiffOffset('', 'neu')).toBe(0);
+        // Unterschied im Low-Surrogate (😀 vs 😁 teilen das High-
+        // Surrogate) → Cursor darf das Paar nicht zerschneiden.
+        expect(firstDiffOffset('😀', '😁')).toBe(0);
+        expect(firstDiffOffset('a😀', 'a😁')).toBe(1);
     });
 });
 
@@ -187,6 +191,25 @@ describe('ai-diff-review Guards + Übernahme', () => {
         await flush();
         expect(editor.applyReplace).toHaveBeenCalled();
         expect(isAiReviewOpen()).toBe(false);
+    });
+
+    it('wiederholt die Guards nach dem Bestätigungs-await (Tab-Wechsel während des Dialogs)', async () => {
+        await openAiDiffReview(baseContext);
+        vi.mocked(getEditorText).mockReturnValue('# Original — geändert');
+        document.getElementById('ai-diff-apply')!.click();
+        await flush();
+        expect(document.getElementById('confirm-dialog')!.hidden).toBe(false);
+
+        // Während der Bestätigung wechselt der aktive Tab → nach OK darf
+        // NICHT übernommen werden (Guard-Wiederholung, Review-Befund).
+        vi.mocked(getActiveTabId).mockReturnValue(99);
+        document.getElementById('confirm-ok')!.click();
+        await flush();
+
+        expect(editor.applyReplace).not.toHaveBeenCalled();
+        expect(document.getElementById('ai-diff-hint')!.textContent)
+            .toContain('aktivieren');
+        expect(isAiReviewOpen()).toBe(true);
     });
 
     it('Quit-Guard: editierte Review verlangt Bestätigung, unbearbeitete schließt still', async () => {

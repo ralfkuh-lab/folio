@@ -36,6 +36,9 @@ export interface VirtualTab {
     slug: string;
     label: () => string;
     dirty?: () => boolean;
+    /** true: Klick auf einen Dokument-Tab deaktiviert diesen virtuellen
+     *  Tab nur (bleibt in der Leiste), statt onClose auszulösen. */
+    keepOnDocTabClick?: boolean;
     onActivate: () => void;
     onClose: () => void | boolean | Promise<void | boolean>;
 }
@@ -212,6 +215,14 @@ export function renderTabs(payload: TabsPayload): void {
             // (E2E 30_tabs_ui zeigte einmalig eine Timing-Race, wenn der
             // Wechsel hinter einer Promise-Kette haengt).
             if (!activeVirtualSlug) {
+                activateTab(tab.id);
+                return;
+            }
+            const activeVirtual = virtualTabs.get(activeVirtualSlug);
+            if (activeVirtual?.keepOnDocTabClick) {
+                activeVirtualSlug = null;
+                syncVirtualRegionClasses();
+                renderTabs(current);
                 activateTab(tab.id);
                 return;
             }

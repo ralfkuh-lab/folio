@@ -171,6 +171,8 @@ def run(ctx):
             _open_actions_dialog(ctx)
             _select_action(ctx, "summarize")
             ctx.api.click("ai-actions-start")
+            # Deterministischer Wait-Vertrag statt reiner Poll-Schleife.
+            ctx.api.wait("ai.action.done", timeout_ms=15_000)
             summary_path = tmp / "bericht.summary.md"
             _poll(ctx, "Zusammenfassungs-Datei geschrieben",
                   lambda: summary_path.exists() and "Kernaussage eins" in

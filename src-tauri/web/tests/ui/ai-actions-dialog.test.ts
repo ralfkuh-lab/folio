@@ -369,7 +369,7 @@ describe('ai-actions-dialog', () => {
         expect(document.getElementById('ai-actions-fav-menu')!.hidden).toBe(true);
     });
 
-    it('öffnet bei Hash-Abweichung eines Custom-Favoriten den Dialog statt direkt zu laufen', async () => {
+    it('öffnet bei Hash-Abweichung eines Custom-Favoriten den Dialog vorbefüllt statt direkt zu laufen', async () => {
         settingsData.aiActionFavorites = ['eigenes'];
         settingsData.aiActionFavoriteHashes = { eigenes: 'deadbeef' };
         await openAiActionsDialog(); // lädt Favoriten + Templates
@@ -380,6 +380,44 @@ describe('ai-actions-dialog', () => {
 
         expect(lastRunArgs).toBeNull();
         expect(document.getElementById('ai-actions-dialog')!.hidden).toBe(false);
+        // Vorbefüllt mit genau dem angeklickten Template (Review-Befund).
+        expect((document.getElementById('ai-actions-prompt') as HTMLTextAreaElement).value)
+            .toBe('Mach was.');
+    });
+
+    it('führt Custom-Favoriten OHNE gespeicherten Pin nie direkt aus (fail-closed)', async () => {
+        settingsData.aiActionFavorites = ['eigenes'];
+        settingsData.aiActionFavoriteHashes = {};
+        await runFavoriteAction('eigenes');
+        await flush();
+
+        expect(lastRunArgs).toBeNull();
+        expect(document.getElementById('ai-actions-dialog')!.hidden).toBe(false);
+    });
+
+    it('cancelt den Lauf, wenn der Ziel-Tab während des Streams geschlossen wird', async () => {
+        await openAiActionsDialog();
+        document.getElementById('ai-actions-start')!.click();
+        await flush();
+        handles.emitEvent('ai:action_started', {
+            runId: 11,
+            requestId: lastRunArgs.request.requestId,
+        });
+        handles.emitEvent('ai:action_stream', { runId: 11, chars: 3, tabId: 42, text: 'x' });
+
+        // Ziel-Tab 42 verschwindet aus der Leiste → Cancel.
+        handles.emitEvent('tabs:changed', { tabs: [{ id: 7 }] });
+        await flush();
+        expect(handles.invoke).toHaveBeenCalledWith('ai_action_cancel', { runId: 11 });
+    });
+
+    it('sendet den Prompt exakt wie sichtbar (kein Trim)', async () => {
+        await openAiActionsDialog();
+        const prompt = document.getElementById('ai-actions-prompt') as HTMLTextAreaElement;
+        prompt.value = '  Anweisung mit Einrückung\n';
+        document.getElementById('ai-actions-start')!.click();
+        await flush();
+        expect(lastRunArgs.request.prompt).toBe('  Anweisung mit Einrückung\n');
     });
 
     it('speichert einen editierten Prompt als eigene Vorlage (Slug aus dem Namen)', async () => {
