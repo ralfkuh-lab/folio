@@ -79,10 +79,10 @@ Wichtige stabile Selektor-Gruppen:
 - Settings-Tabs: `settings-tab-<slug>` und
   `[data-settings-tab="<slug>"]`.
 - KI-Settings: `#settings-panel-ki-anbieter`,
-  `#settings-panel-ki-modelle`, `#ai-provider-list`,
-  `#ai-custom-provider-list`, `#ai-model-list`, `#ai-model-search`,
-  `#ai-default-model`, `#ai-catalog-refresh` und
-  `#ai-catalog-updated`.
+  `#settings-panel-ki-modelle`, `#ai-provider-list` (enthält Katalog-
+  UND Custom-Provider in einer Liste, sortiert aktiv → verwendbar →
+  Rest), `#ai-model-list`, `#ai-model-search`, `#ai-default-model`,
+  `#ai-catalog-refresh` und `#ai-catalog-updated`.
 - KI-Provider-Zeilen: `[data-ai-provider-id="<providerId>"]`,
   `#ai-provider-enabled-<providerId>`,
   `[data-ai-auth-provider="<providerId>"]`,
@@ -96,8 +96,13 @@ Wichtige stabile Selektor-Gruppen:
   `#ai-custom-save` und `#ai-custom-cancel`.
 - KI-Modell-Zeilen: `[data-ai-model-provider="<providerId>"]`,
   `[data-ai-model-id="<modelId>"]`,
-  `#ai-model-toggle-<providerId>-<modelId>` und für eigene Provider
-  `#ai-models-fetch-<providerId>`.
+  `#ai-model-toggle-<providerId>-<modelId>`, für eigene Provider
+  `#ai-models-fetch-<providerId>` sowie bei freigeschalteten Modellen
+  `#ai-model-test-<providerId>-<modelId>`.
+- KI-Chat-Test-Dialog: `#ai-chat-test-dialog`, `#ai-chat-test-meta`,
+  `#ai-chat-test-messages`, `#ai-chat-test-input`,
+  `#ai-chat-test-send`, `#ai-chat-test-close` und
+  `#ai-chat-test-error`.
 - KI-Übersetzung: `#ai-translate-dialog`, `#ai-translate-start`,
   `#ai-translate-cancel`, `#ai-translate-error`, `#ai-translate-model`,
   `#ai-translate-lang-<code>` für die Presets

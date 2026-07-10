@@ -217,6 +217,29 @@ pub async fn ai_recent_languages_set(
     Ok(result)
 }
 
+/// Kurzer Chat gegen ein freigeschaltetes Modell zum Verifizieren von
+/// Endpoint, Schlüssel und Modell-ID (UI: „Test"-Button in der Modellzeile).
+/// Antworten werden nicht persistiert.
+#[tauri::command]
+pub async fn ai_model_chat_test(
+    provider_id: String,
+    model_id: String,
+    messages: Vec<ChatMessage>,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let (base_url, api_key) = resolve_provider(state.inner(), &provider_id, &model_id)?;
+    client::chat_stream(
+        &state.ai_http,
+        &base_url,
+        api_key.as_deref(),
+        &model_id,
+        &messages,
+        |_| {},
+    )
+    .await
+    .map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 pub async fn ai_translate_document(
     languages: Vec<String>,

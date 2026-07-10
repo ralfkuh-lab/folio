@@ -272,17 +272,11 @@
           <p class="settings-hint">Schlüssel liegen im Klartext in <code>auth.json</code> im Config-Verzeichnis (Dateirechte 0600).</p>
           <div class="settings-ai-toolbar">
             <input type="search" id="ai-provider-search" class="settings-input" placeholder="Anbieter suchen…" autocomplete="off" />
-          </div>
-          <p class="settings-hint">Die vordefinierten Anbieter stammen aus dem <code>models.dev</code>-Katalog; aktualisieren lässt er sich im Reiter „KI-Modelle“.</p>
-          <p id="ai-providers-error" class="settings-ai-error" hidden></p>
-          <div id="ai-provider-list" class="settings-ai-list" aria-live="polite"></div>
-        </section>
-        <section class="settings-section">
-          <div class="settings-ai-heading">
-            <h3 class="settings-section__title">Eigene Anbieter</h3>
             <button type="button" id="ai-custom-add" class="settings-ai-button">Anbieter hinzufügen</button>
           </div>
-          <div id="ai-custom-provider-list" class="settings-ai-list"></div>
+          <p class="settings-hint">Die vordefinierten Anbieter stammen aus dem <code>models.dev</code>-Katalog; aktualisieren lässt er sich im Reiter „KI-Modelle“. Eigene (OpenAI-kompatible) Anbieter lassen sich über „Anbieter hinzufügen“ ergänzen.</p>
+          <p id="ai-providers-error" class="settings-ai-error" hidden></p>
+          <div id="ai-provider-list" class="settings-ai-list" aria-live="polite"></div>
         </section>
         <div id="ai-custom-dialog" class="settings-ai-overlay" hidden>
           <form id="ai-custom-form" class="settings-ai-dialog" role="dialog" aria-modal="true" aria-labelledby="ai-custom-title">
@@ -324,6 +318,19 @@
         <section class="settings-section">
           <div id="ai-model-list" class="settings-ai-model-list" aria-live="polite"></div>
         </section>
+        <div id="ai-chat-test-dialog" class="settings-ai-overlay" hidden>
+          <div class="settings-ai-dialog settings-ai-chat" role="dialog" aria-modal="true" aria-labelledby="ai-chat-test-title">
+            <h3 id="ai-chat-test-title">Modell testen</h3>
+            <p id="ai-chat-test-meta" class="settings-hint"></p>
+            <div id="ai-chat-test-messages" class="settings-ai-chat__messages" aria-live="polite"></div>
+            <p id="ai-chat-test-error" class="settings-ai-error" hidden></p>
+            <textarea id="ai-chat-test-input" class="settings-input" rows="2" aria-label="Testnachricht"></textarea>
+            <div class="settings-ai-dialog__actions">
+              <button type="button" id="ai-chat-test-close">Schließen</button>
+              <button type="button" id="ai-chat-test-send" class="primary">Senden</button>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="settings-dialog__tabpanel" id="settings-panel-diagnose" role="tabpanel" aria-labelledby="settings-tab-diagnose" data-settings-tab="diagnose" hidden>
         <section class="settings-section">

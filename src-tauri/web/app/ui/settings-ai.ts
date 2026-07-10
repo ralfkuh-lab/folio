@@ -1,4 +1,5 @@
 import { folioLog, safeInvoke } from '../util/log';
+import { initAiChatTest, openAiChatTest } from './ai-chat-test';
 import { populateModelPicker } from './ai-model-picker';
 import { makeToggle } from './controls';
 
@@ -97,7 +98,7 @@ function button(text: string, className = 'settings-ai-button'): HTMLButtonEleme
     return element;
 }
 
-function renderAuthRow(providerId: string): HTMLElement {
+function renderAuthRow(providerId: string, isCustom = false): HTMLElement {
     const row = document.createElement('div');
     row.className = 'settings-ai-auth';
     row.dataset.aiAuthProvider = providerId;
@@ -105,15 +106,20 @@ function renderAuthRow(providerId: string): HTMLElement {
     const stored = authStatus[providerId] === true;
     const status = document.createElement('span');
     status.className = 'settings-ai-auth__status';
-    const dot = document.createElement('span');
-    dot.className = 'settings-ai-status-dot' +
-        (stored ? ' settings-ai-status-dot--stored' : '');
-    dot.setAttribute('aria-hidden', 'true');
-    const statusText = document.createElement('span');
-    statusText.textContent = stored ? 'Schlüssel hinterlegt' : 'Schlüssel fehlt';
-    status.append(dot, statusText);
+    if (stored || !isCustom) {
+        // Bei Custom-Providern ist der Schlüssel optional — kein "fehlt"-Status.
+        const dot = document.createElement('span');
+        dot.className = 'settings-ai-status-dot' +
+            (stored ? ' settings-ai-status-dot--stored' : '');
+        dot.setAttribute('aria-hidden', 'true');
+        const statusText = document.createElement('span');
+        statusText.textContent = stored ? 'Schlüssel hinterlegt' : 'Schlüssel fehlt';
+        status.append(dot, statusText);
+    }
 
-    const edit = button(stored ? 'Schlüssel ändern' : 'Schlüssel setzen');
+    const edit = button(
+        stored ? 'Schlüssel ändern' : isCustom ? 'Schlüssel setzen (optional)' : 'Schlüssel setzen',
+    );
     edit.id = `ai-auth-edit-${providerId}`;
     edit.dataset.aiAuthEdit = providerId;
     const remove = button('Entfernen');
@@ -154,7 +160,8 @@ function renderAuthRow(providerId: string): HTMLElement {
     });
     save.addEventListener('click', () => saveAuth(providerId, keyInput));
     remove.addEventListener('click', () => removeAuth(providerId, error.id));
-    row.append(status, edit, remove, editor, error);
+    if (status.childElementCount > 0) row.append(status);
+    row.append(edit, remove, editor, error);
     return row;
 }
 
@@ -231,6 +238,7 @@ function providerCard(
     enabled: boolean,
     api?: string,
     doc?: string,
+    isCustom = false,
 ): HTMLElement {
     const card = document.createElement('article');
     card.className = 'settings-ai-card';
@@ -271,17 +279,17 @@ function providerCard(
         }
         card.appendChild(details);
     }
-    card.appendChild(renderAuthRow(providerId));
+    card.appendChild(renderAuthRow(providerId, isCustom));
     return card;
 }
 
-// Rang für die Anbieter-Sortierung: aktive zuerst (0), dann alle weiteren
-// konfigurierten — mit hinterlegtem Schlüssel oder bestehendem Config-Eintrag
-// (1) —, dann der ungenutzte Rest (2). Innerhalb jeder Gruppe alphabetisch.
+// Rang für die Anbieter-Sortierung: aktive zuerst (0), dann verwendbare —
+// hinterlegter Schlüssel oder Custom-Eintrag (Schlüssel dort optional) (1) —,
+// dann der Rest (2). Innerhalb jeder Gruppe alphabetisch.
 function providerRank(id: string): number {
     const cfg = aiConfig?.provider[id];
     if (cfg?.enabled) return 0;
-    if (cfg || authStatus[id] === true) return 1;
+    if (cfg?.custom || authStatus[id] === true) return 1;
     return 2;
 }
 
@@ -289,79 +297,79 @@ function providerMatchesTerm(id: string, name: string, term: string): boolean {
     return !term || `${name} ${id}`.toLocaleLowerCase('de').includes(term);
 }
 
+type ProviderListEntry = {
+    id: string;
+    name: string;
+    custom: boolean;
+    api?: string;
+    doc?: string;
+};
+
 function renderProviders(): void {
-    const catalogList = $('ai-provider-list');
-    const customList = $('ai-custom-provider-list');
-    if (!catalogList || !customList || !catalogResult || !aiConfig) return;
-    catalogList.textContent = '';
-    customList.textContent = '';
+    const list = $('ai-provider-list');
+    if (!list || !catalogResult || !aiConfig) return;
+    list.textContent = '';
     const term = (input('ai-provider-search')?.value || '')
         .trim()
         .toLocaleLowerCase('de');
 
-    const providers = Object.entries(catalogResult.catalog)
+    // Katalog- und Custom-Provider in EINER Liste, sortiert nach providerRank.
+    const entries: ProviderListEntry[] = Object.entries(catalogResult.catalog)
         .filter(([id]) => !aiConfig!.provider[id]?.custom)
-        .map(([id, provider]) =>
-            [id, provider, providerName(id, provider)] as
-                [string, CatalogProvider, string])
-        .filter(([id, , name]) => providerMatchesTerm(id, name, term))
-        .sort(([idA, , nameA], [idB, , nameB]) => {
-            const byRank = providerRank(idA) - providerRank(idB);
-            return byRank !== 0 ? byRank : nameA.localeCompare(nameB, 'de');
+        .map(([id, provider]) => ({
+            id,
+            name: providerName(id, provider),
+            custom: false,
+            api: provider.api,
+            doc: provider.doc,
+        }));
+    for (const [id, provider] of Object.entries(aiConfig.provider)) {
+        if (!provider.custom) continue;
+        entries.push({
+            id,
+            name: providerName(id, undefined, provider),
+            custom: true,
+            api: provider.options?.baseURL,
+        });
+    }
+
+    const providers = entries
+        .filter((entry) => providerMatchesTerm(entry.id, entry.name, term))
+        .sort((a, b) => {
+            const byRank = providerRank(a.id) - providerRank(b.id);
+            return byRank !== 0 ? byRank : a.name.localeCompare(b.name, 'de');
         });
     if (providers.length === 0) {
         const empty = document.createElement('p');
         empty.className = 'settings-hint';
         empty.textContent = term ? 'Keine passenden Anbieter.' : 'Keine Anbieter im Katalog.';
-        catalogList.appendChild(empty);
+        list.appendChild(empty);
     }
-    for (const [id, provider, name] of providers) {
-        catalogList.appendChild(providerCard(
-            id,
-            name,
-            aiConfig.provider[id]?.enabled === true,
-            provider.api,
-            provider.doc,
-        ));
-    }
-
-    const customProviders = Object.entries(aiConfig.provider)
-        .filter(([, provider]) => provider.custom)
-        .map(([id, provider]) =>
-            [id, provider, providerName(id, undefined, provider)] as
-                [string, ProviderConfig, string])
-        .filter(([id, , name]) => providerMatchesTerm(id, name, term))
-        .sort(([, a, nameA], [, b, nameB]) => {
-            const byActive = (a.enabled ? 0 : 1) - (b.enabled ? 0 : 1);
-            return byActive !== 0 ? byActive : nameA.localeCompare(nameB, 'de');
-        });
-    if (customProviders.length === 0) {
-        const empty = document.createElement('p');
-        empty.className = 'settings-hint';
-        empty.textContent = term ? 'Keine passenden eigenen Anbieter.' : 'Noch keine eigenen Anbieter.';
-        customList.appendChild(empty);
-    }
-    for (const [id, provider] of customProviders) {
+    for (const entry of providers) {
         const card = providerCard(
-            id,
-            providerName(id, undefined, provider),
-            provider.enabled,
-            provider.options?.baseURL,
+            entry.id,
+            entry.name,
+            aiConfig.provider[entry.id]?.enabled === true,
+            entry.api,
+            entry.doc,
+            entry.custom,
         );
-        card.classList.add('settings-ai-card--custom');
-        const actions = document.createElement('div');
-        actions.className = 'settings-ai-card__actions';
-        const edit = button('Bearbeiten');
-        edit.id = `ai-custom-edit-${id}`;
-        edit.dataset.aiCustomEdit = id;
-        edit.addEventListener('click', () => openCustomDialog(id));
-        const remove = button('Löschen');
-        remove.id = `ai-custom-delete-${id}`;
-        remove.dataset.aiCustomDelete = id;
-        remove.addEventListener('click', () => deleteCustomProvider(id));
-        actions.append(edit, remove);
-        card.appendChild(actions);
-        customList.appendChild(card);
+        if (entry.custom) {
+            card.classList.add('settings-ai-card--custom');
+            const actions = document.createElement('div');
+            actions.className = 'settings-ai-card__actions';
+            const edit = button('Bearbeiten');
+            edit.id = `ai-custom-edit-${entry.id}`;
+            edit.dataset.aiCustomEdit = entry.id;
+            edit.addEventListener('click', () => openCustomDialog(entry.id));
+            const remove = button('Löschen');
+            remove.id = `ai-custom-delete-${entry.id}`;
+            remove.dataset.aiCustomDelete = entry.id;
+            remove.addEventListener('click', () => deleteCustomProvider(entry.id));
+            actions.append(edit, remove);
+            card.appendChild(actions);
+        }
+        list.appendChild(card);
     }
 }
 
@@ -540,6 +548,25 @@ function modelRow(
         'Verwenden',
         (checked) => toggleModel(providerId, modelId, checked),
     );
+    if (provider.whitelist?.includes(modelId) === true) {
+        // Chat-Test nur für freigeschaltete Modelle anbieten.
+        const actions = document.createElement('div');
+        actions.className = 'settings-ai-model__actions';
+        const test = button('Test', 'settings-ai-button settings-ai-button--small');
+        test.id = `ai-model-test-${providerId}-${modelId}`;
+        test.dataset.aiModelTest = `${providerId}/${modelId}`;
+        test.addEventListener('click', (event) => {
+            event.stopPropagation();
+            openAiChatTest(
+                providerId,
+                modelId,
+                `${providerName(providerId, catalogResult?.catalog[providerId], provider)} — ${model.name || modelId}`,
+            );
+        });
+        actions.append(test, toggle);
+        row.append(text, badges, actions);
+        return row;
+    }
     row.append(text, badges, toggle);
     return row;
 }
@@ -777,4 +804,5 @@ export function initSettingsAi(): void {
     select('ai-default-model')?.addEventListener('change', (event) => {
         setDefaultModel((event.currentTarget as HTMLSelectElement).value);
     });
+    initAiChatTest();
 }

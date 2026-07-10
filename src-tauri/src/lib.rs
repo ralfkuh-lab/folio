@@ -344,6 +344,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::ai::ai_custom_models_fetch,
             commands::ai::ai_default_model_set,
             commands::ai::ai_recent_languages_set,
+            commands::ai::ai_model_chat_test,
             commands::ai::ai_auth_set,
             commands::ai::ai_auth_remove,
             commands::ai::ai_auth_status,

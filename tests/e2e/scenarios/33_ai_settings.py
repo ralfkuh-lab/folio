@@ -46,7 +46,7 @@ def _custom_state(ctx) -> dict:
             ctx,
             f"""(() => {{
                 const card = document.querySelector(
-                    '#ai-custom-provider-list [data-ai-provider-id="{PROVIDER_ID}"]'
+                    '#ai-provider-list [data-ai-provider-id="{PROVIDER_ID}"]'
                 );
                 const enabled = document.getElementById(
                     "ai-provider-enabled-{PROVIDER_ID}"
@@ -223,17 +223,23 @@ def run(ctx):
 
         with ctx.step("Schluessel ueber die UI wieder entfernen"):
             ctx.api.click(f"ai-auth-remove-{PROVIDER_ID}")
+            # Custom-Provider zeigen ohne Schluessel KEINEN "fehlt"-Status
+            # (Schluessel dort optional) — nur "Schluessel setzen (optional)".
             state = _poll(
                 ctx,
                 lambda: (
                     current
-                    if "fehlt" in (current := _custom_state(ctx)).get(
+                    if "hinterlegt" not in (current := _custom_state(ctx)).get(
                         "authText", ""
                     )
+                    and "optional" in current.get("authText", "")
                     else None
                 ),
             )
-            ctx.expect(bool(state), "Auth-Status wechselte nicht auf fehlt")
+            ctx.expect(
+                bool(state), "Auth-Status wechselte nicht auf optional/ohne Schluessel"
+            )
+            ctx.expect("fehlt" not in state.get("authText", ""), f"Auth-State: {state!r}")
             ctx.expect(state.get("removeHidden") is True, f"Auth-State: {state!r}")
 
         with ctx.step("Aktiver Custom-Provider erscheint im Modelle-Tab"):

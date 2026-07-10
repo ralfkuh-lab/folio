@@ -66,10 +66,9 @@ function buildDom(): void {
         <button id="settings-tab-ki-modelle"></button>
         <div id="settings-panel-ki-anbieter">
             <input id="ai-provider-search" />
+            <button id="ai-custom-add"></button>
             <p id="ai-providers-error" hidden></p>
             <div id="ai-provider-list"></div>
-            <button id="ai-custom-add"></button>
-            <div id="ai-custom-provider-list"></div>
             <div id="ai-custom-dialog" hidden>
                 <form id="ai-custom-form">
                     <h3 id="ai-custom-title"></h3>
@@ -90,6 +89,15 @@ function buildDom(): void {
             <p id="ai-models-error" hidden></p>
             <select id="ai-default-model"></select>
             <div id="ai-model-list"></div>
+            <div id="ai-chat-test-dialog" hidden>
+                <h3 id="ai-chat-test-title"></h3>
+                <p id="ai-chat-test-meta"></p>
+                <div id="ai-chat-test-messages"></div>
+                <p id="ai-chat-test-error" hidden></p>
+                <textarea id="ai-chat-test-input"></textarea>
+                <button id="ai-chat-test-close"></button>
+                <button id="ai-chat-test-send"></button>
+            </div>
         </div>
     `;
 }
@@ -140,6 +148,9 @@ describe('settings-ai', () => {
                     : null;
                 return Promise.resolve(clone(config));
             }
+            if (cmd === 'ai_model_chat_test') {
+                return Promise.resolve('Mock-Antwort');
+            }
             return Promise.resolve(undefined);
         });
         initSettingsAi();
@@ -152,13 +163,18 @@ describe('settings-ai', () => {
         const cards = Array.from(
             document.querySelectorAll<HTMLElement>('#ai-provider-list [data-ai-provider-id]'),
         );
-        // Aktive Anbieter zuerst (openai ist enabled), dann der Rest
-        // alphabetisch (anthropic ist unkonfiguriert).
+        // EINE Liste für Katalog- und Custom-Provider: aktive zuerst
+        // (local + openai, alphabetisch nach Anzeigename), dann der Rest
+        // (anthropic ist unkonfiguriert).
         expect(cards.map((card) => card.dataset.aiProviderId))
-            .toEqual(['openai', 'anthropic']);
-        expect(cards[0].textContent).toContain('https://api.openai.test/v1');
-        expect(document.querySelector('[data-ai-provider-id="local"]')!.textContent)
-            .toContain('Lokales Modell');
+            .toEqual(['local', 'openai', 'anthropic']);
+        expect(document.querySelector('[data-ai-provider-id="openai"]')!.textContent)
+            .toContain('https://api.openai.test/v1');
+        const localCard = document.querySelector('[data-ai-provider-id="local"]')!;
+        expect(localCard.textContent).toContain('Lokales Modell');
+        // Custom-Provider: Schlüssel ist optional — kein "fehlt"-Status.
+        expect(localCard.textContent).not.toContain('Schlüssel fehlt');
+        expect(localCard.textContent).toContain('Schlüssel setzen (optional)');
 
         document.getElementById('settings-tab-ki-modelle')!.click();
         await settle();
@@ -276,5 +292,60 @@ describe('settings-ai', () => {
             providerId: null,
             modelId: null,
         });
+    });
+
+    it('sortiert Anbieter in Gruppen: aktiv, verwendbar (Key/Custom), Rest', async () => {
+        // openai deaktiviert, aber mit Schlüssel → Gruppe 2; ein inaktiver
+        // Custom-Provider ohne Schlüssel gehört ebenfalls in Gruppe 2.
+        config.provider.openai.enabled = false;
+        config.provider.zzz = {
+            enabled: false,
+            custom: true,
+            name: 'ZZZ lokal',
+            options: { baseURL: 'http://localhost:9999/v1' },
+            models: {},
+            whitelist: [],
+        };
+        authStored = true;
+
+        document.getElementById('settings-tab-ki-anbieter')!.click();
+        await settle();
+
+        const cards = Array.from(
+            document.querySelectorAll<HTMLElement>('#ai-provider-list [data-ai-provider-id]'),
+        );
+        expect(cards.map((card) => card.dataset.aiProviderId))
+            .toEqual(['local', 'openai', 'zzz', 'anthropic']);
+    });
+
+    it('bietet den Chat-Test nur für freigeschaltete Modelle an', async () => {
+        document.getElementById('settings-tab-ki-modelle')!.click();
+        await settle();
+
+        expect(document.getElementById('ai-model-test-openai-gpt-4o')).not.toBeNull();
+        expect(document.getElementById('ai-model-test-openai-gpt-4o-mini')).toBeNull();
+
+        document.getElementById('ai-model-test-openai-gpt-4o')!.click();
+        const dialog = document.getElementById('ai-chat-test-dialog')!;
+        expect(dialog.hidden).toBe(false);
+        expect(document.getElementById('ai-chat-test-meta')!.textContent)
+            .toContain('GPT-4o');
+
+        const chatInput = document.getElementById('ai-chat-test-input') as HTMLTextAreaElement;
+        expect(chatInput.value).toBe('Hi');
+        document.getElementById('ai-chat-test-send')!.click();
+        await settle();
+
+        expect(handles.invoke).toHaveBeenCalledWith('ai_model_chat_test', {
+            providerId: 'openai',
+            modelId: 'gpt-4o',
+            messages: [{ role: 'user', content: 'Hi' }],
+        });
+        const messagesText = document.getElementById('ai-chat-test-messages')!.textContent;
+        expect(messagesText).toContain('Hi');
+        expect(messagesText).toContain('Mock-Antwort');
+
+        document.getElementById('ai-chat-test-close')!.click();
+        expect(dialog.hidden).toBe(true);
     });
 });
