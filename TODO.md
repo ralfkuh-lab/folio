@@ -2,31 +2,7 @@
 
 ## Hohe Priorität
 
-- **Theme-System-Ausbau: E1–E9 UMGESETZT** (E1–E7 2026-07-06/07, E8
-  Settings-Theme-Browser + E9 Font-Manifest-Felder 2026-07-07; Spec mit
-  Etappen-Checkliste in
-  [`docs/spec-theme-system.md`](docs/spec-theme-system.md)):
-  In-App-Theme-CRUD + Monaco-Editor mit Live-Preview (eigener virtueller
-  Tab), Verzeichnis-Paketformat mit Deckblatt/Kopf-Fußzeile/Logo-Assets/
-  Frontmatter-Template-Variablen, 8 neue Built-in-Vorlagen, KI-Theme-Autor
-  (Draft→Review→Save), Import/Export als `.mdtheme`, Settings-Theme-Browser
-  (Master-Detail mit Live-Vorschauen, Detail-Einsicht auch für Built-ins,
-  explizite View-Auswahl statt Klick=Anwenden, Name/Beschreibung-Edit).
-  Windows-Smoke ist erledigt (2026-07-07). Fonts sind Theme-Bestandteile
-  (fontBody/fontMono/fontSize im Manifest, wirken in View + Export +
-  Previews; @font-face-Assets auch in der View). E10 (dynamischer
-  Per-Export-KI-Modus) ist ebenfalls umgesetzt: „✨ KI-Layout für dieses
-  Dokument" im Export-Dialog erzeugt einen transienten, dokumentbezogenen
-  Draft (Streaming/Abbruch, Live-Preview-Karte, Export via
-  export_html_draft/export_pdf_draft, optional „Als Theme speichern").
-  Bewusst verschoben bleiben: PDF-Live-Seitenzahlen via CDP,
-  Theme-ID-Rename (nur Anzeigename ist editierbar).
-  Bewusst akzeptierte Review-Rest-Punkte:
-  Theme-Guards sind lexikalisch, Symlinks unter `themes/` können nach außen
-  zeigen (gleiche Trust-Stufe wie Custom-CSS, lokale Desktop-App);
-  Store-Updates haben ein winziges Sichtbarkeitsfenster (Reads laufen
-  lockless zwischen rename-out und rename-in); Template-Fallback-Datum
-  nutzt UTC statt lokaler Zeitzone (std-only, kein chrono).
+*(zurzeit nichts)*
 
 ## Mittlere Priorität
 
@@ -106,10 +82,6 @@
   „Neues Fenster"-Command (Tauri-Multi-Window) für echtes
   Nebeneinander; Monaco-Model-Cache ohne Cap (bei sehr vielen Tabs
   LRU erwägen).
-
-- **Suche — Audit-Befunde 2/4/5** (notes/find-audit.md): Marker-Lane-Cache+rAF (Befund 2),
-  Monaco `findMatches`+Cap (Befund 4), HTML-Split-Live-Debounce+Gen+Scroll (Befund 5)
-  2026-07-09 umgesetzt (vitest + Gates). Fruehere Befunde (inkl. 1/3/6+) bereits geloest.
 
 ## Niedrige Priorität
 

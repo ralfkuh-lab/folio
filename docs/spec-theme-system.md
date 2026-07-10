@@ -58,16 +58,17 @@ bestehende View-Theme-System („Layouts“ in `src-tauri/src/export.rs`):
    Theme-Dateien), der dynamische Per-Export-KI-Modus später als eigene
    Stufe. Der Draft→Review→Save-Pfad (E6) hält Stufe 2 offen.
 2. **Alle vier Corporate-Design-Fähigkeiten**: Deckblatt, Kopf-/Fußzeile
-   (ohne Live-Seitenzahl, s. u.), Logo/Assets als data-URI,
+   (ohne Live-Seitenzahl), Logo/Assets als data-URI,
    Frontmatter-Metadaten als Template-Variablen.
 3. **Theme-Editor als eigener virtueller Tab** (wie der Settings-Tab:
    Vollflächen-Region + Frontend-only-Tab in der Leiste), nicht im
    Settings-Bereich eingequetscht — Monaco + Vorschau brauchen Platz.
 4. **Breites Vorlagen-Set**: 8 neue Built-ins (business, report, minimal,
    brand, warm, tech, contrast, pastel), alle mit Dark-Variante.
-5. **Seitenzahlen im PDF vorerst raus** (User-Entscheid 2026-07-06,
-   „nicht so wichtig“) — Befund und Lösungsweg unter „Bewusst verschoben“
-   dokumentiert, damit nichts verloren geht.
+5. **Keine Seitenzahlen im PDF** (User-Entscheid 2026-07-06,
+   „nicht so wichtig“; bestätigt 2026-07-10 — wird nicht gemacht).
+   Statische Kopf-/Fußzeilen (Logo, Text) laufen über den
+   `position:fixed`-Pfad (E5).
 
 ## Paketformat: Verzeichnis-pro-Theme, Legacy bleibt lesbar
 
@@ -730,31 +731,24 @@ Close), E2E `39_export_ai_draft.py` mit Mock-Provider (SSE-Muster aus
 in Xvfb unerreichbar; View-Mode explizit setzen; finally-Cleanup für
 Temp-Dateien und ggf. gespeicherte Themes).
 
-## Bewusst verschoben
+## Bewusst nicht gebaut
 
-- **Live-Seitenzahlen im PDF** (User-Entscheid 2026-07-06): Chromiums
-  CLI-Pfad (`--print-to-pdf`) rendert `counter(page)` nur in
-  `@page`-Margin-Boxen, deren Content Blink nicht implementiert; der
-  CLI-Schalter exponiert auch kein header/footerTemplate. Lösung wäre
-  eine CDP-Migration: Chromium mit `--remote-debugging-port=0` starten,
-  Port aus `DevToolsActivePort` lesen, per WebSocket `Page.navigate` +
-  `Page.printToPDF { headerTemplate, footerTemplate,
-  displayHeaderFooter }` — nur dort funktionieren
-  `<span class="pageNumber"/>` / `totalPages`. Die Platzhalter
-  `pageNumber`/`totalPages` kommen erst mit dieser Etappe in die
-  Whitelist. Kopf-/Fußzeilen selbst (Logo, statischer Text) funktionieren
-  schon über den `position:fixed`-Pfad (E5).
-- ~~**Dynamischer KI-Export (Stufe 2)**~~ → als **E10** umgesetzt
-  (siehe Etappen-Abschnitt).
-- **Theme-ID-Rename** (Entscheid 2026-07-07, mit E8): Es gibt bewusst
-  keinen `theme_rename`-Command. Die ID ist nur im Create-Dialog sichtbar
-  und danach reine Adresse (Verzeichnisname); editierbar ist der
-  Anzeigename im Manifest (E8). Ein ID-Rename bräuchte Verzeichnis-Rename
-  unter dem `theme_write`-Lock plus Migration von `settings.viewTheme` +
-  `settings.themeFavorites` plus Behandlung offener Editor-Tabs — viel
-  Risiko ohne sichtbaren Nutzen. Falls doch je nötig: Andockstelle wäre
-  `store::rename_in` (fs::rename + Kollisions-Check) + Settings-Patch +
-  `themes:changed`.
+- **Live-Seitenzahlen im PDF** (User-Entscheid 2026-07-06, bestätigt
+  2026-07-10): wird nicht gemacht. Chromiums CLI-Pfad kann es nicht;
+  eine CDP-Migration wäre der einzige Weg — der Aufwand lohnt nicht.
+- **Theme-ID-Rename** (Entscheid 2026-07-07, bestätigt 2026-07-10):
+  kein `theme_rename`-Command. Die ID ist nach dem Create-Dialog reine
+  Adresse (Verzeichnisname); editierbar ist nur der Anzeigename im
+  Manifest.
+
+## Bewusst akzeptierte Trade-offs (Review 2026-07)
+
+- Theme-Guards sind lexikalisch; Symlinks unter `themes/` können nach
+  außen zeigen (gleiche Trust-Stufe wie Custom-CSS, lokale Desktop-App).
+- Store-Updates haben ein winziges Sichtbarkeitsfenster (Reads laufen
+  lockless zwischen rename-out und rename-in).
+- Template-Fallback-Datum nutzt UTC statt lokaler Zeitzone (std-only,
+  kein chrono).
 
 ## Risiken
 

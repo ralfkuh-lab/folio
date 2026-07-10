@@ -8,8 +8,17 @@ Plattformübergreifender Markdown-Viewer und -Editor auf **Tauri 2 + Rust**.
   Editor links, Live-Vorschau rechts; ungespeicherte Änderungen sind
   sofort sichtbar, ohne Save
 - **Live-Vorschau** mit GitHub-Flavored Markdown (Tasklisten, Tabellen, Frontmatter)
+- **Multi-Datei-Tabs** mit Session-Restore, Drag-Reorder und
+  Ctrl-/Mittelklick-Öffnen; Undo-Stack überlebt den Tab-Wechsel
 - **WYSIWYG-Toolbar** mit Bold/Italic/Heading/Listen/Link/Tabellen + Cheat-Sheet
-- **Vault-Navigation** mit Ordnerbaum, Workspace-Pins und Recent-Dateien
+- **Vault-Navigation** mit Ordnerbaum, Workspace-Pins (sortierbar per
+  Drag), Recent-Dateien und Gitignore-Dimming
+- **Theme-System**: View-Themes und Export-Layouts mit In-App-Theme-Editor
+  (Live-Preview), Custom-Themes als Verzeichnis-Pakete inkl. Fonts/Logos,
+  `.mdtheme`-Import/Export und KI-Theme-Autor
+- **HTML-/PDF-Export** mit Deckblatt, Kopf-/Fußzeilen,
+  Frontmatter-Template-Variablen und syntect-Code-Highlighting
+- **Mermaid-Diagramme** in der Vorschau und im Export
 - **Dateityp-bewusste Toolbar**: Markdown-spezifische Buttons und TOC-Rail
   blenden sich für Nicht-Markdown-Dateien automatisch aus
 - **Mehrere Vorschau-Pfade**: Markdown (HTML-Render), Code/Text
@@ -23,9 +32,9 @@ Plattformübergreifender Markdown-Viewer und -Editor auf **Tauri 2 + Rust**.
 - **Automatisierungs-API** für E2E-Tests (HTTP auf `127.0.0.1:9876`)
 - **KI-Integration nach opencode-Muster** mit models.dev-Katalog,
   getrennt gespeicherten Provider-Schlüsseln und Markdown-Übersetzung in
-  eine oder mehrere neue Dateien
-- **E2E-Test-Suite** mit 34 Szenarien, visueller Regression und auto-
-  rotiertem Baseline-Mechanismus — siehe Abschnitt *Tests*
+  eine oder mehrere neue Dateien (Code-Fragmente deterministisch maskiert)
+- **E2E-Test-Suite** mit 44 Szenarien, visueller Regression und auto-
+  angelegten Baselines — siehe Abschnitt *Tests*
 - **Cross-Platform** dank Tauri 2 (WebView2 / WebKitGTK)
 
 ## Tech-Stack
@@ -57,10 +66,11 @@ folio/
 │   │   └── copy-monaco.js       #   Monaco-Vendor-Sync nach dist/monaco/
 │   ├── dist/                    # Ausgelieferte Frontend-Assets
 │   │                            #   (index.html, app.bundle.js, app.css,
-│   │                            #    editor.bundle.js, monaco/)
+│   │                            #    editor.bundle.js, mermaid.bundle.js,
+│   │                            #    monaco/)
 │   ├── Cargo.toml
 │   └── tauri.conf.json
-├── tests/e2e/                   # Python + Pillow E2E-Suite (34 Szenarien)
+├── tests/e2e/                   # Python + Pillow E2E-Suite (44 Szenarien)
 ├── docs/                        # E2E, Automation-Vertrag, Release,
 │                                #   Headless-Caveats, Linux-MD-Icon
 ├── scripts/                     # Linux-Helper (Icon-Install, run-e2e.sh)
@@ -103,7 +113,7 @@ Informationen" → „Trotzdem ausführen" fortfahren.
 
 ### Voraussetzungen
 
-- [Rust](https://rustup.rs/) 1.75+
+- [Rust](https://rustup.rs/) 1.80+
 - [Node.js](https://nodejs.org/) 18+ (nur, wenn Frontend-TS geändert wird —
   Bundles in `src-tauri/dist/` sind eingecheckt)
 - Linux: `libwebkit2gtk-4.1-dev`
@@ -118,8 +128,9 @@ Tauri-Build verwendet.
 ```bash
 cd src-tauri/web
 npm install                # einmalig bzw. nach package.json-Änderung
-npm run build              # tsc --noEmit (Typecheck) → copy-monaco →
-                           # editor.bundle.js → app.bundle.js → app.css
+npm run build              # copy-monaco → tsc --noEmit (Typecheck) →
+                           # editor.bundle.js → app.bundle.js →
+                           # mermaid.bundle.js → app.css
 ```
 
 Reihenfolge im Build-Script ist wichtig: `editor.bundle.js` wird vor
@@ -227,6 +238,8 @@ werden gegen Allowlists geprüft (Details:
 | `/editor/command` | POST | Monaco-Adapter-Methode rufen (undo, redo, insertText, …) |
 | `/editor/selection` | POST | Editor-Selection setzen (mit Ack) |
 | `/workspace/pin` / `/workspace/unpin` | POST | Pfad pinnen / unpinnen |
+| `/tabs` | GET | Tab-Leiste (IDs, Pfade, aktiver Tab) |
+| `/tabs/open` / `/tabs/close` / `/tabs/activate` / `/tabs/close_all` / `/tabs/reorder` | POST | Tab-Operationen |
 | `/history/back` / `/history/forward` | POST | Navigation, am Stack-Edge moved:false |
 | `/find` / `/find/text` | POST | Find-Bar öffnen / Suchbegriff setzen (auto-open) |
 | `/eval` | POST | JS im WebView ausführen, Ergebnis zurückliefern |
@@ -245,4 +258,4 @@ wie externe Tests.
 
 ## Lizenz
 
-MIT — siehe [LICENSE](LICENSE), falls vorhanden.
+MIT — siehe [LICENSE](LICENSE).

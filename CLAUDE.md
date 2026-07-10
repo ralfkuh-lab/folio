@@ -269,8 +269,7 @@ sonst lehnt Tauri den Build ab.
   Font-Feldern `fontBody`/`fontMono`/`fontSize`, Templates/Assets,
   `.mdtheme`-Import/Export, Settings-Theme-Browser mit Master-Detail und
   expliziter View-Auswahl, KI-Autor sowie dokumentspezifischer
-  Per-Export-KI-Draft im Export-Dialog): Architektur, Etappen und bewusst
-  weggelassene Punkte (ID-Rename, PDF-Live-Seitenzahlen) in
+  Per-Export-KI-Draft im Export-Dialog): Architektur und Etappen in
   [`docs/spec-theme-system.md`](docs/spec-theme-system.md).
 - **Image-View** (`view/image.ts`, Surface `#image-view-mount` in
   `dist/index.html`): `FileKind::Image` (png/jpg/jpeg/gif/webp/svg/
@@ -562,13 +561,16 @@ sonst lehnt Tauri den Build ab.
 
 ## E2E-Test-Suite
 
-Vollständige UI-Coverage in `tests/e2e/` (34 Szenarien, Python +
-Pillow): Boot, View-/Edit-/Split-Mode, Theme, Vault, Find, Workspace,
-Save-Roundtrip durch alle BOM/EOL-Kombis, Undo/Redo, Toolbar-Commands
-(Bold/Italic/Heading), Menü-Coverage (File/Edit/View/Help), DOM-
-Keybindings, Vault-Tree-Klicks, Pin/Unpin, History-Back/Forward,
-Rechtsklick-Kontextmenüs, echter TOC-DOM-Klick, HTML-View, Tabs,
-KI-Settings und KI-Übersetzung (Mock-Provider).
+Vollständige UI-Coverage in `tests/e2e/` (44 Szenarien, Python +
+Pillow): Boot, View-/Edit-/Split-Mode, Theme, Vault, Find (inkl.
+Code-View), Workspace, Save-Roundtrip durch alle BOM/EOL-Kombis,
+Undo/Redo, Toolbar-Commands (Bold/Italic/Heading), Menü-Coverage
+(File/Edit/View/Help), DOM-Keybindings, Vault-Tree-Klicks, Pin/Unpin,
+History-Back/Forward, Rechtsklick-Kontextmenüs, echter TOC-DOM-Klick,
+HTML-View, Tabs (API/UI/Restore/Reorder), View-/Custom-Themes,
+Theme-CRUD/-Browser/-Import-Export, Export-Highlighting, Mermaid
+(View + Export), Link-in-neuem-Tab sowie KI-Settings, KI-Übersetzung,
+KI-Theme-Autor und Export-KI-Draft (Mock-Provider).
 
 Wrapper: `bash scripts/run-e2e.sh` (Linux+Xvfb). Visual-Baselines in
 `tests/e2e/baselines/`, Artefakte (gitignored) in
