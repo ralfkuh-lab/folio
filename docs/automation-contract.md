@@ -109,6 +109,27 @@ Wichtige stabile Selektor-Gruppen:
   (`en,de,fr,es,it,pt,nl,pl,ja,zh`) und
   `#ai-translate-langs-extra`. Der Automation-Menüpfad verwendet die ID
   `edit.ai_translate`.
+- KI-Aktionen (✨): Toolbar `#tb-ai-actions` + Split-Button-Caret
+  `#tb-ai-actions-menu` (Popover `#ai-actions-fav-menu` mit
+  `[data-ai-fav-run="<id>"]`); Dialog `#ai-actions-dialog`,
+  `#ai-actions-list` mit `[data-action-id="<id>"]`
+  (Custom-Eintrag `__custom__`), `[data-ai-action-fav="<id>"]`
+  (★-Toggle), `[data-ai-action-delete="<id>"]`, `#ai-actions-prompt`,
+  `#ai-actions-target-newfile`/`#ai-actions-target-replace`,
+  `#ai-actions-scope-selection`/`#ai-actions-scope-document`,
+  `#ai-actions-model`, `#ai-actions-error`, `#ai-actions-start`,
+  `#ai-actions-cancel`, `#ai-actions-save-template` + Overlay
+  `#ai-actions-save-overlay` (`#ai-actions-save-name`,
+  `#ai-actions-save-id`, `#ai-actions-save-ok`,
+  `#ai-actions-save-cancel`, `#ai-actions-save-error`); Statusleiste
+  `#ai-action-status` + `#ai-action-status-cancel`; Diff-Review
+  `#ai-diff-region` (Body-Klasse `ai-diff-open`), `#ai-diff-apply`,
+  `#ai-diff-discard`, `#ai-diff-hint`; generischer
+  Bestätigungsdialog `#confirm-dialog` (`#confirm-ok`/
+  `#confirm-cancel`). Der Automation-Menüpfad verwendet die ID
+  `edit.ai_actions`; Events: `ai:action_started` (runId+requestId),
+  `ai:action_stream` (runId, chars, bei NewFile tabId+text),
+  `ai:action_done` (runId, ok, error?).
 - View-Theme: `#view-theme-style`, `body[data-view-theme="<id>"]`,
   `#settings-theme-list`, `#settings-theme-hint` und
   `[data-view-theme="<id>"]`, `[data-view-theme-fav="<id>"]`.

@@ -530,6 +530,33 @@ sonst lehnt Tauri den Build ab.
   auf reines Prompt-Verhalten). E2E-Szenario 34 verifiziert per SSE-Mock, dass
   geschützte Fragmente als Token ankommen und die Zieldatei die Original-Bytes
   1:1 enthält.
+- **KI-Aktionen (✨)**: Toolbar-Split-Button + Ein-Dialog
+  (Funktionsliste, editierbarer Prompt, Ziel/Scope/Modell) über der
+  Template-Bibliothek `ai/actions.rs` (5 Built-ins eingebettet, eigene
+  Templates als JSON unter `<config>/folio/prompts/`, Built-in-IDs
+  gewinnen, frisch gelesen wie Themes). `ai_action_run` ist atomar an
+  den Quell-Tab gebunden (sourceTabId + sha256-Snapshot + tab-gebundener
+  `editor_text_changed`-Sync mit Lone-CR-Wächter) und läuft über den
+  gemeinsamen atomaren KI-Admission-Guard (`ai_job_active` — Übersetzung/
+  Theme-Autor/Aktionen schließen sich gegenseitig aus). Cancel/Events
+  korrelieren über die runId aus dem `ai:action_started`-Handshake.
+  Ziel „Neue Datei" folgt dem Übersetzungs-Muster (Reservierung → Tab →
+  Stream-Preview → Ownership-geprüfter Write mit Conflict-Fallback-
+  Reservierung; Cleanup discardet nie dirty Tabs); Ziel „Ersetzen"
+  liefert Gate-and-Return und öffnet die **Diff-Review** (virtueller Tab
+  `ai-diff`, Monaco-DiffEditor als vierte Surface `FolioDiffView`,
+  modified editierbar): Übernehmen mit dreistufigem Guard (Quelltab
+  existiert → aktiv → Snapshot; sonst Bestätigung), firstDiff-Cursor,
+  ein Undo-Schritt via `applyReplace`. Selektions-Scope nutzt strikte
+  UTF-16→Byte-Konvertierung (`utf16_to_byte_offset_strict`, kein Clamp)
+  und `mask_selection` (Grenzschnitt durch geschützte Ranges = Fehler);
+  Prompt-Injection-Härtung über Nonce-Delimiter + Untrusted-Data-Regel.
+  Favoriten: `aiActionFavorites`/`aiActionFavoriteHashes` in
+  settings.json (Hash-Pinning — verändertes Custom-Template führt in
+  den Dialog statt Direktausführung). Editierte Review zählt in allen
+  Quit-Gates wie ein dirty Tab (`ai_review_state_set`); RunEvent::Exit
+  cancelt aktive Läufe (≤2 s Cleanup-Wartefenster). Spec + Review-
+  Historie: [`docs/spec-ki-actions.md`](docs/spec-ki-actions.md).
 - Architektur, opencode-Parität und bewusste Folgepunkte stehen in
   [`docs/spec-ki-tab.md`](docs/spec-ki-tab.md).
 
@@ -561,7 +588,7 @@ sonst lehnt Tauri den Build ab.
 
 ## E2E-Test-Suite
 
-Vollständige UI-Coverage in `tests/e2e/` (44 Szenarien, Python +
+Vollständige UI-Coverage in `tests/e2e/` (45 Szenarien, Python +
 Pillow): Boot, View-/Edit-/Split-Mode, Theme, Vault, Find (inkl.
 Code-View), Workspace, Save-Roundtrip durch alle BOM/EOL-Kombis,
 Undo/Redo, Toolbar-Commands (Bold/Italic/Heading), Menü-Coverage
@@ -570,7 +597,7 @@ History-Back/Forward, Rechtsklick-Kontextmenüs, echter TOC-DOM-Klick,
 HTML-View, Tabs (API/UI/Restore/Reorder), View-/Custom-Themes,
 Theme-CRUD/-Browser/-Import-Export, Export-Highlighting, Mermaid
 (View + Export), Link-in-neuem-Tab sowie KI-Settings, KI-Übersetzung,
-KI-Theme-Autor und Export-KI-Draft (Mock-Provider).
+KI-Theme-Autor, Export-KI-Draft und KI-Aktionen (Mock-Provider).
 
 Wrapper: `bash scripts/run-e2e.sh` (Linux+Xvfb). Visual-Baselines in
 `tests/e2e/baselines/`, Artefakte (gitignored) in

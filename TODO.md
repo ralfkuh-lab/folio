@@ -85,6 +85,12 @@
 
 ## Niedrige Priorität
 
+- **KI-Aktionen — Folgepunkte** (Kernfeature 2026-07-10 komplett, Spec
+  [`docs/spec-ki-actions.md`](docs/spec-ki-actions.md)): Kontextmenü
+  der Selektion mit Favoriten; Shortcuts pro Favorit (wartet auf die
+  Accelerator-Baustelle); Nicht-Markdown-Dateien als Quelle;
+  Template-Editor-UI (heute Dateien + „Als Vorlage speichern").
+
 - **KI-Integration — Folgepunkte** (Kernfeature und Dokumentübersetzung
   umgesetzt, Architektur in [`docs/spec-ki-tab.md`](docs/spec-ki-tab.md)):
   zusätzliche E2E-/Desktop-Verifikation auf macOS und Windows sowie weitere
