@@ -10,7 +10,11 @@
 
 use crate::persist;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, io, path::PathBuf};
+use std::{
+    collections::{BTreeMap, HashSet},
+    io,
+    path::PathBuf,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -144,6 +148,18 @@ pub struct SettingsData {
     /// ausgeblendet.
     #[serde(default)]
     pub theme_favorites: Vec<String>,
+    /// Favorisierte KI-Aktions-Template-IDs (Spec docs/spec-ki-actions.md).
+    /// Bewusst OHNE Existenzvalidierung im Patch (anders als
+    /// theme_favorites): verschwundene Custom-Template-IDs bleiben
+    /// erhalten und werden in der UI nur ausgeblendet.
+    #[serde(default)]
+    pub ai_action_favorites: Vec<String>,
+    /// Hash-Pinning fuer favorisierte Custom-Templates: beim Favorisieren
+    /// bestaetigter Inhalts-Hash. Weicht das Template auf Disk beim
+    /// Schnellzugriff ab, oeffnet das Frontend den Dialog statt direkt
+    /// auszufuehren. Built-ins brauchen kein Pinning.
+    #[serde(default)]
+    pub ai_action_favorite_hashes: BTreeMap<String, String>,
     /// Steuert, ob File-System-Events fuer gepinnte/aufgeklappte
     /// Vault-Ordner einen Tree-Refresh ausloesen. Default an; aus
     /// wenn der User viele Ordner pinnt und FS-Watch-Limits drueckt.
@@ -196,6 +212,8 @@ impl Default for SettingsData {
             view_auto_format: default_true(),
             view_theme: default_view_theme(),
             theme_favorites: Vec::new(),
+            ai_action_favorites: Vec::new(),
+            ai_action_favorite_hashes: BTreeMap::new(),
             vault_auto_refresh: default_true(),
             document_auto_reload: default_true(),
             export_dir_mode: ExportDirMode::default(),
@@ -217,6 +235,10 @@ pub struct SettingsPatch {
     pub view_auto_format: Option<bool>,
     pub view_theme: Option<String>,
     pub theme_favorites: Option<Vec<String>>,
+    #[serde(default)]
+    pub ai_action_favorites: Option<Vec<String>>,
+    #[serde(default)]
+    pub ai_action_favorite_hashes: Option<BTreeMap<String, String>>,
     pub vault_auto_refresh: Option<bool>,
     pub document_auto_reload: Option<bool>,
     pub export_dir_mode: Option<ExportDirMode>,
@@ -232,6 +254,8 @@ impl SettingsPatch {
             && self.view_auto_format.is_none()
             && self.view_theme.is_none()
             && self.theme_favorites.is_none()
+            && self.ai_action_favorites.is_none()
+            && self.ai_action_favorite_hashes.is_none()
             && self.vault_auto_refresh.is_none()
             && self.document_auto_reload.is_none()
             && self.export_dir_mode.is_none()
@@ -309,6 +333,22 @@ impl SettingsService {
             let mut seen = HashSet::new();
             values.retain(|value| seen.insert(value.clone()));
         }
+        if let Some(values) = patch.ai_action_favorites.as_mut() {
+            // Nur Slug-Form pruefen + first-seen deduplizieren — bewusst
+            // keine Existenzvalidierung (s. Feld-Doku).
+            for value in values.iter() {
+                crate::ai::actions::validate_slug(value, "KI-Aktions-Favorit")
+                    .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
+            }
+            let mut seen = HashSet::new();
+            values.retain(|value| seen.insert(value.clone()));
+        }
+        if let Some(map) = patch.ai_action_favorite_hashes.as_ref() {
+            for id in map.keys() {
+                crate::ai::actions::validate_slug(id, "KI-Aktions-Favorit")
+                    .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
+            }
+        }
         let mut changed: Vec<&'static str> = Vec::new();
         if let Some(value) = patch.language {
             if self.data.language != value {
@@ -344,6 +384,18 @@ impl SettingsService {
             if self.data.theme_favorites != value {
                 self.data.theme_favorites = value;
                 changed.push("themeFavorites");
+            }
+        }
+        if let Some(value) = patch.ai_action_favorites {
+            if self.data.ai_action_favorites != value {
+                self.data.ai_action_favorites = value;
+                changed.push("aiActionFavorites");
+            }
+        }
+        if let Some(value) = patch.ai_action_favorite_hashes {
+            if self.data.ai_action_favorite_hashes != value {
+                self.data.ai_action_favorite_hashes = value;
+                changed.push("aiActionFavoriteHashes");
             }
         }
         if let Some(value) = patch.vault_auto_refresh {
@@ -505,6 +557,50 @@ mod tests {
         std::fs::write(&path, r#"{"viewTheme":"alt-theme"}"#).unwrap();
         let svc = SettingsService::load_from(path);
         assert_eq!("alt-theme", svc.data().view_theme);
+    }
+
+    #[test]
+    fn ai_action_favorites_accept_unknown_ids_dedupe_and_reject_bad_slugs() {
+        let temp = TempDir::new().unwrap();
+        let mut service = SettingsService::load_from(temp.path().join("settings.json"));
+
+        // Unbekannte (aber wohlgeformte) IDs sind erlaubt — bewusst keine
+        // Existenzvalidierung; first-seen-Dedupe.
+        let changed = service
+            .apply_patch(SettingsPatch {
+                ai_action_favorites: Some(vec![
+                    "summarize".to_string(),
+                    "verschwunden".to_string(),
+                    "summarize".to_string(),
+                ]),
+                ..SettingsPatch::default()
+            })
+            .unwrap();
+        assert_eq!(vec!["aiActionFavorites"], changed);
+        assert_eq!(
+            vec!["summarize".to_string(), "verschwunden".to_string()],
+            service.data().ai_action_favorites
+        );
+
+        // Slug-Form wird geprueft.
+        assert!(service
+            .apply_patch(SettingsPatch {
+                ai_action_favorites: Some(vec!["../boese".to_string()]),
+                ..SettingsPatch::default()
+            })
+            .is_err());
+
+        // Hash-Pinning-Map: Keys werden slug-validiert, Werte frei.
+        let mut hashes = std::collections::BTreeMap::new();
+        hashes.insert("eigenes".to_string(), "abc123".to_string());
+        let changed = service
+            .apply_patch(SettingsPatch {
+                ai_action_favorite_hashes: Some(hashes.clone()),
+                ..SettingsPatch::default()
+            })
+            .unwrap();
+        assert_eq!(vec!["aiActionFavoriteHashes"], changed);
+        assert_eq!(hashes, service.data().ai_action_favorite_hashes);
     }
 
     #[test]
@@ -765,6 +861,11 @@ mod tests {
                 view_auto_format: Some(false),
                 view_theme: Some("clean".to_string()),
                 theme_favorites: Some(vec!["github".to_string()]),
+                ai_action_favorites: Some(vec!["summarize".to_string()]),
+                ai_action_favorite_hashes: Some(std::collections::BTreeMap::from([(
+                    "eigenes".to_string(),
+                    "hash".to_string(),
+                )])),
                 vault_auto_refresh: Some(false),
                 document_auto_reload: Some(false),
                 export_dir_mode: Some(ExportDirMode::Last),
@@ -772,7 +873,7 @@ mod tests {
                 log_level: Some(LogLevel::Debug),
             })
             .unwrap();
-        assert_eq!(11, changed.len());
+        assert_eq!(13, changed.len());
 
         let reloaded = SettingsService::load_from(path).data();
         assert_eq!(Language::En, reloaded.language);

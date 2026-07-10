@@ -13,7 +13,11 @@ vi.mock('../../app/view/preview', () => ({
     renderPreviewText: vi.fn(() => Promise.resolve()),
 }));
 
-import { initAiActionsDialog, openAiActionsDialog } from '../../app/ui/ai-actions-dialog';
+import {
+    initAiActionsDialog,
+    openAiActionsDialog,
+    runFavoriteAction,
+} from '../../app/ui/ai-actions-dialog';
 import { getActiveTabId } from '../../app/state/tabs';
 import {
     getCurrentPath,
@@ -80,12 +84,30 @@ function buildDom(): void {
             </div>
             <select id="ai-actions-model"></select>
             <p id="ai-actions-error" hidden></p>
+            <button id="ai-actions-save-template" hidden></button>
             <button id="ai-actions-cancel"></button>
             <button id="ai-actions-start">Ausführen</button>
         </div>
         <div id="ai-action-status" hidden>
             <span id="ai-action-status-text"></span>
             <button id="ai-action-status-cancel">Abbrechen</button>
+        </div>
+        <button id="tb-ai-actions-menu" disabled>▾</button>
+        <nav id="ai-actions-fav-menu" hidden></nav>
+        <div id="ai-actions-save-overlay" hidden>
+            <form id="ai-actions-save-form">
+                <input id="ai-actions-save-name" />
+                <input id="ai-actions-save-id" />
+                <p id="ai-actions-save-error" hidden></p>
+                <button type="button" id="ai-actions-save-cancel"></button>
+                <button type="submit" id="ai-actions-save-ok"></button>
+            </form>
+        </div>
+        <div id="confirm-dialog" hidden>
+            <div id="confirm-title"></div>
+            <div id="confirm-text"></div>
+            <button id="confirm-cancel"></button>
+            <button id="confirm-ok"></button>
         </div>
     `;
 }
@@ -99,6 +121,7 @@ describe('ai-actions-dialog', () => {
     let runResolver: ((value: unknown) => void) | null;
     let runRejecter: ((reason: unknown) => void) | null;
     let lastRunArgs: any;
+    let settingsData: any;
 
     beforeEach(() => {
         buildDom();
@@ -110,11 +133,17 @@ describe('ai-actions-dialog', () => {
         runResolver = null;
         runRejecter = null;
         lastRunArgs = null;
+        settingsData = { aiActionFavorites: [], aiActionFavoriteHashes: {} };
         handles = installTauriMock();
         handles.invoke.mockImplementation((cmd: string, args?: any) => {
             if (cmd === 'ai_config_get') return Promise.resolve(config);
             if (cmd === 'ai_catalog_get') return Promise.resolve({ catalog: {} });
             if (cmd === 'ai_actions_list') return Promise.resolve(templates);
+            if (cmd === 'settings_get') return Promise.resolve(settingsData);
+            if (cmd === 'settings_update') return Promise.resolve(settingsData);
+            if (cmd === 'ai_action_template_save') {
+                return Promise.resolve({ ...args.template, builtin: false });
+            }
             if (cmd === 'ai_action_run') {
                 lastRunArgs = args;
                 return new Promise((resolve, reject) => {
@@ -294,5 +323,90 @@ describe('ai-actions-dialog', () => {
         expect(lastRunArgs.request.scope).toEqual({ start: 2, length: 3 });
         expect(lastRunArgs.request.masking).toBe(true);
         expect(lastRunArgs.request.suffix).toBe('eigenes');
+    });
+
+    it('sortiert Favoriten zuerst und blendet verschwundene IDs aus', async () => {
+        settingsData.aiActionFavorites = ['eigenes', 'geist'];
+        await openAiActionsDialog();
+
+        const items = Array.from(document.querySelectorAll('.ai-actions-dialog__item'));
+        expect(items.map((item) => (item as HTMLElement).dataset.actionId))
+            .toEqual(['eigenes', 'summarize', '__custom__']);
+        const star = document.querySelector('[data-ai-action-fav="eigenes"]')!;
+        expect(star.getAttribute('aria-pressed')).toBe('true');
+        expect(star.textContent).toBe('★');
+    });
+
+    it('Stern-Toggle patcht die Settings-Favoriten inkl. Hash-Pinning für Customs', async () => {
+        await openAiActionsDialog();
+        (document.querySelector('[data-ai-action-fav="eigenes"]') as HTMLElement).click();
+        await flush();
+
+        const patchCall = handles.invoke.mock.calls
+            .filter((call) => call[0] === 'settings_update')
+            .pop();
+        expect(patchCall![1].patch.aiActionFavorites).toEqual(['eigenes']);
+        expect(patchCall![1].patch.aiActionFavoriteHashes.eigenes)
+            .toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it('führt Favoriten direkt mit Template-Defaults und Default-Modell aus', async () => {
+        settingsData.aiActionFavorites = ['summarize'];
+        document.getElementById('tb-ai-actions-menu')!.click();
+        await flush();
+
+        const item = document.querySelector('[data-ai-fav-run="summarize"]') as HTMLElement;
+        expect(item).toBeTruthy();
+        item.click();
+        await flush();
+
+        expect(syncEditorTextToStoreForTab).toHaveBeenCalledWith(7, '# Doc');
+        expect(lastRunArgs.request.actionId).toBe('summarize');
+        expect(lastRunArgs.request.providerId).toBe('local');
+        expect(lastRunArgs.request.modelId).toBe('mock');
+        expect(lastRunArgs.request.target).toBe('new-file');
+        expect(lastRunArgs.request.suffix).toBe('summary');
+        expect(document.getElementById('ai-actions-fav-menu')!.hidden).toBe(true);
+    });
+
+    it('öffnet bei Hash-Abweichung eines Custom-Favoriten den Dialog statt direkt zu laufen', async () => {
+        settingsData.aiActionFavorites = ['eigenes'];
+        settingsData.aiActionFavoriteHashes = { eigenes: 'deadbeef' };
+        await openAiActionsDialog(); // lädt Favoriten + Templates
+        document.getElementById('ai-actions-cancel')!.click();
+
+        await runFavoriteAction('eigenes');
+        await flush();
+
+        expect(lastRunArgs).toBeNull();
+        expect(document.getElementById('ai-actions-dialog')!.hidden).toBe(false);
+    });
+
+    it('speichert einen editierten Prompt als eigene Vorlage (Slug aus dem Namen)', async () => {
+        await openAiActionsDialog();
+        const prompt = document.getElementById('ai-actions-prompt') as HTMLTextAreaElement;
+        prompt.value = 'Ganz neuer Prompt.';
+        prompt.dispatchEvent(new Event('input'));
+        expect(document.getElementById('ai-actions-save-template')!.hidden).toBe(false);
+
+        document.getElementById('ai-actions-save-template')!.click();
+        expect(document.getElementById('ai-actions-save-overlay')!.hidden).toBe(false);
+        const name = document.getElementById('ai-actions-save-name') as HTMLInputElement;
+        name.value = 'Mein Über-Prompt';
+        name.dispatchEvent(new Event('input'));
+        expect((document.getElementById('ai-actions-save-id') as HTMLInputElement).value)
+            .toBe('mein-ueber-prompt');
+
+        document.getElementById('ai-actions-save-form')!.dispatchEvent(
+            new Event('submit', { cancelable: true }),
+        );
+        await flush();
+
+        const saveCall = handles.invoke.mock.calls
+            .filter((call) => call[0] === 'ai_action_template_save')
+            .pop();
+        expect(saveCall![1].template.id).toBe('mein-ueber-prompt');
+        expect(saveCall![1].template.prompt).toBe('Ganz neuer Prompt.');
+        expect(document.getElementById('ai-actions-save-overlay')!.hidden).toBe(true);
     });
 });

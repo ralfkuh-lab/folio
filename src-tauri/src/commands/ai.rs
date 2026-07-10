@@ -616,6 +616,30 @@ pub async fn ai_actions_list() -> Result<Vec<actions::ActionTemplate>, String> {
     Ok(actions::list_templates())
 }
 
+#[tauri::command]
+pub async fn ai_action_template_save(
+    template: actions::ActionTemplate,
+) -> Result<actions::ActionTemplate, String> {
+    let saved = actions::save_template(template)?;
+    tracing::info!(
+        target: "folio::ai",
+        id = saved.id,
+        "AI action template saved"
+    );
+    Ok(saved)
+}
+
+#[tauri::command]
+pub async fn ai_action_template_delete(id: String) -> Result<(), String> {
+    actions::delete_template(&id)?;
+    tracing::info!(
+        target: "folio::ai",
+        id,
+        "AI action template deleted"
+    );
+    Ok(())
+}
+
 /// Frontend meldet den Zustand der KI-Diff-Review (offen + editiert),
 /// damit die Quit-Gates sie wie einen dirty Tab behandeln koennen.
 #[tauri::command]

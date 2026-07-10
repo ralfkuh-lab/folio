@@ -251,6 +251,56 @@ pub fn list_templates_in(dir: &std::path::Path) -> Vec<ActionTemplate> {
     templates
 }
 
+/// Speichert ein Custom-Template atomar unter `<config>/folio/prompts/
+/// <id>.json`. Built-in-IDs sind reserviert; das Verzeichnis wird beim
+/// ersten Save angelegt.
+pub fn save_template(template: ActionTemplate) -> Result<ActionTemplate, String> {
+    save_template_in(&persist::prompts_dir(), template)
+}
+
+pub fn save_template_in(
+    dir: &std::path::Path,
+    mut template: ActionTemplate,
+) -> Result<ActionTemplate, String> {
+    template.builtin = false;
+    validate_template(&template)?;
+    if builtin_templates()
+        .iter()
+        .any(|builtin| builtin.id == template.id)
+    {
+        return Err(format!(
+            "Die ID '{}' ist für eine eingebaute Aktion reserviert.",
+            template.id
+        ));
+    }
+    std::fs::create_dir_all(dir)
+        .map_err(|error| format!("Template-Verzeichnis konnte nicht angelegt werden: {error}"))?;
+    let path = dir.join(format!("{}.json", template.id));
+    persist::save_json_atomic(&path, &template)
+        .map_err(|error| format!("Template konnte nicht gespeichert werden: {error}"))?;
+    Ok(template)
+}
+
+/// Löscht ein Custom-Template. Built-ins sind nicht löschbar.
+pub fn delete_template(id: &str) -> Result<(), String> {
+    delete_template_in(&persist::prompts_dir(), id)
+}
+
+pub fn delete_template_in(dir: &std::path::Path, id: &str) -> Result<(), String> {
+    validate_slug(id, "Template-Kürzel")?;
+    if builtin_templates().iter().any(|builtin| builtin.id == id) {
+        return Err("Eingebaute Aktionen können nicht gelöscht werden.".to_string());
+    }
+    let path = dir.join(format!("{id}.json"));
+    std::fs::remove_file(&path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            format!("Template '{id}' wurde nicht gefunden.")
+        } else {
+            format!("Template '{id}' konnte nicht gelöscht werden: {error}")
+        }
+    })
+}
+
 /// Fester System-Rahmen. Der editierbare Aktions-Prompt kommt separat in
 /// die User-Message; `delimiter` ist die kollisionsfreie Trennerzeile aus
 /// [`document_delimiter`].
@@ -510,5 +560,49 @@ mod tests {
         let temp = tempfile::TempDir::new().unwrap();
         let missing = temp.path().join("gibt-es-nicht");
         assert_eq!(builtin_templates().len(), list_templates_in(&missing).len());
+    }
+
+    #[test]
+    fn template_save_roundtrip_and_delete() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let dir = temp.path().join("prompts"); // existiert noch nicht → Save legt an
+        let template = ActionTemplate {
+            id: "meins".into(),
+            name: "Meins".into(),
+            description: "Test".into(),
+            prompt: "Tu was.".into(),
+            masking: true,
+            scope: Scope::Auto,
+            target: Target::Replace,
+            suffix: "meins".into(),
+            builtin: true, // wird beim Save erzwungen auf false
+        };
+        let saved = save_template_in(&dir, template).unwrap();
+        assert!(!saved.builtin);
+
+        let listed = list_templates_in(&dir);
+        let found = listed.iter().find(|t| t.id == "meins").unwrap();
+        assert_eq!("Tu was.", found.prompt);
+        assert!(!found.builtin);
+
+        delete_template_in(&dir, "meins").unwrap();
+        assert!(list_templates_in(&dir).iter().all(|t| t.id != "meins"));
+        assert!(delete_template_in(&dir, "meins")
+            .unwrap_err()
+            .contains("nicht gefunden"));
+    }
+
+    #[test]
+    fn template_save_rejects_builtin_ids_and_delete_protects_builtins() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let mut template = builtin_templates().remove(0);
+        template.builtin = false;
+        assert!(save_template_in(temp.path(), template)
+            .unwrap_err()
+            .contains("reserviert"));
+        assert!(delete_template_in(temp.path(), "summarize")
+            .unwrap_err()
+            .contains("nicht gelöscht"));
+        assert!(delete_template_in(temp.path(), "../etc").is_err());
     }
 }

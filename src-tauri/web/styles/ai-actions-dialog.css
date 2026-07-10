@@ -274,3 +274,98 @@ body.ai-diff-open .content-panes {
   flex: 1 1 auto;
   min-height: 0;
 }
+
+/* === Split-Button + Favoriten-Popover (Etappe A4a) ===================== */
+
+.toolbar button.tb-caret {
+  min-width: 16px;
+  padding: 0 2px;
+  font-size: 10px;
+}
+
+.ai-actions-fav-menu[hidden] {
+  display: none;
+}
+
+.ai-actions-fav-menu {
+  position: fixed;
+  z-index: 10050;
+  min-width: 220px;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--fg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
+.ai-actions-fav-menu__item {
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  padding: 6px 9px;
+  cursor: pointer;
+}
+
+.ai-actions-fav-menu__item:hover {
+  background: var(--rail-bg);
+}
+
+.ai-actions-fav-menu__hint {
+  font-size: 11.5px;
+  color: var(--fg-muted);
+  padding: 6px 9px;
+}
+
+.ai-actions-dialog__actions-spacer {
+  flex: 1 1 auto;
+}
+
+.ai-actions-dialog__secondary[hidden] {
+  display: none;
+}
+
+.ai-actions-dialog__item-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ai-actions-dialog__item-row .ai-actions-dialog__item-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ai-actions-dialog__fav {
+  border: none;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.ai-actions-dialog__fav[aria-pressed="true"] {
+  color: #e3a008;
+}
+
+.ai-actions-dialog__delete {
+  border: none;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.ai-actions-dialog__delete:hover {
+  color: #c23d3d;
+}

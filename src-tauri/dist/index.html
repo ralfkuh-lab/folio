@@ -66,6 +66,7 @@
     <button id="tb-export" class="ti-emoji" title="Exportieren…" aria-label="Exportieren" disabled>&#x1F4E4;</button>
     <button id="tb-ai-translate" class="ti-emoji" title="Mit KI übersetzen…" aria-label="Mit KI übersetzen" disabled>🌐</button>
     <button id="tb-ai-actions" class="ti-emoji" title="KI-Aktionen…" aria-label="KI-Aktionen" disabled>✨</button>
+    <button id="tb-ai-actions-menu" class="tb-caret" title="KI-Aktions-Favoriten" aria-label="KI-Aktions-Favoriten" aria-haspopup="menu" aria-expanded="false" aria-controls="ai-actions-fav-menu" disabled>▾</button>
   </div>
   <div class="sep"></div>
   <div class="group">
@@ -604,6 +605,7 @@
     </div>
   </div>
 </div>
+<nav id="ai-actions-fav-menu" class="ai-actions-fav-menu" role="menu" aria-label="KI-Aktions-Favoriten" hidden></nav>
 <div id="ai-diff-region" hidden>
   <div class="ai-diff-toolbar">
     <span class="ai-diff-toolbar__title" id="ai-diff-title">✨ KI-Review</span>
@@ -613,6 +615,20 @@
     <button type="button" id="ai-diff-apply" class="primary">Übernehmen</button>
   </div>
   <div id="ai-diff-mount"></div>
+</div>
+<div class="settings-ai-overlay" id="ai-actions-save-overlay" hidden>
+  <form class="settings-ai-dialog" id="ai-actions-save-form" role="dialog" aria-modal="true" aria-labelledby="ai-actions-save-title">
+    <div class="settings-ai-dialog__title" id="ai-actions-save-title">Als Vorlage speichern</div>
+    <label class="settings-ai-dialog__label" for="ai-actions-save-name">Name</label>
+    <input type="text" id="ai-actions-save-name" class="settings-ai-dialog__input" autocomplete="off" spellcheck="false" />
+    <label class="settings-ai-dialog__label" for="ai-actions-save-id">Kürzel (Datei-Suffix)</label>
+    <input type="text" id="ai-actions-save-id" class="settings-ai-dialog__input" autocomplete="off" spellcheck="false" placeholder="z. B. mein-prompt" />
+    <p class="settings-ai-dialog__error" id="ai-actions-save-error" hidden></p>
+    <div class="settings-ai-dialog__actions">
+      <button type="button" id="ai-actions-save-cancel">Abbrechen</button>
+      <button type="submit" id="ai-actions-save-ok" class="primary">Speichern</button>
+    </div>
+  </form>
 </div>
 <div id="ai-actions-dialog" hidden>
   <div class="ai-actions-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="ai-actions-title">
@@ -649,6 +665,8 @@
     </div>
     <p id="ai-actions-error" class="ai-actions-dialog__error" hidden></p>
     <div class="ai-actions-dialog__actions">
+      <button type="button" id="ai-actions-save-template" class="ai-actions-dialog__secondary" hidden>Als Vorlage speichern…</button>
+      <span class="ai-actions-dialog__actions-spacer"></span>
       <button type="button" id="ai-actions-cancel">Abbrechen</button>
       <button type="button" id="ai-actions-start" class="primary">Ausführen</button>
     </div>

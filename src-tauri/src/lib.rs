@@ -363,6 +363,8 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::ai::ai_action_run,
             commands::ai::ai_action_cancel,
             commands::ai::ai_review_state_set,
+            commands::ai::ai_action_template_save,
+            commands::ai::ai_action_template_delete,
             commands::app::dialog::open_folder,
             commands::app::dialog::pick_folder,
             commands::app::dialog::pick_file,
