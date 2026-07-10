@@ -340,14 +340,17 @@ describe('ai-actions-dialog', () => {
     it('Stern-Toggle patcht die Settings-Favoriten inkl. Hash-Pinning für Customs', async () => {
         await openAiActionsDialog();
         (document.querySelector('[data-ai-action-fav="eigenes"]') as HTMLElement).click();
-        await flush();
-
-        const patchCall = handles.invoke.mock.calls
-            .filter((call) => call[0] === 'settings_update')
-            .pop();
-        expect(patchCall![1].patch.aiActionFavorites).toEqual(['eigenes']);
-        expect(patchCall![1].patch.aiActionFavoriteHashes.eigenes)
-            .toMatch(/^[0-9a-f]{64}$/);
+        // Async-Kette (Hash via crypto.subtle + Settings-Patch) — auf das
+        // Ergebnis warten statt auf einen einzelnen Macrotask.
+        await vi.waitFor(() => {
+            const patchCall = handles.invoke.mock.calls
+                .filter((call) => call[0] === 'settings_update')
+                .pop();
+            expect(patchCall).toBeTruthy();
+            expect(patchCall![1].patch.aiActionFavorites).toEqual(['eigenes']);
+            expect(patchCall![1].patch.aiActionFavoriteHashes.eigenes)
+                .toMatch(/^[0-9a-f]{64}$/);
+        });
     });
 
     it('führt Favoriten direkt mit Template-Defaults und Default-Modell aus', async () => {
@@ -358,7 +361,7 @@ describe('ai-actions-dialog', () => {
         const item = document.querySelector('[data-ai-fav-run="summarize"]') as HTMLElement;
         expect(item).toBeTruthy();
         item.click();
-        await flush();
+        await vi.waitFor(() => expect(lastRunArgs).not.toBeNull());
 
         expect(syncEditorTextToStoreForTab).toHaveBeenCalledWith(7, '# Doc');
         expect(lastRunArgs.request.actionId).toBe('summarize');
@@ -376,23 +379,23 @@ describe('ai-actions-dialog', () => {
         document.getElementById('ai-actions-cancel')!.click();
 
         await runFavoriteAction('eigenes');
-        await flush();
-
+        await vi.waitFor(() => {
+            expect(document.getElementById('ai-actions-dialog')!.hidden).toBe(false);
+            // Vorbefüllt mit genau dem angeklickten Template (Review-Befund).
+            expect((document.getElementById('ai-actions-prompt') as HTMLTextAreaElement).value)
+                .toBe('Mach was.');
+        });
         expect(lastRunArgs).toBeNull();
-        expect(document.getElementById('ai-actions-dialog')!.hidden).toBe(false);
-        // Vorbefüllt mit genau dem angeklickten Template (Review-Befund).
-        expect((document.getElementById('ai-actions-prompt') as HTMLTextAreaElement).value)
-            .toBe('Mach was.');
     });
 
     it('führt Custom-Favoriten OHNE gespeicherten Pin nie direkt aus (fail-closed)', async () => {
         settingsData.aiActionFavorites = ['eigenes'];
         settingsData.aiActionFavoriteHashes = {};
         await runFavoriteAction('eigenes');
-        await flush();
-
+        await vi.waitFor(() => {
+            expect(document.getElementById('ai-actions-dialog')!.hidden).toBe(false);
+        });
         expect(lastRunArgs).toBeNull();
-        expect(document.getElementById('ai-actions-dialog')!.hidden).toBe(false);
     });
 
     it('cancelt den Lauf, wenn der Ziel-Tab während des Streams geschlossen wird', async () => {

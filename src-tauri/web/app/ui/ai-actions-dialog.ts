@@ -57,6 +57,10 @@ let currentRequestId: string | null = null;
 let currentRunId: number | null = null;
 let currentActionName = '';
 let abortRequested = false;
+// User hat den laufenden Lauf aktiv abgebrochen — der resultierende
+// Command-Fehler ist dann erwartet und braucht weder Fehler-Reopen
+// noch Fehlerstatus (Abbruch ist kein Fehler).
+let cancelRequested = false;
 // Ziel-Tab des laufenden NewFile-Laufs (aus dem ersten Stream-Event):
 // verschwindet er aus der Tab-Leiste, cancelt das Frontend den Lauf
 // (Review-Konsensbefund — Close des Ziel-Tabs ist ein Abbruchwunsch).
@@ -440,8 +444,13 @@ export async function openAiActionsDialog(preselectId?: string): Promise<void> {
     state = 'loading';
     setError(null);
     // Loading-Zustand sichtbar machen: Dialog sofort zeigen, Eingaben
-    // sperren, nur Abbrechen bleibt bedienbar (setBusy-Ausnahme).
+    // sperren, nur Abbrechen bleibt bedienbar (setBusy-Ausnahme). Die
+    // Aktionsliste wird geleert — stale Items aus einem früheren Open
+    // dürfen nicht klickbar sein (ihre Auswahl würde vom fertig
+    // geladenen Preselect überschrieben).
     setBusy(true);
+    const staleList = $('ai-actions-list');
+    if (staleList) staleList.textContent = '';
     dialog.hidden = false;
 
     // Quelle einfrieren: Tab, Pfad, Snapshot, Hash, Selektion.
@@ -611,6 +620,7 @@ function dispatchRun(params: RunParams): void {
     abortRequested = false;
     currentActionName = template?.name || 'Eigener Prompt';
     currentTargetTabId = null;
+    cancelRequested = false;
     state = 'running';
     const dialog = $('ai-actions-dialog');
     if (dialog) dialog.hidden = true;
@@ -653,7 +663,13 @@ function dispatchRun(params: RunParams): void {
         }
     }).catch((error) => {
         if (currentRequestId !== requestId) return;
+        const wasCancelled = cancelRequested;
         finishRun();
+        if (wasCancelled) {
+            // Vom User abgebrochen — still aufräumen, kein Fehlerbild.
+            folioLog.info('ai-actions', 'KI-Aktion abgebrochen', {});
+            return;
+        }
         folioLog.warn('ai-actions', 'KI-Aktion fehlgeschlagen', { error: String(error) });
         // Fehler-Reopen nur, wenn die Quelle noch da ist; sonst nur Status.
         if (params.reopenOnError && getCurrentPath() === requestSource.path) {
@@ -778,6 +794,7 @@ function requestCancel(): void {
         button.disabled = true;
         button.textContent = 'Bricht ab…';
     }
+    cancelRequested = true;
     if (currentRunId !== null) {
         invoke<void>('ai_action_cancel', { runId: currentRunId }).catch((error) => {
             folioLog.warn('ai-actions', 'Abbruch fehlgeschlagen', { error: String(error) });
@@ -957,6 +974,7 @@ export function initAiActionsDialog(): void {
     currentRequestId = null;
     currentRunId = null;
     abortRequested = false;
+    cancelRequested = false;
     favorites = [];
     favoriteHashes = {};
     documentIsMarkdown = document.body.classList.contains('kind-markdown');
@@ -1063,6 +1081,7 @@ export function initAiActionsDialog(): void {
             if (!stillOpen) {
                 const runId = currentRunId;
                 currentTargetTabId = null;
+                cancelRequested = true;
                 folioLog.info('ai-actions', 'Ziel-Tab geschlossen — breche Lauf ab', { runId });
                 invoke<void>('ai_action_cancel', { runId }).catch(() => {});
             }

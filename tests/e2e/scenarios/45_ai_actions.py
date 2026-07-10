@@ -139,8 +139,12 @@ def _cleanup_provider(ctx):
 
 def _open_actions_dialog(ctx):
     ctx.api.menu_click("edit.ai_actions")
-    _poll(ctx, "KI-Aktionen-Dialog offen",
-          lambda: not _eval(ctx, "document.getElementById('ai-actions-dialog').hidden"))
+    # Der Dialog ist schon im Loading-Zustand sichtbar — ready ist er
+    # erst, wenn der Start-Button wieder enabled ist (setBusy(false)).
+    _poll(ctx, "KI-Aktionen-Dialog bereit",
+          lambda: _eval(ctx, "(() => { const d = document.getElementById('ai-actions-dialog');"
+                             " const s = document.getElementById('ai-actions-start');"
+                             " return !d.hidden && !s.disabled; })()"))
 
 
 def _select_action(ctx, action_id: str):
