@@ -2,7 +2,27 @@
 
 ## Hohe Priorität
 
-*(zurzeit nichts)*
+- **KI-Diff-Review zeigt nichts an** (User-Report 2026-07-10, Screenshot:
+  KI-Review-Tab offen, Fläche leer, Inhalt rechts außen gequetscht):
+  Root-Cause gefunden — `#ai-diff-region` lag als Body-Kind in einer
+  impliziten Zelle des Body-Grids statt IN der `.content-region`
+  (wie `#settings-dialog`/`#theme-editor-dialog`, siehe CLAUDE.md
+  „Settings als virtueller Tab"). **Fix begonnen, NICHT fertig**:
+  `dist/index.html` — Region ist bereits hinter `#theme-editor-dialog`
+  in die content-region verschoben (Verschachtelung verifiziert,
+  Commit „WIP"). Offen: App-Lauf/Screenshot-Verifikation, ggf.
+  CSS-Nachschliff (`ai-actions-dialog.css`, Abschnitt KI-Review-
+  Region), E2E 45 erneut laufen lassen (prüft nur Body-Klasse, nicht
+  Sichtbarkeit — Assertion auf sichtbare Geometrie ergänzen!),
+  Bundles/`cargo build --release` + Deb 0.5.0 neu bauen.
+
+- **KI-Aktionen: Selektion als Scope-Default — ERLEDIGT, Install offen**
+  (User-Feedback 2026-07-10): Bei vorhandener Markierung ist im
+  ✨-Dialog jetzt immer „Selektion" vorgewählt, auch bei
+  scope=document-Vorlagen (Commit `5da4cd9`; Favoriten-
+  Direktausführung respektiert scope=document weiterhin hart).
+  Deb 0.5.0 von 18:22 enthält den Fix bereits — muss aber wegen des
+  Diff-Review-Fixes oben ohnehin neu gebaut und installiert werden.
 
 ## Mittlere Priorität
 
