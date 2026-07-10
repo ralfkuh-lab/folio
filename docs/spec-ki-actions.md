@@ -405,7 +405,11 @@ Fullscreen-Overlay nach translate-dialog-Muster, eigenes CSS
 Zweispaltig: links Aktionsliste (Favoriten → Built-ins → Eigene →
 „Eigener Prompt"; ★-Toggle ab A4a; Eigene als „Eigene Vorlage"
 gekennzeichnet), rechts Prompt-`textarea`, Ziel-Radio, Scope-Radio
-(nur bei vorhandener Selektion; zeigt Größe in Code-Points),
+(nur bei vorhandener Selektion; zeigt Größe in Code-Points; bei
+vorhandener Markierung ist IMMER „Selektion" vorgewählt — die
+explizite Markierung schlägt den Template-Scope, User-Entscheid
+2026-07-10; nur die Favoriten-Direktausführung respektiert
+scope='document' hart),
 Modell-`<select>`, „Systemregeln anzeigen", Error-Zeile,
 Abbrechen/Start.
 

@@ -381,8 +381,12 @@ function applySelection(id: string): void {
 
     const selectionRadio = $('ai-actions-scope-selection') as HTMLInputElement | null;
     const documentRadio = $('ai-actions-scope-document') as HTMLInputElement | null;
-    const preferSelection = !!source?.selection
-        && (template ? template.scope !== 'document' : true);
+    // Eine explizite Markierung schlägt den Template-Scope (User-Wunsch
+    // 2026-07-10): wer vor dem Öffnen etwas markiert hat, will darauf
+    // arbeiten — der Radio ist sichtbar und jederzeit umschaltbar. Nur
+    // die Favoriten-Direktausführung (ohne UI) respektiert weiterhin
+    // scope='document' als harten Template-Default.
+    const preferSelection = !!source?.selection;
     if (selectionRadio) selectionRadio.checked = preferSelection;
     if (documentRadio) documentRadio.checked = !preferSelection;
     syncSaveTemplateVisibility();

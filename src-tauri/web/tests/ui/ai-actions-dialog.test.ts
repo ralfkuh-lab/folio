@@ -311,9 +311,10 @@ describe('ai-actions-dialog', () => {
         await openAiActionsDialog();
 
         expect(document.getElementById('ai-actions-scope-row')!.hidden).toBe(false);
+        // Explizite Markierung gewinnt für ALLE Vorlagen — auch summarize
+        // (scope=document) startet mit Selektion vorgewählt.
         expect((document.getElementById('ai-actions-scope-selection') as HTMLInputElement).checked)
-            .toBe(false); // summarize hat scope=document → Dokument vorgewählt
-        // Eigenes Template (scope=auto) → Selektion vorgewählt.
+            .toBe(true);
         (document.querySelectorAll('.ai-actions-dialog__item')[1] as HTMLElement).click();
         expect((document.getElementById('ai-actions-scope-selection') as HTMLInputElement).checked)
             .toBe(true);
