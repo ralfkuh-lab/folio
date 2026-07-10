@@ -31,6 +31,18 @@ def _poll_view_theme(ctx, theme_id: str, timeout_s: float = 2.0) -> bool:
     return False
 
 
+def _poll(predicate, timeout_s: float = 2.0):
+    """Small general poll helper (modeled after 36); returns last predicate value (truthy on success)."""
+    deadline = time.monotonic() + timeout_s
+    value = None
+    while time.monotonic() < deadline:
+        value = predicate()
+        if value:
+            return value
+        time.sleep(0.05)
+    return value
+
+
 def run(ctx):
     themes_dir = _themes_dir(ctx)
     package_dir = themes_dir / THEME_ID
@@ -95,6 +107,22 @@ def run(ctx):
             ctx.api.sync_render()
             ctx.screenshot("theme_browser_detail")
     finally:
+        try:
+            ctx.api.click("settings-close")
+        except Exception:
+            pass
+        # hard absence check outside best-effort close (same structure as 36 fix)
+        # no .tab-item[data-tab-id="settings"] left (virtual tab leak prevention)
+        ctx.expect(
+            _poll(
+                lambda: _eval(
+                    ctx,
+                    "document.querySelectorAll('#tab-bar .tab-item[data-tab-id=\"settings\"]').length === 0"
+                ),
+                timeout_s=2.0,
+            ),
+            "settings virtual tab still present in #tab-bar",
+        )
         try:
             _eval(
                 ctx,

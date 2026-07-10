@@ -310,10 +310,18 @@ impl AppState {
         Ok(TabsPayload {
             tabs: tabs.summaries(),
             active_index: tabs.active_index(),
+            request_id: None,
         })
     }
 
     pub fn emit_tabs_changed(app: &AppHandle) -> Result<(), String> {
+        Self::emit_tabs_changed_with_request(app, None)
+    }
+
+    pub fn emit_tabs_changed_with_request(
+        app: &AppHandle,
+        request_id: Option<u64>,
+    ) -> Result<(), String> {
         let state = app.state::<AppState>();
         let (payload, open_tabs, active_tab) = {
             let tabs = state
@@ -323,6 +331,7 @@ impl AppState {
             let payload = TabsPayload {
                 tabs: tabs.summaries(),
                 active_index: tabs.active_index(),
+                request_id,
             };
             let (open_tabs, active_tab) = tabs.session_state();
             (payload, open_tabs, active_tab)

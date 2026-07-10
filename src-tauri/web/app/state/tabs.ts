@@ -7,6 +7,7 @@ import {
     requestSaveIfDirty,
     syncEditorTextToStore,
 } from './document';
+import { ackHandler } from '../automation/events';
 import { folioLog, safeInvoke } from '../util/log';
 
 export interface TabSummary {
@@ -19,6 +20,7 @@ export interface TabSummary {
 export interface TabsPayload {
     tabs: TabSummary[];
     activeIndex: number;
+    requestId?: number;
 }
 
 let current: TabsPayload = { tabs: [], activeIndex: 0 };
@@ -533,9 +535,13 @@ function setupTabDragListeners(): void {
 export function initTabs(): void {
     const runtime = window.__TAURI__;
     if (runtime && runtime.event && runtime.core) {
+        const invokeFn = runtime.core.invoke;
         runtime.event.listen('tabs:changed', function (event: any) {
             eventRevision++;
-            renderTabs((event && event.payload) || {});
+            const payload = (event && event.payload) || {};
+            ackHandler(invokeFn, payload, function () {
+                renderTabs(payload);
+            });
         });
 
         // Beim Boot kann das Backend-Event bereits vor der Listener-

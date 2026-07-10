@@ -102,12 +102,21 @@ pub(in crate::automation) async fn post_close_all(
 
 pub(in crate::automation) async fn post_reorder(
     AxumState(context): AxumState<AutomationContext>,
+    ApiQuery(options): ApiQuery<AckOptions>,
     payload: Result<Json<TabReorderRequest>, JsonRejection>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let Json(payload) = json_payload(payload)?;
     let state = context.app_handle.state::<AppState>();
-    tabs::reorder(&state, &context.app_handle, payload.ids).map_err(api_error)?;
-    Ok(Json(serde_json::json!({ "ok": true })))
+    tabs::apply_reorder(&state, payload.ids).map_err(api_error)?;
+    let (request_id, receiver) = ack::register(state.inner()).map_err(ApiError::internal)?;
+    let _guard = ack::PendingGuard::new(&state.inner().pending_acks, request_id);
+    AppState::emit_tabs_changed_with_request(&context.app_handle, Some(request_id))
+        .map_err(ApiError::internal)?;
+    let timeout_ms = options.ack_timeout_ms.unwrap_or(DEFAULT_ACK_TIMEOUT_MS);
+    let acked = ack::wait_for_ack(state.inner(), request_id, receiver, timeout_ms).await;
+    Ok(Json(
+        serde_json::json!({ "ok": true, "acked": acked, "requestId": request_id }),
+    ))
 }
 
 async fn respond_after_frontend(
@@ -126,6 +135,7 @@ async fn respond_after_frontend(
 
     let state = context.app_handle.state::<AppState>();
     let (request_id, receiver) = ack::register(state.inner()).map_err(ApiError::internal)?;
+    let _guard = ack::PendingGuard::new(&state.inner().pending_acks, request_id);
     tabs::emit_navigation_changed(&context.app_handle, &transition, Some(request_id))
         .map_err(api_error)?;
     let timeout_ms = options.ack_timeout_ms.unwrap_or(DEFAULT_ACK_TIMEOUT_MS);

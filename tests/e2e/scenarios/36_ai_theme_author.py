@@ -192,10 +192,24 @@ def run(ctx):
     finally:
         _cleanup_provider(ctx)
         try:
-            _eval(ctx, "if (window.FolioThemeEditor) { window.FolioThemeEditor.dispose(); }")
-            _eval(ctx, "document.getElementById('theme-editor-dialog').hidden = true;")
+            ctx.api.click("theme-editor-close")
+            ctx.api.click("unsaved-discard")
         except Exception:
             pass
         server.shutdown()
         server.server_close()
         thread.join(timeout=2.0)
+        # hard absence check OUTSIDE the best-effort try/except (clicks may be no-op if
+        # editor not open or early failure); use ctx.expect so leak is detected as test failure.
+        # If never opened, length===0 is trivially true. Runs AFTER server teardown so a
+        # failing expect cannot leak the mock server thread into later scenarios.
+        ctx.expect(
+            _poll(
+                lambda: _eval(
+                    ctx,
+                    "document.querySelectorAll('#tab-bar .tab-item[data-tab-id=\"theme-editor\"]').length === 0"
+                ),
+                timeout_s=2.0,
+            ),
+            "theme-editor virtual tab still present in #tab-bar",
+        )

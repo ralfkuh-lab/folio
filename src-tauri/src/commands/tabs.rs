@@ -57,18 +57,21 @@ pub fn list(state: &AppState) -> Result<TabsPayload, TabError> {
     state.tabs_payload().map_err(TabError::Internal)
 }
 
-pub fn reorder(state: &AppState, handle: &AppHandle, ids: Vec<u64>) -> Result<(), TabError> {
-    {
-        let mut tabs = state
-            .tabs
-            .lock()
-            .map_err(|_| TabError::Internal("tabs lock poisoned".into()))?;
-        if !tabs.reorder(&ids) {
-            return Err(TabError::InvalidArgument(
-                "invalid reorder: ids must be exact permutation of current document tabs".into(),
-            ));
-        }
+pub fn apply_reorder(state: &AppState, ids: Vec<u64>) -> Result<(), TabError> {
+    let mut tabs = state
+        .tabs
+        .lock()
+        .map_err(|_| TabError::Internal("tabs lock poisoned".into()))?;
+    if !tabs.reorder(&ids) {
+        return Err(TabError::InvalidArgument(
+            "invalid reorder: ids must be exact permutation of current document tabs".into(),
+        ));
     }
+    Ok(())
+}
+
+pub fn reorder(state: &AppState, handle: &AppHandle, ids: Vec<u64>) -> Result<(), TabError> {
+    apply_reorder(state, ids)?;
     AppState::emit_tabs_changed(handle).map_err(TabError::Internal)?;
     Ok(())
 }

@@ -67,6 +67,8 @@ pub struct TabSummary {
 pub struct TabsPayload {
     pub tabs: Vec<TabSummary>,
     pub active_index: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<u64>,
 }
 
 pub struct TabManager {
