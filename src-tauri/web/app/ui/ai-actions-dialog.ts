@@ -2,8 +2,9 @@
 // Funktionsliste links, editierbarer Prompt rechts, Ziel/Scope/Modell.
 // Der Lauf ist atomar an den Quell-Tab gebunden (eingefrorener Snapshot
 // + sha256 + tab-gebundener Sync); Cancel/Events korrelieren über die
-// runId aus dem `ai:action_started`-Handshake. In A2 ist das Replace-
-// Ziel sichtbar, aber deaktiviert — es kommt mit der Diff-Review (A3).
+// runId aus dem `ai:action_started`-Handshake. Das Replace-Ziel liefert
+// `kind:"text"` und öffnet die Diff-Review (ai-diff-review.ts, A3) —
+// nichts fasst das Original vor der expliziten Übernahme an.
 
 import {
     getCurrentPath,
@@ -13,6 +14,7 @@ import {
 import { getActiveTabId } from '../state/tabs';
 import { renderPreviewText } from '../view/preview';
 import { folioLog, safeInvoke } from '../util/log';
+import { isAiReviewOpen, openAiDiffReview } from './ai-diff-review';
 import { populateModelPicker, type AiConfig, type CatalogResult } from './ai-model-picker';
 
 export type ActionTemplate = {
@@ -146,30 +148,11 @@ function setBusy(busy: boolean): void {
             element.disabled = busy;
         }
     }
-    // Dialog-Abbrechen bleibt immer bedienbar; das Replace-Ziel bleibt in
-    // A2 auch im Idle-Zustand gesperrt.
+    // Dialog-Abbrechen bleibt immer bedienbar.
     const cancel = $('ai-actions-cancel') as HTMLButtonElement | null;
     if (cancel) cancel.disabled = false;
-    if (!busy) applyReplaceStageGate();
     const start = $('ai-actions-start') as HTMLButtonElement | null;
     if (start) start.textContent = busy ? 'Läuft…' : 'Ausführen';
-}
-
-/** A2: Replace ist sichtbar, aber bis zur Diff-Review (A3) gesperrt. */
-function applyReplaceStageGate(): void {
-    const replace = $('ai-actions-target-replace') as HTMLInputElement | null;
-    const label = $('ai-actions-target-replace-label');
-    if (replace) {
-        replace.disabled = true;
-        if (replace.checked) {
-            const newFile = $('ai-actions-target-newfile') as HTMLInputElement | null;
-            if (newFile) newFile.checked = true;
-        }
-    }
-    if (label) {
-        label.classList.add('disabled');
-        label.title = 'Folgt in Kürze (Diff-Review)';
-    }
 }
 
 function templateById(id: string): ActionTemplate | null {
@@ -254,9 +237,11 @@ function applySelection(id: string): void {
     const prompt = $('ai-actions-prompt') as HTMLTextAreaElement | null;
     if (prompt) prompt.value = template?.prompt || '';
 
+    const preferReplace = template?.target === 'replace';
     const newFile = $('ai-actions-target-newfile') as HTMLInputElement | null;
-    if (newFile) newFile.checked = true;
-    applyReplaceStageGate();
+    const replace = $('ai-actions-target-replace') as HTMLInputElement | null;
+    if (newFile) newFile.checked = !preferReplace;
+    if (replace) replace.checked = preferReplace;
 
     const selectionRadio = $('ai-actions-scope-selection') as HTMLInputElement | null;
     const documentRadio = $('ai-actions-scope-document') as HTMLInputElement | null;
@@ -423,6 +408,13 @@ async function startAction(): Promise<void> {
     }
 
     const template = selectedTemplate();
+    const replaceRadio = $('ai-actions-target-replace') as HTMLInputElement | null;
+    const target: 'new-file' | 'replace' = replaceRadio?.checked ? 'replace' : 'new-file';
+    if (target === 'replace' && isAiReviewOpen()) {
+        setError('Erst die offene KI-Review abschließen.');
+        setBusy(false);
+        return;
+    }
     const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     currentRequestId = requestId;
     currentRunId = null;
@@ -434,6 +426,8 @@ async function startAction(): Promise<void> {
     showStatus(currentActionName);
 
     const requestSource = source;
+    const scopePayload = currentScopePayload();
+    const actionName = currentActionName;
     invoke<{ kind: string; runId: number; path?: string; text?: string }>('ai_action_run', {
         request: {
             actionId: template?.id ?? null,
@@ -441,10 +435,10 @@ async function startAction(): Promise<void> {
             prompt,
             providerId,
             modelId,
-            target: 'new-file',
+            target,
             masking: effectiveMasking(),
             suffix: effectiveSuffix(),
-            scope: currentScopePayload(),
+            scope: scopePayload,
             sourceTabId: requestSource.tabId,
             sourcePath: requestSource.path,
             sourceTextSha256: requestSource.sha256,
@@ -457,6 +451,17 @@ async function startAction(): Promise<void> {
             kind: outcome?.kind || '',
             runId: outcome?.runId ?? -1,
         });
+        if (outcome?.kind === 'text' && typeof outcome.text === 'string') {
+            void openAiDiffReview({
+                runId: outcome.runId,
+                sourceTabId: requestSource.tabId,
+                sourcePath: requestSource.path,
+                originalFull: requestSource.text,
+                selection: scopePayload,
+                resultText: outcome.text,
+                actionName,
+            });
+        }
     }).catch((error) => {
         if (currentRequestId !== requestId) return;
         finishRun();
@@ -513,7 +518,6 @@ export function initAiActionsDialog(): void {
     currentRunId = null;
     abortRequested = false;
     documentIsMarkdown = document.body.classList.contains('kind-markdown');
-    applyReplaceStageGate();
 
     const toolbarButton = $('tb-ai-actions');
     toolbarButton?.addEventListener('click', () => void openAiActionsDialog());

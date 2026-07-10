@@ -87,6 +87,11 @@ pub struct AppState {
     pub ai_job_active: Mutex<Option<AiJob>>,
     /// Monotone runId-Quelle fuer KI-Aktionen.
     pub ai_action_run_seq: AtomicU64,
+    /// Frontend-gemeldeter Zustand der KI-Diff-Review (Spec
+    /// docs/spec-ki-actions.md): true, solange eine Review offen UND
+    /// vom User editiert ist. Geht in die Quit-Gates ein, weil der
+    /// Backend-Dirty-Check (`tabs.any_dirty`) virtuelle Tabs nicht kennt.
+    pub ai_review_dirty: AtomicBool,
     pub vault: Mutex<Vault>,
     pub vault_watcher: Mutex<VaultWatcher>,
     pub git_head_watcher: Mutex<GitHeadWatcher>,
@@ -150,6 +155,7 @@ impl AppState {
             ai_action_cancel: Arc::new(AtomicBool::new(false)),
             ai_job_active: Mutex::new(None),
             ai_action_run_seq: AtomicU64::new(0),
+            ai_review_dirty: AtomicBool::new(false),
             vault: Mutex::new(Vault::new()),
             vault_watcher: Mutex::new(VaultWatcher::new()),
             git_head_watcher: Mutex::new(GitHeadWatcher::new()),

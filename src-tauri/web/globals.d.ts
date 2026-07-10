@@ -80,6 +80,18 @@ interface FolioCodeViewSurface {
 type FolioThemePart = 'content' | 'dark' | 'page' | 'cover' | 'header' | 'footer';
 type FolioThemeParts = Partial<Record<FolioThemePart, string>>;
 
+interface FolioDiffViewSurface {
+    mount(elementId: string): Promise<void>;
+    setContents(original: string, modified: string, language: string): void;
+    onModifiedChange(callback: (() => void) | null): void;
+    getModified(): string;
+    setTheme(mode: 'light' | 'dark'): void;
+    layout(): void;
+    focus(): void;
+    dispose(): void;
+    isMounted(): boolean;
+}
+
 interface FolioThemeEditorSurface {
     mount(elementId: string): Promise<void>;
     setParts(parts: FolioThemeParts, cleanParts?: FolioThemeParts): void;
@@ -97,6 +109,7 @@ interface Window {
     FolioEditor?: FolioEditorSurface;
     FolioCodeView?: FolioCodeViewSurface;
     FolioThemeEditor?: FolioThemeEditorSurface;
+    FolioDiffView?: FolioDiffViewSurface;
     __TAURI__?: TauriRuntime;
     __folioInvoke?: TauriCoreApi['invoke'];
     openDocument?: (path: string) => Promise<boolean>;

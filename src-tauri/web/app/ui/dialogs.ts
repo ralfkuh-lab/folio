@@ -85,6 +85,45 @@ export function showUnsavedDialog(): Promise<'save' | 'discard' | 'cancel'> {
     });
 }
 
+// Generische Bestätigung: resolves true = OK, false = Abbrechen.
+// Default-Fokus auf "Abbrechen" (destruktive Aktionen nie per Enter).
+export function showConfirmDialog(
+    message: string,
+    options?: { title?: string; okLabel?: string },
+): Promise<boolean> {
+    return new Promise<boolean>(function (resolve) {
+        const dialog = $('confirm-dialog');
+        const ok = $('confirm-ok');
+        const cancel = $('confirm-cancel');
+        const text = $('confirm-text');
+        const title = $('confirm-title');
+        if (!dialog || !ok || !cancel || !text) {
+            resolve(false);
+            return;
+        }
+        if (title) title.textContent = options?.title || 'Bestätigen';
+        ok.textContent = options?.okLabel || 'OK';
+        text.textContent = message;
+        dialog.hidden = false;
+        function done(result: boolean): void {
+            dialog.hidden = true;
+            ok.removeEventListener('click', onOk);
+            cancel.removeEventListener('click', onCancel);
+            document.removeEventListener('keydown', onKey);
+            resolve(result);
+        }
+        function onOk(): void { done(true); }
+        function onCancel(): void { done(false); }
+        function onKey(e: KeyboardEvent): void {
+            if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+        }
+        ok.addEventListener('click', onOk);
+        cancel.addEventListener('click', onCancel);
+        document.addEventListener('keydown', onKey);
+        setTimeout(function () { if (cancel) cancel.focus(); }, 0);
+    });
+}
+
 // Ausführen-Bestätigung: resolves true = ausführen, false = abbrechen.
 // Default-Fokus liegt bewusst auf "Abbrechen" (kein versehentliches
 // Ausführen per Enter).

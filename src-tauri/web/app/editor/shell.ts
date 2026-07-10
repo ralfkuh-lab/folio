@@ -113,6 +113,7 @@ export function setEditorTheme(mode: string): void {
         window.FolioCodeView.setTheme(normalized);
     }
     if (window.FolioThemeEditor) window.FolioThemeEditor.setTheme(normalized);
+    if (window.FolioDiffView) window.FolioDiffView.setTheme(normalized);
 }
 
 export function requestEditorSelection(): { start: number; length: number } | null {

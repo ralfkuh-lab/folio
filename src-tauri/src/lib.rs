@@ -179,12 +179,19 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
                     // so kann ein totes Frontend den Close nie blockieren.
                     let is_dirty = app
                         .try_state::<AppState>()
-                        .and_then(|state| {
-                            state
+                        .map(|state| {
+                            let tabs_dirty = state
                                 .tabs
                                 .lock()
                                 .ok()
                                 .map(|tabs| tabs.any_dirty())
+                                .unwrap_or(false);
+                            // Editierte KI-Diff-Review = dirty (virtueller
+                            // Tab, dem Backend-Tab-Gate sonst unsichtbar).
+                            tabs_dirty
+                                || state
+                                    .ai_review_dirty
+                                    .load(std::sync::atomic::Ordering::Acquire)
                         })
                         .unwrap_or(false);
                     if is_dirty {
@@ -355,6 +362,7 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::ai::ai_actions_list,
             commands::ai::ai_action_run,
             commands::ai::ai_action_cancel,
+            commands::ai::ai_review_state_set,
             commands::app::dialog::open_folder,
             commands::app::dialog::pick_folder,
             commands::app::dialog::pick_file,
@@ -524,6 +532,51 @@ pub fn run() {
                 if let Some(state) = app.try_state::<AppState>() {
                     if let Ok(panel) = state.panel_state.lock() {
                         let _ = panel.save();
+                    }
+                    // Laufende KI-Aktion kooperativ abbrechen und bis zu
+                    // 2 s auf das terminale Cleanup warten (Cancel greift
+                    // im Stream-Poll <=250 ms) — sonst bliebe eine leere
+                    // Reservierungsdatei als Leiche zurueck. Timeout ist
+                    // der abnorme Fall (warn-Log, akzeptierter Trade-off).
+                    let action_active = state
+                        .ai_job_active
+                        .lock()
+                        .ok()
+                        .map(|job| {
+                            matches!(
+                                *job,
+                                Some(crate::state::AiJob {
+                                    kind: crate::state::AiJobKind::Action,
+                                    ..
+                                })
+                            )
+                        })
+                        .unwrap_or(false);
+                    if action_active {
+                        state
+                            .ai_action_cancel
+                            .store(true, std::sync::atomic::Ordering::Release);
+                        let deadline =
+                            std::time::Instant::now() + std::time::Duration::from_secs(2);
+                        loop {
+                            let cleared = state
+                                .ai_job_active
+                                .lock()
+                                .ok()
+                                .map(|job| job.is_none())
+                                .unwrap_or(true);
+                            if cleared {
+                                break;
+                            }
+                            if std::time::Instant::now() >= deadline {
+                                tracing::warn!(
+                                    target: "folio::ai",
+                                    "quit while AI action still active after 2s cancel window"
+                                );
+                                break;
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(50));
+                        }
                     }
                 }
             }

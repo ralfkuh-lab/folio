@@ -11,6 +11,7 @@ import {
     saveCurrent,
 } from '../state/document';
 import { closeActiveTab, confirmAllDirtyTabs } from '../state/tabs';
+import { confirmAiReviewForQuit } from './ai-diff-review';
 import { setMode } from '../editor/shell';
 import { openEditorFind } from './find-bar';
 import { folioLog, safeInvoke } from '../util/log';
@@ -49,9 +50,14 @@ export function initMenuRouter(deps: Deps): void {
     // (Save/Discard/Cancel); nach Bestaetigung beendet quit_app ohne
     // weiteres Gate.
     ev.listen('menu:file_quit', function () {
-        confirmAllDirtyTabs().then(function (ok) {
-            if (!ok) return;
-            safeInvoke('quit_app', undefined, 'quit_app');
+        // Eine editierte KI-Diff-Review zaehlt wie ein dirty Tab —
+        // erst deren Verwerfen bestaetigen, dann die Dokument-Tabs.
+        confirmAiReviewForQuit().then(function (reviewOk) {
+            if (!reviewOk) return;
+            confirmAllDirtyTabs().then(function (ok) {
+                if (!ok) return;
+                safeInvoke('quit_app', undefined, 'quit_app');
+            });
         });
     });
     ev.listen('menu:edit_undo', function () {

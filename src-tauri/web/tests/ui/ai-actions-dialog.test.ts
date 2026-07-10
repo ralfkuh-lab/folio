@@ -138,7 +138,10 @@ describe('ai-actions-dialog', () => {
         expect(items[0].getAttribute('aria-selected')).toBe('true');
         expect((document.getElementById('ai-actions-prompt') as HTMLTextAreaElement).value)
             .toBe('Fasse zusammen.');
+        // Seit A3 ist Replace wählbar; summarize (target new-file) wählt Neue Datei vor.
         expect((document.getElementById('ai-actions-target-replace') as HTMLInputElement).disabled)
+            .toBe(false);
+        expect((document.getElementById('ai-actions-target-newfile') as HTMLInputElement).checked)
             .toBe(true);
         const model = document.getElementById('ai-actions-model') as HTMLSelectElement;
         expect(model.options[0].textContent).toBe('Lokaler Provider · Mock Modell');

@@ -47,6 +47,7 @@ let settingsTabHooks: { onActivate: () => void; onClose: () => void } | null = n
 function syncVirtualRegionClasses(): void {
     document.body.classList.toggle('settings-open', activeVirtualSlug === 'settings');
     document.body.classList.toggle('theme-editor-open', activeVirtualSlug === 'theme-editor');
+    document.body.classList.toggle('ai-diff-open', activeVirtualSlug === 'ai-diff');
 }
 
 export function registerVirtualTab(tab: VirtualTab, activate = true): void {
@@ -80,6 +81,11 @@ export function refreshVirtualTabs(): void {
 
 export function isVirtualTabActive(slug: string): boolean {
     return activeVirtualSlug === slug;
+}
+
+/** Existiert der Dokument-Tab (Backend-Sicht der Leiste) noch? */
+export function hasDocumentTab(id: number): boolean {
+    return current.tabs.some((tab) => tab.id === id);
 }
 
 async function requestCloseVirtualTab(slug: string): Promise<boolean> {

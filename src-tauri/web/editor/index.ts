@@ -57,6 +57,7 @@ import {
 } from './text';
 import * as codeView from './view-code';
 import * as themeEditor from './theme-editor';
+import * as diffView from './diff-view';
 
 (window as any).FolioEditor = {
     mount,
@@ -110,6 +111,19 @@ import * as themeEditor from './theme-editor';
     findNext: codeView.findNext,
     findPrev: codeView.findPrev,
     setSuppressActive: codeView.setSuppressActive,
+};
+
+// Vierte Surface: Monaco-DiffEditor fuer die KI-Aktions-Review (A3).
+(window as any).FolioDiffView = {
+    mount: diffView.mount,
+    setContents: diffView.setContents,
+    onModifiedChange: diffView.onModifiedChange,
+    getModified: diffView.getModified,
+    setTheme: diffView.setTheme,
+    layout: diffView.layout,
+    focus: diffView.focus,
+    dispose: diffView.dispose,
+    isMounted: diffView.isMounted,
 };
 
 // Dritte Surface: editierbare Theme-Paketteile mit Model-pro-Part.

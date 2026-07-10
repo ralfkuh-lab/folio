@@ -616,6 +616,20 @@ pub async fn ai_actions_list() -> Result<Vec<actions::ActionTemplate>, String> {
     Ok(actions::list_templates())
 }
 
+/// Frontend meldet den Zustand der KI-Diff-Review (offen + editiert),
+/// damit die Quit-Gates sie wie einen dirty Tab behandeln koennen.
+#[tauri::command]
+pub async fn ai_review_state_set(
+    open: bool,
+    dirty: bool,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state
+        .ai_review_dirty
+        .store(open && dirty, Ordering::Release);
+    Ok(())
+}
+
 /// Bricht genau den Lauf mit `run_id` ab — ein verspaeteter Cancel aus
 /// einem frueheren Lauf kann einen Folgelauf nicht treffen.
 #[tauri::command]

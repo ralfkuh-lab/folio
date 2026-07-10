@@ -49,7 +49,20 @@ pub fn dispatch_menu_action(app: &AppHandle, id: &str) {
             // Menue-Beenden Dirty-Inhalt kommentarlos.
             let is_dirty = app
                 .try_state::<crate::state::AppState>()
-                .and_then(|state| state.tabs.lock().ok().map(|tabs| tabs.any_dirty()))
+                .map(|state| {
+                    let tabs_dirty = state
+                        .tabs
+                        .lock()
+                        .ok()
+                        .map(|tabs| tabs.any_dirty())
+                        .unwrap_or(false);
+                    // Eine editierte KI-Diff-Review zaehlt wie ein dirty
+                    // Tab — sie lebt nur im Frontend (virtueller Tab).
+                    tabs_dirty
+                        || state
+                            .ai_review_dirty
+                            .load(std::sync::atomic::Ordering::Acquire)
+                })
                 .unwrap_or(false);
             if is_dirty {
                 let _ = app.emit("menu:file_quit", serde_json::json!({}));
