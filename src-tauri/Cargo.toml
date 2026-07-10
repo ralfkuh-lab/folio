@@ -24,6 +24,7 @@ saphyr = "0.0.6"
 
 # Phase 2-3: Serde + Persistenz
 serde = { version = "1.0", features = ["derive"] }
+sha2 = "0.10"
 serde_json = "1.0"
 tempfile = "3.14"
 dirs = "6.0"

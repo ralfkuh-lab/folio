@@ -31,6 +31,24 @@ pub struct ConsoleErrorRecord {
 
 pub const CONSOLE_ERROR_BUFFER_MAX: usize = 200;
 
+/// Art des exklusiv laufenden KI-Jobs (v1: gegenseitiger Ausschluss —
+/// Uebersetzung, Theme-Autor und KI-Aktionen laufen nie gleichzeitig).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AiJobKind {
+    Translate,
+    ThemeAuthor,
+    Action,
+}
+
+/// Belegter KI-Job-Slot. `run_id` korreliert Cancel/Events der
+/// KI-Aktionen (Uebersetzung/Theme-Autor tragen 0 — sie haben keine
+/// laufbezogenen Cancel-Commands).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AiJob {
+    pub kind: AiJobKind,
+    pub run_id: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AutomationUiState {
     pub theme: String,
@@ -61,9 +79,14 @@ pub struct AppState {
     pub ai_auth: Mutex<AuthStore>,
     pub ai_http: reqwest::Client,
     pub ai_translate_cancel: Arc<AtomicBool>,
-    pub ai_translate_active: Mutex<bool>,
     pub ai_theme_author_cancel: Arc<AtomicBool>,
-    pub ai_theme_author_active: Mutex<bool>,
+    pub ai_action_cancel: Arc<AtomicBool>,
+    /// Atomarer Admission-Guard fuer KI-Jobs: Check + Set passieren in
+    /// EINEM Lock-Scope (`commands::ai::acquire_ai_job`), damit zwei
+    /// Commands nicht gleichzeitig "frei" sehen (TOCTOU).
+    pub ai_job_active: Mutex<Option<AiJob>>,
+    /// Monotone runId-Quelle fuer KI-Aktionen.
+    pub ai_action_run_seq: AtomicU64,
     pub vault: Mutex<Vault>,
     pub vault_watcher: Mutex<VaultWatcher>,
     pub git_head_watcher: Mutex<GitHeadWatcher>,
@@ -123,9 +146,10 @@ impl AppState {
             ai_auth: Mutex::new(AuthStore::load()),
             ai_http: reqwest::Client::new(),
             ai_translate_cancel: Arc::new(AtomicBool::new(false)),
-            ai_translate_active: Mutex::new(false),
             ai_theme_author_cancel: Arc::new(AtomicBool::new(false)),
-            ai_theme_author_active: Mutex::new(false),
+            ai_action_cancel: Arc::new(AtomicBool::new(false)),
+            ai_job_active: Mutex::new(None),
+            ai_action_run_seq: AtomicU64::new(0),
             vault: Mutex::new(Vault::new()),
             vault_watcher: Mutex::new(VaultWatcher::new()),
             git_head_watcher: Mutex::new(GitHeadWatcher::new()),

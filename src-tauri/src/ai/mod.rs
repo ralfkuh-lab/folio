@@ -1,5 +1,6 @@
 //! KI-Backend-Grundlagen: models.dev-Katalog, Konfiguration und Auth-Store.
 
+pub mod actions;
 pub mod auth;
 pub mod catalog;
 pub mod client;

@@ -41,6 +41,22 @@ impl fmt::Display for UnmaskError {
 
 impl std::error::Error for UnmaskError {}
 
+/// Returned when a selection boundary cuts through a protected range.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectionMaskError;
+
+impl fmt::Display for SelectionMaskError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "Die Auswahl zerschneidet einen geschützten Bereich (Code/Frontmatter) — \
+             Auswahl erweitern oder verkleinern."
+        )
+    }
+}
+
+impl std::error::Error for SelectionMaskError {}
+
 /// Replaces frontmatter, code, and HTML nodes with opaque placeholder tokens.
 pub fn mask(source: &str) -> Masked {
     let nonce = available_nonce(source);
@@ -51,6 +67,66 @@ pub fn mask(source: &str) -> Masked {
             nonce,
         };
     }
+    let non_overlapping = protected_ranges(source);
+
+    let fragments = non_overlapping
+        .iter()
+        .map(|range| source[range.clone()].to_string())
+        .collect::<Vec<_>>();
+    let mut text = source.to_string();
+    for (index, range) in non_overlapping.iter().enumerate().rev() {
+        text.replace_range(range.clone(), &token(&nonce, index));
+    }
+
+    Masked {
+        text,
+        fragments,
+        nonce,
+    }
+}
+
+/// Masks a selection of `source`. The protected ranges come from parsing the
+/// FULL document (a selection substring starting inside a fence would parse
+/// as prose and silently lose its protection). Ranges fully inside the
+/// selection are tokenized with selection-local indices/offsets, so the final
+/// `unmask` gate only knows fragments the model actually received. A boundary
+/// that cuts through a protected range is an error.
+pub fn mask_selection(source: &str, selection: Range<usize>) -> Result<Masked, SelectionMaskError> {
+    let all_ranges = protected_ranges(source);
+    let mut inside = Vec::new();
+    for range in all_ranges {
+        let overlaps = range.start < selection.end && range.end > selection.start;
+        if !overlaps {
+            continue;
+        }
+        if range.start < selection.start || range.end > selection.end {
+            return Err(SelectionMaskError);
+        }
+        inside.push(range);
+    }
+
+    let sub_source = &source[selection.clone()];
+    let nonce = available_nonce(sub_source);
+    let fragments = inside
+        .iter()
+        .map(|range| source[range.clone()].to_string())
+        .collect::<Vec<_>>();
+    let mut text = sub_source.to_string();
+    for (index, range) in inside.iter().enumerate().rev() {
+        let local = range.start - selection.start..range.end - selection.start;
+        text.replace_range(local, &token(&nonce, index));
+    }
+
+    Ok(Masked {
+        text,
+        fragments,
+        nonce,
+    })
+}
+
+/// Non-overlapping protected byte ranges of the full document, sorted by
+/// start. Outer nodes win over contained nodes (same rule `mask` applies).
+fn protected_ranges(source: &str) -> Vec<Range<usize>> {
     let line_starts = line_starts(source);
     let mut options = renderer::markdown_options();
     options.extension.front_matter_delimiter = Some("---".into());
@@ -81,21 +157,7 @@ pub fn mask(source: &str) -> Masked {
             non_overlapping.push(range);
         }
     }
-
-    let fragments = non_overlapping
-        .iter()
-        .map(|range| source[range.clone()].to_string())
-        .collect::<Vec<_>>();
-    let mut text = source.to_string();
-    for (index, range) in non_overlapping.iter().enumerate().rev() {
-        text.replace_range(range.clone(), &token(&nonce, index));
-    }
-
-    Masked {
-        text,
-        fragments,
-        nonce,
-    }
+    non_overlapping
 }
 
 /// Restores protected fragments in a translated model response.
@@ -202,7 +264,7 @@ fn line_starts(source: &str) -> Vec<usize> {
     starts
 }
 
-fn has_lone_carriage_return(source: &str) -> bool {
+pub(crate) fn has_lone_carriage_return(source: &str) -> bool {
     let bytes = source.as_bytes();
     bytes
         .iter()
@@ -425,6 +487,69 @@ Schluss 😀 <br>.
 
         assert_eq!(vec![source.trim_end().to_string()], masked.fragments);
         assert_eq!(format!("{}\n", token(&masked.nonce, 0)), masked.text);
+    }
+
+    #[test]
+    fn selection_mask_tokenizes_only_ranges_inside_the_selection() {
+        let source = "Vor `a()` mitte `b()` nach `c()` Ende.";
+        // Selektion umfasst genau "mitte `b()` nach" — `a()` liegt davor,
+        // `c()` dahinter; beide dürfen weder Token noch Fragment werden.
+        let start = source.find("mitte").unwrap();
+        let end = source.find(" nach").unwrap() + " nach".len();
+        let masked = mask_selection(source, start..end).unwrap();
+
+        assert_eq!(vec!["`b()`".to_string()], masked.fragments);
+        assert_eq!(
+            format!("mitte {} nach", token(&masked.nonce, 0)),
+            masked.text
+        );
+        assert_eq!("mitte `b()` nach", unmask(&masked.text, &masked).unwrap());
+    }
+
+    #[test]
+    fn selection_boundary_cutting_a_protected_range_is_an_error() {
+        let source = "Text `geschuetzt()` mehr Text.";
+        let inside = source.find("schuetzt").unwrap();
+        // Grenze mitten im Inline-Code → Fehler.
+        assert_eq!(Err(SelectionMaskError), mask_selection(source, 0..inside));
+        assert_eq!(
+            Err(SelectionMaskError),
+            mask_selection(source, inside..source.len())
+        );
+    }
+
+    #[test]
+    fn selection_boundaries_exactly_on_range_edges_are_allowed() {
+        let source = "Vor `code()` nach.";
+        let code_start = source.find('`').unwrap();
+        let code_end = source.rfind('`').unwrap() + 1;
+        let masked = mask_selection(source, code_start..code_end).unwrap();
+
+        assert_eq!(vec!["`code()`".to_string()], masked.fragments);
+        assert_eq!(token(&masked.nonce, 0), masked.text);
+    }
+
+    #[test]
+    fn selection_mask_with_fence_and_frontmatter_boundaries() {
+        let source =
+            "---\ntitle: x\n---\n\nProsa eins.\n\n```rust\nfn f() {}\n```\n\nProsa zwei.\n";
+        // Auswahl beginnt mitten im Frontmatter → Fehler.
+        assert!(mask_selection(source, 4..source.len()).is_err());
+        // Auswahl nur über die Prosa zwischen Frontmatter und Fence-Ende.
+        let start = source.find("Prosa eins").unwrap();
+        let end = source.find("Prosa zwei").unwrap() + "Prosa zwei.".len();
+        let masked = mask_selection(source, start..end).unwrap();
+        assert_eq!(1, masked.fragments.len());
+        assert!(masked.fragments[0].contains("fn f()"));
+        assert!(!masked.text.contains("fn f()"));
+    }
+
+    #[test]
+    fn selection_mask_handles_emoji_around_ranges() {
+        let source = "😀 vor `x()` nach 😀.";
+        let masked = mask_selection(source, 0..source.len()).unwrap();
+        assert_eq!(vec!["`x()`".to_string()], masked.fragments);
+        assert_eq!(source, unmask(&masked.text, &masked).unwrap());
     }
 
     #[test]

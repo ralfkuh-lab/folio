@@ -1,5 +1,6 @@
 use crate::{
     ai::{
+        actions,
         catalog::{self, CatalogResult},
         client::{self, ChatMessage},
         config::{AiConfigError, AiConfigService},
@@ -7,31 +8,50 @@ use crate::{
         types::{AiConfig, AuthStatus, Catalog, CustomProviderDefinition},
     },
     file_kind::{classify, FileKind},
-    state::AppState,
+    state::{AiJob, AiJobKind, AppState},
     theme::author,
 };
 use reqwest::{StatusCode, Url};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeSet,
     fs::OpenOptions,
     path::{Path, PathBuf},
-    sync::{atomic::Ordering, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
     time::Duration,
     time::Instant,
 };
 use tauri::{AppHandle, Emitter, State};
 
-struct ActiveTranslation<'a> {
-    active: &'a Mutex<bool>,
+/// RAII-Guard fuer den exklusiven KI-Job-Slot: gibt den Slot in jedem
+/// Ausgang (auch bei `?`/frühem Return) wieder frei.
+struct AiJobGuard<'a> {
+    slot: &'a Mutex<Option<AiJob>>,
 }
 
-impl Drop for ActiveTranslation<'_> {
+impl Drop for AiJobGuard<'_> {
     fn drop(&mut self) {
-        if let Ok(mut active) = self.active.lock() {
-            *active = false;
+        if let Ok(mut slot) = self.slot.lock() {
+            *slot = None;
         }
     }
+}
+
+/// Atomare Admission: Check + Set des Job-Slots in EINEM Lock-Scope,
+/// damit zwei KI-Commands nicht gleichzeitig "frei" sehen (TOCTOU).
+fn acquire_ai_job(slot: &Mutex<Option<AiJob>>, job: AiJob) -> Result<AiJobGuard<'_>, String> {
+    let mut active = slot
+        .lock()
+        .map_err(|_| "AI job lock poisoned".to_string())?;
+    if active.is_some() {
+        return Err("Es läuft bereits ein KI-Vorgang.".to_string());
+    }
+    *active = Some(job);
+    drop(active);
+    Ok(AiJobGuard { slot })
 }
 
 #[tauri::command]
@@ -248,19 +268,13 @@ pub async fn ai_translate_document(
     state: State<'_, AppState>,
     handle: AppHandle,
 ) -> Result<Vec<String>, String> {
-    let _active = {
-        let mut active = state
-            .ai_translate_active
-            .lock()
-            .map_err(|_| "AI translation lock poisoned".to_string())?;
-        if *active {
-            return Err("Es läuft bereits eine KI-Übersetzung.".to_string());
-        }
-        *active = true;
-        ActiveTranslation {
-            active: &state.ai_translate_active,
-        }
-    };
+    let _active = acquire_ai_job(
+        &state.ai_job_active,
+        AiJob {
+            kind: AiJobKind::Translate,
+            run_id: 0,
+        },
+    )?;
     state.ai_translate_cancel.store(false, Ordering::Release);
     let languages = normalize_languages(languages)?;
     let (source_path, source_text) = {
@@ -295,14 +309,14 @@ pub async fn ai_translate_document(
             break;
         }
 
-        let path = reserve_translation(&source_path, &language)
+        let path = reserve_derived_file(&source_path, &language)
             .map_err(|error| translation_error(&language, &created, error))?;
         let normalized_path = path.to_string_lossy().replace('\\', "/");
         let transition =
             match crate::commands::tabs::open(state.inner(), &handle, normalized_path.clone()) {
                 Ok(transition) => transition,
                 Err(error) => {
-                    remove_translation_file(&path);
+                    remove_derived_file(&path);
                     return Err(translation_error(&language, &created, error.to_string()));
                 }
             };
@@ -310,7 +324,7 @@ pub async fn ai_translate_document(
         if let Err(error) =
             crate::commands::tabs::emit_navigation_changed(&handle, &transition, None)
         {
-            cleanup_translation(state.inner(), &handle, tab_id, &path);
+            cleanup_derived_tab(state.inner(), &handle, tab_id, &path);
             return Err(translation_error(&language, &created, error.to_string()));
         }
 
@@ -356,33 +370,33 @@ pub async fn ai_translate_document(
         if matches!(translated_raw, Err(client::ChatError::Cancelled))
             || state.ai_translate_cancel.load(Ordering::Acquire)
         {
-            cleanup_translation(state.inner(), &handle, tab_id, &path);
+            cleanup_derived_tab(state.inner(), &handle, tab_id, &path);
             break;
         }
         let translated_raw = match translated_raw {
             Ok(translated) => translated,
             Err(error) => {
-                cleanup_translation(state.inner(), &handle, tab_id, &path);
+                cleanup_derived_tab(state.inner(), &handle, tab_id, &path);
                 return Err(translation_error(&language, &created, error.to_string()));
             }
         };
         if let Some(error) = emit_error {
-            cleanup_translation(state.inner(), &handle, tab_id, &path);
+            cleanup_derived_tab(state.inner(), &handle, tab_id, &path);
             return Err(translation_error(&language, &created, error));
         }
         let translated = match mask::unmask(&translated_raw, &masked) {
             Ok(translated) => translated,
             Err(error) => {
-                cleanup_translation(state.inner(), &handle, tab_id, &path);
+                cleanup_derived_tab(state.inner(), &handle, tab_id, &path);
                 return Err(translation_error(&language, &created, error.to_string()));
             }
         };
-        if let Err(error) = finalize_translation(&path, translated.as_bytes()) {
-            cleanup_translation(state.inner(), &handle, tab_id, &path);
+        if let Err(error) = write_derived_file(&path, translated.as_bytes()) {
+            cleanup_derived_tab(state.inner(), &handle, tab_id, &path);
             return Err(translation_error(&language, &created, error));
         }
-        if let Err(error) = reload_translation_tab(state.inner(), tab_id, &normalized_path) {
-            cleanup_translation(state.inner(), &handle, tab_id, &path);
+        if let Err(error) = reload_derived_tab(state.inner(), tab_id, &normalized_path) {
+            cleanup_derived_tab(state.inner(), &handle, tab_id, &path);
             return Err(translation_error(&language, &created, error));
         }
         created.push(normalized_path.clone());
@@ -428,19 +442,13 @@ pub async fn ai_theme_author(
     state: State<'_, AppState>,
     handle: AppHandle,
 ) -> Result<author::ThemeDraft, String> {
-    let _active = {
-        let mut active = state
-            .ai_theme_author_active
-            .lock()
-            .map_err(|_| "AI theme author lock poisoned".to_string())?;
-        if *active {
-            return Err("Es läuft bereits ein KI-Theme-Lauf.".to_string());
-        }
-        *active = true;
-        ActiveTranslation {
-            active: &state.ai_theme_author_active,
-        }
-    };
+    let _active = acquire_ai_job(
+        &state.ai_job_active,
+        AiJob {
+            kind: AiJobKind::ThemeAuthor,
+            run_id: 0,
+        },
+    )?;
     state.ai_theme_author_cancel.store(false, Ordering::Release);
 
     let (base_url, api_key) = resolve_provider(state.inner(), &provider_id, &model_id)?;
@@ -554,6 +562,546 @@ pub async fn ai_theme_author(
 pub async fn ai_theme_author_cancel(state: State<'_, AppState>) -> Result<(), String> {
     state.ai_theme_author_cancel.store(true, Ordering::Release);
     Ok(())
+}
+
+// === KI-Aktionen (Spec: docs/spec-ki-actions.md) ==========================
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiActionSelection {
+    pub start: u64,
+    pub length: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiActionRequest {
+    /// Nur fuer Logging — der wirksame Prompt kommt immer explizit mit.
+    pub action_id: Option<String>,
+    /// Client-Token fuer den `ai:action_started`-Handshake.
+    pub request_id: String,
+    pub prompt: String,
+    pub provider_id: String,
+    pub model_id: String,
+    pub target: actions::Target,
+    pub masking: bool,
+    pub suffix: String,
+    /// UTF-16-Offsets auf dem LF-normalisierten Snapshot (Koordinaten-
+    /// vertrag der Spec); `None` = ganzes Dokument.
+    pub scope: Option<AiActionSelection>,
+    pub source_tab_id: u64,
+    pub source_path: String,
+    pub source_text_sha256: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind")]
+pub enum AiActionOutcome {
+    #[serde(rename = "file")]
+    File {
+        #[serde(rename = "runId")]
+        run_id: u64,
+        path: String,
+    },
+    #[serde(rename = "text")]
+    Text {
+        #[serde(rename = "runId")]
+        run_id: u64,
+        text: String,
+    },
+}
+
+#[tauri::command]
+pub async fn ai_actions_list() -> Result<Vec<actions::ActionTemplate>, String> {
+    Ok(actions::list_templates())
+}
+
+/// Bricht genau den Lauf mit `run_id` ab — ein verspaeteter Cancel aus
+/// einem frueheren Lauf kann einen Folgelauf nicht treffen.
+#[tauri::command]
+pub async fn ai_action_cancel(run_id: u64, state: State<'_, AppState>) -> Result<(), String> {
+    let job = state
+        .ai_job_active
+        .lock()
+        .map_err(|_| "AI job lock poisoned".to_string())?;
+    if matches!(
+        *job,
+        Some(AiJob {
+            kind: AiJobKind::Action,
+            run_id: active,
+        }) if active == run_id
+    ) {
+        state.ai_action_cancel.store(true, Ordering::Release);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn ai_action_run(
+    request: AiActionRequest,
+    state: State<'_, AppState>,
+    handle: AppHandle,
+) -> Result<AiActionOutcome, String> {
+    // === Preflight: laeuft komplett VOR der Guard-Annahme. Fehler hier
+    // gehen nur ueber den Command-Return — kein Started, kein Done. ===
+    actions::validate_slug(&request.suffix, "Datei-Suffix")?;
+    if request.prompt.trim().is_empty() {
+        return Err("Der Prompt darf nicht leer sein.".to_string());
+    }
+    if request.prompt.chars().count() > actions::PROMPT_MAX_CHARS {
+        return Err(format!(
+            "Der Prompt darf höchstens {} Zeichen haben.",
+            actions::PROMPT_MAX_CHARS
+        ));
+    }
+
+    let source_text = {
+        let tabs = state
+            .tabs
+            .lock()
+            .map_err(|_| "tabs lock poisoned".to_string())?;
+        let tab = tabs
+            .tab(request.source_tab_id)
+            .ok_or_else(|| "Der Quell-Tab existiert nicht mehr.".to_string())?;
+        let store = &tab.document_store;
+        let path = store.path.clone().ok_or_else(|| {
+            "Für KI-Aktionen muss ein gespeichertes Dokument geöffnet sein.".to_string()
+        })?;
+        if path.replace('\\', "/") != request.source_path.replace('\\', "/") {
+            return Err("Die Quelle hat sich geändert — bitte erneut starten.".to_string());
+        }
+        if classify(&path) != FileKind::Markdown {
+            return Err("KI-Aktionen sind nur für Markdown-Dokumente verfügbar.".to_string());
+        }
+        store.text.clone()
+    };
+    // Zweitgurt zum Lone-CR-Waechter im tab-gebundenen Sync: Store und
+    // Monaco-Modell waeren bei Lone-CR nicht identisch, jede Offset-
+    // Rechnung falsch (Koordinatenvertrag der Spec).
+    if mask::has_lone_carriage_return(&source_text) {
+        return Err(
+            "Dieses Dokument verwendet nicht unterstützte Zeilenenden (einzelne CR).".to_string(),
+        );
+    }
+    if actions::sha256_hex(&source_text) != request.source_text_sha256 {
+        return Err("Die Quelle hat sich geändert — bitte erneut starten.".to_string());
+    }
+
+    let (base_url, api_key) =
+        resolve_provider(state.inner(), &request.provider_id, &request.model_id)?;
+
+    let selection = match &request.scope {
+        Some(scope) => Some(actions::resolve_selection(
+            &source_text,
+            scope.start,
+            scope.length,
+        )?),
+        None => None,
+    };
+    let (work_text, masked) = match (&selection, request.masking) {
+        (Some(range), true) => {
+            let masked =
+                mask::mask_selection(&source_text, range.clone()).map_err(|e| e.to_string())?;
+            (masked.text.clone(), Some(masked))
+        }
+        (Some(range), false) => (source_text[range.clone()].to_string(), None),
+        (None, true) => {
+            let masked = mask::mask(&source_text);
+            (masked.text.clone(), Some(masked))
+        }
+        (None, false) => (source_text.clone(), None),
+    };
+    let delimiter = actions::document_delimiter(&[&request.prompt, &work_text]);
+    let messages = [
+        ChatMessage::system(actions::system_prompt(masked.is_some(), &delimiter)),
+        ChatMessage::user(actions::build_user_message(
+            &request.prompt,
+            &delimiter,
+            &work_text,
+        )),
+    ];
+
+    // === Atomare Admission (Check+Set in einem Lock) + Started-Handshake.
+    // Ab der Guard-Annahme feuert `done` in jedem Ausgang genau einmal. ===
+    let run_id = state.ai_action_run_seq.fetch_add(1, Ordering::Relaxed) + 1;
+    let _job = acquire_ai_job(
+        &state.ai_job_active,
+        AiJob {
+            kind: AiJobKind::Action,
+            run_id,
+        },
+    )?;
+    state.ai_action_cancel.store(false, Ordering::Release);
+
+    let done = {
+        let handle = handle.clone();
+        move |ok: bool, error: Option<&str>| {
+            let _ = handle.emit(
+                "ai:action_done",
+                serde_json::json!({ "runId": run_id, "ok": ok, "error": error }),
+            );
+        }
+    };
+    if let Err(error) = handle.emit(
+        "ai:action_started",
+        serde_json::json!({ "runId": run_id, "requestId": request.request_id }),
+    ) {
+        let message = error.to_string();
+        done(false, Some(&message));
+        return Err(message);
+    }
+
+    tracing::info!(
+        target: "folio::ai",
+        run_id,
+        action = request.action_id.as_deref().unwrap_or("custom"),
+        provider_id = request.provider_id,
+        model_id = request.model_id,
+        target = ?request.target,
+        masking = masked.is_some(),
+        selection = selection.is_some(),
+        chars = source_text.chars().count(),
+        "AI action started"
+    );
+
+    match request.target {
+        actions::Target::Replace => {
+            run_action_replace(
+                &state,
+                &handle,
+                run_id,
+                &base_url,
+                api_key.as_deref(),
+                &request,
+                &messages,
+                masked.as_ref(),
+                done,
+            )
+            .await
+        }
+        actions::Target::NewFile => {
+            run_action_new_file(
+                &state,
+                &handle,
+                run_id,
+                &base_url,
+                api_key.as_deref(),
+                &request,
+                &messages,
+                masked.as_ref(),
+                done,
+            )
+            .await
+        }
+    }
+}
+
+/// Replace-Ziel: Gate-and-Return wie der Theme-Autor — kein Datei-Write,
+/// kein Tab; die Diff-Review im Frontend entscheidet über die Übernahme.
+#[allow(clippy::too_many_arguments)]
+async fn run_action_replace(
+    state: &AppState,
+    handle: &AppHandle,
+    run_id: u64,
+    base_url: &str,
+    api_key: Option<&str>,
+    request: &AiActionRequest,
+    messages: &[ChatMessage],
+    masked: Option<&mask::Masked>,
+    done: impl Fn(bool, Option<&str>),
+) -> Result<AiActionOutcome, String> {
+    let cancel = state.ai_action_cancel.clone();
+    let raw = stream_chat(
+        state,
+        base_url,
+        api_key,
+        &request.model_id,
+        messages,
+        cancel.clone(),
+        |accumulated| {
+            let _ = handle.emit(
+                "ai:action_stream",
+                serde_json::json!({ "runId": run_id, "chars": accumulated.chars().count() }),
+            );
+        },
+    )
+    .await;
+
+    if matches!(raw, Err(client::ChatError::Cancelled)) || cancel.load(Ordering::Acquire) {
+        done(false, Some("abgebrochen"));
+        return Err("KI-Aktion abgebrochen.".to_string());
+    }
+    let raw = match raw {
+        Ok(raw) => raw,
+        Err(error) => {
+            let message = error.to_string();
+            done(false, Some(&message));
+            return Err(message);
+        }
+    };
+    let text = match masked {
+        Some(masked) => match mask::unmask(&raw, masked) {
+            Ok(text) => text,
+            Err(error) => {
+                let message = error.to_string();
+                done(false, Some(&message));
+                return Err(message);
+            }
+        },
+        None => raw,
+    };
+    let text = actions::normalize_output_eol(&text);
+    if text.trim().is_empty() {
+        let message = "Das Modell hat eine leere Antwort geliefert.".to_string();
+        done(false, Some(&message));
+        return Err(message);
+    }
+    done(true, None);
+    Ok(AiActionOutcome::Text { run_id, text })
+}
+
+/// NewFile-Ziel: Reservierung → Tab → Stream mit Live-Preview →
+/// Ownership-geprüfter Write → Tab-Reload. Cleanup löscht nur die
+/// eigene, noch leere Reservierung und discardet nie einen dirty Tab.
+#[allow(clippy::too_many_arguments)]
+async fn run_action_new_file(
+    state: &AppState,
+    handle: &AppHandle,
+    run_id: u64,
+    base_url: &str,
+    api_key: Option<&str>,
+    request: &AiActionRequest,
+    messages: &[ChatMessage],
+    masked: Option<&mask::Masked>,
+    done: impl Fn(bool, Option<&str>),
+) -> Result<AiActionOutcome, String> {
+    let fail = |message: String, done: &dyn Fn(bool, Option<&str>)| -> String {
+        done(false, Some(&message));
+        message
+    };
+
+    let path = match reserve_derived_file(&request.source_path, &request.suffix) {
+        Ok(path) => path,
+        Err(error) => return Err(fail(error, &done)),
+    };
+    let normalized_path = path.to_string_lossy().replace('\\', "/");
+    let transition = match crate::commands::tabs::open(state, handle, normalized_path.clone()) {
+        Ok(transition) => transition,
+        Err(error) => {
+            remove_derived_file(&path);
+            return Err(fail(error.to_string(), &done));
+        }
+    };
+    let tab_id = transition.tab.id;
+    if let Err(error) = crate::commands::tabs::emit_navigation_changed(handle, &transition, None) {
+        cleanup_action_target(state, handle, tab_id, &path);
+        return Err(fail(error.to_string(), &done));
+    }
+
+    let cancel = state.ai_action_cancel.clone();
+    let raw = stream_chat(
+        state,
+        base_url,
+        api_key,
+        &request.model_id,
+        messages,
+        cancel.clone(),
+        |accumulated| {
+            let text = match masked {
+                Some(masked) => mask::unmask_partial(accumulated, masked),
+                None => accumulated.to_string(),
+            };
+            let _ = handle.emit(
+                "ai:action_stream",
+                serde_json::json!({
+                    "runId": run_id,
+                    "tabId": tab_id,
+                    "text": text,
+                    "chars": text.chars().count(),
+                }),
+            );
+        },
+    )
+    .await;
+
+    if matches!(raw, Err(client::ChatError::Cancelled)) || cancel.load(Ordering::Acquire) {
+        cleanup_action_target(state, handle, tab_id, &path);
+        done(false, Some("abgebrochen"));
+        return Err("KI-Aktion abgebrochen.".to_string());
+    }
+    let raw = match raw {
+        Ok(raw) => raw,
+        Err(error) => {
+            cleanup_action_target(state, handle, tab_id, &path);
+            return Err(fail(error.to_string(), &done));
+        }
+    };
+    let text = match masked {
+        Some(masked) => match mask::unmask(&raw, masked) {
+            Ok(text) => text,
+            Err(error) => {
+                cleanup_action_target(state, handle, tab_id, &path);
+                return Err(fail(error.to_string(), &done));
+            }
+        },
+        None => raw,
+    };
+    let text = actions::normalize_output_eol(&text);
+    if text.trim().is_empty() {
+        cleanup_action_target(state, handle, tab_id, &path);
+        return Err(fail(
+            "Das Modell hat eine leere Antwort geliefert.".to_string(),
+            &done,
+        ));
+    }
+
+    // Ownership-Check unmittelbar vor dem Erfolgs-Write: hat der User den
+    // Ziel-Tab editiert oder die Datei gefüllt, wird NIE überschrieben —
+    // Conflict-Fallback reserviert stattdessen eine frische Datei.
+    let ownership_intact = target_still_owned(state, tab_id, &path);
+    let (final_path, final_tab_id, final_normalized) = if ownership_intact {
+        (path.clone(), tab_id, normalized_path.clone())
+    } else {
+        tracing::warn!(
+            target: "folio::ai",
+            run_id,
+            path = %path.display(),
+            "AI action target was modified during the run; falling back to a fresh reservation"
+        );
+        // Verwaiste Alt-Reservierung mit aufräumen, soweit sie noch dem
+        // Lauf gehört (Tab bereits zu + Datei leer → nur Datei löschen).
+        cleanup_action_target(state, handle, tab_id, &path);
+        let fallback = match reserve_derived_file(&request.source_path, &request.suffix) {
+            Ok(path) => path,
+            Err(error) => return Err(fail(error, &done)),
+        };
+        let fallback_normalized = fallback.to_string_lossy().replace('\\', "/");
+        let transition =
+            match crate::commands::tabs::open(state, handle, fallback_normalized.clone()) {
+                Ok(transition) => transition,
+                Err(error) => {
+                    remove_derived_file(&fallback);
+                    return Err(fail(error.to_string(), &done));
+                }
+            };
+        let fallback_tab = transition.tab.id;
+        if let Err(error) =
+            crate::commands::tabs::emit_navigation_changed(handle, &transition, None)
+        {
+            cleanup_action_target(state, handle, fallback_tab, &fallback);
+            return Err(fail(error.to_string(), &done));
+        }
+        (fallback, fallback_tab, fallback_normalized)
+    };
+
+    if let Err(error) = write_derived_file(&final_path, text.as_bytes()) {
+        cleanup_action_target(state, handle, final_tab_id, &final_path);
+        return Err(fail(error, &done));
+    }
+    if let Err(error) = reload_derived_tab(state, final_tab_id, &final_normalized) {
+        cleanup_action_target(state, handle, final_tab_id, &final_path);
+        return Err(fail(error, &done));
+    }
+
+    tracing::info!(
+        target: "folio::ai",
+        run_id,
+        chars = text.chars().count(),
+        "AI action file written"
+    );
+    done(true, None);
+    Ok(AiActionOutcome::File {
+        run_id,
+        path: final_normalized,
+    })
+}
+
+/// Gemeinsames Streaming mit 150-ms-Event-Throttle (Muster der
+/// Übersetzung); `emit_tick` bekommt den akkumulierten Gesamtstring.
+async fn stream_chat(
+    state: &AppState,
+    base_url: &str,
+    api_key: Option<&str>,
+    model_id: &str,
+    messages: &[ChatMessage],
+    cancel: Arc<AtomicBool>,
+    mut emit_tick: impl FnMut(&str),
+) -> Result<String, client::ChatError> {
+    let mut last_emit = None;
+    client::chat_stream_cancellable(
+        &state.ai_http,
+        base_url,
+        api_key,
+        model_id,
+        messages,
+        |accumulated| {
+            let now = Instant::now();
+            if last_emit
+                .is_some_and(|last: Instant| now.duration_since(last) < Duration::from_millis(150))
+            {
+                return;
+            }
+            last_emit = Some(now);
+            emit_tick(accumulated);
+        },
+        || cancel.load(Ordering::Acquire),
+    )
+    .await
+}
+
+/// Ownership-Regel der Spec: die Reservierung gehört dem Lauf nur,
+/// solange der Ziel-Tab nicht dirty ist und die Datei noch leer.
+fn target_still_owned(state: &AppState, tab_id: u64, path: &Path) -> bool {
+    let tab_clean = state
+        .tabs
+        .lock()
+        .map(|tabs| {
+            tabs.tab(tab_id)
+                .map(|tab| !tab.document_store.is_dirty)
+                .unwrap_or(false)
+        })
+        .unwrap_or(false);
+    let file_empty = std::fs::metadata(path)
+        .map(|meta| meta.len() == 0)
+        .unwrap_or(false);
+    tab_clean && file_empty
+}
+
+/// Cleanup für den NewFile-Pfad: Datei nur im Reservierungszustand
+/// (leer) löschen; Tab nur discarden, wenn er existiert und der User
+/// ihn nicht editiert hat. Ist der Tab bereits zu (User-Close während
+/// des Streams), wird nur die leere Datei entfernt. Alles andere
+/// bleibt dem User erhalten (warn-Log).
+fn cleanup_action_target(state: &AppState, handle: &AppHandle, tab_id: u64, path: &Path) {
+    let file_empty = std::fs::metadata(path)
+        .map(|meta| meta.len() == 0)
+        .unwrap_or(false);
+    if !file_empty {
+        tracing::warn!(
+            target: "folio::ai",
+            tab_id,
+            path = %path.display(),
+            "AI action cleanup skipped: target file is no longer empty"
+        );
+        return;
+    }
+    let tab_dirty = state
+        .tabs
+        .lock()
+        .ok()
+        .map(|tabs| tabs.tab(tab_id).map(|tab| tab.document_store.is_dirty));
+    match tab_dirty {
+        Some(Some(false)) => cleanup_derived_tab(state, handle, tab_id, path),
+        Some(None) => remove_derived_file(path),
+        _ => {
+            tracing::warn!(
+                target: "folio::ai",
+                tab_id,
+                path = %path.display(),
+                "AI action cleanup skipped: target tab was modified by the user"
+            );
+        }
+    }
 }
 
 #[tauri::command]
@@ -710,7 +1258,7 @@ fn normalize_languages(languages: Vec<String>) -> Result<Vec<String>, String> {
     Ok(normalized)
 }
 
-fn reserve_translation(source_path: &str, language: &str) -> Result<PathBuf, String> {
+fn reserve_derived_file(source_path: &str, suffix: &str) -> Result<PathBuf, String> {
     let source = Path::new(source_path);
     let parent = source
         .parent()
@@ -721,11 +1269,11 @@ fn reserve_translation(source_path: &str, language: &str) -> Result<PathBuf, Str
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "Der Dateiname des Quelldokuments ist ungültig.".to_string())?;
 
-    for suffix in 0usize.. {
-        let filename = if suffix == 0 {
-            format!("{stem}.{language}.md")
+    for attempt in 0usize.. {
+        let filename = if attempt == 0 {
+            format!("{stem}.{suffix}.md")
         } else {
-            format!("{stem}.{language}-{suffix}.md")
+            format!("{stem}.{suffix}-{attempt}.md")
         };
         let path = parent.join(filename);
         match OpenOptions::new().write(true).create_new(true).open(&path) {
@@ -742,7 +1290,7 @@ fn reserve_translation(source_path: &str, language: &str) -> Result<PathBuf, Str
     unreachable!("unbounded collision suffix loop")
 }
 
-fn finalize_translation(path: &Path, bytes: &[u8]) -> Result<(), String> {
+fn write_derived_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
     std::fs::write(path, bytes).map_err(|error| {
         format!(
             "Übersetzungsdatei '{}' konnte nicht geschrieben werden: {error}",
@@ -751,7 +1299,7 @@ fn finalize_translation(path: &Path, bytes: &[u8]) -> Result<(), String> {
     })
 }
 
-fn reload_translation_tab(state: &AppState, tab_id: u64, path: &str) -> Result<(), String> {
+fn reload_derived_tab(state: &AppState, tab_id: u64, path: &str) -> Result<(), String> {
     let mut tabs = state
         .tabs
         .lock()
@@ -774,7 +1322,7 @@ fn reload_translation_tab(state: &AppState, tab_id: u64, path: &str) -> Result<(
     })
 }
 
-fn remove_translation_file(path: &Path) {
+fn remove_derived_file(path: &Path) {
     if let Err(error) = std::fs::remove_file(path) {
         if error.kind() != std::io::ErrorKind::NotFound {
             tracing::warn!(
@@ -787,8 +1335,8 @@ fn remove_translation_file(path: &Path) {
     }
 }
 
-fn cleanup_translation(state: &AppState, handle: &AppHandle, tab_id: u64, path: &Path) {
-    remove_translation_file(path);
+fn cleanup_derived_tab(state: &AppState, handle: &AppHandle, tab_id: u64, path: &Path) {
+    remove_derived_file(path);
     match crate::commands::tabs::close(
         state,
         handle,
@@ -883,8 +1431,8 @@ fn http_error(provider_id: &str, status: StatusCode, body: &str, api_key: Option
 #[cfg(test)]
 mod tests {
     use super::{
-        custom_models_url, finalize_translation, http_error, normalize_languages,
-        parse_custom_models, provider_base_url, reserve_translation,
+        custom_models_url, http_error, normalize_languages, parse_custom_models, provider_base_url,
+        reserve_derived_file, write_derived_file,
     };
     use crate::ai::types::{AiConfig, AiProviderConfig, AiProviderOptions, CatalogProvider};
     use std::collections::BTreeMap;
@@ -989,8 +1537,8 @@ mod tests {
         std::fs::write(&source, "source").unwrap();
         std::fs::write(temp.path().join("notes.de.md"), "existing").unwrap();
 
-        let created = reserve_translation(source.to_str().unwrap(), "de").unwrap();
-        finalize_translation(&created, b"translated").unwrap();
+        let created = reserve_derived_file(source.to_str().unwrap(), "de").unwrap();
+        write_derived_file(&created, b"translated").unwrap();
 
         assert_eq!(temp.path().join("notes.de-1.md"), created);
         assert_eq!(

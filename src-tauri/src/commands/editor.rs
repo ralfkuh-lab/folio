@@ -19,15 +19,38 @@ impl From<editor_commands::EditResult> for EditResult {
     }
 }
 
+/// `tab_id` ist der tab-gebundene Sync-Pfad der KI-Aktionen (Spec
+/// docs/spec-ki-actions.md): schreibt gezielt in diesen Tab statt in den
+/// gerade aktiven — ein Tab-Wechsel zwischen Frontend-Check und IPC-
+/// Eintreffen kann den Text damit keinem fremden Store zuordnen. Der
+/// Lone-CR-Wächter prüft den BISHERIGEN Store-Text, bevor Monacos
+/// EOL-normalisierter Text ihn überschreibt und die Evidenz zerstört.
+/// Aufrufer ohne `tab_id` behalten das bestehende aktiv-Tab-Verhalten.
 #[tauri::command]
-pub async fn editor_text_changed(text: String, state: State<'_, AppState>) -> Result<(), String> {
-    state
+pub async fn editor_text_changed(
+    text: String,
+    tab_id: Option<u64>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let mut tabs = state
         .tabs
         .lock()
-        .map_err(|_| "tabs lock poisoned".to_string())?
-        .active_mut()
-        .document_store
-        .update_text(text);
+        .map_err(|_| "tabs lock poisoned".to_string())?;
+    match tab_id {
+        Some(tab_id) => {
+            let tab = tabs
+                .tab_mut(tab_id)
+                .ok_or_else(|| "Der Quell-Tab existiert nicht mehr.".to_string())?;
+            if crate::ai::mask::has_lone_carriage_return(&tab.document_store.text) {
+                return Err(
+                    "Dieses Dokument verwendet nicht unterstützte Zeilenenden (einzelne CR)."
+                        .to_string(),
+                );
+            }
+            tab.document_store.update_text(text);
+        }
+        None => tabs.active_mut().document_store.update_text(text),
+    }
     Ok(())
 }
 

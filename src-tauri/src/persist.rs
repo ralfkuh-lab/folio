@@ -22,6 +22,14 @@ pub fn themes_dir() -> PathBuf {
     config_file("themes")
 }
 
+/// Verzeichnis fuer benutzerdefinierte KI-Aktions-Templates (eine
+/// JSON-Datei pro Template, siehe `ai::actions`). Wie bei
+/// [`themes_dir`] wird das Verzeichnis nur gelesen, nie angelegt —
+/// Anlegen passiert erst beim ersten Template-Save.
+pub fn prompts_dir() -> PathBuf {
+    config_file("prompts")
+}
+
 /// Liefert das OS-spezifische Log-Verzeichnis fuer Folio.
 ///
 /// - Linux/BSD: `$XDG_STATE_HOME/folio/logs` (Fallback
