@@ -505,6 +505,20 @@ sonst lehnt Tauri den Build ab.
 - Die Settings-Bereiche `KI-Anbieter` und `KI-Modelle` kuratieren aktive
   Provider und Modell-Whitelists. Nur freigeschaltete Modelle aktivierter
   Provider erscheinen im Übersetzungsdialog.
+- **KI-Button-Gating** (🌐/✨ + Menü-Items): `documentIsMarkdown` in
+  `translate-dialog.ts`/`ai-actions-dialog.ts` wird über das in-window
+  CustomEvent `folio-doc-kind-changed` synchronisiert, das `applyDocKind`
+  (state/document.ts) NACH dem Setzen der `body.kind-*`-Klasse dispatcht.
+  Bewusst KEINE eigenen `document:loaded/closed`-Listener in den
+  Dialogen: deren Aufruf-Reihenfolge relativ zum state-Handler ist nicht
+  deterministisch (async `listen`-Registrierung) — das war die
+  Stale-Read-Race vom 2026-07-11 (Buttons hinkten dem Dokument-Zustand
+  einen Event-Zyklus hinterher); außerdem erbt der CustomEvent-Weg den
+  seq-Stale-Guard gratis. Config-Seite des Gatings: die Dialog-
+  `configCache`s refreshen über `folio-ai-invoke-complete`, das nur der
+  Settings-UI-Pfad (`invokeUi` in settings-ai.ts) dispatcht — wer
+  KI-Config per Raw-Invoke ändert (Automation/E2E), muss den Dispatch
+  nachbilden (siehe `_configure_provider` in E2E 45).
 - „Bearbeiten → Mit KI übersetzen…“ synchronisiert zuerst den aktuellen
   Editorinhalt in den aktiven `DocumentStore` und ruft pro Zielsprache seriell
   `/chat/completions` mit `stream: true` auf. SSE-Deltas bauen die über den

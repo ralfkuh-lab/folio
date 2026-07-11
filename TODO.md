@@ -2,13 +2,21 @@
 
 ## Hohe Priorität
 
-- **Deb 0.5.0 (Build 2026-07-11) installieren**: enthält den
-  Diff-Review-Layout-Fix (Region in der `.content-region`,
-  Screenshot-verifiziert, E2E 45 mit Geometrie-Assertions gehärtet,
-  Voll-Lauf 45/45 grün), den Monaco-Dispose-Fix (`diff-view.ts`:
-  `setModel(null)` vor Model-Dispose — Console-Error beim
-  Übernehmen/Verwerfen beseitigt) sowie den Selektion-als-Scope-
-  Default-Fix (`5da4cd9`). Install: `sudo apt install ./folio.deb`.
+- **Deb 0.5.0 (Build 2026-07-11 Nachmittag) installieren**: enthält
+  den Diff-Review-Layout-Fix (Region in der `.content-region`,
+  Screenshot-verifiziert, E2E 45 mit Geometrie-Assertions gehärtet),
+  den Monaco-Dispose-Fix (`diff-view.ts`: `setModel(null)` vor
+  Model-Dispose), den Selektion-als-Scope-Default-Fix (`5da4cd9`)
+  sowie den **KI-Button-Gating-Fix** (User-Report 2026-07-11: Buttons
+  liefen dem Dokument-Zustand einen Event-Zyklus hinterher —
+  Stale-Read-Race der `kind-markdown`-Klasse in eigenen
+  `document:loaded`-Listenern der KI-Dialoge, latent seit K3; jetzt
+  deterministisches `folio-doc-kind-changed`-CustomEvent am Ende von
+  `applyDocKind`). Voll-Lauf 45/45 grün.
+  Install: `sudo apt install ./folio.deb`.
+  (Der zwischenzeitliche E2E-Fehler-Eintrag 12:32 war die neue
+  Gating-Assertion selbst — Test-Setup brauchte den
+  `folio-ai-invoke-complete`-Dispatch, behoben.)
 
 ## Mittlere Priorität
 

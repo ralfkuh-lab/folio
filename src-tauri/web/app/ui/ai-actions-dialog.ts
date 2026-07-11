@@ -1037,17 +1037,17 @@ export function initAiActionsDialog(): void {
         scheduleAvailabilityRefresh((event as CustomEvent).detail);
     });
 
+    // Statt eigener Tauri-Listener auf document:loaded/closed (die dem
+    // state/document applyDocKind-Race unterlagen) jetzt Window-Event,
+    // das am Ende von applyDocKind dispatched wird (nach class + menus).
+    window.addEventListener('folio-doc-kind-changed', () => {
+        documentIsMarkdown = document.body.classList.contains('kind-markdown');
+        syncMenuEnabled();
+    });
+
     const events = window.__TAURI__ && window.__TAURI__.event;
     if (events && typeof events.listen === 'function') {
         events.listen('menu:edit_ai_actions', () => void openAiActionsDialog());
-        events.listen('document:loaded', () => {
-            documentIsMarkdown = document.body.classList.contains('kind-markdown');
-            syncMenuEnabled();
-        });
-        events.listen('document:closed', () => {
-            documentIsMarkdown = document.body.classList.contains('kind-markdown');
-            syncMenuEnabled();
-        });
         events.listen('ai:action_started', (event: any) => {
             const data = event?.payload || {};
             if (!currentRequestId || data.requestId !== currentRequestId) return;

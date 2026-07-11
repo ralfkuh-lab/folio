@@ -321,6 +321,11 @@ export function applyDocKind(kind: string | null): void {
     // Doc-Laden der View/Edit-Mode-Haken sonst leer bleibt, bis der
     // User selbst umschaltet.
     syncViewModeMenuChecks();
+
+    // Konsumenten (KI-Button-Gating etc.) brauchen einen deterministischen
+    // Zeitpunkt NACH dem Klassen-Setzen; eigene document:loaded-Listener
+    // wären eine Registrierungs-Reihenfolge-Race und hätten keinen seq-Stale-Guard.
+    window.dispatchEvent(new CustomEvent('folio-doc-kind-changed', { detail: { kind: resolved } }));
 }
 
 export function openDocument(path: string): Promise<boolean> {

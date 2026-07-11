@@ -179,6 +179,12 @@ def _configure_provider(ctx, base_url: str):
         await window.__folioInvoke("ai_default_model_set", {{
             providerId: {PROVIDER_ID!r}, modelId: {MODEL_ID!r}
         }});
+        // Raw-Invokes umgehen den Settings-UI-Pfad (invokeUi in
+        // settings-ai.ts), der die configCaches der KI-Dialoge per
+        // folio-ai-invoke-complete refresht — Dispatch hier nachbilden,
+        // sonst bleiben die KI-Toolbar-Buttons trotz Whitelist disabled.
+        const cfg = await window.__folioInvoke("ai_config_get");
+        document.dispatchEvent(new CustomEvent("folio-ai-invoke-complete", {{ detail: cfg }}));
         return true;
     }})()""")
 
@@ -225,6 +231,17 @@ def run(ctx):
             ctx.api.tabs_close_all()
             ctx.api.open(str(source), discard=True)
             ctx.api.mode("view")
+
+            # Poll (nicht Einmal-Check): Enable der KI-Buttons läuft async nach
+            # Provider-Config + Doc-Load (applyDocKind + folio-doc-kind-changed).
+            # menu_click umgeht disabled-States, deshalb hätte die Suite die
+            # Stale-Read-Regression nie gesehen.
+            _poll(ctx, "tb-ai-actions und tb-ai-translate enabled (kein Gating-Race)",
+                  lambda: _eval(ctx, """(() => {
+                      const a = document.getElementById('tb-ai-actions');
+                      const t = document.getElementById('tb-ai-translate');
+                      return a && t && !a.disabled && !t.disabled;
+                  })()"""))
 
         with ctx.step("NewFile-Aktion (Zusammenfassen) über Menü + Dialog"):
             _MockHandler.mode = "summary"

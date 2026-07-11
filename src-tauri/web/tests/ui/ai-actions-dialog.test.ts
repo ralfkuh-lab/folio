@@ -451,4 +451,32 @@ describe('ai-actions-dialog', () => {
         expect(saveCall![1].template.prompt).toBe('Ganz neuer Prompt.');
         expect(document.getElementById('ai-actions-save-overlay')!.hidden).toBe(true);
     });
+
+    it('synchronisiert Toolbar-Button und Menü via folio-doc-kind-changed nach Klassen-Update (kein stale read)', async () => {
+        // Warte initial auf Enable (config async + refresh nach init).
+        await vi.waitFor(() => {
+            expect((document.getElementById('tb-ai-actions') as HTMLButtonElement).disabled)
+                .toBe(false);
+        });
+
+        handles.invoke.mockClear();
+        document.body.classList.remove('kind-markdown');
+        window.dispatchEvent(new CustomEvent('folio-doc-kind-changed'));
+        expect((document.getElementById('tb-ai-actions') as HTMLButtonElement).disabled)
+            .toBe(true);
+        expect(handles.invoke).toHaveBeenCalledWith('menu_set_enabled', {
+            id: 'edit.ai_actions',
+            enabled: false,
+        });
+
+        handles.invoke.mockClear();
+        document.body.classList.add('kind-markdown');
+        window.dispatchEvent(new CustomEvent('folio-doc-kind-changed'));
+        expect((document.getElementById('tb-ai-actions') as HTMLButtonElement).disabled)
+            .toBe(false);
+        expect(handles.invoke).toHaveBeenCalledWith('menu_set_enabled', {
+            id: 'edit.ai_actions',
+            enabled: true,
+        });
+    });
 });

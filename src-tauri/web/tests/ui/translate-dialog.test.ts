@@ -97,11 +97,11 @@ describe('translate-dialog', () => {
         });
 
         handles.invoke.mockClear();
-        // Quelle des Markdown-Status ist seit dem Lifecycle-seq-Review die
-        // Body-Klasse (gepflegt vom geguardeten state/document.ts-Handler),
-        // nicht mehr der rohe Event-Payload — Tests spiegeln das.
+        // Quelle des Markdown-Status ist die Body-Klasse; folio-doc-kind-changed
+        // wird am ENDE von applyDocKind (nach class-Update) dispatched — Test
+        // setzt Klasse → dispatched → Gating prüft (kein stale read mehr).
         document.body.classList.remove('kind-markdown');
-        handles.emitEvent('document:closed');
+        window.dispatchEvent(new CustomEvent('folio-doc-kind-changed'));
         expect((document.getElementById('tb-ai-translate') as HTMLButtonElement).disabled)
             .toBe(true);
         expect(handles.invoke).toHaveBeenCalledWith('menu_set_enabled', {
@@ -111,7 +111,7 @@ describe('translate-dialog', () => {
 
         handles.invoke.mockClear();
         document.body.classList.add('kind-markdown');
-        handles.emitEvent('document:loaded', { kind: 'markdown' });
+        window.dispatchEvent(new CustomEvent('folio-doc-kind-changed'));
         expect((document.getElementById('tb-ai-translate') as HTMLButtonElement).disabled)
             .toBe(false);
         expect(handles.invoke).toHaveBeenCalledWith('menu_set_enabled', {
