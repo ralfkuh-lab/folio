@@ -36,6 +36,8 @@ Plattformübergreifender Markdown-Viewer und -Editor auf **Tauri 2 + Rust**.
 - **KI-Aktionen (✨)**: Zusammenfassen, Neu formatieren, Korrektur,
   Tabellen, Aktionspunkte — mit editierbarem Prompt, eigenen Vorlagen,
   Favoriten-Schnellzugriff und Diff-Review vor jedem Ersetzen
+  (Per-Block-Revert, wechselt nach Übernehmen in den Edit-Mode);
+  laufende KI-Läufe zeigen eine animierte Statusanzeige
 - **E2E-Test-Suite** mit 45 Szenarien, visueller Regression und auto-
   angelegten Baselines — siehe Abschnitt *Tests*
 - **Cross-Platform** dank Tauri 2 (WebView2 / WebKitGTK)
