@@ -34,3 +34,6 @@ src-tauri/dist/about/avatar-options/
 # `ln -s src-tauri/target/release/bundle/deb/Folio_<ver>_amd64.deb folio.deb`
 /folio.deb
 .herd/
+
+# Temporäre Release-Notes-Arbeitsdatei (siehe docs/RELEASES.md)
+release-notes.md
