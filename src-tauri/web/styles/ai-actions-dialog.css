@@ -293,6 +293,16 @@ body.ai-diff-open .content-panes {
   font-size: 10px;
 }
 
+/* „Als Vorlage speichern"-Overlay wird aus dem KI-Aktionen-Dialog geöffnet
+   und muss ÜBER ihm liegen. Die generische .settings-ai-overlay hat nur
+   z-index 5 + position:absolute (passend im Settings-Stacking-Kontext); über
+   dem fixierten KI-Dialog (z-index 10040) verschwände der Overlay sonst
+   dahinter. Diese ID-Regel hebt nur diese Instanz an. */
+#ai-actions-save-overlay {
+  position: fixed;
+  z-index: 10060;
+}
+
 .ai-actions-fav-menu[hidden] {
   display: none;
 }
