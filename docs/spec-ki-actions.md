@@ -608,6 +608,21 @@ Kurze Nachbesserungen an der KI-Diff-Review (User-Feedback):
 Ergänzungen in CLAUDE.md (KI-Aktionen-Bullet) und E2E 45 (neuer Step nach
 Replace+Undo).
 
+Drittes Paket (gleicher Tag, User-Report „Tasten zählen doppelt"):
+
+- **DiffEditor persistent statt pro-Review neu**: Ab dem 2. Review
+  verarbeitete jede Taste im Diff-Editor mehrfach (Pfeil +2, Backspace 2
+  Zeichen; 3. Review 3×). Empirisch diagnostiziert (Live-Instrumentierung
+  über die Automation-API): `monaco.editor.createDiffEditor(...).dispose()`
+  entfernt das Widget nicht aus `getDiffEditors()` und lässt seinen
+  document-level Keybinding-Handler aktiv (base=0 → create=1 → nach dispose
+  bleibt 1, auch nach 1,5 s). Jeder mount/dispose-Zyklus akkumulierte einen
+  weiteren aktiven Handler. Fix: Instanz persistent halten (wie der
+  Haupteditor); `clear()` gibt zwischen Reviews nur die Models frei,
+  `dispose()` delegiert auf `clear()` (kein echtes Widget-Teardown mehr),
+  `mount()` ist idempotent + Container-Reset als Sicherheitsgurt. E2E 45
+  prüft an der 2. und 3. offenen Review `getDiffEditors().length === 1`.
+
 Zweites Paket (gleicher Tag, User-Feedback zur Auffälligkeit):
 
 - **Statusleisten-Aktivitätsanzeige**: `.ai-translate-status` (Translate +

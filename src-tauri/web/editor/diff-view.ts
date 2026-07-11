@@ -51,8 +51,21 @@ export function mount(elementId: string): Promise<void> {
             console.error(`[folio-diff-view] mount target '${elementId}' not found`);
             return;
         }
-        if (editor && mountedElementId === elementId) return;
-        if (editor) disposeInternal();
+        // Persistente Instanz (Bug 2026-07-11): existiert das Widget schon,
+        // wird es wiederverwendet statt neu erstellt — ein zweites
+        // createDiffEditor hinterließe wegen Monacos dispose-Leck einen
+        // aktiven Zombie-Keybinding-Handler. Im Review-Flow ist der Container
+        // immer #ai-diff-mount; ein Wechsel käme nur bei einem echten Umbau
+        // vor und wird bewusst als No-op behandelt (bestehendes Widget bleibt).
+        if (editor) {
+            if (mountedElementId !== elementId) {
+                console.warn(`[folio-diff-view] mount auf abweichenden Container '${elementId}' ignoriert (persistente Instanz, aktiv: '${mountedElementId}')`);
+            }
+            return;
+        }
+        // Sicherheitsgurt: verwaisten DOM aus einem früheren Zustand entfernen,
+        // bevor das erste Widget in den Container gesetzt wird.
+        if (el.firstChild) el.replaceChildren();
 
         const isDark = document.documentElement.classList.contains('theme-dark')
             || pendingTheme === 'dark';
@@ -129,6 +142,30 @@ export function getModified(): string {
     return modifiedModel ? modifiedModel.getValue() : '';
 }
 
+/**
+ * Leert den Review-Inhalt OHNE das DiffEditor-Widget zu zerstören
+ * (Bug 2026-07-11 „Tasten zählen doppelt"): Monacos
+ * `createDiffEditor(...).dispose()` entfernt das Widget NICHT aus
+ * `monaco.editor.getDiffEditors()` und hinterlässt seinen document-level
+ * Keybinding-Handler aktiv — pro Review-Zyklus akkumulierte das zu N-facher
+ * Tasteneingabe. Deshalb wird die Instanz jetzt persistent gehalten (wie der
+ * Haupteditor) und zwischen Reviews nur der Inhalt gewechselt. `clear` gibt
+ * die Models frei und trennt sie sauber vom Widget; das Widget bleibt für den
+ * nächsten `setContents` bestehen. `dispose` ist damit dem echten Teardown
+ * vorbehalten (heute nirgends im Review-Flow gerufen).
+ */
+export function clear(): void {
+    if (modifiedListener) {
+        try { modifiedListener.dispose(); } catch { /* ignore */ }
+        modifiedListener = null;
+    }
+    changeCallback = null;
+    if (editor) {
+        try { editor.setModel(null); } catch { /* ignore */ }
+    }
+    disposeModels();
+}
+
 export function setTheme(mode: 'light' | 'dark'): void {
     const monaco = getMonaco();
     if (!editor || !monaco) {
@@ -148,25 +185,21 @@ export function focus(): void {
     }
 }
 
+/**
+ * BEWUSST kein echtes Widget-Teardown (Bug 2026-07-11 „Tasten zählen
+ * doppelt"): Monacos `createDiffEditor(...).dispose()` entfernt das Widget
+ * nachweislich NICHT aus `monaco.editor.getDiffEditors()` und lässt seinen
+ * document-level Keybinding-Handler aktiv (empirisch: base=0 → create=1 →
+ * nach dispose bleibt 1, auch nach 1,5 s). Ein anschließender Remount würde
+ * so einen zweiten aktiven Handler hinterlassen. Da ein echtes Widget-
+ * Teardown mit dieser Monaco-Version nicht sauber möglich und im Review-Flow
+ * auch nicht nötig ist (die Instanz lebt bis zum Fenster-Close), delegiert
+ * `dispose` auf `clear`: der Inhalt wird freigegeben, das Widget bleibt
+ * persistent und wiederverwendbar. Der Container-Reset in `mount` bleibt als
+ * Sicherheitsgurt, falls je auf einen anderen Container gemountet wird.
+ */
 export function dispose(): void {
-    disposeInternal();
-}
-
-function disposeInternal(): void {
-    changeCallback = null;
-    if (resizeObserver) {
-        try { resizeObserver.disconnect(); } catch { /* ignore */ }
-        resizeObserver = null;
-    }
-    if (editor) {
-        try { editor.setModel(null); } catch { /* ignore */ }
-    }
-    disposeModels();
-    if (editor) {
-        try { editor.dispose(); } catch { /* ignore */ }
-        editor = null;
-    }
-    mountedElementId = null;
+    clear();
 }
 
 export function isMounted(): boolean {

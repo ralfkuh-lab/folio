@@ -122,6 +122,7 @@ import * as diffView from './diff-view';
     setTheme: diffView.setTheme,
     layout: diffView.layout,
     focus: diffView.focus,
+    clear: diffView.clear,
     dispose: diffView.dispose,
     isMounted: diffView.isMounted,
 };

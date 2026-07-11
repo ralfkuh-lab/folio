@@ -559,7 +559,14 @@ sonst lehnt Tauri den Build ab.
   Reservierung; Cleanup discardet nie dirty Tabs); Ziel „Ersetzen"
   liefert Gate-and-Return und öffnet die **Diff-Review** (virtueller Tab
   `ai-diff`, Monaco-DiffEditor als vierte Surface `FolioDiffView`,
-  modified editierbar): Übernehmen mit dreistufigem Guard (Quelltab
+  modified editierbar): Die DiffEditor-Instanz ist **persistent** (wie der
+  Haupteditor) — pro Review wird nur der Inhalt gewechselt (`setContents`/
+  `clear`), NIE `dispose`/neu erstellt. Grund (Bug 2026-07-11 „Tasten zählen
+  doppelt"): Monacos `createDiffEditor(...).dispose()` entfernt das Widget
+  nicht aus `getDiffEditors()` und lässt seinen document-level Keybinding-
+  Handler aktiv; pro mount/dispose-Zyklus akkumulierte ein weiterer Handler,
+  sodass ab dem 2. Review jede Taste N-fach wirkte. `dispose` delegiert
+  deshalb auf `clear` (Widget bleibt), `mount` ist idempotent. Übernehmen mit dreistufigem Guard (Quelltab
   existiert → aktiv → Snapshot; sonst Bestätigung), firstDiff-Cursor,
   ein Undo-Schritt via `applyReplace`. Revert-Buttons pro Änderungsblock
   sind permanent sichtbar (CSS-Override auf Monacos hover-only Gutter-Menü,

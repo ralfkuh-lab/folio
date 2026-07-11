@@ -168,6 +168,17 @@ def _assert_diff_region_visible(ctx):
           })()"""))
 
 
+def _assert_single_diff_editor(ctx):
+    """Zombie-Guard (Bug 2026-07-11 „Tasten zählen doppelt"): Bei jeder
+    offenen Review darf genau EIN Monaco-DiffEditor existieren. Vor dem Fix
+    blieb der DiffEditor der Vor-Review als Zombie registriert (dispose auf
+    versteckter Region schlug fehl), sodass der Count pro Review wuchs und
+    sein document-level Keybinding-Handler jede Taste zusätzlich verarbeitete
+    (N-ter Review = N-fache Cursor-Bewegung/Löschung)."""
+    _poll(ctx, "genau ein Monaco-DiffEditor (kein Zombie aus Vor-Review)",
+          lambda: _eval(ctx, "window.monaco.editor.getDiffEditors().length") == 1)
+
+
 def _configure_provider(ctx, base_url: str):
     return _eval(ctx, f"""(async () => {{
         await window.__folioInvoke("ai_custom_upsert", {{
@@ -314,6 +325,7 @@ def run(ctx):
             _poll(ctx, "Diff-Review offen",
                   lambda: _eval(ctx, "document.body.classList.contains('ai-diff-open')"))
             _assert_diff_region_visible(ctx)
+            _assert_single_diff_editor(ctx)  # 2. Review — vor dem Fix waeren es 2
             ctx.api.click("ai-diff-apply")
             _poll(ctx, "nach Übernehmen im Edit-Mode (kein Save-Prompt blockte)",
                   lambda: _eval(ctx, "document.body.classList.contains('edit-mode')"))
@@ -375,6 +387,7 @@ def run(ctx):
             _poll(ctx, "Diff-Review offen (Selektion)",
                   lambda: _eval(ctx, "document.body.classList.contains('ai-diff-open')"))
             _assert_diff_region_visible(ctx)
+            _assert_single_diff_editor(ctx)  # 3. Review — vor dem Fix waeren es 3
             ctx.api.click("ai-diff-apply")
             _poll(ctx, "Selektion korrekt ersetzt",
                   lambda: _eval(ctx, "window.FolioEditor.getText()")

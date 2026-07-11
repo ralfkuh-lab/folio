@@ -88,6 +88,7 @@ interface FolioDiffViewSurface {
     setTheme(mode: 'light' | 'dark'): void;
     layout(): void;
     focus(): void;
+    clear(): void;
     dispose(): void;
     isMounted(): boolean;
 }

@@ -145,8 +145,9 @@ export async function openAiDiffReview(context: AiReviewContext): Promise<void> 
     await diffView.mount('ai-diff-mount');
     if (generation !== reviewGeneration || !review) {
         // Review wurde während des (ersten) Monaco-Loads geschlossen —
-        // keine unsichtbare Instanz zurücklassen.
-        diffView.dispose();
+        // Inhalt freigeben, Widget aber persistent lassen (clear statt
+        // dispose, siehe Bug 2026-07-11 in diff-view.ts::clear).
+        diffView.clear();
         return;
     }
     const modified = embedSelectionResult(
@@ -163,12 +164,18 @@ export async function openAiDiffReview(context: AiReviewContext): Promise<void> 
 function closeReview(): void {
     reviewGeneration += 1;
     const region = $('ai-diff-region');
-    if (region) region.hidden = true;
     const diffView = window.FolioDiffView;
+    // NICHT dispose() (Bug 2026-07-11 „Tasten zählen doppelt"): Monacos
+    // createDiffEditor(...).dispose() entfernt das Widget nicht aus
+    // getDiffEditors() und lässt seinen document-level Keybinding-Handler
+    // aktiv — pro Review-Zyklus akkumulierte das zu N-facher Tasteneingabe.
+    // Die DiffEditor-Instanz bleibt persistent; clear() gibt nur die Models
+    // frei. dispose() ist dem echten Teardown vorbehalten.
     if (diffView) {
         diffView.onModifiedChange(null);
-        diffView.dispose();
+        diffView.clear();
     }
+    if (region) region.hidden = true;
     review = null;
     unregisterVirtualTab('ai-diff');
     reportReviewState(false, false);

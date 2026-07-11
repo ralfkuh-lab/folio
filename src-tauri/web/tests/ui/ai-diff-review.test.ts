@@ -55,6 +55,7 @@ function installDiffViewMock(modified = '# Modified') {
         setTheme: vi.fn(),
         layout: vi.fn(),
         focus: vi.fn(),
+        clear: vi.fn(),
         dispose: vi.fn(),
         isMounted: vi.fn(() => true),
     };
@@ -149,7 +150,10 @@ describe('ai-diff-review Guards + Übernahme', () => {
             selectionLength: 0,
         });
         expect(isAiReviewOpen()).toBe(false);
-        expect(diffView.dispose).toHaveBeenCalled();
+        // Persistente DiffEditor-Instanz: closeReview ruft clear(), NICHT
+        // dispose() (Bug 2026-07-11 „Tasten zählen doppelt").
+        expect(diffView.clear).toHaveBeenCalled();
+        expect(diffView.dispose).not.toHaveBeenCalled();
         expect(handles.invoke).toHaveBeenCalledWith(
             'ai_review_state_set',
             { open: false, dirty: false },
