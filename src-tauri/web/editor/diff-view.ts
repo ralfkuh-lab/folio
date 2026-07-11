@@ -64,6 +64,7 @@ export function mount(elementId: string): Promise<void> {
             renderSideBySide: sideBySide,
             originalEditable: false,
             readOnly: false,
+            renderMarginRevertIcon: true, // VS-Code-Verhalten — Pfeil in der Gutter setzt den einzelnen Änderungsblock auf den Original-Stand zurück; ersetzt kein Gesamt-Verwerfen.
             minimap: { enabled: false },
             wordWrap: 'on',
             scrollBeyondLastLine: false,

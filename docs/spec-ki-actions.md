@@ -586,6 +586,28 @@ aktiviert es.
   womit das Edit-Race entschärft ist; das verbleibende Fenster ist
   der IPC-Roundtrip des Open-Reports direkt nach Review-Öffnung.
 
+## UX-Fixes (2026-07-11)
+
+Kurze Nachbesserungen an der KI-Diff-Review (User-Feedback):
+
+- **Per-Änderung-Revert im DiffEditor**: `src-tauri/web/editor/diff-view.ts`
+  `createDiffEditor` übergibt `renderMarginRevertIcon: true` (Monaco 0.52;
+  Modified-Seite editierbar). VS-Code-Verhalten: Gutter-Pfeil setzt
+  einzelnen Block auf Original zurück; ersetzt kein Gesamt-Verwerfen.
+- **„Übernehmen" wechselt aus View- in Edit-Mode**: `ai-diff-review.ts`
+  `applyReview` ruft nach `closeReview()` bei fehlendem `edit-mode` UND
+  `split-mode` `void setMode('edit')` (Import `../editor/shell`).
+  Begründung: Apply ist Editor-Op (Undo-Schritt + firstDiff-Cursor); im
+  View-Mode unsichtbar + Dirty-Zustand überraschend. Split bleibt Split.
+- **Kein Save-Prompt beim Mode-Wechsel edit/split**: `editor/shell.ts`
+  `setMode` führt `requestSaveIfDirty`-Gate nur für `mode === 'view'` aus;
+  für `edit`/`split` direkt `invoke('set_view_mode')`. Kommentar: In den
+  Editor wechselt man, UM ungespeicherte Änderungen zu bearbeiten (Live-
+  Preview). Richtung view bleibt alte Semantik erhalten.
+
+Ergänzungen in CLAUDE.md (KI-Aktionen-Bullet) und E2E 45 (neuer Step nach
+Replace+Undo).
+
 ## Bewusst nicht in v1
 
 - Nicht-Markdown-Dateien (Code/Text) als Quelle.

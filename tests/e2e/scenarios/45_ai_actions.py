@@ -291,6 +291,24 @@ def run(ctx):
             _poll(ctx, "Undo stellt Original wieder her",
                   lambda: "Feler" in _eval(ctx, "window.FolioEditor.getText()"))
 
+        with ctx.step("Replace aus dem View-Mode: Übernehmen wechselt in Edit-Mode"):
+            ctx.api.mode("view")
+            _open_actions_dialog(ctx)
+            _select_action(ctx, "proofread")
+            ctx.api.click("ai-actions-start")
+            _poll(ctx, "Diff-Review offen",
+                  lambda: _eval(ctx, "document.body.classList.contains('ai-diff-open')"))
+            _assert_diff_region_visible(ctx)
+            ctx.api.click("ai-diff-apply")
+            _poll(ctx, "nach Übernehmen im Edit-Mode (kein Save-Prompt blockte)",
+                  lambda: _eval(ctx, "document.body.classList.contains('edit-mode')"))
+            _poll(ctx, "Editor-Text ersetzt (Fehler)",
+                  lambda: "Fehler" in _eval(ctx, "window.FolioEditor.getText()"))
+            # Cleanup wie im Vor-Step, kein mode("view") danach (Folge-Step setzt selbst)
+            _eval(ctx, "window.FolioEditor.undo()")
+            _poll(ctx, "Undo stellt Original wieder her",
+                  lambda: "Feler" in _eval(ctx, "window.FolioEditor.getText()"))
+
         with ctx.step("Cancel-Pfad: langsamer Stream, keine Restdatei"):
             _MockHandler.mode = "slow"
             _MockHandler.slow_started.clear()

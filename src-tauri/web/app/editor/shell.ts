@@ -155,12 +155,22 @@ export function setActiveMode(mode: string): void {
 }
 
 export function setMode(mode: string): Promise<boolean> {
-    return deps.requestSaveIfDirty().then(function (ok) {
-        if (!ok) return false;
-        return invoke('set_view_mode', { mode }).then(function () {
-            setActiveMode(mode);
-            return true;
+    // In den Editor wechselt man, UM mit ungespeicherten Änderungen zu
+    // arbeiten — dort gibt es nichts zu retten; das Gate stammt aus der
+    // Zeit vor der Live-Preview. Richtung `view` bleibt das bestehende
+    // Verhalten (bekannte Semantik „Speichern vor Ansicht") unangetastet.
+    if (mode === 'view') {
+        return deps.requestSaveIfDirty().then(function (ok) {
+            if (!ok) return false;
+            return invoke('set_view_mode', { mode }).then(function () {
+                setActiveMode(mode);
+                return true;
+            });
         });
+    }
+    return invoke('set_view_mode', { mode }).then(function () {
+        setActiveMode(mode);
+        return true;
     });
 }
 

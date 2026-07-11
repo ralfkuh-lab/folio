@@ -12,6 +12,9 @@ vi.mock('../../app/state/tabs', () => ({
 vi.mock('../../app/state/document', () => ({
     getEditorText: vi.fn(() => '# Original'),
 }));
+vi.mock('../../app/editor/shell', () => ({
+    setMode: vi.fn(() => Promise.resolve(true)),
+}));
 
 import {
     confirmAiReviewForQuit,
@@ -23,6 +26,7 @@ import {
 } from '../../app/ui/ai-diff-review';
 import { getActiveTabId, hasDocumentTab, registerVirtualTab } from '../../app/state/tabs';
 import { getEditorText } from '../../app/state/document';
+import { setMode } from '../../app/editor/shell';
 
 function buildDom(): void {
     document.body.innerHTML = `
@@ -150,6 +154,25 @@ describe('ai-diff-review Guards + Übernahme', () => {
             'ai_review_state_set',
             { open: false, dirty: false },
         );
+        // Fix 2: Übernehmen aus View-Mode (body ohne edit/split) ruft setMode('edit')
+        expect(setMode).toHaveBeenCalledWith('edit');
+    });
+
+    it('wechselt NICHT in den Edit-Mode, wenn Edit oder Split bereits aktiv ist', async () => {
+        // Codex-Review-Befund 2026-07-11: „Split bleibt Split" und der
+        // Edit-Fall waren nicht regressionsgesichert.
+        for (const modeClass of ['edit-mode', 'split-mode']) {
+            vi.mocked(setMode).mockClear();
+            document.body.classList.add(modeClass);
+            try {
+                await openAiDiffReview(baseContext);
+                document.getElementById('ai-diff-apply')!.click();
+                await flush();
+                expect(setMode).not.toHaveBeenCalled();
+            } finally {
+                document.body.classList.remove(modeClass);
+            }
+        }
     });
 
     it('sperrt Übernehmen, wenn der Quell-Tab geschlossen wurde', async () => {

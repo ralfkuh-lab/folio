@@ -14,6 +14,7 @@ import {
     unregisterVirtualTab,
 } from '../state/tabs';
 import { getEditorText } from '../state/document';
+import { setMode } from '../editor/shell';
 import { showConfirmDialog } from './dialogs';
 import { folioLog, safeInvoke } from '../util/log';
 
@@ -263,6 +264,20 @@ async function applyReview(): Promise<void> {
         chars: [...modified].length,
     });
     closeReview();
+    // Übernehmen ist eine Editor-Operation (ein Undo-Schritt, Cursor auf firstDiff);
+    // im View-Mode wäre das Ergebnis unsichtbar und der Dirty-Zustand überraschend.
+    // Split bleibt Split (Editor dort schon sichtbar). Der Active-Tab-Re-Check
+    // verhindert, dass ein Tab-Wechsel im IPC-Fenster den Edit-Mode auf dem
+    // falschen Tab setzt (set_view_mode wirkt auf den dann aktiven Tab).
+    if (!document.body.classList.contains('edit-mode') &&
+        !document.body.classList.contains('split-mode') &&
+        getActiveTabId() === context.sourceTabId) {
+        setMode('edit').catch((err) => {
+            folioLog.warn('ai-review', 'setMode(edit) nach Übernehmen fehlgeschlagen', {
+                error: String(err),
+            });
+        });
+    }
 }
 
 export function initAiDiffReview(): void {

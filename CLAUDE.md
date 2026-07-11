@@ -561,7 +561,10 @@ sonst lehnt Tauri den Build ab.
   `ai-diff`, Monaco-DiffEditor als vierte Surface `FolioDiffView`,
   modified editierbar): Übernehmen mit dreistufigem Guard (Quelltab
   existiert → aktiv → Snapshot; sonst Bestätigung), firstDiff-Cursor,
-  ein Undo-Schritt via `applyReplace`. Selektions-Scope nutzt strikte
+  ein Undo-Schritt via `applyReplace`. Revert-Pfeile pro Änderungsblock
+  (`renderMarginRevertIcon` in DiffEditor), Übernehmen wechselt aus dem
+  View- in den Edit-Mode, `setMode`-Save-Gate gilt nur noch Richtung view
+  (edit/split prompt-frei). Selektions-Scope nutzt strikte
   UTF-16→Byte-Konvertierung (`utf16_to_byte_offset_strict`, kein Clamp)
   und `mask_selection` (Grenzschnitt durch geschützte Ranges = Fehler);
   Prompt-Injection-Härtung über Nonce-Delimiter + Untrusted-Data-Regel.
