@@ -95,6 +95,9 @@ export function mount(elementId: string): Promise<void> {
 export function setContents(original: string, modified: string, language: string): void {
     const monaco = getMonaco();
     if (!editor || !monaco) return;
+    // Erst das Model vom Widget loesen, dann disposen — sonst wirft Monaco
+    // "TextModel got disposed before DiffEditorWidget model got reset".
+    try { editor.setModel(null); } catch { /* ignore */ }
     disposeModels();
     originalModel = monaco.editor.createModel(original || '', language || 'markdown');
     modifiedModel = monaco.editor.createModel(modified || '', language || 'markdown');
@@ -152,6 +155,9 @@ function disposeInternal(): void {
     if (resizeObserver) {
         try { resizeObserver.disconnect(); } catch { /* ignore */ }
         resizeObserver = null;
+    }
+    if (editor) {
+        try { editor.setModel(null); } catch { /* ignore */ }
     }
     disposeModels();
     if (editor) {

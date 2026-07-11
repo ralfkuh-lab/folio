@@ -112,6 +112,62 @@ def _poll(ctx, description: str, probe, timeout: float = 12.0, interval: float =
     ctx.expect(False, f"Timeout: {description} (zuletzt: {last!r})")
 
 
+def _assert_diff_region_visible(ctx):
+    """Härtet Sichtbarkeit der Diff-Review: Geometrie + gemounteter Monaco-DiffEditor.
+
+    Statt nur body-Klasse wird getBoundingClientRect + content-region-Überlappung
+    und tatsächliche Mount-Größe geprüft (Regression: Region war außerhalb/zu schmal).
+    """
+    geom = _eval(ctx, """(() => {
+        const region = document.getElementById('ai-diff-region');
+        const content = document.getElementById('content-region');
+        const rect = region ? region.getBoundingClientRect() : null;
+        const contentRect = content ? content.getBoundingClientRect() : null;
+        return {
+            rect: rect ? { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height } : null,
+            contentRect: contentRect ? { left: contentRect.left, right: contentRect.right, top: contentRect.top, bottom: contentRect.bottom, width: contentRect.width, height: contentRect.height } : null,
+            innerWidth: window.innerWidth,
+            innerHeight: window.innerHeight
+        };
+    })()""") or {}
+
+    rect = geom.get("rect") or {}
+    contentRect = geom.get("contentRect") or {}
+    innerW = geom.get("innerWidth") or 0
+    innerH = geom.get("innerHeight") or 0
+
+    ctx.expect(
+        rect.get("width", 0) > 400,
+        f"ai-diff-region Breite >400px erwartet, aber width={rect.get('width')} (innerW={innerW}, rect={rect})"
+    )
+    ctx.expect(
+        rect.get("height", 0) > 200,
+        f"ai-diff-region Höhe >200px erwartet, aber height={rect.get('height')} (innerH={innerH}, rect={rect})"
+    )
+    ctx.expect(
+        rect.get("right", 0) <= innerW + 1,
+        f"ai-diff-region ragt rechts aus Viewport: right={rect.get('right')} > innerW+1={innerW+1} (rect={rect})"
+    )
+    ctx.expect(
+        rect.get("left", 0) >= -1,
+        f"ai-diff-region ragt links aus Viewport: left={rect.get('left')} < -1 (rect={rect})"
+    )
+    ctx.expect(
+        abs(rect.get("left", 0) - contentRect.get("left", 0)) < 5,
+        f"ai-diff-region left weicht stark von .content-region ab: left={rect.get('left')}, contentLeft={contentRect.get('left')} (rect={rect})"
+    )
+
+    # Poll auf asynchrones Mount des DiffEditors (Monaco-Instanz + DOM >0x0)
+    _poll(ctx, "Monaco-DiffEditor in #ai-diff-mount gemountet (nicht 0x0)",
+          lambda: _eval(ctx, """(() => {
+              const m = document.getElementById('ai-diff-mount');
+              if (!m) return false;
+              const hasChild = m.children.length > 0;
+              const h = m.getBoundingClientRect().height || 0;
+              return hasChild && h > 100;
+          })()"""))
+
+
 def _configure_provider(ctx, base_url: str):
     return _eval(ctx, f"""(async () => {{
         await window.__folioInvoke("ai_custom_upsert", {{
@@ -201,6 +257,9 @@ def run(ctx):
             ctx.api.click("ai-actions-start")
             _poll(ctx, "Diff-Review offen",
                   lambda: _eval(ctx, "document.body.classList.contains('ai-diff-open')"))
+            _assert_diff_region_visible(ctx)
+            with ctx.step("screenshot ai-diff review"):
+                ctx.screenshot("ai_diff_review")
             # Masking-Beleg: der Mock sah Token statt Rust-Code.
             ctx.expect("geschuetzt" not in (_MockHandler.received_user or ""),
                        "Code-Fence war nicht maskiert")
@@ -252,6 +311,7 @@ def run(ctx):
             ctx.api.click("ai-actions-start")
             _poll(ctx, "Diff-Review offen (Selektion)",
                   lambda: _eval(ctx, "document.body.classList.contains('ai-diff-open')"))
+            _assert_diff_region_visible(ctx)
             ctx.api.click("ai-diff-apply")
             _poll(ctx, "Selektion korrekt ersetzt",
                   lambda: _eval(ctx, "window.FolioEditor.getText()")
