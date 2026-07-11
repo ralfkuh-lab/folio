@@ -275,6 +275,16 @@ body.ai-diff-open .content-panes {
   min-height: 0;
 }
 
+/* Monaco-Default: .gutter .gutterItem (Revert-Buttons zwischen Diff-Seiten)
+   sind dauerhaft im DOM, aber per opacity:0 + :hover-Einblendung versteckt.
+   Für Nicht-Entwickler unauffindbar (User-Feedback). Wir erzwingen opacity:1
+   permanent — nur für die KI-Review (#ai-diff-region), andere Monaco-Flächen
+   (Editor/CodeView/Theme) bleiben unberührt. */
+#ai-diff-region .monaco-diff-editor .gutter .gutterItem {
+  opacity: 1;
+  transition: none;
+}
+
 /* === Split-Button + Favoriten-Popover (Etappe A4a) ===================== */
 
 .toolbar button.tb-caret {

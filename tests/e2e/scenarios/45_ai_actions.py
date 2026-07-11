@@ -275,6 +275,21 @@ def run(ctx):
             _poll(ctx, "Diff-Review offen",
                   lambda: _eval(ctx, "document.body.classList.contains('ai-diff-open')"))
             _assert_diff_region_visible(ctx)
+            # Regression-Schutz für den Permanent-Sichtbarkeits-Override (härter gegen Monaco .showAlways):
+            # ALLE .gutterItem müssen opacity '1' haben, UND mind. eines darf NICHT .showAlways tragen
+            # (letzteres beweist unseren CSS-Override, nicht nur Monacos selected-Hunk).
+            _poll(ctx, "alle .gutterItem opacity '1' UND mind. eines ohne .showAlways in #ai-diff-region",
+                  lambda: _eval(ctx, """(() => {
+                      const items = document.querySelectorAll('#ai-diff-region .gutterItem');
+                      if (items.length === 0) return false;
+                      let hasNonShowAlways = false;
+                      for (const it of Array.from(items)) {
+                          const op = getComputedStyle(it).opacity;
+                          if (op !== '1' && op !== '1.0') return false;
+                          if (!it.classList.contains('showAlways')) hasNonShowAlways = true;
+                      }
+                      return hasNonShowAlways;
+                  })()"""))
             with ctx.step("screenshot ai-diff review"):
                 ctx.screenshot("ai_diff_review")
             # Masking-Beleg: der Mock sah Token statt Rust-Code.
@@ -317,6 +332,19 @@ def run(ctx):
             _select_action(ctx, "extract-actions")
             ctx.api.click("ai-actions-start")
             ctx.expect(_MockHandler.slow_started.wait(timeout=10.0), "Slow-Stream startete nicht")
+            # Status sichtbar + running-Klasse + (falls nicht reduced-motion) animiert.
+            # Prüft ai-status-running (Lauf-Zustand) + anim (eines von Pulse/Spinner::before).
+            # Bei prefers-reduced-motion: animName==='none' ist korrekt (CSS setzt animation:none), Assertion besteht.
+            _poll(ctx, "#ai-action-status sichtbar, ai-status-running und animiert (oder reduced-motion)",
+                  lambda: _eval(ctx, """(() => {
+                      const el = document.getElementById('ai-action-status');
+                      if (!el || el.hidden || !el.classList.contains('ai-status-running')) return false;
+                      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return true;
+                      const cs = getComputedStyle(el);
+                      const bcs = getComputedStyle(el, '::before');
+                      return (cs.animationName && cs.animationName !== 'none') ||
+                             (bcs.animationName && bcs.animationName !== 'none');
+                  })()"""))
             ctx.api.click("ai-action-status-cancel")
             actions_path = tmp / "bericht.actions.md"
             _poll(ctx, "Statusleiste geschlossen",

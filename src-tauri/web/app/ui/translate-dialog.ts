@@ -167,6 +167,7 @@ function showStatus(language: string): void {
     const status = $('ai-translate-status');
     if (!status) return;
     status.hidden = false;
+    status.classList.add('ai-status-running');
     updateStatusText(`KI-Übersetzung ${language} · 0 Zeichen`);
     const cancel = $('ai-translate-status-cancel') as HTMLButtonElement | null;
     if (cancel) {
@@ -177,7 +178,10 @@ function showStatus(language: string): void {
 
 function hideStatus(): void {
     const status = $('ai-translate-status');
-    if (status) status.hidden = true;
+    if (status) {
+        status.classList.remove('ai-status-running');
+        status.hidden = true;
+    }
 }
 
 function updateStatusText(text: string): void {

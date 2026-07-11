@@ -64,7 +64,8 @@ export function mount(elementId: string): Promise<void> {
             renderSideBySide: sideBySide,
             originalEditable: false,
             readOnly: false,
-            renderMarginRevertIcon: true, // VS-Code-Verhalten — Pfeil in der Gutter setzt den einzelnen Änderungsblock auf den Original-Stand zurück; ersetzt kein Gesamt-Verwerfen.
+            // Sichtbarkeit der Revert-Controls regelt der CSS-Override in ai-actions-dialog.css
+            // (renderMarginRevertIcon ist inert, solange renderGutterMenu aktiv ist).
             minimap: { enabled: false },
             wordWrap: 'on',
             scrollBeyondLastLine: false,

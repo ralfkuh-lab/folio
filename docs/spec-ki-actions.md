@@ -608,6 +608,24 @@ Kurze Nachbesserungen an der KI-Diff-Review (User-Feedback):
 Ergänzungen in CLAUDE.md (KI-Aktionen-Bullet) und E2E 45 (neuer Step nach
 Replace+Undo).
 
+Zweites Paket (gleicher Tag, User-Feedback zur Auffälligkeit):
+
+- **Statusleisten-Aktivitätsanzeige**: `.ai-translate-status` (Translate +
+  Actions) bekommt bei laufendem Stream die Klasse `ai-status-running` —
+  nur dann Spinner (`::before`) + dezenter Akzent-Puls (`color-mix` mit
+  statischem Fallback, `prefers-reduced-motion` deaktiviert beides; die
+  Media-Query-Selektoren müssen die Zwei-Klassen-Spezifität spiegeln).
+  Fehleranzeigen über dieselbe Leiste (`showErrorStatus`) animieren NICHT
+  (Codex-Review-Befund). Klassen-Toggle in show/hide/error-Pfaden beider
+  Dialoge.
+- **Revert-Buttons permanent**: Monacos Gutter-Menü ist hover-only
+  (`opacity:0`); CSS-Override in `ai-actions-dialog.css` erzwingt
+  `opacity:1`, gescopt auf `#ai-diff-region`. `renderMarginRevertIcon`
+  wurde entfernt (inert bei aktivem `renderGutterMenu`; das Gutter-Menü
+  rendert auch im Inline-Diff — empirisch verifiziert). E2E 45 prüft
+  Opacity aller `.gutterItem` inkl. mind. eines ohne `.showAlways` sowie
+  running-Klasse + Animation der Statusleiste (reduced-motion-Guard).
+
 ## Bewusst nicht in v1
 
 - Nicht-Markdown-Dateien (Code/Text) als Quelle.

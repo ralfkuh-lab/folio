@@ -152,3 +152,44 @@
   cursor: default;
   opacity: 0.65;
 }
+
+/* === KI-Statusleiste: Spinner + Puls nur im Lauf-Zustand (.ai-status-running) === */
+
+/* Spinner ::before + Puls NUR bei .ai-status-running (Lauf).
+   Ohne Klasse: kein content (kein Spinner-Element), kein Puls, statischer --rail-bg. */
+.ai-translate-status.ai-status-running::before {
+  content: "";
+  width: 14px;
+  height: 14px;
+  border: 2px solid transparent;
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  flex: 0 0 auto;
+  animation: ai-status-spin 0.9s linear infinite;
+}
+
+.ai-translate-status.ai-status-running {
+  animation: ai-status-pulse 2.5s ease-in-out infinite alternate;
+}
+
+@keyframes ai-status-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes ai-status-pulse {
+  from { background: var(--rail-bg); }
+  to {
+    background: var(--rail-bg); /* Fallback für ältere WebKitGTK ohne color-mix */
+    background: color-mix(in srgb, var(--accent) 12%, var(--rail-bg));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Muss die .ai-status-running-Selektoren spiegeln — Media-Queries erhöhen
+     die Spezifität nicht, gegen die Zwei-Klassen-Regel oben würde die
+     einfachere Klasse verlieren und es würde trotzdem animiert. */
+  .ai-translate-status.ai-status-running,
+  .ai-translate-status.ai-status-running::before {
+    animation: none;
+  }
+}

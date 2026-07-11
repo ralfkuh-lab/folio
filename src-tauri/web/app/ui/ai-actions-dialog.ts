@@ -413,6 +413,7 @@ function showStatus(actionName: string): void {
     const status = $('ai-action-status');
     if (!status) return;
     status.hidden = false;
+    status.classList.add('ai-status-running');
     updateStatusText(`✨ ${actionName} · 0 Zeichen`);
     const cancel = $('ai-action-status-cancel') as HTMLButtonElement | null;
     if (cancel) {
@@ -423,7 +424,10 @@ function showStatus(actionName: string): void {
 
 function hideStatus(): void {
     const status = $('ai-action-status');
-    if (status) status.hidden = true;
+    if (status) {
+        status.classList.remove('ai-status-running');
+        status.hidden = true;
+    }
 }
 
 function updateStatusText(text: string): void {
@@ -691,7 +695,10 @@ function dispatchRun(params: RunParams): void {
  *  sichtbar lassen, Abbrechen-Button wird zum Schließen-Button. */
 function showErrorStatus(text: string): void {
     const status = $('ai-action-status');
-    if (status) status.hidden = false;
+    if (status) {
+        status.classList.remove('ai-status-running');
+        status.hidden = false;
+    }
     updateStatusText(text);
     const cancel = $('ai-action-status-cancel') as HTMLButtonElement | null;
     if (cancel) {

@@ -561,10 +561,16 @@ sonst lehnt Tauri den Build ab.
   `ai-diff`, Monaco-DiffEditor als vierte Surface `FolioDiffView`,
   modified editierbar): Übernehmen mit dreistufigem Guard (Quelltab
   existiert → aktiv → Snapshot; sonst Bestätigung), firstDiff-Cursor,
-  ein Undo-Schritt via `applyReplace`. Revert-Pfeile pro Änderungsblock
-  (`renderMarginRevertIcon` in DiffEditor), Übernehmen wechselt aus dem
+  ein Undo-Schritt via `applyReplace`. Revert-Buttons pro Änderungsblock
+  sind permanent sichtbar (CSS-Override auf Monacos hover-only Gutter-Menü,
+  gescopt auf `#ai-diff-region`; `renderMarginRevertIcon` ist bei aktivem
+  `renderGutterMenu` inert und bewusst entfernt), Übernehmen wechselt aus dem
   View- in den Edit-Mode, `setMode`-Save-Gate gilt nur noch Richtung view
-  (edit/split prompt-frei). Selektions-Scope nutzt strikte
+  (edit/split prompt-frei). Laufende Streams zeigen die Statusleisten
+  (`.ai-translate-status`, Translate + Actions) mit Spinner + Akzent-Puls
+  über die Klasse `ai-status-running` — Fehleranzeigen derselben Leiste
+  animieren nicht; `prefers-reduced-motion`-Block muss die Zwei-Klassen-
+  Spezifität spiegeln. Selektions-Scope nutzt strikte
   UTF-16→Byte-Konvertierung (`utf16_to_byte_offset_strict`, kein Clamp)
   und `mask_selection` (Grenzschnitt durch geschützte Ranges = Fehler);
   Prompt-Injection-Härtung über Nonce-Delimiter + Untrusted-Data-Regel.
