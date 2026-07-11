@@ -2,14 +2,12 @@
 
 ## Hohe Priorität
 
-- **Deb 0.5.0 (Build 2026-07-11, dritter Stand) installieren**: der
-  Gating-Fix-Stand von mittags (KI-Buttons falschherum) ist installiert
-  und vom User bestätigt; NEU dazu kommt das **Diff-Review-UX-Paket**
-  (User-Feedback 2026-07-11): Revert-Pfeile pro Änderungsblock
-  (`renderMarginRevertIcon`), „Übernehmen" wechselt aus dem View- in
-  den Edit-Mode (tab-gebunden, Codex-Review-Befund eingearbeitet),
-  kein Save-Prompt mehr beim Mode-Wechsel Richtung edit/split.
-  Voll-Lauf 45/45 grün, vitest 276/276.
+- **Deb 0.5.0 (Build 2026-07-11 16:29) installieren**: Diff-Review-
+  UX-Paket (Revert + Edit-Mode-Wechsel) ist installiert und bestätigt;
+  NEU dazu das **Sichtbarkeits-Paket** (`7aeeaa5`): Status-Spinner +
+  Akzent-Puls nur bei laufendem Stream (`ai-status-running`, Fehler
+  animieren nicht), Revert-Buttons in der Diff-Review permanent
+  sichtbar statt hover-only. Voll-Lauf 45/45 grün, vitest 276/276.
   Install: `sudo apt install --reinstall ./folio.deb`.
 
 ## Mittlere Priorität
