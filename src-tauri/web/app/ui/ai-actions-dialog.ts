@@ -494,9 +494,12 @@ export async function openAiActionsDialog(preselectId?: string): Promise<void> {
         const modelSelect = $('ai-actions-model') as HTMLSelectElement | null;
         if (modelSelect) populateModelPicker(modelSelect, config, catalog, { separator: ' · ' });
         renderActionList();
+        // Default-Vorauswahl = oberster Eintrag der ANGEZEIGTEN Liste
+        // (orderedTemplates: Favoriten zuerst). Sonst hinge die Auswahl am
+        // ersten Built-in, obwohl in der Liste ein Favorit oben steht.
         const preselect = preselectId && templateById(preselectId)
             ? preselectId
-            : templates.find((template) => template.builtin)?.id || CUSTOM_ENTRY_ID;
+            : orderedTemplates()[0]?.id || CUSTOM_ENTRY_ID;
         applySelection(preselect);
         syncScopeRow();
         if (!modelSelect?.value) setError('Kein freigeschaltetes Modell verfügbar.');

@@ -338,6 +338,19 @@ describe('ai-actions-dialog', () => {
         expect(star.textContent).toBe('★');
     });
 
+    it('wählt beim Öffnen den obersten Favoriten vor (nicht das erste Built-in)', async () => {
+        settingsData.aiActionFavorites = ['eigenes'];
+        await openAiActionsDialog();
+
+        const items = Array.from(document.querySelectorAll('.ai-actions-dialog__item'));
+        // Favorit steht oben UND ist vorausgewählt — vorher hing die
+        // Auswahl am ersten Built-in (summarize), obwohl 'eigenes' oben stand.
+        expect((items[0] as HTMLElement).dataset.actionId).toBe('eigenes');
+        expect(items[0].getAttribute('aria-selected')).toBe('true');
+        expect(document.querySelector('[data-action-id="summarize"]')!
+            .getAttribute('aria-selected')).toBe('false');
+    });
+
     it('Stern-Toggle patcht die Settings-Favoriten inkl. Hash-Pinning für Customs', async () => {
         await openAiActionsDialog();
         (document.querySelector('[data-ai-action-fav="eigenes"]') as HTMLElement).click();
