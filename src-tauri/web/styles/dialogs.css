@@ -2,7 +2,12 @@
 #unsaved-dialog, #rename-dialog, #run-confirm-dialog, #confirm-dialog {
   position: fixed;
   inset: 0;
-  z-index: 10001;
+  /* Blockierende System-Modals — müssen über ALLEN anderen Overlays liegen,
+     inkl. der KI-Overlays (KI-Aktionen-Dialog 10040, Diff-Review-Region
+     10050, Fav-Menü 10050, Save-Overlay 10060). showConfirmDialog wird u. a.
+     aus dem KI-Dialog (Vorlage löschen) und der Diff-Review gerufen; bei
+     z-index 10001 verschwand die Bestätigung sonst dahinter. */
+  z-index: 10070;
   display: flex;
   align-items: center;
   justify-content: center;
