@@ -243,3 +243,150 @@ html.theme-dark .vault-region .git-branch--main {
 html.theme-dark .vault-region .git-branch--detached {
   color: #f85149;
 }
+
+/* ============================================================
+   Vault-Volltextsuche (Such-Panel) — Etappe S2
+   ============================================================ */
+.vault-search {
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--rail-bg);
+}
+.vault-search-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.vault-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  box-sizing: border-box;
+  height: 26px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 12px;
+  font-family: inherit;
+}
+.vault-search-input:focus {
+  outline: none;
+  border-color: var(--rail-accent);
+}
+.vault-search-input::placeholder { color: var(--rail-fg-muted); }
+.vault-search-opt {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  min-width: 24px;
+  height: 26px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--rail-fg-muted);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  line-height: 1;
+}
+.vault-search-opt:hover { background: var(--rail-hover-bg); }
+.vault-search-opt.active {
+  color: #fff;
+  background: var(--rail-accent);
+  border-color: var(--rail-accent);
+}
+
+/* Umschalten Tree <-> Ergebnisse */
+.vault-region.vault-searching ul#vault-tree { display: none; }
+.vault-search-results { display: none; }
+.vault-region.vault-searching .vault-search-results { display: block; }
+
+.vault-search-status {
+  padding: 5px 10px;
+  color: var(--rail-fg-muted);
+  font-size: 11px;
+  border-bottom: 1px solid var(--border);
+}
+.vault-search-list { padding: 2px 0 24px 0; }
+
+.vs-group + .vs-group { margin-top: 1px; }
+.vs-group-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+  color: var(--rail-fg);
+  font-weight: 600;
+}
+.vs-group-head:hover { background: var(--rail-hover-bg); }
+.vs-caret {
+  flex: 0 0 auto;
+  width: 10px;
+  font-size: 9px;
+  color: var(--rail-fg-muted);
+  transition: transform 0.1s;
+}
+.vs-caret.collapsed { transform: rotate(-90deg); }
+.vs-fname {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vs-count {
+  flex: 0 0 auto;
+  color: var(--rail-fg-muted);
+  font-weight: 400;
+  font-size: 10px;
+}
+.vs-hit {
+  display: flex;
+  gap: 6px;
+  padding: 2px 8px 2px 22px;
+  cursor: pointer;
+  color: var(--rail-fg);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.vs-hit:hover { background: var(--rail-hover-bg); }
+.vs-hit.active,
+.vs-hit:focus-visible {
+  background: var(--rail-selected-bg);
+  color: var(--rail-selected-fg);
+  outline: 2px solid var(--rail-accent);
+  outline-offset: -2px;
+  box-shadow: inset 2px 0 0 0 var(--rail-accent);
+}
+.vs-line {
+  flex: 0 0 auto;
+  min-width: 26px;
+  text-align: right;
+  color: var(--rail-fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+.vs-snippet {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.vs-snippet mark {
+  background: #ffd54a;
+  color: #000;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.vs-more {
+  padding: 2px 8px 4px 22px;
+  color: var(--rail-fg-muted);
+  font-size: 10px;
+  font-style: italic;
+}
+html.theme-dark .vs-snippet mark {
+  background: #b58900;
+  color: #fff;
+}

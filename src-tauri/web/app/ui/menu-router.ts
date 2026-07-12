@@ -14,6 +14,7 @@ import { closeActiveTab, confirmAllDirtyTabs } from '../state/tabs';
 import { confirmAiReviewForQuit } from './ai-diff-review';
 import { setMode } from '../editor/shell';
 import { openEditorFind } from './find-bar';
+import { focusVaultSearch } from '../vault/search';
 import { folioLog, safeInvoke } from '../util/log';
 
 type Deps = {
@@ -72,6 +73,9 @@ export function initMenuRouter(deps: Deps): void {
     });
     ev.listen('menu:edit_find', function () {
         openEditorFind('');
+    });
+    ev.listen('menu:edit_search_vault', function () {
+        focusVaultSearch();
     });
     ev.listen('menu:help_cheatsheet', function () {
         var b = $('tb-cheatsheet'); if (b) b.click();

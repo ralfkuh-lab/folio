@@ -202,6 +202,36 @@ pub async fn set_split_mid_percent(
         .map_err(|error| error.to_string())
 }
 
+/// Liefert die persistierten Vault-Such-Optionen (Aa/W) ans Frontend.
+/// Beim Boot des Such-Panels gerufen, damit die Toggle-Buttons synchron
+/// zum persistierten Zustand starten.
+#[tauri::command]
+pub async fn search_options_get(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let data = state
+        .panel_state
+        .lock()
+        .map_err(|_| "panel state lock poisoned".to_string())?
+        .data();
+    Ok(serde_json::json!({
+        "caseSensitive": data.search_case_sensitive,
+        "wholeWord": data.search_whole_word,
+    }))
+}
+
+#[tauri::command]
+pub async fn set_search_options(
+    case_sensitive: bool,
+    whole_word: bool,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state
+        .panel_state
+        .lock()
+        .map_err(|_| "panel state lock poisoned".to_string())?
+        .set_search_options(case_sensitive, whole_word)
+        .map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 pub async fn set_window_title(title: String, handle: AppHandle) -> Result<(), String> {
     let window = handle

@@ -169,24 +169,40 @@ API-first → testbar wie bei den Tabs (T2). **TDD-Zusatz (vereinbart
       (dokumentiert): gepinnte Einzeldateien umgehen hidden/gitignore
       bewusst. Orchestrator-Endabnahme: Gates + E2E 46 nachgefahren.
 
-### Etappe S2 — Such-Panel UI
+### Etappe S2 — Such-Panel UI ✅ FERTIG (2026-07-12)
 
-- [ ] `#vault-search` + `#vault-search-results` in `dist/index.html`,
-      CSS in `vault.css`-Bereich (Light + Dark).
-- [ ] Neues Modul `vault/search.ts`: Debounce/Cancel/runId-Guard,
-      Ergebnis-Rendering (escaped + `<mark>`), Gruppen-Toggle,
-      Truncation-Hinweis, Statuszeile (n Treffer in m Dateien).
-- [ ] Treffer-Klick → Öffnen + Sprung (Edit/Split präzise, View via
-      Find-Bar, Entscheidung 7); Strg+Klick/Strg+Enter → neuer Tab.
-- [ ] Keyboard-Nav (↑/↓/Enter), Strg+Shift+F inkl.
-      `!e.shiftKey`-Guard in `find-bar.ts`, Menü-Eintrag
-      „Im Vault suchen…“.
-- [ ] Aa/W-Toggles persistiert in `panel-state.json`.
-- [ ] jsdom-Tests (Rendering, Debounce/stale-runId, Keyboard-Nav,
-      Escape-Verhalten).
-- [ ] Bundles neu gebaut + eingecheckt; E2E `47_vault_search_ui.py`
-      (Panel öffnen, tippen, Treffer klicken → richtige Datei/Zeile,
-      Baum-Rückkehr via Escape) + Visual-Baseline.
+- [x] `#vault-search` + `#vault-search-results` in `dist/index.html`,
+      CSS in `vault.css`-Bereich (Light + Dark, Fokus-Stil).
+- [x] Neues Modul `vault/search.ts`: Debounce/Cancel/runId- +
+      maxRunId-Guard (Event-Puffer für Hits vor Start-Antwort),
+      Ergebnis-Rendering (escaped + `<mark>` über UTF-16-Ranges),
+      Gruppen-Toggle, Truncation-Hinweis, Statuszeile.
+- [x] Treffer-Klick → Öffnen + Sprung: Edit/Split präzise via
+      `FolioEditor.revealMatch`; View via Find-Bar mit
+      Finder-Settle-Wartung (`folio-find-state`-Quiesce) statt
+      synchroner findNext-Iteration. Sprung-Korrelation über das
+      seq-geschützte `folio-doc-kind-changed` + `getCurrentPath`;
+      Navigation-Restore-Konflikt über `consumeNavRestoreSkip`
+      (nur tab_open-Pfad, Back/Forward unberührt).
+      Strg+Klick/Mittelklick/Strg+Enter → neuer Tab.
+- [x] Keyboard-Nav (↑/↓/Enter, überspringt zugeklappte Gruppen),
+      Strg+Shift+F inkl. `!e.shiftKey`-Guard in `find-bar.ts`,
+      Menü „Bearbeiten → Im Vault suchen…“.
+- [x] Aa/W-Toggles persistiert in `panel-state.json`
+      (`search_options_get`/`set_search_options`).
+- [x] jsdom-Tests (292 gesamt, 15 fürs Suchmodul: Marks/Emoji,
+      Debounce/stale-runId, Escape-während-Start-Race, Event-Puffer,
+      Options-Retrigger, Keyboard, Dispose-Hygiene).
+- [x] Bundles eingecheckt; E2E `47_vault_search_ui.py` (Deadline-
+      Polling, Aa-Toggle über UI, Ctrl+Klick-Sprung in neuen Tab,
+      View-Mode-Sprung auf Treffer N, echter Escape-Pfad) + Baselines:
+      15 reseedet (Suchfeld im linken Rail) + 2 neue; zwei
+      aufeinanderfolgende volle Läufe 47/47 + 15/15 visuell grün.
+- [x] **Kreuz-Review codex (gpt-5.6-sol high) + grok + agy** → EIN
+      Fix-Paket (10 Punkte), umgesetzt; abgelehnt mit Beleg: groks
+      camelCase-Payload-Befund (Tauri-Auto-Konvertierung, empirisch
+      durch Aa-Toggle-E2E bestätigt). Orchestrator-Endabnahme: Gates
+      nachgefahren, Fix-Stichproben, Screenshot-Sichtprüfung.
 
 ### Etappe S3 — Ordner-Scope + Feinschliff
 

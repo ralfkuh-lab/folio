@@ -23,6 +23,7 @@ import { attachPasteHandler } from './ui/paste-handler';
 import { applySplitMidFromBackend, initRails, setRailVisibility } from './ui/rails';
 import { initContextMenu } from './vault/context-menu';
 import { initVaultTree, insertVaultChildren, refreshVault } from './vault/tree';
+import { initVaultSearch, consumeNavRestoreSkip } from './vault/search';
 import {
     initMarkdownView,
     setTocActive,
@@ -84,6 +85,12 @@ function applyRailVisibility(side: 'left' | 'right', visible: boolean): void {
     setRailVisibility(side, !!visible);
     setRailButton(side, visible);
 }
+// Öffnet das linke Rail (falls zu) + persistiert — für Strg+Shift+F / Vault-Suche.
+function openLeftRail(): void {
+    if (!document.body.classList.contains('vault-hidden')) return;
+    applyRailVisibility('left', true);
+    safeInvoke('set_rail_visible', { side: 'left', visible: true }, 'set_rail_visible left');
+}
 
 // ----- Modul-Init in fester Reihenfolge -----
 initMarkdownView({ requestSaveIfDirty });
@@ -91,6 +98,7 @@ initEditorShell({ getCleanText, requestSaveIfDirty });
 initFindBar({ ensureEditorMounted, focusEditor });
 initRails();
 initVaultTree({ openDocument });
+initVaultSearch({ openDocument, showStatus, openLeftRail });
 initCheatsheet();
 initZoom();
 initLanguagePicker();
@@ -158,8 +166,13 @@ if (ev && typeof ev.listen === 'function' && invoke) {
                 var viewScroll = (typeof data.scrollY === 'number') ? data.scrollY : 0;
                 var editorCursor = (typeof data.editorCursor === 'number') ? data.editorCursor : 0;
                 var editorScroll = (typeof data.editorScrollY === 'number') ? data.editorScrollY : 0;
+                // Vault-Suchsprung (tab_open): der Entry-Restore würde Cursor/
+                // Scroll aus dem Entry setzen und den Sprung überschreiben — für
+                // genau diesen Load einmal überspringen (Back/Forward unberührt).
+                var skipRestore = consumeNavRestoreSkip(data.path || '');
                 await new Promise(function (resolve) {
                     requestAnimationFrame(function () {
+                        if (skipRestore) { resolve(undefined); return; }
                         if (anchor) {
                             if (document.body.classList.contains('html-preview-mode')) {
                                 scrollHtmlViewToAnchor(anchor);

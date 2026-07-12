@@ -94,6 +94,33 @@ export function setSelection(start: number, length: number): void {
     );
 }
 
+/**
+ * Springt zu einer Fundstelle (Vault-Suche): zentriert die Zeile und selektiert
+ * den Treffer. Monaco-Spalten sind 1-basiert in UTF-16-Code-Units — exakt das
+ * `colUtf16`/`lenUtf16`-Format aus `search.rs`, daher keine Umrechnung nötig.
+ */
+export function revealMatch(line: number, colUtf16: number, lenUtf16: number): void {
+    const editor = getEditor();
+    if (!editor) {
+        deferUntilMounted(() => revealMatch(line, colUtf16, lenUtf16));
+        return;
+    }
+    const model = editor.getModel();
+    if (!model) return;
+    const monaco = getMonaco();
+    const ln = Math.max(1, Math.min(Math.floor(line || 1), model.getLineCount()));
+    const maxCol = model.getLineMaxColumn(ln);
+    const startCol = Math.max(1, Math.min(Math.floor(colUtf16 || 1), maxCol));
+    const endCol = Math.max(startCol, Math.min(startCol + Math.max(0, Math.floor(lenUtf16 || 0)), maxCol));
+    editor.setSelection(new monaco.Selection(ln, startCol, ln, endCol));
+    if (typeof editor.revealLineInCenter === 'function') {
+        editor.revealLineInCenter(ln);
+    } else {
+        revealLineNearTop(ln);
+    }
+    editor.focus();
+}
+
 export function getScroll(): number {
     const editor = getEditor();
     return editor ? editor.getScrollTop() : 0;

@@ -23,6 +23,7 @@ interface FolioEditorSurface {
     getCursorLine(): number;
     revealLineNearTop(line: number): void;
     revealLineFractionNearTop(line: number): void;
+    revealMatch(line: number, colUtf16: number, lenUtf16: number): void;
     setTheme(mode: string): void;
     setMinimap(enabled: boolean): void;
     layout(): void;

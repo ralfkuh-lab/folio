@@ -35,6 +35,12 @@ pub struct PanelStateData {
     // `#[serde(default)]`, weil f64s Default 0.0 waere.
     #[serde(default = "default_split_mid_percent")]
     pub split_mid_percent: f64,
+    // Vault-Suche: Optionen-Toggles (Aa / W). Beide Default aus — konsistent
+    // mit der Find-Bar. Persistiert nach UI-Toggle-Persistenz-Konvention.
+    #[serde(default)]
+    pub search_case_sensitive: bool,
+    #[serde(default)]
+    pub search_whole_word: bool,
 }
 
 fn default_split_mid_percent() -> f64 {
@@ -59,6 +65,8 @@ impl Default for PanelStateData {
             cheat_sheet_offset_y: 0.0,
             editor_minimap_visible: false,
             split_mid_percent: 50.0,
+            search_case_sensitive: false,
+            search_whole_word: false,
         }
     }
 }
@@ -124,6 +132,12 @@ impl PanelState {
 
     pub fn set_split_mid_percent(&mut self, percent: f64) -> io::Result<()> {
         self.data.split_mid_percent = percent.clamp(20.0, 80.0);
+        self.save()
+    }
+
+    pub fn set_search_options(&mut self, case_sensitive: bool, whole_word: bool) -> io::Result<()> {
+        self.data.search_case_sensitive = case_sensitive;
+        self.data.search_whole_word = whole_word;
         self.save()
     }
 

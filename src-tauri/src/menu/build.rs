@@ -86,6 +86,9 @@ pub fn build(handle: &AppHandle, lang: &str) -> tauri::Result<Menu<Wry>> {
     let item_find = MenuItemBuilder::with_id(ids::EDIT_FIND, l.edit_find)
         .accelerator("CmdOrCtrl+F")
         .build(handle)?;
+    let item_search_vault = MenuItemBuilder::with_id(ids::EDIT_SEARCH_VAULT, l.edit_search_vault)
+        .accelerator("CmdOrCtrl+Shift+F")
+        .build(handle)?;
     let item_ai_translate = MenuItemBuilder::with_id(ids::EDIT_AI_TRANSLATE, l.edit_ai_translate)
         .enabled(false)
         .build(handle)?;
@@ -103,6 +106,7 @@ pub fn build(handle: &AppHandle, lang: &str) -> tauri::Result<Menu<Wry>> {
         .item(&item_redo)
         .item(&PredefinedMenuItem::separator(handle)?)
         .item(&item_find)
+        .item(&item_search_vault)
         .item(&item_ai_translate)
         .item(&item_ai_actions)
         .item(&PredefinedMenuItem::separator(handle)?)

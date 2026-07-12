@@ -378,6 +378,8 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::app::set_editor_minimap_visible,
             commands::app::split_mid_get,
             commands::app::set_split_mid_percent,
+            commands::app::search_options_get,
+            commands::app::set_search_options,
             commands::app::open_find,
             commands::app::cli_pending_open,
             commands::app::set_window_title,

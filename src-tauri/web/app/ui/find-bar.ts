@@ -313,7 +313,9 @@ export function initFindBar(deps: {
     // eingebauter Find-Widget die Tasten im Editor-Fokus. capture:true +
     // stopPropagation deckt Editor-, Code-View-, View- und Vault-Fokus ab.
     document.addEventListener('keydown', function (e: KeyboardEvent) {
-        if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+        // Strg+Shift+F ist die Vault-Suche (vault/search.ts) — hier NICHT
+        // abfangen, sonst öffnet sich die Editor-Find-Bar mit.
+        if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'f' || e.key === 'F')) {
             e.preventDefault();
             e.stopPropagation();
             openEditorFind('');

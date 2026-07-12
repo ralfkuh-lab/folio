@@ -16,6 +16,7 @@ pub(super) const FILE_QUIT: &str = "file.quit";
 pub(super) const EDIT_UNDO: &str = "edit.undo";
 pub(super) const EDIT_REDO: &str = "edit.redo";
 pub(super) const EDIT_FIND: &str = "edit.find";
+pub(super) const EDIT_SEARCH_VAULT: &str = "edit.search_vault";
 pub(super) const EDIT_AI_TRANSLATE: &str = "edit.ai_translate";
 pub(super) const EDIT_AI_ACTIONS: &str = "edit.ai_actions";
 pub(super) const EDIT_SETTINGS: &str = "edit.settings";

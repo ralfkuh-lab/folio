@@ -86,7 +86,19 @@
     <button class="vault-cmd ti-emoji" data-cmd="addFile" title="Datei öffnen…" aria-label="Datei öffnen">&#x1F4C4;</button>
     <button class="vault-cmd ti-emoji" data-cmd="addFolder" title="Ordner hinzufügen…" aria-label="Ordner hinzufügen">&#x1F4C1;</button>
   </header>
+  <div class="vault-search" id="vault-search">
+    <div class="vault-search-row">
+      <input type="search" id="vault-search-input" class="vault-search-input" placeholder="Im Vault suchen…" aria-label="Im Vault suchen" spellcheck="false" autocomplete="off" />
+      <button type="button" id="vault-search-case" class="vault-search-opt" title="Groß-/Kleinschreibung beachten" aria-label="Groß-/Kleinschreibung beachten" aria-pressed="false">Aa</button>
+      <button type="button" id="vault-search-word" class="vault-search-opt" title="Ganzes Wort" aria-label="Ganzes Wort" aria-pressed="false">W</button>
+    </div>
+    <!-- Scope-Chip-Slot (S3): #vault-search-scope kommt hier rein. -->
+  </div>
   <ul id="vault-tree" class="tree"></ul>
+  <div class="vault-search-results" id="vault-search-results" hidden>
+    <div class="vault-search-status" id="vault-search-status" role="status"></div>
+    <div class="vault-search-list" id="vault-search-list"></div>
+  </div>
 </aside>
 <div class="splitter-left" id="splitter-left"></div>
 <div class="content-region" id="content-region">
