@@ -67,6 +67,8 @@ def run(ctx):
             % (TOKEN, TOKEN.lower(), TOKEN),
         )
         _write(os.path.join(td, "more.md"), "extra %s line\n" % TOKEN)
+        # Unterordner für den Ordner-Scope-Test (S3).
+        _write(os.path.join(td, "sub", "inner.md"), "deep %s here\n" % TOKEN)
 
         pinned = False
         try:
@@ -88,7 +90,14 @@ def run(ctx):
 
             with ctx.step("Suche (case-insensitive) rendert 3 Treffer mit <mark>"):
                 _set_query(ctx, TOKEN)
-                hits = _poll(ctx, lambda: _group_hits(ctx, "notes.md") == 3)
+                # Auf das VOLLSTÄNDIGE Streaming-Ergebnis warten (alle 3 Dateien
+                # inkl. sub/inner.md), damit der Screenshot deterministisch ist.
+                hits = _poll(
+                    ctx,
+                    lambda: _group_hits(ctx, "notes.md") == 3
+                    and _group_hits(ctx, "more.md") == 1
+                    and _group_hits(ctx, "inner.md") == 1,
+                )
                 ctx.expect(hits is True, f"notes.md hits(ci)={_group_hits(ctx, 'notes.md')}")
                 ctx.api.sync_render()
                 info = _evalv(
@@ -111,7 +120,14 @@ def run(ctx):
                     "document.getElementById('vault-search-case')"
                     ".dispatchEvent(new MouseEvent('click',{bubbles:true}))"
                 )
-                ok = _poll(ctx, lambda: _group_hits(ctx, "notes.md") == 2)
+                # Vollständiges cs-Ergebnis abwarten (notes 2, more 1, inner 1),
+                # damit der spätere Jump-Screenshot deterministisch ist.
+                ok = _poll(
+                    ctx,
+                    lambda: _group_hits(ctx, "notes.md") == 2
+                    and _group_hits(ctx, "more.md") == 1
+                    and _group_hits(ctx, "inner.md") == 1,
+                )
                 ctx.expect(ok is True, f"notes.md hits(cs)={_group_hits(ctx, 'notes.md')}")
 
             with ctx.step("Edit-Mode: Klick auf ersten Treffer selektiert den Token"):
@@ -132,7 +148,7 @@ def run(ctx):
                     ) or {}
                     return s if s.get("text") == TOKEN else None
 
-                sel = _poll(ctx, sel_ok)
+                sel = _poll(ctx, sel_ok, timeout=6.0)
                 ctx.expect(bool(sel), f"edit-jump selection={sel}")
                 ctx.expect(sel.get("len") == 5, f"len={sel.get('len')}")
 
@@ -157,7 +173,7 @@ def run(ctx):
                     ) or {}
                     return s if s.get("text") == TOKEN else None
 
-                sel2 = _poll(ctx, more_ok)
+                sel2 = _poll(ctx, more_ok, timeout=6.0)
                 ctx.expect(bool(sel2), f"ctrl-click jump selection={sel2}")
                 tabs_after = len(ctx.api.tabs().get("tabs") or [])
                 ctx.expect(tabs_after == tabs_before + 1, f"tabs {tabs_before}->{tabs_after}")
@@ -211,6 +227,72 @@ def run(ctx):
                     ),
                 )
                 ctx.expect(back is True, "tree not restored after Escape")
+
+            with ctx.step("Ordner-Scope via Kontextmenü (bei aktiver Query) beschränkt auf sub/"):
+                td_norm = td.replace("\\", "/")
+                sub_norm = td_norm + "/sub"
+                sub_sel = '#vault-tree li.node[data-path="%s"]' % sub_norm
+                # Pin-Ordner im Baum aufklappen, bis der Unterordner sichtbar ist.
+                ctx.api.click('#vault-tree li.node[data-path="%s"] > .row' % td_norm)
+                appeared = _poll(
+                    ctx,
+                    lambda: _evalv(ctx, "!!document.querySelector('%s')" % sub_sel),
+                )
+                ctx.expect(appeared is True, "sub-Ordner nicht im Baum aufgetaucht")
+
+                # Query VORAB ins Feld setzen (ohne input-Event, Baum bleibt
+                # sichtbar) → der Kontextmenü-Klick trifft den Re-Trigger-Pfad.
+                ctx.api.eval(
+                    "document.getElementById('vault-search-input').value=%s" % repr(TOKEN)
+                )
+                # Rechtsklick → Kontextmenue → „In diesem Ordner suchen".
+                ctx.api.right_click(sub_sel)
+                _poll(
+                    ctx,
+                    lambda: _evalv(
+                        ctx,
+                        "!!document.querySelector('#context-menu.open .ctx-item[data-act=\\'search-folder\\']')",
+                    ),
+                )
+                ctx.api.click("#context-menu .ctx-item[data-act=\"search-folder\"]")
+
+                # Re-Trigger muss unmittelbar scoped suchen: Chip 'sub' + NUR
+                # inner.md, KEINE root-Dateien (Exklusivität).
+                scoped = _poll(
+                    ctx,
+                    lambda: _evalv(
+                        ctx,
+                        "(function(){var n=document.querySelector('#vault-search-scope .vs-scope-name');"
+                        "return n?n.textContent:null;})()",
+                    )
+                    == "sub"
+                    and _group_hits(ctx, "inner.md") == 1
+                    and _group_hits(ctx, "notes.md") == -1
+                    and _group_hits(ctx, "more.md") == -1,
+                )
+                ctx.expect(
+                    scoped is True,
+                    f"scope inner={_group_hits(ctx, 'inner.md')} "
+                    f"notes={_group_hits(ctx, 'notes.md')} more={_group_hits(ctx, 'more.md')}",
+                )
+
+            ctx.screenshot("47_folder_scope")
+
+            with ctx.step("Chip-× entfernt den Scope → wieder vault-weit"):
+                ctx.api.eval(
+                    "document.querySelector('#vault-search-scope .vs-scope-x')"
+                    ".dispatchEvent(new MouseEvent('click',{bubbles:true}))"
+                )
+                widened = _poll(
+                    ctx,
+                    lambda: _group_hits(ctx, "notes.md") == 3
+                    and _group_hits(ctx, "inner.md") == 1,
+                )
+                ctx.expect(
+                    widened is True,
+                    f"nach Chip-× notes.md={_group_hits(ctx, 'notes.md')} "
+                    f"inner.md={_group_hits(ctx, 'inner.md')}",
+                )
 
         finally:
             if pinned:

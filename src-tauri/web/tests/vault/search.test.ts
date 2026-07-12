@@ -35,6 +35,7 @@ function buildDom(): void {
                 <input id="vault-search-input" type="search" />
                 <button id="vault-search-case" aria-pressed="false">Aa</button>
                 <button id="vault-search-word" aria-pressed="false">W</button>
+                <div id="vault-search-scope" hidden></div>
             </div>
             <div id="vault-search-results" hidden>
                 <div id="vault-search-status"></div>
@@ -423,5 +424,133 @@ describe('vault/search — Strg+Shift+F', () => {
             key: 'F', ctrlKey: true, shiftKey: true, bubbles: true,
         }));
         expect(document.activeElement).toBe(document.getElementById('vault-search-input'));
+    });
+});
+
+describe('vault/search — Ordner-Scope (S3)', () => {
+    it('searchInFolder setzt Chip + re-triggert Suche mit scope', async () => {
+        vi.useFakeTimers();
+        const { search } = await importAndInit();
+        type('needle');
+        await vi.advanceTimersByTimeAsync(300);
+        await flushMicro();
+
+        search.searchInFolder('/vault/sub');
+        await flushMicro();
+
+        const chip = document.querySelector('#vault-search-scope .vs-scope-chip');
+        expect(chip).not.toBeNull();
+        expect(chip!.querySelector('.vs-scope-name')!.textContent).toBe('sub');
+        const starts = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_search_start');
+        expect(starts[starts.length - 1][1]).toMatchObject({ query: 'needle', scope: '/vault/sub' });
+    });
+
+    it('Chip-× entfernt den Scope und re-triggert vault-weit', async () => {
+        vi.useFakeTimers();
+        const { search } = await importAndInit();
+        type('needle');
+        await vi.advanceTimersByTimeAsync(300);
+        await flushMicro();
+        search.searchInFolder('/vault/sub');
+        await flushMicro();
+
+        (document.querySelector('.vs-scope-x') as HTMLElement)
+            .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+
+        expect(document.getElementById('vault-search-scope')!.hidden).toBe(true);
+        const starts = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_search_start');
+        expect(starts[starts.length - 1][1]).toMatchObject({ query: 'needle', scope: null });
+    });
+
+    it('Scope-Fehler (scope:-Präfix) → Chip weg + Fallback vault-weit', async () => {
+        vi.useFakeTimers();
+        tauri.invoke.mockImplementation((cmd: string, args: any) => {
+            if (cmd === 'vault_search_start') {
+                // Backend präfixt Scope-Fehler mit `scope:`.
+                if (args && args.scope) return Promise.reject('scope:Suchpfad existiert nicht: /vault/gone');
+                return Promise.resolve(nextRunId++);
+            }
+            if (cmd === 'search_options_get') return Promise.resolve({});
+            return Promise.resolve(undefined);
+        });
+        const { search } = await importAndInit();
+        type('needle');
+        await vi.advanceTimersByTimeAsync(300);
+        await flushMicro();
+
+        search.searchInFolder('/vault/gone'); // → scoped start rejectet mit scope:
+        await flushMicro();
+
+        expect(document.getElementById('vault-search-scope')!.hidden).toBe(true);
+        const scopedStarts = tauri.invoke.mock.calls.filter(
+            (c) => c[0] === 'vault_search_start' && c[1] && c[1].scope,
+        );
+        const vaultStarts = tauri.invoke.mock.calls.filter(
+            (c) => c[0] === 'vault_search_start' && c[1] && !c[1].scope,
+        );
+        expect(scopedStarts.length).toBe(1); // ein Scope-Versuch
+        expect(vaultStarts.length).toBeGreaterThanOrEqual(2); // initial + Fallback
+    });
+
+    it('generischer Startfehler (ohne scope:-Präfix) → Scope BLEIBT, kein Fallback', async () => {
+        vi.useFakeTimers();
+        tauri.invoke.mockImplementation((cmd: string, args: any) => {
+            if (cmd === 'vault_search_start') {
+                if (args && args.scope) return Promise.reject('irgendein IPC-Fehler');
+                return Promise.resolve(nextRunId++);
+            }
+            if (cmd === 'search_options_get') return Promise.resolve({});
+            return Promise.resolve(undefined);
+        });
+        const { search } = await importAndInit();
+        type('needle');
+        await vi.advanceTimersByTimeAsync(300);
+        await flushMicro();
+
+        search.searchInFolder('/vault/x'); // scoped start rejectet generisch
+        await flushMicro();
+
+        // Chip bleibt, kein Vault-weiter Fallback.
+        expect(document.getElementById('vault-search-scope')!.hidden).toBe(false);
+        const scopedStarts = tauri.invoke.mock.calls.filter(
+            (c) => c[0] === 'vault_search_start' && c[1] && c[1].scope,
+        );
+        const vaultStarts = tauri.invoke.mock.calls.filter(
+            (c) => c[0] === 'vault_search_start' && c[1] && !c[1].scope,
+        );
+        expect(scopedStarts.length).toBe(1);
+        expect(vaultStarts.length).toBe(1); // nur der initiale Lauf, kein Fallback
+        expect(document.getElementById('vault-search-status')!.textContent).toContain('Fehler');
+    });
+
+    it('Status: hits=0 + skippedLarge zeigt beides (Basissatz + Zusatz)', async () => {
+        vi.useFakeTimers();
+        await importAndInit();
+        type('needle');
+        await vi.advanceTimersByTimeAsync(300);
+        await flushMicro();
+        tauri.emitEvent('search:done', {
+            runId: 1,
+            stats: { filesScanned: 2, filesMatched: 0, hits: 0, skippedLarge: 1, truncated: false, elapsedMs: 3 },
+        });
+        await flushMicro();
+        const status = document.getElementById('vault-search-status')!.textContent || '';
+        expect(status).toContain('Keine Treffer');
+        expect(status).toContain('übersprungen');
+    });
+
+    it('Leere-Vault-Hinweis bei filesScanned==0 ohne Scope', async () => {
+        vi.useFakeTimers();
+        await importAndInit();
+        type('needle');
+        await vi.advanceTimersByTimeAsync(300);
+        await flushMicro();
+        tauri.emitEvent('search:done', {
+            runId: 1,
+            stats: { filesScanned: 0, filesMatched: 0, hits: 0, skippedLarge: 0, truncated: false, elapsedMs: 1 },
+        });
+        await flushMicro();
+        expect(document.getElementById('vault-search-status')!.textContent).toContain('Keine durchsuchbaren Dateien im Vault');
     });
 });

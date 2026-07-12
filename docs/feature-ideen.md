@@ -15,10 +15,11 @@ lohnend. **Nichts hiervon ist beschlossen** — reine Ideensammlung.
 
 Diese Ideen kamen von 2–4 Quellen unabhängig. Das ist der beste Startpunkt.
 
-1. **⭐ Vault-weite Volltextsuche** — durchsucht alle MD/Text-Dateien im Vault
-   (Rust-Walk + In-Memory/on-demand-Suche), Treffer-Snippets, Klick öffnet die
-   Stelle. *Höchster Produktivitätsgewinn für große Vaults.* `[M–L]`
-   (Quelle: **alle 3** — codex/agy/grok, alle mit ⭐)
+1. **⭐ Vault-weite Volltextsuche** — ✅ **umgesetzt (S1–S3, 2026-07-12)**,
+   siehe [`spec-vault-search.md`](spec-vault-search.md): Rust-Walk +
+   on-demand-Suche, Treffer-Snippets, Klick öffnet die Stelle, Ordner-Scope
+   via Kontextmenü, Strg+Shift+F. *Höchster Produktivitätsgewinn für große
+   Vaults.* `[M–L]` (Quelle: **alle 3** — codex/agy/grok, alle mit ⭐)
 2. **⭐ Wikilinks `[[Name]]` + Backlinks-Panel** — klickbare Vault-interne Links
    (Vorschau + Export), „fehlt? → anlegen"-Dialog; dazu pro Dokument anzeigen, wer
    darauf verlinkt. `[M–L]` (Quelle: **alle 3**)

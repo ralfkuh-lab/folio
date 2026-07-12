@@ -298,6 +298,48 @@ html.theme-dark .vault-region .git-branch--detached {
   border-color: var(--rail-accent);
 }
 
+/* Ordner-Scope-Chip (S3) */
+.vault-search-scope { margin-top: 5px; }
+.vs-scope-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 2px 4px 2px 6px;
+  border: 1px solid var(--rail-accent);
+  border-radius: 10px;
+  background: var(--rail-selected-bg);
+  color: var(--rail-selected-fg);
+  font-size: 11px;
+}
+.vs-scope-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  width: 12px;
+  height: 12px;
+  color: var(--rail-accent);
+}
+.vs-scope-icon svg { width: 12px; height: 12px; }
+.vs-scope-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vs-scope-x {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 2px;
+  border-radius: 3px;
+}
+.vs-scope-x:hover { background: var(--rail-hover-bg); }
+
 /* Umschalten Tree <-> Ergebnisse */
 .vault-region.vault-searching ul#vault-tree { display: none; }
 .vault-search-results { display: none; }

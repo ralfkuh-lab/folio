@@ -98,6 +98,13 @@ let pendingJump: Jump | null = null;
 // unseren Sprung mit Cursor/Scroll aus dem Entry überschreiben.
 let navRestoreSkipPath: string | null = null;
 
+// Ordner-Scope (S3): absoluter, normalisierter Pfad oder null = gesamter Vault.
+// Flüchtig (nicht persistiert).
+let scopePath: string | null = null;
+let scopeEl: HTMLElement | null = null;
+const FOLDER_SEARCH_SVG =
+    '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4a1 1 0 0 1 1-1h3l1.5 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/></svg>';
+
 function $(id: string): HTMLElement | null {
     return document.getElementById(id);
 }
@@ -212,6 +219,7 @@ function runSearch(q: string): void {
         return;
     }
     const myGen = ++gen;
+    const scopedAtStart = scopePath;
     cancelCurrent();
     pendingHits = {};
     pendingDone = {};
@@ -220,23 +228,54 @@ function runSearch(q: string): void {
     activeIdx = -1;
     renderResults();
     setStatus('Suche läuft …');
-    safeInvoke<number>(
-        'vault_search_start',
-        { query: q, caseSensitive, wholeWord },
-        'vault_search_start',
-    ).then((runId) => {
-        if (typeof runId !== 'number') {
-            if (myGen === gen) setStatus('Fehler beim Starten der Suche');
-            return;
-        }
-        if (runId > maxRunId) maxRunId = runId;
-        if (myGen !== gen) {
-            // Während des Await von einer neueren Suche überholt → sofort canceln.
-            safeInvoke('vault_search_cancel', { runId }, 'vault_search_cancel', 'debug');
-            return;
-        }
-        adoptRun(runId);
-    });
+    // Raw invoke (nicht safeInvoke), damit wir die Scope-Fehler
+    // (RootNotFound/InvalidScope) vom generischen Startfehler unterscheiden.
+    rawInvoke('vault_search_start', {
+        query: q,
+        scope: scopedAtStart,
+        caseSensitive,
+        wholeWord,
+    }).then(
+        (runId: any) => {
+            if (typeof runId !== 'number') {
+                if (myGen === gen) setStatus('Fehler beim Starten der Suche');
+                return;
+            }
+            if (runId > maxRunId) maxRunId = runId;
+            if (myGen !== gen) {
+                // Während des Await von einer neueren Suche überholt → canceln.
+                safeInvoke('vault_search_cancel', { runId }, 'vault_search_cancel', 'debug');
+                return;
+            }
+            adoptRun(runId);
+        },
+        (err: unknown) => {
+            if (myGen !== gen) return;
+            // Nur die beiden Scope-Fehler (Backend-Präfix `scope:`) lösen den
+            // Fallback aus — Chip entfernen + vault-weit weitersuchen. Jeder
+            // andere Fehler behält den Scope-Chip und zeigt einen generischen
+            // Startfehler.
+            if (scopedAtStart && String(err).startsWith('scope:')) {
+                folioLog.warn('search', 'scoped search failed → fallback', {
+                    error: String(err),
+                });
+                scopePath = null;
+                renderScopeChip();
+                runSearch(q);
+                setStatus('Ordner existiert nicht mehr — Suche im gesamten Vault');
+            } else {
+                setStatus('Fehler beim Starten der Suche');
+            }
+        },
+    );
+}
+
+function rawInvoke(cmd: string, args?: any): Promise<any> {
+    const core = window.__TAURI__ && window.__TAURI__.core;
+    if (!core || typeof core.invoke !== 'function') {
+        return Promise.reject(new Error('invoke unavailable'));
+    }
+    return core.invoke(cmd, args);
 }
 
 function adoptRun(runId: number): void {
@@ -290,13 +329,29 @@ function applyDone(payload: any): void {
     finalStatus();
 }
 
+const EMPTY_VAULT_HINT =
+    'Keine durchsuchbaren Dateien im Vault — pinne einen Ordner oder starte die Suche per Rechtsklick auf einen Ordner';
+
 function finalStatus(): void {
     if (!doneStats) return;
     const s = doneStats;
-    let msg = `${s.hits} Treffer in ${s.filesMatched} Dateien (${s.elapsedMs} ms)`;
+    // 1. Basissatz wählen …
+    let msg: string;
+    if (s.hits === 0) {
+        // Vault-Scope + 0 gescannte Dateien = nichts Durchsuchbares im Vault
+        // (leere Pins ODER nur Binärdateien); Ordner-Scope oder Pins mit
+        // 0 Treffern liefern filesScanned>0.
+        if (scopePath === null && s.filesScanned === 0) {
+            msg = EMPTY_VAULT_HINT;
+        } else {
+            msg = `Keine Treffer (${s.filesScanned} Dateien durchsucht)`;
+        }
+    } else {
+        msg = `${s.hits} Treffer in ${s.filesMatched} Dateien (${s.elapsedMs} ms)`;
+    }
+    // 2. … DANN die Zusätze anhängen (auch im „alle zu groß"-Fall sichtbar).
     if (s.truncated) msg += ' — Ergebnis gekürzt, Suchbegriff verfeinern';
     if (s.skippedLarge > 0) msg += ` — ${s.skippedLarge} große Datei(en) übersprungen`;
-    if (s.hits === 0) msg = `Keine Treffer (${s.filesScanned} Dateien durchsucht)`;
     setStatus(msg);
 }
 
@@ -623,6 +678,60 @@ function toggleOpt(which: 'case' | 'word'): void {
     if (q !== '') runSearch(q); // laufende Suche mit neuen Optionen re-triggern
 }
 
+// ----- Ordner-Scope (S3) ----------------------------------------------------
+
+function scopeFolderName(p: string): string {
+    const trimmed = p.replace(/\/+$/, '');
+    const idx = trimmed.lastIndexOf('/');
+    return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
+}
+
+function renderScopeChip(): void {
+    if (!scopeEl) return;
+    if (!scopePath) {
+        scopeEl.hidden = true;
+        scopeEl.innerHTML = '';
+        return;
+    }
+    scopeEl.hidden = false;
+    scopeEl.innerHTML =
+        '<span class="vs-scope-chip" title="' +
+        escapeHtml(scopePath) +
+        '"><span class="vs-scope-icon">' +
+        FOLDER_SEARCH_SVG +
+        '</span><span class="vs-scope-name">' +
+        escapeHtml(scopeFolderName(scopePath)) +
+        '</span><button type="button" class="vs-scope-x" aria-label="Ordner-Scope entfernen" title="Ordner-Scope entfernen">×</button></span>';
+}
+
+function retriggerIfQuery(): void {
+    const q = input ? input.value : '';
+    if (Array.from(q).length >= MIN_QUERY_LEN) {
+        // enterSearch, falls das Panel noch im Baum-Modus stand (Scope aus dem
+        // Kontextmenü bei bereits gefülltem Suchfeld) — sonst blieben die
+        // Ergebnisse unsichtbar.
+        enterSearch();
+        runSearch(q);
+    }
+}
+
+/** Kontextmenü „In diesem Ordner suchen": Scope setzen, Panel fokussieren
+ *  (Rail öffnen falls zu), laufende/letzte Suche mit neuem Scope re-triggern. */
+export function searchInFolder(path: string): void {
+    if (!path) return;
+    scopePath = normalizePath(path);
+    renderScopeChip();
+    focusVaultSearch();
+    retriggerIfQuery();
+}
+
+function clearScope(): void {
+    if (!scopePath) return;
+    scopePath = null;
+    renderScopeChip();
+    retriggerIfQuery();
+}
+
 // ----- Strg+Shift+F / Menü --------------------------------------------------
 
 export function focusVaultSearch(): void {
@@ -657,9 +766,12 @@ export function initVaultSearch(d: Deps): () => void {
     resultsEl = $('vault-search-results');
     statusEl = $('vault-search-status');
     listEl = $('vault-search-list');
+    scopeEl = $('vault-search-scope');
     if (!input || !resultsEl || !listEl) return () => {};
 
     optionsTouched = false;
+    scopePath = null;
+    renderScopeChip();
 
     // Persistierte Optionen laden — aber einen inzwischen vom User gesetzten
     // Zustand nicht überschreiben.
@@ -685,6 +797,10 @@ export function initVaultSearch(d: Deps): () => void {
     if (wordBtn) wordBtn.addEventListener('click', wordHandler);
     listEl.addEventListener('click', onResultClick as EventListener);
     listEl.addEventListener('auxclick', onResultAux as EventListener);
+    const scopeClick = (e: MouseEvent) => {
+        if ((e.target as HTMLElement).closest('.vs-scope-x')) clearScope();
+    };
+    if (scopeEl) scopeEl.addEventListener('click', scopeClick as EventListener);
     window.addEventListener('folio-doc-kind-changed', onDocKindChanged);
     document.addEventListener('keydown', onGlobalKey, { capture: true });
 
@@ -699,6 +815,7 @@ export function initVaultSearch(d: Deps): () => void {
     const localCase = caseBtn;
     const localWord = wordBtn;
     const localList = listEl;
+    const localScope = scopeEl;
     return function dispose(): void {
         localInput.removeEventListener('input', onInput);
         localInput.removeEventListener('keydown', onInputKeydown);
@@ -706,6 +823,7 @@ export function initVaultSearch(d: Deps): () => void {
         if (localWord) localWord.removeEventListener('click', wordHandler);
         localList.removeEventListener('click', onResultClick as EventListener);
         localList.removeEventListener('auxclick', onResultAux as EventListener);
+        if (localScope) localScope.removeEventListener('click', scopeClick as EventListener);
         window.removeEventListener('folio-doc-kind-changed', onDocKindChanged);
         document.removeEventListener('keydown', onGlobalKey, { capture: true } as any);
         unlistenPromises.forEach((p) => p.then((fn) => fn()).catch(() => {}));

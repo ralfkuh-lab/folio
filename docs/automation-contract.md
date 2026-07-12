@@ -223,7 +223,10 @@ Request:
   rekursiv. Fehlt/`null` → **gesamter Vault** (Union aller angepinnten Ordner
   rekursiv + angepinnter Einzeldateien; „Zuletzt geöffnet" ist nicht Teil des
   Scopes). Ein nicht existenter Ordner-Scope → HTTP 400. Tote Pins im
-  Vault-Scope werden still übersprungen.
+  Vault-Scope werden still übersprungen. In der WebView entspricht `scope`
+  dem Ordner-Scope-Chip (Kontextmenü „In diesem Ordner suchen" → `vault/search.ts`);
+  ein relativer/gelöschter Scope liefert im Command-Pfad `InvalidScope`/`RootNotFound`,
+  worauf das Frontend den Chip entfernt und vault-weit weitersucht.
 - `caseSensitive`/`wholeWord` (optional, Default `false`): Groß-/Kleinschreibung
   bzw. ganze Wörter (Unicode-Wortgrenzen). Case-insensitive nutzt Unicode
   *simple* case folding (`ß` faltet auf sich selbst, nicht auf `ss`).

@@ -81,6 +81,14 @@
 
 ## Niedrige Priorität
 
+- **Vault-Volltextsuche — Folgepunkte** (Kernfeature S1–S3 komplett
+  2026-07-12, Spec [`docs/spec-vault-search.md`](docs/spec-vault-search.md)):
+  paralleler Walk (`WalkBuilder::build_parallel`), falls große Pins
+  spürbar werden; Regex-Toggle im Suchfeld (Feature-Idee #10 — Backend
+  kompiliert ohnehin regex, wäre ein Einzeiler); Opt-in-Toggle für
+  hidden/gitignorierte Dateien; optionaler persistenter Index (tantivy)
+  nur bei echtem Bedarf (bewusst verworfen für V1).
+
 - **KI-Aktionen — Folgepunkte** (Kernfeature 2026-07-10 komplett, Spec
   [`docs/spec-ki-actions.md`](docs/spec-ki-actions.md)): Kontextmenü
   der Selektion mit Favoriten; Shortcuts pro Favorit (wartet auf die

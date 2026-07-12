@@ -34,9 +34,11 @@ angepinnten Einträge. Daraus folgt:
   gitignore-Filter gelten nur für den Verzeichnis-Walk (bewusst: Pin =
   Nutzer-Intention; der Vault-Baum zeigt gepinnte Dateien ebenfalls
   unabhängig von diesen Filtern). Kind-/Größen-/NUL-Filter greifen weiterhin.
-- Nichts gepinnt + kein Ordner-Scope → leeres Ergebnis mit Hinweistext
-  („Keine angepinnten Ordner — pinne einen Ordner oder starte die
-  Suche per Rechtsklick auf einen Ordner“).
+- Nichts Durchsuchbares (keine Pins **oder** nur Binärdateien) + kein
+  Ordner-Scope → leeres Ergebnis mit Hinweistext („Keine durchsuchbaren
+  Dateien im Vault — pinne einen Ordner oder starte die Suche per
+  Rechtsklick auf einen Ordner“). Erkennbar an `filesScanned == 0` bei
+  Vault-Scope (kein Backend-Flag in V1).
 
 ## Architektur-Entscheidungen (verbindlich)
 
@@ -204,19 +206,29 @@ API-first → testbar wie bei den Tabs (T2). **TDD-Zusatz (vereinbart
       durch Aa-Toggle-E2E bestätigt). Orchestrator-Endabnahme: Gates
       nachgefahren, Fix-Stichproben, Screenshot-Sichtprüfung.
 
-### Etappe S3 — Ordner-Scope + Feinschliff
+### Etappe S3 — Ordner-Scope + Feinschliff ✅ FERTIG (2026-07-12)
 
-- [ ] Kontextmenü-Item „In diesem Ordner suchen“ (nur Verzeichnisse)
+- [x] Kontextmenü-Item „In diesem Ordner suchen“ (nur Verzeichnisse)
       → Scope-Chip, Fokus, Re-Trigger; Chip entfernen → Gesamt-Vault.
-- [ ] Scope-Validierung (Ordner existiert nicht mehr → Chip entfernen
+- [x] Scope-Validierung (Ordner existiert nicht mehr → Chip entfernen
       + Statushinweis).
-- [ ] Leere-Pins-Hinweistext; `search:done`-Stats in der Statuszeile
+- [x] Leere-Pins-Hinweistext; `search:done`-Stats in der Statuszeile
       (inkl. übersprungene Groß-Dateien).
-- [ ] Doku: CLAUDE.md-Abschnitt (Konventionen), automation-contract
-      final, TODO.md-Abgleich, feature-ideen.md-Eintrag als „in
-      Arbeit/fertig“ markieren.
-- [ ] E2E-Erweiterung: Ordner-Scope über echtes Kontextmenü-Klicken;
+- [x] Doku: CLAUDE.md-Abschnitt (Konventionen), automation-contract
+      final, TODO.md-Abgleich, feature-ideen.md-Eintrag als „✅ umgesetzt“
+      markiert.
+- [x] E2E-Erweiterung: Ordner-Scope über echtes Kontextmenü-Klicken
+      (mit aktiver Query = Re-Trigger-Pfad, Exklusivitäts-Asserts);
       voller Suiten-Lauf grün.
+- [x] **Kreuz-Review codex (gpt-5.6-sol high)** (agy: OAuth abgelaufen,
+      für die kleine Etappe bewusst nur ein Zweit-Reviewer) → Fix-Paket
+      umgesetzt: Scope-Fehler-Klassifikation (`scope:`-Präfix, Fallback
+      nur bei echtem Scope-Fehler), finalStatus-Reihenfolge
+      (skippedLarge bei 0 Treffern sichtbar), neutraler
+      Leere-Vault-Text, E2E-Härtung, CLAUDE.md-Probe-Formulierung.
+      Orchestrator-Endabnahme: Gates nachgefahren, Diff-Review.
+
+**Status: Feature komplett — S1–S3 abgeschlossen (2026-07-13).**
 
 ## Risiken / bewusste Entscheidungen
 

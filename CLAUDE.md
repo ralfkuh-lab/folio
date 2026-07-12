@@ -171,6 +171,39 @@ sonst lehnt Tauri den Build ab.
   Kindern), Drop-**Ziel** der gesamte Subtree. Persistenz unverändert
   über `workspace_reorder_pinned`. Kein `draggable`-Attribut mehr.
 - **Gitignore-Dimming im Vault**: Ignorierte Dateien/Verzeichnisse (Pins + Kinder aufgeklappter Ordner) bekommen `ignored`-Klasse auf `li.node`; nur eigene Row wird via `> .row` CSS gedimmt (opacity 0.55). Nutzt `ignore`-Crate (nur GitignoreBuilder + matched_path_or_any_parents; kein WalkBuilder, kein git-Binary, kein neuer Watcher — bestehende expand/refresh + VaultWatcher reichen). `repo_root` aus git_branch. Recent-Liste bleibt unberührt.
+- **Vault-Volltextsuche** (`search.rs` + `commands/search_cmd.rs` +
+  `automation/handlers/search.rs`; Frontend `vault/search.ts` +
+  `#vault-search`; Spec + Etappen in
+  [`docs/spec-vault-search.md`](docs/spec-vault-search.md)):
+  Backend-Suchkern `run_search` läuft single-threaded über
+  `ignore::WalkBuilder` (hidden/gitignore-Filter), Filter nur
+  `FileKind::{Markdown,Text}` + 2-MiB-Cap (`skipped_large`) + NUL-Sniff
+  (8 KiB); `regex`-Literal escaped mit `(?i)`/`\b…\b`. **Scope-Modell**:
+  Vault = Union angepinnter Ordner (rekursiv) + Einzeldateien mit
+  Overlap-Dedup; **explizit gepinnte Einzeldateien umgehen den
+  hidden-/gitignore-Filter bewusst** (Kind-/Größen-/NUL-Filter greifen
+  weiter); Ordner-Scope über Kontextmenü „In diesem Ordner suchen"
+  (`resolve_scope` → `RootNotFound`/`InvalidScope` bei totem/relativem
+  Ordner). Tote Vault-Pins werden STILL verworfen. **Caps**: 50
+  Zeilen-Hits/Datei, 500 gesamt — beim exakten Erreichen läuft der Walk
+  in einem leichten **Probe-Modus** weiter (liest jeden Kandidaten
+  vollständig ein, bricht aber die Match-Prüfung beim ersten Treffer ab)
+  und setzt `truncated` nur bei real weggefallenen Treffern.
+  Spalten/Ranges in **UTF-16-Code-Units** (Monaco-Konvention),
+  Snippet-Fensterung ~240 (Fenster reicht immer bis zum Ende des 1.
+  Matches). **Frontend**: `vault_search_start`→`runId`, Events
+  `search:hits`/`search:done`; Stale-Guard per lokaler Generation +
+  `maxRunId` (Events abgebrochener Läufe verworfen, Events eines noch
+  nicht adoptierten neueren runId gepuffert); Sprung zur Fundstelle
+  korreliert über das state-synchrone CustomEvent `folio-doc-kind-changed`
+  + `getCurrentPath()` (erbt den seq-Stale-Guard), Edit/Split via
+  `FolioEditor.revealMatch(line,colUtf16,lenUtf16)`, View-Mode via
+  Find-Bar nach **Finder-Settle** (`folio-find-state`-Quiesce-Debounce,
+  Ordinal auf `total-1` geklammert). Bei `tab_open`-Öffnen überspringt
+  `consumeNavRestoreSkip(path)` (main.ts navigation:changed) den
+  Entry-Restore einmalig, damit er den Sprung nicht überschreibt.
+  Aa/W-Toggles persistieren in `panel_state.rs`; Scope + Query flüchtig.
+  Automation: `POST /search` (synchron, `{files,stats}`).
 - **main-Badge-Farbe**: `git-branch--main` (und dark) jetzt `var(--rail-accent)` statt `--rail-fg-muted` (Detached bleibt rot, Feature-Branches bernstein) — Unterscheidbarkeit zum Dimming.
 - **Dateityp-Klassifizierung**: zentral in `file_kind.rs`
   (`FileKind::{Markdown, Text, Image, Binary}`, `classify(path)`).

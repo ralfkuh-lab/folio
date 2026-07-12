@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::search::{self, FileResult, SearchOptions, SearchRoots, SearchScope};
+use crate::search::{self, FileResult, SearchError, SearchOptions, SearchRoots, SearchScope};
 use crate::state::AppState;
 
 /// Löst den Such-Umfang aus den angepinnten Workspace-Einträgen auf.
@@ -50,8 +50,16 @@ pub async fn vault_search_start(
     let roots = resolve_roots(&state, scope)?;
 
     // Synchrone Vorabprüfung, damit QueryTooShort/RootNotFound als Command-Err
-    // beim Aufrufer landen statt nur als Event.
-    search::validate(&roots, &query, &options).map_err(|error| error.to_string())?;
+    // beim Aufrufer landen statt nur als Event. Die beiden Scope-Fehler
+    // (toter/relativer Ordner-Scope) bekommen ein stabiles `scope:`-Präfix,
+    // das das Frontend parst, um NUR dann auf die Vault-weite Suche
+    // zurückzufallen und den Scope-Chip zu entfernen.
+    search::validate(&roots, &query, &options).map_err(|error| match error {
+        SearchError::RootNotFound(_) | SearchError::InvalidScope(_) => {
+            format!("scope:{error}")
+        }
+        other => other.to_string(),
+    })?;
 
     let run_id = state.search_run_seq.fetch_add(1, Ordering::Relaxed) + 1;
     let cancel = Arc::new(AtomicBool::new(false));

@@ -12,6 +12,7 @@ type Deps = {
 
 import { safeInvoke } from '../util/log';
 import { confirmRunFile, showConfirmDialog, showRenameDialog } from '../ui/dialogs';
+import { searchInFolder } from './search';
 
 // Monochrome 16x16-Feather-Icons je data-act. Kein width/height im SVG
 // (CSS steuert die Groesse), stroke=currentColor faerbt mit Hover/Theme mit.
@@ -29,6 +30,7 @@ const ICONS: Record<string, string> = {
     terminal: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="10" rx="1"/><path d="M5 7l2 2-2 2M9 11h3"/></svg>',
     copy: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1"/><path d="M3.5 10.5H3a.5.5 0 0 1-.5-.5V3a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 .5.5v.5"/></svg>',
     delete: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5h10M6.5 4.5V3a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1.5M5 4.5l.5 8a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1l.5-8"/></svg>',
+    'search-folder': '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>',
 };
 
 // Baut ein Kontextmenue-Item mit Icon + Label. Ersetzt die frueheren
@@ -88,6 +90,7 @@ export function openContextMenu(
     // Verzeichnis: „Neue Datei…" wird erstes Item; Datei: in der mittleren
     // Aktions-Gruppe bei „Umbenennen".
     if (isDir) actions.push(item('new-file', 'Neue Datei…'));
+    if (isDir) actions.push(item('search-folder', 'In diesem Ordner suchen'));
     if (!isDir) actions.push(item('rename', 'Umbenennen'));
     if (!isDir) actions.push(item('new-file', 'Neue Datei…'));
     if (!inPinned) actions.push(item('pin', 'Anpinnen'));
@@ -249,6 +252,8 @@ export function initContextMenu(d: Deps): void {
             safeInvoke('workspace_unpin', { path }, 'workspace_unpin');
         } else if (act === 'remove-recent') {
             safeInvoke('workspace_remove_recent', { path }, 'workspace_remove_recent');
+        } else if (act === 'search-folder' && isDir) {
+            searchInFolder(path);
         } else if (act === 'rename') {
             startInlineRename(path);
         } else if (act === 'show') {
