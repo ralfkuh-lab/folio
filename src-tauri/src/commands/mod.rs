@@ -7,6 +7,7 @@ pub mod export;
 pub mod file;
 pub mod icon;
 pub mod nav;
+pub mod search_cmd;
 pub mod tabs;
 pub mod theme;
 pub mod vault_cmd;

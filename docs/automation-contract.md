@@ -198,6 +198,99 @@ und ungültige oder nicht existente Dateipfade HTTP 400.
   mit dem vollen Payload; kein Ack (wie andere reine UI-Öffner). Die Find-Bar
   ignoriert Aufrufe bei `kind-image`/`kind-binary`.
 
+### Vault-Suche
+
+`POST /search` durchsucht die angepinnten Vault-Einträge (bzw. einen Ordner)
+und liefert das **komplette** Ergebnis synchron zurück (kein Streaming, kein
+Frontend-Roundtrip — die Route ruft den Suchkern direkt in einem
+Blocking-Task).
+
+Request:
+
+```json
+{
+  "query": "needle",
+  "scope": "/abs/pfad/zum/ordner",
+  "caseSensitive": false,
+  "wholeWord": false,
+  "timeoutMs": 5000
+}
+```
+
+- `query` (Pflicht): Suchbegriff, wird als Literal gematcht (kein Regex).
+  Mindestlänge **2 Zeichen** (Zeichen, nicht Bytes) → sonst HTTP 400.
+- `scope` (optional): absoluter Ordnerpfad → durchsucht genau diesen Ordner
+  rekursiv. Fehlt/`null` → **gesamter Vault** (Union aller angepinnten Ordner
+  rekursiv + angepinnter Einzeldateien; „Zuletzt geöffnet" ist nicht Teil des
+  Scopes). Ein nicht existenter Ordner-Scope → HTTP 400. Tote Pins im
+  Vault-Scope werden still übersprungen.
+- `caseSensitive`/`wholeWord` (optional, Default `false`): Groß-/Kleinschreibung
+  bzw. ganze Wörter (Unicode-Wortgrenzen). Case-insensitive nutzt Unicode
+  *simple* case folding (`ß` faltet auf sich selbst, nicht auf `ss`).
+- `timeoutMs` (optional): Zeitlimit; danach wird der Lauf abgebrochen und
+  HTTP 500 geliefert.
+
+Filter (wie die Vault-Engine): nur `FileKind::Markdown`/`Text`, gitignorierte
+und versteckte (Dotfile-)Einträge werden übersprungen, Dateien > 2 MiB und
+solche mit NUL-Bytes in den ersten 8 KiB ebenfalls (Letztere in `stats`
+gezählt bzw. gar nicht gelesen). **Explizit gepinnte Einzeldateien werden immer
+durchsucht** — hidden-/gitignore-Filter gelten nur für den Verzeichnis-Walk
+(bewusst: Pin = Nutzer-Intention); Kind-/Größen-/NUL-Filter bleiben.
+
+Response:
+
+```json
+{
+  "files": [
+    {
+      "path": "/abs/pfad/note.md",
+      "fileName": "note.md",
+      "hits": [
+        {
+          "line": 12,
+          "colUtf16": 6,
+          "lenUtf16": 6,
+          "snippet": "äß😀 needle …",
+          "snippetOffsetUtf16": 0,
+          "ranges": [[5, 6]]
+        }
+      ],
+      "truncated": false
+    }
+  ],
+  "stats": {
+    "filesScanned": 3,
+    "filesMatched": 1,
+    "hits": 1,
+    "skippedLarge": 0,
+    "truncated": false,
+    "elapsedMs": 4
+  }
+}
+```
+
+Feldsemantik:
+
+- Ein `hit` entspricht **einer Treffer-Zeile** mit allen Match-Ranges dieser
+  Zeile. `line` ist 1-basiert.
+- **Spalten in UTF-16-Code-Units** (Monaco-Konvention): `colUtf16` (1-basiert)
+  und `lenUtf16` beziehen sich auf den ersten Treffer der Zeile.
+- `snippet` ist die Zeile ohne `\r`; überlange Zeilen werden um den ersten
+  Treffer gefenstert. `snippetOffsetUtf16` ist der UTF-16-Offset, an dem der
+  Snippet in der Originalzeile beginnt (0, wenn nicht gefenstert).
+- `ranges` sind `[startUtf16, lenUtf16]`-Paare, **0-basiert relativ zum
+  `snippet`** (für `<mark>`-Markup: `snippetOffsetUtf16 + range.start ==
+  colUtf16 - 1` für den ersten Treffer).
+- Caps: max. 50 Treffer-Zeilen pro Datei (`file.truncated`), max. 500
+  Treffer gesamt (`stats.truncated`) — kein stilles Abschneiden.
+- Pfade sind Forward-Slash-normalisiert.
+
+Die WebView nutzt für die Live-Suche stattdessen die Tauri-Commands
+`vault_search_start { query, scope?, caseSensitive, wholeWord } → runId` und
+`vault_search_cancel { runId }` mit den Events `search:hits { runId, files }`
+und `search:done { runId, stats }` (bzw. `{ runId, error }`). `POST /search`
+bündelt diesen Ablauf synchron für die Tests.
+
 ### Security-Gates (Middleware `security_guard`)
 
 Alle Requests durchlaufen vier Prüfungen (`automation/middleware.rs`):

@@ -245,6 +245,29 @@ class AutomationApi:
     def workspace_unpin(self, path: str) -> dict:
         return self._request("POST", "/workspace/unpin", {"path": path})
 
+    def search(
+        self,
+        query: str,
+        scope: Optional[str] = None,
+        case_sensitive: bool = False,
+        whole_word: bool = False,
+        timeout_ms: Optional[int] = None,
+    ) -> dict:
+        body: dict = {
+            "query": query,
+            "caseSensitive": case_sensitive,
+            "wholeWord": whole_word,
+        }
+        if scope is not None:
+            body["scope"] = scope
+        transport_timeout = None
+        if timeout_ms is not None:
+            body["timeoutMs"] = timeout_ms
+            # HTTP-Transport-Timeout über das Backend-Limit heben, sonst
+            # bricht urllib vor der Backend-Antwort ab.
+            transport_timeout = max(self.timeout, timeout_ms / 1000 + 2)
+        return self._request("POST", "/search", body, timeout=transport_timeout)
+
     def history_back(self) -> dict:
         return self._request("POST", "/history/back", {})
 

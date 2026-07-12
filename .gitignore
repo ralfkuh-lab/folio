@@ -37,3 +37,4 @@ src-tauri/dist/about/avatar-options/
 
 # Temporäre Release-Notes-Arbeitsdatei (siehe docs/RELEASES.md)
 release-notes.md
+.herd-prompts/

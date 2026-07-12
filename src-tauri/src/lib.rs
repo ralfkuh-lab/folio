@@ -20,6 +20,7 @@ pub mod panel_state;
 pub mod pdf_export;
 mod persist;
 pub mod renderer;
+pub mod search;
 pub mod settings;
 pub mod state;
 pub mod tab_manager;
@@ -441,6 +442,8 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::vault_cmd::vault_build_tree,
             commands::vault_cmd::rail_resize,
             commands::vault_cmd::context,
+            commands::search_cmd::vault_search_start,
+            commands::search_cmd::vault_search_cancel,
             commands::nav::navigate,
             commands::nav::go_back,
             commands::nav::go_forward,

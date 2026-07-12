@@ -6,7 +6,9 @@ use axum::{
 use std::sync::{Arc, Mutex};
 
 use super::context::AutomationContext;
-use super::handlers::{console, document, dom, eval, screenshot, settings, state, tabs, ui, wait};
+use super::handlers::{
+    console, document, dom, eval, screenshot, search, settings, state, tabs, ui, wait,
+};
 use super::middleware as mw;
 use super::mock::MockAutomationState;
 
@@ -46,6 +48,7 @@ pub(super) fn build_router(context: AutomationContext) -> Router {
         .route("/find", post(ui::post_find))
         .route("/find/text", post(ui::post_find_text))
         .route("/eval", post(eval::post_eval))
+        .route("/search", post(search::post_search))
         .route("/sync/render", post(ui::post_sync_render))
         .route(
             "/editor/text",

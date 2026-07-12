@@ -92,6 +92,12 @@ pub struct AppState {
     /// vom User editiert ist. Geht in die Quit-Gates ein, weil der
     /// Backend-Dirty-Check (`tabs.any_dirty`) virtuelle Tabs nicht kennt.
     pub ai_review_dirty: AtomicBool,
+    /// Monotone runId-Quelle fuer Vault-Suchlaeufe (`commands::search_cmd`).
+    pub search_run_seq: AtomicU64,
+    /// Aktive Suchlaeufe: runId -> kooperatives Cancel-Flag. `vault_search_start`
+    /// registriert, der Blocking-Task raeumt beim Ende auf, `vault_search_cancel`
+    /// setzt das Flag.
+    pub search_cancels: Mutex<HashMap<u64, Arc<AtomicBool>>>,
     pub vault: Mutex<Vault>,
     pub vault_watcher: Mutex<VaultWatcher>,
     pub git_head_watcher: Mutex<GitHeadWatcher>,
@@ -156,6 +162,8 @@ impl AppState {
             ai_job_active: Mutex::new(None),
             ai_action_run_seq: AtomicU64::new(0),
             ai_review_dirty: AtomicBool::new(false),
+            search_run_seq: AtomicU64::new(0),
+            search_cancels: Mutex::new(HashMap::new()),
             vault: Mutex::new(Vault::new()),
             vault_watcher: Mutex::new(VaultWatcher::new()),
             git_head_watcher: Mutex::new(GitHeadWatcher::new()),
