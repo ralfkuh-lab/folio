@@ -394,6 +394,8 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
             commands::file::save_as::save_as,
             commands::file::close::close_document,
             commands::file::rename::rename_file,
+            commands::file::delete::trash_file,
+            commands::file::create::create_file,
             commands::file::image::save_clipboard_image,
             commands::file::image::save_file_image,
             commands::file::image::pick_image_file,

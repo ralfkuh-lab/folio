@@ -8,17 +8,26 @@ function $(id: string): HTMLElement | null { return document.getElementById(id);
 // Rename-Modal: gibt einen neuen Dateinamen (ohne Pfad) zurück oder null
 // bei Abbruch. Wird heute nicht aufgerufen — Rename geht ueber Inline-
 // Editor im Vault-Tree und einen nativen Save-Dialog im Backend.
-export function showRenameDialog(initialName: string, subtitle?: string): Promise<string | null> {
+export function showRenameDialog(
+    initialName: string,
+    subtitle?: string,
+    options?: { title?: string; okLabel?: string },
+): Promise<string | null> {
     return new Promise<string | null>(function (resolve) {
         const dialog = $('rename-dialog');
         const input = $('rename-input') as HTMLInputElement;
         const ok = $('rename-ok');
         const cancel = $('rename-cancel');
         const sub = $('rename-subtitle');
+        const title = $('rename-title');
         if (!dialog || !input || !ok || !cancel) {
             resolve(null);
             return;
         }
+        // Titel/Button pro Aufruf setzen (Dialog wird zwischen Umbenennen und
+        // „Neue Datei" geteilt) — ohne Angabe zurueck auf die Rename-Defaults.
+        if (title) title.textContent = options?.title || 'Umbenennen';
+        ok.textContent = options?.okLabel || 'Umbenennen';
         if (sub) sub.textContent = subtitle || 'Neuen Dateinamen eingeben:';
         input.value = initialName || '';
         dialog.hidden = false;

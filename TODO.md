@@ -1,19 +1,5 @@
 # TODO
 
-## Hohe Priorität
-
-- **Deb 0.5.0 (Build 2026-07-11 abends) installieren**: Sichtbarkeits-
-  Paket (Spinner/Puls + permanente Revert-Buttons) ist installiert und
-  bestätigt; NEU dazu der **Diff-Editor-Zombie-Fix** (User-Report
-  „Tasten zählen doppelt"): ab dem 2. Review wirkte jede Taste N-fach,
-  weil Monacos `createDiffEditor().dispose()` das Widget nicht abbaut
-  und seinen Keybinding-Handler aktiv lässt. Fix: DiffEditor-Instanz
-  persistent, pro Review nur `clear()`/`setContents` statt dispose/neu.
-  Empirisch verifiziert (nach 3 Reviews: 1 DiffEditor, Cursor +1),
-  codex-reviewt, E2E 45 prüft `getDiffEditors().length===1` an Review
-  2+3. Voll-Lauf 45/45 grün, vitest 276/276.
-  Install: `sudo apt install --reinstall ./folio.deb`.
-
 ## Mittlere Priorität
 
 - **E2E `30_tabs_ui` flaky — Fix 2026-07-09, Beobachtung offen**: dreimal
