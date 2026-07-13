@@ -636,31 +636,140 @@ describe('settings-dialog', () => {
 });
 
 
-describe('settings language select (i18n I1a)', () => {
-    it("language 'system' keeps select non-empty", () => {
+describe('settings language select (i18n I1a/I2)', () => {
+    const LANG_STRINGS = {
+        'settings.language.system': 'System',
+        'settings.language.hint': 'Sprachänderung wird beim nächsten Start aktiv.',
+        'settings.language.unknown': '{tag} (unbekannt)',
+        'settings.language.unknownHint':
+            'Unbekannte Sprache „{tag}“ — folio verwendet Englisch.',
+    };
+
+    async function resetI18n(): Promise<void> {
+        const { __resetI18nForTests } = await import('../../app/i18n/translate');
+        __resetI18nForTests();
+    }
+
+    async function seedLangCatalog(
+        languages: { tag: string; name: string }[] = [
+            { tag: 'de', name: 'Deutsch' },
+            { tag: 'en', name: 'English' },
+        ],
+    ): Promise<void> {
+        const { seedCatalog } = await import('../../app/i18n/translate');
+        seedCatalog({
+            tag: 'de',
+            locale: 'de-DE',
+            languages,
+            strings: LANG_STRINGS,
+        });
+    }
+
+    /** Echtes I2-Markup: leeres Select + Hint-Paragraph. */
+    function emptyI2Markup(): { sel: HTMLSelectElement; hint: HTMLElement } {
         document.body.innerHTML = `
-            <select id="settings-language">
-                <option value="system">System</option>
-                <option value="de">Deutsch</option>
-                <option value="en">English</option>
-            </select>`;
-        const sel = document.getElementById('settings-language') as HTMLSelectElement;
-        syncLanguageSelect(sel, 'system');
-        expect(sel.value).toBe('system');
-        expect(sel.selectedOptions.length).toBe(1);
-        expect(sel.selectedOptions[0].textContent).toContain('System');
+            <select id="settings-language" class="settings-input">
+              <!-- Options filled from i18n registry (System + native names) -->
+            </select>
+            <p class="settings-hint" id="settings-language-hint">Sprachänderung wird beim nächsten Start aktiv.</p>`;
+        return {
+            sel: document.getElementById('settings-language') as HTMLSelectElement,
+            hint: document.getElementById('settings-language-hint') as HTMLElement,
+        };
+    }
+
+    afterEach(async () => {
+        await resetI18n();
     });
 
-    it('unknown language adds disabled temporary option', () => {
-        document.body.innerHTML = `
-            <select id="settings-language">
-                <option value="system">System</option>
-                <option value="de">Deutsch</option>
-                <option value="en">English</option>
-            </select>`;
-        const sel = document.getElementById('settings-language') as HTMLSelectElement;
-        syncLanguageSelect(sel, 'xx-YY');
-        expect(sel.querySelector('option[data-unknown-lang]')).toBeTruthy();
+    it('F1: degradation (getCatalog===null) builds DE minimal fallback on empty I2 markup', async () => {
+        await resetI18n();
+        const { getCatalog } = await import('../../app/i18n/translate');
+        expect(getCatalog()).toBeNull();
+        const { populateLanguageOptions } = await import('../../app/ui/settings-dialog');
+        const { sel } = emptyI2Markup();
+        expect(sel.options.length).toBe(0);
+        populateLanguageOptions(sel);
+        expect(sel.options.length).toBe(3);
+        expect(Array.from(sel.options).map((o) => o.value)).toEqual(['system', 'de', 'en']);
+        expect(sel.options[0].textContent).toBe('System');
+        expect(sel.options[1].textContent).toBe('Deutsch');
+        expect(sel.options[2].textContent).toBe('English');
+        // system und de wählbar
+        sel.value = 'system';
+        expect(sel.value).toBe('system');
+        sel.value = 'de';
+        expect(sel.value).toBe('de');
+        expect(sel.selectedOptions[0].disabled).toBe(false);
+    });
+
+    it('F6: catalog ok + system', async () => {
+        await seedLangCatalog();
+        const { populateLanguageOptions } = await import('../../app/ui/settings-dialog');
+        const { sel, hint } = emptyI2Markup();
+        populateLanguageOptions(sel);
+        const unknown = syncLanguageSelect(sel, 'system', hint);
+        expect(unknown).toBe(false);
+        expect(sel.value).toBe('system');
+        expect(sel.selectedOptions[0].textContent).toBe('System');
+        expect(hint.textContent).toBe(LANG_STRINGS['settings.language.hint']);
+    });
+
+    it('F6: known registry tag value roundtrip', async () => {
+        await seedLangCatalog();
+        const { populateLanguageOptions } = await import('../../app/ui/settings-dialog');
+        const { sel, hint } = emptyI2Markup();
+        populateLanguageOptions(sel);
+        syncLanguageSelect(sel, 'en', hint);
+        expect(sel.value).toBe('en');
+        expect(sel.selectedOptions[0].textContent).toBe('English');
+        expect(sel.selectedOptions[0].disabled).toBe(false);
+        // second set still works
+        syncLanguageSelect(sel, 'de', hint);
+        expect(sel.value).toBe('de');
+        expect(hint.textContent).toBe(LANG_STRINGS['settings.language.hint']);
+    });
+
+    it('F6: empty languages array still keeps System', async () => {
+        await seedLangCatalog([]);
+        const { populateLanguageOptions } = await import('../../app/ui/settings-dialog');
+        const { sel } = emptyI2Markup();
+        populateLanguageOptions(sel);
+        expect(Array.from(sel.options).map((o) => o.value)).toEqual(['system']);
+        expect(sel.options[0].textContent).toBe('System');
+        syncLanguageSelect(sel, 'system');
+        expect(sel.value).toBe('system');
+    });
+
+    it('F6: double populate has no duplicate options', async () => {
+        await seedLangCatalog();
+        const { populateLanguageOptions } = await import('../../app/ui/settings-dialog');
+        const { sel } = emptyI2Markup();
+        populateLanguageOptions(sel);
+        populateLanguageOptions(sel);
+        const values = Array.from(sel.options).map((o) => o.value);
+        expect(values).toEqual(['system', 'de', 'en']);
+        expect(new Set(values).size).toBe(values.length);
+    });
+
+    it('F2/F6: unknown tag — disabled option + value + unknownHint', async () => {
+        await seedLangCatalog();
+        const { populateLanguageOptions } = await import('../../app/ui/settings-dialog');
+        const { sel, hint } = emptyI2Markup();
+        populateLanguageOptions(sel);
+        const unknown = syncLanguageSelect(sel, 'xx-YY', hint);
+        expect(unknown).toBe(true);
+        const opt = sel.querySelector('option[data-unknown-lang]') as HTMLOptionElement;
+        expect(opt).toBeTruthy();
+        expect(opt.disabled).toBe(true);
         expect(sel.value).toBe('xx-YY');
+        expect(opt.textContent).toBe('xx-YY (unbekannt)');
+        expect(hint.textContent).toBe(
+            'Unbekannte Sprache „xx-YY“ — folio verwendet Englisch.',
+        );
+        // zurück auf bekannt → Neustart-Hinweis
+        syncLanguageSelect(sel, 'de', hint);
+        expect(sel.querySelector('option[data-unknown-lang]')).toBeNull();
+        expect(hint.textContent).toBe(LANG_STRINGS['settings.language.hint']);
     });
 });

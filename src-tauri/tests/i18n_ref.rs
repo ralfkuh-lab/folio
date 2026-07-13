@@ -712,3 +712,215 @@ fn i18n_ref_rejects_non_literal_outside_core() {
     assert_eq!(lit[0].key.as_deref(), Some("menu.file"));
     let _ = fake;
 }
+
+// ─── Markup gate (I2): leaf rule + key existence for dist/index.html ─────────
+
+/// True if the element body (until matching close) contains an element child.
+/// Best-effort HTML scan: ignores comments; sufficient for our static shell.
+fn html_element_has_element_children(body: &str) -> bool {
+    let mut i = 0;
+    let b = body.as_bytes();
+    let n = b.len();
+    while i < n {
+        if b[i] == b'<' {
+            // comment
+            if i + 3 < n && &body[i..i + 4] == "<!--" {
+                if let Some(end) = body[i + 4..].find("-->") {
+                    i = i + 4 + end + 3;
+                    continue;
+                }
+                return true; // unclosed comment: be conservative
+            }
+            // closing tag — not a child open
+            if i + 1 < n && b[i + 1] == b'/' {
+                i += 1;
+                continue;
+            }
+            // doctype / processing
+            if i + 1 < n && (b[i + 1] == b'!' || b[i + 1] == b'?') {
+                i += 1;
+                continue;
+            }
+            // opening element tag → has element child
+            if i + 1 < n && (b[i + 1] as char).is_ascii_alphabetic() {
+                return true;
+            }
+        }
+        i += 1;
+    }
+    false
+}
+
+/// Find `data-i18n="…"` (textContent only — not -title/-placeholder/-aria-label)
+/// on elements and check the leaf rule.
+fn find_data_i18n_non_leaves(src: &str) -> Vec<String> {
+    let mut errors = Vec::new();
+    // Match opening tags that carry data-i18n="key" (not data-i18n-title etc.)
+    // Attribute may appear anywhere in the tag.
+    let mut search_from = 0;
+    let bytes = src.as_bytes();
+    while let Some(rel) = src[search_from..].find("data-i18n=") {
+        let abs = search_from + rel;
+        // Ensure it's exactly data-i18n= not data-i18n-title etc.
+        // char before 'd' should be whitespace or start; after 'n' is '='.
+        // Reject if preceded by '-' (as in data-i18n-title)
+        if abs > 0 && bytes[abs - 1] == b'-' {
+            search_from = abs + 9;
+            continue;
+        }
+        // Also reject if the next chars are not quote after =
+        let after_eq = abs + "data-i18n=".len();
+        if after_eq >= src.len() {
+            break;
+        }
+        let quote = src.as_bytes()[after_eq];
+        if quote != b'"' && quote != b'\'' {
+            search_from = after_eq;
+            continue;
+        }
+        let q = quote as char;
+        let key_start = after_eq + 1;
+        let Some(key_end_rel) = src[key_start..].find(q) else {
+            search_from = key_start;
+            continue;
+        };
+        let key = &src[key_start..key_start + key_end_rel];
+        // Walk back to '<' of this tag
+        let tag_start = match src[..abs].rfind('<') {
+            Some(p) => p,
+            None => {
+                search_from = key_start + key_end_rel + 1;
+                continue;
+            }
+        };
+        // Find end of opening tag '>'
+        let Some(tag_end_rel) = src[abs..].find('>') else {
+            search_from = key_start + key_end_rel + 1;
+            continue;
+        };
+        let tag_end = abs + tag_end_rel;
+        let open_tag = &src[tag_start..=tag_end];
+        // Self-closing or void: no body to violate leaf rule
+        if open_tag.ends_with("/>") {
+            search_from = tag_end + 1;
+            continue;
+        }
+        // Tag name
+        let name_start = tag_start + 1;
+        let name_end = src[name_start..]
+            .find(|c: char| c.is_whitespace() || c == '>' || c == '/')
+            .map(|o| name_start + o)
+            .unwrap_or(tag_end);
+        let tag_name = &src[name_start..name_end];
+        let void = matches!(
+            tag_name.to_ascii_lowercase().as_str(),
+            "area"
+                | "base"
+                | "br"
+                | "col"
+                | "embed"
+                | "hr"
+                | "img"
+                | "input"
+                | "link"
+                | "meta"
+                | "param"
+                | "source"
+                | "track"
+                | "wbr"
+        );
+        if void {
+            search_from = tag_end + 1;
+            continue;
+        }
+        // Find matching close tag (naive: first </tagName>)
+        let close = format!("</{tag_name}>");
+        let close_l = format!("</{}>", tag_name.to_ascii_lowercase());
+        let body_start = tag_end + 1;
+        let body_end = src[body_start..]
+            .find(&close)
+            .or_else(|| {
+                if close_l != close {
+                    src[body_start..].find(&close_l)
+                } else {
+                    None
+                }
+            })
+            .map(|o| body_start + o);
+        let Some(body_end) = body_end else {
+            // Unclosed — skip
+            search_from = tag_end + 1;
+            continue;
+        };
+        let body = &src[body_start..body_end];
+        if html_element_has_element_children(body) {
+            let line = src[..tag_start].bytes().filter(|&b| b == b'\n').count() + 1;
+            errors.push(format!(
+                "dist/index.html:{line}: data-i18n=\"{key}\" on non-leaf <{tag_name}> (has element children)"
+            ));
+        }
+        search_from = body_end;
+    }
+    errors
+}
+
+#[test]
+fn i18n_markup_gate_index_html() {
+    let path = manifest_dir().join("dist/index.html");
+    let src = fs::read_to_string(&path).expect("read dist/index.html");
+    let catalog = load_en_keys();
+
+    // Every data-i18n-* key must exist in en (also covered by reference gate;
+    // re-assert here so the markup gate is self-contained).
+    let hits = find_html_attrs(&src, &path);
+    assert!(
+        !hits.is_empty(),
+        "dist/index.html must contain data-i18n-* attributes (I2)"
+    );
+    let mut missing = Vec::new();
+    for hit in &hits {
+        let Some(k) = &hit.key else { continue };
+        if !catalog.contains(k) {
+            missing.push(format!(
+                "{}:{}: key `{k}` (via {}) not in en catalog",
+                hit.file, hit.line, hit.kind
+            ));
+        }
+    }
+
+    let non_leaves = find_data_i18n_non_leaves(&src);
+
+    let mut errors = missing;
+    errors.extend(non_leaves);
+    if !errors.is_empty() {
+        eprintln!("i18n markup gate FAILED ({} error(s)):", errors.len());
+        for e in &errors {
+            eprintln!("  ERROR  {e}");
+        }
+        panic!("i18n markup gate: {} error(s)", errors.len());
+    }
+    println!(
+        "i18n markup gate OK: {} data-i18n-* refs, all leaf-safe",
+        hits.len()
+    );
+}
+
+#[test]
+fn i18n_markup_leaf_detector_unit() {
+    assert!(!html_element_has_element_children("Hello world"));
+    assert!(!html_element_has_element_children(
+        "Aa Groß-/Kleinschreibung"
+    ));
+    assert!(html_element_has_element_children(
+        "<input type=\"checkbox\" /> text"
+    ));
+    assert!(html_element_has_element_children("<svg></svg>Version"));
+    let errs = find_data_i18n_non_leaves(
+        r#"<label data-i18n="x.label"><input type="checkbox" /> text</label>"#,
+    );
+    assert_eq!(errs.len(), 1, "{errs:?}");
+    let ok = find_data_i18n_non_leaves(
+        r#"<label><input type="checkbox" /> <span data-i18n="x.label">text</span></label>"#,
+    );
+    assert!(ok.is_empty(), "{ok:?}");
+}

@@ -4,6 +4,10 @@
    settings_update); dieses Modul ist reine UI-Bindings + Patch-Dispatch. */
 
 import { applyLogLevelFromSettings, folioLog } from '../util/log';
+// Direkt aus translate, nicht dem i18n-Barrel — der re-exportiert
+// event-queue und installiert den listen-Patch (würde state/document-
+// Tests und andere Listener vor uiReady schlucken).
+import { getCatalog, t } from '../i18n/translate';
 import {
     configureSettingsTab,
     isVirtualTabActive,
@@ -20,7 +24,7 @@ import {
     type ViewThemeInfo,
 } from './settings-themes';
 
-/** BCP-47-Tag, `"system"`, oder unbekannter gespeicherter Wert. */
+/** BCP-47-Tag, `"system"`, oder unbekannter gespeicherter Wert (kein TS-Union). */
 export type SettingsLanguage = string;
 export type DefaultViewMode = 'view' | 'edit' | 'current';
 export type ExportDirMode = 'document' | 'last';
@@ -126,7 +130,10 @@ function applySettingsToForm(data: SettingsData): void {
     var logLevel = $('settings-log-level') as HTMLSelectElement | null;
     var langHint = $('settings-language-hint');
 
-    if (langSelect) syncLanguageSelect(langSelect, data.language);
+    if (langSelect) {
+        populateLanguageOptions(langSelect);
+        syncLanguageSelect(langSelect, data.language, langHint);
+    }
     if (mdSelect) mdSelect.value = data.defaultModeMarkdown;
     if (textSelect) textSelect.value = data.defaultModeText;
     if (autoFormat) autoFormat.checked = !!data.viewAutoFormat;
@@ -139,10 +146,8 @@ function applySettingsToForm(data: SettingsData): void {
 
     if (langHint) {
         if (bootLanguage && data.language !== bootLanguage) {
-            langHint.textContent = 'Sprachänderung wird beim nächsten Start aktiv.';
             langHint.classList.add('settings-hint--alert');
         } else {
-            langHint.textContent = 'Sprachänderung wird beim nächsten Start aktiv.';
             langHint.classList.remove('settings-hint--alert');
         }
     }
@@ -225,18 +230,58 @@ export function closeSettingsDialog(): void {
     dlg.hidden = true;
 }
 
-/** Setzt das Sprach-Select inkl. unbekannter/System-Werte ohne leeres Select. */
-export function syncLanguageSelect(select: HTMLSelectElement, language: string): void {
+function appendLangOption(select: HTMLSelectElement, value: string, label: string): void {
+    var opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = label;
+    select.appendChild(opt);
+}
+
+/**
+ * Befüllt das Sprach-Select aus der i18n-Registry: „System" (übersetzt) +
+ * Sprachen in Eigenbezeichnung. Ohne Katalog (Degradation): fester deutscher
+ * Minimal-Fallback system/de/en — nie leeres Select.
+ */
+export function populateLanguageOptions(select: HTMLSelectElement): void {
+    var catalog = getCatalog();
+    select.innerHTML = '';
+    if (!catalog) {
+        // Degradationspfad: hartkodiert DE (Katalog fehlt; t() wäre Key-Fallback).
+        appendLangOption(select, 'system', 'System');
+        appendLangOption(select, 'de', 'Deutsch');
+        appendLangOption(select, 'en', 'English');
+        return;
+    }
+    appendLangOption(select, 'system', t('settings.language.system'));
+    var langs = catalog.languages || [];
+    for (var i = 0; i < langs.length; i++) {
+        var lang = langs[i];
+        if (!lang || !lang.tag) continue;
+        appendLangOption(select, lang.tag, lang.name || lang.tag);
+    }
+}
+
+/**
+ * Setzt das Sprach-Select inkl. unbekannter/System-Werte ohne leeres Select.
+ * Optionaler `hintEl`: Unknown → Fallback-Hinweis, sonst Neustart-Hinweis.
+ * @returns true wenn `language` unbekannt war (disabled Temp-Option).
+ */
+export function syncLanguageSelect(
+    select: HTMLSelectElement,
+    language: string,
+    hintEl?: HTMLElement | null,
+): boolean {
     // temporäre unknown-Option entfernen
     var unknown = select.querySelector('option[data-unknown-lang]');
     if (unknown) unknown.remove();
     var known = Array.from(select.options).some(function (o) {
         return o.value === language && !o.disabled;
     });
-    if (!known && language) {
+    var isUnknown = !known && !!language;
+    if (isUnknown) {
         var opt = document.createElement('option');
         opt.value = language;
-        opt.textContent = language + ' (unbekannt)';
+        opt.textContent = t('settings.language.unknown', { tag: language });
         opt.disabled = true;
         opt.selected = true;
         opt.setAttribute('data-unknown-lang', '1');
@@ -252,6 +297,14 @@ export function syncLanguageSelect(select: HTMLSelectElement, language: string):
             }
         }
     }
+    if (hintEl) {
+        if (isUnknown) {
+            hintEl.textContent = t('settings.language.unknownHint', { tag: language });
+        } else {
+            hintEl.textContent = t('settings.language.hint');
+        }
+    }
+    return isUnknown;
 }
 
 function bindInputs(): void {

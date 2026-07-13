@@ -85,9 +85,12 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 | 163 | `Diagnose` | textNode | `settings.nav.diagnostics` | nein | HTML text node |
 | 167 | `Allgemein` | textNode | `settings.nav.general` | nein | HTML text node |
 | 169 | `Sprache` | textNode | `settings.language.label` | nein | HTML text node |
-| 171 | `Deutsch` | textNode | `settings.language.optionDe` | nein | HTML text node |
-| 172 | `English` | textNode | `settings.language.optionEn` | nein | HTML text node |
-| 175 | `Sprachänderung wird beim nächsten Start aktiv.` | textNode | `settings.language.hint` | nein | HTML text node |
+| 170 | `System` / Registry-Optionen | select options | `settings.language.system` (+ `@meta.name` pro Tag) | — | **dynamisch** via `populateLanguageOptions` aus Registry; kein hartkodiertes Options-HTML mehr |
+| — | `{tag} (unbekannt)` | select option | `settings.language.unknown` | — | **dynamisch** in `syncLanguageSelect` bei unbekanntem persistiertem Tag |
+| — | Fallback-Hinweis unbekannter Tag | hint text | `settings.language.unknownHint` | — | **dynamisch** — nur im Unknown-Fall statt des Neustart-Hinweises |
+| 171 | `Deutsch` | textNode | `ENTFALLEN: Registry-Select` | — | ehem. `settings.language.optionDe`; Optionen kommen aus Katalog-`@meta.name` |
+| 172 | `English` | textNode | `ENTFALLEN: Registry-Select` | — | ehem. `settings.language.optionEn`; Optionen kommen aus Katalog-`@meta.name` |
+| 175 | `Sprachänderung wird beim nächsten Start aktiv.` | textNode | `settings.language.hint` | nein | HTML text node (+ dynamisch via `t()` bei bekanntem Tag) |
 | 178 | `View-/Edit-Mode` | textNode | `settings.mode.sectionTitle` | nein | HTML text node |
 | 180 | `Markdown-Dateien öffnen in` | textNode | `settings.mode.markdownOpenIn.label` | nein | HTML text node |
 | 182 | `Anzeige` | textNode | `settings.mode.optionView` | nein | HTML text node |
@@ -121,7 +124,7 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 | 261 | `Theme erstellen` | textNode | `settings.themes.createDialog.title` | nein | HTML text node |
 | 262 | `ID-Slug` | textNode | `theme.editor.manifest.idSlug.label` | nein | HTML text node |
 | 264 | `Nur Kleinbuchstaben, Zahlen, - und _` | textNode | `theme.editor.manifest.idSlug.hint` | nein | HTML text node |
-| 265 | `Anzeigename` | textNode | `theme.editor.manifest.name.label` | nein | HTML text node |
+| 265 | `Anzeigename` | textNode | `theme.editor.manifest.displayName.label` | nein | HTML text node (Key-Korrektur I2: getrennt von `name.label`) |
 | 267 | `Basis-Theme` | textNode | `settings.themes.createDialog.base.label` | nein | HTML text node |
 | 271 | `Abbrechen` | textNode | `dialogs.common.cancel` | nein | HTML text node |
 | 272 | `Erstellen` | textNode | `settings.themes.createDialog.submit.action` | nein | HTML text node |
@@ -141,7 +144,7 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 | 301 | `Anbieter hinzufügen` | textNode | `settings.ai.providers.addDialog.title` | nein | HTML text node |
 | 302 | `ID` | textNode | `settings.ai.providers.addDialog.id.label` | nein | HTML text node |
 | 304 | `Nur Kleinbuchstaben, Zahlen, - und _` | textNode | `theme.editor.manifest.idSlug.hint` | nein | HTML text node |
-| 305 | `Anzeigename` | textNode | `theme.editor.manifest.name.label` | nein | HTML text node |
+| 305 | `Anzeigename` | textNode | `theme.editor.manifest.displayName.label` | nein | HTML text node (Key-Korrektur I2) |
 | 307 | `Basis-URL` | textNode | `settings.ai.providers.addDialog.baseUrl.label` | nein | HTML text node |
 | 308 | `http://localhost:11434/v1` | placeholder | `OUT-OF-SCOPE: Markenname/technischer Token` | — | HTML attribute placeholder |
 | 309 | `OpenAI-kompatibler Endpoint.` | textNode | `settings.ai.providers.addDialog.baseUrl.hint` | nein | HTML text node |
@@ -180,7 +183,7 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 | 384 | `Speichern` | textNode | `dialogs.common.save` | nein | HTML text node |
 | 385 | `Schließen` | textNode | `dialogs.common.close` | nein | HTML text node |
 | 391 | `Manifest` | textNode | `theme.editor.manifest.sectionTitle` | nein | HTML text node |
-| 393 | `Name` | textNode | `theme.editor.manifest.name.label` | nein | HTML text node |
+| 393 | `Name` | textNode | `theme.editor.manifest.name.label` | nein | HTML text node (Theme-Editor-Manifest; nicht displayName) |
 | 395 | `Beschreibung` | textNode | `theme.editor.manifest.description.label` | nein | HTML text node |
 | 397 | `Body-Font` | textNode | `theme.editor.manifest.fontBody.label` | nein | HTML text node |
 | 399 | `Mono-Font` | textNode | `theme.editor.manifest.fontMono.label` | nein | HTML text node |
@@ -192,6 +195,7 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 | 432 | `Assets` | textNode | `theme.editor.assets.sectionTitle` | nein | HTML text node |
 | 433 | `Asset hinzufügen; das erste Bild wird als Logo verwendet` | title | `theme.editor.assets.add.tooltip` | nein | HTML attribute title |
 | 435 | `＋ Hochladen` | textNode | `theme.editor.assets.upload.action` | nein | HTML text node |
+| 439 | `Manifest-Logo:` | textNode | `theme.editor.manifest.logo.label` | nein | HTML text node (I2 nachgezogen) |
 | 441 | `(kein)` | textNode | `theme.editor.assets.logo.none` | nein | HTML text node |
 | 442 | `zurücksetzen` | textNode | `theme.editor.assets.logo.reset.action` | nein | HTML text node |
 | 446 | `Theme-Vorschau` | title | `theme.editor.preview.tooltip` | nein | HTML attribute title |
@@ -235,6 +239,8 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 | 550 | `✨ KI-Layout für dieses Dokument` | textNode | `export.aiDraft.title` | nein | HTML text node |
 | 552 | `Prompt` | textNode | `ai.prompt.label` | nein | HTML text node |
 | 553 | `Layout-Stil, Zielgruppe, visuelle Richtung` | placeholder | `export.aiDraft.prompt.placeholder` | nein | HTML attribute placeholder |
+| 557 | `Basis-Theme` | textNode | `settings.themes.createDialog.base.label` | ja | Export-KI-Draft-Grid (I2 nachgezogen) |
+| 561 | `Modell` | textNode | `ai.model.label` | ja | Export-KI-Draft-Grid (I2 nachgezogen) |
 | 564 | `Jeder Lauf sendet das Dokument an den gewählten Anbieter und verursacht Kosten.` | textNode | `export.aiDraft.costHint` | nein | HTML text node |
 | 566 | `Bereit.` | textNode | `export.aiDraft.status.ready` | nein | HTML text node |
 | 568 | `Starten` | textNode | `export.aiDraft.start.action` | nein | HTML text node |
@@ -245,7 +251,7 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 | 580 | `Speichern…` | textNode | `dialogs.common.save` | nein | HTML text node |
 | 585 | `KI-Entwurf als Theme speichern` | textNode | `export.aiDraft.saveDialog.title` | nein | HTML text node |
 | 586 | `ID-Slug` | textNode | `theme.editor.manifest.idSlug.label` | nein | HTML text node |
-| 588 | `Anzeigename` | textNode | `theme.editor.manifest.name.label` | nein | HTML text node |
+| 588 | `Anzeigename` | textNode | `theme.editor.manifest.displayName.label` | nein | HTML text node (Key-Korrektur I2) |
 | 592 | `Abbrechen` | textNode | `dialogs.common.cancel` | nein | HTML text node |
 | 593 | `Speichern` | textNode | `dialogs.common.save` | nein | HTML text node |
 | 600 | `Mit KI übersetzen` | textNode | `ai.translate.dialog.title` | nein | HTML text node |
@@ -279,6 +285,7 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 | 651 | `KI-Aktionen` | aria-label | `ai.actions.picker.ariaLabel` | nein | HTML attribute aria-label |
 | 654 | `Prompt` | textNode | `ai.prompt.label` | nein | HTML text node |
 | 657 | `Systemregeln anzeigen` | textNode | `ai.actions.showSystemRules.action` | nein | HTML text node |
+| 657–661 | `Fester Rahmen (nicht editierbar): Antworte nur mit dem…` | textNode | `OUT-OF-SCOPE: KI-Systemprompt-Anzeige — wird in I5 englisch` | — | `#ai-actions-system-text`; I2 unübersetzt gelassen |
 | 664 | `Ziel` | aria-label | `ai.actions.target.ariaLabel` | nein | HTML attribute aria-label |
 | 665 | `Ziel` | textNode | `ai.actions.target.label` | nein | HTML text node |
 | 666 | `Neue Datei` | textNode | `ai.actions.target.newFile` | ja | HTML text node |
@@ -292,6 +299,7 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 | 682 | `Abbrechen` | textNode | `dialogs.common.cancel` | nein | HTML text node |
 | 683 | `Ausführen` | textNode | `ai.actions.run.action` | nein | HTML text node |
 | 703 | `Ralf Kuhlendahl` | alt | `OUT-OF-SCOPE: Markenname/technischer Token` | — | HTML attribute alt |
+| 703–705 | `Made with ♥ by Ralf Kuhlendahl` | textNode | `OUT-OF-SCOPE: Branding/Autorenzeile` | — | About-Figcaption; bewusst unübersetzt |
 | 711 | `Folio` | textNode | `OUT-OF-SCOPE: Markenname/technischer Token` | — | HTML text node |
 | 712 | `Markdown-Viewer &amp; -Editor` | textNode | `dialogs.about.tagline` | nein | HTML text node |
 | 716 | `Version` | textNode | `dialogs.about.version.label` | ja | HTML text node |
