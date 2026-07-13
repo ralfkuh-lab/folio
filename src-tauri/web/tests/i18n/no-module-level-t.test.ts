@@ -1,82 +1,124 @@
 /**
  * Convention (docs/spec-i18n.md): no t() / tPlural() in module-level
  * initializers. Translated data must be factories/getters evaluated after
- * initI18n(). This scanner is a regression guard for I1b+.
+ * initI18n().
  *
- * Allowed: import { t } from ...; function/method bodies calling t().
- * Forbidden at top level: export const x = t('...'); const rows = [t(...)];
+ * I1c: TypeScript AST walk (replaces the fragile line/brace heuristic).
+ * CallExpression of `t` / `tPlural` outside function/class bodies = error.
  */
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import ts from 'typescript';
 
 const APP_ROOT = path.resolve(__dirname, '../../app');
+const EDITOR_ROOT = path.resolve(__dirname, '../../editor');
 
 function walkTs(dir: string, out: string[] = []): string[] {
+    if (!fs.existsSync(dir)) return out;
     for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
         const p = path.join(dir, ent.name);
-        if (ent.isDirectory()) walkTs(p, out);
-        else if (ent.name.endsWith('.ts')) out.push(p);
+        if (ent.isDirectory()) {
+            if (ent.name === 'node_modules') continue;
+            walkTs(p, out);
+        } else if (ent.name.endsWith('.ts') && !ent.name.endsWith('.test.ts')) {
+            out.push(p);
+        }
     }
     return out;
 }
 
-/** Strip block/line comments roughly. */
-function stripComments(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/\/\/[^\n]*/g, '');
+function isFunctionLike(node: ts.Node): boolean {
+    return (
+        ts.isFunctionDeclaration(node)
+        || ts.isFunctionExpression(node)
+        || ts.isArrowFunction(node)
+        || ts.isMethodDeclaration(node)
+        || ts.isConstructorDeclaration(node)
+        || ts.isGetAccessorDeclaration(node)
+        || ts.isSetAccessorDeclaration(node)
+    );
+}
+
+function isClassLike(node: ts.Node): boolean {
+    return ts.isClassDeclaration(node) || ts.isClassExpression(node);
 }
 
 /**
- * Very lightweight heuristic: a t( or tPlural( call whose opening is at
- * the start of a statement line (optional export/const/let/var) and not
- * inside a function — detected by zero open braces before that line in a
- * simplified brace walk. Not a full parser; good enough for convention.
+ * Find t()/tPlural() CallExpressions that are not nested inside a
+ * function-like or class-like body (true module-level).
  */
-function findModuleLevelTCalls(src: string): string[] {
-    const clean = stripComments(src);
-    const lines = clean.split('\n');
-    let depth = 0;
+function findModuleLevelTCalls(fileName: string, src: string): string[] {
+    const sf = ts.createSourceFile(
+        fileName,
+        src,
+        ts.ScriptTarget.ES2020,
+        /*setParentNodes*/ true,
+        ts.ScriptKind.TS,
+    );
     const hits: string[] = [];
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        // Count braces roughly (ignore strings — acceptable for guard)
-        for (const ch of line) {
-            if (ch === '{') depth++;
-            else if (ch === '}') depth = Math.max(0, depth - 1);
+
+    function visit(node: ts.Node, insideFnOrClass: boolean): void {
+        if (isFunctionLike(node) || isClassLike(node)) {
+            // Descend with inside=true so bodies are exempt.
+            ts.forEachChild(node, (child) => visit(child, true));
+            return;
         }
-        if (depth > 0) continue;
-        // Skip import lines
-        if (/^\s*import\b/.test(line)) continue;
-        if (/\btPlural\s*\(/.test(line) || /(?<![.\w])t\s*\(/.test(line)) {
-            // Allow type-only or re-exports without call at module level
-            // that are just `export { t }` — already excluded (no paren after)
-            if (/\b(export\s+)?(const|let|var)\b/.test(line) || /^\s*t\s*\(/.test(line)
-                || /^\s*tPlural\s*\(/.test(line)
-                || /=\s*t\s*\(/.test(line)
-                || /=\s*tPlural\s*\(/.test(line)) {
-                hits.push(`L${i + 1}: ${line.trim()}`);
+
+        if (!insideFnOrClass && ts.isCallExpression(node)) {
+            const expr = node.expression;
+            if (ts.isIdentifier(expr) && (expr.text === 't' || expr.text === 'tPlural')) {
+                const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+                const text = node.getText(sf).replace(/\s+/g, ' ');
+                hits.push(`L${line + 1}: ${text.slice(0, 80)}`);
             }
         }
+
+        ts.forEachChild(node, (child) => visit(child, insideFnOrClass));
     }
+
+    visit(sf, false);
     return hits;
 }
 
-describe('no module-level t()/tPlural()', () => {
-    it('app/**/*.ts has no module-level t calls', () => {
-        const files = walkTs(APP_ROOT);
+function shouldSkip(filePath: string): boolean {
+    // i18n core defines / re-exports t — not call sites of concern
+    if (filePath.includes(`${path.sep}i18n${path.sep}translate.ts`)) return true;
+    if (filePath.includes(`${path.sep}i18n${path.sep}index.ts`)) return true;
+    if (filePath.includes(`${path.sep}i18n${path.sep}apply.ts`)) return true;
+    return false;
+}
+
+describe('no module-level t()/tPlural() (AST)', () => {
+    it('app + editor have no module-level t/tPlural calls', () => {
+        const files = [...walkTs(APP_ROOT), ...walkTs(EDITOR_ROOT)];
         const violations: string[] = [];
         for (const f of files) {
-            // translate.ts defines t — skip definition file internals
-            if (f.endsWith(`${path.sep}i18n${path.sep}translate.ts`)) continue;
-            if (f.endsWith(`${path.sep}i18n${path.sep}index.ts`)) continue;
+            if (shouldSkip(f)) continue;
             const src = fs.readFileSync(f, 'utf8');
-            const hits = findModuleLevelTCalls(src);
+            const hits = findModuleLevelTCalls(f, src);
+            const rel = path.relative(path.resolve(__dirname, '../..'), f);
             for (const h of hits) {
-                violations.push(`${path.relative(APP_ROOT, f)}: ${h}`);
+                violations.push(`${rel}: ${h}`);
             }
         }
         expect(violations).toEqual([]);
+    });
+
+    it('detects multi-line top-level object initializer (regression)', () => {
+        const sample = `
+import { t } from './i18n';
+export const labels = {
+    save: t(
+        'menu.file.save'
+    ),
+};
+export function ok() {
+    return t('menu.file');
+}
+`;
+        const hits = findModuleLevelTCalls('sample.ts', sample);
+        expect(hits.length).toBe(1);
+        expect(hits[0]).toMatch(/menu\.file\.save/);
     });
 });

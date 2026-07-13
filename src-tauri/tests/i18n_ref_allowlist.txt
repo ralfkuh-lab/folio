@@ -1,0 +1,12 @@
+# I18n reference-test allowlist (I1c).
+# Format: one key prefix per line. Lines starting with # are comments.
+# Each entry MUST carry a justification comment on the same line or the
+# preceding line. Prefixes mark dynamically composed registry keys
+# (e.g. theme.builtin.<id>.name) that the scanner cannot see as string
+# literals; dead-key soft mode treats matching catalog keys as referenced.
+#
+# Allowlist entries that match zero actual code references produce a warning
+# (unused allowlist entry). Empty on purpose until I3/I4 introduce registries.
+#
+# Example (commented — not active):
+# theme.builtin.   # Built-in theme name/description keys via registry id

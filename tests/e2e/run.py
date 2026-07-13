@@ -235,16 +235,34 @@ def main(argv: list[str]) -> int:
             app.stop(api)
         return 1
 
-    print("[i] Warte auf Webview-Bereitschaft (body)...")
+    # I1c: readiness via /state.frontendReady (not a /dom roundtrip that
+    # itself requires the FE). Same 25 s budget as the former body probe.
+    print("[i] Warte auf frontendReady (/state)...")
+    ready_deadline = time.time() + 25.0
+    ready_ok = False
     try:
-        res = api.dom("body", timeout_ms=25000)
-        if res.get("timed_out"):
-            print("[WARN] Webview wurde nicht innerhalb von 25 s bereit.")
-        else:
-            print("[i] Webview ist bereit.")
-            time.sleep(0.5)  # Kurze Stabilisierung fuer Xvfb Rendering-Flush
+        while time.time() < ready_deadline:
+            st = api.state()
+            if st.get("frontendReady") is True:
+                ready_ok = True
+                break
+            time.sleep(0.1)
+        if not ready_ok:
+            print(
+                "[ERR] frontendReady wurde nicht innerhalb von 25 s true "
+                "(Bootstrap/frontend_ready ausgeblieben?). "
+                f"Letzter /state.frontendReady={api.state().get('frontendReady')!r}"
+            )
+            if app is not None:
+                app.stop(api)
+            return 1
+        print("[i] frontendReady=true — Webview-Bootstrap fertig.")
+        time.sleep(0.5)  # Kurze Stabilisierung fuer Xvfb Rendering-Flush
     except Exception as e:
-        print(f"[WARN] Fehler beim Warten auf Webview: {e}")
+        print(f"[ERR] Fehler beim Warten auf frontendReady: {e}")
+        if app is not None:
+            app.stop(api)
+        return 1
 
     fixtures_dir = SCRIPT_DIR / "fixtures"
     baselines_dir = SCRIPT_DIR / "baselines"
