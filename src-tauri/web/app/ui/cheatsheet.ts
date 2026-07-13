@@ -8,21 +8,26 @@ import { safeInvoke } from '../util/log';
 
 const STORAGE_KEY = 'folio.cheatsheet';
 
-export const cheatSheetRows: Array<[string, string]> = [
-    ['Überschrift',     '# H1   ## H2   ### H3'],
-    ['Fett / Kursiv',   '**fett**   *kursiv*'],
-    ['Durchgestrichen', '~~text~~'],
-    ['Inline-Code',     '`code`'],
-    ['Codeblock',       '```codeblock```'],
-    ['Link',            '[Text](https://…)'],
-    ['Bild',            '![alt](pfad.png)'],
-    ['Aufzählung',      '- Item   * Item'],
-    ['Nummeriert',      '1. Item'],
-    ['Zitat',           '> Text'],
-    ['Trennlinie',      '---'],
-    ['Tabelle',         '| col | col |\n|---|---|'],
-    ['Aufgabe',         '- [ ] offen   - [x] erledigt'],
-];
+/* Factory instead of module-level constant: I1b requires no translated
+   (or t()-backed) data at import time. Content stays German until I3
+   extracts keys; the getter form is the mechanism. */
+export function getCheatSheetRows(): Array<[string, string]> {
+    return [
+        ['Überschrift',     '# H1   ## H2   ### H3'],
+        ['Fett / Kursiv',   '**fett**   *kursiv*'],
+        ['Durchgestrichen', '~~text~~'],
+        ['Inline-Code',     '`code`'],
+        ['Codeblock',       '```codeblock```'],
+        ['Link',            '[Text](https://…)'],
+        ['Bild',            '![alt](pfad.png)'],
+        ['Aufzählung',      '- Item   * Item'],
+        ['Nummeriert',      '1. Item'],
+        ['Zitat',           '> Text'],
+        ['Trennlinie',      '---'],
+        ['Tabelle',         '| col | col |\n|---|---|'],
+        ['Aufgabe',         '- [ ] offen   - [x] erledigt'],
+    ];
+}
 
 // Lazy-initialized Modul-State — gesetzt in initCheatsheet().
 let overlay: HTMLElement = null;
@@ -122,7 +127,7 @@ export function hideCheatSheet(): void {
 export function cheatsheetSyncMode(isEdit: boolean): void {
     if (isEdit) {
         if (wantsVisible) {
-            const rows = lastRows || cheatSheetRows.map(r => ({ label: r[0], code: r[1] }));
+            const rows = lastRows || getCheatSheetRows().map(r => ({ label: r[0], code: r[1] }));
             renderRows(rows);
             overlay.hidden = false;
             applyPosition();

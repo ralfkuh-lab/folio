@@ -49,6 +49,21 @@ impl ApiError {
             message: message.into(),
         }
     }
+
+    /// Frontend still booting (Ready-Gate timeout) — not a server bug.
+    pub(super) fn service_unavailable(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            message: message.into(),
+        }
+    }
+
+    pub(super) fn method_not_allowed(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::METHOD_NOT_ALLOWED,
+            message: message.into(),
+        }
+    }
 }
 
 impl IntoResponse for ApiError {

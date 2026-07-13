@@ -8,6 +8,7 @@
 //! `__cmd__*`-Companion-Funktionen ueber den Original-Modulpfad sucht.
 
 pub mod dialog;
+pub mod i18n_cmd;
 #[cfg(target_os = "linux")]
 pub mod icon_integration;
 pub mod log_bridge;

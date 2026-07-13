@@ -154,6 +154,9 @@ export XDG_STATE_HOME="${TEMP_HOME}/.local/state"
 log "starte Folio (${BIN}) ..."
 # Release-Builds starten die Automation-API nur mit explizitem Opt-in.
 export FOLIO_AUTOMATION=1
+# i18n: E2E-Baselines sind deutsch — leeres Testprofil + C/en-Locale
+# wuerde sonst Migration→system und englische UI liefern (Spec I1b).
+export FOLIO_LANG=de
 # Konsole pro Run in eine eigene Datei (kein Ueberschreiben durch den
 # naechsten Lauf); run.py kopiert sie am Ende in den Artefaktordner
 # (Vertrag: FOLIO_E2E_CONSOLE_LOG).

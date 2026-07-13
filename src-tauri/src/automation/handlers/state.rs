@@ -102,6 +102,10 @@ pub(in crate::automation) async fn get_state(
         })
         .collect();
 
+    let lang = crate::i18n::process_translator()
+        .map(|tr| tr.catalog_tag().to_string())
+        .unwrap_or_else(|| "en".into());
+
     Ok(Json(AutomationState {
         title,
         file: document_path,
@@ -132,6 +136,8 @@ pub(in crate::automation) async fn get_state(
         },
         tabs: tabs_list,
         console_error_count,
+        frontend_ready: crate::i18n::ready::is_ready(),
+        lang,
     }))
 }
 
@@ -200,5 +206,9 @@ pub(in crate::automation) async fn mock_get_state(
             active: true,
         }],
         console_error_count: state.console_errors.len(),
+        frontend_ready: crate::i18n::ready::is_ready(),
+        lang: crate::i18n::process_translator()
+            .map(|tr| tr.catalog_tag().to_string())
+            .unwrap_or_else(|| "en".into()),
     }))
 }

@@ -193,6 +193,8 @@ def main(argv: list[str]) -> int:
         # Release-Builds starten die Automation-API nur mit explizitem Opt-in.
         env = os.environ.copy()
         env["FOLIO_AUTOMATION"] = "1"
+        # i18n de-Pin (Spec I1b): Baselines + String-Stabilität.
+        env["FOLIO_LANG"] = "de"
         app = AppController(binary=binary, console_log=console_log, env=env)
         app.start()
         if not api.wait_for_alive(timeout=45.0):
@@ -212,6 +214,26 @@ def main(argv: list[str]) -> int:
             "(attach mode — Folio-Konsole nicht aufgezeichnet)\n",
             encoding="utf-8",
         )
+
+    # de-Pin assert: /state.lang must be "de" before baselines/scenarios.
+    try:
+        boot_state = api.state()
+        lang = boot_state.get("lang")
+        if lang != "de":
+            print(
+                f"[ERR] E2E erwartet lang=='de' (FOLIO_LANG=de), "
+                f"got lang={lang!r}. Set FOLIO_LANG=de in run-e2e.sh "
+                f"and run.py start paths."
+            )
+            if app is not None:
+                app.stop(api)
+            return 1
+        print(f"[i] i18n pin ok: lang={lang}")
+    except Exception as e:
+        print(f"[ERR] could not assert /state.lang: {e}")
+        if app is not None:
+            app.stop(api)
+        return 1
 
     print("[i] Warte auf Webview-Bereitschaft (body)...")
     try:

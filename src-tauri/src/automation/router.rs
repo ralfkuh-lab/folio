@@ -1,6 +1,6 @@
 use axum::{
     middleware,
-    routing::{get, options, post},
+    routing::{get, post},
     Router,
 };
 use std::sync::{Arc, Mutex};
@@ -59,9 +59,12 @@ pub(super) fn build_router(context: AutomationContext) -> Router {
         .route("/save", post(document::post_save))
         .route("/wait", post(wait::post_wait))
         .route("/quit", post(document::post_quit))
-        .route("/{*path}", options(mw::preflight))
+        // OPTIONS preflight is answered in security_guard (no catch-all
+        // route — that would turn unknown paths into 405).
         .fallback(mw::not_found)
         .method_not_allowed_fallback(mw::method_not_allowed)
+        // Inner first: ready-gate runs after security on the way in.
+        .layer(middleware::from_fn(mw::frontend_ready_guard))
         .layer(middleware::from_fn(mw::security_guard))
         .with_state(context)
 }
@@ -79,7 +82,6 @@ pub fn build_mock_router(state: Arc<Mutex<MockAutomationState>>) -> Router {
         .route("/wait", post(wait::mock_post_wait))
         .route("/console/errors", get(console::mock_get_console_errors))
         .route("/quit", post(document::mock_post_quit))
-        .route("/{*path}", options(mw::preflight))
         .fallback(mw::not_found)
         .method_not_allowed_fallback(mw::method_not_allowed)
         .layer(middleware::from_fn(mw::security_guard))

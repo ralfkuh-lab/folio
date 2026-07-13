@@ -1,10 +1,17 @@
-/* folio app bundle — Init-Router. Die frueheren grossen Initialisierungsbloecke
-   in main.ts sind in fachliche Module aufgeteilt
-   (ui/{menu-router,drag-drop,toolbar-actions}, automation/events,
-   plus die bereits in 4.x extrahierten state/view/vault/editor/ui-Module).
-   main.ts ist jetzt ausschliesslich Init-Reihenfolge + cross-modulare
-   Wiring-Listener (navigation:changed-Restore, panel:rail_changed-Sync,
-   shell:command-Dispatch, Theme-Boot, cli:open). */
+/* folio app bundle — Init-Router + i18n bootstrap state machine (I1b).
+   Phases: booting → i18nReady → uiReady. See docs/spec-i18n.md.
+
+   FIRST import must be the event-queue so listen() is patched before any
+   other module registers Backend→FE handlers. */
+
+import {
+    installPreAdapters,
+    drainUntilDryAndGoLive,
+    setBootstrapPhase,
+    getBootstrapPhase,
+} from './i18n/event-queue';
+import { initI18n } from './i18n/translate';
+import { applyStaticTranslations } from './i18n/apply';
 
 import { initCheatsheet } from './ui/cheatsheet';
 import { initZoom } from './ui/zoom';
@@ -92,50 +99,52 @@ function openLeftRail(): void {
     safeInvoke('set_rail_visible', { side: 'left', visible: true }, 'set_rail_visible left');
 }
 
-// ----- Modul-Init in fester Reihenfolge -----
-initMarkdownView({ requestSaveIfDirty });
-initEditorShell({ getCleanText, requestSaveIfDirty });
-initFindBar({ ensureEditorMounted, focusEditor });
-initRails();
-initVaultTree({ openDocument });
-initVaultSearch({ openDocument, showStatus, openLeftRail });
-initCheatsheet();
-initZoom();
-initLanguagePicker();
-initToolbarActions();
-initExportDialog({
-    getCurrentPath,
-    syncEditorTextToStore,
-    showStatus,
-});
-initImageDialog({ getCurrentPath, showStatus });
-initAboutDialog();
-initTranslateDialog();
-initAiActionsDialog();
-initAiDiffReview();
-initViewTheme();
-initThemeEditor();
-initThemeAiDialog();
-initSettingsDialog();
-attachPasteHandler(function (blob) {
-    openImageDialog({ preloadedBlob: blob }).catch(function (err) {
-        folioLog.warn('paste', 'openImageDialog failed', { error: String(err) });
+function runModuleInits(): void {
+    initMarkdownView({ requestSaveIfDirty });
+    initEditorShell({ getCleanText, requestSaveIfDirty });
+    initFindBar({ ensureEditorMounted, focusEditor });
+    initRails();
+    initVaultTree({ openDocument });
+    initVaultSearch({ openDocument, showStatus, openLeftRail });
+    initCheatsheet();
+    initZoom();
+    initLanguagePicker();
+    initToolbarActions();
+    initExportDialog({
+        getCurrentPath,
+        syncEditorTextToStore,
+        showStatus,
     });
-});
-initContextMenu({ openDocument, refreshVault, showStatus });
-initMenuRouter({ applyRailVisibility });
-initDragDrop();
-initAutomationEvents();
-initTabs();
-initDocumentState({ setActiveMode });
-initPreview({ getCurrentPath });
-initHtmlLiveUpdate();
-initCodeCopy();
-initMarkdownScrollSync();
-initHtmlScrollSync();
+    initImageDialog({ getCurrentPath, showStatus });
+    initAboutDialog();
+    initTranslateDialog();
+    initAiActionsDialog();
+    initAiDiffReview();
+    initViewTheme();
+    initThemeEditor();
+    initThemeAiDialog();
+    initSettingsDialog();
+    attachPasteHandler(function (blob) {
+        openImageDialog({ preloadedBlob: blob }).catch(function (err) {
+            folioLog.warn('paste', 'openImageDialog failed', { error: String(err) });
+        });
+    });
+    initContextMenu({ openDocument, refreshVault, showStatus });
+    initMenuRouter({ applyRailVisibility });
+    initDragDrop();
+    initAutomationEvents();
+    initTabs();
+    initDocumentState({ setActiveMode });
+    initPreview({ getCurrentPath });
+    initHtmlLiveUpdate();
+    initCodeCopy();
+    initMarkdownScrollSync();
+    initHtmlScrollSync();
+}
 
-// ----- Cross-modulare Backend-Event-Listener -----
-if (ev && typeof ev.listen === 'function' && invoke) {
+function installCrossModuleListeners(): void {
+    if (!ev || typeof ev.listen !== 'function' || !invoke) return;
+
     // insertVaultChildren-Event-Routing aus shell:command bleibt hier,
     // weil insertVaultChildren ein Vault-Setter ist und kein eigenes
     // Lifecycle-Modul rechtfertigt.
@@ -264,15 +273,8 @@ if (ev && typeof ev.listen === 'function' && invoke) {
         });
     });
 
-    // CLI/External-Open: argv-Pfad beim Boot + cli:open bei
-    // Single-Instance-Reinvoke.
-    invoke('cli_pending_open').then(function (path: any) {
-        if (typeof path === 'string' && path.length > 0) {
-            openDocument(path);
-        }
-    }).catch(function (err) {
-        folioLog.warn('boot', 'cli_pending_open failed', { error: String(err) });
-    });
+    // cli:open bei Single-Instance-Reinvoke (cli_pending_open is a
+    // command, invoked after handlers are live — see bootstrap).
     ev.listen('cli:open', function (event: any) {
         var data = event && event.payload;
         var path = (data && typeof data === 'object') ? data.path : null;
@@ -282,8 +284,10 @@ if (ev && typeof ev.listen === 'function' && invoke) {
     });
 }
 
-// ----- Theme beim Boot laden + an html anwenden -----
-if (invoke) {
+function restorePanelStateFromBackend(): void {
+    if (!invoke) return;
+
+    // ----- Theme beim Boot laden + an html anwenden -----
     invoke('theme_get').then(function (mode: any) {
         var html = document.documentElement;
         html.classList.toggle('theme-dark', mode === 'dark');
@@ -333,3 +337,65 @@ if (invoke) {
         folioLog.warn('boot', 'panel_rails_get failed', { error: String(err) });
     });
 }
+
+/**
+ * Dreiphasiger Boot (Spec i18n Frontend-Bootstrap):
+ * 1. booting  — Pre-Adapter queuen alle Backend→FE-Events
+ * 2. i18nReady — Katalog laden + statische DOM-Übersetzungen (Queue noch zu)
+ * 3. uiReady  — init* + Listener, Queue drainen, cli_pending_open, frontend_ready
+ */
+async function bootstrap(): Promise<void> {
+    setBootstrapPhase('booting');
+    await installPreAdapters();
+
+    // i18nReady: Katalog ODER Degradation; applyStatic nur bei Erfolg.
+    const i18nOk = await initI18n();
+    setBootstrapPhase('i18nReady');
+    if (i18nOk) {
+        applyStaticTranslations();
+    }
+
+    // uiReady: alle heutigen init*() + Cross-Module-Listener
+    runModuleInits();
+    installCrossModuleListeners();
+    restorePanelStateFromBackend();
+
+    // F1: await listen-promises, drain-until-dry, then phase=uiReady
+    // (handles events that arrive mid-drain or in the switch race).
+    await drainUntilDryAndGoLive();
+
+    // cli_pending_open is a COMMAND (not an event): only after handlers are
+    // installed. Result path is openDocument (same as cli:open); backend
+    // currently returns null after session activate (document:loaded path).
+    if (invoke) {
+        try {
+            const path = await invoke('cli_pending_open');
+            if (typeof path === 'string' && path.length > 0) {
+                openDocument(path);
+            }
+        } catch (err) {
+            folioLog.warn('boot', 'cli_pending_open failed', { error: String(err) });
+        }
+    }
+
+    // Idempotent frontend_ready — also on degradation path.
+    if (invoke) {
+        try {
+            await invoke('frontend_ready');
+        } catch (err) {
+            folioLog.warn('boot', 'frontend_ready failed', { error: String(err) });
+        }
+    }
+
+    folioLog.info('boot', 'bootstrap complete', {
+        phase: getBootstrapPhase(),
+        i18n: i18nOk,
+    });
+}
+
+// Kick off async bootstrap (bundle is script-end; DOM is ready).
+bootstrap().catch(function (err) {
+    // eslint-disable-next-line no-console
+    console.error('[folio] bootstrap failed', err);
+    folioLog.error('boot', 'bootstrap failed', { error: String(err) });
+});

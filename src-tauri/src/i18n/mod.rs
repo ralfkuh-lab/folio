@@ -1,6 +1,7 @@
 //! Internationalisierung (i18n) — Kataloge, Translator, Resolver, Migration.
 
 mod catalog;
+pub mod ready;
 
 #[cfg(test)]
 mod tests;
@@ -599,6 +600,11 @@ static PROCESS_TRANSLATOR: OnceLock<Translator> = OnceLock::new();
 
 pub fn set_process_translator(tr: Translator) -> Result<(), Translator> {
     PROCESS_TRANSLATOR.set(tr)
+}
+
+/// Boot-Translator (nach `set_process_translator`); `None` vor Init.
+pub fn process_translator() -> Option<&'static Translator> {
+    PROCESS_TRANSLATOR.get()
 }
 
 pub fn t(key: &str) -> String {

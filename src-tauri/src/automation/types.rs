@@ -18,6 +18,10 @@ pub(super) struct AutomationState {
     pub(super) workspace: WorkspaceAutomationState,
     pub(super) tabs: Vec<TabSummary>,
     pub(super) console_error_count: usize,
+    /// true nach dem idempotenten `frontend_ready`-Command (Bootstrap fertig).
+    pub(super) frontend_ready: bool,
+    /// Aufgelöster catalogTag der Prozess-Sprache (z. B. `"de"`).
+    pub(super) lang: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -451,6 +455,8 @@ mod phase0_request_tests {
                 active: true,
             }],
             console_error_count: 0,
+            frontend_ready: true,
+            lang: "de".into(),
         };
         let json = serde_json::to_value(&state).unwrap();
         assert_eq!(65.0, json["splitMidPercent"]);

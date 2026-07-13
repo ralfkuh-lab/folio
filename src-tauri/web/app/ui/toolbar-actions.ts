@@ -14,7 +14,7 @@ import { activateRelativeTab } from '../state/tabs';
 import { setMode } from '../editor/shell';
 import { openImageDialog } from './image-dialog';
 import { openTranslateDialog } from './translate-dialog';
-import { showCheatSheet, hideCheatSheet, cheatSheetRows } from './cheatsheet';
+import { showCheatSheet, hideCheatSheet, getCheatSheetRows } from './cheatsheet';
 import { folioLog, safeInvoke } from '../util/log';
 
 export function initToolbarActions(): void {
@@ -132,7 +132,7 @@ export function initToolbarActions(): void {
         var ov = $('cheatsheet-overlay');
         if (!ov) return;
         if (ov.hidden) {
-            showCheatSheet(JSON.stringify(cheatSheetRows.map(function(r){return{label:r[0],code:r[1]};})));
+            showCheatSheet(JSON.stringify(getCheatSheetRows().map(function(r){return{label:r[0],code:r[1]};})));
         } else {
             hideCheatSheet();
         }

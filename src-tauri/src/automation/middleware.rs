@@ -69,15 +69,23 @@ pub(super) async fn security_guard(
     };
 
     // Preflights tragen nie Custom-Header und lösen selbst nichts aus —
-    // der eigentliche Request wird erneut geprüft.
-    if request.method() != Method::OPTIONS {
-        let provided = request
-            .headers()
-            .get("x-folio-automation-token")
-            .and_then(|value| value.to_str().ok());
-        if !token_matches(required_token(), provided) {
-            return ApiError::forbidden("missing or invalid automation token").into_response();
+    // der eigentliche Request wird erneut geprüft. OPTIONS hier beantworten
+    // (statt catch-all-Route), damit unbekannte Pfade weiterhin 404 via
+    // Fallback bekommen und nicht fälschlich 405 (method_not_allowed).
+    if request.method() == Method::OPTIONS {
+        let mut response = preflight().await.into_response();
+        if let Some(origin) = cors_origin {
+            add_cors_headers(&mut response, &origin);
         }
+        return response;
+    }
+
+    let provided = request
+        .headers()
+        .get("x-folio-automation-token")
+        .and_then(|value| value.to_str().ok());
+    if !token_matches(required_token(), provided) {
+        return ApiError::forbidden("missing or invalid automation token").into_response();
     }
 
     let mut response = next.run(request).await;
@@ -85,6 +93,241 @@ pub(super) async fn security_guard(
         add_cors_headers(&mut response, &origin);
     }
     response
+}
+
+// ─── Frontend-Ready-Gate (Spec I1b) ─────────────────────────────────────────
+//
+// POSITIVE Matrix: nur bekannte FE-abhängige (Methode, Pfad)-Paare warten.
+// Unbekannte Pfade und falsche Methoden laufen ohne Wait durch und
+// liefern sofort 404/405 (kein 10s-Startup-Timeout).
+//
+// Warten NICHT (kein Eintrag unten):
+//   GET  /state, /tabs, /console/errors, /settings, /editor/text
+//   POST /search
+//   OPTIONS *
+//
+// Warten (Eintrag unten): Routen die FE-Events/ACK/Screenshot brauchen.
+
+/// Positive Allowlist: (METHOD, path) die auf frontend_ready warten.
+fn needs_frontend_ready(method: &Method, path: &str) -> bool {
+    matches!(
+        (method.as_str(), path),
+        ("GET", "/screenshot")
+            | ("GET", "/dom")
+            | ("POST", "/settings")
+            | ("POST", "/open")
+            | ("POST", "/open-ui")
+            | ("POST", "/tabs/open")
+            | ("POST", "/tabs/close")
+            | ("POST", "/tabs/activate")
+            | ("POST", "/tabs/close_all")
+            | ("POST", "/tabs/reorder")
+            | ("POST", "/mode")
+            | ("POST", "/theme")
+            | ("POST", "/rail")
+            | ("POST", "/split")
+            | ("POST", "/click")
+            | ("POST", "/rightclick")
+            | ("POST", "/key")
+            | ("POST", "/toc/activate")
+            | ("POST", "/menu/click")
+            | ("POST", "/editor/command")
+            | ("POST", "/workspace/pin")
+            | ("POST", "/workspace/unpin")
+            | ("POST", "/history/back")
+            | ("POST", "/history/forward")
+            | ("POST", "/focus")
+            | ("POST", "/find")
+            | ("POST", "/find/text")
+            | ("POST", "/eval")
+            | ("POST", "/sync/render")
+            | ("POST", "/editor/text")
+            | ("POST", "/editor/selection")
+            | ("POST", "/resize")
+            | ("POST", "/save")
+            | ("POST", "/wait")
+            | ("POST", "/quit")
+    )
+}
+
+/// Effective startup timeout: short in unit tests so gate tests stay fast.
+fn ready_gate_timeout() -> std::time::Duration {
+    #[cfg(test)]
+    {
+        std::time::Duration::from_millis(80)
+    }
+    #[cfg(not(test))]
+    {
+        crate::i18n::ready::STARTUP_TIMEOUT
+    }
+}
+
+/// Wartet auf `frontend_ready` nur für FE-abhängige bekannte Routen.
+pub(super) async fn frontend_ready_guard(request: Request<Body>, next: Next) -> Response {
+    let method = request.method().clone();
+    let path = request.uri().path().to_string();
+    if needs_frontend_ready(&method, &path) && !crate::i18n::ready::is_ready() {
+        let ok = crate::i18n::ready::wait_ready(ready_gate_timeout()).await;
+        if !ok {
+            tracing::warn!(
+                target: "folio::automation",
+                %method,
+                %path,
+                "frontend_ready timeout before automation route"
+            );
+            return ApiError::service_unavailable(
+                "frontend not ready (frontend_ready timeout)".to_string(),
+            )
+            .into_response();
+        }
+    }
+    next.run(request).await
+}
+
+#[cfg(test)]
+mod ready_matrix_tests {
+    use super::*;
+    use axum::http::Method;
+
+    #[test]
+    fn no_wait_routes() {
+        assert!(!needs_frontend_ready(&Method::GET, "/state"));
+        assert!(!needs_frontend_ready(&Method::GET, "/tabs"));
+        assert!(!needs_frontend_ready(&Method::GET, "/console/errors"));
+        assert!(!needs_frontend_ready(&Method::GET, "/settings"));
+        assert!(!needs_frontend_ready(&Method::POST, "/search"));
+        assert!(!needs_frontend_ready(&Method::GET, "/editor/text"));
+        assert!(!needs_frontend_ready(&Method::OPTIONS, "/dom"));
+        // Unknown path / wrong method: do not gate
+        assert!(!needs_frontend_ready(&Method::GET, "/no-such-route"));
+        assert!(!needs_frontend_ready(&Method::POST, "/dom"));
+        assert!(!needs_frontend_ready(&Method::GET, "/click"));
+    }
+
+    #[test]
+    fn wait_routes() {
+        assert!(needs_frontend_ready(&Method::GET, "/dom"));
+        assert!(needs_frontend_ready(&Method::GET, "/screenshot"));
+        assert!(needs_frontend_ready(&Method::POST, "/click"));
+        assert!(needs_frontend_ready(&Method::POST, "/eval"));
+        assert!(needs_frontend_ready(&Method::POST, "/find"));
+        assert!(needs_frontend_ready(&Method::POST, "/find/text"));
+        assert!(needs_frontend_ready(&Method::POST, "/sync/render"));
+        assert!(needs_frontend_ready(&Method::POST, "/menu/click"));
+        assert!(needs_frontend_ready(&Method::POST, "/settings"));
+        assert!(needs_frontend_ready(&Method::POST, "/open"));
+        assert!(needs_frontend_ready(&Method::POST, "/tabs/open"));
+        assert!(needs_frontend_ready(&Method::POST, "/quit"));
+    }
+}
+
+#[cfg(test)]
+mod ready_gate_integration {
+    //! Router-level tests for the ready gate (F3).
+    //! Serialised via GATE_LOCK because READY is process-global.
+    use super::*;
+    use axum::{
+        body::{to_bytes, Body},
+        http::{Request, StatusCode},
+        middleware,
+        routing::{get, post},
+        Router,
+    };
+    use std::time::{Duration, Instant};
+    use tower::ServiceExt;
+
+    /// Serialise ready-gate tests: process-global READY flag.
+    static GATE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    fn mini_router() -> Router {
+        // No OPTIONS catch-all here: a `/{*path}` OPTIONS-only route would make
+        // unknown paths hit method_not_allowed (405) instead of fallback (404).
+        Router::new()
+            .route("/state", get(|| async { "state-ok" }))
+            .route("/dom", get(|| async { "dom-ok" }))
+            .route("/click", post(|| async { "click-ok" }))
+            .fallback(not_found)
+            .method_not_allowed_fallback(method_not_allowed)
+            .layer(middleware::from_fn(frontend_ready_guard))
+    }
+
+    async fn call(router: Router, method: &str, uri: &str) -> (StatusCode, String) {
+        let req = Request::builder()
+            .method(method)
+            .uri(uri)
+            .body(Body::empty())
+            .unwrap();
+        let resp = router.oneshot(req).await.unwrap();
+        let status = resp.status();
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = String::from_utf8_lossy(&bytes).into_owned();
+        (status, body)
+    }
+
+    #[tokio::test]
+    async fn never_ready_gated_route_returns_503_after_timeout() {
+        let _guard = GATE_LOCK.lock().await;
+        crate::i18n::ready::reset_for_tests();
+        let start = Instant::now();
+        let (status, body) = call(mini_router(), "GET", "/dom").await;
+        let elapsed = start.elapsed();
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert!(body.contains("frontend not ready"), "{body}");
+        // Short test timeout (~80ms); must not hang for production 10s.
+        assert!(elapsed < Duration::from_secs(2), "elapsed={elapsed:?}");
+        assert!(elapsed >= Duration::from_millis(40), "elapsed={elapsed:?}");
+    }
+
+    #[tokio::test]
+    async fn ready_during_wait_returns_ok() {
+        let _guard = GATE_LOCK.lock().await;
+        crate::i18n::ready::reset_for_tests();
+        tokio::spawn(async {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            crate::i18n::ready::mark_ready();
+        });
+        let (status, body) = call(mini_router(), "GET", "/dom").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, "dom-ok");
+    }
+
+    #[tokio::test]
+    async fn unknown_path_returns_404_immediately() {
+        let _guard = GATE_LOCK.lock().await;
+        crate::i18n::ready::reset_for_tests();
+        let start = Instant::now();
+        let (status, _) = call(mini_router(), "GET", "/no-such-route").await;
+        let elapsed = start.elapsed();
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert!(
+            elapsed < Duration::from_millis(200),
+            "must not wait for ready-gate: elapsed={elapsed:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn wrong_method_returns_405_immediately() {
+        let _guard = GATE_LOCK.lock().await;
+        crate::i18n::ready::reset_for_tests();
+        let start = Instant::now();
+        // /dom is GET-only; POST is wrong method.
+        let (status, _) = call(mini_router(), "POST", "/dom").await;
+        let elapsed = start.elapsed();
+        assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
+        assert!(
+            elapsed < Duration::from_millis(200),
+            "must not wait for ready-gate: elapsed={elapsed:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn ungated_state_works_while_not_ready() {
+        let _guard = GATE_LOCK.lock().await;
+        crate::i18n::ready::reset_for_tests();
+        let (status, body) = call(mini_router(), "GET", "/state").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, "state-ok");
+    }
 }
 
 fn host_allowed(host: &str) -> bool {
@@ -149,7 +392,8 @@ pub(super) async fn method_not_allowed(method: Method, uri: Uri) -> Response {
     if method == Method::OPTIONS {
         return preflight().await.into_response();
     }
-    ApiError::not_found(format!("no route for {method} {}", uri.path())).into_response()
+    ApiError::method_not_allowed(format!("method not allowed for {method} {}", uri.path()))
+        .into_response()
 }
 
 #[cfg(test)]

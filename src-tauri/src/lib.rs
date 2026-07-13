@@ -378,6 +378,8 @@ pub fn builder(settings: crate::settings::SettingsService) -> tauri::Builder<tau
             commands::app::set_search_options,
             commands::app::open_find,
             commands::app::cli_pending_open,
+            commands::app::i18n_cmd::i18n_catalog,
+            commands::app::i18n_cmd::frontend_ready,
             commands::app::set_window_title,
             commands::app::set_webview_zoom,
             commands::app::shell_opener::show_in_file_manager,
