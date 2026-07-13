@@ -18,23 +18,6 @@ use std::{
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum Language {
-    #[default]
-    De,
-    En,
-}
-
-impl Language {
-    pub fn code(self) -> &'static str {
-        match self {
-            Self::De => "de",
-            Self::En => "en",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
 pub enum DefaultViewMode {
     View,
     Edit,
@@ -130,8 +113,9 @@ impl LogLevel {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SettingsData {
-    #[serde(default)]
-    pub language: Language,
+    /// `"system"` oder kanonischer BCP-47-Tag aus der i18n-Registry.
+    #[serde(default = "default_language")]
+    pub language: String,
     #[serde(default = "default_mode_markdown")]
     pub default_mode_markdown: DefaultViewMode,
     #[serde(default = "default_mode_text")]
@@ -187,6 +171,10 @@ pub struct SettingsData {
     pub log_level: LogLevel,
 }
 
+fn default_language() -> String {
+    "system".to_string()
+}
+
 fn default_mode_markdown() -> DefaultViewMode {
     DefaultViewMode::Current
 }
@@ -206,7 +194,7 @@ fn default_view_theme() -> String {
 impl Default for SettingsData {
     fn default() -> Self {
         Self {
-            language: Language::default(),
+            language: default_language(),
             default_mode_markdown: default_mode_markdown(),
             default_mode_text: default_mode_text(),
             view_auto_format: default_true(),
@@ -229,7 +217,7 @@ impl Default for SettingsData {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SettingsPatch {
-    pub language: Option<Language>,
+    pub language: Option<String>,
     pub default_mode_markdown: Option<DefaultViewMode>,
     pub default_mode_text: Option<DefaultViewMode>,
     pub view_auto_format: Option<bool>,
@@ -284,6 +272,12 @@ impl SettingsService {
     pub fn load_from(path: PathBuf) -> Self {
         let data = persist::load_json(&path);
         Self { data, path }
+    }
+
+    /// Nach Migration/typisiertem Load: effektive Sprache erzwingen
+    /// (Whole-Object-Fallback darf die extrahierte Sprache nicht verwerfen).
+    pub fn set_language_for_boot(&mut self, language: String) {
+        self.data.language = language;
     }
 
     pub fn data(&self) -> SettingsData {
@@ -351,6 +345,14 @@ impl SettingsService {
         }
         let mut changed: Vec<&'static str> = Vec::new();
         if let Some(value) = patch.language {
+            // Patch-Validierung: nur "system" oder exakter Registry-Tag.
+            let registry = crate::i18n::embedded_registry();
+            if !crate::i18n::is_valid_language_setting(&value, registry) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("Ungültige Sprache: '{value}'"),
+                ));
+            }
             if self.data.language != value {
                 self.data.language = value;
                 changed.push("language");
@@ -443,7 +445,7 @@ mod tests {
     #[test]
     fn defaults_match_expected() {
         let data = SettingsData::default();
-        assert_eq!(Language::De, data.language);
+        assert_eq!("system", data.language);
         assert_eq!(DefaultViewMode::Current, data.default_mode_markdown);
         assert_eq!(DefaultViewMode::Current, data.default_mode_text);
         assert!(data.view_auto_format);
@@ -790,7 +792,7 @@ mod tests {
     fn enums_serialize_lowercase() {
         let data = SettingsData::default();
         let json = serde_json::to_string(&data).unwrap();
-        assert!(json.contains("\"language\":\"de\""), "got: {json}");
+        assert!(json.contains("\"language\":\"system\""), "got: {json}");
         assert!(
             json.contains("\"defaultModeMarkdown\":\"current\""),
             "got: {json}"
@@ -836,7 +838,7 @@ mod tests {
 
         let changed = svc
             .apply_patch(SettingsPatch {
-                language: Some(Language::De), // gleicher Wert wie default
+                language: Some("system".to_string()), // gleicher Wert wie default
                 view_auto_format: Some(false),
                 ..Default::default()
             })
@@ -845,7 +847,7 @@ mod tests {
 
         let reloaded = SettingsService::load_from(path).data();
         assert!(!reloaded.view_auto_format);
-        assert_eq!(Language::De, reloaded.language);
+        assert_eq!("system", reloaded.language);
     }
 
     #[test]
@@ -855,7 +857,7 @@ mod tests {
         let mut svc = SettingsService::load_from(path.clone());
         let changed = svc
             .apply_patch(SettingsPatch {
-                language: Some(Language::En),
+                language: Some("en".to_string()),
                 default_mode_markdown: Some(DefaultViewMode::Edit),
                 default_mode_text: Some(DefaultViewMode::View),
                 view_auto_format: Some(false),
@@ -876,7 +878,7 @@ mod tests {
         assert_eq!(13, changed.len());
 
         let reloaded = SettingsService::load_from(path).data();
-        assert_eq!(Language::En, reloaded.language);
+        assert_eq!("en", reloaded.language);
         assert_eq!(DefaultViewMode::Edit, reloaded.default_mode_markdown);
         assert_eq!(DefaultViewMode::View, reloaded.default_mode_text);
         assert!(!reloaded.view_auto_format);
@@ -897,13 +899,48 @@ mod tests {
     }
 
     #[test]
-    fn invalid_enum_falls_back_to_default_on_load() {
-        // Wenn das JSON kaputt ist (z. B. unbekannter Sprachcode),
-        // soll der Service auf Defaults zurueckfallen statt zu crashen.
+    fn unknown_language_tag_is_kept_on_load() {
+        // Unbekannte gespeicherte Tags bleiben erhalten (Resolver fällt
+        // zur Laufzeit auf en zurück); kein Deserialisierungs-Crash.
         let temp = TempDir::new().unwrap();
         let path = temp.path().join("settings.json");
         std::fs::write(&path, r#"{"language":"xx"}"#).unwrap();
         let svc = SettingsService::load_from(path);
-        assert_eq!(SettingsData::default(), svc.data());
+        assert_eq!("xx", svc.data().language);
+    }
+
+    #[test]
+    fn patch_rejects_unknown_language_tag() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("settings.json");
+        let mut svc = SettingsService::load_from(path);
+        let err = svc
+            .apply_patch(SettingsPatch {
+                language: Some("xx".to_string()),
+                ..Default::default()
+            })
+            .unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+        assert!(err.to_string().contains("Ungültige Sprache"), "{err}");
+    }
+
+    #[test]
+    fn patch_accepts_de_en_system_tags() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("settings.json");
+        let mut svc = SettingsService::load_from(path.clone());
+        for tag in ["de", "en", "system"] {
+            let changed = svc
+                .apply_patch(SettingsPatch {
+                    language: Some(tag.to_string()),
+                    ..Default::default()
+                })
+                .unwrap();
+            assert!(
+                changed.contains(&"language") || svc.data().language == tag,
+                "tag={tag} changed={changed:?}"
+            );
+            assert_eq!(tag, svc.data().language);
+        }
     }
 }

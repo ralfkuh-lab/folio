@@ -144,6 +144,11 @@ impl Default for AppState {
 
 impl AppState {
     pub fn new() -> Self {
+        Self::with_settings(SettingsService::load())
+    }
+
+    /// Boot-Owner-Pfad: denselben einmalig geladenen `SettingsService` übernehmen.
+    pub fn with_settings(settings: SettingsService) -> Self {
         let theme = ThemeService::load();
         let initial_theme = theme.mode().to_string();
         Self {
@@ -152,7 +157,7 @@ impl AppState {
             panel_state: Mutex::new(PanelState::load()),
             theme: Mutex::new(theme),
             theme_write: Mutex::new(()),
-            settings: Mutex::new(SettingsService::load()),
+            settings: Mutex::new(settings),
             ai_config: Mutex::new(AiConfigService::load()),
             ai_auth: Mutex::new(AuthStore::load()),
             ai_http: reqwest::Client::new(),

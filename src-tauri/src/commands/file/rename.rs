@@ -44,7 +44,7 @@ pub fn run_rename_dialog(
             .ok_or_else(|| "Kein Dokument geöffnet.".to_string())?
     };
 
-    let labels = menu_strings::labels("de");
+    let labels = menu_strings::labels();
     let mut builder = handle.dialog().file().set_title("Umbenennen…");
     let current_filename = Path::new(&current_path)
         .file_name()
@@ -54,7 +54,7 @@ pub fn run_rename_dialog(
     if let Some(parent) = Path::new(&current_path).parent() {
         builder = builder.set_directory(parent);
     }
-    builder = builder.add_filter(labels.save_as_filter_all, &["*"]);
+    builder = builder.add_filter(labels.save_as_filter_all.as_str(), &["*"]);
 
     let Some(target) = builder.blocking_save_file() else {
         return Ok(None);

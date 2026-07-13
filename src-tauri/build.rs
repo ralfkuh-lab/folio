@@ -1,4 +1,9 @@
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+
+#[path = "src/i18n/catalog.rs"]
+mod catalog;
 
 fn main() {
     // Git-Hash (kurz) als compile-time env exposen. Fehlt Git oder die
@@ -27,6 +32,30 @@ fn main() {
     // im inkrementellen Cache ein.
     println!("cargo:rerun-if-changed=../.git/HEAD");
     println!("cargo:rerun-if-changed=../.git/refs/heads");
+
+    // i18n registry codegen (fail closed)
+    let locales = Path::new("locales");
+    println!("cargo:rerun-if-changed=locales");
+    if locales.is_dir() {
+        if let Ok(rd) = fs::read_dir(locales) {
+            for ent in rd.flatten() {
+                let p = ent.path();
+                if p.extension().and_then(|e| e.to_str()) == Some("json") {
+                    println!("cargo:rerun-if-changed={}", p.display());
+                }
+            }
+        }
+    }
+    match catalog::generate_registry(locales) {
+        Ok(gen) => {
+            let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
+            let out = out_dir.join("i18n_registry.rs");
+            fs::write(&out, gen.rust_source).expect("write i18n_registry.rs");
+        }
+        Err(e) => {
+            panic!("i18n catalog generation failed: {e}");
+        }
+    }
 
     tauri_build::build();
 }

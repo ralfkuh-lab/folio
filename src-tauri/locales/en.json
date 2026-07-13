@@ -1,0 +1,51 @@
+{
+  "@meta": {
+    "tag": "en",
+    "name": "English",
+    "locale": "en-US"
+  },
+  "menu.edit": "Edit",
+  "menu.edit.aiActions": "AI Actions…",
+  "menu.edit.aiTranslate": "Translate with AI…",
+  "menu.edit.find": "Find…",
+  "menu.edit.redo": "Redo",
+  "menu.edit.searchVault": "Search Vault…",
+  "menu.edit.settings": "Settings…",
+  "menu.edit.undo": "Undo",
+  "menu.file": "File",
+  "menu.file.closeTab": "Close Tab",
+  "menu.file.export": "Export…",
+  "menu.file.open": "Open…",
+  "menu.file.quit": "Quit",
+  "menu.file.recent": "Recent",
+  "menu.file.recentEmpty": "(no entries)",
+  "menu.file.rename": "Rename…",
+  "menu.file.save": "Save",
+  "menu.file.saveAs": "Save As…",
+  "menu.filter.all": "All Files",
+  "menu.filter.markdown": "Markdown",
+  "menu.filter.text": "Text File",
+  "menu.help": "Help",
+  "menu.help.about": "About Folio",
+  "menu.help.cheatsheet": "Cheat Sheet",
+  "menu.help.setupMdIcon": "Set up Markdown icon integration…",
+  "menu.view": "View",
+  "menu.view.minimap": "Toggle Minimap",
+  "menu.view.modeEdit": "Edit Mode",
+  "menu.view.modeSplit": "Split Mode",
+  "menu.view.modeView": "View Mode",
+  "menu.view.railLeft": "Toggle Vault",
+  "menu.view.railRight": "Toggle Outline",
+  "menu.view.theme": "Theme",
+  "menu.view.themeDark": "Dark",
+  "menu.view.themeLight": "Light",
+  "search.status.done": "{hitsPart} in {filesPart} ({ms} ms)",
+  "search.status.filesPart": {
+    "one": "1 file",
+    "other": "{count} files"
+  },
+  "search.status.hitsPart": {
+    "one": "1 hit",
+    "other": "{count} hits"
+  }
+}

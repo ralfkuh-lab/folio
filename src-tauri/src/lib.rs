@@ -12,6 +12,7 @@ pub mod frontmatter;
 pub mod git_branch;
 pub mod git_ignore;
 pub mod heading_anchor;
+pub mod i18n;
 pub mod link_interceptor;
 pub mod logging;
 pub mod menu;
@@ -58,7 +59,7 @@ where
     None
 }
 
-pub fn builder() -> tauri::Builder<tauri::Wry> {
+pub fn builder(settings: crate::settings::SettingsService) -> tauri::Builder<tauri::Wry> {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             let Some(path) = first_file_arg(args) else {
@@ -111,18 +112,13 @@ pub fn builder() -> tauri::Builder<tauri::Wry> {
         .plugin(tauri_plugin_screenshots::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .menu(|handle| {
-            // Sprache aus den persistierten Settings ziehen — Live-Switch
-            // gibt es bewusst nicht (Codex-Review: Menue-Rebuild verliert
-            // den vom Frontend nachgepflegten checked/enabled-State).
-            // Stattdessen wirkt die Sprachwahl beim naechsten Start.
-            let lang = crate::settings::SettingsService::load()
-                .data()
-                .language
-                .code();
-            menu::build(handle, lang)
+            // Sprache wird einmal im Boot-Owner aufgelöst und als
+            // MenuLabels-OnceLock gesetzt — Live-Switch gibt es bewusst
+            // nicht (Menue-Rebuild verliert checked/enabled-State).
+            menu::build(handle)
         })
         .on_menu_event(menu::on_menu_event)
-        .manage(AppState::new())
+        .manage(AppState::with_settings(settings))
         .on_window_event(|window, event| {
             if window.label() != "main" {
                 return;
@@ -523,14 +519,42 @@ pub fn run() {
         std::env::set_var("GDK_BACKEND", "x11");
     }
 
-    // Logging zuerst hochziehen — alle nachfolgenden Module (inkl.
-    // `builder().setup(...)`) sollen schon einen Subscriber haben.
-    // Level: persistiert in `settings.json`; `RUST_LOG` und
-    // `cfg(debug_assertions)` haben Vorrang (siehe `logging::init`).
-    let level = crate::settings::SettingsService::load().data().log_level;
+    // ── Boot-Owner (i18n Spec): genau ein Settings-Load ─────────────────
+    // (1) raw Migration → (2) Settings laden → Logging mit geladenem Stand
+    // → (3) FOLIO_LANG/Resolver → (4) Kataloge + Translator/MenuLabels
+    // → (5) derselbe SettingsService in AppState.
+    let config_dir = crate::i18n::config_dir();
+    let (settings, mig) = crate::i18n::boot_load_settings(&config_dir);
+    let level = settings.data().log_level;
     crate::logging::init(level, &crate::persist::log_dir());
+    for msg in &mig.diagnostics {
+        tracing::warn!(target: "folio::i18n", "{msg}");
+    }
 
-    builder()
+    let registry = crate::i18n::load_embedded_registry();
+    let folio_lang = std::env::var("FOLIO_LANG").ok();
+    let os_locale = sys_locale::get_locale();
+    let resolved = crate::i18n::resolve_language(
+        &settings.data().language,
+        folio_lang.as_deref(),
+        os_locale.as_deref(),
+        &registry,
+    );
+    tracing::info!(
+        target: "folio::i18n",
+        catalog = %resolved.catalog_tag,
+        format_locale = %resolved.format_locale,
+        setting = %settings.data().language,
+        "i18n language resolved"
+    );
+    let translator = crate::i18n::Translator::new(registry, resolved);
+    let menu_labels = crate::i18n::menu_labels_from_translator(&translator);
+    crate::menu::strings::set_boot_labels(menu_labels);
+    if crate::i18n::set_process_translator(translator).is_err() {
+        tracing::warn!(target: "folio::i18n", "process translator already set");
+    }
+
+    builder(settings)
         .build(tauri::generate_context!())
         .expect("failed to build Tauri application")
         .run(|app, event| {

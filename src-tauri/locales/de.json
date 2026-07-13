@@ -1,0 +1,51 @@
+{
+  "@meta": {
+    "tag": "de",
+    "name": "Deutsch",
+    "locale": "de-DE"
+  },
+  "menu.edit": "Bearbeiten",
+  "menu.edit.aiActions": "KI-Aktionen…",
+  "menu.edit.aiTranslate": "Mit KI übersetzen…",
+  "menu.edit.find": "Suchen…",
+  "menu.edit.redo": "Wiederholen",
+  "menu.edit.searchVault": "Im Vault suchen…",
+  "menu.edit.settings": "Einstellungen…",
+  "menu.edit.undo": "Rückgängig",
+  "menu.file": "Datei",
+  "menu.file.closeTab": "Tab schließen",
+  "menu.file.export": "Exportieren…",
+  "menu.file.open": "Öffnen…",
+  "menu.file.quit": "Beenden",
+  "menu.file.recent": "Zuletzt geöffnet",
+  "menu.file.recentEmpty": "(keine Einträge)",
+  "menu.file.rename": "Umbenennen…",
+  "menu.file.save": "Speichern",
+  "menu.file.saveAs": "Speichern unter…",
+  "menu.filter.all": "Alle Dateien",
+  "menu.filter.markdown": "Markdown",
+  "menu.filter.text": "Textdatei",
+  "menu.help": "Hilfe",
+  "menu.help.about": "Über folio",
+  "menu.help.cheatsheet": "Cheat-Sheet",
+  "menu.help.setupMdIcon": "Markdown-Icon-Integration einrichten…",
+  "menu.view": "Ansicht",
+  "menu.view.minimap": "Minimap ein/aus",
+  "menu.view.modeEdit": "Edit-Mode",
+  "menu.view.modeSplit": "Split-Mode",
+  "menu.view.modeView": "View-Mode",
+  "menu.view.railLeft": "Vault ein/aus",
+  "menu.view.railRight": "Inhaltsverzeichnis ein/aus",
+  "menu.view.theme": "Theme",
+  "menu.view.themeDark": "Dunkel",
+  "menu.view.themeLight": "Hell",
+  "search.status.done": "{hitsPart} in {filesPart} ({ms} ms)",
+  "search.status.filesPart": {
+    "one": "1 Datei",
+    "other": "{count} Dateien"
+  },
+  "search.status.hitsPart": {
+    "one": "1 Treffer",
+    "other": "{count} Treffer"
+  }
+}

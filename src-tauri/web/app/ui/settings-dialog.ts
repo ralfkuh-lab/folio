@@ -20,7 +20,8 @@ import {
     type ViewThemeInfo,
 } from './settings-themes';
 
-type SettingsLanguage = 'de' | 'en';
+/** BCP-47-Tag, `"system"`, oder unbekannter gespeicherter Wert. */
+export type SettingsLanguage = string;
 export type DefaultViewMode = 'view' | 'edit' | 'current';
 export type ExportDirMode = 'document' | 'last';
 export type OpenFileTarget = 'newtab' | 'replace';
@@ -125,7 +126,7 @@ function applySettingsToForm(data: SettingsData): void {
     var logLevel = $('settings-log-level') as HTMLSelectElement | null;
     var langHint = $('settings-language-hint');
 
-    if (langSelect) langSelect.value = data.language;
+    if (langSelect) syncLanguageSelect(langSelect, data.language);
     if (mdSelect) mdSelect.value = data.defaultModeMarkdown;
     if (textSelect) textSelect.value = data.defaultModeText;
     if (autoFormat) autoFormat.checked = !!data.viewAutoFormat;
@@ -224,13 +225,42 @@ export function closeSettingsDialog(): void {
     dlg.hidden = true;
 }
 
+/** Setzt das Sprach-Select inkl. unbekannter/System-Werte ohne leeres Select. */
+export function syncLanguageSelect(select: HTMLSelectElement, language: string): void {
+    // temporäre unknown-Option entfernen
+    var unknown = select.querySelector('option[data-unknown-lang]');
+    if (unknown) unknown.remove();
+    var known = Array.from(select.options).some(function (o) {
+        return o.value === language && !o.disabled;
+    });
+    if (!known && language) {
+        var opt = document.createElement('option');
+        opt.value = language;
+        opt.textContent = language + ' (unbekannt)';
+        opt.disabled = true;
+        opt.selected = true;
+        opt.setAttribute('data-unknown-lang', '1');
+        select.appendChild(opt);
+    }
+    select.value = language;
+    // falls value nicht greift (disabled-only), selectedIndex setzen
+    if (select.value !== language) {
+        for (var i = 0; i < select.options.length; i++) {
+            if (select.options[i].value === language) {
+                select.selectedIndex = i;
+                break;
+            }
+        }
+    }
+}
+
 function bindInputs(): void {
     var langSelect = $('settings-language') as HTMLSelectElement | null;
     if (langSelect) {
         langSelect.addEventListener('change', function () {
             var value = langSelect.value;
-            if (value !== 'de' && value !== 'en') return;
-            patchSettings({ language: value as SettingsLanguage });
+            if (!value || langSelect.selectedOptions[0]?.disabled) return;
+            patchSettings({ language: value });
         });
     }
     var mdSelect = $('settings-default-md') as HTMLSelectElement | null;

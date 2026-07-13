@@ -32,7 +32,7 @@ pub fn run_save_as(
     let current_path = current_path.expect("path checked above");
 
     // 2) Dialog mit Filter aus aktueller Endung + immer „Alle Dateien".
-    let labels = menu_strings::labels("de");
+    let labels = menu_strings::labels();
     let kind = classify(&current_path);
     let mut builder = handle.dialog().file();
     let current_filename = Path::new(&current_path)
@@ -46,7 +46,7 @@ pub fn run_save_as(
     match kind {
         FileKind::Markdown => {
             builder = builder.add_filter(
-                labels.save_as_filter_markdown,
+                labels.save_as_filter_markdown.as_str(),
                 &["md", "markdown", "mdown", "mkd"],
             );
         }
@@ -57,7 +57,8 @@ pub fn run_save_as(
                 .and_then(|s| s.to_str())
             {
                 let ext_lower = ext.to_ascii_lowercase();
-                builder = builder.add_filter(labels.save_as_filter_text, &[ext_lower.as_str()]);
+                builder =
+                    builder.add_filter(labels.save_as_filter_text.as_str(), &[ext_lower.as_str()]);
             }
         }
         // Bild: kein eigener "Save As"-Filter — Image-View ist read-only.
@@ -66,7 +67,7 @@ pub fn run_save_as(
         // statt Crash.
         FileKind::Image | FileKind::Binary => {}
     }
-    builder = builder.add_filter(labels.save_as_filter_all, &["*"]);
+    builder = builder.add_filter(labels.save_as_filter_all.as_str(), &["*"]);
 
     let Some(target) = builder.blocking_save_file() else {
         return Ok(None);

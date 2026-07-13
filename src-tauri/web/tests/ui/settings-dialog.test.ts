@@ -4,6 +4,7 @@ import {
     closeSettingsDialog,
     initSettingsDialog,
     openSettingsDialog,
+    syncLanguageSelect,
 } from '../../app/ui/settings-dialog';
 import { guardedClose } from '../../app/ui/theme-editor';
 
@@ -38,6 +39,11 @@ function buildDom(): void {
                     role="tab" aria-selected="false" tabindex="-1">Markdown-Themes</button>
             </div>
             <div role="tabpanel" data-settings-tab="allgemein">
+                <select id="settings-language">
+                    <option value="system">System</option>
+                    <option value="de">Deutsch</option>
+                    <option value="en">English</option>
+                </select>
                 <select id="settings-export-dir-mode">
                     <option value="document">Verzeichnis der Datei</option>
                     <option value="last">Zuletzt gewähltes Verzeichnis</option>
@@ -626,5 +632,35 @@ describe('settings-dialog', () => {
         expect(document.querySelector<HTMLElement>(
             '[data-settings-tab="diagnose"]',
         )!.hidden).toBe(true);
+    });
+});
+
+
+describe('settings language select (i18n I1a)', () => {
+    it("language 'system' keeps select non-empty", () => {
+        document.body.innerHTML = `
+            <select id="settings-language">
+                <option value="system">System</option>
+                <option value="de">Deutsch</option>
+                <option value="en">English</option>
+            </select>`;
+        const sel = document.getElementById('settings-language') as HTMLSelectElement;
+        syncLanguageSelect(sel, 'system');
+        expect(sel.value).toBe('system');
+        expect(sel.selectedOptions.length).toBe(1);
+        expect(sel.selectedOptions[0].textContent).toContain('System');
+    });
+
+    it('unknown language adds disabled temporary option', () => {
+        document.body.innerHTML = `
+            <select id="settings-language">
+                <option value="system">System</option>
+                <option value="de">Deutsch</option>
+                <option value="en">English</option>
+            </select>`;
+        const sel = document.getElementById('settings-language') as HTMLSelectElement;
+        syncLanguageSelect(sel, 'xx-YY');
+        expect(sel.querySelector('option[data-unknown-lang]')).toBeTruthy();
+        expect(sel.value).toBe('xx-YY');
     });
 });

@@ -1,0 +1,53 @@
+{
+  "@meta": {
+    "tag": "fr",
+    "name": "Français",
+    "locale": "fr-FR"
+  },
+  "menu.edit": "Édition",
+  "menu.edit.aiActions": "Actions IA…",
+  "menu.edit.aiTranslate": "Traduire avec l’IA…",
+  "menu.edit.find": "Rechercher…",
+  "menu.edit.redo": "Rétablir",
+  "menu.edit.searchVault": "Rechercher dans le coffre…",
+  "menu.edit.settings": "Paramètres…",
+  "menu.edit.undo": "Annuler",
+  "menu.file": "Fichier",
+  "menu.file.closeTab": "Fermer l’onglet",
+  "menu.file.export": "Exporter…",
+  "menu.file.open": "Ouvrir…",
+  "menu.file.quit": "Quitter",
+  "menu.file.recent": "Récents",
+  "menu.file.recentEmpty": "(aucune entrée)",
+  "menu.file.rename": "Renommer…",
+  "menu.file.save": "Enregistrer",
+  "menu.file.saveAs": "Enregistrer sous…",
+  "menu.filter.all": "Tous les fichiers",
+  "menu.filter.markdown": "Markdown",
+  "menu.filter.text": "Fichier texte",
+  "menu.help": "Aide",
+  "menu.help.about": "À propos de Folio",
+  "menu.help.cheatsheet": "Aide-mémoire",
+  "menu.help.setupMdIcon": "Configurer l’intégration d’icône Markdown…",
+  "menu.view": "Affichage",
+  "menu.view.minimap": "Minimap afficher/masquer",
+  "menu.view.modeEdit": "Mode édition",
+  "menu.view.modeSplit": "Mode scindé",
+  "menu.view.modeView": "Mode lecture",
+  "menu.view.railLeft": "Coffre afficher/masquer",
+  "menu.view.railRight": "Table des matières afficher/masquer",
+  "menu.view.theme": "Thème",
+  "menu.view.themeDark": "Sombre",
+  "menu.view.themeLight": "Clair",
+  "search.status.done": "{hitsPart} dans {filesPart} ({ms} ms)",
+  "search.status.filesPart": {
+    "one": "1 fichier",
+    "many": "{count} fichiers",
+    "other": "{count} fichiers"
+  },
+  "search.status.hitsPart": {
+    "one": "1 résultat",
+    "many": "{count} résultats",
+    "other": "{count} résultats"
+  }
+}

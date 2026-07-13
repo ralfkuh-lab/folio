@@ -28,10 +28,11 @@ pub fn rebuild_recent_submenu(handle: &AppHandle, paths: &[String]) -> tauri::Re
     while let Ok(Some(_)) = submenu.remove_at(0) {}
 
     if paths.is_empty() {
-        let l = strings::labels("de");
-        let placeholder = MenuItemBuilder::with_id(ids::FILE_RECENT_EMPTY, l.file_recent_empty)
-            .enabled(false)
-            .build(handle)?;
+        let l = strings::labels();
+        let placeholder =
+            MenuItemBuilder::with_id(ids::FILE_RECENT_EMPTY, l.file_recent_empty.as_str())
+                .enabled(false)
+                .build(handle)?;
         submenu.append(&placeholder)?;
         return Ok(());
     }
