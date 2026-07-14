@@ -59,45 +59,49 @@ const DOCUMENT_EXCERPT_CHARS: usize = 12_000;
 /// der Prompt-Disziplin des Modells.
 pub fn system_prompt(base: Option<&BaseContext>, document_context: Option<&str>) -> String {
     let mut prompt = String::from(
-        "Du bist ein Theme-Autor fuer den Markdown-Viewer folio. \
-         Antworte AUSSCHLIESSLICH mit einem einzigen JSON-Objekt, ohne \
-         Erklaertext. Felder (alle optional ausser contentCss): \
+        "You are a professional theme author for Folio, a Markdown viewer. \
+         Return exactly one JSON object and no explanatory text. Fields (all \
+         optional except contentCss): \
          manifest {name, description, code: \"light\"|\"dark\", logo, \
          cover, header, footer, hideInlineFrontmatter, fontBody, fontMono, \
          fontSize}, contentCss, \
          darkCss, pageCss, coverHtml, headerHtml, footerHtml.\n\
-         Regeln:\n\
-         - Alle CSS-Selektoren sind strikt auf .markdown-body gescopt.\n\
-         - Verwende die Custom-Property-Konvention --fg/--muted/--rule/\
-           --rule-soft/--accent/--code-bg/--quote-bar; die Dark-Variante \
-           (darkCss) ueberschreibt nur diese Properties.\n\
-         - In coverHtml/headerHtml/footerHtml sind nur die Platzhalter \
+         Rules:\n\
+         - Scope every CSS selector strictly to .markdown-body.\n\
+         - Follow the custom-property convention --fg/--muted/--rule/\
+           --rule-soft/--accent/--code-bg/--quote-bar; the dark variant \
+           (darkCss) may override only these properties.\n\
+         - In coverHtml/headerHtml/footerHtml, use only the placeholders \
            {{title}} {{subtitle}} {{author}} {{company}} {{date}} \
-           {{logo}} erlaubt und nur einfache Tags (div, section, header, \
-           footer, h1-h3, p, span, img, table, tr, td, br, strong, em).\n\
-         - Kein <script>, keine on*-Attribute, keine externen URLs, kein \
-           @import; img-src nur data:image/... oder asset:<datei>.\n\
-         - fontBody/fontMono sind CSS-Font-Family-Strings ohne { } < > ; @ \
-           und ohne url(...); fontSize ist Zahl plus px, pt, em, rem oder %.\n\
-         - Du erzeugst keine Binaerassets; referenziere Logos nur ueber \
-           {{logo}} oder url(asset:<vorhandene datei>).",
+           {{logo}} and only simple tags (div, section, header, footer, h1-h3, \
+           p, span, img, table, tr, td, br, strong, em).\n\
+         - Do not use <script>, on* attributes, external URLs, or @import; \
+           img sources may use only data:image/... or asset:<filename>.\n\
+         - fontBody/fontMono must be CSS font-family strings without \
+           { } < > ; @ or url(...); fontSize must be a number followed by px, \
+           pt, em, rem, or %.\n\
+         - Do not create binary assets; reference logos only through {{logo}} \
+           or url(asset:<existing filename>).\n\
+         - Keep JSON field names and all CSS/HTML syntax exactly as specified. \
+           Write user-facing manifest text, especially description, in the \
+           language of the user's request.",
     );
     if let Some(document) = document_context.filter(|document| !document.trim().is_empty()) {
         prompt.push_str(
-            "\n\nDokument-Kontext: Gestalte das Theme passend zu Struktur \
-             und Inhalt dieses Dokuments; kopiere den Dokumentinhalt NICHT \
-             in die Theme-Dateien. Beginnt das Dokument mit einem \
-             Frontmatter-Block, setze bevorzugt hideInlineFrontmatter: true \
-             und zeige die Titeldaten stattdessen ueber ein Cover \
-             ({{title}}/{{author}}/{{date}}).\n\n=== Dokumentauszug ===\n",
+            "\n\nDocument context: Design the theme to suit the structure and \
+             content of this document. Do not copy document content into the \
+             theme files. If the document begins with frontmatter, prefer \
+             hideInlineFrontmatter: true and present its title metadata on a \
+             cover instead ({{title}}/{{author}}/{{date}}).\n\n\
+             === Document excerpt ===\n",
         );
         prompt.push_str(document);
     }
     if let Some(base) = base {
         prompt.push_str(&format!(
-            "\n\nVerfeinerungs-Modus: Basis ist das bestehende Theme \
-             '{}'. Aktuelle Dateien folgen; aendere gezielt, behalte \
-             Bewaehrtes.\n\n=== content.css ===\n{}",
+            "\n\nRefinement mode: Use the existing theme '{}' as the base. Its \
+             current files follow; make focused changes and preserve what \
+             already works.\n\n=== content.css ===\n{}",
             base.id, base.content_css
         ));
         for (label, part) in [
@@ -133,10 +137,10 @@ pub fn document_excerpt(markdown: &str) -> String {
         out.push_str(frontmatter);
     }
     out.push_str(&prefix);
-    out.push_str("\n\n[Dokument gekuerzt]\n");
+    out.push_str("\n\n[Document excerpt truncated]\n");
     let headings = heading_skeleton(markdown);
     if !headings.is_empty() {
-        out.push_str("\nHeading-Skelett:\n");
+        out.push_str("\nHeading outline:\n");
         out.push_str(&headings);
     }
     out
@@ -633,7 +637,8 @@ mod tests {
             footer_html: None,
         };
         let prompt = system_prompt(Some(&base), None);
-        assert!(prompt.contains("Verfeinerungs-Modus"));
+        assert!(prompt.contains("Refinement mode"));
+        assert!(prompt.contains("language of the user's request"));
         assert!(prompt.contains("--accent: #123"));
         assert!(prompt.contains("=== page.css ==="));
         assert!(!prompt.contains("=== cover.html ==="));
@@ -650,8 +655,8 @@ mod tests {
         let excerpt = document_excerpt(&markdown);
 
         assert!(excerpt.starts_with("---\ntitle: Export Pitch\nauthor: Ada\n---"));
-        assert!(excerpt.contains("[Dokument gekuerzt]"));
-        assert!(excerpt.contains("Heading-Skelett:\n# Start\n## Details"));
+        assert!(excerpt.contains("[Document excerpt truncated]"));
+        assert!(excerpt.contains("Heading outline:\n# Start\n## Details"));
         assert!(excerpt.len() < markdown.len());
     }
 
@@ -659,9 +664,10 @@ mod tests {
     fn system_prompt_includes_document_context_instruction() {
         let prompt = system_prompt(None, Some("# Bericht\n\nInhalt"));
 
-        assert!(prompt.contains("Dokument-Kontext"));
-        assert!(prompt.contains("kopiere den Dokumentinhalt NICHT"));
+        assert!(prompt.contains("Document context"));
+        assert!(prompt.contains("Do not copy document content"));
         assert!(prompt.contains("hideInlineFrontmatter: true"));
+        assert!(prompt.contains("language of the user's request"));
         assert!(prompt.contains("# Bericht"));
     }
 }

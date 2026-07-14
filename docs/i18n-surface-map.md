@@ -285,7 +285,7 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 | 651 | `KI-Aktionen` | aria-label | `ai.actions.picker.ariaLabel` | nein | HTML attribute aria-label |
 | 654 | `Prompt` | textNode | `ai.prompt.label` | nein | HTML text node |
 | 657 | `Systemregeln anzeigen` | textNode | `ai.actions.showSystemRules.action` | nein | HTML text node |
-| 657–661 | `Fester Rahmen (nicht editierbar): Antworte nur mit dem…` | textNode | `OUT-OF-SCOPE: KI-Systemprompt-Anzeige — wird in I5 englisch` | — | `#ai-actions-system-text`; I2 unübersetzt gelassen |
+| 657–661 | `Fixed system rules (not editable): Return only the…` | textNode | `OUT-OF-SCOPE: englische KI-Systemprompt-Anzeige` | — | `#ai-actions-system-text`; I5 englisch, bewusst un-katalogisiert, spiegelt den Backend-Prompt |
 | 664 | `Ziel` | aria-label | `ai.actions.target.ariaLabel` | nein | HTML attribute aria-label |
 | 665 | `Ziel` | textNode | `ai.actions.target.label` | nein | HTML text node |
 | 666 | `Neue Datei` | textNode | `ai.actions.target.newFile` | ja | HTML text node |
@@ -1591,7 +1591,9 @@ de-Namen/Beschreibungen zeichengenau wie vor I4a (E2E 38_theme_browser).
 | `to-table` | toTable | Daten als Tabelle |
 | `extract-actions` | extractActions | Aktionspunkte extrahieren |
 
-Prompts bleiben unübersetzt (I5). Custom-Templates unangetastet.
+Die fünf Built-in-Prompts sind seit I5 feste englische Instruktionen mit
+expliziter Dokumentsprachen-Regel und bleiben bewusst un-katalogisiert.
+Custom-Templates bleiben unangetastet.
 
 ### Export-Surface
 

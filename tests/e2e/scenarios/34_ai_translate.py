@@ -95,6 +95,13 @@ class _MockHandler(BaseHTTPRequestHandler):
             "",
         )
         type(self).received_user = user
+        system_lower = system.lower()
+        if (LANGUAGE not in system_lower or "markdown" not in system_lower or
+                "⟦f…:n⟧" not in system_lower):
+            type(self).validation_error = (
+                "translation-system prompt is missing target-language, Markdown, "
+                "or placeholder-preservation semantics"
+            )
         try:
             if type(self).validation_error:
                 raise ValueError(type(self).validation_error)
@@ -111,8 +118,7 @@ class _MockHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
 
-        match = re.search(r"target language\s+([^\s(]+)", system, re.IGNORECASE)
-        language = match.group(1) if match else "unknown"
+        language = LANGUAGE
         content = user.replace(
             "# Originalüberschrift", f"# MOCK-ÜBERSETZUNG ({language})"
         ).replace(

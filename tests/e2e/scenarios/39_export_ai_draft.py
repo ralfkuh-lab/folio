@@ -60,8 +60,11 @@ class _MockHandler(BaseHTTPRequestHandler):
         )
         type(self).received_system = system
         type(self).received_user = user
-        if "Dokument-Kontext" not in system or "## Zahlen" not in system:
-            type(self).validation_error = "Dokument-Kontext fehlt im System-Prompt"
+        system_lower = system.lower()
+        if ("document context" not in system_lower or
+                "do not copy document content" not in system_lower or
+                "## Zahlen" not in system):
+            type(self).validation_error = "document-context semantics missing from system prompt"
 
         theme_json = json.dumps(
             {

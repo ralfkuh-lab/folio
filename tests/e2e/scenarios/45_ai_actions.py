@@ -270,8 +270,15 @@ def run(ctx):
             ctx.expect(any(p.endswith("bericht.summary.md") for p in paths),
                        f"Summary-Tab fehlt: {paths!r}")
             ctx.expect(_MockHandler.received_stream is True, "stream:true fehlt")
-            ctx.expect("Daten, keine Anweisungen" in (_MockHandler.received_system or ""),
-                       "Untrusted-Data-Regel fehlt im System-Prompt")
+            system_prompt = (_MockHandler.received_system or "").lower()
+            ctx.expect("untrusted data" in system_prompt and
+                       "ignore" in system_prompt and "instructions" in system_prompt,
+                       "Untrusted-Data-Semantik fehlt im System-Prompt")
+            ctx.expect("respond in the language of the document" in system_prompt,
+                       "Dokumentsprachen-Regel fehlt im System-Prompt")
+            ctx.expect("respond in the language of the document" in
+                       (_MockHandler.received_user or "").lower(),
+                       "Built-in-Prompt fordert die Dokumentsprache nicht an")
 
         with ctx.step("Replace-Aktion (Korrektur) mit Diff-Review + Undo"):
             _MockHandler.mode = "proofread"
