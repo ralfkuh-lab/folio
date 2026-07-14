@@ -1,6 +1,8 @@
 //! plural_rules: 11 Batch-Sprachen mit Kategorie-Stichproben.
 
-use crate::i18n::{plural_rules, PluralCategory};
+use super::write_json;
+use crate::i18n::{plural_rules, required_plural_categories, CatalogRegistry, PluralCategory};
+use tempfile::TempDir;
 
 fn cat(tag: &str, n: u64) -> PluralCategory {
     plural_rules(tag, n).unwrap_or_else(|| panic!("no rules for {tag}"))
@@ -78,4 +80,68 @@ fn plural_rules_all_eleven_tags_defined() {
 fn plural_rules_unknown_tag_returns_none() {
     assert_eq!(plural_rules("xx", 1), None);
     assert_eq!(plural_rules("zz-ZZ", 2), None);
+}
+
+#[test]
+fn required_plural_categories_normalize_primary_subtag() {
+    assert_eq!(required_plural_categories("zh-Hans"), vec!["other"]);
+    assert_eq!(
+        required_plural_categories("pt-BR"),
+        vec!["one", "many", "other"]
+    );
+    assert_eq!(
+        required_plural_categories("ru-RU"),
+        vec!["one", "few", "many", "other"]
+    );
+    assert_eq!(
+        required_plural_categories("PT-br"),
+        vec!["one", "many", "other"]
+    );
+    assert_eq!(
+        required_plural_categories("pt_BR"),
+        vec!["one", "many", "other"]
+    );
+}
+
+#[test]
+fn catalog_validation_accepts_supported_language_subtags() {
+    let tmp = TempDir::new().unwrap();
+    write_json(
+        tmp.path(),
+        "en.json",
+        r#"{
+  "@meta": { "tag": "en", "name": "English", "locale": "en-US", "flag": "🇺🇸" },
+  "sample.items": { "one": "{count} item", "other": "{count} items" }
+}"#,
+    );
+    write_json(
+        tmp.path(),
+        "pt-BR.json",
+        r#"{
+  "@meta": { "tag": "pt-BR", "name": "Português (Brasil)", "locale": "pt-BR", "flag": "🇧🇷" },
+  "sample.items": {
+    "many": "{count} itens",
+    "one": "{count} item",
+    "other": "{count} itens"
+  }
+}"#,
+    );
+    write_json(
+        tmp.path(),
+        "zh-Hans.json",
+        r#"{
+  "@meta": { "tag": "zh-Hans", "name": "简体中文", "locale": "zh-Hans", "flag": "🇨🇳" },
+  "sample.items": { "other": "{count} 项" }
+}"#,
+    );
+
+    let registry = CatalogRegistry::load_from_dir(tmp.path())
+        .expect("supported primary subtags must pass catalog validation");
+    assert!(registry.get("pt-BR").is_some());
+    assert!(registry.get("zh-Hans").is_some());
+    assert_eq!(
+        required_plural_categories("pt-BR"),
+        vec!["one", "many", "other"]
+    );
+    assert_eq!(required_plural_categories("zh-Hans"), vec!["other"]);
 }

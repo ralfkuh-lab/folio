@@ -293,7 +293,8 @@ fn validate_catalog_set(catalogs: &[Catalog]) -> Result<(), RegistryError> {
                 tag: c.meta.tag.clone(),
             });
         }
-        if !PLURAL_BATCH_TAGS.contains(&c.meta.tag.as_str()) {
+        let primary = primary_language_subtag(&c.meta.tag);
+        if !PLURAL_BATCH_TAGS.contains(&primary.as_str()) {
             return Err(RegistryError::UnknownPluralTag {
                 tag: c.meta.tag.clone(),
             });
@@ -376,7 +377,8 @@ fn value_placeholders(v: &CatalogValue) -> BTreeSet<String> {
 /// Pflicht-Branches pro Sprache (other + alle für n≥0 erreichbaren Kategorien).
 /// Belegt gegen Intl.PluralRules (Node) für 0/1/2/5/1e6.
 pub fn required_plural_categories(tag: &str) -> Vec<&'static str> {
-    match tag {
+    let primary = primary_language_subtag(tag);
+    match primary.as_str() {
         "ja" | "zh" | "ko" => vec!["other"],
         "ru" | "pl" => vec!["one", "few", "many", "other"],
         // es/fr/it/pt: many bei 1_000_000 (CLDR cardinal integer)
@@ -384,6 +386,13 @@ pub fn required_plural_categories(tag: &str) -> Vec<&'static str> {
         // de, en
         _ => vec!["one", "other"],
     }
+}
+
+fn primary_language_subtag(tag: &str) -> String {
+    tag.split(['-', '_'])
+        .next()
+        .unwrap_or(tag)
+        .to_ascii_lowercase()
 }
 
 pub fn placeholders(s: &str) -> BTreeSet<String> {
@@ -664,8 +673,7 @@ fn parse_value(file: &str, key: &str, val: StrictValue) -> Result<CatalogValue, 
 /// CLDR-Pluralregeln (cardinal, Integer) für den V1-Batch.
 /// Abgestimmt auf `Intl.PluralRules` (Node-Referenz 2026-07-13).
 pub fn plural_rules(tag: &str, count: u64) -> Option<PluralCategory> {
-    let primary = tag.split(['-', '_']).next().unwrap_or(tag);
-    let primary = primary.to_ascii_lowercase();
+    let primary = primary_language_subtag(tag);
     match primary.as_str() {
         "de" | "en" => Some(if count == 1 {
             PluralCategory::One

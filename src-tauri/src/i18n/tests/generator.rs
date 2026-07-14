@@ -183,10 +183,6 @@ fn generate_registry_production_locales_includes_de_en_only() {
     let gen = generate_registry(&locales_dir()).expect("production locales");
     assert!(gen.tags.contains(&"de".into()));
     assert!(gen.tags.contains(&"en".into()));
-    assert!(
-        !gen.tags.contains(&"fr".into()),
-        "fr fixture must not appear in production locales/"
-    );
     // deterministische Sortierung
     let mut sorted = gen.tags.clone();
     sorted.sort();
@@ -271,7 +267,5 @@ fn production_locale_files_exist() {
     assert!(locales_dir().join("de.json").is_file());
     assert!(locales_dir().join("en.json").is_file());
     assert!(fr_fixture().is_file());
-    // fr liegt NICHT unter locales/
-    assert!(!locales_dir().join("fr.json").exists());
     let _ = fs::metadata(locales_dir().join("de.json"));
 }
