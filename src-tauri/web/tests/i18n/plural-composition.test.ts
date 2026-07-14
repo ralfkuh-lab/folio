@@ -34,7 +34,7 @@ function loadCatalog(tag: Tag): I18nCatalog {
     return {
         tag: meta.tag,
         locale: meta.locale,
-        languages: [{ tag: meta.tag, name: meta.name }],
+        languages: [{ tag: meta.tag, name: meta.name, flag: meta.flag }],
         strings: strings as I18nCatalog['strings'],
     };
 }

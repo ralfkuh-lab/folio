@@ -168,7 +168,7 @@ fn generate_registry_accepts_ru_with_extra_plural_branches() {
         tmp.path(),
         "en.json",
         r#"{
-  "@meta": { "tag": "en", "name": "English", "locale": "en-US" },
+  "@meta": { "tag": "en", "name": "English", "locale": "en-US", "flag": "🇺🇸" },
   "menu.file": "File",
   "search.status.hitsPart": { "one": "1 hit", "other": "{count} hits" }
 }"#,
@@ -177,7 +177,7 @@ fn generate_registry_accepts_ru_with_extra_plural_branches() {
         tmp.path(),
         "ru.json",
         r#"{
-  "@meta": { "tag": "ru", "name": "Русский", "locale": "ru-RU" },
+  "@meta": { "tag": "ru", "name": "Русский", "locale": "ru-RU", "flag": "🇷🇺" },
   "menu.file": "Файл",
   "search.status.hitsPart": {
     "one": "{count} совпадение",
@@ -199,7 +199,7 @@ fn generate_registry_rejects_duplicate_meta_field() {
         tmp.path(),
         "en.json",
         r#"{
-  "@meta": { "tag": "en", "tag": "en", "name": "English", "locale": "en-US" },
+  "@meta": { "tag": "en", "tag": "en", "name": "English", "locale": "en-US", "flag": "🇺🇸" },
   "menu.file": "File"
 }"#,
     );
@@ -219,7 +219,7 @@ fn generate_registry_rejects_duplicate_plural_branch() {
         tmp.path(),
         "en.json",
         r#"{
-  "@meta": { "tag": "en", "name": "English", "locale": "en-US" },
+  "@meta": { "tag": "en", "name": "English", "locale": "en-US", "flag": "🇺🇸" },
   "search.status.hitsPart": { "one": "1", "one": "2", "other": "{count}" }
 }"#,
     );
@@ -227,7 +227,7 @@ fn generate_registry_rejects_duplicate_plural_branch() {
         tmp.path(),
         "de.json",
         r#"{
-  "@meta": { "tag": "de", "name": "Deutsch", "locale": "de-DE" },
+  "@meta": { "tag": "de", "name": "Deutsch", "locale": "de-DE", "flag": "🇩🇪" },
   "search.status.hitsPart": { "one": "1", "other": "{count}" }
 }"#,
     );
@@ -246,7 +246,7 @@ fn generate_registry_rejects_trailing_garbage() {
         tmp.path(),
         "en.json",
         r#"{
-  "@meta": { "tag": "en", "name": "English", "locale": "en-US" },
+  "@meta": { "tag": "en", "name": "English", "locale": "en-US", "flag": "🇺🇸" },
   "menu.file": "File"
 }
 trailing"#,
@@ -268,7 +268,7 @@ fn generate_registry_rejects_invalid_meta_locale() {
         tmp.path(),
         "en.json",
         r#"{
-  "@meta": { "tag": "en", "name": "English", "locale": "not a locale!!!" },
+  "@meta": { "tag": "en", "name": "English", "locale": "not a locale!!!", "flag": "🇺🇸" },
   "menu.file": "File"
 }"#,
     );
@@ -295,6 +295,7 @@ fn t_falls_back_to_en_when_active_missing_key() {
             tag: "en".into(),
             name: "English".into(),
             locale: "en-US".into(),
+            flag: "🇺🇸".into(),
         },
         strings: en_strings,
     };
@@ -303,6 +304,7 @@ fn t_falls_back_to_en_when_active_missing_key() {
             tag: "de".into(),
             name: "Deutsch".into(),
             locale: "de-DE".into(),
+            flag: "🇩🇪".into(),
         },
         strings: de_strings,
     };

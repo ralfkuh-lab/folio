@@ -2,7 +2,42 @@
 
 use super::*;
 use crate::i18n::{CatalogRegistry, CatalogValue, RegistryError};
+use serde::de::{self, MapAccess, Visitor};
+use serde::Deserialize;
 use std::collections::BTreeSet;
+use std::fmt;
+use std::fs;
+
+#[derive(Debug)]
+struct OrderedStringMap(Vec<(String, String)>);
+
+impl<'de> Deserialize<'de> for OrderedStringMap {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct OrderedStringMapVisitor;
+
+        impl<'de> Visitor<'de> for OrderedStringMapVisitor {
+            type Value = OrderedStringMap;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a flat JSON object with string values")
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+                let mut entries = Vec::new();
+                let mut seen = BTreeSet::new();
+                while let Some((key, value)) = map.next_entry::<String, String>()? {
+                    if !seen.insert(key.clone()) {
+                        return Err(de::Error::custom(format!("duplicate context key: {key}")));
+                    }
+                    entries.push((key, value));
+                }
+                Ok(OrderedStringMap(entries))
+            }
+        }
+
+        deserializer.deserialize_map(OrderedStringMapVisitor)
+    }
+}
 
 fn load_prod() -> CatalogRegistry {
     CatalogRegistry::load_from_dir(&locales_dir()).expect("load production locales")
@@ -25,6 +60,71 @@ fn catalog_key_sets_match_across_languages() {
 }
 
 #[test]
+fn translation_context_matches_source_catalog() {
+    let path = locales_dir().join("context").join("keys.json");
+    assert!(
+        path.is_file(),
+        "translation context file missing: {}",
+        path.display()
+    );
+
+    let text = fs::read_to_string(&path)
+        .unwrap_or_else(|err| panic!("read translation context {}: {err}", path.display()));
+    let OrderedStringMap(entries) = serde_json::from_str(&text)
+        .unwrap_or_else(|err| panic!("invalid translation context {}: {err}", path.display()));
+
+    for (key, value) in &entries {
+        assert!(
+            !value.trim().is_empty(),
+            "translation context value is empty for key: {key}"
+        );
+    }
+
+    let keys: Vec<_> = entries.iter().map(|(key, _)| key.clone()).collect();
+    let mut sorted_keys = keys.clone();
+    sorted_keys.sort();
+    if let Some((index, (actual, expected))) = keys
+        .iter()
+        .zip(&sorted_keys)
+        .enumerate()
+        .find(|(_, (actual, expected))| actual != expected)
+    {
+        panic!(
+            "translation context keys are not alphabetically sorted at position {index}: \
+             found '{actual}', expected '{expected}'"
+        );
+    }
+
+    let actual_keys: BTreeSet<_> = keys.into_iter().collect();
+    let reg = load_prod();
+    let expected_keys: BTreeSet<_> = reg
+        .get("de")
+        .expect("de catalog")
+        .strings
+        .keys()
+        .cloned()
+        .collect();
+    let missing: Vec<_> = expected_keys.difference(&actual_keys).cloned().collect();
+    let extra: Vec<_> = actual_keys.difference(&expected_keys).cloned().collect();
+    let list = |keys: &[String]| {
+        if keys.is_empty() {
+            "  (none)".to_string()
+        } else {
+            keys.iter()
+                .map(|key| format!("  - {key}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
+    };
+    assert!(
+        missing.is_empty() && extra.is_empty(),
+        "translation context key set mismatch:\nmissing keys:\n{}\nextra keys:\n{}",
+        list(&missing),
+        list(&extra)
+    );
+}
+
+#[test]
 fn catalog_contains_full_menu_namespace() {
     let reg = load_prod();
     let en = reg.get("en").expect("en");
@@ -43,6 +143,7 @@ fn catalog_meta_complete() {
         let cat = reg.get(tag).expect(tag);
         assert_eq!(cat.meta.tag, tag);
         assert!(!cat.meta.name.is_empty(), "{tag} name");
+        assert!(!cat.meta.flag.is_empty(), "{tag} flag");
         assert!(
             cat.meta.locale.contains('-') || cat.meta.locale.len() >= 2,
             "{tag} locale={}",
@@ -53,6 +154,8 @@ fn catalog_meta_complete() {
     assert_eq!(reg.get("en").unwrap().meta.name, "English");
     assert_eq!(reg.get("de").unwrap().meta.locale, "de-DE");
     assert_eq!(reg.get("en").unwrap().meta.locale, "en-US");
+    assert_eq!(reg.get("de").unwrap().meta.flag, "🇩🇪");
+    assert_eq!(reg.get("en").unwrap().meta.flag, "🇺🇸");
 }
 
 #[test]
@@ -148,7 +251,7 @@ fn generate_registry_rejects_missing_other_branch() {
         tmp.path(),
         "en.json",
         r#"{
-  "@meta": { "tag": "en", "name": "English", "locale": "en-US" },
+  "@meta": { "tag": "en", "name": "English", "locale": "en-US", "flag": "🇺🇸" },
   "search.status.hitsPart": { "one": "1 hit" }
 }"#,
     );
@@ -156,7 +259,7 @@ fn generate_registry_rejects_missing_other_branch() {
         tmp.path(),
         "de.json",
         r#"{
-  "@meta": { "tag": "de", "name": "Deutsch", "locale": "de-DE" },
+  "@meta": { "tag": "de", "name": "Deutsch", "locale": "de-DE", "flag": "🇩🇪" },
   "search.status.hitsPart": { "one": "1 Treffer" }
 }"#,
     );

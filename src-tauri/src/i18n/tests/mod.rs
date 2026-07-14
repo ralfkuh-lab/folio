@@ -45,14 +45,14 @@ pub(super) fn write_json(dir: &Path, name: &str, body: &str) {
 /// Minimal gültiges en-Meta + ein Key (für fail-closed-Gegenstücke).
 pub(super) fn minimal_en_json() -> &'static str {
     r#"{
-  "@meta": { "tag": "en", "name": "English", "locale": "en-US" },
+  "@meta": { "tag": "en", "name": "English", "locale": "en-US", "flag": "🇺🇸" },
   "menu.file": "File"
 }"#
 }
 
 pub(super) fn minimal_de_json() -> &'static str {
     r#"{
-  "@meta": { "tag": "de", "name": "Deutsch", "locale": "de-DE" },
+  "@meta": { "tag": "de", "name": "Deutsch", "locale": "de-DE", "flag": "🇩🇪" },
   "menu.file": "Datei"
 }"#
 }

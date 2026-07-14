@@ -73,6 +73,8 @@ sonst lehnt Tauri den Build ab.
   Katalogdateien bleiben alphabetisch sortiert und haben identische Key-Mengen.
 - Keys benennen die Funktion auf Englisch in `camelCase` unter einem
   kanonischen Namespace (`errors.<modul>.<fall>`, kein freies `common.*`).
+- Jeder Katalog-Key hat in `src-tauri/locales/context/keys.json` einen
+  nichtleeren englischen Kontextsatz; neue Keys ergänzen ihn im selben Zug.
 - Frontend verwendet `t()`/`tPlural()`, Rust `t()`/`t_args()`/`t_plural()`.
   Übersetzte Fehler umschließen technische Details mit `{detail}`, statt den
   Detailtext selbst als Katalogwert zu behandeln.
@@ -83,7 +85,8 @@ sonst lehnt Tauri den Build ab.
 - Referenz- und Markup-Gates sind hart: neue Keys müssen referenziert,
   Referenzen katalogisiert und `data-i18n-*`-Ziele leaf-safe sein.
 - Neue Sprache: vollständige `src-tauri/locales/<tag>.json` kopieren.
-- `@meta` (`tag`, Eigenname, Format-Locale) anpassen und Werte übersetzen.
+- `@meta` (`tag`, Eigenname, Format-Locale, Flaggen-Emoji `flag`) anpassen und
+  Werte übersetzen.
 - Katalog-/Referenztests ausführen; Produktcode bleibt unverändert.
 
 Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md).

@@ -45,9 +45,10 @@ Log-Meldungen, Lokalisierung Monaco-interner Strings (Drittanbieter-Surface).
 
 - **Format**: eine JSON-Datei pro Sprache unter `src-tauri/locales/`
   (`de.json`, `en.json`). Reservierter Metadaten-Key `"@meta"`:
-  `{ "tag": "de", "name": "Deutsch", "locale": "de-DE" }` — kanonischer
-  BCP-47-Tag (== Dateistamm), Eigenbezeichnung (Settings-Dropdown),
-  Default-Formatierungs-Locale. Darunter flache **Namespace-Dot-Keys**.
+  `{ "tag": "de", "name": "Deutsch", "locale": "de-DE", "flag": "🇩🇪" }` —
+  kanonischer BCP-47-Tag (== Dateistamm), Eigenbezeichnung
+  (Settings-Dropdown), Default-Formatierungs-Locale und Flaggen-Emoji.
+  Darunter flache **Namespace-Dot-Keys**.
 - **Werte**: String **oder** Plural-Objekt mit CLDR-Kategorien. Interpolation
   über benannte Platzhalter `{name}` (englisch, sprechend, in allen Sprachen
   identisch). Kein ICU, keine Fremdbibliothek (Grenzen unter „Plural &
@@ -60,6 +61,16 @@ Log-Meldungen, Lokalisierung Monaco-interner Strings (Drittanbieter-Surface).
   `(catalogTag, key, failureKind)` und Prozess** — Status-/Stream-Updates
   dürfen denselben Defekt nicht tausendfach loggen). Fehlende Keys dürfen
   die UI nie brechen.
+
+#### Sprachunabhängiger Übersetzungskontext
+
+`src-tauri/locales/context/keys.json` beschreibt jeden Katalog-Key mit einem
+einzeiligen englischen Kontextsatz für KI- und Katalogübersetzungen. Die Datei
+ist ein alphabetisch sortiertes, flaches JSON-Objekt `"<key>": "<context>"`
+mit nichtleeren String-Werten. Ein fail-closed `cargo test`-Gate prüft Format,
+Sortierung und exakte Key-Parität mit `locales/de.json` ohne `@meta`; neue Keys
+erfordern daher immer auch einen Kontextsatz. Das Unterverzeichnis wird weder
+vom Registry-Codegen eingebettet noch zur Laufzeit gelesen.
 
 ### Registry & Build-Script (Vertrag)
 
@@ -394,10 +405,14 @@ Katalog.
 
 ### Settings-UI
 
-Sprach-Select aus der Registry (`languages` aus `i18n_catalog`): „System"
-(übersetzt) + Sprachen in Eigenbezeichnung. Unbekannter gespeicherter Tag →
-deaktivierte temporäre Option + Hinweis (s. Tag-Vertrag). Neustart-Hinweis
-bleibt. Kein hartkodiertes Options-HTML, kein TS-Union-Type.
+Sprach-Select aus der Registry (`languages` aus `i18n_catalog`): „🌐 System"
+(übersetzt) + Sprachen mit `@meta.flag` und Eigenbezeichnung. Unbekannter
+gespeicherter Tag → deaktivierte temporäre Option ohne Flagge + Hinweis
+(s. Tag-Vertrag). Neustart-Hinweis bleibt. Das native `<select>` bleibt für
+Tastaturbedienung und Accessibility erhalten. Ältere Windows-Emoji-Fonts
+können Flaggen als informative ISO-Buchstabenpaare darstellen; aktuelle
+Chromium/WebView2-Versionen bündeln Flaggen-Rendering, Linux/WebKitGTK nutzt
+Noto Color Emoji. Kein hartkodiertes Options-HTML, kein TS-Union-Type.
 
 ### E2E
 
@@ -415,7 +430,8 @@ bleibt. Kein hartkodiertes Options-HTML, kein TS-Union-Type.
 - **Katalog-/Generator-Gate** (Build + `cargo test`): Key-Mengen-Parität
   aller Sprachen; Platzhalter-Parität pro Key (in jedem Pluralzweig);
   Werttyp-Parität; Pflicht-Branches (`other` + erreichbare Kategorien);
-  erlaubte CLDR-Kategorien; `@meta` vollständig; Sortierung; keine
+  erlaubte CLDR-Kategorien; `@meta` vollständig (inkl. nichtleerem `flag`);
+  Sortierung; keine
   Duplikate; `@format`-Ablehnung.
 - **Referenz-Test** (beide Richtungen): erfasst `t`, `tPlural`, `t_args`,
   `t_plural`, `data-i18n-*` und deklarative Registry-Einträge.

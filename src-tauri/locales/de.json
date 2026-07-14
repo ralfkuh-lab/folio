@@ -2,7 +2,8 @@
   "@meta": {
     "tag": "de",
     "name": "Deutsch",
-    "locale": "de-DE"
+    "locale": "de-DE",
+    "flag": "🇩🇪"
   },
   "ai.actions.customPrompt.description": "Freie Anweisung ohne Vorlage.",
   "ai.actions.customPrompt.name": "Eigener Prompt",

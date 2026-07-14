@@ -57,6 +57,7 @@ pub struct CatalogMeta {
     pub tag: String,
     pub name: String,
     pub locale: String,
+    pub flag: String,
 }
 
 /// Ein Sprachkatalog.
@@ -172,7 +173,10 @@ impl fmt::Display for RegistryError {
                 )
             }
             Self::IncompleteMeta { file } => {
-                write!(f, "incomplete @meta in {file} (need tag, name, locale)")
+                write!(
+                    f,
+                    "incomplete @meta in {file} (need tag, name, locale, flag)"
+                )
             }
             Self::DuplicateTag { tag } => write!(f, "duplicate catalog tag '{tag}'"),
             Self::DuplicateKey { file, key } => {
@@ -576,20 +580,22 @@ fn parse_meta(file: &str, val: &StrictValue) -> Result<CatalogMeta, RegistryErro
     let mut tag = None;
     let mut name = None;
     let mut locale = None;
+    let mut flag = None;
     for (k, v) in entries {
         match (k.as_str(), v) {
             ("tag", StrictValue::String(s)) => tag = Some(s.clone()),
             ("name", StrictValue::String(s)) => name = Some(s.clone()),
             ("locale", StrictValue::String(s)) => locale = Some(s.clone()),
+            ("flag", StrictValue::String(s)) => flag = Some(s.clone()),
             _ => {}
         }
     }
-    let (Some(tag), Some(name), Some(locale)) = (tag, name, locale) else {
+    let (Some(tag), Some(name), Some(locale), Some(flag)) = (tag, name, locale, flag) else {
         return Err(RegistryError::IncompleteMeta {
             file: file.to_string(),
         });
     };
-    if tag.is_empty() || name.is_empty() || locale.is_empty() {
+    if tag.is_empty() || name.is_empty() || locale.is_empty() || flag.is_empty() {
         return Err(RegistryError::IncompleteMeta {
             file: file.to_string(),
         });
@@ -607,7 +613,12 @@ fn parse_meta(file: &str, val: &StrictValue) -> Result<CatalogMeta, RegistryErro
             locale: tag,
         });
     }
-    Ok(CatalogMeta { tag, name, locale })
+    Ok(CatalogMeta {
+        tag,
+        name,
+        locale,
+        flag,
+    })
 }
 
 fn parse_value(file: &str, key: &str, val: StrictValue) -> Result<CatalogValue, RegistryError> {

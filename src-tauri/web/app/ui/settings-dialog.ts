@@ -239,25 +239,31 @@ function appendLangOption(select: HTMLSelectElement, value: string, label: strin
 
 /**
  * Befüllt das Sprach-Select aus der i18n-Registry: „System" (übersetzt) +
- * Sprachen in Eigenbezeichnung. Ohne Katalog (Degradation): fester deutscher
+ * Sprachen mit Flagge und Eigenbezeichnung. Ohne Katalog (Degradation): fester deutscher
  * Minimal-Fallback system/de/en — nie leeres Select.
  */
 export function populateLanguageOptions(select: HTMLSelectElement): void {
+    // Native <option>-Texte bleiben a11y-/tastaturfreundlich; alte Windows-Emoji-Fonts
+    // zeigen Regionalindikatoren ggf. als ISO-Buchstabenpaar statt als Flagge.
     var catalog = getCatalog();
     select.innerHTML = '';
-    if (!catalog) {
+    if (!catalog || !catalog.languages || catalog.languages.length === 0) {
         // Degradationspfad: hartkodiert DE (Katalog fehlt; t() wäre Key-Fallback).
-        appendLangOption(select, 'system', 'System');
-        appendLangOption(select, 'de', 'Deutsch');
-        appendLangOption(select, 'en', 'English');
+        appendLangOption(select, 'system', '🌐 System');
+        appendLangOption(select, 'de', '🇩🇪 Deutsch');
+        appendLangOption(select, 'en', '🇺🇸 English');
         return;
     }
-    appendLangOption(select, 'system', t('settings.language.system'));
+    appendLangOption(select, 'system', '🌐 ' + t('settings.language.system'));
     var langs = catalog.languages || [];
     for (var i = 0; i < langs.length; i++) {
         var lang = langs[i];
         if (!lang || !lang.tag) continue;
-        appendLangOption(select, lang.tag, lang.name || lang.tag);
+        appendLangOption(
+            select,
+            lang.tag,
+            (lang.flag ? lang.flag + ' ' : '') + (lang.name || lang.tag),
+        );
     }
 }
 

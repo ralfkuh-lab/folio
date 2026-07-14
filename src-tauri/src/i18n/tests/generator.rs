@@ -22,7 +22,7 @@ fn generate_registry_rejects_meta_tag_mismatch() {
     write_json(
         tmp.path(),
         "en.json",
-        r#"{ "@meta": { "tag": "de", "name": "English", "locale": "en-US" }, "menu.file": "File" }"#,
+        r#"{ "@meta": { "tag": "de", "name": "English", "locale": "en-US", "flag": "🇺🇸" }, "menu.file": "File" }"#,
     );
     let err = generate_registry(tmp.path()).unwrap_err();
     assert!(
@@ -51,7 +51,7 @@ fn generate_registry_rejects_duplicate_keys() {
         tmp.path(),
         "en.json",
         r#"{
-  "@meta": { "tag": "en", "name": "English", "locale": "en-US" },
+  "@meta": { "tag": "en", "name": "English", "locale": "en-US", "flag": "🇺🇸" },
   "menu.file": "File",
   "menu.file": "Duplicate"
 }"#,
@@ -71,7 +71,7 @@ fn generate_registry_rejects_unsorted_keys() {
         tmp.path(),
         "en.json",
         r#"{
-  "@meta": { "tag": "en", "name": "English", "locale": "en-US" },
+  "@meta": { "tag": "en", "name": "English", "locale": "en-US", "flag": "🇺🇸" },
   "menu.file.save": "Save",
   "menu.file": "File"
 }"#,
@@ -80,7 +80,7 @@ fn generate_registry_rejects_unsorted_keys() {
         tmp.path(),
         "de.json",
         r#"{
-  "@meta": { "tag": "de", "name": "Deutsch", "locale": "de-DE" },
+  "@meta": { "tag": "de", "name": "Deutsch", "locale": "de-DE", "flag": "🇩🇪" },
   "menu.file": "Datei",
   "menu.file.save": "Speichern"
 }"#,
@@ -101,7 +101,7 @@ fn generate_registry_rejects_unknown_plural_tag() {
         tmp.path(),
         "xx.json",
         r#"{
-  "@meta": { "tag": "xx", "name": "X", "locale": "xx" },
+  "@meta": { "tag": "xx", "name": "X", "locale": "xx", "flag": "🏳️" },
   "menu.file": "X"
 }"#,
     );
@@ -119,7 +119,7 @@ fn generate_registry_rejects_at_format_object() {
         tmp.path(),
         "en.json",
         r#"{
-  "@meta": { "tag": "en", "name": "English", "locale": "en-US" },
+  "@meta": { "tag": "en", "name": "English", "locale": "en-US", "flag": "🇺🇸" },
   "menu.file": { "@format": "icu", "value": "File" }
 }"#,
     );
@@ -145,6 +145,27 @@ fn generate_registry_rejects_incomplete_meta() {
         matches!(err, RegistryError::IncompleteMeta { .. }),
         "expected IncompleteMeta, got {err:?}"
     );
+}
+
+#[test]
+fn generate_registry_rejects_missing_or_empty_flag() {
+    for meta in [
+        r#"{ "tag": "en", "name": "English", "locale": "en-US" }"#,
+        r#"{ "tag": "en", "name": "English", "locale": "en-US", "flag": "" }"#,
+    ] {
+        let tmp = TempDir::new().unwrap();
+        write_json(
+            tmp.path(),
+            "en.json",
+            &format!(r#"{{ "@meta": {meta}, "menu.file": "File" }}"#),
+        );
+        write_json(tmp.path(), "de.json", minimal_de_json());
+        let err = generate_registry(tmp.path()).unwrap_err();
+        assert!(
+            matches!(err, RegistryError::IncompleteMeta { .. }),
+            "expected IncompleteMeta for {meta}, got {err:?}"
+        );
+    }
 }
 
 #[test]
@@ -179,6 +200,10 @@ fn extensibility_temp_dir_with_fr_fixture() {
     let gen = generate_registry(tmp.path()).expect("generate with fr");
     assert!(gen.tags.contains(&"fr".into()), "tags={:?}", gen.tags);
     assert_eq!(gen.tags.iter().filter(|t| *t == "fr").count(), 1);
+    assert_eq!(
+        gen.metas.iter().find(|meta| meta.tag == "fr").unwrap().flag,
+        "🇫🇷"
+    );
 
     let registry = CatalogRegistry::load_from_dir(tmp.path()).expect("load");
     assert!(registry.get("fr").is_some());
@@ -225,7 +250,7 @@ fn generate_registry_duplicate_case_insensitive_tags() {
         tmp.path(),
         "fr.json",
         r#"{
-  "@meta": { "tag": "EN", "name": "Dup", "locale": "en-GB" },
+  "@meta": { "tag": "EN", "name": "Dup", "locale": "en-GB", "flag": "🇬🇧" },
   "menu.file": "File2"
 }"#,
     );

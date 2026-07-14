@@ -16,7 +16,7 @@ describe('i18n t / tPlural', () => {
         seedCatalog({
             tag: 'de',
             locale: 'de-DE',
-            languages: [{ tag: 'de', name: 'Deutsch' }],
+            languages: [{ tag: 'de', name: 'Deutsch', flag: '🇩🇪' }],
             strings: {
                 'menu.file': 'Datei',
                 'search.status.hitsPart': {
@@ -96,7 +96,7 @@ describe('F5: initI18n', () => {
                 return {
                     tag: 'de',
                     locale: 'de-DE',
-                    languages: [{ tag: 'de', name: 'Deutsch' }],
+                    languages: [{ tag: 'de', name: 'Deutsch', flag: '🇩🇪' }],
                     strings: { 'menu.file': 'Datei' },
                 };
             }
@@ -106,6 +106,7 @@ describe('F5: initI18n', () => {
         const ok = await initI18n();
         expect(ok).toBe(true);
         expect(getCatalog()?.tag).toBe('de');
+        expect(getCatalog()?.languages[0].flag).toBe('🇩🇪');
         expect(t('menu.file')).toBe('Datei');
     });
 

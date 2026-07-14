@@ -2,7 +2,8 @@
   "@meta": {
     "tag": "en",
     "name": "English",
-    "locale": "en-US"
+    "locale": "en-US",
+    "flag": "🇺🇸"
   },
   "ai.actions.customPrompt.description": "Free-form instruction without a template.",
   "ai.actions.customPrompt.name": "Custom prompt",

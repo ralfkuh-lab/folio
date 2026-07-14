@@ -8,6 +8,7 @@ import {
     syncLanguageSelect,
 } from '../../app/ui/settings-dialog';
 import { guardedClose } from '../../app/ui/theme-editor';
+import type { LanguageInfo } from '../../app/i18n/types';
 
 const settings = {
     language: 'de',
@@ -653,16 +654,17 @@ describe('settings language select (i18n I1a/I2)', () => {
     }
 
     async function seedLangCatalog(
-        languages: { tag: string; name: string }[] = [
-            { tag: 'de', name: 'Deutsch' },
-            { tag: 'en', name: 'English' },
+        languages: (Omit<LanguageInfo, 'flag'> & { flag?: string })[] = [
+            { tag: 'de', name: 'Deutsch', flag: '🇩🇪' },
+            { tag: 'en', name: 'English', flag: '🇺🇸' },
         ],
     ): Promise<void> {
         const { seedCatalog } = await import('../../app/i18n/translate');
         seedCatalog({
             tag: 'de',
             locale: 'de-DE',
-            languages,
+            // Legacy-/Mock-Payloads dürfen zur Laufzeit noch ohne `flag` ankommen.
+            languages: languages as LanguageInfo[],
             strings: LANG_STRINGS,
         });
     }
@@ -694,9 +696,9 @@ describe('settings language select (i18n I1a/I2)', () => {
         populateLanguageOptions(sel);
         expect(sel.options.length).toBe(3);
         expect(Array.from(sel.options).map((o) => o.value)).toEqual(['system', 'de', 'en']);
-        expect(sel.options[0].textContent).toBe('System');
-        expect(sel.options[1].textContent).toBe('Deutsch');
-        expect(sel.options[2].textContent).toBe('English');
+        expect(sel.options[0].textContent).toBe('🌐 System');
+        expect(sel.options[1].textContent).toBe('🇩🇪 Deutsch');
+        expect(sel.options[2].textContent).toBe('🇺🇸 English');
         // system und de wählbar
         sel.value = 'system';
         expect(sel.value).toBe('system');
@@ -713,7 +715,7 @@ describe('settings language select (i18n I1a/I2)', () => {
         const unknown = syncLanguageSelect(sel, 'system', hint);
         expect(unknown).toBe(false);
         expect(sel.value).toBe('system');
-        expect(sel.selectedOptions[0].textContent).toBe('System');
+        expect(sel.selectedOptions[0].textContent).toBe('🌐 System');
         expect(hint.textContent).toBe(LANG_STRINGS['settings.language.hint']);
     });
 
@@ -724,7 +726,7 @@ describe('settings language select (i18n I1a/I2)', () => {
         populateLanguageOptions(sel);
         syncLanguageSelect(sel, 'en', hint);
         expect(sel.value).toBe('en');
-        expect(sel.selectedOptions[0].textContent).toBe('English');
+        expect(sel.selectedOptions[0].textContent).toBe('🇺🇸 English');
         expect(sel.selectedOptions[0].disabled).toBe(false);
         // second set still works
         syncLanguageSelect(sel, 'de', hint);
@@ -732,13 +734,25 @@ describe('settings language select (i18n I1a/I2)', () => {
         expect(hint.textContent).toBe(LANG_STRINGS['settings.language.hint']);
     });
 
-    it('F6: empty languages array still keeps System', async () => {
+    it('F6: legacy LanguageInfo without flag has no undefined prefix', async () => {
+        await seedLangCatalog([{ tag: 'de', name: 'Deutsch' }]);
+        const { populateLanguageOptions } = await import('../../app/ui/settings-dialog');
+        const { sel } = emptyI2Markup();
+        populateLanguageOptions(sel);
+        expect(Array.from(sel.options).map((o) => o.value)).toEqual(['system', 'de']);
+        expect(sel.options[1].textContent).toBe('Deutsch');
+        expect(sel.options[1].textContent).not.toContain('undefined');
+    });
+
+    it('F1: empty languages array uses DE minimal fallback', async () => {
         await seedLangCatalog([]);
         const { populateLanguageOptions } = await import('../../app/ui/settings-dialog');
         const { sel } = emptyI2Markup();
         populateLanguageOptions(sel);
-        expect(Array.from(sel.options).map((o) => o.value)).toEqual(['system']);
-        expect(sel.options[0].textContent).toBe('System');
+        expect(Array.from(sel.options).map((o) => o.value)).toEqual(['system', 'de', 'en']);
+        expect(sel.options[0].textContent).toBe('🌐 System');
+        expect(sel.options[1].textContent).toBe('🇩🇪 Deutsch');
+        expect(sel.options[2].textContent).toBe('🇺🇸 English');
         syncLanguageSelect(sel, 'system');
         expect(sel.value).toBe('system');
     });
@@ -765,6 +779,7 @@ describe('settings language select (i18n I1a/I2)', () => {
         expect(opt).toBeTruthy();
         expect(opt.disabled).toBe(true);
         expect(sel.value).toBe('xx-YY');
+        // Unknown-Option bleibt bewusst ohne Flaggen-Präfix.
         expect(opt.textContent).toBe('xx-YY (unbekannt)');
         expect(hint.textContent).toBe(
             'Unbekannte Sprache „xx-YY“ — folio verwendet Englisch.',

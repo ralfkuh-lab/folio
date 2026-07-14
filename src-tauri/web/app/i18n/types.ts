@@ -4,6 +4,7 @@ export type CatalogValue = string | { [category: string]: string };
 export type LanguageInfo = {
     tag: string;
     name: string;
+    flag: string;
 };
 
 export type I18nCatalog = {

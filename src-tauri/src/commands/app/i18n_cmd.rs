@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 pub struct LanguageInfo {
     pub tag: String,
     pub name: String,
+    pub flag: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -47,6 +48,7 @@ pub(crate) fn build_catalog_response(tr: &Translator) -> I18nCatalogResponse {
             registry.get(&tag).map(|c| LanguageInfo {
                 tag: c.meta.tag.clone(),
                 name: c.meta.name.clone(),
+                flag: c.meta.flag.clone(),
             })
         })
         .collect();
@@ -125,6 +127,7 @@ mod tests {
                     tag: "en".into(),
                     name: "English".into(),
                     locale: "en-US".into(),
+                    flag: "🇺🇸".into(),
                 },
                 strings: en_strings,
             },
@@ -133,6 +136,7 @@ mod tests {
                     tag: "de".into(),
                     name: "Deutsch".into(),
                     locale: "de-DE".into(),
+                    flag: "🇩🇪".into(),
                 },
                 strings: de_strings,
             },
@@ -164,7 +168,7 @@ mod tests {
         assert!(resp
             .languages
             .iter()
-            .any(|l| l.tag == "de" && l.name == "Deutsch"));
+            .any(|l| l.tag == "de" && l.name == "Deutsch" && l.flag == "🇩🇪"));
         assert!(resp.languages.iter().any(|l| l.tag == "en"));
     }
 }
