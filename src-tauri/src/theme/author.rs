@@ -586,6 +586,26 @@ mod tests {
     }
 
     #[test]
+    fn gate_accepts_created_by_and_prepared_by_cover_placeholders() {
+        // Regression: WHITELIST must be lowercase so author validate_draft
+        // (to_ascii_lowercase) accepts camelCase template syntax.
+        let mut draft = raw(".markdown-body { color: var(--fg); }");
+        draft.cover_html = Some(
+            "<section class=\"cover\">\
+             <span>{{createdBy}}</span>\
+             <span>{{preparedBy}}</span>\
+             <h1>{{title}}</h1></section>"
+                .to_string(),
+        );
+        draft.manifest = Some(ThemeManifest {
+            cover: true,
+            ..ThemeManifest::default()
+        });
+        let validated = validate_draft(draft, Some("cover-labels")).unwrap();
+        assert!(validated.manifest.unwrap().cover);
+    }
+
+    #[test]
     fn gate_unsets_flags_without_templates() {
         let mut draft = raw(".markdown-body {}");
         draft.manifest = Some(ThemeManifest {

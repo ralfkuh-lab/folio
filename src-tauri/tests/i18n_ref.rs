@@ -275,6 +275,42 @@ fn rel_display(path: &Path) -> String {
         .replace('\\', "/")
 }
 
+/// Extract double-quoted string literals (simple escapes) for catalog-key hits
+/// in declarative tables (`name_key: "theme.builtin…"`).
+fn extract_string_literals(src: &str) -> Vec<String> {
+    let clean = strip_comments_rs_ts(src);
+    let chars: Vec<char> = clean.chars().collect();
+    let mut out = Vec::new();
+    let mut i = 0;
+    let n = chars.len();
+    while i < n {
+        if chars[i] == '"' {
+            i += 1;
+            let mut s = String::new();
+            while i < n {
+                if chars[i] == '\\' && i + 1 < n {
+                    s.push(chars[i + 1]);
+                    i += 2;
+                    continue;
+                }
+                if chars[i] == '"' {
+                    i += 1;
+                    break;
+                }
+                s.push(chars[i]);
+                i += 1;
+            }
+            // i18n keys look like a.b or a.b.c — require at least one dot, no spaces
+            if s.contains('.') && !s.contains(' ') && s.len() < 120 {
+                out.push(s);
+            }
+            continue;
+        }
+        i += 1;
+    }
+    out
+}
+
 fn line_of_char(src: &str, char_idx: usize) -> usize {
     src.chars().take(char_idx).filter(|&c| c == '\n').count() + 1
 }
@@ -571,43 +607,58 @@ fn i18n_reference_gate() {
         }
     }
 
-    // Literal reference keys
+    // Literal reference keys (t()/attrs + bare catalog-key string literals)
     let mut referenced: BTreeSet<String> = BTreeSet::new();
     for hit in &refs {
         if let Some(k) = &hit.key {
             referenced.insert(k.clone());
         }
     }
+    // Declarative registries (THEME_BUILTIN_CATALOG / AI_ACTION_BUILTIN_CATALOG)
+    // store keys as plain string literals, not only as t("…") first args.
+    for file in &files {
+        let Ok(src) = fs::read_to_string(file) else {
+            continue;
+        };
+        let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if ext != "rs" && ext != "ts" {
+            continue;
+        }
+        for lit in extract_string_literals(&src) {
+            if catalog.contains(&lit) {
+                referenced.insert(lit);
+            }
+        }
+    }
 
     // Allowlist prefixes mark matching catalog keys as referenced (dead-key soft)
+    // but only when a code hit also exists (I4a F2: any && !code_hit is hard fail).
     let mut allowlist_unused = Vec::new();
+    let mut allowlist_no_code = Vec::new();
     for entry in &allowlist {
         let mut any = false;
         for ck in &catalog {
             if ck.starts_with(&entry.prefix) {
-                referenced.insert(ck.clone());
                 any = true;
             }
         }
-        // "müssen selbst referenziert sein" — at least one code ref should
-        // start with the prefix, OR we already expanded catalog matches.
-        // If prefix matches no catalog key and no code ref, warn unused.
-        let code_hit = refs.iter().any(|h| {
-            h.key
-                .as_ref()
-                .map(|k| k.starts_with(&entry.prefix))
-                .unwrap_or(false)
-        });
+        let code_hit = referenced.iter().any(|k| k.starts_with(&entry.prefix));
         if !any && !code_hit {
             allowlist_unused.push(format!(
                 "allowlist L{}: prefix `{}` matches no catalog key and no code reference",
                 entry.line_no, entry.prefix
             ));
         } else if any && !code_hit {
-            // Catalog keys covered by prefix but no literal in code — that's
-            // the point of the allowlist; still OK. Spec: entry must be
-            // "referenziert" — interpret as: justified for keys that exist.
-            // Soft-warn only if prefix matches zero catalog keys.
+            allowlist_no_code.push(format!(
+                "allowlist L{}: prefix `{}` matches catalog keys but has no code string-literal hit",
+                entry.line_no, entry.prefix
+            ));
+        } else if any && code_hit {
+            for ck in &catalog {
+                if ck.starts_with(&entry.prefix) {
+                    referenced.insert(ck.clone());
+                }
+            }
         }
     }
 
@@ -657,12 +708,16 @@ fn i18n_reference_gate() {
     for w in &allowlist_unused {
         println!("  WARN allowlist: {w}");
     }
+    for w in &allowlist_no_code {
+        println!("  ERROR allowlist (no code hit): {w}");
+    }
 
     // Failures
     let mut errors = Vec::new();
     errors.extend(alias_errors);
     errors.extend(non_literal_errors);
     errors.extend(missing);
+    errors.extend(allowlist_no_code);
     if hard_dead {
         for k in &dead {
             errors.push(format!("dead key (FOLIO_I18N_DEAD_KEYS=hard): {k}"));

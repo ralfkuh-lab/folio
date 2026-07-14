@@ -34,7 +34,10 @@ pub fn run_save_as(
     // 2) Dialog mit Filter aus aktueller Endung + immer „Alle Dateien".
     let labels = menu_strings::labels();
     let kind = classify(&current_path);
-    let mut builder = handle.dialog().file();
+    let mut builder = handle
+        .dialog()
+        .file()
+        .set_title(labels.file_save_as.as_str());
     let current_filename = Path::new(&current_path)
         .file_name()
         .and_then(|s| s.to_str())

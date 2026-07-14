@@ -85,29 +85,25 @@ pub fn validate_template(template: &ActionTemplate) -> Result<(), String> {
 }
 
 pub fn builtin_templates() -> Vec<ActionTemplate> {
-    let builtin = |id: &str,
-                   name: &str,
-                   description: &str,
-                   prompt: &str,
-                   masking: bool,
-                   scope: Scope,
-                   target: Target,
-                   suffix: &str| ActionTemplate {
-        id: id.into(),
-        name: name.into(),
-        description: description.into(),
-        prompt: prompt.into(),
-        masking,
-        scope,
-        target,
-        suffix: suffix.into(),
-        builtin: true,
-    };
+    // Name/description from i18n catalog (`ai.actions.<idSegment>.*`); IDs and
+    // system prompts stay fixed (prompts → I5 English rewrite).
+    let builtin =
+        |id: &str, prompt: &str, masking: bool, scope: Scope, target: Target, suffix: &str| {
+            ActionTemplate {
+                id: id.into(),
+                name: crate::i18n::ai_action_name_active(id),
+                description: crate::i18n::ai_action_description_active(id),
+                prompt: prompt.into(),
+                masking,
+                scope,
+                target,
+                suffix: suffix.into(),
+                builtin: true,
+            }
+        };
     vec![
         builtin(
             "summarize",
-            "Zusammenfassen",
-            "Prägnante Zusammenfassung als neues Dokument.",
             "Fasse das folgende Dokument prägnant zusammen. Gliedere die \
              Zusammenfassung mit Markdown: kurze Einleitung, Kernaussagen als \
              Aufzählung, bei Bedarf Zwischenüberschriften. Ziel ist etwa ein \
@@ -119,8 +115,6 @@ pub fn builtin_templates() -> Vec<ActionTemplate> {
         ),
         builtin(
             "reformat",
-            "Neu formatieren",
-            "Struktur verbessern: Überschriften, Listen, Code-Blöcke, Tabellen.",
             "Strukturiere das folgende Dokument neu, ohne den Inhalt zu \
              verändern: sinnvolle Überschriften-Hierarchie, Aufzählungen für \
              Aufzählbares, Codebeispiele in Code-Blöcke, tabellarische Daten \
@@ -133,8 +127,6 @@ pub fn builtin_templates() -> Vec<ActionTemplate> {
         ),
         builtin(
             "proofread",
-            "Korrektur lesen",
-            "Rechtschreibung/Grammatik korrigieren, ohne umzuformulieren.",
             "Korrigiere Rechtschreibung, Grammatik und Zeichensetzung im \
              folgenden Text. Formulierungen, Stil, Struktur und \
              Markdown-Auszeichnung unverändert lassen — nur echte Fehler \
@@ -146,8 +138,6 @@ pub fn builtin_templates() -> Vec<ActionTemplate> {
         ),
         builtin(
             "to-table",
-            "Daten als Tabelle",
-            "Daten/Aufzählungen in eine Markdown-Tabelle umwandeln.",
             "Wandle die Daten im folgenden Text in eine übersichtliche \
              Markdown-Tabelle um. Wähle sinnvolle Spalten und erhalte alle \
              Informationen. Text, der keine Daten enthält, unverändert \
@@ -159,8 +149,6 @@ pub fn builtin_templates() -> Vec<ActionTemplate> {
         ),
         builtin(
             "extract-actions",
-            "Aktionspunkte extrahieren",
-            "Aufgaben und Zusagen als Checkliste in ein neues Dokument.",
             "Extrahiere alle Aufgaben, Aktionspunkte und Zusagen aus dem \
              folgenden Dokument als Markdown-Checkliste (- [ ]). Gruppiere \
              nach Thema und nenne Verantwortliche und Termine, wenn sie \
@@ -457,6 +445,54 @@ mod tests {
             validate_template(template).unwrap();
             assert!(template.builtin);
         }
+        // de display names via catalog (lookup → embedded de without process tr)
+        let summarize = templates.iter().find(|t| t.id == "summarize").unwrap();
+        assert_eq!(summarize.name, "Zusammenfassen");
+    }
+
+    #[test]
+    fn declarative_action_catalog_covers_all_ids_de_en_no_raw_keys() {
+        use crate::i18n::{
+            ai_action_description, ai_action_name, CatalogRegistry, ResolvedLanguage, Translator,
+            AI_ACTION_BUILTIN_CATALOG,
+        };
+        let reg = CatalogRegistry::load_from_dir(&crate::i18n::production_locales_dir())
+            .expect("prod locales");
+        let de = Translator::new(
+            reg.clone(),
+            ResolvedLanguage {
+                catalog_tag: "de".into(),
+                format_locale: "de-DE".into(),
+            },
+        );
+        let en = Translator::new(
+            reg,
+            ResolvedLanguage {
+                catalog_tag: "en".into(),
+                format_locale: "en-US".into(),
+            },
+        );
+        let templates = builtin_templates();
+        assert_eq!(AI_ACTION_BUILTIN_CATALOG.len(), templates.len());
+        for entry in AI_ACTION_BUILTIN_CATALOG {
+            assert!(
+                templates.iter().any(|t| t.id == entry.id),
+                "catalog id {} missing from builtin_templates",
+                entry.id
+            );
+            let de_name = ai_action_name(&de, entry.id);
+            let en_name = ai_action_name(&en, entry.id);
+            let de_desc = ai_action_description(&de, entry.id);
+            let en_desc = ai_action_description(&en, entry.id);
+            assert!(!de_name.starts_with("ai.actions."), "{} de name", entry.id);
+            assert!(!en_name.starts_with("ai.actions."), "{} en name", entry.id);
+            assert!(!de_desc.starts_with("ai.actions."), "{} de desc", entry.id);
+            assert!(!en_desc.starts_with("ai.actions."), "{} en desc", entry.id);
+            assert_ne!(de_name, en_name, "{} names should differ de/en", entry.id);
+        }
+        assert_eq!(ai_action_name(&de, "summarize"), "Zusammenfassen");
+        assert_eq!(ai_action_name(&en, "summarize"), "Summarize");
+        assert_eq!(ai_action_name(&de, "to-table"), "Daten als Tabelle");
     }
 
     #[test]

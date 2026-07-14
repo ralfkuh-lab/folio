@@ -155,11 +155,16 @@ pub async fn pick_image_file(
     handle: AppHandle,
     default_dir: Option<String>,
 ) -> Result<Option<String>, String> {
+    let images_label = crate::i18n::t("menu.filter.images");
+    let all_label = crate::i18n::t("menu.filter.all");
     let mut builder = handle
         .dialog()
         .file()
-        .add_filter("Bilder", &["png", "jpg", "jpeg", "gif", "webp", "bmp"])
-        .add_filter("Alle Dateien", &["*"]);
+        .add_filter(
+            images_label.as_str(),
+            &["png", "jpg", "jpeg", "gif", "webp", "bmp"],
+        )
+        .add_filter(all_label.as_str(), &["*"]);
     if let Some(dir) = default_dir {
         builder = builder.set_directory(dir);
     }

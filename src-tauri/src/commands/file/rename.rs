@@ -45,7 +45,10 @@ pub fn run_rename_dialog(
     };
 
     let labels = menu_strings::labels();
-    let mut builder = handle.dialog().file().set_title("Umbenennen…");
+    let mut builder = handle
+        .dialog()
+        .file()
+        .set_title(labels.file_rename.as_str());
     let current_filename = Path::new(&current_path)
         .file_name()
         .and_then(|s| s.to_str())

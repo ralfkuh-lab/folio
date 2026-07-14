@@ -637,6 +637,268 @@ pub fn t_plural(key: &str, count: u64, args: &[(&str, &str)]) -> Result<String, 
     }
 }
 
+// ─── Declarative built-in catalog (ID → name/description keys) ───────────────
+//
+// Keys are string literals so the i18n reference gate sees them without
+// allowlist prefixes. Lookups never `format!` keys from IDs.
+
+/// One built-in entity whose display name/description live in the locale catalog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BuiltinCatalogEntry {
+    pub id: &'static str,
+    pub name_key: &'static str,
+    pub description_key: &'static str,
+}
+
+/// Built-in themes: stable id + catalog keys (order matches `theme::builtin::IDS`).
+pub const THEME_BUILTIN_CATALOG: &[BuiltinCatalogEntry] = &[
+    BuiltinCatalogEntry {
+        id: "standard",
+        name_key: "theme.builtin.standard.name",
+        description_key: "theme.builtin.standard.description",
+    },
+    BuiltinCatalogEntry {
+        id: "classic",
+        name_key: "theme.builtin.classic.name",
+        description_key: "theme.builtin.classic.description",
+    },
+    BuiltinCatalogEntry {
+        id: "clean",
+        name_key: "theme.builtin.clean.name",
+        description_key: "theme.builtin.clean.description",
+    },
+    BuiltinCatalogEntry {
+        id: "github",
+        name_key: "theme.builtin.github.name",
+        description_key: "theme.builtin.github.description",
+    },
+    BuiltinCatalogEntry {
+        id: "business",
+        name_key: "theme.builtin.business.name",
+        description_key: "theme.builtin.business.description",
+    },
+    BuiltinCatalogEntry {
+        id: "report",
+        name_key: "theme.builtin.report.name",
+        description_key: "theme.builtin.report.description",
+    },
+    BuiltinCatalogEntry {
+        id: "minimal",
+        name_key: "theme.builtin.minimal.name",
+        description_key: "theme.builtin.minimal.description",
+    },
+    BuiltinCatalogEntry {
+        id: "brand",
+        name_key: "theme.builtin.brand.name",
+        description_key: "theme.builtin.brand.description",
+    },
+    BuiltinCatalogEntry {
+        id: "warm",
+        name_key: "theme.builtin.warm.name",
+        description_key: "theme.builtin.warm.description",
+    },
+    BuiltinCatalogEntry {
+        id: "tech",
+        name_key: "theme.builtin.tech.name",
+        description_key: "theme.builtin.tech.description",
+    },
+    BuiltinCatalogEntry {
+        id: "contrast",
+        name_key: "theme.builtin.contrast.name",
+        description_key: "theme.builtin.contrast.description",
+    },
+    BuiltinCatalogEntry {
+        id: "pastel",
+        name_key: "theme.builtin.pastel.name",
+        description_key: "theme.builtin.pastel.description",
+    },
+];
+
+/// Built-in KI actions: stable template id + catalog keys.
+pub const AI_ACTION_BUILTIN_CATALOG: &[BuiltinCatalogEntry] = &[
+    BuiltinCatalogEntry {
+        id: "summarize",
+        name_key: "ai.actions.summarize.name",
+        description_key: "ai.actions.summarize.description",
+    },
+    BuiltinCatalogEntry {
+        id: "reformat",
+        name_key: "ai.actions.reformat.name",
+        description_key: "ai.actions.reformat.description",
+    },
+    BuiltinCatalogEntry {
+        id: "proofread",
+        name_key: "ai.actions.proofread.name",
+        description_key: "ai.actions.proofread.description",
+    },
+    BuiltinCatalogEntry {
+        id: "to-table",
+        name_key: "ai.actions.toTable.name",
+        description_key: "ai.actions.toTable.description",
+    },
+    BuiltinCatalogEntry {
+        id: "extract-actions",
+        name_key: "ai.actions.extractActions.name",
+        description_key: "ai.actions.extractActions.description",
+    },
+];
+
+fn find_catalog_entry<'a>(
+    table: &'a [BuiltinCatalogEntry],
+    id: &str,
+) -> Option<&'a BuiltinCatalogEntry> {
+    table.iter().find(|e| e.id == id)
+}
+
+/// Theme display name for `id` via declarative catalog + translator.
+pub fn theme_builtin_name(tr: &Translator, id: &str) -> String {
+    match find_catalog_entry(THEME_BUILTIN_CATALOG, id) {
+        Some(e) => tr.t(e.name_key),
+        None => id.to_string(),
+    }
+}
+
+pub fn theme_builtin_description(tr: &Translator, id: &str) -> String {
+    match find_catalog_entry(THEME_BUILTIN_CATALOG, id) {
+        Some(e) => tr.t(e.description_key),
+        None => id.to_string(),
+    }
+}
+
+/// Process translator, or embedded-de for unit/integration tests and rare
+/// pre-boot package discovery (`packages()` / `builtin_templates()` /
+/// `render_document` smoke tests). Production always sets the process façade
+/// before UI/export; `t()` / `ExportStrings::current` stay strict.
+pub fn translator_for_builtins() -> &'static Translator {
+    if let Some(tr) = process_translator() {
+        return tr;
+    }
+    static DE: OnceLock<Translator> = OnceLock::new();
+    DE.get_or_init(|| {
+        Translator::new(
+            embedded_registry().clone(),
+            ResolvedLanguage {
+                catalog_tag: "de".into(),
+                format_locale: "de-DE".into(),
+            },
+        )
+    })
+}
+
+pub fn theme_builtin_name_active(id: &str) -> String {
+    theme_builtin_name(translator_for_builtins(), id)
+}
+
+pub fn theme_builtin_description_active(id: &str) -> String {
+    theme_builtin_description(translator_for_builtins(), id)
+}
+
+/// AI action display name/description via declarative catalog + translator.
+pub fn ai_action_name(tr: &Translator, id: &str) -> String {
+    match find_catalog_entry(AI_ACTION_BUILTIN_CATALOG, id) {
+        Some(e) => tr.t(e.name_key),
+        None => id.to_string(),
+    }
+}
+
+pub fn ai_action_description(tr: &Translator, id: &str) -> String {
+    match find_catalog_entry(AI_ACTION_BUILTIN_CATALOG, id) {
+        Some(e) => tr.t(e.description_key),
+        None => id.to_string(),
+    }
+}
+
+pub fn ai_action_name_active(id: &str) -> String {
+    ai_action_name(translator_for_builtins(), id)
+}
+
+pub fn ai_action_description_active(id: &str) -> String {
+    ai_action_description(translator_for_builtins(), id)
+}
+
+/// Export-related strings from a translator (tests inject local instances).
+#[derive(Debug, Clone)]
+pub struct ExportStrings {
+    pub catalog_tag: String,
+    pub format_locale: String,
+    pub default_title: String,
+    pub preview_title: String,
+    pub created_by: String,
+    pub prepared_by: String,
+}
+
+impl ExportStrings {
+    pub fn from_translator(tr: &Translator) -> Self {
+        Self {
+            catalog_tag: tr.catalog_tag().to_string(),
+            format_locale: tr.format_locale().to_string(),
+            default_title: tr.t("export.defaultTitle"),
+            preview_title: tr.t("export.preview.title"),
+            created_by: tr.t("export.cover.createdBy"),
+            prepared_by: tr.t("export.cover.preparedBy"),
+        }
+    }
+
+    /// Boot process translator. Requires `set_process_translator` (same as `t()`).
+    pub fn current() -> Self {
+        match process_translator() {
+            Some(tr) => Self::from_translator(tr),
+            None => {
+                debug_assert!(
+                    false,
+                    "ExportStrings::current before set_process_translator"
+                );
+                Self {
+                    catalog_tag: "en".into(),
+                    format_locale: "en-US".into(),
+                    default_title: "export.defaultTitle".into(),
+                    preview_title: "export.preview.title".into(),
+                    created_by: "export.cover.createdBy".into(),
+                    prepared_by: "export.cover.preparedBy".into(),
+                }
+            }
+        }
+    }
+}
+
+/// Format a civil date for export fallbacks from the **full** `format_locale`
+/// (BCP-47), not only the primary language subtag.
+///
+/// Region map (V1; `_` normalized to `-`, case-insensitive):
+/// - `en-US` → `MM/DD/YYYY`
+/// - `en-GB` → `DD/MM/YYYY`
+/// - `en-CA` → `YYYY-MM-DD`
+/// - `fr-FR` → `DD/MM/YYYY`
+/// - `fr-CA` → `YYYY-MM-DD`
+/// - `de-DE` / `de-CH` / `de-AT` → `DD.MM.YYYY`
+///
+/// Language defaults when no region match:
+/// - `de` → `DD.MM.YYYY`
+/// - `en` → `MM/DD/YYYY` (product default matches `@meta.locale` `en-US`)
+/// - `fr` → `DD/MM/YYYY`
+/// - other → `YYYY-MM-DD` (ISO)
+pub fn format_export_date(y: i64, m: u32, d: u32, format_locale: &str) -> String {
+    let tag = normalize_format_locale(format_locale);
+    match tag.as_str() {
+        "en-us" => format!("{m:02}/{d:02}/{y:04}"),
+        "en-gb" => format!("{d:02}/{m:02}/{y:04}"),
+        "en-ca" => format!("{y:04}-{m:02}-{d:02}"),
+        "fr-fr" => format!("{d:02}/{m:02}/{y:04}"),
+        "fr-ca" => format!("{y:04}-{m:02}-{d:02}"),
+        "de-de" | "de-ch" | "de-at" => format!("{d:02}.{m:02}.{y:04}"),
+        other => match other.split('-').next().unwrap_or(other) {
+            "de" => format!("{d:02}.{m:02}.{y:04}"),
+            "en" => format!("{m:02}/{d:02}/{y:04}"),
+            "fr" => format!("{d:02}/{m:02}/{y:04}"),
+            _ => format!("{y:04}-{m:02}-{d:02}"),
+        },
+    }
+}
+
+fn normalize_format_locale(format_locale: &str) -> String {
+    format_locale.trim().replace('_', "-").to_ascii_lowercase()
+}
+
 #[cfg(test)]
 pub(crate) fn production_locales_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("locales")

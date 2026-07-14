@@ -74,8 +74,15 @@ pub async fn export_html(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let (path, text) = current_document(&state)?;
-    let title = export::derive_title(path.as_deref());
-    let html = export::render_document(&layout_id, &title, path.as_deref(), &text, mermaid_svgs)?;
+    let strings = crate::i18n::ExportStrings::current();
+    let html = export::render_export_pipeline_html(
+        &layout_id,
+        path.as_deref(),
+        &text,
+        mermaid_svgs,
+        &strings,
+        &crate::persist::themes_dir(),
+    )?;
     fs::write(&target_path, html).map_err(|e| e.to_string())
 }
 
@@ -108,8 +115,15 @@ pub async fn export_pdf(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let (path, text) = current_document(&state)?;
-    let title = export::derive_title(path.as_deref());
-    let html = export::render_document(&layout_id, &title, path.as_deref(), &text, mermaid_svgs)?;
+    let strings = crate::i18n::ExportStrings::current();
+    let html = export::render_export_pipeline_html(
+        &layout_id,
+        path.as_deref(),
+        &text,
+        mermaid_svgs,
+        &strings,
+        &crate::persist::themes_dir(),
+    )?;
     let source_dir = path
         .as_deref()
         .and_then(|p| Path::new(p).parent())
@@ -149,10 +163,15 @@ pub async fn pick_export_target(
     format: String,
     state: State<'_, AppState>,
 ) -> Result<Option<String>, String> {
-    let (filter_name, exts): (&str, &[&str]) = match format.as_str() {
-        "pdf" => ("PDF", &["pdf"]),
-        _ => ("HTML", &["html", "htm"]),
+    let filter_owned = match format.as_str() {
+        "pdf" => crate::i18n::t("export.formats.pdf"),
+        _ => crate::i18n::t("export.formats.html"),
     };
+    let exts: &[&str] = match format.as_str() {
+        "pdf" => &["pdf"],
+        _ => &["html", "htm"],
+    };
+    let filter_name = filter_owned.as_str();
     let document_dir = {
         let tabs = state
             .tabs

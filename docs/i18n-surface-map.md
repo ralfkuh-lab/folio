@@ -1549,6 +1549,66 @@ Nach Etappe I3b + Fix-Paket. Regeln (F2): (a) Validierung/Fehler → `errors.<mo
 
 *I3b-Fix-Paket 2026-07-14 · F1–F5 kanonisiert*
 
+---
+
+## I4a — Kanonische Key-Registry (native Dialoge, Built-ins, Export)
+
+### Native Dialoge / Filter
+
+| Key | de (zeichengenau) | Bemerkung |
+| :--- | :--- | :--- |
+| `menu.file.rename` | Umbenennen… | rename-Dialog-Titel via `labels().file_rename` |
+| `menu.file.saveAs` | Speichern unter… | save_as-Dialog-Titel |
+| `menu.filter.images` | Bilder | image-Picker |
+| `menu.filter.all` / `.markdown` / `.text` | Alle Dateien / … | bestehende Filter via labels() |
+| `export.formats.html` / `.pdf` | HTML / PDF | Export-Save-Filter |
+| `dialogs.icon.title` | Markdown-Icon-Integration | Linux-Icon-Dialog |
+| `dialogs.icon.confirm` | Diese Funktion richtet … Jetzt einrichten? | (ASCII-Umlautschreibweise wie historisch) |
+| `dialogs.icon.setup.action` | Einrichten | |
+| `dialogs.icon.success` | Das Folio-Icon wurde … | |
+| `dialogs.icon.scriptNotFound` | Das Installations-Skript … | |
+| `dialogs.common.cancel` | Abbrechen | Icon-Dialog-Button |
+
+### Built-in Themes (deklarativ, Allowlist `theme.builtin.`)
+
+Keys: `theme.builtin.<id>.name` / `.description` für IDs
+`standard|classic|clean|github|business|report|minimal|brand|warm|tech|contrast|pastel`.
+Auflösung: `i18n::theme_builtin_name/description` (ID-Komposition, kein `t("literal")`).
+de-Namen/Beschreibungen zeichengenau wie vor I4a (E2E 38_theme_browser).
+
+### Built-in KI-Actions (Allowlist `ai.actions.<segment>.`)
+
+| Template-ID | Key-Segment | de name |
+| :--- | :--- | :--- |
+| `summarize` | summarize | Zusammenfassen |
+| `reformat` | reformat | Neu formatieren |
+| `proofread` | proofread | Korrektur lesen |
+| `to-table` | toTable | Daten als Tabelle |
+| `extract-actions` | extractActions | Aktionspunkte extrahieren |
+
+Prompts bleiben unübersetzt (I5). Custom-Templates unangetastet.
+
+### Export-Surface
+
+| Key | de | en |
+| :--- | :--- | :--- |
+| `export.cover.createdBy` | Erstellt von | Created by |
+| `export.cover.preparedBy` | Vorbereitet von: | Prepared by: |
+| `export.defaultTitle` | Dokument | Document |
+
+Template-Platzhalter `{{createdBy}}` / `{{preparedBy}}` in brand/business.cover.html
+(WHITELIST-Einträge lowercase: `createdby`/`preparedby` für author-Validate).
+`<html lang>` = `catalogTag`; Datums-Fallback via `format_export_date` auf dem
+**vollen** `formatLocale` (BCP-47): z. B. `en-US` → MM/DD/YYYY, `en-GB` →
+DD/MM/YYYY, `fr-CA` → YYYY-MM-DD, `fr-FR` → DD/MM/YYYY, `de-*` → DD.MM.YYYY;
+Sprach-Default ohne Region: en→US, fr→FR, de→DE-Muster; sonst ISO.
+| `export.preview.title` | Theme-Vorschau | Theme preview |
+
+Built-in-Registry: `THEME_BUILTIN_CATALOG` / `AI_ACTION_BUILTIN_CATALOG` mit
+literalen Keys (kein `format!`, keine Allowlist-Präfixe).
+
+*I4a 2026-07-14 · native Dialoge, Built-ins, Export · Fix-Paket F1–F8*
+
 
 ### Hinweis
 

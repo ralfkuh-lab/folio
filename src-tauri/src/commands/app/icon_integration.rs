@@ -10,8 +10,6 @@ use std::process::Command;
 use tauri::AppHandle;
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
-const DIALOG_TITLE: &str = "Markdown-Icon-Integration";
-
 /// Kandidatenpfade fuer das Installations-Skript: erst der ins .deb
 /// gelegte System-Pfad, dann der Dev-Repo-Pfad (relativ zum Crate).
 fn find_script() -> Option<PathBuf> {
@@ -25,10 +23,11 @@ fn find_script() -> Option<PathBuf> {
 }
 
 fn notify(handle: &AppHandle, body: impl Into<String>, kind: MessageDialogKind) {
+    let title = crate::i18n::t("dialogs.icon.title");
     handle
         .dialog()
         .message(body)
-        .title(DIALOG_TITLE)
+        .title(title)
         .kind(kind)
         .blocking_show();
 }
@@ -36,25 +35,18 @@ fn notify(handle: &AppHandle, body: impl Into<String>, kind: MessageDialogKind) 
 /// Erklaert die Funktion und holt eine Bestaetigung ein, bevor etwas
 /// passiert — der Menuepunkt ist leicht versehentlich getroffen, und
 /// ohne Erklaerung weiss ein normaler Benutzer nicht, was dahinter
-/// steckt. Liefert true nur bei explizitem "Einrichten".
+/// steckt. Liefert true nur bei explizitem Setup-Button.
 fn confirm_icon_integration(handle: &AppHandle) -> bool {
+    let title = crate::i18n::t("dialogs.icon.title");
+    let message = crate::i18n::t("dialogs.icon.confirm");
+    let setup = crate::i18n::t("dialogs.icon.setup.action");
+    let cancel = crate::i18n::t("dialogs.common.cancel");
     handle
         .dialog()
-        .message(
-            "Diese Funktion richtet das Folio-Icon fuer Markdown-Dateien \
-             (.md) im Linux-Datei-Manager ein.\n\n\
-             Dazu wird ein mitgeliefertes Skript ausgefuehrt, das einen \
-             Per-User-Override im aktiven Icon-Theme anlegt (ohne sudo, \
-             nur im eigenen Home) und anschliessend den Datei-Manager \
-             neu startet, damit das Icon sichtbar wird.\n\n\
-             Jetzt einrichten?",
-        )
-        .title(DIALOG_TITLE)
+        .message(message)
+        .title(title)
         .kind(MessageDialogKind::Info)
-        .buttons(MessageDialogButtons::OkCancelCustom(
-            "Einrichten".to_string(),
-            "Abbrechen".to_string(),
-        ))
+        .buttons(MessageDialogButtons::OkCancelCustom(setup, cancel))
         .blocking_show()
 }
 
@@ -75,10 +67,7 @@ pub fn run_icon_integration(handle: &AppHandle) {
         );
         notify(
             handle,
-            "Das Installations-Skript wurde nicht gefunden.\n\n\
-             Erwartet unter /usr/share/folio/install-folio-icons.sh \
-             (installiertes Paket) oder scripts/install-folio-icons.sh \
-             (Dev-Repo).",
+            crate::i18n::t("dialogs.icon.scriptNotFound"),
             MessageDialogKind::Error,
         );
         return;
@@ -95,9 +84,7 @@ pub fn run_icon_integration(handle: &AppHandle) {
             tracing::info!(target: "folio::menu", "icon integration: script succeeded");
             notify(
                 handle,
-                "Das Folio-Icon wurde fuer Markdown-Dateien eingerichtet.\n\n\
-                 Falls der Datei-Manager das neue Icon noch nicht zeigt, \
-                 kann ein Ab- und Anmelden noetig sein.",
+                crate::i18n::t("dialogs.icon.success"),
                 MessageDialogKind::Info,
             );
         }
@@ -116,6 +103,7 @@ pub fn run_icon_integration(handle: &AppHandle) {
             } else {
                 detail
             };
+            // Error framing stays German diagnose text until I4b; title is i18n.
             notify(
                 handle,
                 format!("Die Einrichtung ist fehlgeschlagen:\n\n{detail}"),

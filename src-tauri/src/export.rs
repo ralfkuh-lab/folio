@@ -1,3 +1,4 @@
+use crate::i18n::ExportStrings;
 use crate::{persist, renderer, theme};
 use regex::Regex;
 use std::{borrow::Cow, path::Path, sync::OnceLock};
@@ -40,6 +41,37 @@ pub fn render_document(
         markdown,
         &persist::themes_dir(),
         mermaid_svgs,
+        &export_strings_for_call(),
+    )
+}
+
+/// Process translator when booted; otherwise embedded-de (unit/integration
+/// tests without boot). `export_pdf` / `export_html` use `ExportStrings::current`
+/// after boot and stay strict.
+fn export_strings_for_call() -> ExportStrings {
+    ExportStrings::from_translator(crate::i18n::translator_for_builtins())
+}
+
+/// HTML that `export_pdf` / `export_html` hand to disk or Chromium: derives the
+/// localized default title then runs the shared document renderer. Injectable
+/// `ExportStrings` + themes dir for unit tests (en PDF/HTML seams).
+pub fn render_export_pipeline_html(
+    layout_id: &str,
+    path: Option<&str>,
+    markdown: &str,
+    mermaid_svgs: Option<Vec<renderer::MermaidSvgEntry>>,
+    strings: &ExportStrings,
+    themes_dir: &Path,
+) -> Result<String, String> {
+    let title = derive_title_with(path, &strings.default_title);
+    render_document_in(
+        layout_id,
+        &title,
+        path,
+        markdown,
+        themes_dir,
+        mermaid_svgs,
+        strings,
     )
 }
 
@@ -49,10 +81,11 @@ pub fn render_theme_preview(
     dark: bool,
     theme_id: Option<&str>,
 ) -> String {
+    let strings = export_strings_for_call();
     let title = if parts.manifest.name.trim().is_empty() {
-        "Theme-Vorschau"
+        strings.preview_title.as_str()
     } else {
-        &parts.manifest.name
+        parts.manifest.name.as_str()
     };
     render_theme_parts_in(
         markdown,
@@ -155,7 +188,9 @@ fn render_theme_parts_in(
         &asset_pairs,
         themes_dir,
     );
-    let mut context = theme::template::TemplateContext::from_markdown(markdown, path, logo_uri);
+    let strings = export_strings_for_call();
+    let mut context =
+        theme::template::TemplateContext::from_markdown_with(markdown, path, logo_uri, &strings);
     context.title = title.to_string();
     let cover = rewrite_rendered_template(
         render_optional_template(parts.cover_html.as_deref(), parts.manifest.cover, &context),
@@ -180,6 +215,7 @@ fn render_theme_parts_in(
 
     wrap_html(&WrapContext {
         title,
+        lang: &strings.catalog_tag,
         css: &css,
         body_html: &body,
         cover_html: cover.as_deref(),
@@ -195,6 +231,7 @@ fn render_document_in(
     markdown: &str,
     dir: &Path,
     mermaid_svgs: Option<Vec<renderer::MermaidSvgEntry>>,
+    strings: &ExportStrings,
 ) -> Result<String, String> {
     let package = theme::package_in(layout_id, dir)
         .ok_or_else(|| format!("Unbekanntes Layout: '{layout_id}'"))?;
@@ -232,7 +269,8 @@ fn render_document_in(
     let logo_uri = package.dir.as_deref().and_then(|theme_dir| {
         resolved_logo_uri(theme_dir, package.manifest.logo.as_deref(), &asset_pairs)
     });
-    let context = theme::template::TemplateContext::from_markdown(markdown, path, logo_uri);
+    let context =
+        theme::template::TemplateContext::from_markdown_with(markdown, path, logo_uri, strings);
     let cover = rewrite_rendered_template(
         render_optional_template(
             package.cover_html.as_deref(),
@@ -260,6 +298,7 @@ fn render_document_in(
 
     Ok(wrap_html(&WrapContext {
         title,
+        lang: &strings.catalog_tag,
         css: &css,
         body_html: &body,
         cover_html: cover.as_deref(),
@@ -359,6 +398,7 @@ fn rewrite_rendered_template(
 
 struct WrapContext<'a> {
     title: &'a str,
+    lang: &'a str,
     css: &'a str,
     body_html: &'a str,
     cover_html: Option<&'a str>,
@@ -368,6 +408,7 @@ struct WrapContext<'a> {
 
 fn wrap_html(ctx: &WrapContext) -> String {
     let title_escaped = escape_html(ctx.title);
+    let lang_escaped = escape_html(ctx.lang);
     // `@page :first { margin: 0 }` nur, wenn ein Deckblatt existiert;
     // ohne Deckblatt wuerde die Regel sonst auf jeder ersten Druckseite
     // die Raender wegnehmen.
@@ -399,7 +440,7 @@ fn wrap_html(ctx: &WrapContext) -> String {
     body.push_str("</article>\n");
     format!(
         "<!doctype html>\n\
-<html lang=\"de\">\n\
+<html lang=\"{lang_escaped}\">\n\
 <head>\n\
 <meta charset=\"utf-8\">\n\
 <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
@@ -415,11 +456,17 @@ fn wrap_html(ctx: &WrapContext) -> String {
 }
 
 pub fn derive_title(path: Option<&str>) -> String {
+    let fallback = export_strings_for_call().default_title;
+    derive_title_with(path, &fallback)
+}
+
+/// Title from path stem, or `default_title` (localized „Dokument"/„Document").
+pub fn derive_title_with(path: Option<&str>, default_title: &str) -> String {
     path.and_then(|p| Path::new(p).file_stem())
         .and_then(|s| s.to_str())
         .map(str::to_string)
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "Dokument".to_string())
+        .unwrap_or_else(|| default_title.to_string())
 }
 
 pub fn derive_default_filename(path: Option<&str>) -> String {
@@ -461,6 +508,34 @@ mod tests {
         DEFAULT_PAGE_CSS,
     };
     use std::fs;
+
+    fn de_export() -> ExportStrings {
+        use crate::i18n::{CatalogRegistry, ResolvedLanguage, Translator};
+        let reg = CatalogRegistry::load_from_dir(&crate::i18n::production_locales_dir())
+            .expect("prod locales");
+        let tr = Translator::new(
+            reg,
+            ResolvedLanguage {
+                catalog_tag: "de".into(),
+                format_locale: "de-DE".into(),
+            },
+        );
+        ExportStrings::from_translator(&tr)
+    }
+
+    fn en_export(format_locale: &str) -> ExportStrings {
+        use crate::i18n::{CatalogRegistry, ResolvedLanguage, Translator};
+        let reg = CatalogRegistry::load_from_dir(&crate::i18n::production_locales_dir())
+            .expect("prod locales");
+        let tr = Translator::new(
+            reg,
+            ResolvedLanguage {
+                catalog_tag: "en".into(),
+                format_locale: format_locale.into(),
+            },
+        );
+        ExportStrings::from_translator(&tr)
+    }
 
     #[test]
     fn layouts_lists_all_builtin_exports() {
@@ -789,8 +864,16 @@ mod tests {
         )
         .unwrap();
 
-        let html =
-            render_document_in("mine", "Custom", None, "# Hallo", temp.path(), None).unwrap();
+        let html = render_document_in(
+            "mine",
+            "Custom",
+            None,
+            "# Hallo",
+            temp.path(),
+            None,
+            &de_export(),
+        )
+        .unwrap();
         assert!(html.contains(DEFAULT_PAGE_CSS));
         assert!(html.contains("#123456"));
 
@@ -799,8 +882,16 @@ mod tests {
             "html, body { background: papayawhip; }",
         )
         .unwrap();
-        let html =
-            render_document_in("mine", "Custom", None, "# Hallo", temp.path(), None).unwrap();
+        let html = render_document_in(
+            "mine",
+            "Custom",
+            None,
+            "# Hallo",
+            temp.path(),
+            None,
+            &de_export(),
+        )
+        .unwrap();
         assert!(html.contains("background: papayawhip"));
         assert!(!html.contains(DEFAULT_PAGE_CSS));
     }
@@ -820,13 +911,29 @@ mod tests {
         .unwrap();
         let markdown = "```rust\nfn main() {}\n```";
 
-        let dark =
-            render_document_in("dark-code", "Dark", None, markdown, temp.path(), None).unwrap();
+        let dark = render_document_in(
+            "dark-code",
+            "Dark",
+            None,
+            markdown,
+            temp.path(),
+            None,
+            &de_export(),
+        )
+        .unwrap();
         assert!(dark.contains("#b48ead"), "{dark}");
         assert!(!dark.contains("#a71d5d"), "{dark}");
 
-        let light =
-            render_document_in("light-code", "Light", None, markdown, temp.path(), None).unwrap();
+        let light = render_document_in(
+            "light-code",
+            "Light",
+            None,
+            markdown,
+            temp.path(),
+            None,
+            &de_export(),
+        )
+        .unwrap();
         assert!(light.contains("#a71d5d"), "{light}");
         assert!(!light.contains("#b48ead"), "{light}");
     }
@@ -881,6 +988,7 @@ mod tests {
             markdown,
             temp.path(),
             None,
+            &de_export(),
         )
         .unwrap();
 
@@ -944,6 +1052,7 @@ mod tests {
             markdown,
             temp.path(),
             None,
+            &de_export(),
         )
         .unwrap();
         assert!(
@@ -960,7 +1069,16 @@ mod tests {
     fn render_document_rewrites_asset_urls_in_content_and_page_css() {
         let temp = tempfile::tempdir().unwrap();
         write_corporate_theme(&temp, true);
-        let html = render_document_in("corp", "Bericht", None, "# Hai", temp.path(), None).unwrap();
+        let html = render_document_in(
+            "corp",
+            "Bericht",
+            None,
+            "# Hai",
+            temp.path(),
+            None,
+            &de_export(),
+        )
+        .unwrap();
         // Beide css-vorkommen von `url(asset:logo.png)` muessen zu data:-URIs rewrites
         // geworden sein; `url(asset:...)` darf nirgends mehr vorkommen.
         assert!(
@@ -1004,8 +1122,16 @@ mod tests {
             if logo == "broken.txt" {
                 fs::write(dir.join("assets/broken.txt"), b"not an image").unwrap();
             }
-            let html =
-                render_document_in("corp", "Bericht", None, "# Inhalt", temp.path(), None).unwrap();
+            let html = render_document_in(
+                "corp",
+                "Bericht",
+                None,
+                "# Inhalt",
+                temp.path(),
+                None,
+                &de_export(),
+            )
+            .unwrap();
             assert!(html.contains("<section class=\"folio-cover\"><div></div></section>"));
             assert!(!html.contains("alt=\"logo\""));
         }
@@ -1023,8 +1149,16 @@ mod tests {
         )
         .unwrap();
 
-        let error =
-            render_document_in("corp", "Bericht", None, "# Inhalt", temp.path(), None).unwrap_err();
+        let error = render_document_in(
+            "corp",
+            "Bericht",
+            None,
+            "# Inhalt",
+            temp.path(),
+            None,
+            &de_export(),
+        )
+        .unwrap_err();
         assert!(error.contains("missing.png"), "{error}");
     }
 
@@ -1037,7 +1171,8 @@ mod tests {
         fs::write(dir.join("content.css"), ".markdown-body { color: x; }").unwrap();
         fs::write(dir.join("page.css"), "body { margin: 0; }").unwrap();
         // cover.html existiert NICHT — flag false implizit.
-        let html = render_document_in("corp", "B", None, "# x", temp.path(), None).unwrap();
+        let html =
+            render_document_in("corp", "B", None, "# x", temp.path(), None, &de_export()).unwrap();
         assert!(
             !html.contains("@page :first { margin: 0; }"),
             "@page :first sollte nicht injiziert werden"
@@ -1065,7 +1200,8 @@ mod tests {
         .unwrap();
         fs::write(dir.join("content.css"), ".markdown-body { color: x; }").unwrap();
         fs::write(dir.join("cover.html"), "<h1>{{title}}</h1>").unwrap();
-        let html = render_document_in("corp", "B", None, "# x", temp.path(), None).unwrap();
+        let html =
+            render_document_in("corp", "B", None, "# x", temp.path(), None, &de_export()).unwrap();
         assert!(
             !html.contains("<section class=\"folio-cover\">"),
             "cover trotz Flag=false emittiert"
@@ -1172,6 +1308,61 @@ mod tests {
             html.contains("#a71d5d") || html.contains("span style"),
             "syntect coloring present"
         );
+    }
+
+    /// en-HTML-Export via pipeline seam: cover, lang, title, fixed en-US date.
+    #[test]
+    fn en_html_export_localizes_cover_lang_title_and_date() {
+        let en = en_export("en-US");
+        assert_eq!(en.default_title, "Document");
+        assert_eq!(en.created_by, "Created by");
+
+        // Fixed today via frontmatter omission + injected context date path:
+        // use markdown without date; pipeline uses today from format_locale.
+        // For a fixed assert, put no date and check createdBy + lang + title;
+        // date format is covered by format_export_date / from_markdown_in tests.
+        let markdown = "---\nauthor: Ada\ncompany: Acme\ndate: 07/14/2026\n---\n# Body\n";
+        let html =
+            render_export_pipeline_html("brand", None, markdown, None, &en, &persist::themes_dir())
+                .unwrap();
+
+        assert!(html.contains("<html lang=\"en\">"), "lang: {html}");
+        assert!(html.contains("<title>Document</title>"));
+        assert!(html.contains("Created by"), "createdBy missing");
+        assert!(!html.contains("Erstellt von"));
+        assert!(html.contains("07/14/2026"), "en-US date missing: {html}");
+    }
+
+    /// Same HTML pipeline that `export_pdf` passes to `render_pdf`.
+    #[test]
+    fn en_pdf_export_pipeline_localizes_business_cover() {
+        let en = en_export("en-US");
+        let markdown = "---\nauthor: Bob\ndate: 07/14/2026\n---\n# Report\n";
+        let html = render_export_pipeline_html(
+            "business",
+            None,
+            markdown,
+            None,
+            &en,
+            &persist::themes_dir(),
+        )
+        .unwrap();
+
+        assert!(html.contains("<html lang=\"en\">"));
+        assert!(html.contains("<title>Document</title>"));
+        assert!(html.contains("Prepared by:"), "preparedBy missing");
+        assert!(!html.contains("Vorbereitet von:"));
+        assert!(html.contains("07/14/2026"));
+    }
+
+    #[test]
+    fn derive_title_with_localized_default() {
+        assert_eq!(
+            "notes",
+            derive_title_with(Some("/path/to/notes.md"), "Document")
+        );
+        assert_eq!("Document", derive_title_with(None, "Document"));
+        assert_eq!("Dokument", derive_title_with(None, "Dokument"));
     }
 }
 
