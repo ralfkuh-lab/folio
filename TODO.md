@@ -81,14 +81,25 @@
 
 ## Niedrige Priorität
 
-- **i18n — Folgepunkte** (V1 Deutsch/Englisch abgeschlossen, Spec
-  [`docs/spec-i18n.md`](docs/spec-i18n.md)):
-  - Sprach-Batch 2: es, fr, pt-BR, it, zh-Hans, ja; optional ru, pl, ko.
-  - Live-Sprachwechsel ohne Neustart.
+- **i18n — Folgepunkte** (V1 de/en abgeschlossen; Sprach-Batch 2
+  es/fr/pt-BR/it/ru/zh-Hans/ja + Flaggen-Picker + Übersetzungs-
+  Kontextdatei `locales/context/keys.json` abgeschlossen 2026-07-14,
+  Spec [`docs/spec-i18n.md`](docs/spec-i18n.md)):
+  - Interne Fehlerdetails von Deutsch auf Englisch umstellen
+    (`#[error]`-Attribute und `format!`-Detailtexte in `ai/`,
+    `theme/store.rs`, `commands/ai.rs` — fließen als `{detail}` in
+    übersetzte Fehlermeldungen ein; Fundliste vom 2026-07-14).
+  - Dropdown-Optionstexte werden bei langen Übersetzungen abgeschnitten
+    (Settings-Selects, z. B. es „Abrir en una pestaña nueva", ru
+    „Открыть в новой вкладке") — Select-Breite oder Ellipsis prüfen.
+  - Weitere Sprachen (pl, ko, …): Ablauf = Katalog per KI mit
+    Kontextdatei übersetzen, Kreuz-Review, `scripts/lang-boot-smoke.sh
+    <tag>` für den Sichttest.
+  - Live-Sprachwechsel ohne Neustart (zurückgestellt auf Wunsch
+    2026-07-14 — kein echter Mehrwert aktuell).
   - Externe Sprachpakete aus `<config>/folio/lang/`.
   - Pseudo-Locale für Layout- und Extraktionsprüfungen.
   - Generierte typisierte Key-Surface.
-  - Translator-Notes für Kontext und Übersetzungsregeln.
   - HTML-Parser statt Heuristik im Markup-Gate.
 
 - **Vault-Volltextsuche — Folgepunkte** (Kernfeature S1–S3 komplett
