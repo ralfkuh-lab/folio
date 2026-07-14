@@ -112,7 +112,7 @@ export function showConfirmDialog(
             resolve(false);
             return;
         }
-        if (title) title.textContent = options?.title || 'Bestätigen';
+        if (title) title.textContent = options?.title || t('dialogs.confirm.title');
         ok.textContent = options?.okLabel || 'OK';
         text.textContent = message;
         dialog.hidden = false;

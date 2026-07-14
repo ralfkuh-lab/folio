@@ -17,6 +17,7 @@ import { getEditorText } from '../state/document';
 import { setMode } from '../editor/shell';
 import { showConfirmDialog } from './dialogs';
 import { folioLog, safeInvoke } from '../util/log';
+import { t } from '../i18n/translate';
 
 export type AiReviewContext = {
     runId: number;
@@ -119,14 +120,14 @@ export async function openAiDiffReview(context: AiReviewContext): Promise<void> 
     const generation = ++reviewGeneration;
     region.hidden = false;
     const title = $('ai-diff-title');
-    if (title) title.textContent = `✨ KI-Review — ${context.actionName}`;
+    if (title) title.textContent = t('ai.diffReview.title', { actionName: context.actionName });
     setHint(fileName(context.sourcePath));
     const apply = $('ai-diff-apply') as HTMLButtonElement | null;
     if (apply) apply.disabled = false;
 
     registerVirtualTab({
         slug: 'ai-diff',
-        label: () => '✨ KI-Review',
+        label: () => t('ai.diffReview.titlePlain'),
         dirty: () => !!review?.edited,
         // Klick auf einen Dokument-Tab deaktiviert die Review nur —
         // sonst wäre der „Quelle aktivieren"-Guard-Schritt nicht ohne
@@ -190,8 +191,8 @@ async function guardedClose(): Promise<boolean> {
     if (!review) return true;
     if (review.edited) {
         const ok = await showConfirmDialog(
-            'Die bearbeitete KI-Review verwerfen?',
-            { title: 'KI-Review', okLabel: 'Verwerfen' },
+            t('ai.diffReview.discard.confirm'),
+            { title: t('ai.diffReview.discard.title'), okLabel: t('dialogs.common.discard') },
         );
         if (!ok) return false;
     }
@@ -208,8 +209,8 @@ export async function confirmAiReviewForQuit(): Promise<boolean> {
     if (!review) return true;
     if (review.edited) {
         const ok = await showConfirmDialog(
-            'Die bearbeitete KI-Review wird beim Beenden verworfen. Fortfahren?',
-            { title: 'KI-Review', okLabel: 'Verwerfen und beenden' },
+            t('ai.diffReview.discardAndExit.confirm'),
+            { title: t('ai.diffReview.discard.title'), okLabel: t('ai.diffReview.discardAndExit.action') },
         );
         if (!ok) return false;
     }
@@ -221,13 +222,13 @@ export async function confirmAiReviewForQuit(): Promise<boolean> {
  *  false, wenn Apply (noch) nicht erlaubt ist. */
 function applyGuardsPass(context: ReviewState): boolean {
     if (!hasDocumentTab(context.sourceTabId)) {
-        setHint('Der Quell-Tab wurde geschlossen — Übernehmen ist nicht mehr möglich.');
+        setHint(t('errors.ai.sourceTabClosed'));
         const apply = $('ai-diff-apply') as HTMLButtonElement | null;
         if (apply) apply.disabled = true;
         return false;
     }
     if (getActiveTabId() !== context.sourceTabId) {
-        setHint('Bitte zuerst den Quell-Tab aktivieren.');
+        setHint(t('ai.diffReview.activateSource.hint'));
         return false;
     }
     return true;
@@ -244,8 +245,8 @@ async function applyReview(): Promise<void> {
         if (apply) apply.disabled = true;
         if (discard) discard.disabled = true;
         const ok = await showConfirmDialog(
-            'Das Dokument wurde zwischenzeitlich geändert — Ersetzen überschreibt diese Änderungen.',
-            { title: 'KI-Review', okLabel: 'Trotzdem ersetzen' },
+            t('ai.diffReview.apply.overwriteConfirm'),
+            { title: t('ai.diffReview.discard.title'), okLabel: t('ai.diffReview.apply.overwrite.action') },
         );
         if (apply) apply.disabled = false;
         if (discard) discard.disabled = false;

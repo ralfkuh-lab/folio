@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { installTauriMock, TauriMockHandles } from '../helpers';
+import { seedDeCatalog } from '../helpers-i18n';
 
 vi.mock('../../app/state/tabs', () => ({
     getActiveTabId: vi.fn(() => 7),
@@ -123,7 +124,8 @@ describe('ai-actions-dialog', () => {
     let lastRunArgs: any;
     let settingsData: any;
 
-    beforeEach(() => {
+    beforeEach(async () => {
+        await seedDeCatalog();
         buildDom();
         vi.mocked(getActiveTabId).mockReturnValue(7);
         vi.mocked(getCurrentPath).mockReturnValue('/tmp/doc.md');

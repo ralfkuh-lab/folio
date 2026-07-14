@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { initSettingsAi } from '../../app/ui/settings-ai';
 import { installTauriMock, TauriMockHandles } from '../helpers';
+import { seedDeCatalog } from '../helpers-i18n';
 
 const catalog = {
     catalog: {
@@ -111,7 +112,8 @@ describe('settings-ai', () => {
     let config: any;
     let authStored: boolean;
 
-    beforeEach(() => {
+    beforeEach(async () => {
+        await seedDeCatalog();
         buildDom();
         handles = installTauriMock();
         config = clone(initialConfig);

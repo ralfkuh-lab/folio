@@ -7,6 +7,8 @@ import {
 } from '../state/tabs';
 import { getCleanText, getCurrentPath } from '../state/document';
 import { showUnsavedDialog } from './dialogs';
+import { t } from '../i18n/translate';
+import { fmtBytes } from '../i18n/format';
 import { folioLog } from '../util/log';
 import { openThemeAiDialog } from './theme-ai-dialog';
 
@@ -214,9 +216,7 @@ async function refreshManifestTextFromThemeChange(event: any): Promise<void> {
 }
 
 function formatSize(bytes: number): string {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
-    return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+    return fmtBytes(bytes);
 }
 
 function renderAssetList(): void {
@@ -236,20 +236,20 @@ function renderAssetList(): void {
         const useAsLogo = document.createElement('button');
         useAsLogo.type = 'button';
         useAsLogo.className = 'link-button';
-        useAsLogo.textContent = 'als Logo';
+        useAsLogo.textContent = t('theme.editor.assets.logo.badge');
         useAsLogo.addEventListener('click', () => setLogo(asset.filename));
         const remove = document.createElement('button');
         remove.type = 'button';
         remove.className = 'theme-editor-assets__remove';
         remove.textContent = '×';
-        remove.title = 'Asset entfernen';
+        remove.title = t('theme.editor.assets.remove.tooltip');
         remove.addEventListener('click', () => removeAsset(asset.filename));
         actions.appendChild(useAsLogo);
         actions.appendChild(remove);
         li.appendChild(actions);
         list.appendChild(li);
     }
-    if (logoName) logoName.textContent = logo || '(kein)';
+    if (logoName) logoName.textContent = logo || t('theme.editor.assets.logo.none');
 }
 
 function setAssetError(message: string | null): void {
@@ -280,7 +280,7 @@ async function uploadAsset(file: File): Promise<void> {
     if (!currentId || !currentFiles) return;
     setAssetError(null);
     if (file.size > MAX_ASSET_BYTES) {
-        setAssetError('Das Asset darf höchstens 5 MB groß sein.');
+        setAssetError(t('errors.theme.assetTooLarge'));
         return;
     }
     const filename = file.name;

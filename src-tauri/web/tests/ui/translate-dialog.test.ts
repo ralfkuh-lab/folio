@@ -4,6 +4,7 @@ import {
     openTranslateDialog,
 } from '../../app/ui/translate-dialog';
 import { installTauriMock, TauriMockHandles } from '../helpers';
+import { seedDeCatalog } from '../helpers-i18n';
 
 const config = {
     provider: {
@@ -50,7 +51,8 @@ function buildDom(): void {
 describe('translate-dialog', () => {
     let handles: TauriMockHandles;
 
-    beforeEach(() => {
+    beforeEach(async () => {
+        await seedDeCatalog();
         buildDom();
         handles = installTauriMock();
         handles.invoke.mockImplementation((cmd: string) => {

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { installTauriMock, type TauriMockHandles } from '../helpers';
+import { seedDeCatalog } from '../helpers-i18n';
 import { initThemeAiDialog, openThemeAiDialog, closeThemeAiDialog } from '../../app/ui/theme-ai-dialog';
 
 const catalog = {
@@ -80,7 +81,8 @@ describe('theme-ai-dialog', () => {
     let tauri: TauriMockHandles;
     let harness: SurfaceHarness;
 
-    beforeEach(() => {
+    beforeEach(async () => {
+        await seedDeCatalog();
         vi.clearAllMocks();
         buildDom();
         tauri = installTauriMock();

@@ -1,4 +1,6 @@
 import { folioLog, safeInvoke } from '../util/log';
+import { t } from '../i18n/translate';
+import { fmtNumber, fmtDate, compareStrings, normalizeForSearch } from '../i18n/format';
 import { initAiChatTest, openAiChatTest } from './ai-chat-test';
 import { populateModelPicker } from './ai-model-picker';
 import { makeToggle } from './controls';
@@ -68,7 +70,7 @@ function getInvoke(): ((cmd: string, args?: any) => Promise<any>) | null {
 
 async function invokeUi<T>(cmd: string, args: any, operation: string): Promise<InvokeResult<T>> {
     const invoke = getInvoke();
-    if (!invoke) return { error: 'Tauri-Schnittstelle ist nicht verfügbar.' };
+    if (!invoke) return { error: t('errors.ai.tauriUnavailable') };
     try {
         const value = await invoke(cmd, args) as T;
         document.dispatchEvent(new CustomEvent('folio-ai-invoke-complete', { detail: value }));
@@ -113,16 +115,16 @@ function renderAuthRow(providerId: string, isCustom = false): HTMLElement {
             (stored ? ' settings-ai-status-dot--stored' : '');
         dot.setAttribute('aria-hidden', 'true');
         const statusText = document.createElement('span');
-        statusText.textContent = stored ? 'Schlüssel hinterlegt' : 'Schlüssel fehlt';
+        statusText.textContent = stored ? t('settings.ai.auth.keyStored') : t('settings.ai.auth.keyMissing');
         status.append(dot, statusText);
     }
 
     const edit = button(
-        stored ? 'Schlüssel ändern' : isCustom ? 'Schlüssel setzen (optional)' : 'Schlüssel setzen',
+        stored ? t('settings.ai.auth.changeKey.action') : isCustom ? t('settings.ai.auth.setKeyOptional.action') : t('settings.ai.auth.setKey.action'),
     );
     edit.id = `ai-auth-edit-${providerId}`;
     edit.dataset.aiAuthEdit = providerId;
-    const remove = button('Entfernen');
+    const remove = button(t('settings.ai.auth.remove.action'));
     remove.id = `ai-auth-remove-${providerId}`;
     remove.dataset.aiAuthRemove = providerId;
     remove.hidden = !stored;
@@ -136,11 +138,11 @@ function renderAuthRow(providerId: string, isCustom = false): HTMLElement {
     keyInput.dataset.aiAuthInput = providerId;
     keyInput.className = 'settings-input';
     keyInput.autocomplete = 'new-password';
-    keyInput.setAttribute('aria-label', `Schlüssel für ${providerId}`);
-    const save = button('Speichern');
+    keyInput.setAttribute('aria-label', t('settings.ai.auth.keyAriaLabel', { providerId }));
+    const save = button(t('dialogs.common.save'));
     save.id = `ai-auth-save-${providerId}`;
     save.dataset.aiAuthSave = providerId;
-    const cancel = button('Abbrechen');
+    const cancel = button(t('dialogs.common.cancel'));
     editor.append(keyInput, save, cancel);
 
     const error = document.createElement('p');
@@ -180,7 +182,7 @@ async function saveAuth(providerId: string, keyInput: HTMLInputElement): Promise
     const key = keyInput.value;
     const errorId = `ai-auth-error-${providerId}`;
     if (!key.trim()) {
-        setError(errorId, 'Schlüssel darf nicht leer sein.');
+        setError(errorId, t('settings.ai.auth.keyEmpty'));
         return;
     }
     setError(errorId, null);
@@ -258,7 +260,7 @@ function providerCard(
         makeToggle(
             `ai-provider-enabled-${providerId}`,
             enabled,
-            'Aktiv',
+            t('settings.ai.auth.active.label'),
             (checked) => setProviderEnabled(providerId, checked),
         ),
     );
@@ -269,12 +271,12 @@ function providerCard(
         details.className = 'settings-ai-card__details';
         if (api) {
             const endpoint = document.createElement('span');
-            endpoint.textContent = `API: ${api}`;
+            endpoint.textContent = t('settings.ai.providers.apiLabel', { api });
             details.appendChild(endpoint);
         }
         if (doc) {
             const documentation = document.createElement('span');
-            documentation.textContent = `Doku: ${doc}`;
+            documentation.textContent = t('settings.ai.providers.docLabel', { doc });
             details.appendChild(documentation);
         }
         card.appendChild(details);
@@ -294,7 +296,7 @@ function providerRank(id: string): number {
 }
 
 function providerMatchesTerm(id: string, name: string, term: string): boolean {
-    return !term || `${name} ${id}`.toLocaleLowerCase('de').includes(term);
+    return !term || normalizeForSearch(`${name} ${id}`).includes(term);
 }
 
 type ProviderListEntry = {
@@ -309,9 +311,7 @@ function renderProviders(): void {
     const list = $('ai-provider-list');
     if (!list || !catalogResult || !aiConfig) return;
     list.textContent = '';
-    const term = (input('ai-provider-search')?.value || '')
-        .trim()
-        .toLocaleLowerCase('de');
+    const term = normalizeForSearch((input('ai-provider-search')?.value || '').trim());
 
     // Katalog- und Custom-Provider in EINER Liste, sortiert nach providerRank.
     const entries: ProviderListEntry[] = Object.entries(catalogResult.catalog)
@@ -337,12 +337,12 @@ function renderProviders(): void {
         .filter((entry) => providerMatchesTerm(entry.id, entry.name, term))
         .sort((a, b) => {
             const byRank = providerRank(a.id) - providerRank(b.id);
-            return byRank !== 0 ? byRank : a.name.localeCompare(b.name, 'de');
+            return byRank !== 0 ? byRank : compareStrings(a.name, b.name);
         });
     if (providers.length === 0) {
         const empty = document.createElement('p');
         empty.className = 'settings-hint';
-        empty.textContent = term ? 'Keine passenden Anbieter.' : 'Keine Anbieter im Katalog.';
+        empty.textContent = term ? t('settings.ai.providers.noneMatch') : t('settings.ai.providers.empty');
         list.appendChild(empty);
     }
     for (const entry of providers) {
@@ -358,11 +358,11 @@ function renderProviders(): void {
             card.classList.add('settings-ai-card--custom');
             const actions = document.createElement('div');
             actions.className = 'settings-ai-card__actions';
-            const edit = button('Bearbeiten');
+            const edit = button(t('settings.ai.edit.action'));
             edit.id = `ai-custom-edit-${entry.id}`;
             edit.dataset.aiCustomEdit = entry.id;
             edit.addEventListener('click', () => openCustomDialog(entry.id));
-            const remove = button('Löschen');
+            const remove = button(t('settings.themes.delete.action'));
             remove.id = `ai-custom-delete-${entry.id}`;
             remove.dataset.aiCustomDelete = entry.id;
             remove.addEventListener('click', () => deleteCustomProvider(entry.id));
@@ -381,7 +381,7 @@ function openCustomDialog(providerId?: string): void {
     const keyInput = input('ai-custom-key');
     if (!dialog || !idInput || !nameInput || !baseUrlInput || !keyInput) return;
     const provider = providerId ? aiConfig?.provider[providerId] : undefined;
-    $('ai-custom-title')!.textContent = provider ? 'Anbieter bearbeiten' : 'Anbieter hinzufügen';
+    $('ai-custom-title')!.textContent = provider ? t('settings.ai.custom.edit.title') : t('settings.ai.providers.addDialog.title');
     idInput.value = providerId || '';
     idInput.disabled = !!provider;
     nameInput.value = provider?.name || '';
@@ -460,24 +460,29 @@ async function deleteCustomProvider(providerId: string): Promise<void> {
 }
 
 function formatCount(value: number): string {
-    if (value >= 1_000_000) return `${Number((value / 1_000_000).toFixed(1))}m`;
-    if (value >= 1_000) return `${Number((value / 1_000).toFixed(1))}k`;
-    return String(value);
+    if (value >= 1_000_000) return fmtNumber(value / 1_000_000, { maximumFractionDigits: 1 }) + 'm';
+    if (value >= 1_000) return fmtNumber(value / 1_000, { maximumFractionDigits: 1 }) + 'k';
+    return fmtNumber(value);
 }
 
 function formatCost(value: number): string {
-    return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(3)));
+    return Number.isInteger(value)
+        ? fmtNumber(value)
+        : fmtNumber(value, { maximumFractionDigits: 3 });
 }
 
 function modelBadges(model?: CatalogModel): string[] {
     if (!model) return [];
     const badges: string[] = [];
-    if (model.limit?.context) badges.push(`Kontext ${formatCount(model.limit.context)}`);
-    if (model.reasoning) badges.push('Reasoning');
-    if (model.tool_call) badges.push('Tools');
+    if (model.limit?.context) badges.push(t('settings.ai.model.contextBadge', { count: formatCount(model.limit.context) }));
+    if (model.reasoning) badges.push(t('settings.ai.model.reasoningBadge'));
+    if (model.tool_call) badges.push(t('settings.ai.model.toolsBadge'));
     if (model.cost?.input !== undefined && model.cost.output !== undefined) {
         badges.push(
-            `$${formatCost(model.cost.input)}/$${formatCost(model.cost.output)} je 1M`,
+            t('settings.ai.model.costBadge', {
+                input: '$' + formatCost(model.cost.input),
+                output: '$' + formatCost(model.cost.output),
+            }),
         );
     }
     return badges;
@@ -499,7 +504,7 @@ function configuredModels(
             // jede Gruppe alphabetisch.
             const byUse = (whitelisted.has(idA) ? 0 : 1) - (whitelisted.has(idB) ? 0 : 1);
             if (byUse !== 0) return byUse;
-            return (a.name || idA).localeCompare(b.name || idB, 'de');
+            return compareStrings(a.name || idA, b.name || idB);
         });
 }
 
@@ -545,14 +550,14 @@ function modelRow(
     const toggle = makeToggle(
         `ai-model-toggle-${providerId}-${modelId}`,
         provider.whitelist?.includes(modelId) === true,
-        'Verwenden',
+        t('settings.ai.model.use.label'),
         (checked) => toggleModel(providerId, modelId, checked),
     );
     if (provider.whitelist?.includes(modelId) === true) {
         // Chat-Test nur für freigeschaltete Modelle anbieten.
         const actions = document.createElement('div');
         actions.className = 'settings-ai-model__actions';
-        const test = button('Test', 'settings-ai-button settings-ai-button--small');
+        const test = button(t('settings.ai.model.test.action'), 'settings-ai-button settings-ai-button--small');
         test.id = `ai-model-test-${providerId}-${modelId}`;
         test.dataset.aiModelTest = `${providerId}/${modelId}`;
         test.addEventListener('click', (event) => {
@@ -576,7 +581,7 @@ function renderDefaultModels(): void {
     if (!element || !aiConfig) return;
     populateModelPicker(element, aiConfig, catalogResult || { catalog: {} }, {
         includeEmptyOption: true,
-        emptyOptionLabel: '(keins)',
+        emptyOptionLabel: t('settings.ai.defaultModel.none'),
         separator: ' — ',
     });
 }
@@ -586,18 +591,18 @@ function renderModels(): void {
     if (!list || !aiConfig || !catalogResult) return;
     list.textContent = '';
     renderDefaultModels();
-    const term = (input('ai-model-search')?.value || '').trim().toLocaleLowerCase('de');
+    const term = normalizeForSearch((input('ai-model-search')?.value || '').trim());
     const providers = Object.entries(aiConfig.provider)
         .filter(([, provider]) => provider.enabled)
         .sort(([idA, a], [idB, b]) =>
-            providerName(idA, catalogResult!.catalog[idA], a).localeCompare(
+            compareStrings(
+                providerName(idA, catalogResult!.catalog[idA], a),
                 providerName(idB, catalogResult!.catalog[idB], b),
-                'de',
             ));
     if (providers.length === 0) {
         const empty = document.createElement('p');
         empty.className = 'settings-ai-empty';
-        empty.textContent = 'Aktiviere zuerst Anbieter im Tab KI-Anbieter.';
+        empty.textContent = t('settings.ai.models.enableProviderFirst');
         list.appendChild(empty);
         return;
     }
@@ -609,11 +614,11 @@ function renderModels(): void {
             catalogResult.catalog[providerId],
             provider,
         );
-        const providerMatches = `${name} ${providerId}`.toLocaleLowerCase('de').includes(term);
+        const providerMatches = normalizeForSearch(`${name} ${providerId}`).includes(term);
         const models = configuredModels(providerId, provider)
             .filter(([modelId, model]) =>
                 !term || providerMatches ||
-                `${model.name || ''} ${modelId}`.toLocaleLowerCase('de').includes(term));
+                normalizeForSearch(`${model.name || ''} ${modelId}`).includes(term));
         if (term && !providerMatches && models.length === 0) continue;
 
         const group = document.createElement('section');
@@ -625,7 +630,7 @@ function renderModels(): void {
         title.textContent = name;
         header.appendChild(title);
         if (provider.custom) {
-            const fetch = button('Modelle abrufen');
+            const fetch = button(t('settings.ai.providers.fetchModels.action'));
             fetch.id = `ai-models-fetch-${providerId}`;
             fetch.dataset.aiModelsFetch = providerId;
             fetch.addEventListener('click', () => fetchCustomModels(providerId, fetch));
@@ -641,8 +646,8 @@ function renderModels(): void {
             const empty = document.createElement('p');
             empty.className = 'settings-hint';
             empty.textContent = provider.custom
-                ? 'Noch keine Modelle. Rufe die Modellliste vom Anbieter ab.'
-                : 'Keine passenden Modelle.';
+                ? t('settings.ai.providers.models.empty')
+                : t('settings.ai.models.noneMatch');
             group.appendChild(empty);
         } else {
             for (const [modelId, model] of models) {
@@ -655,7 +660,7 @@ function renderModels(): void {
     if (rendered === 0) {
         const empty = document.createElement('p');
         empty.className = 'settings-ai-empty';
-        empty.textContent = 'Keine passenden Modelle.';
+        empty.textContent = t('settings.ai.models.noneMatch');
         list.appendChild(empty);
     }
 }
@@ -667,7 +672,7 @@ async function fetchCustomModels(
     const errorId = `ai-models-fetch-error-${providerId}`;
     setError(errorId, null);
     fetchButton.disabled = true;
-    fetchButton.textContent = 'Wird abgerufen…';
+    fetchButton.textContent = t('settings.ai.providers.fetchModels.status');
     const result = await invokeUi<AiConfig>(
         'ai_custom_models_fetch',
         { providerId },
@@ -675,7 +680,7 @@ async function fetchCustomModels(
     );
     if (result.error) {
         fetchButton.disabled = false;
-        fetchButton.textContent = 'Modelle abrufen';
+        fetchButton.textContent = t('settings.ai.providers.fetchModels.action');
         setError(errorId, result.error);
         return;
     }
@@ -693,21 +698,26 @@ function formatCatalogDate(updatedAt: string): string {
     }
     return Number.isNaN(date.getTime())
         ? updatedAt
-        : new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium' }).format(date);
+        : fmtDate(date, { dateStyle: 'medium' });
 }
 
 function renderCatalogUpdated(): void {
     const element = $('ai-catalog-updated');
     if (!element || !catalogResult) return;
-    const source = catalogResult.source === 'cache' ? 'Cache' : 'Snapshot';
-    element.textContent = `Katalogstand: ${formatCatalogDate(catalogResult.updatedAt)} (${source})`;
+    const source = catalogResult.source === 'cache'
+        ? t('settings.ai.catalog.sourceCache')
+        : t('settings.ai.catalog.sourceSnapshot');
+    element.textContent = t('settings.ai.models.catalogAge', {
+        date: formatCatalogDate(catalogResult.updatedAt),
+        source,
+    });
 }
 
 async function refreshCatalog(): Promise<void> {
     const refresh = $('ai-catalog-refresh') as HTMLButtonElement | null;
     if (!refresh) return;
     refresh.disabled = true;
-    refresh.textContent = 'Wird aktualisiert…';
+    refresh.textContent = t('settings.ai.models.refreshCatalog.status');
     setError('ai-models-error', null);
     const result = await invokeUi<CatalogResult>(
         'ai_catalog_refresh',
@@ -715,7 +725,7 @@ async function refreshCatalog(): Promise<void> {
         'KI-Katalog konnte nicht aktualisiert werden',
     );
     refresh.disabled = false;
-    refresh.textContent = 'Anbieter-/Modellkatalog aktualisieren';
+    refresh.textContent = t('settings.ai.models.refreshCatalog.action');
     if (result.error) {
         setError('ai-models-error', result.error);
         return;
@@ -751,8 +761,8 @@ async function loadAiData(): Promise<void> {
     if (loadPromise) return loadPromise;
     const providerList = $('ai-provider-list');
     const modelList = $('ai-model-list');
-    if (providerList) providerList.textContent = 'Wird geladen…';
-    if (modelList) modelList.textContent = 'Wird geladen…';
+    if (providerList) providerList.textContent = t('settings.ai.loading.status');
+    if (modelList) modelList.textContent = t('settings.ai.loading.status');
     loadPromise = Promise.all([
         safeInvoke<CatalogResult>('ai_catalog_get', undefined, 'KI-Katalog laden'),
         safeInvoke<AiConfig>('ai_config_get', undefined, 'KI-Konfiguration laden'),
@@ -763,8 +773,8 @@ async function loadAiData(): Promise<void> {
         ),
     ]).then(([catalog, config, status]) => {
         if (!catalog || !config || !status) {
-            setError('ai-providers-error', 'KI-Einstellungen konnten nicht geladen werden.');
-            setError('ai-models-error', 'KI-Einstellungen konnten nicht geladen werden.');
+            setError('ai-providers-error', t('settings.ai.loadFailed'));
+            setError('ai-models-error', t('settings.ai.loadFailed'));
             return;
         }
         catalogResult = catalog;

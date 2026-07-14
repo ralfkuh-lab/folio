@@ -938,17 +938,17 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 | 329 | `Eigene Vorlage` | textContent | `ai.actions.customTemplate.badge` | DOM assignment |
 | 341 | `Die Vorlage „${template.name}" löschen?` | literal | `ai.actions.deleteTemplate.confirm` | German string found |
 | 342 | `Löschen` | literal | `ai.actions.deleteTemplate.submit` | German string found |
-| 407 | `Selektion (${codePoints(selectedText).toLocaleString('de-DE')} Zeichen)` | literal | `ai.actions.scope.selectionWithCount` | German string found |
+| 407 | `Selektion (${…} Zeichen)` | textContent | `ai.actions.scope.selectionWithCount` + `ai.status.charsPart` | I3b-fix F1: Template `{charsPart}` + tPlural/fmtNumber |
 | 417 | `✨ ${actionName} · 0 Zeichen` | literal | `ai.actions.status.charCount` | German string found |
 | 421 | `Abbrechen` | textContent | `dialogs.common.cancel` | DOM assignment |
 | 505 | `Kein freigeschaltetes Modell verfügbar.` | setError | `errors.ai.noEnabledModel` | dialog call |
 | 534 | `Der Prompt darf nicht leer sein.` | setError | `errors.ai.emptyPrompt` | dialog call |
 | 539 | `Bitte ein Modell auswählen.` | setError | `errors.ai.noModelSelected` | dialog call |
 | 547 | `Die Modellauswahl ist ungültig.` | setError | `errors.ai.invalidModelSelection` | dialog call |
-| 554 | `Die Quelle hat sich geändert — Dialog bitte neu öffnen.` | setError | `errors.app.dieQuelleHatSich` | dialog call |
-| 558 | `Das Dokument wurde zwischenzeitlich geändert — Dialog bitte neu öffnen.` | setError | `errors.app.dasDokumentWurdeZwischenzeitlich` | dialog call |
+| 554 | `Die Quelle hat sich geändert — Dialog bitte neu öffnen.` | setError | `errors.ai.sourceChanged` | I3b kanonisch |
+| 558 | `Das Dokument wurde zwischenzeitlich geändert — Dialog bitte neu öffnen.` | setError | `errors.ai.documentChanged` | I3b kanonisch |
 | 566 | `Erst die offene KI-Review abschließen.` | setError | `errors.ai.reviewOpen` | dialog call |
-| 595 | `Das Dokument wurde während des Starts geändert — bitte erneut starten.` | setError | `errors.app.dasDokumentWurdeW` | dialog call |
+| 595 | `Das Dokument wurde während des Starts geändert — bitte erneut starten.` | setError | `errors.ai.documentChangedDuringStart` | I3b kanonisch |
 | 709 | `Schließen` | textContent | `dialogs.common.close` | DOM assignment |
 | 764 | `Erst die offene KI-Review abschließen.` | literal | `errors.ai.reviewOpen` | German string found |
 | 803 | `Schließen` | literal | `dialogs.common.close` | German string found |
@@ -966,7 +966,7 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 | :--- | :--- | :--- | :--- | :--- |
 | 41 | `Du` | textContent | `ai.chatTest.roleUser` | User-Rolle im Chat-Test |
 | 41 | `Modell` | textContent | `ai.chatTest.roleAssistant` | KI-Rolle im Chat-Test |
-| 68 | `Tauri-Schnittstelle ist nicht verfügbar.` | setError | `errors.app.tauriSchnittstelleIstNicht` | Schnittstellen-Fehler |
+| 68 | `Tauri-Schnittstelle ist nicht verfügbar.` | setError | `errors.ai.tauriUnavailable` | I3b kanonisch |
 
 ## src-tauri/web/app/ui/ai-diff-review.ts
 
@@ -1019,7 +1019,7 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 | :--- | :--- | :--- | :--- | :--- |
 | 102 | `Abbrechen` | textContent | `dialogs.common.cancel` | DOM assignment |
 | 108 | `Transientes KI-Layout für diesen Export` | literal | `export.aiDraft.transientLabel` | German string found |
-| 152 | `Kein Basis-Theme` | textContent | `export.aiDraft.noBaseTheme` | DOM assignment |
+| 152 | `Kein Basis-Theme` | textContent | `export.aiDraft.base.none` | I3b: hierarchischer Key behalten (Map-Korrektur) |
 | 172 | `Kein freigeschaltetes Modell verfügbar.` | setError | `errors.ai.noEnabledModel` | dialog call |
 | 233 | `KI-Entwurf bereit.` | literal | `export.aiDraft.status.readyResult` | German string found |
 | 240 | `Bitte einen Prompt eingeben.` | setError | `errors.ai.emptyPrompt` | dialog call |
@@ -1191,7 +1191,7 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 | 184 | `Bricht ab…` | textContent | `export.aiDraft.status.cancelling` | DOM assignment |
 | 192 | `Abbrechen` | textContent | `dialogs.common.cancel` | DOM assignment |
 | 216 | `KI-Generierung · ${chars.toLocaleString('de-DE')} Zeichen` | literal | `export.aiDraft.status.charCount` | German string found |
-| 221 | `Generierung fehlgeschlagen.` | literal | `errors.export.aiGenerateFailed` | German string found |
+| 221 | `Generierung fehlgeschlagen.` | literal | `errors.ai.generationFailed` | I3b-Fix F4: Theme-AI → errors.ai.* |
 
 ## src-tauri/web/app/ui/theme-editor.ts
 
@@ -1214,7 +1214,7 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 | 171 | `KI-Übersetzung ${language} · 0 Zeichen` | literal | `ai.translate.status.charCount` | German string found |
 | 175 | `Abbrechen` | textContent | `dialogs.common.cancel` | DOM assignment |
 | 221 | `Kein freigeschaltetes Modell verfügbar.` | setError | `errors.ai.noEnabledModel` | dialog call |
-| 237 | `Bitte mindestens eine Zielsprache auswählen.` | setError | `errors.ai.noTargetLanguage` | dialog call |
+| 237 | `Bitte mindestens eine Zielsprache auswählen.` | setError | `errors.ai.noTargetLanguage` | I3b-fix F2: errors-Namespace (war kurzzeitig ai.translate.noTargetLanguage) |
 | 242 | `Bitte ein Modell auswählen.` | setError | `errors.ai.noModelSelected` | dialog call |
 | 250 | `Die Modellauswahl ist ungültig.` | setError | `errors.ai.invalidModelSelection` | dialog call |
 | 300 | `Bricht ab…` | textContent | `ai.translate.status.cancelling` | DOM assignment |
@@ -1361,7 +1361,9 @@ Folgende Vorkommen erfordern Segment-Zerlegung oder Pluralformen gemäß Spec v3
 
 8. **KI-Status mit Zeichenzahl** (Translate / Actions / Export-AI / Theme-AI)
    - Komposition z. B. `ai.status.runningTemplate` = `"{title} · {charsPart}"`
-   - Segment: `ai.status.charsPart` = `{ "one": "1 Zeichen", "other": "{count} Zeichen" }`
+   - Segment: `ai.status.charsPart` = `{ "one": "1 Zeichen", "other": "{formattedCount} Zeichen" }`
+     (`formattedCount` via `fmtNumber` — lokalisierte Gruppierung gewollt; I3b-Fix F2c)
+   - Selektion: `ai.actions.scope.selectionWithCount` = `"Selektion ({charsPart})"` + gleiches Segment
 
 ---
 
@@ -1372,13 +1374,13 @@ Folgende Stellen rufen locale-abhängige JS-Funktionen auf und müssen auf die n
 
 | Datei:Zeile | Aktueller Code | Zu ersetzender Helfer |
 | :--- | :--- | :--- | :--- | :--- |
-| `src-tauri/web/app/ui/ai-actions-dialog.ts:407` | `toLocaleString('de-DE')` | `fmtNumber` |
+| `src-tauri/web/app/ui/ai-actions-dialog.ts` (Scope/Stream) | `toLocaleString('de-DE')` | `fmtNumber` + `tPlural(ai.status.charsPart)` — **I3b erledigt** |
 | `src-tauri/web/app/ui/ai-actions-dialog.ts:1076` | `toLocaleString('de-DE')` | `fmtNumber` |
 | `src-tauri/web/app/ui/export-ai.ts:422` | `toLocaleString('de-DE')` | `fmtNumber` |
 | `src-tauri/web/app/ui/theme-ai-dialog.ts:216` | `toLocaleString('de-DE')` | `fmtNumber` |
 | `src-tauri/web/app/ui/translate-dialog.ts:338` | `toLocaleString('de-DE')` | `fmtNumber` |
 | `src-tauri/web/app/ui/settings-ai.ts:696` | `new Intl.DateTimeFormat('de-DE', ...)` | `fmtDate` |
-| `src-tauri/web/app/ui/theme-editor.ts:219` | `.toFixed(1) + ' MB'` | `fmtBytes` |
+| `src-tauri/web/app/ui/theme-editor.ts` | `.toFixed(1) + ' MB'` | `fmtBytes` (SI 1000er KB/MB — I3b-Fix F5) |
 | `src-tauri/web/app/ui/settings-ai.ts:297` | `.toLocaleLowerCase('de')` | `normalizeForSearch` |
 | `src-tauri/web/app/ui/settings-ai.ts:314` | `.toLocaleLowerCase('de')` | `normalizeForSearch` |
 | `src-tauri/web/app/ui/settings-ai.ts:589` | `.toLocaleLowerCase('de')` | `normalizeForSearch` |
@@ -1441,6 +1443,112 @@ Folgende Stellen rufen locale-abhängige JS-Funktionen auf und müssen auf die n
 `menu.*` deckt den vollständigen `MenuLabels`-Satz ab (I1a).
 
 *Überarbeitet: 2026-07-13 · grok (Implementierer) · Spec v3.1 Naming*
+
+---
+
+## I3b — Kanonische Key-Registry (Dialoge/Settings/AI/Theme/Export)
+
+Nach Etappe I3b + Fix-Paket. Regeln (F2): (a) Validierung/Fehler → `errors.<modul>.<fall>`;
+(b) Map-Key gewinnt außer Implementierung klar besser → Map korrigiert;
+(c) `ai.status.charsPart` nutzt `{formattedCount}` (fmtNumber).
+
+### AI Actions / Status
+
+| Key | de (zeichengenau) | Bemerkung |
+| :--- | :--- | :--- |
+| `ai.actions.customPrompt.name` | Eigener Prompt | |
+| `ai.actions.customPrompt.description` | Freie Anweisung ohne Vorlage. | |
+| `ai.actions.customTemplate.badge` | Eigene Vorlage | Map-alt |
+| `ai.actions.deleteTemplate.ariaLabel` | Vorlage löschen | Map-alt |
+| `ai.actions.deleteTemplate.confirm` | Die Vorlage „{name}" löschen? | Map-alt |
+| `ai.actions.deleteTemplate.submit` | Löschen | Map-alt |
+| `ai.actions.favorite.add.ariaLabel` | Als Favorit markieren | |
+| `ai.actions.favorite.remove.ariaLabel` | Favorit entfernen | |
+| `ai.actions.favorites.empty` | Favoriten im ✨-Dialog markieren. | Map-alt |
+| `ai.actions.saveTemplate.emptyName` | Bitte einen Namen angeben. | |
+| `ai.actions.scope.selectionWithCount` | Selektion ({charsPart}) | F1: + `ai.status.charsPart` |
+| `ai.actions.status.cancelling` | Bricht ab… | Map-alt |
+| `ai.actions.status.charCount` | ✨ {actionName} · {charsPart} | Map-alt |
+| `ai.actions.status.done` | ✓ {actionName} | |
+| `ai.actions.status.error` | ✕ {detail} | |
+| `ai.actions.status.errorNamed` | ✕ {actionName}: {detail} | |
+| `ai.actions.status.running` | Läuft… | Map-alt |
+| `ai.status.charsPart` | one: 1 Zeichen / other: {formattedCount} Zeichen | F2c |
+| `ai.chatTest.roleUser` | Du | Map-alt |
+| `ai.chatTest.roleAssistant` | Modell | Map-alt |
+
+### AI Diff / Translate
+
+| Key | de | Bemerkung |
+| :--- | :--- | :--- |
+| `ai.diffReview.title` | ✨ KI-Review — {actionName} | Map-alt |
+| `ai.diffReview.titlePlain` | ✨ KI-Review | Map-alt |
+| `ai.diffReview.discard.confirm` | Die bearbeitete KI-Review verwerfen? | |
+| `ai.diffReview.discard.title` | KI-Review | |
+| `ai.diffReview.discardAndExit.confirm` | Die bearbeitete KI-Review wird beim Beenden verworfen. Fortfahren? | |
+| `ai.diffReview.discardAndExit.action` | Verwerfen und beenden | Map-alt |
+| `ai.diffReview.apply.overwriteConfirm` | Das Dokument wurde zwischenzeitlich geändert — Ersetzen überschreibt diese Änderungen. | Map-alt |
+| `ai.diffReview.apply.overwrite.action` | Trotzdem ersetzen | |
+| `ai.diffReview.activateSource.hint` | Bitte zuerst den Quell-Tab aktivieren. | |
+| `ai.translate.status.running` | Übersetze… | Map-alt |
+| `ai.translate.status.cancelling` | Bricht ab… | Map-alt |
+| `ai.translate.status.charCount` | KI-Übersetzung {language} · {charsPart} | Map-alt |
+| `ai.translate.status.done` | ✓ {language} | |
+| `ai.translate.status.doneWithNext` | ✓ {language} · KI-Übersetzung {next} · {charsPart} | |
+
+### errors.ai (Validierung/Laufzeit)
+
+| Key | de | Bemerkung |
+| :--- | :--- | :--- |
+| `errors.ai.emptyPrompt` | Der Prompt darf nicht leer sein. | F4: einziger Prompt-Leer-Key (promptRequired entfernt) |
+| `errors.ai.noEnabledModel` | Kein freigeschaltetes Modell verfügbar. | Map-alt |
+| `errors.ai.noModelSelected` | Bitte ein Modell auswählen. | Map-alt |
+| `errors.ai.invalidModelSelection` | Die Modellauswahl ist ungültig. | Map-alt |
+| `errors.ai.noTargetLanguage` | Bitte mindestens eine Zielsprache auswählen. | F2a (war ai.translate.*) |
+| `errors.ai.reviewOpen` | Erst die offene KI-Review abschließen. | Map-alt |
+| `errors.ai.sourceChanged` | Die Quelle hat sich geändert — Dialog bitte neu öffnen. | |
+| `errors.ai.documentChanged` | Das Dokument wurde zwischenzeitlich geändert — Dialog bitte neu öffnen. | |
+| `errors.ai.documentChangedDuringStart` | Das Dokument wurde während des Starts geändert — bitte erneut starten. | |
+| `errors.ai.sourceTabClosed` | Der Quell-Tab wurde geschlossen — Übernehmen ist nicht mehr möglich. | Map-alt |
+| `errors.ai.tauriUnavailable` | Tauri-Schnittstelle ist nicht verfügbar. | |
+| `errors.ai.generationFailed` | Generierung fehlgeschlagen. | F4 (war errors.export.generationFailed) |
+| `errors.export.aiGenerateFailed` | KI-Generierung fehlgeschlagen. | Export-Draft-Status |
+| `errors.export.failed` | Export fehlgeschlagen | Map-alt |
+| `errors.theme.assetTooLarge` | Das Asset darf höchstens 5 MB groß sein. | |
+| `errors.theme.baseRequired` | Bitte ein Basis-Theme wählen. | Map-alt |
+
+### Export / Image / Theme
+
+| Key | de | Bemerkung |
+| :--- | :--- | :--- |
+| `export.layouts.more` | one/other Plural | Map-alt |
+| `export.status.running` / `.done` | Export läuft… / Exportiert: {path} | Map-alt |
+| `export.aiDraft.base.none` | Kein Basis-Theme | F2b: statt noBaseTheme |
+| `export.aiDraft.card.name` / `.defaultDesc` / `.defaultName` | KI-Entwurf / … | |
+| `export.aiDraft.generating` | Erzeuge... | |
+| `export.aiDraft.status.*` | ready/readyResult/cancelling/charCount | Map-alt + ergänzt |
+| `export.aiDraft.saveDialog.idInvalid` / `.displayNameEmpty` | … | |
+| `export.aiDraft.themeSaved.status` | Theme gespeichert: {name} | Map-alt |
+| `export.aiDraft.transientLabel` | Transientes KI-Layout… | Map-alt |
+| `dialogs.image.*` | loadFailed, noClipboardImage, noFileChosen, pick*, insert*, targetDirEmpty, noDocOpen.warning, canvasContextUnavailable | I3b |
+| `theme.editor.assets.logo.badge` / `.remove.tooltip` | als Logo / Asset entfernen | Map-alt |
+| `theme.editor.aiDialog.generating` / `.status.cancelling` / `.status.charCount` | … | |
+
+### Settings AI / Themes
+
+| Key | de | Bemerkung |
+| :--- | :--- | :--- |
+| `settings.ai.auth.keyStored` / `.keyMissing` / `.changeKey.action` / `.setKey*` / `.remove.action` / `.keyEmpty` / `.keyAriaLabel` / `.active.label` | Schlüssel-UI | |
+| `settings.ai.catalog.sourceCache` | Cache | F3 |
+| `settings.ai.catalog.sourceSnapshot` | Snapshot | F3 (fr: Instantané) |
+| `settings.ai.models.catalogAge` | Katalogstand: {date} ({source}) | Map-alt Wrapper |
+| `settings.ai.model.*` | contextBadge, costBadge, reasoning/tools/use/test | |
+| `settings.ai.providers.*` | apiLabel, docLabel, empty, noneMatch, fetchModels.*, models.empty | |
+| `settings.ai.loading.status` / `.loadFailed` / `.edit.action` / `.custom.edit.title` | … | |
+| `settings.themes.*` | active/custom/builtin badges, variants, detail.*, favorite*, use.*, clone/export/delete.confirmNamed, customDir.hint, createDialog.* | |
+
+*I3b-Fix-Paket 2026-07-14 · F1–F5 kanonisiert*
+
 
 ### Hinweis
 

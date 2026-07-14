@@ -1,3 +1,4 @@
+import { compareStrings } from '../i18n/format';
 export type CatalogModel = { id: string; name?: string };
 export type CatalogProvider = {
     id: string;
@@ -58,7 +59,7 @@ export function populateModelPicker(
         }
     }
 
-    choices.sort((a, b) => a.label.localeCompare(b.label, 'de'));
+    choices.sort((a, b) => compareStrings(a.label, b.label));
 
     for (const choice of choices) {
         const option = document.createElement('option');

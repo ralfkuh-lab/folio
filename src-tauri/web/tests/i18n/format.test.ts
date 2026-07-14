@@ -24,10 +24,13 @@ describe('i18n format', () => {
         expect(de).not.toBe(en);
     });
 
-    it('fmtBytes scales', () => {
-        expect(fmtBytes(500)).toMatch(/500/);
-        expect(fmtBytes(2048)).toMatch(/2/);
-        expect(fmtBytes(2048)).toMatch(/KiB/);
+    it('fmtBytes uses 1000-based SI units (KB/MB)', () => {
+        expect(fmtBytes(500)).toBe('500 B');
+        expect(fmtBytes(2000)).toBe('2 KB');
+        // 5_000_000 bytes → 5 MB (matches theme asset limit wording)
+        expect(fmtBytes(5_000_000)).toBe('5 MB');
+        setFormatLocale('en-US');
+        expect(fmtBytes(1500)).toBe('1.5 KB');
     });
 
     it('F7: fmtDate differs de vs en for fixed UTC date', () => {

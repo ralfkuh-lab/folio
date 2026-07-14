@@ -3,6 +3,8 @@ import { getActiveTabId } from '../state/tabs';
 import { renderPreviewText } from '../view/preview';
 import { folioLog, safeInvoke } from '../util/log';
 import { populateModelPicker } from './ai-model-picker';
+import { t, tPlural } from '../i18n/translate';
+import { fmtNumber } from '../i18n/format';
 
 type CatalogModel = { id: string; name?: string };
 type CatalogProvider = {
@@ -160,7 +162,7 @@ function setBusy(next: boolean): void {
         }
     }
     const start = $('ai-translate-start') as HTMLButtonElement | null;
-    if (start) start.textContent = next ? 'Übersetze…' : 'Übersetzen';
+    if (start) start.textContent = next ? t('ai.translate.status.running') : t('ai.translate.submit.action');
 }
 
 function showStatus(language: string): void {
@@ -168,11 +170,14 @@ function showStatus(language: string): void {
     if (!status) return;
     status.hidden = false;
     status.classList.add('ai-status-running');
-    updateStatusText(`KI-Übersetzung ${language} · 0 Zeichen`);
+    updateStatusText(t('ai.translate.status.charCount', {
+        language,
+        charsPart: tPlural('ai.status.charsPart', 0, { formattedCount: fmtNumber(0) }),
+    }));
     const cancel = $('ai-translate-status-cancel') as HTMLButtonElement | null;
     if (cancel) {
         cancel.disabled = false;
-        cancel.textContent = 'Abbrechen';
+        cancel.textContent = t('dialogs.common.cancel');
     }
 }
 
@@ -218,7 +223,7 @@ export async function openTranslateDialog(): Promise<void> {
         renderModels(config, catalog);
         applyRecentLanguages(config);
         if (!select('ai-translate-model')?.value) {
-            setError('Kein freigeschaltetes Modell verfügbar.');
+            setError(t('errors.ai.noEnabledModel'));
         }
         dialog.hidden = false;
         input('ai-translate-lang-en')?.focus();
@@ -234,12 +239,12 @@ export async function openTranslateDialog(): Promise<void> {
 async function startTranslation(): Promise<void> {
     const languages = selectedLanguages();
     if (languages.length === 0) {
-        setError('Bitte mindestens eine Zielsprache auswählen.');
+        setError(t('errors.ai.noTargetLanguage'));
         return;
     }
     const modelValue = select('ai-translate-model')?.value;
     if (!modelValue) {
-        setError('Bitte ein Modell auswählen.');
+        setError(t('errors.ai.noModelSelected'));
         return;
     }
     let providerId: string;
@@ -247,7 +252,7 @@ async function startTranslation(): Promise<void> {
     try {
         [providerId, modelId] = JSON.parse(modelValue) as [string, string];
     } catch {
-        setError('Die Modellauswahl ist ungültig.');
+        setError(t('errors.ai.invalidModelSelection'));
         return;
     }
 
@@ -297,7 +302,7 @@ export function initTranslateDialog(): void {
         const button = $('ai-translate-status-cancel') as HTMLButtonElement | null;
         if (button) {
             button.disabled = true;
-            button.textContent = 'Bricht ab…';
+            button.textContent = t('ai.translate.status.cancelling');
         }
         invoke<void>('ai_translate_cancel').catch((error) => {
             folioLog.warn('translate', 'Abbruch der Dokumentübersetzung fehlgeschlagen', {
@@ -305,7 +310,7 @@ export function initTranslateDialog(): void {
             });
             if (button) {
                 button.disabled = false;
-                button.textContent = 'Abbrechen';
+                button.textContent = t('dialogs.common.cancel');
             }
         });
     });
@@ -334,9 +339,10 @@ export function initTranslateDialog(): void {
             const data = event?.payload || {};
             const language = String(data.language || '');
             const chars = Number(data.chars) || 0;
-            updateStatusText(
-                `KI-Übersetzung ${language} · ${chars.toLocaleString('de-DE')} Zeichen`,
-            );
+            updateStatusText(t('ai.translate.status.charCount', {
+                language,
+                charsPart: tPlural('ai.status.charsPart', chars, { formattedCount: fmtNumber(chars) }),
+            }));
             if (typeof data.tabId === 'number'
                 && data.tabId === getActiveTabId()
                 && typeof data.text === 'string') {
@@ -349,8 +355,12 @@ export function initTranslateDialog(): void {
             const index = runningLanguages.indexOf(language);
             const next = index >= 0 ? runningLanguages[index + 1] : undefined;
             updateStatusText(next
-                ? `✓ ${language} · KI-Übersetzung ${next} · 0 Zeichen`
-                : `✓ ${language}`);
+                ? t('ai.translate.status.doneWithNext', {
+                    language,
+                    next,
+                    charsPart: tPlural('ai.status.charsPart', 0, { formattedCount: fmtNumber(0) }),
+                })
+                : t('ai.translate.status.done', { language }));
         });
     }
     void refreshAiTranslateAvailability();

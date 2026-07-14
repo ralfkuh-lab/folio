@@ -9,6 +9,8 @@
      Bild liegt, wird es vorausgewaehlt, sonst Default „Datei waehlen".
 */
 
+import { t } from '../i18n/translate';
+
 type Deps = {
     getCurrentPath: () => string | null;
     showStatus: (msg: string) => void;
@@ -91,14 +93,14 @@ async function blobToClipboardImage(blob: Blob): Promise<ClipboardImage> {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
         const el = new Image();
         el.onload = () => resolve(el);
-        el.onerror = () => reject(new Error('Bild laden fehlgeschlagen'));
+        el.onerror = () => reject(new Error(t('dialogs.image.loadFailed')));
         el.src = dataUrl;
     });
     const canvas = document.createElement('canvas');
     canvas.width = img.naturalWidth;
     canvas.height = img.naturalHeight;
     const cctx = canvas.getContext('2d');
-    if (!cctx) throw new Error('Canvas-Context nicht verfuegbar');
+    if (!cctx) throw new Error(t('dialogs.image.canvasContextUnavailable'));
     cctx.drawImage(img, 0, 0);
     const data = cctx.getImageData(0, 0, canvas.width, canvas.height);
     return {
@@ -159,8 +161,8 @@ function renderPreview(): void {
         const placeholder = document.createElement('div');
         placeholder.className = 'placeholder';
         placeholder.textContent = source === 'clipboard'
-            ? 'Kein Bild in der Zwischenablage.'
-            : 'Keine Datei gewählt.';
+            ? t('dialogs.image.noClipboardImage')
+            : t('dialogs.image.noFileChosen');
         preview.appendChild(placeholder);
     }
 }
@@ -271,7 +273,7 @@ function bindOnce(): void {
             await loadFileImage(picked);
             setSource('file');
         } catch (err) {
-            deps.showStatus(typeof err === 'string' ? err : 'Datei-Auswahl fehlgeschlagen');
+            deps.showStatus(typeof err === 'string' ? err : t('dialogs.image.pickFileFailed'));
         }
     });
     $('image-dir-browse')?.addEventListener('click', async () => {
@@ -284,7 +286,7 @@ function bindOnce(): void {
                 updateInsertEnabled();
             }
         } catch (err) {
-            deps.showStatus(typeof err === 'string' ? err : 'Verzeichnis-Auswahl fehlgeschlagen');
+            deps.showStatus(typeof err === 'string' ? err : t('dialogs.image.pickDirFailed'));
         }
     });
     $('image-link-toggle')?.addEventListener('click', () => setLinked(!linkedFilename));
@@ -341,7 +343,7 @@ async function doInsert(): Promise<void> {
     const filename = ensureExtension(fnInput.value, `image.${defaultExtensionForSource()}`);
     const dir = dirInput.value.trim();
     if (!dir) {
-        deps.showStatus('Zielordner darf nicht leer sein.');
+        deps.showStatus(t('dialogs.image.targetDirEmpty'));
         return;
     }
 
@@ -393,7 +395,7 @@ async function doInsert(): Promise<void> {
         if (result.warning) {
             deps.showStatus(result.warning);
         } else {
-            deps.showStatus(`Bild eingefügt: ${result.finalFilename}`);
+            deps.showStatus(t('dialogs.image.inserted.status', { filename: result.finalFilename }));
         }
         closeDialog();
         // Fokus zurueck in den Editor — applyReplace hat den Cursor
@@ -404,7 +406,7 @@ async function doInsert(): Promise<void> {
             window.FolioEditor.focus();
         }
     } catch (err) {
-        const msg = typeof err === 'string' ? err : 'Bild-Insert fehlgeschlagen';
+        const msg = typeof err === 'string' ? err : t('dialogs.image.insertFailed');
         deps.showStatus(msg);
         showWarning(msg);
     }
@@ -505,7 +507,7 @@ export async function openImageDialog(opts: OpenImageDialogOptions = {}): Promis
 
     dlg.hidden = false;
     showWarning(!docPath
-        ? 'Kein Dokument geöffnet — Bild wird mit absolutem Pfad eingefügt.'
+        ? t('dialogs.image.noDocOpen.warning')
         : null);
 
     // Re-Open ohne Close: alten Handler abraeumen, sonst leakt er.

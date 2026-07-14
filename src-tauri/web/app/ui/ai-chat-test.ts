@@ -5,6 +5,7 @@
    textContent gerendert — kein HTML aus Modell-Antworten. */
 
 import { folioLog } from '../util/log';
+import { t } from '../i18n/translate';
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
 
@@ -38,7 +39,7 @@ function renderMessages(loading = false): void {
         row.className =
             `settings-ai-chat__message settings-ai-chat__message--${message.role}`;
         const role = document.createElement('span');
-        role.textContent = message.role === 'user' ? 'Du' : 'Modell';
+        role.textContent = message.role === 'user' ? t('ai.chatTest.roleUser') : t('ai.chatTest.roleAssistant');
         const text = document.createElement('p');
         text.textContent = message.content;
         row.append(role, text);
@@ -48,7 +49,7 @@ function renderMessages(loading = false): void {
         const row = document.createElement('div');
         row.className = 'settings-ai-chat__message settings-ai-chat__message--assistant';
         const role = document.createElement('span');
-        role.textContent = 'Modell';
+        role.textContent = t('ai.chatTest.roleAssistant');
         const text = document.createElement('p');
         text.textContent = '…';
         row.append(role, text);
@@ -65,7 +66,7 @@ async function sendMessage(): Promise<void> {
     if (!content) return;
     const invoke = getInvoke();
     if (!invoke) {
-        setError('Tauri-Schnittstelle ist nicht verfügbar.');
+        setError(t('errors.ai.tauriUnavailable'));
         return;
     }
     messages.push({ role: 'user', content });

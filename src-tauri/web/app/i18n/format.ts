@@ -30,14 +30,14 @@ export function fmtDate(value: Date | number | string, options?: Intl.DateTimeFo
     }
 }
 
-/** Human-readable byte size (1024-based), locale-aware number. */
+/** Human-readable byte size (1000-based, SI labels), locale-aware number. */
 export function fmtBytes(bytes: number): string {
-    if (!isFinite(bytes) || bytes < 0) return fmtNumber(0);
-    const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+    if (!isFinite(bytes) || bytes < 0) return fmtNumber(0) + ' B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
     let n = bytes;
     let i = 0;
-    while (n >= 1024 && i < units.length - 1) {
-        n /= 1024;
+    while (n >= 1000 && i < units.length - 1) {
+        n /= 1000;
         i++;
     }
     const opts: Intl.NumberFormatOptions =

@@ -1,5 +1,7 @@
 import { populateModelPicker, AiConfig, CatalogResult } from './ai-model-picker';
 import { folioLog } from '../util/log';
+import { t, tPlural } from '../i18n/translate';
+import { fmtNumber } from '../i18n/format';
 import type { MermaidSvgEntry } from '../view/mermaid';
 
 export const EXPORT_AI_DRAFT_ID = '__folio_export_ai_draft';
@@ -97,15 +99,15 @@ function setBusy(next: boolean): void {
         }
     }
     const start = $('export-ai-start') as HTMLButtonElement | null;
-    if (start) start.textContent = next ? 'Erzeuge...' : 'Starten';
+    if (start) start.textContent = next ? t('export.aiDraft.generating') : t('export.aiDraft.start.action');
     const cancel = $('export-ai-cancel') as HTMLButtonElement | null;
-    if (cancel) cancel.textContent = 'Abbrechen';
+    if (cancel) cancel.textContent = t('dialogs.common.cancel');
 }
 
 function defaultManifest(): ThemeManifest {
     return {
-        name: 'KI-Entwurf',
-        description: 'Transientes KI-Layout für diesen Export',
+        name: t('export.aiDraft.defaultName'),
+        description: t('export.aiDraft.transientLabel'),
         code: 'light',
         logo: null,
         cover: false,
@@ -149,7 +151,7 @@ function populateBaseThemes(layouts: ExportLayout[]): void {
     select.textContent = '';
     const none = document.createElement('option');
     none.value = '';
-    none.textContent = 'Kein Basis-Theme';
+    none.textContent = t('export.aiDraft.base.none');
     select.appendChild(none);
     layouts.forEach((layout) => {
         const option = document.createElement('option');
@@ -169,7 +171,7 @@ async function loadModelPicker(): Promise<void> {
             deps.invoke<CatalogResult>('ai_catalog_get'),
         ]);
         populateModelPicker(select, config, catalog, { separator: ' · ' });
-        if (!select.value) setError('Kein freigeschaltetes Modell verfügbar.');
+        if (!select.value) setError(t('errors.ai.noEnabledModel'));
     } catch (error) {
         folioLog.warn('export-ai', 'Model-Picker konnte nicht geladen werden', {
             error: String(error),
@@ -188,11 +190,13 @@ function renderDraftCard(): void {
     card.dataset.layoutId = EXPORT_AI_DRAFT_ID;
     card.tabIndex = 0;
     card.innerHTML =
-        '<div class="export-card__name">KI-Entwurf</div>' +
+        '<div class="export-card__name"></div>' +
         '<div class="export-card__desc"></div>' +
         '<div class="export-card__preview"><iframe sandbox></iframe></div>';
+    const nameEl = card.querySelector('.export-card__name');
+    if (nameEl) nameEl.textContent = t('export.aiDraft.card.name');
     const desc = card.querySelector('.export-card__desc');
-    if (desc) desc.textContent = draftFiles.manifest.name || 'Dokumentspezifisches Layout';
+    if (desc) desc.textContent = draftFiles.manifest.name || t('export.aiDraft.card.defaultDesc');
     card.addEventListener('click', () => deps?.selectDraftCard());
     card.addEventListener('keydown', (event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -230,19 +234,19 @@ function setDraft(draft: ThemeDraft, baseThemeId: string | null): void {
     const actions = $('export-ai-draft-actions');
     if (actions) actions.hidden = false;
     deps?.selectDraftCard();
-    setStatus('KI-Entwurf bereit.');
+    setStatus(t('export.aiDraft.status.readyResult'));
 }
 
 async function startGeneration(): Promise<void> {
     if (!deps || busy) return;
     const prompt = ($('export-ai-prompt') as HTMLTextAreaElement | null)?.value || '';
     if (!prompt.trim()) {
-        setError('Bitte einen Prompt eingeben.');
+        setError(t('errors.ai.emptyPrompt'));
         return;
     }
     const modelValue = ($('export-ai-model') as HTMLSelectElement | null)?.value || '';
     if (!modelValue) {
-        setError('Bitte ein Modell auswählen.');
+        setError(t('errors.ai.noModelSelected'));
         return;
     }
     let providerId: string;
@@ -250,13 +254,13 @@ async function startGeneration(): Promise<void> {
     try {
         [providerId, modelId] = JSON.parse(modelValue) as [string, string];
     } catch {
-        setError('Die Modellauswahl ist ungültig.');
+        setError(t('errors.ai.invalidModelSelection'));
         return;
     }
     const baseThemeId = (($('export-ai-base') as HTMLSelectElement | null)?.value || '').trim() || null;
 
     setError(null);
-    setStatus('KI-Generierung · 0 Zeichen');
+    setStatus(t('export.aiDraft.status.charCount', { charsPart: tPlural('ai.status.charsPart', 0, { formattedCount: fmtNumber(0) }) }));
     setBusy(true);
     try {
         const draft = await deps.invoke<ThemeDraft>('ai_theme_author', {
@@ -274,7 +278,7 @@ async function startGeneration(): Promise<void> {
         });
         setBusy(false);
         setError(String(error));
-        setStatus('KI-Generierung fehlgeschlagen.');
+        setStatus(t('errors.export.aiGenerateFailed'));
     }
 }
 
@@ -283,7 +287,7 @@ function cancelGeneration(): void {
     const cancel = $('export-ai-cancel') as HTMLButtonElement | null;
     if (cancel) {
         cancel.disabled = true;
-        cancel.textContent = 'Bricht ab...';
+        cancel.textContent = t('export.aiDraft.status.cancelling');
     }
     deps.invoke<void>('ai_theme_author_cancel').catch((error) => {
         folioLog.warn('export-ai', 'Abbruch fehlgeschlagen', {
@@ -298,7 +302,7 @@ function openSaveDialog(): void {
     const idInput = $('export-ai-save-id') as HTMLInputElement | null;
     const nameInput = $('export-ai-save-name') as HTMLInputElement | null;
     if (!dialog || !idInput || !nameInput) return;
-    nameInput.value = draftFiles.manifest.name || 'KI-Entwurf';
+    nameInput.value = draftFiles.manifest.name || t('export.aiDraft.defaultName');
     idInput.value = slugify(nameInput.value);
     setSaveError(null);
     dialog.hidden = false;
@@ -324,11 +328,11 @@ async function saveDraftTheme(event: Event): Promise<void> {
     const id = (($('export-ai-save-id') as HTMLInputElement | null)?.value || '').trim();
     const name = (($('export-ai-save-name') as HTMLInputElement | null)?.value || '').trim();
     if (!/^[a-z0-9][a-z0-9_-]*$/.test(id)) {
-        setSaveError('ID: nur Kleinbuchstaben, Zahlen, - und _.');
+        setSaveError(t('export.aiDraft.saveDialog.idInvalid'));
         return;
     }
     if (!name) {
-        setSaveError('Anzeigename darf nicht leer sein.');
+        setSaveError(t('export.aiDraft.saveDialog.displayNameEmpty'));
         return;
     }
     const files = {
@@ -341,7 +345,7 @@ async function saveDraftTheme(event: Event): Promise<void> {
     try {
         await deps.invoke('theme_create', { id, files });
         closeSaveDialog();
-        deps.showStatus('Theme gespeichert: ' + name);
+        deps.showStatus(t('export.aiDraft.themeSaved.status', { name }));
     } catch (error) {
         folioLog.warn('export-ai', 'KI-Entwurf konnte nicht als Theme gespeichert werden', {
             themeId: id,
@@ -354,7 +358,7 @@ async function saveDraftTheme(event: Event): Promise<void> {
 export function prepareExportAiOpen(layouts: ExportLayout[]): void {
     populateBaseThemes(layouts);
     setError(null);
-    setStatus('Bereit.');
+    setStatus(t('export.aiDraft.status.ready'));
     setBusy(false);
     const actions = $('export-ai-draft-actions');
     if (actions) actions.hidden = draftFiles === null;
@@ -419,7 +423,7 @@ export function initExportAi(nextDeps: Deps): void {
         events.listen('ai:theme_stream', (event: any) => {
             if (!busy) return;
             const chars = Number(event?.payload?.chars) || 0;
-            setStatus(`KI-Generierung · ${chars.toLocaleString('de-DE')} Zeichen`);
+            setStatus(t('export.aiDraft.status.charCount', { charsPart: tPlural('ai.status.charsPart', chars, { formattedCount: fmtNumber(chars) }) }));
         });
         events.listen('ai:theme_done', (event: any) => {
             if (!busy) return;

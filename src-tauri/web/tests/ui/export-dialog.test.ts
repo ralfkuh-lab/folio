@@ -11,6 +11,7 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import { installTauriMock, TauriMockHandles } from '../helpers';
+import { seedDeCatalog } from '../helpers-i18n';
 import {
     initExportDialog,
     splitLayoutsByFavorites,
@@ -142,7 +143,8 @@ async function openDialog(): Promise<void> {
 describe('export-dialog', () => {
     let handles: TauriMockHandles;
 
-    beforeEach(() => {
+    beforeEach(async () => {
+        await seedDeCatalog();
         themeFavorites = [];
         handles = installTauriMock();
         setupInvokeResponses(handles);

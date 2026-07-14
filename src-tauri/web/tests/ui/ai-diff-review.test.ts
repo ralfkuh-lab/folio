@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { installTauriMock, TauriMockHandles } from '../helpers';
+import { seedDeCatalog } from '../helpers-i18n';
 
 vi.mock('../../app/state/tabs', () => ({
     getActiveTabId: vi.fn(() => 7),
@@ -111,7 +112,8 @@ describe('ai-diff-review Guards + Übernahme', () => {
     let diffView: ReturnType<typeof installDiffViewMock>;
     let editor: ReturnType<typeof installEditorMock>;
 
-    beforeEach(() => {
+    beforeEach(async () => {
+        await seedDeCatalog();
         buildDom();
         handles = installTauriMock();
         handles.invoke.mockResolvedValue(undefined);

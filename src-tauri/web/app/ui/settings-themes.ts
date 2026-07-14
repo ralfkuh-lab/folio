@@ -1,3 +1,4 @@
+import { t } from '../i18n/translate';
 import { folioLog } from '../util/log';
 import { makeToggle } from './controls';
 import { openThemeEditor } from './theme-editor';
@@ -158,7 +159,7 @@ function syncFavoriteViewThemes(): void {
             button.setAttribute('aria-pressed', active ? 'true' : 'false');
             button.setAttribute(
                 'aria-label',
-                active ? 'Favorit entfernen' : 'Als Favorit markieren',
+                active ? t('settings.themes.favorite.remove.ariaLabel') : t('settings.themes.favorite.ariaLabel'),
             );
             button.textContent = active ? '★' : '☆';
         });
@@ -273,7 +274,7 @@ function cardPreview(theme: ViewThemeInfo): HTMLElement {
     var preview = document.createElement('div');
     preview.className = 'settings-theme-card__preview';
     var frame = document.createElement('iframe');
-    frame.title = theme.name + ' Vorschau';
+    frame.title = t('settings.themes.preview.iframeTitle', { name: theme.name });
     frame.setAttribute('sandbox', '');
     preview.appendChild(frame);
     attachLazyPreview(frame, theme.id);
@@ -286,23 +287,23 @@ function renderBadges(theme: ViewThemeInfo): HTMLElement {
     var activeBadge = document.createElement('span');
     activeBadge.className = 'settings-theme-card__badge settings-theme-card__badge--active';
     activeBadge.dataset.themeActiveBadge = 'true';
-    activeBadge.textContent = '● Aktiv';
+    activeBadge.textContent = t('settings.themes.active.badge');
     badges.appendChild(activeBadge);
     if (theme.custom) {
         var customBadge = document.createElement('span');
         customBadge.className =
             'settings-theme-card__badge settings-theme-card__badge--custom';
-        customBadge.textContent = 'Eigenes Theme';
+        customBadge.textContent = t('settings.themes.custom.badge');
         badges.appendChild(customBadge);
     } else {
         var builtinBadge = document.createElement('span');
         builtinBadge.className = 'settings-theme-card__badge';
-        builtinBadge.textContent = 'Built-in';
+        builtinBadge.textContent = t('settings.themes.builtin.badge');
         badges.appendChild(builtinBadge);
     }
     var variantBadge = document.createElement('span');
     variantBadge.className = 'settings-theme-card__badge';
-    variantBadge.textContent = theme.hasDark ? 'Hell/Dunkel' : 'Nur hell';
+    variantBadge.textContent = theme.hasDark ? t('settings.themes.variant.lightDark') : t('settings.themes.variant.lightOnly');
     badges.appendChild(variantBadge);
     return badges;
 }
@@ -343,7 +344,7 @@ function renderCard(theme: ViewThemeInfo): HTMLElement {
         favorite.type = 'button';
         favorite.className = 'settings-theme-card__fav';
         favorite.dataset.viewThemeFav = theme.id;
-        favorite.setAttribute('aria-label', 'Als Favorit markieren');
+        favorite.setAttribute('aria-label', t('settings.themes.favorite.ariaLabel'));
         favorite.setAttribute('aria-pressed', 'false');
         favorite.textContent = '☆';
         favorite.addEventListener('click', function (event) {
@@ -362,7 +363,7 @@ function renderCard(theme: ViewThemeInfo): HTMLElement {
     if (theme.id === 'standard') {
         var note = document.createElement('span');
         note.className = 'settings-theme-card__note';
-        note.textContent = 'Folgt dem App-Theme · nur Ansicht, kein Export-Layout';
+        note.textContent = t('settings.themes.standard.hint');
         body.appendChild(note);
     }
     entry.appendChild(body);
@@ -401,8 +402,7 @@ export function renderSettingsThemes(themes: ViewThemeInfo[]): void {
 export function renderSettingsThemesDirHint(path: string): void {
     var hint = $('settings-theme-hint');
     if (!hint) return;
-    hint.textContent = 'Eigene Themes: CSS-Dateien in ' + path +
-        ' ablegen (name.css, optional name.dark.css / name.page.css).';
+    hint.textContent = t('settings.themes.customDir.hint', { path });
 }
 
 function partOptions(files: ThemeFiles): ThemePartOption[] {
@@ -448,25 +448,25 @@ function detailActions(theme: ViewThemeInfo): HTMLElement {
     use.className = 'settings-theme-button primary';
     var active = activeThemeId() === theme.id;
     use.disabled = active;
-    use.textContent = active ? 'Wird verwendet ✓' : 'Als Ansicht verwenden';
+    use.textContent = active ? t('settings.themes.use.active') : t('settings.themes.use.action');
     use.addEventListener('click', function () {
         options?.patchSettings({ viewTheme: theme.id });
     });
     actions.appendChild(use);
     if (!isExportTheme(theme)) return actions;
     if (theme.custom) {
-        actions.appendChild(themeAction('Bearbeiten', 'edit', theme, function () {
+        actions.appendChild(themeAction(t('settings.themes.edit.action'), 'edit', theme, function () {
             openThemeEditor(theme.id);
         }));
     }
-    actions.appendChild(themeAction('Duplizieren', 'clone', theme, function () {
+    actions.appendChild(themeAction(t('settings.themes.clone.action'), 'clone', theme, function () {
         openThemeCreateDialog(theme);
     }));
-    actions.appendChild(themeAction('Exportieren…', 'export', theme, function () {
+    actions.appendChild(themeAction(t('settings.themes.export.action'), 'export', theme, function () {
         exportTheme(theme);
     }));
     if (theme.custom) {
-        actions.appendChild(themeAction('Löschen', 'delete', theme, function () {
+        actions.appendChild(themeAction(t('settings.themes.delete.action'), 'delete', theme, function () {
             openThemeDeleteDialog(theme);
         }));
     }
@@ -483,12 +483,12 @@ function renderDetailHeader(theme: ViewThemeInfo, files: ThemeFiles | null): HTM
         nameInput.id = 'settings-theme-detail-name-input';
         nameInput.className = 'settings-input';
         nameInput.value = files.manifest.name || theme.name;
-        nameInput.setAttribute('aria-label', 'Theme-Name');
+        nameInput.setAttribute('aria-label', t('settings.themes.detail.name.ariaLabel'));
         var descInput = document.createElement('input');
         descInput.id = 'settings-theme-detail-description-input';
         descInput.className = 'settings-input';
         descInput.value = files.manifest.description || theme.description;
-        descInput.setAttribute('aria-label', 'Theme-Beschreibung');
+        descInput.setAttribute('aria-label', t('settings.themes.detail.description.ariaLabel'));
         text.append(nameInput, descInput);
     } else {
         var title = document.createElement('h3');
@@ -505,7 +505,7 @@ function renderDetailHeader(theme: ViewThemeInfo, files: ThemeFiles | null): HTM
         edit.type = 'button';
         edit.className = 'settings-theme-icon-button';
         edit.id = editManifest ? 'settings-theme-detail-save-name' : 'settings-theme-detail-edit-name';
-        edit.title = editManifest ? 'Name und Beschreibung speichern' : 'Name und Beschreibung bearbeiten';
+        edit.title = editManifest ? t('settings.themes.detail.saveMeta.action') : t('settings.themes.detail.editMeta.action');
         edit.textContent = editManifest ? '✓' : '✎';
         edit.addEventListener('click', function () {
             if (editManifest) {
@@ -530,7 +530,7 @@ function renderDetail(): void {
     if (!theme) {
         var empty = document.createElement('p');
         empty.className = 'settings-hint';
-        empty.textContent = 'Theme auswählen.';
+        empty.textContent = t('settings.themes.detail.empty');
         detail.appendChild(empty);
         return;
     }
@@ -539,23 +539,23 @@ function renderDetail(): void {
     meta.className = 'settings-theme-detail__badges';
     var source = document.createElement('span');
     source.className = 'settings-theme-card__badge';
-    source.textContent = theme.custom ? 'Eigenes Theme' : 'Built-in';
+    source.textContent = theme.custom ? t('settings.themes.custom.badge') : t('settings.themes.builtin.badge');
     var variant = document.createElement('span');
     variant.className = 'settings-theme-card__badge';
-    variant.textContent = theme.hasDark ? 'Hell/Dunkel' : 'Nur hell';
+    variant.textContent = theme.hasDark ? t('settings.themes.variant.lightDark') : t('settings.themes.variant.lightOnly');
     meta.append(source, variant);
     if (theme.id === 'standard') {
         var note = document.createElement('span');
         note.className = 'settings-theme-detail__note';
-        note.textContent = 'Folgt dem App-Theme · nur Ansicht, kein Export-Layout';
+        note.textContent = t('settings.themes.standard.hint');
         meta.appendChild(note);
     }
     detail.appendChild(meta);
     if (detailFiles) {
         var fontItems = [
-            ['Body', detailFiles.manifest.fontBody],
-            ['Mono', detailFiles.manifest.fontMono],
-            ['Größe', detailFiles.manifest.fontSize],
+            [t('settings.themes.detail.fontBody.label'), detailFiles.manifest.fontBody],
+            [t('settings.themes.detail.fontMono.label'), detailFiles.manifest.fontMono],
+            [t('settings.themes.detail.size.label'), detailFiles.manifest.fontSize],
         ].filter(function (item) { return !!item[1]; });
         if (fontItems.length) {
             var fonts = document.createElement('p');
@@ -571,7 +571,7 @@ function renderDetail(): void {
     preview.className = 'settings-theme-detail__preview';
     var frame = document.createElement('iframe');
     frame.id = 'settings-theme-detail-preview';
-    frame.title = theme.name + ' Detail-Vorschau';
+    frame.title = t('settings.themes.detail.preview.iframeTitle', { name: theme.name });
     frame.setAttribute('sandbox', '');
     preview.appendChild(frame);
     detail.appendChild(preview);
@@ -581,20 +581,20 @@ function renderDetail(): void {
     var toggle = makeToggle(
         'settings-theme-detail-dark',
         detailDark,
-        'Dunkle Vorschau',
+        t('settings.themes.detail.darkPreview.label'),
         function (checked) {
             detailDark = checked;
             renderDetailPreview();
         },
     );
     var toggleText = document.createElement('span');
-    toggleText.textContent = 'Dunkle Vorschau';
+    toggleText.textContent = t('settings.themes.detail.darkPreview.label');
     previewRow.append(toggle, toggleText);
     detail.appendChild(previewRow);
 
     var fileRow = document.createElement('label');
     fileRow.className = 'settings-theme-detail__file';
-    fileRow.textContent = 'Datei: ';
+    fileRow.textContent = t('settings.themes.detail.file.label');
     var select = document.createElement('select');
     select.id = 'settings-theme-detail-part';
     select.className = 'settings-input';
@@ -724,15 +724,15 @@ async function saveThemeCreateDialog(event: Event): Promise<void> {
     var name = nameInput.value.trim();
     var sourceId = baseSelect.value;
     if (!/^[a-z0-9][a-z0-9_-]*$/.test(id)) {
-        setThemeDialogError('ID: nur Kleinbuchstaben, Zahlen, - und _.');
+        setThemeDialogError(t('settings.themes.createDialog.idInvalid'));
         return;
     }
     if (!name) {
-        setThemeDialogError('Anzeigename darf nicht leer sein.');
+        setThemeDialogError(t('settings.themes.createDialog.displayNameEmpty'));
         return;
     }
     if (!sourceId) {
-        setThemeDialogError('Bitte ein Basis-Theme wählen.');
+        setThemeDialogError(t('errors.theme.baseRequired'));
         return;
     }
     setThemeDialogError(null);
@@ -769,7 +769,7 @@ function openThemeDeleteDialog(theme: ViewThemeInfo): void {
     pendingDeleteTheme = theme;
     var dialog = $('theme-delete-dialog');
     var text = $('theme-delete-text');
-    if (text) text.textContent = 'Theme „' + theme.name + '“ wirklich löschen?';
+    if (text) text.textContent = t('settings.themes.delete.confirmNamed', { name: theme.name });
     if (dialog) dialog.hidden = false;
     $('theme-delete-cancel')?.focus();
 }

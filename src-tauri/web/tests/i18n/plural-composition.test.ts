@@ -202,6 +202,9 @@ describe('I3a plural compositions — fr (0→one injects {count})', () => {
         expect(searchEmpty(0)).toBe('Aucun résultat (0 fichier)');
         expect(searchSkipped(0)).toBe(' — 0 gros fichier ignoré');
         expect(wordCountLine(0, 0, 0)).toBe('0 mot · 0 caractère · 0 ligne');
+        // I3b: export.layouts.more + ai.status.charsPart also cover 0 via one+{count}
+        expect(tPlural('export.layouts.more', 0)).toBe('0 autre mise en page');
+        expect(tPlural('ai.status.charsPart', 0, { formattedCount: fmtNumber(0) })).toBe('0 caractère');
     });
 
     it('count=1 and 2 select correct branches', () => {
@@ -211,5 +214,148 @@ describe('I3a plural compositions — fr (0→one injects {count})', () => {
         expect(tPlural('search.status.filesPart', 2)).toBe('2 fichiers');
         expect(searchSkipped(1)).toBe(' — 1 gros fichier ignoré');
         expect(searchSkipped(2)).toBe(' — 2 gros fichiers ignorés');
+        expect(tPlural('export.layouts.more', 1)).toBe('1 autre mise en page');
+        expect(tPlural('export.layouts.more', 2)).toBe('2 autres mises en page');
+        expect(tPlural('ai.status.charsPart', 1, { formattedCount: fmtNumber(1) })).toBe('1 caractère');
+        expect(tPlural('ai.status.charsPart', 2, { formattedCount: fmtNumber(2) })).toBe('2 caractères');
+    });
+});
+
+/** I3b: „Weitere Layouts (n)" + AI-Zeichen-Plural 0/1/2 de+en. */
+describe('I3b export.layouts.more + ai.status.charsPart — de', () => {
+    beforeEach(() => {
+        __resetI18nForTests();
+        seedCatalog(loadCatalog('de'));
+        setFormatLocale('de-DE');
+    });
+
+    it('export.layouts.more 0/1/2', () => {
+        expect(tPlural('export.layouts.more', 0)).toBe('Weitere Layouts (0)');
+        expect(tPlural('export.layouts.more', 1)).toBe('Weiteres Layout (1)');
+        expect(tPlural('export.layouts.more', 2)).toBe('Weitere Layouts (2)');
+    });
+
+    it('ai.status.charsPart 0/1/2 (streaming status composition)', () => {
+        expect(tPlural('ai.status.charsPart', 0, { formattedCount: fmtNumber(0) })).toBe('0 Zeichen');
+        expect(tPlural('ai.status.charsPart', 1, { formattedCount: fmtNumber(1) })).toBe('1 Zeichen');
+        expect(tPlural('ai.status.charsPart', 2, { formattedCount: fmtNumber(2) })).toBe('2 Zeichen');
+        expect(tPlural('ai.status.charsPart', 12400, { formattedCount: fmtNumber(12400) })).toBe('12.400 Zeichen');
+        expect(t('ai.actions.status.charCount', {
+            actionName: 'Zusammenfassen',
+            charsPart: tPlural('ai.status.charsPart', 0, { formattedCount: fmtNumber(0) }),
+        })).toBe('✨ Zusammenfassen · 0 Zeichen');
+        expect(t('export.aiDraft.status.charCount', {
+            charsPart: tPlural('ai.status.charsPart', 12, { formattedCount: fmtNumber(12) }),
+        })).toBe('KI-Generierung · 12 Zeichen');
+        expect(t('ai.translate.status.charCount', {
+            language: 'en',
+            charsPart: tPlural('ai.status.charsPart', 1, { formattedCount: fmtNumber(1) }),
+        })).toBe('KI-Übersetzung en · 1 Zeichen');
+    });
+});
+
+describe('I3b export.layouts.more + ai.status.charsPart — en', () => {
+    beforeEach(() => {
+        __resetI18nForTests();
+        seedCatalog(loadCatalog('en'));
+        setFormatLocale('en-US');
+    });
+
+    it('export.layouts.more 0/1/2', () => {
+        expect(tPlural('export.layouts.more', 0)).toBe('0 more layouts');
+        expect(tPlural('export.layouts.more', 1)).toBe('1 more layout');
+        expect(tPlural('export.layouts.more', 2)).toBe('2 more layouts');
+    });
+
+    it('ai.status.charsPart 0/1/2', () => {
+        expect(tPlural('ai.status.charsPart', 0, { formattedCount: fmtNumber(0) })).toBe('0 characters');
+        expect(tPlural('ai.status.charsPart', 1, { formattedCount: fmtNumber(1) })).toBe('1 character');
+        expect(tPlural('ai.status.charsPart', 2, { formattedCount: fmtNumber(2) })).toBe('2 characters');
+    });
+});
+
+/** F1: selection scope must pluralize via ai.status.charsPart (not bare “characters”). */
+function selectionScope(count: number): string {
+    return t('ai.actions.scope.selectionWithCount', {
+        charsPart: tPlural('ai.status.charsPart', count, {
+            formattedCount: fmtNumber(count),
+        }),
+    });
+}
+
+describe('I3b-fix F1 selectionWithCount composition — en', () => {
+    beforeEach(() => {
+        __resetI18nForTests();
+        seedCatalog(loadCatalog('en'));
+        setFormatLocale('en-US');
+    });
+
+    it('0/1/2 plural forms', () => {
+        expect(selectionScope(0)).toBe('Selection (0 characters)');
+        expect(selectionScope(1)).toBe('Selection (1 character)');
+        expect(selectionScope(2)).toBe('Selection (2 characters)');
+    });
+});
+
+describe('I3b-fix F1 selectionWithCount composition — fr', () => {
+    beforeEach(() => {
+        __resetI18nForTests();
+        seedCatalog(loadCatalog('fr'));
+        setFormatLocale('fr-FR');
+    });
+
+    it('0/1/2 (0→one with {formattedCount})', () => {
+        expect(selectionScope(0)).toBe('Sélection (0 caractère)');
+        expect(selectionScope(1)).toBe('Sélection (1 caractère)');
+        expect(selectionScope(2)).toBe('Sélection (2 caractères)');
+    });
+});
+
+describe('I3b-fix F1 selectionWithCount composition — de', () => {
+    beforeEach(() => {
+        __resetI18nForTests();
+        seedCatalog(loadCatalog('de'));
+        setFormatLocale('de-DE');
+    });
+
+    it('zeichengenau 0/1/2', () => {
+        expect(selectionScope(0)).toBe('Selektion (0 Zeichen)');
+        expect(selectionScope(1)).toBe('Selektion (1 Zeichen)');
+        expect(selectionScope(2)).toBe('Selektion (2 Zeichen)');
+    });
+});
+
+/** F3: catalog source labels fully translated (no hard-coded Cache/Snapshot). */
+describe('I3b-fix F3 catalog source labels', () => {
+    it('de + en use Cache/Snapshot; fr translates Snapshot', () => {
+        __resetI18nForTests();
+        seedCatalog(loadCatalog('de'));
+        setFormatLocale('de-DE');
+        expect(t('settings.ai.catalog.sourceCache')).toBe('Cache');
+        expect(t('settings.ai.catalog.sourceSnapshot')).toBe('Snapshot');
+        expect(t('settings.ai.models.catalogAge', {
+            date: '1. Jan. 2020',
+            source: t('settings.ai.catalog.sourceSnapshot'),
+        })).toContain('Snapshot');
+
+        __resetI18nForTests();
+        seedCatalog(loadCatalog('en'));
+        setFormatLocale('en-US');
+        expect(t('settings.ai.catalog.sourceCache')).toBe('Cache');
+        expect(t('settings.ai.catalog.sourceSnapshot')).toBe('Snapshot');
+
+        __resetI18nForTests();
+        seedCatalog(loadCatalog('fr'));
+        setFormatLocale('fr-FR');
+        expect(t('settings.ai.catalog.sourceCache')).toBe('Cache');
+        expect(t('settings.ai.catalog.sourceSnapshot')).toBe('Instantané');
+        expect(t('settings.ai.models.catalogAge', {
+            date: '1 janv. 2020',
+            source: t('settings.ai.catalog.sourceSnapshot'),
+        })).toMatch(/Instantané/);
+        expect(t('settings.ai.models.catalogAge', {
+            date: '1 janv. 2020',
+            source: t('settings.ai.catalog.sourceSnapshot'),
+        })).not.toMatch(/Snapshot/);
     });
 });

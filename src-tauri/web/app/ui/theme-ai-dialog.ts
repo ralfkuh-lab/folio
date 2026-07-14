@@ -1,6 +1,8 @@
 import { populateModelPicker, AiConfig, CatalogResult } from './ai-model-picker';
 import { applyThemeDraft, getCurrentThemeId } from './theme-editor';
 import { folioLog } from '../util/log';
+import { t, tPlural } from '../i18n/translate';
+import { fmtNumber } from '../i18n/format';
 
 export type ThemeDraft = {
     manifest?: {
@@ -61,7 +63,7 @@ function setBusy(next: boolean): void {
     }
     const startBtn = $('theme-ai-start') as HTMLButtonElement | null;
     if (startBtn) {
-        startBtn.textContent = next ? 'Erzeuge…' : 'Starten';
+        startBtn.textContent = next ? t('theme.editor.aiDialog.generating') : t('theme.editor.aiDialog.start.action');
     }
     const statusDiv = $('theme-ai-status');
     if (statusDiv) {
@@ -69,7 +71,7 @@ function setBusy(next: boolean): void {
     }
     const cancelBtn = $('theme-ai-cancel') as HTMLButtonElement | null;
     if (cancelBtn) {
-        cancelBtn.textContent = 'Abbrechen';
+        cancelBtn.textContent = t('dialogs.common.cancel');
         cancelBtn.disabled = false;
     }
 }
@@ -91,7 +93,7 @@ export async function openThemeAiDialog(): Promise<void> {
     if (!dialog) return;
     setError(null);
     setBusy(false);
-    updateStatusText('Warte auf KI...');
+    updateStatusText(t('theme.editor.aiDialog.status.waiting'));
     const promptArea = $('theme-ai-prompt') as HTMLTextAreaElement | null;
     if (promptArea) promptArea.value = '';
 
@@ -104,7 +106,7 @@ export async function openThemeAiDialog(): Promise<void> {
         if (modelSelect) {
             populateModelPicker(modelSelect, config, catalog, { separator: ' · ' });
             if (!modelSelect.value) {
-                setError('Kein freigeschaltetes Modell verfügbar.');
+                setError(t('errors.ai.noEnabledModel'));
             }
         }
         dialog.hidden = false;
@@ -121,13 +123,13 @@ export async function openThemeAiDialog(): Promise<void> {
 async function startGeneration(): Promise<void> {
     const prompt = ($('theme-ai-prompt') as HTMLTextAreaElement | null)?.value || '';
     if (!prompt.trim()) {
-        setError('Bitte einen Prompt eingeben.');
+        setError(t('errors.ai.emptyPrompt'));
         return;
     }
     const modelSelect = $('theme-ai-model') as HTMLSelectElement | null;
     const modelValue = modelSelect?.value;
     if (!modelValue) {
-        setError('Bitte ein Modell auswählen.');
+        setError(t('errors.ai.noModelSelected'));
         return;
     }
     let providerId: string;
@@ -135,13 +137,15 @@ async function startGeneration(): Promise<void> {
     try {
         [providerId, modelId] = JSON.parse(modelValue) as [string, string];
     } catch {
-        setError('Die Modellauswahl ist ungültig.');
+        setError(t('errors.ai.invalidModelSelection'));
         return;
     }
 
     setError(null);
     setBusy(true);
-    updateStatusText('KI-Generierung · 0 Zeichen');
+    updateStatusText(t('theme.editor.aiDialog.status.charCount', {
+        charsPart: tPlural('ai.status.charsPart', 0, { formattedCount: fmtNumber(0) }),
+    }));
 
     const baseId = getCurrentThemeId();
 
@@ -181,7 +185,7 @@ export function initThemeAiDialog(): void {
             const button = $('theme-ai-cancel') as HTMLButtonElement | null;
             if (button) {
                 button.disabled = true;
-                button.textContent = 'Bricht ab…';
+                button.textContent = t('theme.editor.aiDialog.status.cancelling');
             }
             invoke<void>('ai_theme_author_cancel').catch((error) => {
                 folioLog.warn('theme-ai', 'Abbruch fehlgeschlagen', {
@@ -189,7 +193,7 @@ export function initThemeAiDialog(): void {
                 });
                 if (button) {
                     button.disabled = false;
-                    button.textContent = 'Abbrechen';
+                    button.textContent = t('dialogs.common.cancel');
                 }
             });
         } else {
@@ -213,12 +217,14 @@ export function initThemeAiDialog(): void {
         events.listen('ai:theme_stream', (event: any) => {
             const data = event?.payload || {};
             const chars = Number(data.chars) || 0;
-            updateStatusText(`KI-Generierung · ${chars.toLocaleString('de-DE')} Zeichen`);
+            updateStatusText(t('theme.editor.aiDialog.status.charCount', {
+                charsPart: tPlural('ai.status.charsPart', chars, { formattedCount: fmtNumber(chars) }),
+            }));
         });
         events.listen('ai:theme_done', (event: any) => {
             const data = event?.payload || {};
             if (!data.ok) {
-                setError(data.error || 'Generierung fehlgeschlagen.');
+                setError(data.error || t('errors.ai.generationFailed'));
             }
         });
     }

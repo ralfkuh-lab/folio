@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { seedDeCatalog } from '../helpers-i18n';
 import { populateModelPicker, AiConfig, CatalogResult } from '../../app/ui/ai-model-picker';
 
 describe('ai-model-picker', () => {
+    beforeEach(async () => {
+        await seedDeCatalog();
+    });
     const catalog: CatalogResult = {
         catalog: {
             openai: {

@@ -7,6 +7,7 @@ import {
     setExportMermaidSvgs,
 } from './export-ai';
 import { renderMermaidForExport, type MermaidSvgEntry } from '../view/mermaid';
+import { t, tPlural } from '../i18n/translate';
 
 /* Export-Dialog: HTML/PDF-Format-Wahl + Layout-Karten mit Iframe-Preview.
    Aufruf via Toolbar (tb-export). Abhaengig vom Document-State
@@ -147,7 +148,7 @@ function renderLayoutCards(
     toggle.className = 'export-more-toggle';
     toggle.setAttribute('aria-expanded', 'false');
     toggle.setAttribute('aria-controls', 'export-more-cards');
-    toggle.textContent = 'Weitere Layouts (' + groups.rest.length + ')';
+    toggle.textContent = tPlural('export.layouts.more', groups.rest.length);
 
     const moreCards = document.createElement('div');
     moreCards.id = 'export-more-cards';
@@ -221,7 +222,7 @@ function openExportDialog(): void {
         };
         document.addEventListener('keydown', exportKeydownHandler);
     }).catch(function (err) {
-        deps.showStatus(typeof err === 'string' ? err : 'Export fehlgeschlagen');
+        deps.showStatus(typeof err === 'string' ? err : t('errors.export.failed'));
     });
 }
 
@@ -248,12 +249,12 @@ function doExportSave(): void {
     invoke('pick_export_target', { defaultName, format: fmt })
         .then(function (targetPath) {
             if (!targetPath) return;
-            deps.showStatus('Export läuft…');
+            deps.showStatus(t('export.status.running'));
             if (selectedLayoutId === EXPORT_AI_DRAFT_ID) {
                 return exportAiDraftSave(fmt, targetPath).then(function (handled) {
                     if (!handled) return;
                     closeExportDialog();
-                    deps.showStatus('Exportiert: ' + targetPath);
+                    deps.showStatus(t('export.status.done', { path: String(targetPath) }));
                 });
             }
             const cmd = (fmt === 'pdf') ? 'export_pdf' : 'export_html';
@@ -262,10 +263,10 @@ function doExportSave(): void {
             return invoke(cmd, payload)
                 .then(function () {
                     closeExportDialog();
-                    deps.showStatus('Exportiert: ' + targetPath);
+                    deps.showStatus(t('export.status.done', { path: String(targetPath) }));
                 });
         }).catch(function (err) {
-            deps.showStatus(typeof err === 'string' ? err : 'Export fehlgeschlagen');
+            deps.showStatus(typeof err === 'string' ? err : t('errors.export.failed'));
         });
 }
 

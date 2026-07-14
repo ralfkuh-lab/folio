@@ -14,6 +14,8 @@ import {
 import { getActiveTabId } from '../state/tabs';
 import { renderPreviewText } from '../view/preview';
 import { folioLog, safeInvoke } from '../util/log';
+import { t, tPlural } from '../i18n/translate';
+import { fmtNumber } from '../i18n/format';
 import { isAiReviewOpen, openAiDiffReview } from './ai-diff-review';
 import { showConfirmDialog } from './dialogs';
 import { populateModelPicker, type AiConfig, type CatalogResult } from './ai-model-picker';
@@ -230,7 +232,7 @@ function setBusy(busy: boolean): void {
     const cancel = $('ai-actions-cancel') as HTMLButtonElement | null;
     if (cancel) cancel.disabled = false;
     const start = $('ai-actions-start') as HTMLButtonElement | null;
-    if (start) start.textContent = busy ? 'Läuft…' : 'Ausführen';
+    if (start) start.textContent = busy ? t('ai.actions.status.running') : t('ai.actions.run.action');
 }
 
 function templateById(id: string): ActionTemplate | null {
@@ -281,7 +283,7 @@ function renderActionList(): void {
         row.className = 'ai-actions-dialog__item-row';
         const name = document.createElement('span');
         name.className = 'ai-actions-dialog__item-name';
-        name.textContent = template?.name ?? 'Eigener Prompt';
+        name.textContent = template?.name ?? t('ai.actions.customPrompt.name');
         row.appendChild(name);
         if (template) {
             const fav = document.createElement('button');
@@ -291,8 +293,8 @@ function renderActionList(): void {
             const active = favorites.includes(id);
             fav.setAttribute('aria-pressed', String(active));
             fav.setAttribute('aria-label', active
-                ? 'Favorit entfernen'
-                : 'Als Favorit markieren');
+                ? t('ai.actions.favorite.remove.ariaLabel')
+                : t('ai.actions.favorite.add.ariaLabel'));
             fav.textContent = active ? '★' : '☆';
             fav.addEventListener('click', (event) => {
                 event.stopPropagation();
@@ -304,7 +306,7 @@ function renderActionList(): void {
                 del.type = 'button';
                 del.className = 'ai-actions-dialog__delete';
                 del.dataset.aiActionDelete = id;
-                del.setAttribute('aria-label', 'Vorlage löschen');
+                del.setAttribute('aria-label', t('ai.actions.deleteTemplate.ariaLabel'));
                 del.textContent = '✕';
                 del.addEventListener('click', (event) => {
                     event.stopPropagation();
@@ -316,7 +318,7 @@ function renderActionList(): void {
         item.appendChild(row);
 
         const descriptionText = template?.description
-            ?? 'Freie Anweisung ohne Vorlage.';
+            ?? t('ai.actions.customPrompt.description');
         if (descriptionText) {
             const description = document.createElement('span');
             description.className = 'ai-actions-dialog__item-desc';
@@ -326,7 +328,7 @@ function renderActionList(): void {
         if (template && !template.builtin) {
             const badge = document.createElement('span');
             badge.className = 'ai-actions-dialog__item-badge';
-            badge.textContent = 'Eigene Vorlage';
+            badge.textContent = t('ai.actions.customTemplate.badge');
             item.appendChild(badge);
         }
         item.addEventListener('click', () => applySelection(id));
@@ -338,8 +340,8 @@ async function deleteTemplate(id: string): Promise<void> {
     const template = templateById(id);
     if (!template || template.builtin) return;
     const ok = await showConfirmDialog(
-        `Die Vorlage „${template.name}" löschen?`,
-        { title: 'KI-Aktionen', okLabel: 'Löschen' },
+        t('ai.actions.deleteTemplate.confirm', { name: template.name }),
+        { title: t('ai.actions.dialog.title'), okLabel: t('ai.actions.deleteTemplate.submit') },
     );
     if (!ok) return;
     try {
@@ -403,8 +405,12 @@ function syncScopeRow(): void {
             const utf16Start = selection.start;
             const utf16End = selection.start + selection.length;
             const selectedText = source.text.slice(utf16Start, utf16End);
-            label.textContent =
-                `Selektion (${codePoints(selectedText).toLocaleString('de-DE')} Zeichen)`;
+            const n = codePoints(selectedText);
+            label.textContent = t('ai.actions.scope.selectionWithCount', {
+                charsPart: tPlural('ai.status.charsPart', n, {
+                    formattedCount: fmtNumber(n),
+                }),
+            });
         }
     }
 }
@@ -414,11 +420,14 @@ function showStatus(actionName: string): void {
     if (!status) return;
     status.hidden = false;
     status.classList.add('ai-status-running');
-    updateStatusText(`✨ ${actionName} · 0 Zeichen`);
+    updateStatusText(t('ai.actions.status.charCount', {
+        actionName,
+        charsPart: tPlural('ai.status.charsPart', 0, { formattedCount: fmtNumber(0) }),
+    }));
     const cancel = $('ai-action-status-cancel') as HTMLButtonElement | null;
     if (cancel) {
         cancel.disabled = false;
-        cancel.textContent = 'Abbrechen';
+        cancel.textContent = t('dialogs.common.cancel');
     }
 }
 
@@ -502,7 +511,7 @@ export async function openAiActionsDialog(preselectId?: string): Promise<void> {
             : orderedTemplates()[0]?.id || CUSTOM_ENTRY_ID;
         applySelection(preselect);
         syncScopeRow();
-        if (!modelSelect?.value) setError('Kein freigeschaltetes Modell verfügbar.');
+        if (!modelSelect?.value) setError(t('errors.ai.noEnabledModel'));
 
         state = 'ready';
         setBusy(false);
@@ -531,12 +540,12 @@ async function startAction(): Promise<void> {
     // trim() dient nur der Leerpruefung.
     const prompt = promptField?.value || '';
     if (!prompt.trim()) {
-        setError('Der Prompt darf nicht leer sein.');
+        setError(t('errors.ai.emptyPrompt'));
         return;
     }
     const modelValue = ($('ai-actions-model') as HTMLSelectElement | null)?.value;
     if (!modelValue) {
-        setError('Bitte ein Modell auswählen.');
+        setError(t('errors.ai.noModelSelected'));
         return;
     }
     let providerId: string;
@@ -544,18 +553,18 @@ async function startAction(): Promise<void> {
     try {
         [providerId, modelId] = JSON.parse(modelValue) as [string, string];
     } catch {
-        setError('Die Modellauswahl ist ungültig.');
+        setError(t('errors.ai.invalidModelSelection'));
         return;
     }
 
     // Revalidierung: aktiver Tab und Snapshot müssen der eingefrorenen
     // Quelle entsprechen — sonst würde der Sync fremden Text verankern.
     if (getActiveTabId() !== source.tabId || getCurrentPath() !== source.path) {
-        setError('Die Quelle hat sich geändert — Dialog bitte neu öffnen.');
+        setError(t('errors.ai.sourceChanged'));
         return;
     }
     if (getEditorText() !== source.text) {
-        setError('Das Dokument wurde zwischenzeitlich geändert — Dialog bitte neu öffnen.');
+        setError(t('errors.ai.documentChanged'));
         return;
     }
 
@@ -563,7 +572,7 @@ async function startAction(): Promise<void> {
     const replaceRadio = $('ai-actions-target-replace') as HTMLInputElement | null;
     const target: 'new-file' | 'replace' = replaceRadio?.checked ? 'replace' : 'new-file';
     if (target === 'replace' && isAiReviewOpen()) {
-        setError('Erst die offene KI-Review abschließen.');
+        setError(t('errors.ai.reviewOpen'));
         return;
     }
 
@@ -592,7 +601,7 @@ async function startAction(): Promise<void> {
         || getEditorText() !== requestSource.text) {
         state = 'ready';
         setBusy(false);
-        setError('Das Dokument wurde während des Starts geändert — bitte erneut starten.');
+        setError(t('errors.ai.documentChangedDuringStart'));
         return;
     }
     dispatchRun({
@@ -689,7 +698,7 @@ function dispatchRun(params: RunParams): void {
             state = 'ready';
             setError(String(error));
         } else {
-            showErrorStatus(`✕ ${actionName}: ${String(error)}`);
+            showErrorStatus(t('ai.actions.status.errorNamed', { actionName, detail: String(error) }));
         }
     });
 }
@@ -706,7 +715,7 @@ function showErrorStatus(text: string): void {
     const cancel = $('ai-action-status-cancel') as HTMLButtonElement | null;
     if (cancel) {
         cancel.disabled = false;
-        cancel.textContent = 'Schließen';
+        cancel.textContent = t('dialogs.common.close');
     }
 }
 
@@ -740,7 +749,7 @@ export async function runFavoriteAction(id: string): Promise<void> {
     try {
         templates = await invoke<ActionTemplate[]>('ai_actions_list');
     } catch (error) {
-        showErrorStatus(`✕ ${String(error)}`);
+        showErrorStatus(t('ai.actions.status.error', { detail: String(error) }));
         return;
     }
     const template = templateById(id);
@@ -761,7 +770,7 @@ export async function runFavoriteAction(id: string): Promise<void> {
         }
     }
     if (template.target === 'replace' && isAiReviewOpen()) {
-        showErrorStatus('Erst die offene KI-Review abschließen.');
+        showErrorStatus(t('errors.ai.reviewOpen'));
         return;
     }
     const requestSource = await freezeSource();
@@ -771,7 +780,7 @@ export async function runFavoriteAction(id: string): Promise<void> {
         await syncEditorTextToStoreForTab(requestSource.tabId, requestSource.text);
     } catch (error) {
         state = 'closed';
-        showErrorStatus(`✕ ${template.name}: ${String(error)}`);
+        showErrorStatus(t('ai.actions.status.errorNamed', { actionName: template.name, detail: String(error) }));
         return;
     }
     const useSelection = !!requestSource.selection && template.scope !== 'document';
@@ -800,13 +809,13 @@ function finishRun(): void {
 
 function requestCancel(): void {
     const button = $('ai-action-status-cancel') as HTMLButtonElement | null;
-    if (button && button.textContent === 'Schließen') {
+    if (button && button.textContent === t('dialogs.common.close')) {
         hideStatus();
         return;
     }
     if (button) {
         button.disabled = true;
-        button.textContent = 'Bricht ab…';
+        button.textContent = t('ai.actions.status.cancelling');
     }
     cancelRequested = true;
     if (currentRunId !== null) {
@@ -814,7 +823,7 @@ function requestCancel(): void {
             folioLog.warn('ai-actions', 'Abbruch fehlgeschlagen', { error: String(error) });
             if (button) {
                 button.disabled = false;
-                button.textContent = 'Abbrechen';
+                button.textContent = t('dialogs.common.cancel');
             }
         });
     } else {
@@ -864,7 +873,7 @@ async function toggleFavMenu(): Promise<void> {
     if (entries.length === 0) {
         const hint = document.createElement('span');
         hint.className = 'ai-actions-fav-menu__hint';
-        hint.textContent = 'Favoriten im ✨-Dialog markieren.';
+        hint.textContent = t('ai.actions.favorites.empty');
         menu.appendChild(hint);
     }
     for (const template of entries) {
@@ -936,12 +945,12 @@ async function submitSaveTemplate(): Promise<void> {
     const name = (nameInput?.value || '').trim();
     const id = (idInput?.value || '').trim() || slugify(name);
     if (!name) {
-        showError('Bitte einen Namen angeben.');
+        showError(t('ai.actions.saveTemplate.emptyName'));
         return;
     }
     const prompt = ($('ai-actions-prompt') as HTMLTextAreaElement | null)?.value.trim() || '';
     if (!prompt) {
-        showError('Der Prompt darf nicht leer sein.');
+        showError(t('errors.ai.emptyPrompt'));
         return;
     }
     const replaceRadio = $('ai-actions-target-replace') as HTMLInputElement | null;
@@ -1072,9 +1081,10 @@ export function initAiActionsDialog(): void {
             if (currentRunId === null || data.runId !== currentRunId) return;
             if (typeof data.tabId === 'number') currentTargetTabId = data.tabId;
             const chars = Number(data.chars) || 0;
-            updateStatusText(
-                `✨ ${currentActionName} · ${chars.toLocaleString('de-DE')} Zeichen`,
-            );
+            updateStatusText(t('ai.actions.status.charCount', {
+                actionName: currentActionName,
+                charsPart: tPlural('ai.status.charsPart', chars, { formattedCount: fmtNumber(chars) }),
+            }));
             if (typeof data.tabId === 'number'
                 && data.tabId === getActiveTabId()
                 && typeof data.text === 'string') {
@@ -1084,7 +1094,7 @@ export function initAiActionsDialog(): void {
         events.listen('ai:action_done', (event: any) => {
             const data = event?.payload || {};
             if (currentRunId === null || data.runId !== currentRunId) return;
-            if (data.ok) updateStatusText(`✓ ${currentActionName}`);
+            if (data.ok) updateStatusText(t('ai.actions.status.done', { actionName: currentActionName }));
         });
         // Ziel-Tab-Close während des Streams = Abbruchwunsch des Users.
         events.listen('tabs:changed', (event: any) => {
