@@ -100,6 +100,13 @@ mod tests {
 
     #[test]
     fn build_tree_uses_workspace() {
+        let _ = crate::i18n::set_process_translator(crate::i18n::Translator::new(
+            crate::i18n::load_embedded_registry(),
+            crate::i18n::ResolvedLanguage {
+                catalog_tag: "de".into(),
+                format_locale: "de-DE".into(),
+            },
+        ));
         let temp = TempDir::new().unwrap();
         let mut workspace = Workspace::load_from(temp.path().join("workspace.json"));
         workspace.pin("/tmp/a.md".into(), false).unwrap();

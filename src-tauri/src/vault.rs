@@ -223,14 +223,14 @@ impl Vault {
         html.push_str(&self.section_html(
             "pinned",
             "📌",
-            "Angepinnt",
+            &crate::i18n::t("vault.section.pinned"),
             self.pinned_children_html(workspace),
             pinned_expanded,
         ));
         html.push_str(&self.section_html(
             "recent",
             "🕘",
-            "Zuletzt geöffnet",
+            &crate::i18n::t("vault.section.recent"),
             self.recent_children_html(workspace),
             recent_expanded,
         ));
@@ -511,7 +511,10 @@ impl Vault {
 
 fn empty_placeholder(html: String) -> String {
     if html.is_empty() {
-        r#"<li class="empty">Keine Einträge</li>"#.to_string()
+        format!(
+            r#"<li class="empty">{}</li>"#,
+            crate::i18n::t("vault.section.empty")
+        )
     } else {
         html
     }
@@ -551,13 +554,20 @@ mod tests {
 
     #[test]
     fn initial_tree_contains_pinned_and_recent_sections() {
+        let _ = crate::i18n::set_process_translator(crate::i18n::Translator::new(
+            crate::i18n::load_embedded_registry(),
+            crate::i18n::ResolvedLanguage {
+                catalog_tag: "de".into(),
+                format_locale: "de-DE".into(),
+            },
+        ));
         let temp = TempDir::new().unwrap();
         let mut workspace = Workspace::load_from(temp.path().join("workspace.json"));
         workspace.pin("/tmp/a.md".into(), false).unwrap();
         workspace.add_recent("/tmp/b.md".into()).unwrap();
         let html = Vault::new().build_initial_tree_html(&workspace);
-        assert!(html.contains("Angepinnt"));
-        assert!(html.contains("Zuletzt geöffnet"));
+        assert!(html.contains(&crate::i18n::t("vault.section.pinned")));
+        assert!(html.contains(&crate::i18n::t("vault.section.recent")));
         assert!(html.contains(r#"class="section" data-section="pinned""#));
         assert!(html.contains("a.md"));
     }

@@ -58,6 +58,14 @@ def main() -> int:
             'TOC-Titel ist "Table of Contents"',
         )
         check(
+            dom_text(api, '[data-section="pinned"] .label') == "Pinned",
+            'Vault-Sektion "Pinned" ist englisch',
+        )
+        check(
+            dom_text(api, '[data-section="recent"] .label') == "Recently opened",
+            'Vault-Sektion "Recently opened" ist englisch',
+        )
+        check(
             dom_text(api, "#status-path") == "Ready",
             'Statusleiste ist englisch ("Ready")',
         )
