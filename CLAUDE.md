@@ -66,6 +66,30 @@ sonst lehnt Tauri den Build ab.
 
 ## Konventionen
 
+### i18n
+
+- Kataloge liegen in `src-tauri/locales/<tag>.json`; Registry und eingebettete
+  Kataloge werden durch `src-tauri/build.rs`/`src-tauri/src/i18n/catalog.rs` erzeugt.
+  Katalogdateien bleiben alphabetisch sortiert und haben identische Key-Mengen.
+- Keys benennen die Funktion auf Englisch in `camelCase` unter einem
+  kanonischen Namespace (`errors.<modul>.<fall>`, kein freies `common.*`).
+- Frontend verwendet `t()`/`tPlural()`, Rust `t()`/`t_args()`/`t_plural()`.
+  Übersetzte Fehler umschließen technische Details mit `{detail}`, statt den
+  Detailtext selbst als Katalogwert zu behandeln.
+- Der Bootstrap läuft `booting → i18nReady → uiReady`; frontendabhängige
+  Automation darf erst nach `frontendReady` bzw. dem Ready-Gate arbeiten.
+- Der E2E-Voll-Lauf ist mit `FOLIO_LANG=de` baseline-stabilisiert;
+  `bash scripts/run-e2e.sh --lang-smoke` prüft einen separaten englischen Boot.
+- Referenz- und Markup-Gates sind hart: neue Keys müssen referenziert,
+  Referenzen katalogisiert und `data-i18n-*`-Ziele leaf-safe sein.
+- Neue Sprache: vollständige `src-tauri/locales/<tag>.json` kopieren.
+- `@meta` (`tag`, Eigenname, Format-Locale) anpassen und Werte übersetzen.
+- Katalog-/Referenztests ausführen; Produktcode bleibt unverändert.
+
+Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md).
+
+### Weitere Konventionen
+
 - **Slugifier**: eigener in `heading_anchor.rs` (kein comrak-Default).
 - **AST-Postprocess** in `renderer.rs` ergänzt fehlendes `GenericAttributes`-Feature.
 - **CRLF/LF/BOM**: Roundtrip ist getestet (`document_store.rs`). Beim Schreiben

@@ -165,6 +165,8 @@ describe('settings-ai', () => {
         const cards = Array.from(
             document.querySelectorAll<HTMLElement>('#ai-provider-list [data-ai-provider-id]'),
         );
+        expect(document.getElementById('ai-provider-list')!.dataset.loading).toBe('false');
+        expect(document.getElementById('ai-model-list')!.dataset.loading).toBe('false');
         // EINE Liste für Katalog- und Custom-Provider: aktive zuerst
         // (local + openai, alphabetisch nach Anzeigename), dann der Rest
         // (anthropic ist unkonfiguriert).

@@ -761,6 +761,8 @@ async function loadAiData(): Promise<void> {
     if (loadPromise) return loadPromise;
     const providerList = $('ai-provider-list');
     const modelList = $('ai-model-list');
+    if (providerList) providerList.dataset.loading = 'true';
+    if (modelList) modelList.dataset.loading = 'true';
     if (providerList) providerList.textContent = t('settings.ai.loading.status');
     if (modelList) modelList.textContent = t('settings.ai.loading.status');
     loadPromise = Promise.all([
@@ -786,6 +788,8 @@ async function loadAiData(): Promise<void> {
         renderProviders();
         renderModels();
     }).finally(() => {
+        if (providerList) providerList.dataset.loading = 'false';
+        if (modelList) modelList.dataset.loading = 'false';
         loadPromise = null;
     });
     return loadPromise;

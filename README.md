@@ -42,6 +42,12 @@ Plattformübergreifender Markdown-Viewer und -Editor auf **Tauri 2 + Rust**.
   angelegten Baselines — siehe Abschnitt *Tests*
 - **Cross-Platform** dank Tauri 2 (WebView2 / WebKitGTK)
 
+## Mehrsprachigkeit
+
+Folio übernimmt standardmäßig die Systemsprache und unterstützt Deutsch und
+Englisch. Unter **Einstellungen → Allgemein → Sprache** kann alternativ eine
+Sprache fest gewählt werden; die Änderung wird beim nächsten App-Start aktiv.
+
 ## Tech-Stack
 
 | Komponente | Technologie |

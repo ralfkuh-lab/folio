@@ -1,19 +1,9 @@
 # Spec: Internationalisierung (i18n)
 
-Status: **v3.1** (2026-07-13). Historie: v1-Entwurf → Plan-Review codex
-([`review-i18n-plan-codex.md`](review-i18n-plan-codex.md), 9 Blocker) → v2 →
-Re-Review codex ([`review-i18n-plan-codex-v2.md`](review-i18n-plan-codex-v2.md),
-5 Blocker) + Implementierer-Feedback grok
-([`review-i18n-plan-grok.md`](review-i18n-plan-grok.md), 5 Blocker) → v3 →
-Freigabe-Checks (codex: [`review-i18n-plan-codex-v3.md`](review-i18n-plan-codex-v3.md),
-4 Restpunkte; grok: [`review-i18n-plan-grok-v2.md`](review-i18n-plan-grok-v2.md),
-BEREIT) → v3.1 (Restpunkte eingearbeitet: Defekt-Fälle der Migration,
-`formatLocale` bei Subtag-Override, `cli_pending_open` als Command, de-Pin in
-I1b vorgezogen, explizite Pluralregel-Sprachliste).
-Konsolidierungsnotizen am Ende. Bestandsaufnahme:
-[`i18n-inventar.md`](i18n-inventar.md) (Planungsgröße) und
-[`i18n-surface-map.md`](i18n-surface-map.md) (Etappe I0, Arbeits-Checkliste —
-Abnahme-Kriterien unten).
+Status: **UMGESETZT (I1–I6, 2026-07-14)**. Planungsgrundlage war Spec v3.1;
+die konsolidierte Historie steht am Ende und im Git-Log. Die gepflegte,
+normative Referenz der String-Surfaces ist
+[`i18n-surface-map.md`](i18n-surface-map.md).
 
 ## Ziel
 
@@ -454,102 +444,102 @@ DOM-/Katalog-/Referenz-Test-Umbau im Quadrat).
 
 ### Etappe I1a — Rust-Fundament (TDD)
 
-- [ ] `locales/de.json`/`en.json` mit `@meta` + `menu.*`
-- [ ] Generator + `build.rs`-Integration (Vertrag oben: rerun-if-changed,
+- [x] `locales/de.json`/`en.json` mit `@meta` + `menu.*`
+- [x] Generator + `build.rs`-Integration (Vertrag oben: rerun-if-changed,
       fail-closed, OUT_DIR)
-- [ ] `i18n.rs`: `Translator`/`CatalogRegistry` instanziierbar, `OnceLock`-
+- [x] `i18n.rs`: `Translator`/`CatalogRegistry` instanziierbar, `OnceLock`-
       Fassade, `t`/`t_args`/`t_plural` (inkl. `{count}`-Injektion),
       Pluralregelwerk (Batch-Sprachen), Fallback/Merge (atomare
       Plural-Objekte)
-- [ ] Resolver (`catalogTag`+`formatLocale`, `FOLIO_LANG`, `system`,
+- [x] Resolver (`catalogTag`+`formatLocale`, `FOLIO_LANG`, `system`,
       Subtag-Match) + Settings-Migration (Zustandsmaschine, alle Tests)
-- [ ] `language` als String-Tag + Patch-Validierung (Tauri + Automation-400)
-- [ ] Boot-Owner-Sequenz in `lib.rs` (ein Settings-Load)
-- [ ] `menu/strings.rs`: `MenuLabels` mit `String`-Feldern aus dem Katalog,
+- [x] `language` als String-Tag + Patch-Validierung (Tauri + Automation-400)
+- [x] Boot-Owner-Sequenz in `lib.rs` (ein Settings-Load)
+- [x] `menu/strings.rs`: `MenuLabels` mit `String`-Feldern aus dem Katalog,
       Hardcodes weg, de/en-Integrationstest
-- [ ] Erweiterbarkeits-Test mit `fr`-Fixture (Temp-Verzeichnis-Generator)
-- [ ] Katalog-/Generator-Gate aktiv
-- [ ] Gates: cargo test/clippy/fmt (Frontend unberührt)
+- [x] Erweiterbarkeits-Test mit `fr`-Fixture (Temp-Verzeichnis-Generator)
+- [x] Katalog-/Generator-Gate aktiv
+- [x] Gates: cargo test/clippy/fmt (Frontend unberührt)
 
 ### Etappe I1b — Frontend-Fundament + Ready-Gate
 
-- [ ] Command `i18n_catalog` (`tag`, `locale`, `languages`, merged `strings`)
-- [ ] `app/i18n/`: `initI18n`, `t`, `tPlural`, `format.ts`, Applier
+- [x] Command `i18n_catalog` (`tag`, `locale`, `languages`, merged `strings`)
+- [x] `app/i18n/`: `initI18n`, `t`, `tPlural`, `format.ts`, Applier
       (Leaf-Regel, Attribut-Mapping, `documentElement.lang`)
-- [ ] `bootstrap()`-Zustandsmaschine (booting → i18nReady → uiReady) +
+- [x] `bootstrap()`-Zustandsmaschine (booting → i18nReady → uiReady) +
       Ereignisliste + Queue + Drain + `frontend_ready`
-- [ ] Automation-Ready-Gate (AtomicBool/Notify, Routen-Matrix wartend/nicht
+- [x] Automation-Ready-Gate (AtomicBool/Notify, Routen-Matrix wartend/nicht
       wartend, Startup-Timeouts), `/state` +`frontendReady`+`lang`
-- [ ] Modul-Konstanten-Factories (Cheatsheet & Co.) + vitest-Check
-- [ ] vitest komplett; Gates inkl. npm build
-- [ ] **`FOLIO_LANG=de`-Pin in `run-e2e.sh` UND `run.py` + Runner-Assert auf
+- [x] Modul-Konstanten-Factories (Cheatsheet & Co.) + vitest-Check
+- [x] vitest komplett; Gates inkl. npm build
+- [x] **`FOLIO_LANG=de`-Pin in `run-e2e.sh` UND `run.py` + Runner-Assert auf
       `/state.lang`** (vorgezogen aus I1c: das isolierte Testprofil ist leer
       → Migration ergäbe `system`, und auf nichtdeutscher/`C`-Locale bräche
       der Baseline-Lauf englisch)
-- [ ] E2E-Voll-Lauf grün (de-gepinnt)
+- [x] E2E-Voll-Lauf grün (de-gepinnt)
 
 ### Etappe I1c — Referenz-Gate + Runner-Readiness
 
-- [ ] Referenz-Test (Scan-Scope, Literal-Regel, Alias-Verbot, Allowlist;
+- [x] Referenz-Test (Scan-Scope, Literal-Regel, Alias-Verbot, Allowlist;
       Dead-Keys soft)
-- [ ] Runner-Readiness auf `frontendReady`-Poll umgestellt
-- [ ] E2E-Voll-Lauf grün
+- [x] Runner-Readiness auf `frontendReady`-Poll umgestellt
+- [x] E2E-Voll-Lauf grün
 
 ### Etappe I2 — HTML-Shell + Settings-UI
 
-- [ ] `dist/index.html`: alle statischen Strings laut I0-Map mit
+- [x] `dist/index.html`: alle statischen Strings laut I0-Map mit
       `data-i18n-*` (Wrapper-Spalte beachten), deutsche Platzhalter bleiben
-- [ ] Settings-Sprachauswahl aus Registry (inkl. Unknown-Tag-Option)
-- [ ] Markup-Test
-- [ ] Sichtprüfung de/en (Screenshots), E2E-Voll-Lauf
+- [x] Settings-Sprachauswahl aus Registry (inkl. Unknown-Tag-Option)
+- [x] Markup-Test
+- [x] Sichtprüfung de/en (Screenshots), E2E-Voll-Lauf
 
 ### Etappe I3a — Frontend dynamisch: State/Vault/Find/Tabs/View/Editor-Shell
 
-- [ ] Strings laut I0-Map auf `t()`/`tPlural()` (Statuszeile, Such-Status,
+- [x] Strings laut I0-Map auf `t()`/`tPlural()` (Statuszeile, Such-Status,
       Kontextmenüs, Tab-Tooltips, Image-View-Fehler, Code-Copy-ARIA,
       Mode-Tooltips, Cheatsheet-Factory, `web/editor/`-Surfaces)
-- [ ] Monaco-Kontextmenü Haupteditor/Theme-Editor aus
-- [ ] Plural-Kompositions-Tests (0/1/2-Matrix de/en)
-- [ ] Gates + E2E-Voll-Lauf
+- [x] Monaco-Kontextmenü Haupteditor/Theme-Editor aus
+- [x] Plural-Kompositions-Tests (0/1/2-Matrix de/en)
+- [x] Gates + E2E-Voll-Lauf
 
 ### Etappe I3b — Frontend dynamisch: Dialoge/Settings/AI/Theme/Export-UI
 
-- [ ] Strings laut I0-Map (translate-, ai-actions-, theme-, export-,
+- [x] Strings laut I0-Map (translate-, ai-actions-, theme-, export-,
       settings-Dialoge, ai-chat-test)
-- [ ] Locale-Helfer flächendeckend + Grep-Nachweis (Liste oben)
-- [ ] Gates + E2E-Voll-Lauf
+- [x] Locale-Helfer flächendeckend + Grep-Nachweis (Liste oben)
+- [x] Gates + E2E-Voll-Lauf
 
 *(I3a und I3b strikt sequentiell — beide ändern dieselben Katalogdateien.)*
 
 ### Etappe I4a — Backend: native Dialoge, Built-ins, Export
 
-- [ ] Datei-Dialog-Titel/-Filter, Linux-Icon-Dialog
-- [ ] Built-in-Theme-Manifeste + KI-Action-Metadaten (deklarative
+- [x] Datei-Dialog-Titel/-Filter, Linux-Icon-Dialog
+- [x] Built-in-Theme-Manifeste + KI-Action-Metadaten (deklarative
       Registry-Keys)
-- [ ] Export: TemplateContext-Cover-Werte, `<html lang>`, Default-Titel,
+- [x] Export: TemplateContext-Cover-Werte, `<html lang>`, Default-Titel,
       Datums-Fallback; en-Exporttests HTML+PDF
-- [ ] Gates + E2E-Voll-Lauf
+- [x] Gates + E2E-Voll-Lauf
 
 ### Etappe I4b — Backend: Fehlermeldungen
 
-- [ ] UI-Fehlertexte auf `t()`/`t_args()` mit `{detail}`;
+- [x] UI-Fehlertexte auf `t()`/`t_args()` mit `{detail}`;
       `thiserror`-Entscheidungstabelle vervollständigt und umgesetzt
-- [ ] automation-contract.md: Fehlertext-Diagnose-Regel, 400-Statusklasse,
+- [x] automation-contract.md: Fehlertext-Diagnose-Regel, 400-Statusklasse,
       `lang`/`frontendReady`-Felder
-- [ ] Gates + E2E-Voll-Lauf
+- [x] Gates + E2E-Voll-Lauf
 
 ### Etappe I5 — KI-Systemprompts (klein, isoliert)
 
-- [ ] Prompts in `ai/actions.rs`/`theme/author.rs` englisch + „respond in
+- [x] Prompts in `ai/actions.rs`/`theme/author.rs` englisch + „respond in
       the language of the document" (Prompts sind KEINE Katalogwerte)
-- [ ] E2E 34/45: Semantik- statt Wortlaut-Asserts
+- [x] E2E 34/45: Semantik- statt Wortlaut-Asserts
 
 ### Etappe I6 — E2E-Härtung + Abschluss
 
-- [ ] `33_ai_settings` sprachneutral
-- [ ] `--lang-smoke`-Modus (en-Boot)
-- [ ] Dead-Key-Gate hart schalten
-- [ ] Doku: CLAUDE.md-Konvention, README, automation-contract.md final,
+- [x] `33_ai_settings` sprachneutral
+- [x] `--lang-smoke`-Modus (en-Boot)
+- [x] Dead-Key-Gate hart schalten
+- [x] Doku: CLAUDE.md-Konvention, README, automation-contract.md final,
       Arbeitsdateien (Inventar, Reviews, Surface-Map) archivieren/löschen,
       TODO-Folgepunkte
 

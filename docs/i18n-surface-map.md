@@ -1,4 +1,4 @@
-# i18n String-Surface- und Key-Map (Etappe I0)
+# i18n String-Surface- und Key-Map (gepflegt, normativ)
 
 Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys folgen der Naming-Konvention: englische Funktions-Keys, camelCase, kanonische Namespaces (kein `common.*` außer `dialogs.common.*`), Rollen-Qualifier, `errors.<modul>.<fall>`. False-Positives bleiben als Zeile mit `OUT-OF-SCOPE: …` stehen.
 
@@ -1151,7 +1151,6 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 | 93 | `standard` | literal | `OUT-OF-SCOPE: Theme-/Layout-ID (technisch)` | German string found |
 | 94 | `standard` | literal | `OUT-OF-SCOPE: Theme-/Layout-ID (technisch)` | German string found |
 | 103 | `standard` | literal | `OUT-OF-SCOPE: Theme-/Layout-ID (technisch)` | German string found |
-| 276 | `Vorschau` | literal | `settings.themes.preview.label` | German string found |
 | 289 | `● Aktiv` | textContent | `settings.themes.active.badge` | DOM assignment |
 | 295 | `Eigenes Theme` | textContent | `settings.themes.custom.badge` | DOM assignment |
 | 300 | `Built-in` | textContent | `settings.themes.builtin.badge` | DOM assignment |
@@ -1169,7 +1168,6 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 | 547 | `standard` | literal | `OUT-OF-SCOPE: Theme-/Layout-ID (technisch)` | German string found |
 | 550 | `Folgt dem App-Theme · nur Ansicht, kein Export-Layout` | textContent | `settings.themes.standard.hint` | DOM assignment |
 | 558 | `Größe` | literal | `settings.themes.detail.size.label` | German string found |
-| 574 | `Detail-Vorschau` | literal | `settings.themes.detail.preview.label` | German string found |
 | 584 | `Dunkle Vorschau` | literal | `settings.themes.detail.darkPreview.label` | German string found |
 | 591 | `Dunkle Vorschau` | textContent | `settings.themes.detail.darkPreview.label` | DOM assignment |
 | 597 | `Datei: ` | textContent | `settings.themes.detail.file.label` | DOM assignment |
@@ -1398,10 +1396,10 @@ Folgende Stellen rufen locale-abhängige JS-Funktionen auf und müssen auf die n
 
 | Metrik | Wert |
 | :--- | ---: |
-| Tabellen-Zeilen (Surface-Fundstellen inkl. OOS) | 807 |
-| In-Scope (zu extrahieren) | 696 |
+| Tabellen-Zeilen (Surface-Fundstellen inkl. OOS) | 805 |
+| In-Scope (zu extrahieren) | 694 |
 | OUT-OF-SCOPE (Vollständigkeitsnachweis) | 111 |
-| Eindeutige In-Scope-Key-Strings | 558 |
+| Eindeutige In-Scope-Key-Strings | 556 |
 | Ungültige Top-Level-Namespaces | 0 |
 | `common.*` außer `dialogs.common.*` | 0 |
 | Wortlaut-/Transliterations-Verdacht | 0 |
@@ -1411,7 +1409,7 @@ Folgende Stellen rufen locale-abhängige JS-Funktionen auf und müssen auf die n
 | Namespace | Anzahl |
 | :--- | ---: |
 | `errors` | 134 |
-| `settings` | 110 |
+| `settings` | 108 |
 | `ai` | 64 |
 | `toolbar` | 47 |
 | `theme` | 38 |

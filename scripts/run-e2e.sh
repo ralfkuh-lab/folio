@@ -9,6 +9,7 @@
 # Aufruf:
 #   bash scripts/run-e2e.sh                  # voller Run
 #   bash scripts/run-e2e.sh --update-baselines
+#   bash scripts/run-e2e.sh --lang-smoke    # kurzer en-Boot + DOM-Checks
 #   bash scripts/run-e2e.sh 21_split_mode    # nur einzelne Szenarien
 #                                              (Name oder Praefix, z. B. 21;
 #                                              funktional — Screenshots ohne
@@ -29,11 +30,13 @@ SCREEN_WH="${FOLIO_E2E_SCREEN:-1280x800x24}"
 XVFB_PID=""
 FOLIO_PID=""
 ATTACH=0
+LANG_SMOKE=0
 PASSTHROUGH_ARGS=()
 
 for arg in "$@"; do
     case "$arg" in
         --attach) ATTACH=1 ;;
+        --lang-smoke) LANG_SMOKE=1 ;;
         *) PASSTHROUGH_ARGS+=("$arg") ;;
     esac
 done
@@ -63,6 +66,11 @@ cleanup() {
     exit "$code"
 }
 trap cleanup EXIT INT TERM
+
+if [[ "$LANG_SMOKE" -eq 1 && ( "$ATTACH" -eq 1 || "${#PASSTHROUGH_ARGS[@]}" -ne 0 ) ]]; then
+    log "--lang-smoke muss als einziger Modus ohne --attach/Szenario-Argumente laufen."
+    exit 1
+fi
 
 if [[ "$ATTACH" -eq 1 ]]; then
     log "attach mode — Xvfb + Folio werden nicht selbst gestartet."
@@ -154,9 +162,13 @@ export XDG_STATE_HOME="${TEMP_HOME}/.local/state"
 log "starte Folio (${BIN}) ..."
 # Release-Builds starten die Automation-API nur mit explizitem Opt-in.
 export FOLIO_AUTOMATION=1
-# i18n: E2E-Baselines sind deutsch — leeres Testprofil + C/en-Locale
-# wuerde sonst Migration→system und englische UI liefern (Spec I1b).
-export FOLIO_LANG=de
+# i18n: Der Voll-Lauf ist fuer stabile Baselines auf Deutsch gepinnt.
+# --lang-smoke bootet dagegen bewusst einen eigenen englischen Prozess.
+if [[ "$LANG_SMOKE" -eq 1 ]]; then
+    export FOLIO_LANG=en
+else
+    export FOLIO_LANG=de
+fi
 # Konsole pro Run in eine eigene Datei (kein Ueberschreiben durch den
 # naechsten Lauf); run.py kopiert sie am Ende in den Artefaktordner
 # (Vertrag: FOLIO_E2E_CONSOLE_LOG).
@@ -187,7 +199,18 @@ if ! curl -sf http://127.0.0.1:9876/state >/dev/null 2>&1; then
     exit 1
 fi
 
-# 6) Python-Suite anwerfen (im --attach-Mode, weil Folio schon laeuft)
+# 6a) Kurzer englischer Prozess-Smoke ohne Szenarien/Baselines.
+if [[ "$LANG_SMOKE" -eq 1 ]]; then
+    log "starte englischen Sprach-Smoke ..."
+    set +e
+    python3 "tests/e2e/lang_smoke.py"
+    SMOKE_CODE=$?
+    set -e
+    log "Sprach-Smoke beendet mit exit-code ${SMOKE_CODE}"
+    exit "${SMOKE_CODE}"
+fi
+
+# 6b) Python-Suite anwerfen (im --attach-Mode, weil Folio schon laeuft)
 log "starte E2E-Suite ..."
 set +e
 python3 "tests/e2e/run.py" --attach "${PASSTHROUGH_ARGS[@]}"

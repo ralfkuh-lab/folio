@@ -81,6 +81,16 @@
 
 ## Niedrige Priorität
 
+- **i18n — Folgepunkte** (V1 Deutsch/Englisch abgeschlossen, Spec
+  [`docs/spec-i18n.md`](docs/spec-i18n.md)):
+  - Sprach-Batch 2: es, fr, pt-BR, it, zh-Hans, ja; optional ru, pl, ko.
+  - Live-Sprachwechsel ohne Neustart.
+  - Externe Sprachpakete aus `<config>/folio/lang/`.
+  - Pseudo-Locale für Layout- und Extraktionsprüfungen.
+  - Generierte typisierte Key-Surface.
+  - Translator-Notes für Kontext und Übersetzungsregeln.
+  - HTML-Parser statt Heuristik im Markup-Gate.
+
 - **Vault-Volltextsuche — Folgepunkte** (Kernfeature S1–S3 komplett
   2026-07-12, Spec [`docs/spec-vault-search.md`](docs/spec-vault-search.md)):
   paralleler Walk (`WalkBuilder::build_parallel`), falls große Pins

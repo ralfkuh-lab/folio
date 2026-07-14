@@ -3,9 +3,9 @@
 //! Scans production sources for `t` / `t_args` / `t_plural` / `tPlural` /
 //! `data-i18n*` usages and checks them against the embedded `en` catalog.
 //!
-//! - Hard: missing keys, non-literal first args (outside i18n core), aliases
-//! - Soft (until I6): unreferenced catalog keys — println report; set
-//!   `FOLIO_I18N_DEAD_KEYS=hard` to fail (I6 switch)
+//! - Hard: missing keys, non-literal first args (outside i18n core), aliases,
+//!   unreferenced catalog keys
+//! - Diagnostic escape hatch: `FOLIO_I18N_DEAD_KEYS=soft` only reports dead keys
 
 use serde_json::Value;
 use std::collections::BTreeSet;
@@ -674,7 +674,7 @@ fn i18n_reference_gate() {
         }
     }
 
-    // Direction 2 (soft): dead keys
+    // Direction 2 (hard by default): dead keys
     let dead: Vec<String> = catalog
         .iter()
         .filter(|k| !referenced.contains(*k))
@@ -682,8 +682,8 @@ fn i18n_reference_gate() {
         .collect();
 
     let hard_dead = std::env::var("FOLIO_I18N_DEAD_KEYS")
-        .map(|v| v == "hard")
-        .unwrap_or(false);
+        .map(|v| v != "soft")
+        .unwrap_or(true);
 
     // Report
     println!("i18n reference gate");
@@ -697,9 +697,9 @@ fn i18n_reference_gate() {
             .count()
     );
     println!("  en catalog keys:   {}", catalog.len());
-    println!("  dead keys (soft):  {}", dead.len());
+    println!("  dead keys:         {}", dead.len());
     if !dead.is_empty() {
-        println!("  --- dead key report (soft until I6) ---");
+        println!("  --- dead key report ---");
         for k in &dead {
             println!("    DEAD  {k}");
         }
@@ -720,7 +720,7 @@ fn i18n_reference_gate() {
     errors.extend(allowlist_no_code);
     if hard_dead {
         for k in &dead {
-            errors.push(format!("dead key (FOLIO_I18N_DEAD_KEYS=hard): {k}"));
+            errors.push(format!("dead key: {k}"));
         }
     }
     // Unused allowlist with no catalog match is a soft warn only (already printed)
