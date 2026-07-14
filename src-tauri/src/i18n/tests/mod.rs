@@ -8,6 +8,7 @@ mod plural_rules;
 mod resolve;
 mod translate;
 // Fix-Paket I1a (F1–F14) — zusätzliche Tests, Phase-1-Suite unangetastet
+mod error_gate;
 mod fix_pack;
 
 use std::fs;

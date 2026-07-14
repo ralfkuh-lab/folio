@@ -70,8 +70,8 @@ pub fn init(level: LogLevel, log_dir: &Path) {
             // Schreibzugriff auf stderr, damit Tippfehler im
             // RUST_LOG-Override sichtbar werden.
             eprintln!(
-                "[folio::logging] ungueltiger Filter-Ausdruck '{filter_expr}' \
-                 ({filter_kind}): {err} — Fallback auf 'info'"
+                "[folio::logging] invalid filter expression '{filter_expr}' \
+                 ({filter_kind}): {err} — fallback to 'info'"
             );
             EnvFilter::new(LogLevel::Info.env_filter())
         }
@@ -81,7 +81,7 @@ pub fn init(level: LogLevel, log_dir: &Path) {
     // Rolling-File-Sink. Verzeichnis best-effort anlegen.
     if let Err(err) = std::fs::create_dir_all(log_dir) {
         eprintln!(
-            "[folio::logging] konnte Log-Verzeichnis '{}' nicht anlegen: {err}",
+            "[folio::logging] could not create log directory '{}': {err}",
             log_dir.display()
         );
     }
@@ -134,7 +134,7 @@ pub fn init(level: LogLevel, log_dir: &Path) {
             );
         }
         Err(err) => {
-            eprintln!("[folio::logging] set_global_default fehlgeschlagen: {err}");
+            eprintln!("[folio::logging] set_global_default failed: {err}");
         }
     }
 }

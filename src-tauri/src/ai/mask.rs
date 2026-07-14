@@ -32,8 +32,8 @@ impl fmt::Display for UnmaskError {
             .join(", ");
         write!(
             formatter,
-            "Das Modell hat geschützte Platzhalter entfernt (fehlende Fragmente: {indices}; \
-             insgesamt {}). Bitte versuchen Sie ein anderes Modell.",
+            "The model removed protected placeholders (missing fragments: {indices}; \
+             total {}). Please try another model.",
             self.missing.len()
         )
     }
@@ -49,8 +49,8 @@ impl fmt::Display for SelectionMaskError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
-            "Die Auswahl zerschneidet einen geschützten Bereich (Code/Frontmatter) — \
-             Auswahl erweitern oder verkleinern."
+            "The selection cuts through a protected area (code/frontmatter) — \
+             expand or reduce the selection."
         )
     }
 }
@@ -423,7 +423,7 @@ fn main() {
         let error = unmask(&translated, &masked).unwrap_err();
 
         assert_eq!(vec![0], error.missing);
-        assert!(error.to_string().contains("Platzhalter entfernt"));
+        assert!(error.to_string().contains("removed protected placeholders"));
         assert!(error.to_string().contains("0"));
     }
 

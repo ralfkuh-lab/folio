@@ -44,32 +44,26 @@ pub(crate) fn mime_for_extension(filename: &str) -> Option<&'static str> {
 /// Pfad, kein Laufwerksprefix (`:`), kein NUL-Byte, nicht leer.
 pub(crate) fn validate_asset_filename(filename: &str) -> Result<(), String> {
     if filename.is_empty() {
-        return Err("Asset-Dateiname ist leer".to_string());
+        return Err("asset filename is empty".to_string());
     }
     if filename.starts_with('.') {
         return Err(format!(
-            "Asset-Dateiname '{filename}' darf nicht mit einem Punkt beginnen"
+            "asset filename '{filename}' must not start with a dot"
         ));
     }
     if filename.contains('/') || filename.contains('\\') {
         return Err(format!(
-            "Asset-Dateiname '{filename}' darf keinen Pfadseparator enthalten"
+            "asset filename '{filename}' must not contain path separators"
         ));
     }
     if filename.contains("..") {
-        return Err(format!(
-            "Asset-Dateiname '{filename}' darf kein '..' enthalten"
-        ));
+        return Err(format!("asset filename '{filename}' must not contain '..'"));
     }
     if filename.contains(':') {
-        return Err(format!(
-            "Asset-Dateiname '{filename}' darf kein ':' enthalten"
-        ));
+        return Err(format!("asset filename '{filename}' must not contain ':'"));
     }
     if filename.contains('\0') {
-        return Err(format!(
-            "Asset-Dateiname '{filename}' enthaelt ein NUL-Byte"
-        ));
+        return Err(format!("asset filename '{filename}' contains a NUL byte"));
     }
     Ok(())
 }
@@ -79,10 +73,10 @@ pub(crate) fn validate_asset_filename(filename: &str) -> Result<(), String> {
 pub(crate) fn data_uri(filename: &str, bytes: &[u8]) -> Result<String, String> {
     validate_asset_filename(filename)?;
     let mime = mime_for_extension(filename)
-        .ok_or_else(|| format!("Asset-Datei '{filename}' hat eine nicht unterstuetzte Endung"))?;
+        .ok_or_else(|| format!("asset file '{filename}' has an unsupported extension"))?;
     if bytes.len() > MAX_ASSET_BYTES {
         return Err(format!(
-            "Asset '{filename}' ist {} Bytes gross, Maximum sind {} Bytes",
+            "asset '{filename}' is {} bytes in size, maximum is {} bytes",
             bytes.len(),
             MAX_ASSET_BYTES
         ));
@@ -97,12 +91,8 @@ pub(crate) fn data_uri(filename: &str, bytes: &[u8]) -> Result<String, String> {
 pub(crate) fn load_asset(theme_dir: &Path, filename: &str) -> Result<String, String> {
     validate_asset_filename(filename)?;
     let path = theme_dir.join(ASSET_DIR).join(filename);
-    let bytes = fs::read(&path).map_err(|error| {
-        format!(
-            "Asset '{}' kann nicht gelesen werden: {error}",
-            path.display()
-        )
-    })?;
+    let bytes = fs::read(&path)
+        .map_err(|error| format!("cannot read asset '{}': {error}", path.display()))?;
     data_uri(filename, &bytes)
 }
 
@@ -117,18 +107,14 @@ pub(crate) fn load_assets(
     for filename in filenames {
         validate_asset_filename(filename)?;
         let path = theme_dir.join(ASSET_DIR).join(filename);
-        let bytes = fs::read(&path).map_err(|error| {
-            format!(
-                "Asset '{}' kann nicht gelesen werden: {error}",
-                path.display()
-            )
-        })?;
+        let bytes = fs::read(&path)
+            .map_err(|error| format!("cannot read asset '{}': {error}", path.display()))?;
         total = total
             .checked_add(bytes.len())
-            .ok_or_else(|| "Asset-Gesamtgroesse ueberlaeuft".to_string())?;
+            .ok_or_else(|| "total asset size overflowed".to_string())?;
         if total > MAX_TOTAL_ASSET_BYTES {
             return Err(format!(
-                "Asset-Gesamtgroesse ({total} Bytes) ueberschreitet das Limit von {} Bytes",
+                "total asset size ({total} bytes) exceeds the limit of {} bytes",
                 MAX_TOTAL_ASSET_BYTES
             ));
         }
@@ -324,7 +310,7 @@ mod tests {
     #[test]
     fn data_uri_rejects_unknown_extension() {
         let err = data_uri("logo.txt", b"x").unwrap_err();
-        assert!(err.contains("nicht unterstuetzte"));
+        assert!(err.contains("unsupported"));
     }
 
     #[test]
@@ -347,7 +333,7 @@ mod tests {
     fn data_uri_enforces_per_asset_byte_limit() {
         let big = vec![0u8; MAX_ASSET_BYTES + 1];
         let err = data_uri("logo.png", &big).unwrap_err();
-        assert!(err.contains("Maximum"), "{err}");
+        assert!(err.contains("maximum"), "{err}");
     }
 
     #[test]
@@ -373,7 +359,7 @@ mod tests {
         }
         let names: Vec<String> = (0..4u32).map(|n| format!("big_{n}.png")).collect();
         let err = load_assets(&dir, &names).unwrap_err();
-        assert!(err.contains("Gesamtgroesse"), "{err}");
+        assert!(err.contains("total asset size"), "{err}");
     }
 
     #[test]

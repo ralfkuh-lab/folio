@@ -8,19 +8,19 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum AiConfigError {
-    #[error("KI-Konfiguration konnte nicht gespeichert werden: {0}")]
+    #[error("could not save AI configuration: {0}")]
     Persist(#[from] io::Error),
-    #[error("Ungültige Provider-ID '{0}': erlaubt sind nur Kleinbuchstaben, Zahlen, '-' und '_'")]
+    #[error("invalid provider ID '{0}': only lowercase letters, numbers, '-' and '_' are allowed")]
     InvalidSlug(String),
-    #[error("Anzeigename des Custom-Providers darf nicht leer sein")]
+    #[error("custom provider display name cannot be empty")]
     EmptyName,
-    #[error("Basis-URL des Custom-Providers darf nicht leer sein")]
+    #[error("custom provider base URL cannot be empty")]
     EmptyBaseUrl,
-    #[error("Provider '{0}' ist kein Custom-Provider")]
+    #[error("provider '{0}' is not a custom provider")]
     NotCustom(String),
-    #[error("Provider und Modell müssen entweder beide gesetzt oder beide leer sein")]
+    #[error("provider and model must either both be set or both be empty")]
     IncompleteDefaultModel,
-    #[error("Provider- und Modell-ID dürfen nicht leer sein")]
+    #[error("provider and model ID cannot be empty")]
     EmptyIdentifier,
 }
 

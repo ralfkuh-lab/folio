@@ -150,7 +150,7 @@ pub(crate) fn validate_manifest_fonts(manifest: &ThemeManifest) -> Result<(), St
 pub(crate) fn validate_font_family(value: &str) -> Result<String, String> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
-        return Err("darf nicht leer sein".to_string());
+        return Err("cannot be empty".to_string());
     }
     // '\' und '(' pauschal verbieten: CSS-Unicode-Escapes wie `ur\6c(`
     // wuerden sonst die url(-Pruefung umgehen, und ohne '(' ist keine
@@ -160,7 +160,7 @@ pub(crate) fn validate_font_family(value: &str) -> Result<String, String> {
         .chars()
         .find(|c| matches!(c, '{' | '}' | '<' | '>' | ';' | '@' | '\\' | '(' | ')'))
     {
-        return Err(format!("enthaelt verbotenes Zeichen '{forbidden}'"));
+        return Err(format!("contains forbidden character '{forbidden}'"));
     }
     Ok(trimmed.to_string())
 }
@@ -170,7 +170,7 @@ pub(crate) fn validate_font_size(value: &str) -> Result<String, String> {
     if font_size_regex().is_match(trimmed) {
         Ok(trimmed.to_string())
     } else {
-        Err("muss dem Muster Zahl + px|pt|em|rem|% entsprechen".to_string())
+        Err("must match number + px|pt|em|rem|%".to_string())
     }
 }
 

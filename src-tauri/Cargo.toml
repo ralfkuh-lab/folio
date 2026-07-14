@@ -42,7 +42,7 @@ futures-util = "0.3"
 thiserror = "2"
 
 # Phase 4: Tauri
-tauri = { version = "2", features = ["protocol-asset"] }
+tauri = { version = "2", features = ["protocol-asset", "test"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-single-instance = "2"

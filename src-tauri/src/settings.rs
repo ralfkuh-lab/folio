@@ -304,7 +304,7 @@ impl SettingsService {
             if !valid {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
-                    format!("Unbekanntes View-Theme: '{value}'"),
+                    format!("unknown view theme: '{value}'"),
                 ));
             }
         }
@@ -313,14 +313,14 @@ impl SettingsService {
                 if value == "standard" {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidInput,
-                        "Das Standard-Theme kann kein Favorit sein",
+                        "the standard theme cannot be a favorite",
                     ));
                 }
                 let valid = themes.iter().any(|theme| theme.id == *value);
                 if !valid {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidInput,
-                        format!("Unbekanntes Theme-Favorit: '{value}'"),
+                        format!("unknown theme favorite: '{value}'"),
                     ));
                 }
             }
@@ -331,7 +331,7 @@ impl SettingsService {
             // Nur Slug-Form pruefen + first-seen deduplizieren — bewusst
             // keine Existenzvalidierung (s. Feld-Doku).
             for value in values.iter() {
-                crate::ai::actions::validate_slug(value, "KI-Aktions-Favorit")
+                crate::ai::actions::validate_slug(value, "AI action favorite")
                     .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
             }
             let mut seen = HashSet::new();
@@ -339,7 +339,7 @@ impl SettingsService {
         }
         if let Some(map) = patch.ai_action_favorite_hashes.as_ref() {
             for id in map.keys() {
-                crate::ai::actions::validate_slug(id, "KI-Aktions-Favorit")
+                crate::ai::actions::validate_slug(id, "AI action favorite")
                     .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
             }
         }
@@ -350,7 +350,7 @@ impl SettingsService {
             if !crate::i18n::is_valid_language_setting(&value, registry) {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
-                    format!("Ungültige Sprache: '{value}'"),
+                    format!("invalid language: '{value}'"),
                 ));
             }
             if self.data.language != value {
@@ -921,7 +921,7 @@ mod tests {
             })
             .unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
-        assert!(err.to_string().contains("Ungültige Sprache"), "{err}");
+        assert!(err.to_string().contains("invalid language"), "{err}");
     }
 
     #[test]

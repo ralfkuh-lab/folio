@@ -234,11 +234,11 @@ fn render_document_in(
     strings: &ExportStrings,
 ) -> Result<String, String> {
     let package = theme::package_in(layout_id, dir)
-        .ok_or_else(|| format!("Unbekanntes Layout: '{layout_id}'"))?;
+        .ok_or_else(|| format!("unknown layout: '{layout_id}'"))?;
     let content_css = theme::layout_css_in(layout_id, false, dir)
-        .ok_or_else(|| format!("Unbekanntes Layout: '{layout_id}'"))?;
+        .ok_or_else(|| format!("unknown layout: '{layout_id}'"))?;
     let page_css = theme::page_css_in(layout_id, dir)
-        .ok_or_else(|| format!("Unbekanntes Layout: '{layout_id}'"))?;
+        .ok_or_else(|| format!("unknown layout: '{layout_id}'"))?;
 
     let asset_pairs = match package.dir.as_deref() {
         Some(theme_dir) => load_export_assets(
@@ -1442,6 +1442,6 @@ mod asset_tests {
         write_minimal_theme(&temp);
         let big = vec![0u8; crate::theme::assets::MAX_ASSET_BYTES + 1];
         let err = store::asset_add_in("mine", "big.png", &big, temp.path()).unwrap_err();
-        assert!(err.contains("Maximum"), "{err}");
+        assert!(err.contains("maximum"), "{err}");
     }
 }

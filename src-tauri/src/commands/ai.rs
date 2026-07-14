@@ -730,13 +730,13 @@ pub async fn ai_action_run(
 ) -> Result<AiActionOutcome, String> {
     // === Preflight: laeuft komplett VOR der Guard-Annahme. Fehler hier
     // gehen nur ueber den Command-Return — kein Started, kein Done. ===
-    actions::validate_slug(&request.suffix, "Datei-Suffix").map_err(|detail| {
+    actions::validate_slug(&request.suffix, "file suffix").map_err(|detail| {
         i18n::t_args("errors.ai.actionValidationFailed", &[("detail", &detail)])
     })?;
     if let Some(action_id) = request.action_id.as_deref() {
         // Verhindert freie Strings im Log (Redaction-Vertrag) —
         // action_id ist reine Korrelation, kein Inhaltstransport.
-        actions::validate_slug(action_id, "Aktions-Kürzel").map_err(|detail| {
+        actions::validate_slug(action_id, "action slug").map_err(|detail| {
             i18n::t_args("errors.ai.actionValidationFailed", &[("detail", &detail)])
         })?;
     }

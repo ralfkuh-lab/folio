@@ -83,15 +83,15 @@ struct CatalogCache {
 
 #[derive(Debug, Error)]
 pub enum CatalogError {
-    #[error("models.dev-Katalog konnte nicht geladen werden: {0}")]
+    #[error("could not load models.dev catalog: {0}")]
     Request(#[source] reqwest::Error),
-    #[error("models.dev antwortete mit HTTP-Status {0}")]
+    #[error("models.dev responded with HTTP status {0}")]
     HttpStatus(reqwest::StatusCode),
-    #[error("models.dev-Katalog enthält ungültiges JSON: {0}")]
+    #[error("models.dev catalog contains invalid JSON: {0}")]
     Parse(#[source] reqwest::Error),
-    #[error("Katalog-Cache konnte nicht geschrieben werden: {0}")]
+    #[error("could not write catalog cache: {0}")]
     Persist(#[source] io::Error),
-    #[error("Systemzeit liegt vor der Unix-Epoche")]
+    #[error("system time is before the Unix epoch")]
     InvalidSystemTime,
 }
 

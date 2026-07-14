@@ -79,13 +79,13 @@ pub(crate) fn view_theme_css_in(
     dir: &Path,
 ) -> Result<Cow<'static, str>, String> {
     if !valid_theme_id(theme_id) {
-        return Err(format!("Unbekanntes View-Theme: '{theme_id}'"));
+        return Err(format!("unknown view theme: '{theme_id}'"));
     }
     if theme_id == "standard" {
         return Ok(Cow::Borrowed(""));
     }
     let package =
-        package_in(theme_id, dir).ok_or_else(|| format!("Unbekanntes View-Theme: '{theme_id}'"))?;
+        package_in(theme_id, dir).ok_or_else(|| format!("unknown view theme: '{theme_id}'"))?;
     let css = content_css(&package, dark);
     let css = match package.dir.as_deref() {
         Some(theme_dir) => {

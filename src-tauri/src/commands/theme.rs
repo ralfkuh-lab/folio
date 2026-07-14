@@ -348,33 +348,25 @@ fn theme_command_error(
     operation: ThemeOperation,
     tr: Option<&i18n::Translator>,
 ) -> String {
-    if let Some(id) = quoted_detail(detail, "Ungültige Theme-ID: '", "'") {
+    if let Some(id) = quoted_detail(detail, "invalid theme ID: '", "'") {
         return match tr {
             Some(tr) => tr.t_args("errors.theme.invalidId", &[("id", id)]),
             None => i18n::t_args("errors.theme.invalidId", &[("id", id)]),
         };
     }
-    if let Some(id) = quoted_detail(
-        detail,
-        "Eingebautes Theme '",
-        "' kann nicht geändert werden",
-    ) {
+    if let Some(id) = quoted_detail(detail, "builtin theme '", "' cannot be modified") {
         return match tr {
             Some(tr) => tr.t_args("errors.theme.builtinReadOnly", &[("id", id)]),
             None => i18n::t_args("errors.theme.builtinReadOnly", &[("id", id)]),
         };
     }
-    if let Some(id) = quoted_detail(
-        detail,
-        "Eingebautes Theme '",
-        "' kann nicht gelöscht werden",
-    ) {
+    if let Some(id) = quoted_detail(detail, "builtin theme '", "' cannot be deleted") {
         return match tr {
             Some(tr) => tr.t_args("errors.theme.builtinDelete", &[("id", id)]),
             None => i18n::t_args("errors.theme.builtinDelete", &[("id", id)]),
         };
     }
-    if let Some(id) = quoted_detail(detail, "Theme-ID '", "' ist bereits vergeben") {
+    if let Some(id) = quoted_detail(detail, "theme ID '", "' is already taken") {
         return match tr {
             Some(tr) => tr.t_args("errors.theme.idTaken", &[("id", id)]),
             None => i18n::t_args("errors.theme.idTaken", &[("id", id)]),
@@ -389,7 +381,7 @@ fn theme_command_error(
             None => i18n::t_args("errors.theme.unknown", &[("detail", &quoted)]),
         };
     }
-    if let Some(id) = quoted_detail(detail, "Theme '", "' kann nicht dupliziert werden") {
+    if let Some(id) = quoted_detail(detail, "theme '", "' cannot be duplicated") {
         return match tr {
             Some(tr) => tr.t_args("errors.theme.cloneUnsupported", &[("id", id)]),
             None => i18n::t_args("errors.theme.cloneUnsupported", &[("id", id)]),
@@ -397,8 +389,8 @@ fn theme_command_error(
     }
     if let Some(id) = quoted_detail(
         detail,
-        "Verzeichnis-Theme '",
-        "' existiert nicht; Assets koennen nur an Verzeichnis-Themes angehaengt werden",
+        "directory theme '",
+        "' does not exist; assets can only be added to directory themes",
     ) {
         return match tr {
             Some(tr) => tr.t_args("errors.theme.assetDirectoryRequired", &[("id", id)]),
@@ -494,27 +486,133 @@ mod tests {
     #[test]
     fn domain_theme_errors_are_not_wrapped_in_operation_frames() {
         let de = translator("de");
+        let en = translator("en");
+
+        // 1. invalid theme ID
         assert_eq!(
-            "Theme-ID 'mine' ist bereits vergeben",
+            "Ungültige Theme-ID: 'mine'",
             theme_command_error(
-                "Theme-ID 'mine' ist bereits vergeben",
+                "invalid theme ID: 'mine'",
                 ThemeOperation::Create,
-                Some(&de),
+                Some(&de)
+            )
+        );
+        assert_eq!(
+            "Invalid theme ID: 'mine'",
+            theme_command_error(
+                "invalid theme ID: 'mine'",
+                ThemeOperation::Create,
+                Some(&en)
             )
         );
 
-        let en = translator("en");
+        // 2. builtin theme cannot be modified
         assert_eq!(
-            "Theme ID 'mine' is already taken",
+            "Eingebautes Theme 'mine' kann nicht geändert werden",
             theme_command_error(
-                "Theme-ID 'mine' ist bereits vergeben",
+                "builtin theme 'mine' cannot be modified",
                 ThemeOperation::Create,
-                Some(&en),
+                Some(&de)
             )
         );
         assert_eq!(
+            "Built-in theme 'mine' cannot be modified",
+            theme_command_error(
+                "builtin theme 'mine' cannot be modified",
+                ThemeOperation::Create,
+                Some(&en)
+            )
+        );
+
+        // 3. builtin theme cannot be deleted
+        assert_eq!(
+            "Eingebautes Theme 'mine' kann nicht gelöscht werden",
+            theme_command_error(
+                "builtin theme 'mine' cannot be deleted",
+                ThemeOperation::Delete,
+                Some(&de)
+            )
+        );
+        assert_eq!(
+            "Built-in theme 'mine' cannot be deleted",
+            theme_command_error(
+                "builtin theme 'mine' cannot be deleted",
+                ThemeOperation::Delete,
+                Some(&en)
+            )
+        );
+
+        // 4. theme ID is already taken
+        assert_eq!(
+            "Theme-ID 'mine' ist bereits vergeben",
+            theme_command_error(
+                "theme ID 'mine' is already taken",
+                ThemeOperation::Create,
+                Some(&de)
+            )
+        );
+        assert_eq!(
+            "Theme ID 'mine' is already taken",
+            theme_command_error(
+                "theme ID 'mine' is already taken",
+                ThemeOperation::Create,
+                Some(&en)
+            )
+        );
+
+        // 5. theme cannot be duplicated
+        assert_eq!(
+            "Theme 'mine' kann nicht dupliziert werden",
+            theme_command_error(
+                "theme 'mine' cannot be duplicated",
+                ThemeOperation::Clone,
+                Some(&de)
+            )
+        );
+        assert_eq!(
+            "Theme 'mine' cannot be duplicated",
+            theme_command_error(
+                "theme 'mine' cannot be duplicated",
+                ThemeOperation::Clone,
+                Some(&en)
+            )
+        );
+
+        // 6. directory theme does not exist
+        assert_eq!(
+            "Verzeichnis-Theme 'mine' existiert nicht; Assets koennen nur an Verzeichnis-Themes angehaengt werden",
+            theme_command_error(
+                "directory theme 'mine' does not exist; assets can only be added to directory themes",
+                ThemeOperation::Asset,
+                Some(&de)
+            )
+        );
+        assert_eq!(
+            "Directory theme 'mine' does not exist; assets can only be added to directory themes",
+            theme_command_error(
+                "directory theme 'mine' does not exist; assets can only be added to directory themes",
+                ThemeOperation::Asset,
+                Some(&en)
+            )
+        );
+
+        // Generic error
+        assert_eq!(
             "Could not create theme: disk full",
             theme_command_error("disk full", ThemeOperation::Create, Some(&en))
+        );
+
+        // Store->Command integration test to verify the exact error message coupling
+        let store_err =
+            crate::theme::store::asset_remove_in("clean", "logo.png", std::path::Path::new("none"))
+                .unwrap_err();
+        assert_eq!(
+            "Eingebautes Theme 'clean' kann nicht geändert werden",
+            theme_command_error(&store_err, ThemeOperation::Asset, Some(&de))
+        );
+        assert_eq!(
+            "Built-in theme 'clean' cannot be modified",
+            theme_command_error(&store_err, ThemeOperation::Asset, Some(&en))
         );
     }
 

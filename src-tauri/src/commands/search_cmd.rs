@@ -117,16 +117,13 @@ pub async fn vault_search_start(
     Ok(run_id)
 }
 
-/// Räumt beim Drop den Suchlauf aus der State-Registry und stellt sicher, dass
-/// jeder Lauf genau EIN `search:done` sieht — auch wenn der Blocking-Task
-/// abnormal (Panic) endet.
-struct SearchRunGuard {
-    handle: AppHandle,
+struct SearchRunGuard<R: tauri::Runtime = tauri::Wry> {
+    handle: tauri::AppHandle<R>,
     run_id: u64,
     completed: bool,
 }
 
-impl Drop for SearchRunGuard {
+impl<R: tauri::Runtime> Drop for SearchRunGuard<R> {
     fn drop(&mut self) {
         if let Some(state) = self.handle.try_state::<AppState>() {
             if let Ok(mut cancels) = state.search_cancels.lock() {
@@ -136,7 +133,7 @@ impl Drop for SearchRunGuard {
         if !self.completed {
             let _ = self.handle.emit(
                 "search:done",
-                serde_json::json!({ "runId": self.run_id, "error": "interner Fehler" }),
+                serde_json::json!({ "runId": self.run_id, "error": "internal error" }),
             );
             tracing::error!(
                 target: "folio::search",
@@ -160,4 +157,37 @@ pub async fn vault_search_cancel(run_id: u64, state: State<'_, AppState>) -> Res
         flag.store(true, Ordering::Release);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+    use tauri::Listener;
+
+    #[test]
+    fn test_search_run_guard_emits_internal_error_on_abnormal_drop() {
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+
+        let received = Arc::new(Mutex::new(None));
+        let received_clone = received.clone();
+
+        handle.listen("search:done", move |event| {
+            let payload: serde_json::Value = serde_json::from_str(event.payload()).unwrap();
+            *received_clone.lock().unwrap() = Some(payload);
+        });
+
+        let guard = SearchRunGuard {
+            handle: handle.clone(),
+            run_id: 12345,
+            completed: false,
+        };
+
+        drop(guard);
+
+        let result = received.lock().unwrap().clone().unwrap();
+        assert_eq!(result["runId"], 12345);
+        assert_eq!(result["error"], "internal error");
+    }
 }

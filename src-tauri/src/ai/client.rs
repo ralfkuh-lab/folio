@@ -247,7 +247,7 @@ pub async fn chat_stream_cancellable(
         let elapsed = chunk_wait_started.elapsed();
         if elapsed >= STREAM_CHUNK_TIMEOUT {
             return Err(ChatError::ResponseRead(
-                "Zeitüberschreitung beim Warten auf den nächsten Stream-Chunk".to_string(),
+                "timeout waiting for the next stream chunk".to_string(),
             ));
         }
         let wait = CANCEL_POLL_INTERVAL.min(STREAM_CHUNK_TIMEOUT - elapsed);
@@ -362,7 +362,7 @@ fn provider_error_message(body: &str, api_key: Option<&str>) -> String {
         .take(MAX_PROVIDER_ERROR_CHARS)
         .collect::<String>();
     if shortened.is_empty() {
-        "keine Fehlermeldung".to_string()
+        "no error message".to_string()
     } else {
         shortened
     }

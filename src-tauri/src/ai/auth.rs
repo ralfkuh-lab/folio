@@ -24,13 +24,13 @@ struct AuthEntry {
 
 #[derive(Debug, Error)]
 pub enum AuthError {
-    #[error("Provider-ID darf nicht leer sein")]
+    #[error("provider ID cannot be empty")]
     EmptyProviderId,
-    #[error("API-Key darf nicht leer sein")]
+    #[error("API key cannot be empty")]
     EmptyKey,
-    #[error("Auth-Daten konnten nicht serialisiert werden: {0}")]
+    #[error("could not serialize auth data: {0}")]
     Serialize(#[from] serde_json::Error),
-    #[error("Auth-Daten konnten nicht gespeichert werden: {0}")]
+    #[error("could not save auth data: {0}")]
     Io(#[from] io::Error),
 }
 

@@ -85,10 +85,10 @@
   es/fr/pt-BR/it/ru/zh-Hans/ja + Flaggen-Picker + Übersetzungs-
   Kontextdatei `locales/context/keys.json` abgeschlossen 2026-07-14,
   Spec [`docs/spec-i18n.md`](docs/spec-i18n.md)):
-  - Interne Fehlerdetails von Deutsch auf Englisch umstellen
-    (`#[error]`-Attribute und `format!`-Detailtexte in `ai/`,
-    `theme/store.rs`, `commands/ai.rs` — fließen als `{detail}` in
-    übersetzte Fehlermeldungen ein; Fundliste vom 2026-07-14).
+  - Deutsche `tracing`-Log-Meldungen auf Englisch angleichen (11
+    Fundstellen, u. a. `logging.rs`, `theme/*` — rein diagnostisch,
+    niedrigste Dringlichkeit; Fehlerdetails selbst sind seit
+    2026-07-14 englisch).
   - Dropdown-Optionstexte werden bei langen Übersetzungen abgeschnitten
     (Settings-Selects, z. B. es „Abrir en una pestaña nueva", ru
     „Открыть в новой вкладке") — Select-Breite oder Ellipsis prüfen.

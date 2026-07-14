@@ -198,7 +198,7 @@ pub fn parse_draft(raw: &str) -> Result<RawDraft, String> {
     let trimmed = raw.trim();
     let body = strip_code_fence(trimmed);
     serde_json::from_str::<RawDraft>(body)
-        .map_err(|error| format!("KI-Antwort ist kein gueltiges Theme-JSON: {error}"))
+        .map_err(|error| format!("AI response is not valid theme JSON: {error}"))
 }
 
 fn strip_code_fence(s: &str) -> &str {
@@ -218,10 +218,10 @@ fn strip_code_fence(s: &str) -> &str {
 pub fn validate_draft(raw: RawDraft, new_id: Option<&str>) -> Result<ThemeDraft, String> {
     if let Some(id) = new_id {
         if !valid_theme_id(id) {
-            return Err(format!("Ungueltige Theme-ID: '{id}'"));
+            return Err(format!("invalid theme ID: '{id}'"));
         }
         if builtin::IDS.contains(&id) {
-            return Err(format!("Theme-ID '{id}' kollidiert mit einem Built-in"));
+            return Err(format!("theme ID '{id}' conflicts with a builtin theme"));
         }
     }
 
@@ -267,7 +267,7 @@ pub fn validate_draft(raw: RawDraft, new_id: Option<&str>) -> Result<ThemeDraft,
 
 fn validate_css(css: &str, label: &str, require_content: bool) -> Result<(), String> {
     if require_content && css.trim().is_empty() {
-        return Err(format!("{label} ist leer"));
+        return Err(format!("{label} is empty"));
     }
     let mut depth: i64 = 0;
     for c in css.chars() {
@@ -276,25 +276,25 @@ fn validate_css(css: &str, label: &str, require_content: bool) -> Result<(), Str
             '}' => {
                 depth -= 1;
                 if depth < 0 {
-                    return Err(format!("{label}: unausgewogene geschweifte Klammern"));
+                    return Err(format!("{label}: unbalanced braces"));
                 }
             }
             _ => {}
         }
     }
     if depth != 0 {
-        return Err(format!("{label}: unausgewogene geschweifte Klammern"));
+        return Err(format!("{label}: unbalanced braces"));
     }
     let lower = css.to_ascii_lowercase();
     // Das CSS wird in <style>…</style> des Export-HTML interpoliert —
     // ein '<' genuegt fuer den Ausbruch (</style><script>). KI-CSS
     // braucht kein Markup, daher pauschal ablehnen (Zweitreview-Fund).
     if lower.contains('<') {
-        return Err(format!("{label}: '<' ist in KI-CSS nicht erlaubt"));
+        return Err(format!("{label}: '<' is not allowed in AI CSS"));
     }
     for needle in ["@import", "expression(", "javascript:"] {
         if lower.contains(needle) {
-            return Err(format!("{label}: verbotenes Muster '{needle}'"));
+            return Err(format!("{label}: forbidden pattern '{needle}'"));
         }
     }
     // url(...) als Whitelist statt Blacklist: url("http…), url( 'http…)
@@ -311,7 +311,7 @@ fn validate_css(css: &str, label: &str, require_content: bool) -> Result<(), Str
         if !(target.starts_with("data:") || target.starts_with("asset:") || target.starts_with('#'))
         {
             return Err(format!(
-                "{label}: url() darf nur data:, asset: oder '#…' referenzieren"
+                "{label}: url() may only reference data:, asset:, or '#...'"
             ));
         }
     }
@@ -337,7 +337,7 @@ const ALLOWED_ATTRS: &[&str] = &["class", "style", "src", "alt"];
 fn validate_template(template: &str, label: &str) -> Result<(), String> {
     for caps in template_placeholder_captures(template) {
         if !template::WHITELIST.contains(&caps.to_ascii_lowercase().as_str()) {
-            return Err(format!("{label}: unbekannter Platzhalter '{{{{{caps}}}}}'"));
+            return Err(format!("{label}: unknown placeholder '{{{{{caps}}}}}'"));
         }
     }
 
@@ -345,7 +345,7 @@ fn validate_template(template: &str, label: &str) -> Result<(), String> {
     for caps in tag_re.captures_iter(template) {
         let tag = caps.get(1).unwrap().as_str().to_ascii_lowercase();
         if !ALLOWED_TAGS.contains(&tag.as_str()) {
-            return Err(format!("{label}: Tag <{tag}> ist nicht erlaubt"));
+            return Err(format!("{label}: tag <{tag}> is not allowed"));
         }
         let attrs = caps.get(2).map(|m| m.as_str()).unwrap_or("");
         validate_attrs(attrs, &tag, label)?;
@@ -358,13 +358,11 @@ fn validate_attrs(attrs: &str, tag: &str, label: &str) -> Result<(), String> {
     for caps in attr_re.captures_iter(attrs) {
         let name = caps.get(1).unwrap().as_str().to_ascii_lowercase();
         if name.starts_with("on") {
-            return Err(format!(
-                "{label}: Event-Attribut '{name}' ist nicht erlaubt"
-            ));
+            return Err(format!("{label}: event attribute '{name}' is not allowed"));
         }
         if !ALLOWED_ATTRS.contains(&name.as_str()) {
             return Err(format!(
-                "{label}: Attribut '{name}' an <{tag}> ist nicht erlaubt"
+                "{label}: attribute '{name}' on <{tag}> is not allowed"
             ));
         }
         let value = caps
@@ -377,13 +375,13 @@ fn validate_attrs(attrs: &str, tag: &str, label: &str) -> Result<(), String> {
         match name.as_str() {
             "src" if !(lower.starts_with("data:image/") || lower.starts_with("asset:")) => {
                 return Err(format!(
-                    "{label}: src an <{tag}> muss data:image/... oder asset:... sein"
+                    "{label}: src on <{tag}> must be data:image/... or asset:..."
                 ));
             }
             "style" => {
                 for needle in ["expression(", "javascript:", "@import"] {
                     if lower.contains(needle) {
-                        return Err(format!("{label}: verbotenes Muster '{needle}' in style"));
+                        return Err(format!("{label}: forbidden pattern '{needle}' in style"));
                     }
                 }
                 // Gleiche url()-Whitelist wie in validate_css.
@@ -400,7 +398,7 @@ fn validate_attrs(attrs: &str, tag: &str, label: &str) -> Result<(), String> {
                         || target.starts_with('#'))
                     {
                         return Err(format!(
-                            "{label}: url() in style darf nur data:, asset: oder '#…' referenzieren"
+                            "{label}: url() in style may only reference data:, asset:, or '#...'"
                         ));
                     }
                 }
