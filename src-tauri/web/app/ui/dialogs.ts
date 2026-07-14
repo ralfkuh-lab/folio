@@ -3,6 +3,8 @@
    (kein dauerhafter Wiring-State). DOM-Lookup ist lazy — die HTML-Shell
    muss zum Zeitpunkt des Aufrufs gemountet sein. */
 
+import { t } from '../i18n/translate';
+
 function $(id: string): HTMLElement | null { return document.getElementById(id); }
 
 // Rename-Modal: gibt einen neuen Dateinamen (ohne Pfad) zurück oder null
@@ -143,7 +145,8 @@ export function confirmRunFile(name: string): Promise<boolean> {
         const cancel = $('run-confirm-cancel');
         const text = $('run-confirm-text');
         if (!dialog || !ok || !cancel) { resolve(false); return; }
-        if (text) text.textContent = '„' + name + '" als Programm ausführen?';
+        // textContent only — t() never into innerHTML (i18n Spec).
+        if (text) text.textContent = t('dialogs.run.confirm', { name });
         dialog.hidden = false;
         function done(result: boolean): void {
             dialog.hidden = true;

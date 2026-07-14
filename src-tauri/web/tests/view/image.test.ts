@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { installTauriMock } from '../helpers';
+import { seedDeCatalog } from '../helpers-i18n';
 import {
     clearImageView,
     getImageViewState,
@@ -18,8 +19,9 @@ function ensureMount(): HTMLElement {
     return mount;
 }
 
-beforeEach(() => {
+beforeEach(async () => {
     installTauriMock();
+    await seedDeCatalog();
     // Default-Mock fuer convertFileSrc: einfach den Pfad zurueckgeben.
     (window as any).__TAURI__.core.convertFileSrc = vi.fn((p: string) => 'asset://' + p);
     document.body.innerHTML = '';
@@ -79,8 +81,8 @@ describe('view/image', () => {
         const mount = ensureMount();
         mountImageView('/photo.png');
         expect(mount.querySelector('img')).toBeNull();
-        expect(getImageViewState().lastError).toBe('convertFileSrc nicht verfuegbar');
-        expect(mount.textContent).toContain('convertFileSrc nicht verfuegbar');
+        expect(getImageViewState().lastError).toBe('convertFileSrc nicht verfügbar');
+        expect(mount.textContent).toContain('convertFileSrc nicht verfügbar');
     });
 
     it('leerer Pfad rendert nichts', () => {

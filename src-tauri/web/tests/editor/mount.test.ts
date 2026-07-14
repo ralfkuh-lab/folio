@@ -189,6 +189,7 @@ describe('editor/mount tab model cache', () => {
         const createOptions = (mock.monaco.editor.create as any).mock.calls[0][1];
         expect(createOptions.model).toBeTruthy();
         expect(createOptions.value).toBeUndefined();
+        expect(createOptions.contextmenu).toBe(false);
         expect(mock.monaco.editor.createModel).toHaveBeenCalled();
     });
 

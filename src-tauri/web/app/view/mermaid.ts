@@ -12,6 +12,7 @@
 // - Lazy: Bundle wird nur geladen, wenn tatsaechlich Mermaid-Bloecke vorhanden sind.
 
 import { folioLog } from '../util/log';
+import { t } from '../i18n/translate';
 
 const SOURCE_ATTR = 'data-folio-source';
 const THEME_ATTR = 'data-folio-theme';
@@ -72,7 +73,7 @@ async function ensureMermaidLoaded(): Promise<any> {
         script.onerror = () => {
             loadPromise = null;
             try { script.parentNode?.removeChild(script); } catch (_) {}
-            reject(new Error('Laden von mermaid.bundle.js fehlgeschlagen'));
+            reject(new Error(t('errors.view.mermaidLoadFailed')));
         };
         document.head.appendChild(script);
     });
@@ -111,7 +112,7 @@ function cleanupStrayMermaidSvg(): void {
 }
 
 function extractFirstErrorLine(err: unknown): string {
-    const raw = String((err as any)?.message || err || 'unbekannter Mermaid-Fehler');
+    const raw = String((err as any)?.message || err || t('errors.view.mermaidUnknownError'));
     const line = raw.split(/\r?\n/).map((l) => l.trim()).find((l) => l.length > 0) || raw;
     return line.length > 120 ? line.slice(0, 117) + '...' : line;
 }

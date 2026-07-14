@@ -7,6 +7,8 @@ import { setFormatLocale } from './format';
 
 let catalog: I18nCatalog | null = null;
 const warnDedup = new Set<string>();
+/** Cache Intl.PluralRules per catalog tag — status bar calls tPlural 3× per keystroke. */
+const pluralRulesCache = new Map<string, Intl.PluralRules>();
 
 function warnOnce(key: string, kind: string): void {
     const id = (catalog ? catalog.tag : '?') + '|' + key + '|' + kind;
@@ -37,6 +39,7 @@ function lookup(key: string): CatalogValue | undefined {
 export function seedCatalog(next: I18nCatalog | null): void {
     catalog = next;
     warnDedup.clear();
+    pluralRulesCache.clear();
     if (next && next.locale) {
         setFormatLocale(next.locale);
     }
@@ -89,7 +92,12 @@ export function tPlural(
         const tag = catalog ? catalog.tag : 'en';
         let cat = 'other';
         try {
-            cat = new Intl.PluralRules(tag).select(count);
+            let pr = pluralRulesCache.get(tag);
+            if (!pr) {
+                pr = new Intl.PluralRules(tag);
+                pluralRulesCache.set(tag, pr);
+            }
+            cat = pr.select(count);
         } catch {
             cat = count === 1 ? 'one' : 'other';
         }
@@ -148,5 +156,6 @@ export async function initI18n(): Promise<boolean> {
 export function __resetI18nForTests(): void {
     catalog = null;
     warnDedup.clear();
+    pluralRulesCache.clear();
     setFormatLocale('en-US');
 }

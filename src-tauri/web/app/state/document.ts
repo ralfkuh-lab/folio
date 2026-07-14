@@ -26,6 +26,8 @@ import { showUnsavedDialog } from '../ui/dialogs';
 import { isEditorMounted, loadEditorText } from '../editor/shell';
 import { getCachedSettings } from '../ui/settings-dialog';
 import { folioLog, safeInvoke } from '../util/log';
+// Direct modules — avoid app/i18n barrel (event-queue listen patch side-effect).
+import { t, tPlural } from '../i18n/translate';
 import { getActiveTabId } from './tabs';
 // getCachedSettings wird im FolioCodeView-Mount-Pfad weiter genutzt
 // (autoFormat-Flag); der Default-Mode-Switch laeuft jetzt im Backend
@@ -127,7 +129,7 @@ export function markDirty(dirty: boolean): void {
 export function setStatusPath(path: string, dirty: boolean): void {
     const el = $('status-path');
     if (!el) return;
-    el.textContent = path || 'Bereit';
+    el.textContent = path || t('statusBar.ready');
     el.classList.toggle('dirty', !!dirty);
 }
 
@@ -139,7 +141,11 @@ export function updateWordCount(text: string): void {
     const words = (text.match(/\S+/g) || []).length;
     const lines = text.split(/\r\n|\r|\n/).length;
     el.hidden = false;
-    el.textContent = words + ' Wörter · ' + chars + ' Zeichen · ' + lines + ' Zeilen';
+    el.textContent = t('statusBar.wordCount.template', {
+        wordsPart: tPlural('statusBar.wordCount.wordsPart', words),
+        charsPart: tPlural('statusBar.wordCount.charsPart', chars),
+        linesPart: tPlural('statusBar.wordCount.linesPart', lines),
+    });
 }
 
 export function showStatus(msg: string): void {
@@ -277,17 +283,19 @@ export function applyDocKind(kind: string | null): void {
     // legt keinen Text ab; ein Edit-Switch waere ein "leerer Editor").
     const hasViewMode = md || resolved === 'text' || isImage;
     const canEdit = md || resolved === 'text';
+    const noneLoaded = t('errors.document.noneLoaded');
+    const imageReadOnly = t('errors.document.imageReadOnly');
     const btnView = $('tb-mode-view') as HTMLButtonElement;
     if (btnView) {
         btnView.disabled = !hasViewMode;
-        btnView.title = hasViewMode ? 'View (Ctrl+1)' : 'Kein Dokument geladen';
+        btnView.title = hasViewMode ? t('toolbar.modeView.tooltip') : noneLoaded;
     }
     const btnEdit = $('tb-mode-edit') as HTMLButtonElement;
     if (btnEdit) {
         btnEdit.disabled = !canEdit;
         btnEdit.title = canEdit
-            ? 'Edit (Ctrl+2)'
-            : (isImage ? 'Bilder sind read-only' : 'Kein Dokument geladen');
+            ? t('toolbar.modeEdit.tooltip')
+            : (isImage ? imageReadOnly : noneLoaded);
     }
     // Split braucht eine editierbare Datei (Editor-Seite) + eine
     // anzeigbare Seite — also dieselbe Bedingung wie Edit. Bilder sind
@@ -296,13 +304,13 @@ export function applyDocKind(kind: string | null): void {
     if (btnSplit) {
         btnSplit.disabled = !canEdit;
         btnSplit.title = canEdit
-            ? 'Split (Ctrl+3)'
-            : (isImage ? 'Bilder sind read-only' : 'Kein Dokument geladen');
+            ? t('toolbar.modeSplit.tooltip')
+            : (isImage ? imageReadOnly : noneLoaded);
     }
     const btnExport = $('tb-export') as HTMLButtonElement;
     if (btnExport) {
         btnExport.disabled = !md;
-        btnExport.title = md ? 'Exportieren…' : 'Export nur für Markdown verfügbar';
+        btnExport.title = md ? t('toolbar.export.tooltip') : t('statusBar.exportMarkdownOnly');
     }
     // Menue-Items synchron halten: View-Mode auch fuer Text/Code/Image,
     // Edit-Mode nur fuer editierbare Kinds, Save-As/Rename/Close fuer
@@ -339,7 +347,7 @@ export function openDocument(path: string): Promise<boolean> {
             return true;
         }).catch(function (err) {
             folioLog.warn('document', 'read_file failed', { path, error: String(err) });
-            showStatus(typeof err === 'string' ? err : 'Datei konnte nicht geöffnet werden');
+            showStatus(typeof err === 'string' ? err : t('errors.file.openFailed'));
             return false;
         });
     });
@@ -416,7 +424,7 @@ export function initDocumentState(d: Deps): void {
         lastLoadedTabId = typeof data.tabId === 'number' ? data.tabId : null;
         markDirty(false);
         setReloadButtonPending(false);
-        setStatusPath(data.path || 'Bereit', false);
+        setStatusPath(data.path || t('statusBar.ready'), false);
         updateWordCount(data.text || '');
         applyDocKind(data.kind || 'unknown');
         safeInvoke('workspace_add_recent', { path: data.path }, 'workspace_add_recent', 'debug');
@@ -533,7 +541,7 @@ export function initDocumentState(d: Deps): void {
             return;
         }
         if (isDirty) {
-            showStatus('Datei extern geändert (ungespeicherte Änderungen) — Reload via Save oder Verwerfen');
+            showStatus(t('statusBar.externalChangedDirty'));
             return;
         }
         var settings = getCachedSettings();
@@ -542,7 +550,7 @@ export function initDocumentState(d: Deps): void {
             safeInvoke('reload_document', undefined, 'reload_document', 'warn');
         } else {
             setReloadButtonPending(true);
-            showStatus('Datei extern geändert — Reload-Button zum Übernehmen');
+            showStatus(t('statusBar.externalChangedClean'));
         }
     });
 
@@ -581,7 +589,7 @@ export function initDocumentState(d: Deps): void {
         if (window.FolioCodeView) window.FolioCodeView.dispose();
         setTocList('');
         applyDocKind('unknown');
-        setStatusPath('Bereit', false);
+        setStatusPath(t('statusBar.ready'), false);
         updateWordCount('');
         applyWindowTitle();
     });
@@ -613,7 +621,7 @@ export function initDocumentState(d: Deps): void {
         updateWordCount(data.text || '');
         // Statusbar zuruecksetzen, falls vorher noch ein showStatus-Hinweis
         // (z. B. "Datei extern geaendert") im status-path-Element stand.
-        setStatusPath(data.path || currentPath || 'Bereit', false);
+        setStatusPath(data.path || currentPath || t('statusBar.ready'), false);
     });
 
     applyDocKind('unknown');

@@ -36,4 +36,29 @@ describe('editor/theme-editor mount lifecycle', () => {
 
         expect(create).not.toHaveBeenCalled();
     });
+
+    it('mount passes contextmenu:false to monaco.editor.create', async () => {
+        const create = vi.fn(() => ({
+            layout: vi.fn(),
+            dispose: vi.fn(),
+            getModel: vi.fn(),
+            setModel: vi.fn(),
+            onDidChangeModelContent: vi.fn(() => ({ dispose: vi.fn() })),
+            updateOptions: vi.fn(),
+        }));
+        (window as any).monaco = {
+            editor: {
+                create,
+                createModel: vi.fn(),
+                setTheme: vi.fn(),
+            },
+        };
+        const themeEditor = await import('../../editor/theme-editor');
+        const mounting = themeEditor.mount('theme-mount');
+        loader.resolve();
+        await mounting;
+        expect(create).toHaveBeenCalled();
+        const options = create.mock.calls[0][1];
+        expect(options.contextmenu).toBe(false);
+    });
 });

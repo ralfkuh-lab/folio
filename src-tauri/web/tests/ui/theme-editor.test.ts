@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { installTauriMock, type TauriMockHandles } from '../helpers';
+import { seedDeCatalog } from '../helpers-i18n';
 
 vi.mock('../../app/state/document', () => ({
     getCleanText: vi.fn().mockReturnValue('# Aktuelles Dokument'),
@@ -124,9 +125,10 @@ describe('ui/theme-editor', () => {
     let tauri: TauriMockHandles;
     let harness: SurfaceHarness;
 
-    beforeEach(() => {
+    beforeEach(async () => {
         vi.clearAllMocks();
         vi.resetModules();
+        await seedDeCatalog();
         buildDom();
         tauri = installTauriMock();
         harness = installSurface();

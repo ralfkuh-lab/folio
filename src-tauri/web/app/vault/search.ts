@@ -21,6 +21,10 @@
 import { folioLog, safeInvoke } from '../util/log';
 import { setEditorFindTerm, findNext } from '../ui/find-bar';
 import { getCurrentPath } from '../state/document';
+// Direct modules — not the app/i18n barrel (that re-exports event-queue,
+// whose import side-effect patches listen() and suppresses handlers until uiReady).
+import { t, tPlural } from '../i18n/translate';
+import { fmtNumber } from '../i18n/format';
 
 type Deps = {
     openDocument: (path: string) => void;
@@ -215,7 +219,7 @@ function runSearch(q: string): void {
         doneStats = null;
         activeIdx = -1;
         renderResults();
-        setStatus('Mindestens 2 Zeichen');
+        setStatus(t('search.query.minLength.hint'));
         return;
     }
     const myGen = ++gen;
@@ -227,7 +231,7 @@ function runSearch(q: string): void {
     doneStats = null;
     activeIdx = -1;
     renderResults();
-    setStatus('Suche läuft …');
+    setStatus(t('search.status.runningSimple'));
     // Raw invoke (nicht safeInvoke), damit wir die Scope-Fehler
     // (RootNotFound/InvalidScope) vom generischen Startfehler unterscheiden.
     rawInvoke('vault_search_start', {
@@ -238,7 +242,7 @@ function runSearch(q: string): void {
     }).then(
         (runId: any) => {
             if (typeof runId !== 'number') {
-                if (myGen === gen) setStatus('Fehler beim Starten der Suche');
+                if (myGen === gen) setStatus(t('errors.search.startFailed'));
                 return;
             }
             if (runId > maxRunId) maxRunId = runId;
@@ -262,9 +266,9 @@ function runSearch(q: string): void {
                 scopePath = null;
                 renderScopeChip();
                 runSearch(q);
-                setStatus('Ordner existiert nicht mehr — Suche im gesamten Vault');
+                setStatus(t('search.scope.folderMissing.fallback'));
             } else {
-                setStatus('Fehler beim Starten der Suche');
+                setStatus(t('errors.search.startFailed'));
             }
         },
     );
@@ -316,21 +320,21 @@ function onDone(payload: any): void {
 function applyHits(newFiles: FileResult[]): void {
     for (const f of newFiles) files.push(f);
     renderResults();
-    setStatus(`${totalHits()} Treffer in ${files.length} Dateien …`);
+    setStatus(t('search.status.running', {
+        hitsPart: tPlural('search.status.hitsPart', totalHits()),
+        filesPart: tPlural('search.status.filesPart', files.length),
+    }));
 }
 
 function applyDone(payload: any): void {
     if (payload.error) {
-        setStatus('Fehler: ' + String(payload.error));
+        setStatus(t('search.status.error', { detail: String(payload.error) }));
         folioLog.warn('search', 'search done with error', { error: String(payload.error) });
         return;
     }
     doneStats = (payload.stats as Stats) || null;
     finalStatus();
 }
-
-const EMPTY_VAULT_HINT =
-    'Keine durchsuchbaren Dateien im Vault — pinne einen Ordner oder starte die Suche per Rechtsklick auf einen Ordner';
 
 function finalStatus(): void {
     if (!doneStats) return;
@@ -342,16 +346,26 @@ function finalStatus(): void {
         // (leere Pins ODER nur Binärdateien); Ordner-Scope oder Pins mit
         // 0 Treffern liefern filesScanned>0.
         if (scopePath === null && s.filesScanned === 0) {
-            msg = EMPTY_VAULT_HINT;
+            msg = t('search.status.noFiles');
         } else {
-            msg = `Keine Treffer (${s.filesScanned} Dateien durchsucht)`;
+            msg = t('search.status.empty', {
+                filesPart: tPlural('search.status.filesPart', s.filesScanned),
+            });
         }
     } else {
-        msg = `${s.hits} Treffer in ${s.filesMatched} Dateien (${s.elapsedMs} ms)`;
+        msg = t('search.status.done', {
+            hitsPart: tPlural('search.status.hitsPart', s.hits),
+            filesPart: tPlural('search.status.filesPart', s.filesMatched),
+            ms: fmtNumber(s.elapsedMs),
+        });
     }
     // 2. … DANN die Zusätze anhängen (auch im „alle zu groß"-Fall sichtbar).
-    if (s.truncated) msg += ' — Ergebnis gekürzt, Suchbegriff verfeinern';
-    if (s.skippedLarge > 0) msg += ` — ${s.skippedLarge} große Datei(en) übersprungen`;
+    if (s.truncated) msg += t('search.status.truncated');
+    if (s.skippedLarge > 0) {
+        msg += t('search.status.skippedSuffix', {
+            skippedPart: tPlural('search.status.skippedPart', s.skippedLarge),
+        });
+    }
     setStatus(msg);
 }
 
@@ -359,42 +373,73 @@ function finalStatus(): void {
 
 function renderResults(): void {
     if (!listEl) return;
-    let html = '';
+    // DOM construction + textContent for user/t() values (i18n Spec).
+    // Snippet HTML is the sole exception: controlled <mark> around escapeHtml.
+    listEl.replaceChildren();
     for (let fi = 0; fi < files.length; fi++) {
         const f = files[fi];
         const isCollapsed = collapsed.has(f.path);
         const count = f.hits.length + (f.truncated ? '+' : '');
-        html += '<div class="vs-group" data-file-idx="' + fi + '">';
-        html +=
-            '<div class="vs-group-head" data-file-idx="' +
-            fi +
-            '" title="' +
-            escapeHtml(f.path) +
-            '">';
-        html += '<span class="vs-caret' + (isCollapsed ? ' collapsed' : '') + '">▾</span>';
-        html += '<span class="vs-fname">' + escapeHtml(f.fileName) + '</span>';
-        html += '<span class="vs-count">' + count + '</span>';
-        html += '</div>';
-        html += '<div class="vs-hits"' + (isCollapsed ? ' hidden' : '') + '>';
+
+        const group = document.createElement('div');
+        group.className = 'vs-group';
+        group.setAttribute('data-file-idx', String(fi));
+
+        const head = document.createElement('div');
+        head.className = 'vs-group-head';
+        head.setAttribute('data-file-idx', String(fi));
+        head.title = f.path;
+
+        const caret = document.createElement('span');
+        caret.className = 'vs-caret' + (isCollapsed ? ' collapsed' : '');
+        caret.textContent = '▾';
+
+        const fname = document.createElement('span');
+        fname.className = 'vs-fname';
+        fname.textContent = f.fileName;
+
+        const countEl = document.createElement('span');
+        countEl.className = 'vs-count';
+        countEl.textContent = String(count);
+
+        head.appendChild(caret);
+        head.appendChild(fname);
+        head.appendChild(countEl);
+        group.appendChild(head);
+
+        const hitsWrap = document.createElement('div');
+        hitsWrap.className = 'vs-hits';
+        if (isCollapsed) hitsWrap.hidden = true;
+
         for (let hi = 0; hi < f.hits.length; hi++) {
             const h = f.hits[hi];
-            html +=
-                '<div class="vs-hit" data-file-idx="' +
-                fi +
-                '" data-hit-idx="' +
-                hi +
-                '">';
-            html += '<span class="vs-line">' + h.line + '</span>';
-            html += '<span class="vs-snippet">' + markedSnippet(h.snippet, h.ranges) + '</span>';
-            html += '</div>';
+            const hit = document.createElement('div');
+            hit.className = 'vs-hit';
+            hit.setAttribute('data-file-idx', String(fi));
+            hit.setAttribute('data-hit-idx', String(hi));
+
+            const lineEl = document.createElement('span');
+            lineEl.className = 'vs-line';
+            lineEl.textContent = String(h.line);
+
+            const snippetEl = document.createElement('span');
+            snippetEl.className = 'vs-snippet';
+            // markedSnippet only embeds escapeHtml(snippet) + static <mark> tags.
+            snippetEl.innerHTML = markedSnippet(h.snippet, h.ranges);
+
+            hit.appendChild(lineEl);
+            hit.appendChild(snippetEl);
+            hitsWrap.appendChild(hit);
         }
         if (f.truncated) {
-            html +=
-                '<div class="vs-more">… weitere Treffer in dieser Datei, Suchbegriff verfeinern</div>';
+            const more = document.createElement('div');
+            more.className = 'vs-more';
+            more.textContent = t('search.results.moreInFile');
+            hitsWrap.appendChild(more);
         }
-        html += '</div></div>';
+        group.appendChild(hitsWrap);
+        listEl.appendChild(group);
     }
-    listEl.innerHTML = html;
     rebuildFlat();
     paintActive();
 }
@@ -690,18 +735,36 @@ function renderScopeChip(): void {
     if (!scopeEl) return;
     if (!scopePath) {
         scopeEl.hidden = true;
-        scopeEl.innerHTML = '';
+        scopeEl.replaceChildren();
         return;
     }
     scopeEl.hidden = false;
-    scopeEl.innerHTML =
-        '<span class="vs-scope-chip" title="' +
-        escapeHtml(scopePath) +
-        '"><span class="vs-scope-icon">' +
-        FOLDER_SEARCH_SVG +
-        '</span><span class="vs-scope-name">' +
-        escapeHtml(scopeFolderName(scopePath)) +
-        '</span><button type="button" class="vs-scope-x" aria-label="Ordner-Scope entfernen" title="Ordner-Scope entfernen">×</button></span>';
+    // DOM + textContent for path/t() (never interpolate into innerHTML).
+    scopeEl.replaceChildren();
+    const chip = document.createElement('span');
+    chip.className = 'vs-scope-chip';
+    chip.title = scopePath;
+
+    const icon = document.createElement('span');
+    icon.className = 'vs-scope-icon';
+    // Static SVG constant only.
+    icon.innerHTML = FOLDER_SEARCH_SVG;
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'vs-scope-name';
+    nameEl.textContent = scopeFolderName(scopePath);
+
+    const clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.className = 'vs-scope-x';
+    clearBtn.setAttribute('aria-label', t('search.scope.clear.ariaLabel'));
+    clearBtn.title = t('search.scope.clear.tooltip');
+    clearBtn.textContent = '×';
+
+    chip.appendChild(icon);
+    chip.appendChild(nameEl);
+    chip.appendChild(clearBtn);
+    scopeEl.appendChild(chip);
 }
 
 function retriggerIfQuery(): void {

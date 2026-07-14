@@ -5,6 +5,8 @@
    Downscaling auf Container-Groesse (siehe `content.css` →
    `.image-view-mount img`). */
 
+import { t } from '../i18n/translate';
+
 let currentPath = '';
 let lastError: string | null = null;
 
@@ -33,7 +35,7 @@ export function mountImageView(path: string): void {
     if (!path) return;
     const convert = getConvertFileSrc();
     if (!convert) {
-        lastError = 'convertFileSrc nicht verfuegbar';
+        lastError = t('errors.view.imageConvertUnavailable');
         mount.textContent = lastError;
         return;
     }
@@ -44,7 +46,7 @@ export function mountImageView(path: string): void {
         // Windows mit Backslashes verschluckt wird.
         src = convert(path.replace(/\\/g, '/'));
     } catch (err) {
-        lastError = 'convertFileSrc warf: ' + String(err);
+        lastError = t('errors.view.imageConvertFailed', { detail: String(err) });
         mount.textContent = lastError;
         return;
     }
@@ -56,7 +58,7 @@ export function mountImageView(path: string): void {
     img.alt = path;
     img.draggable = false;
     img.onerror = function () {
-        lastError = 'Bild konnte nicht geladen werden';
+        lastError = t('errors.view.imageLoadFailed');
         mount.innerHTML = '';
         mount.textContent = lastError + ' — ' + path;
     };

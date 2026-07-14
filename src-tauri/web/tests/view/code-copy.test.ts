@@ -9,6 +9,7 @@
 // - Clipboard-Fehler → .copy-failed (execCommand-Fallback ebenfalls weg).
 
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { seedDeCatalog } from '../helpers-i18n';
 
 type CodeCopy = typeof import('../../app/view/code-copy');
 
@@ -42,6 +43,7 @@ describe('view/code-copy', () => {
         vi.resetModules();
         vi.useFakeTimers();
         document.body.innerHTML = '';
+        await seedDeCatalog();
         writeText = vi.fn().mockResolvedValue(undefined);
         Object.defineProperty(navigator, 'clipboard', {
             configurable: true,

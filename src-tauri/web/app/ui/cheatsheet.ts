@@ -5,27 +5,27 @@
    Reihenfolge der DOM-Zugriffe erhalten bleibt. */
 
 import { safeInvoke } from '../util/log';
+import { t } from '../i18n/translate';
 
 const STORAGE_KEY = 'folio.cheatsheet';
 
 /* Factory instead of module-level constant: I1b requires no translated
-   (or t()-backed) data at import time. Content stays German until I3
-   extracts keys; the getter form is the mechanism. */
+   (or t()-backed) data at import time. Labels resolved at call time. */
 export function getCheatSheetRows(): Array<[string, string]> {
     return [
-        ['Überschrift',     '# H1   ## H2   ### H3'],
-        ['Fett / Kursiv',   '**fett**   *kursiv*'],
-        ['Durchgestrichen', '~~text~~'],
-        ['Inline-Code',     '`code`'],
-        ['Codeblock',       '```codeblock```'],
-        ['Link',            '[Text](https://…)'],
-        ['Bild',            '![alt](pfad.png)'],
-        ['Aufzählung',      '- Item   * Item'],
-        ['Nummeriert',      '1. Item'],
-        ['Zitat',           '> Text'],
-        ['Trennlinie',      '---'],
-        ['Tabelle',         '| col | col |\n|---|---|'],
-        ['Aufgabe',         '- [ ] offen   - [x] erledigt'],
+        [t('cheatsheet.heading.label'),       '# H1   ## H2   ### H3'],
+        [t('cheatsheet.boldItalic.label'),    '**fett**   *kursiv*'],
+        [t('cheatsheet.strikethrough.label'), '~~text~~'],
+        [t('cheatsheet.inlineCode.label'),    '`code`'],
+        [t('cheatsheet.codeBlock.label'),     '```codeblock```'],
+        [t('cheatsheet.link.label'),          '[Text](https://…)'],
+        [t('cheatsheet.image.label'),         '![alt](pfad.png)'],
+        [t('cheatsheet.bulletList.label'),    '- Item   * Item'],
+        [t('cheatsheet.orderedList.label'),   '1. Item'],
+        [t('cheatsheet.blockquote.label'),    '> Text'],
+        [t('cheatsheet.horizontalRule.label'),'---'],
+        [t('cheatsheet.table.label'),         '| col | col |\n|---|---|'],
+        [t('cheatsheet.taskList.label'),      '- [ ] offen   - [x] erledigt'],
     ];
 }
 

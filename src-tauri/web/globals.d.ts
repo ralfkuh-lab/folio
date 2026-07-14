@@ -107,11 +107,22 @@ interface FolioThemeEditorSurface {
     layout(): void;
 }
 
+/** Optional cross-bundle i18n surface (set by app.bundle after initI18n).
+ *  Reserved for future editor-bundle strings; pre-init is undefined —
+ *  consumers must keep a German/fallback until ready. editor.bundle must
+ *  not import app/ modules; it may read this lazily. */
+interface FolioI18nSurface {
+    t(key: string, args?: Record<string, string | number>): string;
+    tPlural(key: string, count: number, args?: Record<string, string | number>): string;
+    ready: boolean;
+}
+
 interface Window {
     FolioEditor?: FolioEditorSurface;
     FolioCodeView?: FolioCodeViewSurface;
     FolioThemeEditor?: FolioThemeEditorSurface;
     FolioDiffView?: FolioDiffViewSurface;
+    FolioI18n?: FolioI18nSurface;
     __TAURI__?: TauriRuntime;
     __folioInvoke?: TauriCoreApi['invoke'];
     openDocument?: (path: string) => Promise<boolean>;

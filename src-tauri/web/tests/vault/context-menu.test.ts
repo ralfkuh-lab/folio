@@ -8,15 +8,17 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { installTauriMock } from '../helpers';
+import { seedDeCatalog } from '../helpers-i18n';
 
 function mountMenuDom(): void {
     document.body.innerHTML = `<nav id="context-menu" role="menu"></nav>`;
 }
 
-beforeEach(() => {
+beforeEach(async () => {
     installTauriMock();
     mountMenuDom();
     vi.resetModules();
+    await seedDeCatalog();
 });
 
 async function openMenu(

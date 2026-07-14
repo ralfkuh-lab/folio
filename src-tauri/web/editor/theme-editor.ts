@@ -68,6 +68,9 @@ export function mount(elementId: string): Promise<void> {
             fontSize: 13.5,
             fontFamily: 'Consolas, "Cascadia Mono", "Courier New", monospace',
             padding: { top: 12, bottom: 12 },
+            // Monaco-internal context menu is English-only; disable like
+            // view-code / diff-view (I3a).
+            contextmenu: false,
         });
         mountedElementId = elementId;
         if (pendingTheme) {

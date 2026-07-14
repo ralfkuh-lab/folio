@@ -9,6 +9,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installTauriMock, type TauriMockHandles } from '../helpers';
+import { seedDeCatalog } from '../helpers-i18n';
 
 const mocks = vi.hoisted(() => ({
     getCurrentPath: vi.fn(() => '/vault/note.md' as string | null),
@@ -95,9 +96,10 @@ async function importAndInit(overrides: any = {}) {
     return { search, deps };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
     vi.clearAllMocks();
     vi.resetModules();
+    await seedDeCatalog();
     nextRunId = 1;
     mocks.getCurrentPath.mockReturnValue('/vault/note.md');
     tauri = installTauriMock();

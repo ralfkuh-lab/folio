@@ -10,7 +10,7 @@ import {
     setBootstrapPhase,
     getBootstrapPhase,
 } from './i18n/event-queue';
-import { initI18n } from './i18n/translate';
+import { initI18n, t, tPlural } from './i18n/translate';
 import { applyStaticTranslations } from './i18n/apply';
 
 import { initCheatsheet } from './ui/cheatsheet';
@@ -353,6 +353,12 @@ async function bootstrap(): Promise<void> {
     setBootstrapPhase('i18nReady');
     if (i18nOk) {
         applyStaticTranslations();
+        // Cross-bundle surface for editor.bundle (isolated from app/ imports).
+        // Reserved for future editor-bundle strings (I3b/I4). Pre-init =
+        // undefined; consumers must keep a German/fallback string until ready.
+        // Assign functions directly (no t(key) wrapper) so the i18n ref-gate
+        // does not see a non-literal key argument.
+        (window as any).FolioI18n = { t, tPlural, ready: true };
     }
 
     // uiReady: alle heutigen init*() + Cross-Module-Listener

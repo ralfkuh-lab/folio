@@ -16,6 +16,7 @@
 // wird an denselben Render-Stellen wie highlightCodeBlocks() gerufen.
 
 import { folioLog } from '../util/log';
+import { t } from '../i18n/translate';
 
 const SOURCE_ATTR = 'data-folio-source';
 const BTN_CLASS = 'code-copy-btn';
@@ -53,8 +54,8 @@ export function addCodeCopyButtons(root: HTMLElement | null): void {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = BTN_CLASS;
-        btn.title = 'Code kopieren';
-        btn.setAttribute('aria-label', 'Code kopieren');
+        btn.title = t('view.codeCopy.tooltip');
+        btn.setAttribute('aria-label', t('view.codeCopy.ariaLabel'));
         btn.innerHTML =
             '<span class="cc-icon cc-copy">' + COPY_SVG + '</span>'
             + '<span class="cc-icon cc-check">' + CHECK_SVG + '</span>';
@@ -107,18 +108,18 @@ async function copyText(text: string): Promise<boolean> {
 function showFeedback(btn: HTMLElement, ok: boolean): void {
     btn.classList.remove('copied', 'copy-failed');
     btn.classList.add(ok ? 'copied' : 'copy-failed');
-    const label = ok ? 'Kopiert!' : 'Kopieren fehlgeschlagen';
+    const label = ok ? t('view.codeCopy.copied') : t('view.codeCopy.failed');
     btn.title = label;
     btn.setAttribute('aria-label', label);
     const prev = revertTimers.get(btn);
     if (prev) window.clearTimeout(prev);
-    const t = window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
         btn.classList.remove('copied', 'copy-failed');
-        btn.title = 'Code kopieren';
-        btn.setAttribute('aria-label', 'Code kopieren');
+        btn.title = t('view.codeCopy.tooltip');
+        btn.setAttribute('aria-label', t('view.codeCopy.ariaLabel'));
         revertTimers.delete(btn);
     }, 1500);
-    revertTimers.set(btn, t);
+    revertTimers.set(btn, timer);
 }
 
 function onClick(e: MouseEvent): void {

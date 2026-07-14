@@ -164,6 +164,9 @@ export function mount(elementId: string, initialText: string): Promise<void> {
             fontSize: 13.5,
             fontFamily: 'Consolas, "Cascadia Mono", "Courier New", monospace',
             padding: { top: 12, bottom: 12 },
+            // Monaco-internal context menu is English-only; disable like
+            // view-code / diff-view (I3a). Folio does not ship Monaco i18n.
+            contextmenu: false,
         });
         setEditor(editor);
 

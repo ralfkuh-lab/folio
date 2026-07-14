@@ -17,6 +17,7 @@ import { renderMermaidBlocks } from '../view/mermaid';
 import { flushPreviewRender } from '../view/preview';
 import { reapplyCurrentViewTheme } from '../view/theme';
 import { folioLog, safeInvoke } from '../util/log';
+import { t } from '../i18n/translate';
 
 type Deps = {
     getCleanText: () => string;
@@ -143,7 +144,13 @@ export function setActiveMode(mode: string): void {
     $('tb-mode-edit')?.classList.toggle('active', mode === 'edit');
     $('tb-mode-split')?.classList.toggle('active', mode === 'split');
     const sm = $('status-mode');
-    if (sm) sm.textContent = mode === 'edit' ? 'Edit' : mode === 'split' ? 'Split' : 'View';
+    if (sm) {
+        sm.textContent = mode === 'edit'
+            ? t('statusBar.modeEdit')
+            : mode === 'split'
+                ? t('statusBar.modeSplit')
+                : t('statusBar.modeView');
+    }
     // Cheatsheet ist eine Edit-Hilfe — auch im Split-Mode (Editor ist
     // sichtbar + bearbeitbar) sinnvoll.
     cheatsheetSyncMode(mode === 'edit' || mode === 'split');

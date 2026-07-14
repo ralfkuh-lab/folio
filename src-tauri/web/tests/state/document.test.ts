@@ -9,6 +9,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { installTauriMock, type TauriMockHandles } from '../helpers';
+import { seedDeCatalog } from '../helpers-i18n';
 
 // Cross-Modul-Imports von state/document.ts mocken — wir testen hier
 // nur State + DOM-Side-Effects von document.ts selbst, nicht die
@@ -69,10 +70,11 @@ function buildDom(): void {
     document.body.className = '';
 }
 
-beforeEach(() => {
+beforeEach(async () => {
     tauri = installTauriMock();
     buildDom();
     vi.resetModules();
+    await seedDeCatalog();
 });
 
 describe('state/document — synchronous setters', () => {
@@ -103,6 +105,22 @@ describe('state/document — synchronous setters', () => {
         updateWordCount('');
         expect(el.hidden).toBe(true);
         expect(el.textContent).toBe('');
+    });
+
+    it('updateWordCount matches sample.md sizes exactly (E2E status bar)', async () => {
+        // Production algorithm on tests/e2e/fixtures/sample.md (JS string length).
+        // Protects visual baselines that include the status word-count cell.
+        const { readFileSync } = await import('node:fs');
+        const { resolve } = await import('node:path');
+        const { updateWordCount } = await import('../../app/state/document');
+        const el = document.getElementById('status-wordcount') as HTMLElement;
+        const sample = readFileSync(
+            resolve(__dirname, '../../../../tests/e2e/fixtures/sample.md'),
+            'utf8',
+        );
+        updateWordCount(sample);
+        expect(el.hidden).toBe(false);
+        expect(el.textContent).toBe('95 Wörter · 611 Zeichen · 35 Zeilen');
     });
 
     it('setStatusPath falls back to "Bereit" for empty input', async () => {

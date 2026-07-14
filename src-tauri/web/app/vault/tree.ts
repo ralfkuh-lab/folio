@@ -13,6 +13,7 @@
 
 import { openContextMenu, closeContextMenu, runOrOpenFile } from './context-menu';
 import { folioLog, safeInvoke } from '../util/log';
+import { t } from '../i18n/translate';
 
 type Deps = {
     openDocument: (path: string) => void;
@@ -236,7 +237,12 @@ function applyIconsToNode(rootNode: Element): void {
 function renderVault(html: string): void {
     if (!ROOT) return;
     if (!html || html.length === 0) {
-        ROOT.innerHTML = '<li class="empty">Keine Einträge. Datei öffnen oder per Drag&amp;Drop ablegen.</li>';
+        // textContent only — never interpolate t() into innerHTML.
+        ROOT.replaceChildren();
+        const empty = document.createElement('li');
+        empty.className = 'empty';
+        empty.textContent = t('vault.tree.empty');
+        ROOT.appendChild(empty);
         return;
     }
     ROOT.innerHTML = html;

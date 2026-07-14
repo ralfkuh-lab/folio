@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { installTauriMock, type TauriMockHandles } from '../helpers';
+import { seedDeCatalog } from '../helpers-i18n';
 
 const requestSaveIfDirty = vi.fn().mockResolvedValue(true);
 const syncEditorTextToStore = vi.fn().mockResolvedValue(undefined);
@@ -12,10 +13,11 @@ vi.mock('../../app/state/document', () => ({
 
 let tauri: TauriMockHandles;
 
-beforeEach(() => {
+beforeEach(async () => {
     vi.clearAllMocks();
     vi.resetModules();
     tauri = installTauriMock();
+    await seedDeCatalog();
     document.body.className = '';
     document.body.innerHTML = '<nav id="tab-bar" hidden></nav>';
 });

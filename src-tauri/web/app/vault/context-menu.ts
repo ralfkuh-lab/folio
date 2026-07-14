@@ -13,6 +13,7 @@ type Deps = {
 import { safeInvoke } from '../util/log';
 import { confirmRunFile, showConfirmDialog, showRenameDialog } from '../ui/dialogs';
 import { searchInFolder } from './search';
+import { t } from '../i18n/translate';
 
 // Monochrome 16x16-Feather-Icons je data-act. Kein width/height im SVG
 // (CSS steuert die Groesse), stroke=currentColor faerbt mit Hover/Theme mit.
@@ -33,11 +34,28 @@ const ICONS: Record<string, string> = {
     'search-folder': '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>',
 };
 
-// Baut ein Kontextmenue-Item mit Icon + Label. Ersetzt die frueheren
-// inline-duplizierten HTML-Strings (weniger Fehlerquellen bei Punkt 3/4).
-function item(act: string, label: string, extraClass?: string): string {
-    const cls = extraClass ? `ctx-item ${extraClass}` : 'ctx-item';
-    return `<div class="${cls}" data-act="${act}"><span class="ctx-icon">${ICONS[act] || ''}</span><span class="ctx-label">${label}</span></div>`;
+// Baut ein Kontextmenue-Item mit Icon + Label als DOM-Nodes.
+// t()-Werte nur via textContent — nie in innerHTML interpolieren (i18n Spec).
+function appendItem(parent: HTMLElement, act: string, label: string, extraClass?: string): void {
+    const div = document.createElement('div');
+    div.className = extraClass ? `ctx-item ${extraClass}` : 'ctx-item';
+    div.setAttribute('data-act', act);
+    const icon = document.createElement('span');
+    icon.className = 'ctx-icon';
+    // Static SVG constants only — never user/t() content.
+    icon.innerHTML = ICONS[act] || '';
+    const lab = document.createElement('span');
+    lab.className = 'ctx-label';
+    lab.textContent = label;
+    div.appendChild(icon);
+    div.appendChild(lab);
+    parent.appendChild(div);
+}
+
+function appendSep(parent: HTMLElement): void {
+    const sep = document.createElement('div');
+    sep.className = 'ctx-sep';
+    parent.appendChild(sep);
 }
 
 function basename(p: string): string {
@@ -78,39 +96,36 @@ export function openContextMenu(
 ): void {
     if (!ctxMenu) return;
     ctxTarget = { path, isDirectory: isDir };
-    const parts: string[] = [];
-    if (!isDir) parts.push(item('open', 'Öffnen'));
-    if (!isDir) parts.push(item('open-newtab', 'In neuem Tab öffnen'));
+    ctxMenu.replaceChildren();
+    let headCount = 0;
     if (!isDir) {
-        if (isExec) parts.push(item('run', 'Ausführen'));
-        else parts.push(item('open-default', 'Mit Standardprogramm öffnen'));
+        appendItem(ctxMenu, 'open', t('vault.contextMenu.open'));
+        appendItem(ctxMenu, 'open-newtab', t('vault.contextMenu.openNewTab'));
+        if (isExec) appendItem(ctxMenu, 'run', t('vault.contextMenu.run'));
+        else appendItem(ctxMenu, 'open-default', t('vault.contextMenu.openWithDefault'));
+        headCount = 3;
     }
-    const actionsBefore = parts.length;
-    const actions: string[] = [];
     // Verzeichnis: „Neue Datei…" wird erstes Item; Datei: in der mittleren
     // Aktions-Gruppe bei „Umbenennen".
-    if (isDir) actions.push(item('new-file', 'Neue Datei…'));
-    if (isDir) actions.push(item('search-folder', 'In diesem Ordner suchen'));
-    if (!isDir) actions.push(item('rename', 'Umbenennen'));
-    if (!isDir) actions.push(item('new-file', 'Neue Datei…'));
-    if (!inPinned) actions.push(item('pin', 'Anpinnen'));
-    if (inPinned) actions.push(item('unpin', 'Vom Pin lösen'));
-    if (inRecent) actions.push(item('remove-recent', 'Aus „Zuletzt" entfernen'));
-    if (actions.length && actionsBefore) parts.push('<div class="ctx-sep"></div>');
-    parts.push(...actions);
-    const tail = [
-        item('show', 'Im Explorer zeigen'),
-        item('terminal', 'Terminal hier öffnen'),
-        item('copy', 'Pfad kopieren'),
-    ];
-    if (parts.length) parts.push('<div class="ctx-sep"></div>');
-    parts.push(...tail);
+    const mid: Array<[string, string]> = [];
+    if (isDir) mid.push(['new-file', t('vault.contextMenu.newFile')]);
+    if (isDir) mid.push(['search-folder', t('vault.contextMenu.searchInFolder')]);
+    if (!isDir) mid.push(['rename', t('vault.contextMenu.rename')]);
+    if (!isDir) mid.push(['new-file', t('vault.contextMenu.newFile')]);
+    if (!inPinned) mid.push(['pin', t('vault.contextMenu.pin')]);
+    if (inPinned) mid.push(['unpin', t('vault.contextMenu.unpin')]);
+    if (inRecent) mid.push(['remove-recent', t('vault.contextMenu.removeRecent')]);
+    if (mid.length && headCount) appendSep(ctxMenu);
+    for (const [act, label] of mid) appendItem(ctxMenu, act, label);
+    if (headCount + mid.length > 0) appendSep(ctxMenu);
+    appendItem(ctxMenu, 'show', t('vault.contextMenu.showInExplorer'));
+    appendItem(ctxMenu, 'terminal', t('vault.contextMenu.openTerminal'));
+    appendItem(ctxMenu, 'copy', t('vault.contextMenu.copyPath'));
     // Löschen (nur Dateien) ganz unten, durch Separator abgesetzt.
     if (!isDir) {
-        parts.push('<div class="ctx-sep"></div>');
-        parts.push(item('delete', 'Löschen', 'ctx-item-danger'));
+        appendSep(ctxMenu);
+        appendItem(ctxMenu, 'delete', t('vault.contextMenu.delete'), 'ctx-item-danger');
     }
-    ctxMenu.innerHTML = parts.join('');
 
     // Punkt 1: provisorisch positionieren, dann gemessene Groesse am
     // Viewport-Rand clampen, damit das Menue nie abgeschnitten wird.
@@ -202,7 +217,7 @@ export function startInlineRename(path: string): void {
         const parent = lastSlash >= 0 ? path.slice(0, lastSlash + 1) : '';
         const newPath = parent + newName;
         invoke('rename_file', { oldPath: path, newPath }).catch(function (err) {
-            deps.showStatus(typeof err === 'string' ? err : 'Umbenennen fehlgeschlagen');
+            deps.showStatus(typeof err === 'string' ? err : t('errors.vault.renameFailed'));
             deps.refreshVault();
         });
     }
@@ -264,23 +279,23 @@ export function initContextMenu(d: Deps): void {
             if (navigator.clipboard) navigator.clipboard.writeText(path).catch(function () { /* clipboard write may reject silently */ });
         } else if (act === 'new-file') {
             const dir = isDir ? path : path.replace(/\\/g, '/').replace(/\/[^/]*$/, '');
-            showRenameDialog('untitled.md', 'Dateinamen eingeben:', { title: 'Neue Datei', okLabel: 'Anlegen' }).then(function (name) {
+            showRenameDialog('untitled.md', t('vault.contextMenu.newFile.prompt'), { title: t('vault.contextMenu.newFile.title'), okLabel: t('vault.contextMenu.newFile.action') }).then(function (name) {
                 const trimmed = (name || '').trim();
                 if (!trimmed) return; // leer/whitespace → abbrechen
                 if (/[\\/]/.test(trimmed) || trimmed === '.' || trimmed === '..' || trimmed.includes('..')) {
-                    deps.showStatus('Ungültiger Dateiname');
+                    deps.showStatus(t('errors.file.invalidName'));
                     return;
                 }
                 const newPath = dir.replace(/\/$/, '') + '/' + trimmed;
                 invoke('create_file', { path: newPath }).then(function (p) {
                     safeInvoke('tab_open', { path: p }, 'tab_open', 'warn');
                 }).catch(function (err) {
-                    deps.showStatus(typeof err === 'string' ? err : 'Anlegen fehlgeschlagen');
+                    deps.showStatus(typeof err === 'string' ? err : t('errors.vault.createFailed'));
                 });
             });
         } else if (act === 'delete' && !isDir) {
             const name = basename(path);
-            showConfirmDialog(`„${name}" in den Papierkorb verschieben?`, { title: 'Datei löschen', okLabel: 'Löschen' }).then(function (ok) {
+            showConfirmDialog(t('vault.contextMenu.deleteConfirm', { name }), { title: t('vault.contextMenu.delete.title'), okLabel: t('vault.contextMenu.delete.action') }).then(function (ok) {
                 if (ok) safeInvoke('trash_file', { path }, 'trash_file', 'warn');
             });
         }

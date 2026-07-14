@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installTauriMock, TauriMockHandles } from '../helpers';
+import { seedDeCatalog } from '../helpers-i18n';
 import {
     closeSettingsDialog,
     initSettingsDialog,
@@ -101,7 +102,8 @@ describe('settings-dialog', () => {
     let observedPreviews: Element[];
     let intersect: ((entries: Array<{ isIntersecting: boolean; target: Element }>) => void) | null;
 
-    beforeEach(() => {
+    beforeEach(async () => {
+        await seedDeCatalog();
         closeSettingsDialog();
         handles = installTauriMock();
         observedPreviews = [];

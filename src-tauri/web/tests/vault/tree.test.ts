@@ -7,6 +7,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { installTauriMock, type TauriMockHandles } from '../helpers';
+import { seedDeCatalog } from '../helpers-i18n';
 
 vi.mock('../../app/vault/context-menu', () => ({
     openContextMenu: vi.fn(),
@@ -39,11 +40,12 @@ function buildVaultDom(): void {
     `;
 }
 
-beforeEach(() => {
+beforeEach(async () => {
     vi.clearAllMocks();
     tauri = installTauriMock();
     buildVaultDom();
     vi.resetModules();
+    await seedDeCatalog();
 });
 
 describe('vault/tree — setVaultActive', () => {

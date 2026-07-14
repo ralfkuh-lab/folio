@@ -5,6 +5,9 @@
 
    Cross-Bundle-Abhaengigkeit: window.FolioEditor.{listLanguages,setLanguage}. */
 
+import { t } from '../i18n/translate';
+import { compareStrings } from '../i18n/format';
+
 let btn: HTMLElement | null = null;
 let picker: HTMLElement | null = null;
 let input: HTMLInputElement | null = null;
@@ -20,15 +23,25 @@ function ensureLoaded(): boolean {
     const f = window.FolioEditor;
     if (!f || typeof f.listLanguages !== 'function') return false;
     allLanguages = f.listLanguages();
-    allLanguages.sort(function (a, b) { return a.label.localeCompare(b.label); });
+    // Override Monaco's English "Plain Text" display with catalog (Monaco
+    // names stay for other languages — only this picker fallback is in scope).
+    for (let i = 0; i < allLanguages.length; i++) {
+        if (allLanguages[i].id === 'plaintext') {
+            allLanguages[i] = Object.assign({}, allLanguages[i], {
+                label: t('editor.language.plaintext'),
+            });
+        }
+    }
+    allLanguages.sort(function (a, b) { return compareStrings(a.label, b.label); });
     return allLanguages.length > 0;
 }
 
 function labelFor(id: string): string {
+    if (!id || id === 'plaintext') return t('editor.language.plaintext');
     for (let i = 0; i < allLanguages.length; i++) {
         if (allLanguages[i].id === id) return allLanguages[i].label;
     }
-    return id ? id.charAt(0).toUpperCase() + id.slice(1) : 'Plain Text';
+    return id.charAt(0).toUpperCase() + id.slice(1);
 }
 
 function highlightActive(): void {

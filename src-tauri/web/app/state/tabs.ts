@@ -9,6 +9,7 @@ import {
 } from './document';
 import { ackHandler } from '../automation/events';
 import { folioLog, safeInvoke } from '../util/log';
+import { t } from '../i18n/translate';
 
 export interface TabSummary {
     id: number;
@@ -107,7 +108,7 @@ export function configureSettingsTab(hooks: { onActivate: () => void; onClose: (
     if (virtualTabs.has('settings')) {
         registerVirtualTab({
             slug: 'settings',
-            label: () => '\u2699 Einstellungen',
+            label: () => t('tabs.settings.label'),
             onActivate: hooks.onActivate,
             onClose: hooks.onClose,
         }, activeVirtualSlug === 'settings');
@@ -123,7 +124,7 @@ export function setSettingsTabOpen(open: boolean): void {
     if (!settingsTabHooks) return;
     registerVirtualTab({
         slug: 'settings',
-        label: () => '\u2699 Einstellungen',
+        label: () => t('tabs.settings.label'),
         onActivate: settingsTabHooks.onActivate,
         onClose: settingsTabHooks.onClose,
     });
@@ -134,7 +135,7 @@ function invoke(command: string, args?: Record<string, unknown>): Promise<any> {
 }
 
 function fileName(path: string | null): string {
-    if (!path) return 'Leerer Tab';
+    if (!path) return t('tabs.empty.label');
     return path.replace(/\\/g, '/').split('/').pop() || path;
 }
 
@@ -192,7 +193,7 @@ export function renderTabs(payload: TabsPayload): void {
             const dirty = document.createElement('span');
             dirty.className = 'tab-dirty';
             dirty.textContent = '•';
-            dirty.setAttribute('aria-label', 'Ungespeicherte Änderungen');
+            dirty.setAttribute('aria-label', t('tabs.dirty.ariaLabel'));
             item.appendChild(dirty);
         }
 
@@ -200,8 +201,8 @@ export function renderTabs(payload: TabsPayload): void {
         close.className = 'tab-close';
         close.type = 'button';
         close.dataset.tabId = String(tab.id);
-        close.title = 'Tab schließen';
-        close.setAttribute('aria-label', fileName(tab.path) + ' schließen');
+        close.title = t('tabs.close.tooltip', { label: 'Tab' });
+        close.setAttribute('aria-label', t('tabs.close.tooltip', { label: fileName(tab.path) }));
         close.textContent = '×';
         close.addEventListener('click', function (event) {
             event.stopPropagation();
@@ -257,15 +258,16 @@ export function renderTabs(payload: TabsPayload): void {
             const dirty = document.createElement('span');
             dirty.className = 'tab-dirty';
             dirty.textContent = '•';
-            dirty.setAttribute('aria-label', 'Ungespeicherte Änderungen');
+            dirty.setAttribute('aria-label', t('tabs.dirty.ariaLabel'));
             item.appendChild(dirty);
         }
 
         const close = document.createElement('button');
         close.className = 'tab-close';
         close.type = 'button';
-        close.title = virtual.label() + ' schließen';
-        close.setAttribute('aria-label', virtual.label() + ' schließen');
+        const vLabel = virtual.label();
+        close.title = t('tabs.close.tooltip', { label: vLabel });
+        close.setAttribute('aria-label', t('tabs.close.tooltip', { label: vLabel }));
         close.textContent = '×';
         close.addEventListener('click', async function (event) {
             event.stopPropagation();

@@ -898,8 +898,8 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 | 130 | `Bereit` | literal | `statusBar.ready` | German string found |
 | 142 | `Wörter ·` | literal | `statusBar.wordCount.wordsPart` | German string found |
 | 283 | `Kein Dokument geladen` | literal | `errors.document.noneLoaded` | German string found |
-| 290 | `Kein Dokument geladen` | literal | `errors.document.noneLoaded` | German string found |
-| 300 | `Kein Dokument geladen` | literal | `errors.document.noneLoaded` | German string found |
+| 290 | `Kein Dokument geladen` / `Bilder sind read-only` | literal | `errors.document.noneLoaded` / `errors.document.imageReadOnly` | Mode-Tooltip disabled |
+| 300 | `Kein Dokument geladen` / `Bilder sind read-only` | literal | `errors.document.noneLoaded` / `errors.document.imageReadOnly` | Mode-Tooltip disabled |
 | 305 | `Export nur für Markdown verfügbar` | literal | `statusBar.exportMarkdownOnly` | German string found |
 | 342 | `Datei konnte nicht geöffnet werden` | literal | `errors.file.openFailed` | German string found |
 | 419 | `Bereit` | literal | `statusBar.ready` | German string found |
@@ -907,6 +907,7 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 | 545 | `Datei extern geändert — Reload-Button zum Übernehmen` | showStatus | `statusBar.externalChangedClean` | dialog call |
 | 584 | `Bereit` | literal | `statusBar.ready` | German string found |
 | 616 | `Bereit` | literal | `statusBar.ready` | German string found |
+| — | `View` / `Edit` / `Split` (Statuszelle) | shell `setActiveMode` | `statusBar.modeView` / `statusBar.modeEdit` / `statusBar.modeSplit` | I3a ergänzt |
 
 ## src-tauri/web/app/state/tabs.ts
 
@@ -916,8 +917,9 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 | :--- | :--- | :--- | :--- | :--- |
 | 110 | `\u2699 Einstellungen` | literal | `tabs.settings.label` | German string found |
 | 126 | `\u2699 Einstellungen` | literal | `tabs.settings.label` | German string found |
+| 137 | `Leerer Tab` | literal | `tabs.empty.label` | I3a ergänzt |
 | 195 | `Ungespeicherte Änderungen` | setAttribute(aria-label) | `tabs.dirty.ariaLabel` | setAttribute text |
-| 203 | `Tab schließen` | title | `tabs.close.tooltip` | DOM assignment |
+| 203 | `Tab schließen` | title | `tabs.close.tooltip` | DOM assignment (`{label} schließen`) |
 | 204 | `schließen` | literal | `tabs.close.tooltip` | German string found |
 | 260 | `Ungespeicherte Änderungen` | setAttribute(aria-label) | `tabs.dirty.ariaLabel` | setAttribute text |
 | 267 | `schließen` | literal | `tabs.close.tooltip` | German string found |
@@ -986,8 +988,19 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 | Zeile | Originaler String | Einbau-Pfad | Vorgeschlagener Key | Bemerkung |
 | :--- | :--- | :--- | :--- | :--- |
 | 12 | `Überschrift` | literal | `cheatsheet.heading.label` | German string found |
-| 18 | `![alt](pfad.png)` | literal | `OUT-OF-SCOPE: Markdown-Beispielsyntax (nicht übersetzen)` | German string found |
+| 13 | `Fett / Kursiv` | literal | `cheatsheet.boldItalic.label` | I3a ergänzt (volle Zeilenliste) |
+| 14 | `Durchgestrichen` | literal | `cheatsheet.strikethrough.label` | I3a ergänzt |
+| 15 | `Inline-Code` | literal | `cheatsheet.inlineCode.label` | I3a ergänzt |
+| 16 | `Codeblock` | literal | `cheatsheet.codeBlock.label` | I3a ergänzt |
+| 17 | `Link` | literal | `cheatsheet.link.label` | I3a ergänzt |
+| 18 | `![alt](pfad.png)` | literal | `OUT-OF-SCOPE: Markdown-Beispielsyntax (nicht übersetzen)` | Code-Spalte |
+| 18 | `Bild` | literal | `cheatsheet.image.label` | I3a ergänzt |
 | 19 | `Aufzählung` | literal | `cheatsheet.bulletList.label` | German string found |
+| 20 | `Nummeriert` | literal | `cheatsheet.orderedList.label` | I3a ergänzt |
+| 21 | `Zitat` | literal | `cheatsheet.blockquote.label` | I3a ergänzt |
+| 22 | `Trennlinie` | literal | `cheatsheet.horizontalRule.label` | I3a ergänzt |
+| 23 | `Tabelle` | literal | `cheatsheet.table.label` | I3a ergänzt |
+| 24 | `Aufgabe` | literal | `cheatsheet.taskList.label` | I3a ergänzt |
 
 ## src-tauri/web/app/ui/dialogs.ts
 
@@ -996,7 +1009,7 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 | Zeile | Originaler String | Einbau-Pfad | Vorgeschlagener Key | Bemerkung |
 | :--- | :--- | :--- | :--- | :--- |
 | 113 | `Bestätigen` | literal | `dialogs.confirm.title` | German string found |
-| 146 | `" als Programm ausführen?` | literal | `dialogs.run.confirm` | German string found |
+| 146 | `„{name}" als Programm ausführen?` | textContent | `dialogs.run.confirm` | I3a F1: `{name}` + textContent |
 
 ## src-tauri/web/app/ui/export-ai.ts
 
@@ -1215,15 +1228,20 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 
 | Zeile | Originaler String | Einbau-Pfad | Vorgeschlagener Key | Bemerkung |
 | :--- | :--- | :--- | :--- | :--- |
-| 82 | `Öffnen` | literal | `vault.contextMenu.open` | German string found |
-| 83 | `In neuem Tab öffnen` | literal | `vault.contextMenu.openNewTab` | German string found |
-| 85 | `Ausführen` | literal | `vault.contextMenu.run` | German string found |
-| 86 | `Mit Standardprogramm öffnen` | literal | `vault.contextMenu.openWithDefault` | German string found |
-| 92 | `Neue Datei…` | literal | `vault.contextMenu.newFile` | German string found |
-| 93 | `In diesem Ordner suchen` | literal | `vault.contextMenu.searchInFolder` | German string found |
-| 95 | `Neue Datei…` | literal | `vault.contextMenu.newFile` | German string found |
-| 97 | `Vom Pin lösen` | literal | `vault.contextMenu.unpin` | German string found |
-| 98 | `Aus „Zuletzt" entfernen` | literal | `vault.contextMenu.removeRecent` | German string found |
+| 82 | `Öffnen` | textContent | `vault.contextMenu.open` | DOM-Item |
+| 83 | `In neuem Tab öffnen` | textContent | `vault.contextMenu.openNewTab` | DOM-Item |
+| 85 | `Ausführen` | textContent | `vault.contextMenu.run` | DOM-Item |
+| 86 | `Mit Standardprogramm öffnen` | textContent | `vault.contextMenu.openWithDefault` | DOM-Item |
+| 92 | `Neue Datei…` | textContent | `vault.contextMenu.newFile` | DOM-Item |
+| 93 | `In diesem Ordner suchen` | textContent | `vault.contextMenu.searchInFolder` | DOM-Item |
+| 94 | `Umbenennen` | textContent | `vault.contextMenu.rename` | I3a ergänzt |
+| 95 | `Neue Datei…` | textContent | `vault.contextMenu.newFile` | DOM-Item |
+| 96 | `Anpinnen` | textContent | `vault.contextMenu.pin` | I3a ergänzt |
+| 97 | `Vom Pin lösen` | textContent | `vault.contextMenu.unpin` | DOM-Item |
+| 98 | `Aus „Zuletzt" entfernen` | textContent | `vault.contextMenu.removeRecent` | DOM-Item |
+| 102 | `Im Explorer zeigen` | textContent | `vault.contextMenu.showInExplorer` | I3a ergänzt |
+| — | `Dateinamen eingeben:` / `Neue Datei` / `Anlegen` | dialog | `vault.contextMenu.newFile.prompt` / `.title` / `.action` | I3a ergänzt |
+| — | `Datei löschen` / `Löschen` (Confirm) | dialog | `vault.contextMenu.delete.title` / `.action` | I3a ergänzt |
 | 103 | `Terminal hier öffnen` | literal | `vault.contextMenu.openTerminal` | German string found |
 | 104 | `Pfad kopieren` | literal | `vault.contextMenu.copyPath` | German string found |
 | 111 | `Löschen` | literal | `vault.contextMenu.delete` | German string found |
@@ -1250,7 +1268,9 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 | 350 | `${s.hits} Treffer in ${s.filesMatched} Dateien (${s.elapsedMs} ms)` | literal | `search.status.done` | German string found |
 | 353 | `— Ergebnis gekürzt, Suchbegriff verfeinern` | literal | `search.status.truncated` | German string found |
 | 354 | `— ${s.skippedLarge} große Datei(en) übersprungen` | literal | `search.status.skippedSuffix` | German string found |
-| 393 | `<div class="vs-more">… weitere Treffer in dieser Datei, Suchbegriff verfeinern</div>` | literal | `OUT-OF-SCOPE: Markup-Schnipsel` | German string found |
+| — | `Fehler: {detail}` | setStatus | `search.status.error` | I3a ergänzt |
+| — | `Ordner-Scope entfernen` | aria-label/title | `search.scope.clear.ariaLabel` / `.tooltip` | I3a ergänzt |
+| 393 | `… weitere Treffer in dieser Datei, Suchbegriff verfeinern` | textContent | `search.results.moreInFile` | **I3a F3:** user-sichtbar (Truncation-Hinweis). Frühere Map-Einstufung „OUT-OF-SCOPE: Markup-Schnipsel“ war falsch — der Text ist lesbar; Render jetzt DOM+`textContent`, nicht `innerHTML` |
 
 ## src-tauri/web/app/vault/tree.ts
 
@@ -1268,7 +1288,7 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 | :--- | :--- | :--- | :--- | :--- |
 | 56 | `Code kopieren` | title | `view.codeCopy.tooltip` | DOM assignment |
 | 57 | `Code kopieren` | setAttribute(aria-label) | `view.codeCopy.ariaLabel` | setAttribute text |
-| 110 | `Kopiert!` | literal | `view.codeCopy.copied` | German string found |
+| 110 | `Kopiert!` / `Kopieren fehlgeschlagen` | literal | `view.codeCopy.copied` / `view.codeCopy.failed` | Feedback |
 | 117 | `Code kopieren` | title | `view.codeCopy.tooltip` | DOM assignment |
 | 118 | `Code kopieren` | setAttribute(aria-label) | `view.codeCopy.ariaLabel` | setAttribute text |
 
@@ -1278,9 +1298,9 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 
 | Zeile | Originaler String | Einbau-Pfad | Vorgeschlagener Key | Bemerkung |
 | :--- | :--- | :--- | :--- | :--- |
-| 36 | `convertFileSrc nicht verfuegbar` | literal | `OUT-OF-SCOPE: interner Dev-Fehlerpfad` | Fehlertext-Zuweisung |
-| 47 | `convertFileSrc warf: ` | literal | `errors.view.imageConvertFailed` | Fehlertext-Zuweisung |
-| 59 | `Bild konnte nicht geladen werden` | literal | `errors.view.imageLoadFailed` | Fehlertext-Zuweisung |
+| 36 | `convertFileSrc nicht verfügbar` | textContent | `errors.view.imageConvertUnavailable` | **I3a F5:** user-sichtbar im Image-Mount (kein reines Dev-Log); Map früher fälschlich OOS |
+| 47 | `convertFileSrc warf: ` | textContent | `errors.view.imageConvertFailed` | `{detail}` |
+| 59 | `Bild konnte nicht geladen werden` | textContent | `errors.view.imageLoadFailed` | Fehlertext-Zuweisung |
 
 ## src-tauri/web/app/view/mermaid.ts
 
