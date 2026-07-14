@@ -1,4 +1,5 @@
 use crate::{
+    i18n,
     state::AppState,
     theme::{
         self,
@@ -101,7 +102,7 @@ pub async fn theme_read(id: String, state: State<'_, AppState>) -> Result<ThemeF
         .map_err(|_| "theme write lock poisoned".to_string())?;
     let mut files = theme::package(&id)
         .map(ThemeFiles::from)
-        .ok_or_else(|| format!("Unbekanntes Theme: '{id}'"))?;
+        .ok_or_else(|| i18n::t_args("errors.theme.unknown", &[("detail", &id)]))?;
     files.assets = store::list_assets(&id);
     Ok(files)
 }
@@ -114,11 +115,11 @@ pub async fn theme_write(
     handle: AppHandle,
 ) -> Result<LayoutInfo, String> {
     let layout = {
-        let _guard = state
-            .theme_write
-            .lock()
-            .map_err(|_| "theme write lock poisoned".to_string())?;
-        let package = store::write(&id, &ThemeParts::from(files))?;
+        let _guard = state.theme_write.lock().map_err(|_| {
+            theme_command_error("theme write lock poisoned", ThemeOperation::Write, None)
+        })?;
+        let package = store::write(&id, &ThemeParts::from(files))
+            .map_err(|detail| theme_command_error(&detail, ThemeOperation::Write, None))?;
         theme::layout_info(&package)
     };
     emit_changed(&handle, &id, "write")?;
@@ -133,11 +134,11 @@ pub async fn theme_create(
     handle: AppHandle,
 ) -> Result<LayoutInfo, String> {
     let layout = {
-        let _guard = state
-            .theme_write
-            .lock()
-            .map_err(|_| "theme write lock poisoned".to_string())?;
-        let package = store::create(&id, &ThemeParts::from(files))?;
+        let _guard = state.theme_write.lock().map_err(|_| {
+            theme_command_error("theme write lock poisoned", ThemeOperation::Create, None)
+        })?;
+        let package = store::create(&id, &ThemeParts::from(files))
+            .map_err(|detail| theme_command_error(&detail, ThemeOperation::Create, None))?;
         theme::layout_info(&package)
     };
     emit_changed(&handle, &id, "create")?;
@@ -151,11 +152,11 @@ pub async fn theme_delete(
     handle: AppHandle,
 ) -> Result<(), String> {
     {
-        let _guard = state
-            .theme_write
-            .lock()
-            .map_err(|_| "theme write lock poisoned".to_string())?;
-        store::delete(&id)?;
+        let _guard = state.theme_write.lock().map_err(|_| {
+            theme_command_error("theme write lock poisoned", ThemeOperation::Delete, None)
+        })?;
+        store::delete(&id)
+            .map_err(|detail| theme_command_error(&detail, ThemeOperation::Delete, None))?;
     }
     emit_changed(&handle, &id, "delete")
 }
@@ -168,11 +169,11 @@ pub async fn theme_clone(
     handle: AppHandle,
 ) -> Result<LayoutInfo, String> {
     let layout = {
-        let _guard = state
-            .theme_write
-            .lock()
-            .map_err(|_| "theme write lock poisoned".to_string())?;
-        let package = store::clone(&source_id, &new_id)?;
+        let _guard = state.theme_write.lock().map_err(|_| {
+            theme_command_error("theme write lock poisoned", ThemeOperation::Clone, None)
+        })?;
+        let package = store::clone(&source_id, &new_id)
+            .map_err(|detail| theme_command_error(&detail, ThemeOperation::Clone, None))?;
         theme::layout_info(&package)
     };
     emit_changed(&handle, &new_id, "clone")?;
@@ -197,12 +198,18 @@ pub async fn theme_preview_render(
 
 #[tauri::command]
 pub async fn theme_preview_saved(theme_id: String, dark: bool) -> Result<String, String> {
-    render_saved_theme_preview(&theme_id, dark)
+    render_saved_theme_preview(&theme_id, dark, None)
 }
 
-fn render_saved_theme_preview(theme_id: &str, dark: bool) -> Result<String, String> {
-    let package =
-        theme::package(theme_id).ok_or_else(|| format!("Unbekanntes Theme: '{theme_id}'"))?;
+fn render_saved_theme_preview(
+    theme_id: &str,
+    dark: bool,
+    tr: Option<&i18n::Translator>,
+) -> Result<String, String> {
+    let package = theme::package(theme_id).ok_or_else(|| match tr {
+        Some(tr) => tr.t_args("errors.theme.unknown", &[("detail", theme_id)]),
+        None => i18n::t_args("errors.theme.unknown", &[("detail", theme_id)]),
+    })?;
     Ok(crate::export::render_theme_preview(
         THEME_PREVIEW_SAMPLE,
         &ThemeParts::from(&package),
@@ -220,14 +227,17 @@ pub async fn theme_asset_add(
     handle: AppHandle,
 ) -> Result<AssetInfo, String> {
     let info = {
-        let _guard = state
-            .theme_write
-            .lock()
-            .map_err(|_| "theme write lock poisoned".to_string())?;
+        let _guard = state.theme_write.lock().map_err(|_| {
+            theme_command_error("theme write lock poisoned", ThemeOperation::Asset, None)
+        })?;
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(bytes_base64.as_bytes())
-            .map_err(|error| format!("Asset-Bytes konnten nicht dekodiert werden: {error}"))?;
-        store::asset_add(&id, &filename, &bytes)?
+            .map_err(|error| {
+                let detail = error.to_string();
+                i18n::t_args("errors.theme.assetDecodeFailed", &[("detail", &detail)])
+            })?;
+        store::asset_add(&id, &filename, &bytes)
+            .map_err(|detail| theme_command_error(&detail, ThemeOperation::Asset, None))?
     };
     emit_changed(&handle, &id, "asset-add")?;
     Ok(info)
@@ -241,11 +251,11 @@ pub async fn theme_asset_remove(
     handle: AppHandle,
 ) -> Result<(), String> {
     {
-        let _guard = state
-            .theme_write
-            .lock()
-            .map_err(|_| "theme write lock poisoned".to_string())?;
-        store::asset_remove(&id, &filename)?;
+        let _guard = state.theme_write.lock().map_err(|_| {
+            theme_command_error("theme write lock poisoned", ThemeOperation::Asset, None)
+        })?;
+        store::asset_remove(&id, &filename)
+            .map_err(|detail| theme_command_error(&detail, ThemeOperation::Asset, None))?;
     }
     emit_changed(&handle, &id, "asset-remove")
 }
@@ -275,11 +285,11 @@ pub async fn theme_export(
         }
     };
     {
-        let _guard = state
-            .theme_write
-            .lock()
-            .map_err(|_| "theme write lock poisoned".to_string())?;
-        theme::archive::export_theme(&id, Path::new(&target_path))?;
+        let _guard = state.theme_write.lock().map_err(|_| {
+            theme_command_error("theme write lock poisoned", ThemeOperation::Export, None)
+        })?;
+        theme::archive::export_theme(&id, Path::new(&target_path))
+            .map_err(|detail| theme_command_error(&detail, ThemeOperation::Export, None))?;
     }
     Ok(Some(target_path))
 }
@@ -307,15 +317,139 @@ pub async fn theme_import(
         }
     };
     let layout = {
-        let _guard = state
-            .theme_write
-            .lock()
-            .map_err(|_| "theme write lock poisoned".to_string())?;
-        let package = theme::archive::import_theme(Path::new(&source_path))?;
+        let _guard = state.theme_write.lock().map_err(|_| {
+            theme_command_error("theme write lock poisoned", ThemeOperation::Import, None)
+        })?;
+        let package = theme::archive::import_theme(Path::new(&source_path))
+            .map_err(|detail| theme_command_error(&detail, ThemeOperation::Import, None))?;
         theme::layout_info(&package)
     };
     emit_changed(&handle, &layout.id, "import")?;
     Ok(Some(layout))
+}
+
+fn quoted_detail<'a>(detail: &'a str, prefix: &str, suffix: &str) -> Option<&'a str> {
+    detail.strip_prefix(prefix)?.strip_suffix(suffix)
+}
+
+#[derive(Clone, Copy)]
+enum ThemeOperation {
+    Write,
+    Create,
+    Delete,
+    Clone,
+    Asset,
+    Export,
+    Import,
+}
+
+fn theme_command_error(
+    detail: &str,
+    operation: ThemeOperation,
+    tr: Option<&i18n::Translator>,
+) -> String {
+    if let Some(id) = quoted_detail(detail, "Ungültige Theme-ID: '", "'") {
+        return match tr {
+            Some(tr) => tr.t_args("errors.theme.invalidId", &[("id", id)]),
+            None => i18n::t_args("errors.theme.invalidId", &[("id", id)]),
+        };
+    }
+    if let Some(id) = quoted_detail(
+        detail,
+        "Eingebautes Theme '",
+        "' kann nicht geändert werden",
+    ) {
+        return match tr {
+            Some(tr) => tr.t_args("errors.theme.builtinReadOnly", &[("id", id)]),
+            None => i18n::t_args("errors.theme.builtinReadOnly", &[("id", id)]),
+        };
+    }
+    if let Some(id) = quoted_detail(
+        detail,
+        "Eingebautes Theme '",
+        "' kann nicht gelöscht werden",
+    ) {
+        return match tr {
+            Some(tr) => tr.t_args("errors.theme.builtinDelete", &[("id", id)]),
+            None => i18n::t_args("errors.theme.builtinDelete", &[("id", id)]),
+        };
+    }
+    if let Some(id) = quoted_detail(detail, "Theme-ID '", "' ist bereits vergeben") {
+        return match tr {
+            Some(tr) => tr.t_args("errors.theme.idTaken", &[("id", id)]),
+            None => i18n::t_args("errors.theme.idTaken", &[("id", id)]),
+        };
+    }
+    if let Some(id) = quoted_detail(detail, "Unbekanntes Theme: '", "'")
+        .or_else(|| quoted_detail(detail, "unknown theme: '", "'"))
+    {
+        let quoted = format!("'{id}'");
+        return match tr {
+            Some(tr) => tr.t_args("errors.theme.unknown", &[("detail", &quoted)]),
+            None => i18n::t_args("errors.theme.unknown", &[("detail", &quoted)]),
+        };
+    }
+    if let Some(id) = quoted_detail(detail, "Theme '", "' kann nicht dupliziert werden") {
+        return match tr {
+            Some(tr) => tr.t_args("errors.theme.cloneUnsupported", &[("id", id)]),
+            None => i18n::t_args("errors.theme.cloneUnsupported", &[("id", id)]),
+        };
+    }
+    if let Some(id) = quoted_detail(
+        detail,
+        "Verzeichnis-Theme '",
+        "' existiert nicht; Assets koennen nur an Verzeichnis-Themes angehaengt werden",
+    ) {
+        return match tr {
+            Some(tr) => tr.t_args("errors.theme.assetDirectoryRequired", &[("id", id)]),
+            None => i18n::t_args("errors.theme.assetDirectoryRequired", &[("id", id)]),
+        };
+    }
+
+    match (operation, tr) {
+        (ThemeOperation::Write, Some(tr)) => {
+            tr.t_args("errors.theme.writeFailed", &[("detail", detail)])
+        }
+        (ThemeOperation::Write, None) => {
+            i18n::t_args("errors.theme.writeFailed", &[("detail", detail)])
+        }
+        (ThemeOperation::Create, Some(tr)) => {
+            tr.t_args("errors.theme.createFailed", &[("detail", detail)])
+        }
+        (ThemeOperation::Create, None) => {
+            i18n::t_args("errors.theme.createFailed", &[("detail", detail)])
+        }
+        (ThemeOperation::Delete, Some(tr)) => {
+            tr.t_args("errors.theme.deleteFailed", &[("detail", detail)])
+        }
+        (ThemeOperation::Delete, None) => {
+            i18n::t_args("errors.theme.deleteFailed", &[("detail", detail)])
+        }
+        (ThemeOperation::Clone, Some(tr)) => {
+            tr.t_args("errors.theme.cloneFailed", &[("detail", detail)])
+        }
+        (ThemeOperation::Clone, None) => {
+            i18n::t_args("errors.theme.cloneFailed", &[("detail", detail)])
+        }
+        (ThemeOperation::Asset, Some(tr)) => {
+            tr.t_args("errors.theme.assetFailed", &[("detail", detail)])
+        }
+        (ThemeOperation::Asset, None) => {
+            i18n::t_args("errors.theme.assetFailed", &[("detail", detail)])
+        }
+        (ThemeOperation::Export, Some(tr)) => {
+            tr.t_args("errors.theme.exportFailed", &[("detail", detail)])
+        }
+        (ThemeOperation::Export, None) => {
+            i18n::t_args("errors.theme.exportFailed", &[("detail", detail)])
+        }
+        (ThemeOperation::Import, Some(tr)) => {
+            tr.t_args("errors.theme.importFailed", &[("detail", detail)])
+        }
+        (ThemeOperation::Import, None) => {
+            i18n::t_args("errors.theme.importFailed", &[("detail", detail)])
+        }
+    }
 }
 
 fn emit_changed(handle: &AppHandle, id: &str, action: &str) -> Result<(), String> {
@@ -324,7 +458,10 @@ fn emit_changed(handle: &AppHandle, id: &str, action: &str) -> Result<(), String
             "themes:changed",
             serde_json::json!({ "id": id, "action": action }),
         )
-        .map_err(|error| error.to_string())
+        .map_err(|error| {
+            let detail = error.to_string();
+            i18n::t_args("errors.theme.eventFailed", &[("detail", &detail)])
+        })
 }
 
 fn file_path_to_string(path: FilePath) -> String {
@@ -335,11 +472,12 @@ fn file_path_to_string(path: FilePath) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::render_saved_theme_preview;
+    use super::{render_saved_theme_preview, theme_command_error, ThemeOperation};
+    use crate::i18n::{CatalogRegistry, ResolvedLanguage, Translator};
 
     #[test]
     fn saved_preview_renders_builtin_theme() {
-        let html = render_saved_theme_preview("clean", true).unwrap();
+        let html = render_saved_theme_preview("clean", true, Some(&translator("en"))).unwrap();
         assert!(html.contains("Theme-Vorschau"));
         assert!(html.contains("Überschrift 1"));
         assert!(html.contains("<style>"));
@@ -347,14 +485,55 @@ mod tests {
 
     #[test]
     fn saved_preview_rejects_unknown_theme() {
-        let error = render_saved_theme_preview("gibtsnicht", false).unwrap_err();
-        assert!(error.contains("Unbekanntes Theme"));
+        let error =
+            render_saved_theme_preview("gibtsnicht", false, Some(&translator("en"))).unwrap_err();
+        assert!(error.contains("Unknown theme"));
+        assert!(error.contains("gibtsnicht"));
+    }
+
+    #[test]
+    fn domain_theme_errors_are_not_wrapped_in_operation_frames() {
+        let de = translator("de");
+        assert_eq!(
+            "Theme-ID 'mine' ist bereits vergeben",
+            theme_command_error(
+                "Theme-ID 'mine' ist bereits vergeben",
+                ThemeOperation::Create,
+                Some(&de),
+            )
+        );
+
+        let en = translator("en");
+        assert_eq!(
+            "Theme ID 'mine' is already taken",
+            theme_command_error(
+                "Theme-ID 'mine' ist bereits vergeben",
+                ThemeOperation::Create,
+                Some(&en),
+            )
+        );
+        assert_eq!(
+            "Could not create theme: disk full",
+            theme_command_error("disk full", ThemeOperation::Create, Some(&en))
+        );
     }
 
     #[test]
     fn saved_preview_renders_standard_neutrally() {
-        let html = render_saved_theme_preview("standard", false).unwrap();
+        let html = render_saved_theme_preview("standard", false, Some(&translator("en"))).unwrap();
         assert!(html.contains("Folio-Export"));
         assert!(html.contains("Theme-Vorschau"));
+    }
+
+    fn translator(tag: &str) -> Translator {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("locales");
+        let registry = CatalogRegistry::load_from_dir(&dir).expect("load locales");
+        Translator::new(
+            registry,
+            ResolvedLanguage {
+                catalog_tag: tag.to_string(),
+                format_locale: "en-US".to_string(),
+            },
+        )
     }
 }

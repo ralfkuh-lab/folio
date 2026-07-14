@@ -144,6 +144,25 @@ Die HTTP-API läuft nur auf Loopback (`127.0.0.1:9876`). Die aktuelle Route-
 Übersicht steht im README; die Szenario-Details in `tests/e2e/README.md`
 und `docs/e2e-testing.md`.
 
+Fehlertexte der Automation-API sind ausschließlich **Diagnose** und kein
+stabiler Vertrag. Tests dürfen deshalb nicht auf ihren Wortlaut matchen;
+vertraglich sind HTTP-Statusklassen sowie dokumentierte Erfolgsfelder. Ein
+ungültiger `language`-Patch (alles außer `system` oder einem exakten
+Registry-Tag) wird vor jeder Mutation mit **HTTP 400** abgelehnt.
+
+`GET /state` bleibt der ungesperrte Healthcheck und liefert zusätzlich
+`lang` (aufgelöster Katalog-Tag) und `frontendReady` (Bootstrap inklusive
+Queue-Drain abgeschlossen). Das Ready-Gate verwendet eine positive
+Routenmatrix:
+
+- Ohne Warten: `GET /state`, `/tabs`, `/console/errors`, `/settings`,
+  `/editor/text`; `POST /search`; alle `OPTIONS`-Requests sowie unbekannte
+  Routen/falsche Methoden.
+- Mit Warten: `GET /dom`, `/screenshot`; alle bekannten frontendabhängigen
+  POST-Routen (`/settings`, Dokument-/Tab-/UI-/Find-/Eval-/Sync-/Editor-
+  Aktionen, `/save`, `/wait`, `/quit`). Sie warten bis zum eigenen
+  Startup-Timeout auf `frontend_ready`.
+
 `GET/POST /settings` transportiert unter anderem die persistierten Felder
 `viewTheme` und `themeFavorites`. Erlaubte Theme-IDs kommen aus dem
 Tauri-Command `view_themes`; das sind die Built-ins sowie die bei jedem

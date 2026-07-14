@@ -63,8 +63,7 @@ fn chromium_candidates() -> Vec<PathBuf> {
 
 pub fn render_pdf(html: &str, source_dir: Option<&Path>, target_path: &Path) -> Result<(), String> {
     let chromium = find_chromium().ok_or_else(|| {
-        "Chromium-Browser nicht gefunden. Bitte Chrome, Edge oder Chromium installieren."
-            .to_string()
+        "Chromium browser not found; install Chrome, Edge, or Chromium".to_string()
     })?;
 
     // Temp-HTML bevorzugt im Source-Verzeichnis (relative Bilder funktionieren),
@@ -73,7 +72,7 @@ pub fn render_pdf(html: &str, source_dir: Option<&Path>, target_path: &Path) -> 
         .filter(|d| d.exists())
         .map(|d| d.to_path_buf())
         .or_else(|| target_path.parent().map(|p| p.to_path_buf()))
-        .ok_or_else(|| "Kein Verzeichnis für Temp-Datei verfügbar.".to_string())?;
+        .ok_or_else(|| "no directory available for temporary export file".to_string())?;
 
     let temp_html = temp_dir.join(format!(
         ".folio-export-{}-{}.html",
@@ -83,7 +82,7 @@ pub fn render_pdf(html: &str, source_dir: Option<&Path>, target_path: &Path) -> 
             .map(|d| d.as_millis())
             .unwrap_or(0),
     ));
-    std::fs::write(&temp_html, html).map_err(|e| format!("Temp-HTML schreiben: {e}"))?;
+    std::fs::write(&temp_html, html).map_err(|e| format!("could not write temporary HTML: {e}"))?;
 
     let url = format!("file:///{}", temp_html.to_string_lossy().replace('\\', "/"));
 
@@ -106,16 +105,16 @@ pub fn render_pdf(html: &str, source_dir: Option<&Path>, target_path: &Path) -> 
 
     let _ = std::fs::remove_file(&temp_html);
 
-    let output = result.map_err(|e| format!("Browser-Aufruf fehlgeschlagen: {e}"))?;
+    let output = result.map_err(|e| format!("browser invocation failed: {e}"))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!(
-            "PDF-Erzeugung fehlgeschlagen (Exit {:?}): {stderr}",
+            "PDF generation failed (exit {:?}): {stderr}",
             output.status.code()
         ));
     }
     if !target_path.exists() {
-        return Err("PDF wurde nicht erzeugt (Browser-Output prüfen).".to_string());
+        return Err("PDF was not created; inspect browser output".to_string());
     }
     Ok(())
 }

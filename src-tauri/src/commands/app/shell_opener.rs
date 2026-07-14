@@ -4,6 +4,7 @@
 //! dann gaengige Emulatoren), macOS oeffnet Terminal.app via `open -a`,
 //! Windows startet Windows Terminal (`wt`) ueber `cmd /C start`.
 
+use crate::i18n;
 use std::path::Path;
 use tauri::AppHandle;
 use tauri_plugin_shell::ShellExt;
@@ -20,7 +21,10 @@ pub async fn show_in_file_manager(path: String, handle: AppHandle) -> Result<(),
     handle
         .shell()
         .open(target.to_string_lossy().to_string(), None)
-        .map_err(|error| error.to_string())
+        .map_err(|error| {
+            let detail = error.to_string();
+            i18n::t_args("errors.app.fileManagerFailed", &[("detail", &detail)])
+        })
 }
 
 #[tauri::command]
@@ -66,7 +70,11 @@ pub async fn open_terminal_at(path: String) -> Result<(), String> {
                 Err(error) => last_err = Some(format!("{cmd}: {error}")),
             }
         }
-        return Err(last_err.unwrap_or_else(|| "kein Terminal-Emulator gefunden".into()));
+        let detail = last_err.unwrap_or_else(|| "no terminal emulator found".into());
+        return Err(i18n::t_args(
+            "errors.app.terminalFailed",
+            &[("detail", &detail)],
+        ));
     }
 
     #[cfg(target_os = "macos")]
@@ -76,7 +84,10 @@ pub async fn open_terminal_at(path: String) -> Result<(), String> {
             .arg("Terminal")
             .arg(&target)
             .spawn()
-            .map_err(|e| e.to_string())?;
+            .map_err(|error| {
+                let detail = error.to_string();
+                i18n::t_args("errors.app.terminalFailed", &[("detail", &detail)])
+            })?;
         return Ok(());
     }
 
@@ -86,7 +97,10 @@ pub async fn open_terminal_at(path: String) -> Result<(), String> {
             .args(["/C", "start", "wt", "-d"])
             .arg(&target)
             .spawn()
-            .map_err(|e| e.to_string())?;
+            .map_err(|error| {
+                let detail = error.to_string();
+                i18n::t_args("errors.app.terminalFailed", &[("detail", &detail)])
+            })?;
         return Ok(());
     }
 
@@ -100,10 +114,10 @@ pub async fn open_terminal_at(path: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn open_with_default(path: String, handle: AppHandle) -> Result<(), String> {
     #[allow(deprecated)]
-    handle
-        .shell()
-        .open(path, None)
-        .map_err(|error| error.to_string())
+    handle.shell().open(path, None).map_err(|error| {
+        let detail = error.to_string();
+        i18n::t_args("errors.app.openDefaultFailed", &[("detail", &detail)])
+    })
 }
 
 /// Ausführbare Datei als eigenständigen Prozess starten (Arbeitsverzeichnis
@@ -113,7 +127,7 @@ pub async fn open_with_default(path: String, handle: AppHandle) -> Result<(), St
 #[tauri::command]
 pub async fn run_file(path: String, handle: AppHandle) -> Result<(), String> {
     if !crate::file_kind::is_executable(&path) {
-        return Err("Datei ist nicht ausführbar".into());
+        return Err(i18n::t("errors.file.notExecutable"));
     }
 
     tracing::warn!(target: "folio::ipc", %path, "run_file: spawning executable");
@@ -125,7 +139,10 @@ pub async fn run_file(path: String, handle: AppHandle) -> Result<(), String> {
         if let Some(dir) = p.parent().filter(|d| !d.as_os_str().is_empty()) {
             cmd.current_dir(dir);
         }
-        cmd.spawn().map_err(|e| e.to_string())?;
+        cmd.spawn().map_err(|error| {
+            let detail = error.to_string();
+            i18n::t_args("errors.app.runFileFailed", &[("detail", &detail)])
+        })?;
         let _ = &handle; // auf Unix ungenutzt
         return Ok(());
     }
@@ -135,13 +152,40 @@ pub async fn run_file(path: String, handle: AppHandle) -> Result<(), String> {
         // Auf Windows ist ShellExecute (== shell().open) das Doppelklick-
         // Verhalten und führt .exe/.bat/.cmd/.ps1 korrekt aus.
         #[allow(deprecated)]
-        handle
-            .shell()
-            .open(path, None)
-            .map_err(|error| error.to_string())?;
+        handle.shell().open(path, None).map_err(|error| {
+            let detail = error.to_string();
+            i18n::t_args("errors.app.runFileFailed", &[("detail", &detail)])
+        })?;
         return Ok(());
     }
 
     #[allow(unreachable_code)]
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::i18n::{CatalogRegistry, ResolvedLanguage, Translator};
+
+    #[test]
+    fn shell_error_frame_is_localized_and_keeps_detail() {
+        let message = translator("en").t_args(
+            "errors.app.terminalFailed",
+            &[("detail", "xterm: executable missing")],
+        );
+        assert!(message.contains("Could not open terminal"));
+        assert!(message.contains("xterm: executable missing"));
+    }
+
+    fn translator(tag: &str) -> Translator {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("locales");
+        let registry = CatalogRegistry::load_from_dir(&dir).expect("load locales");
+        Translator::new(
+            registry,
+            ResolvedLanguage {
+                catalog_tag: tag.to_string(),
+                format_locale: "en-US".to_string(),
+            },
+        )
+    }
 }

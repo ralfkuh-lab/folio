@@ -2,7 +2,7 @@
 //! optional kopieren. Beide Pfade liefern einen relativen Pfad gegenueber
 //! dem aktuellen Dokument zurueck, der direkt in den Markdown-Tag wandert.
 
-use crate::{file_resolver, state::AppState};
+use crate::{file_resolver, i18n, state::AppState};
 use base64::Engine;
 use image::{ImageBuffer, Rgba};
 use serde::{Deserialize, Serialize};
@@ -65,27 +65,36 @@ pub async fn save_clipboard_image(
 ) -> Result<ImageInsertResult, String> {
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(args.rgba_base64.as_bytes())
-        .map_err(|error| format!("Clipboard-Bild dekodieren fehlgeschlagen: {error}"))?;
+        .map_err(|error| {
+            let detail = error.to_string();
+            i18n::t_args("errors.file.clipboardDecodeFailed", &[("detail", &detail)])
+        })?;
 
     let expected = (args.width as usize)
         .checked_mul(args.height as usize)
         .and_then(|pixels| pixels.checked_mul(4))
-        .ok_or_else(|| "Bild-Dimensionen ueberlaufen".to_string())?;
+        .ok_or_else(|| i18n::t("errors.file.imageDimensionsOverflow"))?;
     if bytes.len() != expected {
-        return Err(format!(
-            "RGBA-Bytes ({}) passen nicht zu {}x{}x4 = {expected}",
+        let detail = format!(
+            "{} bytes for {}x{}x4 (expected {expected})",
             bytes.len(),
             args.width,
             args.height
+        );
+        return Err(i18n::t_args(
+            "errors.file.imageDataInvalid",
+            &[("detail", &detail)],
         ));
     }
 
     let img = ImageBuffer::<Rgba<u8>, _>::from_raw(args.width, args.height, bytes)
-        .ok_or_else(|| "Bild konnte nicht aus RGBA-Bytes aufgebaut werden".to_string())?;
+        .ok_or_else(|| i18n::t("errors.file.imageBufferInvalid"))?;
 
     let target_dir = PathBuf::from(&args.target_dir);
-    fs::create_dir_all(&target_dir)
-        .map_err(|error| format!("Zielverzeichnis kann nicht angelegt werden: {error}"))?;
+    fs::create_dir_all(&target_dir).map_err(|error| {
+        let detail = error.to_string();
+        i18n::t_args("errors.file.mkdirFailed", &[("detail", &detail)])
+    })?;
 
     let final_path = resolve_unique(&target_dir, &args.filename, "png");
     let final_filename = path_filename(&final_path);
@@ -94,16 +103,24 @@ pub async fn save_clipboard_image(
         .prefix(".folio-img-")
         .suffix(".tmp")
         .tempfile_in(&target_dir)
-        .map_err(|error| format!("Tempfile anlegen fehlgeschlagen: {error}"))?;
+        .map_err(|error| {
+            let detail = error.to_string();
+            i18n::t_args("errors.file.tempCreateFailed", &[("detail", &detail)])
+        })?;
     {
         let mut writer = BufWriter::new(tmp.as_file());
         img.write_to(&mut writer, image::ImageFormat::Png)
-            .map_err(|error| format!("PNG-Encoding fehlgeschlagen: {error}"))?;
+            .map_err(|error| {
+                let detail = error.to_string();
+                i18n::t_args("errors.file.pngEncodeFailed", &[("detail", &detail)])
+            })?;
     }
-    tmp.persist(&final_path)
-        .map_err(|error| format!("Rename fehlgeschlagen: {error}"))?;
+    tmp.persist(&final_path).map_err(|error| {
+        let detail = error.to_string();
+        i18n::t_args("errors.file.renameFailed", &[("detail", &detail)])
+    })?;
 
-    let (relative_path, warning) = compute_relative(&final_path, args.doc_path.as_deref());
+    let (relative_path, warning) = compute_relative(&final_path, args.doc_path.as_deref(), None);
     Ok(ImageInsertResult {
         absolute_path: final_path.to_string_lossy().into_owned(),
         relative_path,
@@ -119,27 +136,34 @@ pub async fn save_clipboard_image(
 pub async fn save_file_image(args: SaveFileImageArgs) -> Result<ImageInsertResult, String> {
     let source = PathBuf::from(&args.source_path);
     if !source.exists() {
-        return Err(format!("Quelldatei existiert nicht: {}", args.source_path));
+        return Err(i18n::t_args(
+            "errors.file.sourceMissing",
+            &[("detail", &args.source_path)],
+        ));
     }
 
     let final_path = if args.copy {
         let target_dir = PathBuf::from(&args.target_dir);
-        fs::create_dir_all(&target_dir)
-            .map_err(|error| format!("Zielverzeichnis kann nicht angelegt werden: {error}"))?;
+        fs::create_dir_all(&target_dir).map_err(|error| {
+            let detail = error.to_string();
+            i18n::t_args("errors.file.mkdirFailed", &[("detail", &detail)])
+        })?;
         let fallback_ext = source
             .extension()
             .and_then(|extension| extension.to_str())
             .unwrap_or("png");
         let path = resolve_unique(&target_dir, &args.filename, fallback_ext);
-        fs::copy(&source, &path)
-            .map_err(|error| format!("Bild kopieren fehlgeschlagen: {error}"))?;
+        fs::copy(&source, &path).map_err(|error| {
+            let detail = error.to_string();
+            i18n::t_args("errors.file.copyFailed", &[("detail", &detail)])
+        })?;
         path
     } else {
         source
     };
 
     let final_filename = path_filename(&final_path);
-    let (relative_path, warning) = compute_relative(&final_path, args.doc_path.as_deref());
+    let (relative_path, warning) = compute_relative(&final_path, args.doc_path.as_deref(), None);
     Ok(ImageInsertResult {
         absolute_path: final_path.to_string_lossy().into_owned(),
         relative_path,
@@ -248,19 +272,26 @@ fn resolve_unique(dir: &Path, filename: &str, default_ext: &str) -> PathBuf {
     dir.join(name)
 }
 
-fn compute_relative(final_path: &Path, doc_path: Option<&str>) -> (String, Option<String>) {
+fn compute_relative(
+    final_path: &Path,
+    doc_path: Option<&str>,
+    tr: Option<&i18n::Translator>,
+) -> (String, Option<String>) {
     let absolute = fs::canonicalize(final_path).unwrap_or_else(|_| final_path.to_path_buf());
     let Some(doc) = doc_path.filter(|p| !p.is_empty()) else {
         return (
             absolute.to_string_lossy().replace('\\', "/"),
-            Some("Kein Dokument geoeffnet — absoluter Pfad eingefuegt.".to_string()),
+            Some(image_warning(ImageWarning::NoDocument, tr)),
         );
     };
     let doc_path = Path::new(doc);
     let Some(doc_dir) = doc_path.parent() else {
         return (
             absolute.to_string_lossy().replace('\\', "/"),
-            Some("Dokumentpfad ohne Verzeichnis — absoluter Pfad eingefuegt.".to_string()),
+            Some(image_warning(
+                ImageWarning::DocumentPathWithoutDirectory,
+                tr,
+            )),
         );
     };
     let doc_dir_canon = fs::canonicalize(doc_dir).unwrap_or_else(|_| doc_dir.to_path_buf());
@@ -268,18 +299,43 @@ fn compute_relative(final_path: &Path, doc_path: Option<&str>) -> (String, Optio
     if Path::new(&rel).is_absolute() {
         (
             rel,
-            Some(
-                "Bild liegt ausserhalb des Dokumentbaums — absoluter Pfad eingefuegt.".to_string(),
-            ),
+            Some(image_warning(ImageWarning::OutsideDocumentTree, tr)),
         )
     } else {
         (rel, None)
     }
 }
 
+#[derive(Clone, Copy)]
+enum ImageWarning {
+    NoDocument,
+    DocumentPathWithoutDirectory,
+    OutsideDocumentTree,
+}
+
+fn image_warning(kind: ImageWarning, tr: Option<&i18n::Translator>) -> String {
+    match (kind, tr) {
+        (ImageWarning::NoDocument, Some(tr)) => tr.t("dialogs.image.noDocOpen.warning"),
+        (ImageWarning::NoDocument, None) => i18n::t("dialogs.image.noDocOpen.warning"),
+        (ImageWarning::DocumentPathWithoutDirectory, Some(tr)) => {
+            tr.t("dialogs.image.docPathNoDirectory.warning")
+        }
+        (ImageWarning::DocumentPathWithoutDirectory, None) => {
+            i18n::t("dialogs.image.docPathNoDirectory.warning")
+        }
+        (ImageWarning::OutsideDocumentTree, Some(tr)) => {
+            tr.t("dialogs.image.outsideDocumentTree.warning")
+        }
+        (ImageWarning::OutsideDocumentTree, None) => {
+            i18n::t("dialogs.image.outsideDocumentTree.warning")
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::i18n::{CatalogRegistry, ResolvedLanguage, Translator};
     use tempfile::TempDir;
 
     #[test]
@@ -318,7 +374,8 @@ mod tests {
         let img = temp.path().join("img.png");
         fs::write(&doc, "").unwrap();
         fs::write(&img, []).unwrap();
-        let (rel, warn) = compute_relative(&img, Some(doc.to_str().unwrap()));
+        let tr = translator("en");
+        let (rel, warn) = compute_relative(&img, Some(doc.to_str().unwrap()), Some(&tr));
         assert_eq!("img.png", rel);
         assert!(warn.is_none());
     }
@@ -328,8 +385,24 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let img = temp.path().join("img.png");
         fs::write(&img, []).unwrap();
-        let (rel, warn) = compute_relative(&img, None);
+        let tr = translator("en");
+        let (rel, warn) = compute_relative(&img, None, Some(&tr));
         assert!(rel.contains("img.png"));
-        assert!(warn.is_some());
+        assert_eq!(
+            Some("No document open — image will be inserted with an absolute path."),
+            warn.as_deref()
+        );
+    }
+
+    fn translator(tag: &str) -> Translator {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("locales");
+        let registry = CatalogRegistry::load_from_dir(&dir).expect("load locales");
+        Translator::new(
+            registry,
+            ResolvedLanguage {
+                catalog_tag: tag.to_string(),
+                format_locale: "en-US".to_string(),
+            },
+        )
     }
 }

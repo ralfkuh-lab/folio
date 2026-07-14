@@ -1,4 +1,5 @@
 use crate::document_service::DirtyPolicy;
+use crate::i18n;
 use crate::state::AppState;
 use tauri::{AppHandle, Emitter, State};
 
@@ -21,7 +22,10 @@ pub async fn trash_file(
     } else {
         path.clone()
     };
-    trash::delete(&native).map_err(|error| error.to_string())?;
+    trash::delete(&native).map_err(|error| {
+        let detail = error.to_string();
+        i18n::t_args("errors.file.deleteFailed", &[("detail", &detail)])
+    })?;
 
     // Die Datei ist ab hier irreversibel im Papierkorb. Fehler beim
     // Tab-Close dürfen deshalb die folgende Recent/Pin/Vault-Bereinigung

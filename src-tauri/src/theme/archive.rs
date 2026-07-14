@@ -40,14 +40,14 @@ pub(crate) fn export_theme_in(
     themes_dir: &Path,
 ) -> Result<PathBuf, String> {
     let package =
-        super::package_in(id, themes_dir).ok_or_else(|| format!("Unbekanntes Theme: '{id}'"))?;
+        super::package_in(id, themes_dir).ok_or_else(|| format!("unknown theme: '{id}'"))?;
     let parent = target
         .parent()
         .filter(|path| !path.as_os_str().is_empty())
-        .ok_or_else(|| format!("Zielpfad '{}' hat kein Verzeichnis", target.display()))?;
+        .ok_or_else(|| format!("target path '{}' has no parent directory", target.display()))?;
     fs::create_dir_all(parent).map_err(|error| {
         format!(
-            "Export-Verzeichnis '{}' kann nicht angelegt werden: {error}",
+            "could not create export directory '{}': {error}",
             parent.display()
         )
     })?;
@@ -56,14 +56,12 @@ pub(crate) fn export_theme_in(
         .prefix(".folio-theme-export-")
         .suffix(".mdtheme.tmp")
         .tempfile_in(parent)
-        .map_err(|error| {
-            format!("Tempfile fuer Theme-Export kann nicht angelegt werden: {error}")
-        })?;
+        .map_err(|error| format!("could not create temporary theme export file: {error}"))?;
     write_package_zip(&package, themes_dir, &mut tmp)?;
     tmp.flush()
-        .map_err(|error| format!("Theme-Export kann nicht geschrieben werden: {error}"))?;
+        .map_err(|error| format!("could not write theme export: {error}"))?;
     tmp.persist(target)
-        .map_err(|error| format!("Theme-Export kann nicht veroeffentlicht werden: {error}"))?;
+        .map_err(|error| format!("could not publish theme export: {error}"))?;
     Ok(target.to_path_buf())
 }
 
@@ -80,14 +78,11 @@ pub(crate) fn import_theme_in(path: &Path, themes_dir: &Path) -> Result<ThemePac
         let dir = tempfile::Builder::new()
             .prefix(".folio-theme-assets-")
             .tempdir_in(themes_dir)
-            .map_err(|error| {
-                format!("Temporäres Asset-Verzeichnis kann nicht angelegt werden: {error}")
-            })?;
+            .map_err(|error| format!("could not create temporary asset directory: {error}"))?;
         for (filename, bytes) in &imported.assets {
             assets::data_uri(filename, bytes)?;
-            fs::write(dir.path().join(filename), bytes).map_err(|error| {
-                format!("Asset '{filename}' kann nicht zwischengespeichert werden: {error}")
-            })?;
+            fs::write(dir.path().join(filename), bytes)
+                .map_err(|error| format!("could not stage asset '{filename}': {error}"))?;
         }
         Some(dir)
     };
@@ -107,7 +102,7 @@ fn write_package_zip<W: Write + Seek>(
     let mut zip = ZipWriter::new(writer);
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
     let manifest = serde_json::to_vec_pretty(&package.manifest)
-        .map_err(|error| format!("Theme-Manifest kann nicht serialisiert werden: {error}"))?;
+        .map_err(|error| format!("could not serialize theme manifest: {error}"))?;
     write_zip_file(&mut zip, options, MANIFEST_FILE, &manifest)?;
     write_zip_file(
         &mut zip,
@@ -151,7 +146,7 @@ fn write_package_zip<W: Write + Seek>(
     }
 
     zip.finish()
-        .map_err(|error| format!("Theme-Archiv kann nicht abgeschlossen werden: {error}"))?;
+        .map_err(|error| format!("could not finish theme archive: {error}"))?;
     Ok(())
 }
 
@@ -177,31 +172,27 @@ fn write_assets<W: Write + Seek>(
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
         Err(error) => {
             return Err(format!(
-                "Asset-Verzeichnis '{}' kann nicht gelesen werden: {error}",
+                "could not read asset directory '{}': {error}",
                 assets_dir.display()
             ));
         }
     };
     for entry in entries {
-        let entry =
-            entry.map_err(|error| format!("Asset-Eintrag kann nicht gelesen werden: {error}"))?;
+        let entry = entry.map_err(|error| format!("could not read asset entry: {error}"))?;
         let file_type = entry
             .file_type()
-            .map_err(|error| format!("Asset-Typ kann nicht gelesen werden: {error}"))?;
+            .map_err(|error| format!("could not read asset file type: {error}"))?;
         if !file_type.is_file() {
             continue;
         }
         let filename = entry
             .file_name()
             .to_str()
-            .ok_or_else(|| "Asset-Dateiname ist kein gueltiges UTF-8".to_string())?
+            .ok_or_else(|| "asset file name is not valid UTF-8".to_string())?
             .to_string();
         assets::validate_asset_filename(&filename)?;
         let bytes = fs::read(entry.path()).map_err(|error| {
-            format!(
-                "Asset '{}' kann nicht gelesen werden: {error}",
-                entry.path().display()
-            )
+            format!("could not read asset '{}': {error}", entry.path().display())
         })?;
         assets::data_uri(&filename, &bytes)?;
         write_zip_file(zip, options, &format!("assets/{filename}"), &bytes)?;
@@ -216,21 +207,17 @@ fn write_zip_file<W: Write + Seek>(
     bytes: &[u8],
 ) -> Result<(), String> {
     zip.start_file(name, options)
-        .map_err(|error| format!("Archiv-Eintrag '{name}' kann nicht begonnen werden: {error}"))?;
+        .map_err(|error| format!("could not start archive entry '{name}': {error}"))?;
     zip.write_all(bytes)
-        .map_err(|error| format!("Archiv-Eintrag '{name}' kann nicht geschrieben werden: {error}"))
+        .map_err(|error| format!("could not write archive entry '{name}': {error}"))
 }
 
 fn read_archive(path: &Path) -> Result<ImportedArchive, String> {
-    let file = File::open(path).map_err(|error| {
-        format!(
-            "Theme-Archiv '{}' kann nicht geoeffnet werden: {error}",
-            path.display()
-        )
-    })?;
+    let file = File::open(path)
+        .map_err(|error| format!("could not open theme archive '{}': {error}", path.display()))?;
     let mut archive = ZipArchive::new(BufReader::new(file)).map_err(|error| {
         format!(
-            "Theme-Archiv '{}' ist kein gueltiges ZIP: {error}",
+            "theme archive '{}' is not a valid ZIP file: {error}",
             path.display()
         )
     })?;
@@ -246,22 +233,22 @@ fn read_archive(path: &Path) -> Result<ImportedArchive, String> {
     let mut imported_assets = Vec::new();
 
     for index in 0..archive.len() {
-        let mut file = archive.by_index(index).map_err(|error| {
-            format!("Archiv-Eintrag #{index} kann nicht gelesen werden: {error}")
-        })?;
+        let mut file = archive
+            .by_index(index)
+            .map_err(|error| format!("could not read archive entry #{index}: {error}"))?;
         let name = validate_entry(&file)?;
         if !seen.insert(name.clone()) {
-            return Err(format!("Archiv-Eintrag '{name}' ist doppelt vorhanden"));
+            return Err(format!("archive entry '{name}' is duplicated"));
         }
 
         match name.as_str() {
             MANIFEST_FILE => {
                 let text = read_text_entry(&mut file, &name, &mut total)?;
                 let parsed: ThemeManifest = serde_json::from_str(&text)
-                    .map_err(|error| format!("Theme-Manifest im Archiv ist ungueltig: {error}"))?;
+                    .map_err(|error| format!("theme manifest in archive is invalid: {error}"))?;
                 if parsed.format_version > CURRENT_FORMAT_VERSION {
                     return Err(format!(
-                        "Theme-Archiv nutzt formatVersion {}, unterstuetzt wird {}",
+                        "theme archive uses formatVersion {}; supported version is {}",
                         parsed.format_version, CURRENT_FORMAT_VERSION
                     ));
                 }
@@ -276,7 +263,7 @@ fn read_archive(path: &Path) -> Result<ImportedArchive, String> {
             _ => {
                 let filename = name
                     .strip_prefix("assets/")
-                    .ok_or_else(|| format!("Archiv-Eintrag '{name}' ist nicht erlaubt"))?;
+                    .ok_or_else(|| format!("archive entry '{name}' is not allowed"))?;
                 assets::validate_asset_filename(filename)?;
                 let bytes = read_binary_entry(&mut file, &name, MAX_ASSET_BYTES, &mut total)?;
                 assets::data_uri(filename, &bytes)?;
@@ -285,9 +272,8 @@ fn read_archive(path: &Path) -> Result<ImportedArchive, String> {
         }
     }
 
-    let manifest = manifest.ok_or_else(|| "Theme-Archiv enthaelt kein theme.json".to_string())?;
-    let content_css =
-        content_css.ok_or_else(|| "Theme-Archiv enthaelt kein content.css".to_string())?;
+    let manifest = manifest.ok_or_else(|| "theme archive has no theme.json".to_string())?;
+    let content_css = content_css.ok_or_else(|| "theme archive has no content.css".to_string())?;
     Ok(ImportedArchive {
         parts: ThemeParts {
             manifest,
@@ -305,20 +291,20 @@ fn read_archive(path: &Path) -> Result<ImportedArchive, String> {
 fn validate_entry(file: &ZipFile<'_>) -> Result<String, String> {
     let name = file.name();
     if name.is_empty() {
-        return Err("Archiv-Eintrag ohne Namen ist nicht erlaubt".to_string());
+        return Err("archive entries without a name are not allowed".to_string());
     }
     if name.starts_with('/') || name.starts_with('\\') || name.contains('\\') || name.contains('\0')
     {
-        return Err(format!("Archiv-Eintrag '{name}' hat einen unsicheren Pfad"));
+        return Err(format!("archive entry '{name}' has an unsafe path"));
     }
     if name.contains("..") {
-        return Err(format!("Archiv-Eintrag '{name}' darf kein '..' enthalten"));
+        return Err(format!("archive entry '{name}' must not contain '..'"));
     }
     if file.is_symlink() {
-        return Err(format!("Archiv-Eintrag '{name}' ist ein Symlink"));
+        return Err(format!("archive entry '{name}' is a symlink"));
     }
     if file.is_dir() || !file.is_file() {
-        return Err(format!("Archiv-Eintrag '{name}' ist keine regulaere Datei"));
+        return Err(format!("archive entry '{name}' is not a regular file"));
     }
     if is_known_text_file(name) {
         return Ok(name.to_string());
@@ -327,7 +313,7 @@ fn validate_entry(file: &ZipFile<'_>) -> Result<String, String> {
         assets::validate_asset_filename(filename)?;
         return Ok(name.to_string());
     }
-    Err(format!("Archiv-Eintrag '{name}' ist nicht erlaubt"))
+    Err(format!("archive entry '{name}' is not allowed"))
 }
 
 fn is_known_text_file(name: &str) -> bool {
@@ -350,7 +336,7 @@ fn read_text_entry(
 ) -> Result<String, String> {
     let bytes = read_binary_entry(file, name, MAX_TEXT_BYTES, total)?;
     String::from_utf8(bytes)
-        .map_err(|error| format!("Archiv-Eintrag '{name}' ist kein UTF-8: {error}"))
+        .map_err(|error| format!("archive entry '{name}' is not valid UTF-8: {error}"))
 }
 
 fn read_binary_entry(
@@ -359,33 +345,33 @@ fn read_binary_entry(
     limit: usize,
     total: &mut usize,
 ) -> Result<Vec<u8>, String> {
-    let declared_size = usize::try_from(file.size())
-        .map_err(|_| format!("Archiv-Eintrag '{name}' ist zu gross"))?;
+    let declared_size =
+        usize::try_from(file.size()).map_err(|_| format!("archive entry '{name}' is too large"))?;
     if declared_size > limit {
         return Err(format!(
-            "Archiv-Eintrag '{name}' ist {declared_size} Bytes gross, Maximum sind {limit} Bytes"
+            "archive entry '{name}' is {declared_size} bytes; maximum is {limit} bytes"
         ));
     }
     if total.saturating_add(declared_size) > MAX_ARCHIVE_BYTES {
         return Err(format!(
-            "Theme-Archiv ueberschreitet das Limit von {MAX_ARCHIVE_BYTES} Bytes"
+            "theme archive exceeds the {MAX_ARCHIVE_BYTES}-byte limit"
         ));
     }
     let mut bytes = Vec::with_capacity(declared_size);
     file.take((limit as u64) + 1)
         .read_to_end(&mut bytes)
-        .map_err(|error| format!("Archiv-Eintrag '{name}' kann nicht gelesen werden: {error}"))?;
+        .map_err(|error| format!("could not read archive entry '{name}': {error}"))?;
     if bytes.len() > limit {
         return Err(format!(
-            "Archiv-Eintrag '{name}' ist groesser als das Limit von {limit} Bytes"
+            "archive entry '{name}' exceeds the {limit}-byte limit"
         ));
     }
     *total = total
         .checked_add(bytes.len())
-        .ok_or_else(|| "Theme-Archiv-Groesse ueberlaeuft".to_string())?;
+        .ok_or_else(|| "theme archive size overflow".to_string())?;
     if *total > MAX_ARCHIVE_BYTES {
         return Err(format!(
-            "Theme-Archiv ueberschreitet das Limit von {MAX_ARCHIVE_BYTES} Bytes"
+            "theme archive exceeds the {MAX_ARCHIVE_BYTES}-byte limit"
         ));
     }
     Ok(bytes)
@@ -406,7 +392,7 @@ fn available_id(path: &Path, themes_dir: &Path) -> Result<String, String> {
             return Ok(candidate);
         }
     }
-    Err("Keine freie Theme-ID gefunden".to_string())
+    Err("no available theme ID found".to_string())
 }
 
 fn slug_from_path(path: &Path) -> String {

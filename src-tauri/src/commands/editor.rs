@@ -1,4 +1,4 @@
-use crate::{editor_commands, renderer, state::AppState, toc};
+use crate::{editor_commands, i18n, renderer, state::AppState, toc};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
@@ -40,12 +40,9 @@ pub async fn editor_text_changed(
         Some(tab_id) => {
             let tab = tabs
                 .tab_mut(tab_id)
-                .ok_or_else(|| "Der Quell-Tab existiert nicht mehr.".to_string())?;
+                .ok_or_else(|| i18n::t("errors.editor.sourceTabMissing"))?;
             if crate::ai::mask::has_lone_carriage_return(&tab.document_store.text) {
-                return Err(
-                    "Dieses Dokument verwendet nicht unterstützte Zeilenenden (einzelne CR)."
-                        .to_string(),
-                );
+                return Err(i18n::t("errors.editor.unsupportedLineEndings"));
             }
             tab.document_store.update_text(text);
         }
@@ -63,7 +60,10 @@ pub async fn editor_save_requested(state: State<'_, AppState>) -> Result<bool, S
         .active_mut()
         .document_store
         .save()
-        .map_err(|error| error.to_string())
+        .map_err(|error| {
+            let detail = error.to_string();
+            i18n::t_args("errors.editor.saveFailed", &[("detail", &detail)])
+        })
 }
 
 #[tauri::command]
@@ -76,7 +76,10 @@ pub async fn discard_editor_changes(state: State<'_, AppState>) -> Result<bool, 
     let Some(path) = store.path.clone() else {
         return Ok(false);
     };
-    store.load(&path).map_err(|error| error.to_string())?;
+    store.load(&path).map_err(|error| {
+        let detail = error.to_string();
+        i18n::t_args("errors.editor.discardFailed", &[("detail", &detail)])
+    })?;
     Ok(true)
 }
 
@@ -247,6 +250,29 @@ pub fn apply_command(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::i18n::{CatalogRegistry, ResolvedLanguage, Translator};
+
+    fn translator(tag: &str) -> Translator {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("locales");
+        let registry = CatalogRegistry::load_from_dir(&dir).expect("load locales");
+        Translator::new(
+            registry,
+            ResolvedLanguage {
+                catalog_tag: tag.to_string(),
+                format_locale: "en-US".to_string(),
+            },
+        )
+    }
+
+    #[test]
+    fn editor_error_frame_is_localized_and_keeps_detail() {
+        let message = translator("en").t_args(
+            "errors.editor.saveFailed",
+            &[("detail", "technical-io-detail")],
+        );
+        assert!(message.contains("Could not save document"));
+        assert!(message.contains("technical-io-detail"));
+    }
 
     #[test]
     fn applies_bold_command() {

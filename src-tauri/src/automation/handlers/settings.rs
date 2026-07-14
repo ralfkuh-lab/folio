@@ -23,9 +23,7 @@ pub(in crate::automation) async fn post_settings(
     if let Some(lang) = patch.language.as_deref() {
         let registry = crate::i18n::embedded_registry();
         if !crate::i18n::is_valid_language_setting(lang, registry) {
-            return Err(ApiError::bad_request(format!(
-                "Ungültige Sprache: '{lang}'"
-            )));
+            return Err(ApiError::bad_request(format!("invalid language: '{lang}'")));
         }
     }
     if let Some(theme_id) = patch.view_theme.as_deref() {
@@ -34,7 +32,7 @@ pub(in crate::automation) async fn post_settings(
             .any(|theme| theme.id == theme_id);
         if !valid {
             return Err(ApiError::bad_request(format!(
-                "Unbekanntes View-Theme: '{theme_id}'"
+                "unknown view theme: '{theme_id}'"
             )));
         }
     }
@@ -43,12 +41,12 @@ pub(in crate::automation) async fn post_settings(
         for theme_id in favorites {
             if theme_id == "standard" {
                 return Err(ApiError::bad_request(
-                    "Das Standard-Theme kann kein Favorit sein",
+                    "the standard theme cannot be a favorite",
                 ));
             }
             if !themes.iter().any(|theme| theme.id == *theme_id) {
                 return Err(ApiError::bad_request(format!(
-                    "Unbekanntes Theme-Favorit: '{theme_id}'"
+                    "unknown favorite theme: '{theme_id}'"
                 )));
             }
         }
@@ -68,7 +66,7 @@ mod language_validation_tests {
     fn unknown_language_maps_to_http_400() {
         let registry = crate::i18n::embedded_registry();
         assert!(!crate::i18n::is_valid_language_setting("xx", registry));
-        let err = ApiError::bad_request("Ungültige Sprache: 'xx'");
+        let err = ApiError::bad_request("invalid language: 'xx'");
         assert_eq!(err.status, StatusCode::BAD_REQUEST);
     }
 

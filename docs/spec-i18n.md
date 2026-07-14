@@ -238,8 +238,15 @@ Settings-Load mehr machen, sondern bekommt den geladenen Stand).
   | Enum | UI-sichtbar? | Automation teilt Display? | Entscheidung |
   | --- | --- | --- | --- |
   | `SearchError` | ja | ja (`handlers/search.rs`) | Display übersetzen (Automation-Text = Diagnose) |
-  | `AiConfigError` | ja | indirekt | am UI-Rand wrappen |
-  | … (alle weiteren `#[error]`-Enums) | | | |
+  | `AiConfigError` | ja | indirekt (`POST /settings` nutzt einen eigenen Settings-Pfad) | Display bleibt Diagnose; in `commands/ai.rs::mutate_config` mit `errors.ai.configUpdateFailed` wrappen |
+  | `CatalogError` | ja | nein | Display bleibt Diagnose; in `ai_catalog_refresh` mit `errors.ai.catalogRefreshFailed` wrappen |
+  | `AuthError` | ja | nein | Display bleibt Diagnose; in `ai_auth_set`/`ai_auth_remove` mit `errors.ai.authUpdateFailed` wrappen |
+  | `ChatError` | ja | nein | Display bleibt Provider-/Transportdiagnose; an allen Command-Rändern mit `errors.ai.requestFailed` (bzw. dem spezifischen Response-Key) wrappen |
+
+  `SearchError::localized(&Translator)` ist der lokale Testpfad; sein
+  produktives `Display` verwendet die Prozess-Übersetzung. Die vier KI-Enums
+  behalten absichtlich ihre `thiserror`-Diagnosetexte, damit keine bereits
+  lokalisierte Erklärung als technisches `{detail}` erneut übersetzt wird.
 
 - Eingebettete Inhalte als Katalog-Keys: Built-in-Theme-Manifeste,
   Built-in-KI-Action-Metadaten, Linux-Icon-Dialog, Datei-Dialog-Titel/-Filter.

@@ -1,10 +1,14 @@
+use crate::i18n;
 use std::{fs, path::Path};
 
 use super::types::FileEntry;
 
 #[tauri::command]
 pub async fn file_list(dir: String) -> Result<Vec<FileEntry>, String> {
-    list_dir(&dir).map_err(|error| error.to_string())
+    list_dir(&dir).map_err(|error| {
+        let detail = error.to_string();
+        i18n::t_args("errors.file.listFailed", &[("detail", &detail)])
+    })
 }
 
 pub fn list_dir(dir: &str) -> std::io::Result<Vec<FileEntry>> {

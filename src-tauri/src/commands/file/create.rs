@@ -1,4 +1,5 @@
 use crate::state::AppState;
+use crate::{i18n, i18n::Translator};
 use std::fs::OpenOptions;
 use std::path::Path;
 use tauri::{AppHandle, Emitter, State};
@@ -6,10 +7,13 @@ use tauri::{AppHandle, Emitter, State};
 /// Reine, Tauri-freie Kernlogik: Pfad normalisieren, `..`-Komponenten
 /// ablehnen (Defense-in-Depth gegen Pfad-Traversal) und die Datei atomar
 /// per `create_new` anlegen. Gibt den normalisierten Pfad zurück.
-fn create_file_at(raw_path: &str) -> Result<String, String> {
+fn create_file_at(raw_path: &str, tr: Option<&Translator>) -> Result<String, String> {
     let path = raw_path.replace('\\', "/");
     if path.split('/').any(|component| component == "..") {
-        return Err("Ungültiger Dateiname".into());
+        return Err(match tr {
+            Some(tr) => tr.t("errors.file.invalidName"),
+            None => i18n::t("errors.file.invalidName"),
+        });
     }
     // Atomar: create_new schlägt fehl, falls das Ziel schon existiert —
     // kein TOCTOU-Race zwischen exists()-Check und write.
@@ -19,15 +23,20 @@ fn create_file_at(raw_path: &str) -> Result<String, String> {
         .open(&path)
         .map_err(|error| {
             if error.kind() == std::io::ErrorKind::AlreadyExists {
-                format!(
-                    "Datei existiert bereits: {}",
-                    Path::new(&path)
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .unwrap_or(&path)
-                )
+                let detail = Path::new(&path)
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or(&path);
+                match tr {
+                    Some(tr) => tr.t_args("errors.file.alreadyExists", &[("detail", detail)]),
+                    None => i18n::t_args("errors.file.alreadyExists", &[("detail", detail)]),
+                }
             } else {
-                error.to_string()
+                let detail = error.to_string();
+                match tr {
+                    Some(tr) => tr.t_args("errors.file.createFailed", &[("detail", &detail)]),
+                    None => i18n::t_args("errors.file.createFailed", &[("detail", &detail)]),
+                }
             }
         })?;
     Ok(path)
@@ -42,7 +51,7 @@ pub async fn create_file(
     state: State<'_, AppState>,
     handle: AppHandle,
 ) -> Result<String, String> {
-    let path = create_file_at(&path)?;
+    let path = create_file_at(&path, None)?;
 
     // Vault-Sync wie in `finish_rename` (gleiche Lock-Reihenfolge).
     {
@@ -65,6 +74,7 @@ pub async fn create_file(
 #[cfg(test)]
 mod tests {
     use super::create_file_at;
+    use crate::i18n::{CatalogRegistry, ResolvedLanguage, Translator};
     use tempfile::TempDir;
 
     #[test]
@@ -73,7 +83,7 @@ mod tests {
         let target = temp.path().join("neu.md");
         let raw = target.to_string_lossy().replace('\\', "/");
 
-        let result = create_file_at(&raw).unwrap();
+        let result = create_file_at(&raw, Some(&translator("en"))).unwrap();
         assert_eq!(result, raw);
         assert!(target.exists());
     }
@@ -85,8 +95,9 @@ mod tests {
         std::fs::write(&target, "x").unwrap();
         let raw = target.to_string_lossy().replace('\\', "/");
 
-        let error = create_file_at(&raw).unwrap_err();
-        assert!(error.contains("existiert bereits"), "unerwartet: {error}");
+        let error = create_file_at(&raw, Some(&translator("en"))).unwrap_err();
+        assert!(error.contains("already exists"), "unexpected: {error}");
+        assert!(error.contains("da.md"), "missing detail: {error}");
     }
 
     #[test]
@@ -94,7 +105,19 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let raw = format!("{}/../evil.md", temp.path().to_string_lossy()).replace('\\', "/");
 
-        let error = create_file_at(&raw).unwrap_err();
-        assert_eq!(error, "Ungültiger Dateiname");
+        let error = create_file_at(&raw, Some(&translator("en"))).unwrap_err();
+        assert_eq!(error, "Invalid file name");
+    }
+
+    fn translator(tag: &str) -> Translator {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("locales");
+        let registry = CatalogRegistry::load_from_dir(&dir).expect("load locales");
+        Translator::new(
+            registry,
+            ResolvedLanguage {
+                catalog_tag: tag.to_string(),
+                format_locale: "en-US".to_string(),
+            },
+        )
     }
 }

@@ -98,15 +98,16 @@ pub fn run_icon_integration(handle: &AppHandle) {
                 "icon integration: script exited with error"
             );
             let detail = stderr.trim();
+            let fallback;
             let detail = if detail.is_empty() {
-                "(keine Fehlerausgabe)"
+                fallback = crate::i18n::t("errors.app.iconNoOutput");
+                fallback.as_str()
             } else {
                 detail
             };
-            // Error framing stays German diagnose text until I4b; title is i18n.
             notify(
                 handle,
-                format!("Die Einrichtung ist fehlgeschlagen:\n\n{detail}"),
+                crate::i18n::t_args("errors.app.iconSetupFailed", &[("detail", detail)]),
                 MessageDialogKind::Error,
             );
         }
@@ -118,7 +119,10 @@ pub fn run_icon_integration(handle: &AppHandle) {
             );
             notify(
                 handle,
-                format!("Das Skript konnte nicht gestartet werden: {error}"),
+                crate::i18n::t_args(
+                    "errors.app.iconScriptFailed",
+                    &[("detail", &error.to_string())],
+                ),
                 MessageDialogKind::Error,
             );
         }

@@ -57,28 +57,28 @@ pub fn validate_slug(value: &str, what: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!(
-            "Ungültiges {what} '{value}': erlaubt sind Kleinbuchstaben, Zahlen und '-' \
-             (max. {SLUG_MAX_LEN} Zeichen, Beginn mit Buchstabe/Zahl)."
+            "invalid {what} '{value}': use lowercase letters, digits, and '-' \
+             (max. {SLUG_MAX_LEN} characters, starting with a letter or digit)"
         ))
     }
 }
 
 pub fn validate_template(template: &ActionTemplate) -> Result<(), String> {
-    validate_slug(&template.id, "Template-Kürzel")?;
-    validate_slug(&template.suffix, "Datei-Suffix")?;
+    validate_slug(&template.id, "template slug")?;
+    validate_slug(&template.suffix, "file suffix")?;
     if template.name.trim().is_empty() || template.name.chars().count() > NAME_MAX_CHARS {
         return Err(format!(
-            "Der Template-Name muss 1–{NAME_MAX_CHARS} Zeichen lang sein."
+            "template name must be between 1 and {NAME_MAX_CHARS} characters"
         ));
     }
     if template.description.chars().count() > DESCRIPTION_MAX_CHARS {
         return Err(format!(
-            "Die Template-Beschreibung darf höchstens {DESCRIPTION_MAX_CHARS} Zeichen haben."
+            "template description must be at most {DESCRIPTION_MAX_CHARS} characters"
         ));
     }
     if template.prompt.trim().is_empty() || template.prompt.chars().count() > PROMPT_MAX_CHARS {
         return Err(format!(
-            "Der Template-Prompt muss 1–{PROMPT_MAX_CHARS} Zeichen lang sein."
+            "template prompt must be between 1 and {PROMPT_MAX_CHARS} characters"
         ));
     }
     Ok(())
@@ -257,15 +257,15 @@ pub fn save_template_in(
         .any(|builtin| builtin.id == template.id)
     {
         return Err(format!(
-            "Die ID '{}' ist für eine eingebaute Aktion reserviert.",
+            "template id '{}' is reserved for a built-in action",
             template.id
         ));
     }
     std::fs::create_dir_all(dir)
-        .map_err(|error| format!("Template-Verzeichnis konnte nicht angelegt werden: {error}"))?;
+        .map_err(|error| format!("could not create template directory: {error}"))?;
     let path = dir.join(format!("{}.json", template.id));
     persist::save_json_atomic(&path, &template)
-        .map_err(|error| format!("Template konnte nicht gespeichert werden: {error}"))?;
+        .map_err(|error| format!("could not save template: {error}"))?;
     Ok(template)
 }
 
@@ -274,17 +274,21 @@ pub fn delete_template(id: &str) -> Result<(), String> {
     delete_template_in(&persist::prompts_dir(), id)
 }
 
+pub fn is_builtin_template(id: &str) -> bool {
+    builtin_templates().iter().any(|builtin| builtin.id == id)
+}
+
 pub fn delete_template_in(dir: &std::path::Path, id: &str) -> Result<(), String> {
-    validate_slug(id, "Template-Kürzel")?;
-    if builtin_templates().iter().any(|builtin| builtin.id == id) {
-        return Err("Eingebaute Aktionen können nicht gelöscht werden.".to_string());
+    validate_slug(id, "template slug")?;
+    if is_builtin_template(id) {
+        return Err("built-in actions cannot be deleted".to_string());
     }
     let path = dir.join(format!("{id}.json"));
     std::fs::remove_file(&path).map_err(|error| {
         if error.kind() == std::io::ErrorKind::NotFound {
-            format!("Template '{id}' wurde nicht gefunden.")
+            format!("template '{id}' was not found")
         } else {
-            format!("Template '{id}' konnte nicht gelöscht werden: {error}")
+            format!("could not delete template '{id}': {error}")
         }
     })
 }
@@ -337,8 +341,8 @@ pub fn build_user_message(action_prompt: &str, delimiter: &str, document: &str) 
 /// gibt bewusst KEIN Clamping. Der lossy Helfer in `commands/editor.rs`
 /// bleibt davon unberührt (Editor-Kommandos wollen Clamp-Semantik).
 pub fn utf16_to_byte_offset_strict(text: &str, utf16_offset: u64) -> Result<usize, String> {
-    let target = usize::try_from(utf16_offset)
-        .map_err(|_| "Der Selektions-Offset ist zu groß.".to_string())?;
+    let target =
+        usize::try_from(utf16_offset).map_err(|_| "selection offset is too large".to_string())?;
     let mut units = 0_usize;
     for (byte_index, ch) in text.char_indices() {
         if units == target {
@@ -347,15 +351,14 @@ pub fn utf16_to_byte_offset_strict(text: &str, utf16_offset: u64) -> Result<usiz
         units += ch.len_utf16();
         if units > target {
             return Err(
-                "Der Selektions-Offset liegt innerhalb eines Zeichens (Surrogat-Mitte)."
-                    .to_string(),
+                "selection offset is inside a character (UTF-16 surrogate midpoint)".to_string(),
             );
         }
     }
     if units == target {
         Ok(text.len())
     } else {
-        Err("Die Selektion liegt außerhalb des Dokuments.".to_string())
+        Err("selection is outside the document".to_string())
     }
 }
 
@@ -363,11 +366,11 @@ pub fn utf16_to_byte_offset_strict(text: &str, utf16_offset: u64) -> Result<usiz
 pub fn resolve_selection(text: &str, start: u64, length: u64) -> Result<Range<usize>, String> {
     let end_units = start
         .checked_add(length)
-        .ok_or_else(|| "Die Selektion ist ungültig (Überlauf).".to_string())?;
+        .ok_or_else(|| "selection range overflow".to_string())?;
     let start_byte = utf16_to_byte_offset_strict(text, start)?;
     let end_byte = utf16_to_byte_offset_strict(text, end_units)?;
     if start_byte >= end_byte {
-        return Err("Die Auswahl ist leer.".to_string());
+        return Err("selection is empty".to_string());
     }
     Ok(start_byte..end_byte)
 }
@@ -506,7 +509,7 @@ mod tests {
         // Mitte des Surrogatpaars → Fehler, kein Clamp.
         assert!(utf16_to_byte_offset_strict(text, 2)
             .unwrap_err()
-            .contains("Surrogat"));
+            .contains("surrogate"));
         // Hinter EOF → Fehler.
         assert!(utf16_to_byte_offset_strict(text, 5).is_err());
     }
@@ -625,7 +628,7 @@ mod tests {
         assert!(list_templates_in(&dir).iter().all(|t| t.id != "meins"));
         assert!(delete_template_in(&dir, "meins")
             .unwrap_err()
-            .contains("nicht gefunden"));
+            .contains("was not found"));
     }
 
     #[test]
@@ -635,10 +638,10 @@ mod tests {
         template.builtin = false;
         assert!(save_template_in(temp.path(), template)
             .unwrap_err()
-            .contains("reserviert"));
+            .contains("reserved"));
         assert!(delete_template_in(temp.path(), "summarize")
             .unwrap_err()
-            .contains("nicht gelöscht"));
+            .contains("cannot be deleted"));
         assert!(delete_template_in(temp.path(), "../etc").is_err());
     }
 }

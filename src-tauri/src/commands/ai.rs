@@ -8,6 +8,7 @@ use crate::{
         types::{AiConfig, AuthStatus, Catalog, CustomProviderDefinition},
     },
     file_kind::{classify, FileKind},
+    i18n,
     state::{AiJob, AiJobKind, AppState},
     theme::author,
 };
@@ -47,7 +48,7 @@ fn acquire_ai_job(slot: &Mutex<Option<AiJob>>, job: AiJob) -> Result<AiJobGuard<
         .lock()
         .map_err(|_| "AI job lock poisoned".to_string())?;
     if active.is_some() {
-        return Err("Es läuft bereits ein KI-Vorgang.".to_string());
+        return Err(i18n::t("errors.ai.jobActive"));
     }
     *active = Some(job);
     drop(active);
@@ -61,9 +62,10 @@ pub async fn ai_catalog_get() -> Result<CatalogResult, String> {
 
 #[tauri::command]
 pub async fn ai_catalog_refresh(state: State<'_, AppState>) -> Result<CatalogResult, String> {
-    let result = catalog::refresh(&state.ai_http)
-        .await
-        .map_err(|error| error.to_string())?;
+    let result = catalog::refresh(&state.ai_http).await.map_err(|error| {
+        let detail = error.to_string();
+        i18n::t_args("errors.ai.catalogRefreshFailed", &[("detail", &detail)])
+    })?;
     tracing::info!(
         target: "folio::ai",
         updated_at = %result.updated_at,
@@ -149,19 +151,29 @@ pub async fn ai_custom_models_fetch(
 ) -> Result<AiConfig, String> {
     let (base_url, key) = {
         let config = config_data(state.inner())?;
-        let provider = config
-            .provider
-            .get(&provider_id)
-            .ok_or_else(|| format!("Custom-Provider '{provider_id}' wurde nicht gefunden"))?;
+        let provider = config.provider.get(&provider_id).ok_or_else(|| {
+            i18n::t_args(
+                "errors.ai.customProviderMissing",
+                &[("detail", &provider_id)],
+            )
+        })?;
         if !provider.custom {
-            return Err(format!("Provider '{provider_id}' ist kein Custom-Provider"));
+            return Err(i18n::t_args(
+                "errors.ai.notCustomProvider",
+                &[("detail", &provider_id)],
+            ));
         }
         let base_url = provider
             .options
             .as_ref()
             .map(|options| options.base_url.clone())
             .filter(|url| !url.trim().is_empty())
-            .ok_or_else(|| format!("Custom-Provider '{provider_id}' hat keine Basis-URL"))?;
+            .ok_or_else(|| {
+                i18n::t_args(
+                    "errors.ai.customBaseUrlMissing",
+                    &[("detail", &provider_id)],
+                )
+            })?;
         let key = state
             .ai_auth
             .lock()
@@ -176,17 +188,24 @@ pub async fn ai_custom_models_fetch(
         request = request.bearer_auth(key);
     }
     let response = request.send().await.map_err(|error| {
-        format!("Modelle von Provider '{provider_id}' konnten nicht abgerufen werden: {error}")
+        let detail = format!("{provider_id}: {error}");
+        i18n::t_args("errors.ai.listModelsFailed", &[("detail", &detail)])
     })?;
     let status = response.status();
     let body = response.text().await.map_err(|error| {
-        format!("Antwort von Provider '{provider_id}' konnte nicht gelesen werden: {error}")
+        let detail = format!("{provider_id}: {error}");
+        i18n::t_args("errors.ai.providerResponseFailed", &[("detail", &detail)])
     })?;
     if !status.is_success() {
-        return Err(http_error(&provider_id, status, &body, key.as_deref()));
+        let detail = http_error(&provider_id, status, &body, key.as_deref());
+        return Err(i18n::t_args(
+            "errors.ai.providerHttpFailed",
+            &[("detail", &detail)],
+        ));
     }
     let model_ids = parse_custom_models(&body).map_err(|error| {
-        format!("Provider '{provider_id}' lieferte keine gültige Modellliste: {error}")
+        let detail = format!("{provider_id}: {error}");
+        i18n::t_args("errors.ai.invalidModelList", &[("detail", &detail)])
     })?;
 
     let count = model_ids.len();
@@ -257,7 +276,19 @@ pub async fn ai_model_chat_test(
         |_| {},
     )
     .await
-    .map_err(|error| error.to_string())
+    .map_err(|error| request_failed(&error))
+}
+
+fn request_failed(error: &client::ChatError) -> String {
+    request_failed_with(error, None)
+}
+
+fn request_failed_with(error: &client::ChatError, tr: Option<&i18n::Translator>) -> String {
+    let detail = error.to_string();
+    match tr {
+        Some(tr) => tr.t_args("errors.ai.requestFailed", &[("detail", &detail)]),
+        None => i18n::t_args("errors.ai.requestFailed", &[("detail", &detail)]),
+    }
 }
 
 #[tauri::command]
@@ -276,18 +307,19 @@ pub async fn ai_translate_document(
         },
     )?;
     state.ai_translate_cancel.store(false, Ordering::Release);
-    let languages = normalize_languages(languages)?;
+    let languages = normalize_languages(languages, None)?;
     let (source_path, source_text) = {
         let tabs = state
             .tabs
             .lock()
             .map_err(|_| "tabs lock poisoned".to_string())?;
         let store = &tabs.active().document_store;
-        let path = store.path.clone().ok_or_else(|| {
-            "Für die Übersetzung muss ein gespeichertes Dokument geöffnet sein.".to_string()
-        })?;
+        let path = store
+            .path
+            .clone()
+            .ok_or_else(|| i18n::t("errors.ai.translateNeedsSavedDoc"))?;
         if classify(&path) != FileKind::Markdown {
-            return Err("Nur Markdown-Dokumente können mit KI übersetzt werden.".to_string());
+            return Err(i18n::t("errors.ai.translateMarkdownOnly"));
         }
         // `DocumentStore::text` ist derselbe kanonische Inhalt, den Save
         // verwendet. `editor_text_changed` hält ihn auch bei Dirty-Text
@@ -456,7 +488,7 @@ pub async fn ai_theme_author(
     let base = match base_id.as_deref().filter(|id| !id.trim().is_empty()) {
         Some(id) => {
             let package = crate::theme::package(id)
-                .ok_or_else(|| format!("Unbekanntes Basis-Theme: '{id}'"))?;
+                .ok_or_else(|| i18n::t_args("errors.ai.baseThemeMissing", &[("detail", id)]))?;
             Some(author::BaseContext {
                 id: package.id,
                 content_css: package.content_css,
@@ -477,7 +509,7 @@ pub async fn ai_theme_author(
                 .map_err(|_| "tabs lock poisoned".to_string())?;
             let store = &tabs.active().document_store;
             if store.path.is_none() {
-                return Err("Kein Dokument geöffnet.".to_string());
+                return Err(i18n::t("errors.document.noneOpen"));
             }
             store.text.clone()
         };
@@ -530,21 +562,29 @@ pub async fn ai_theme_author(
     if matches!(raw_response, Err(client::ChatError::Cancelled))
         || state.ai_theme_author_cancel.load(Ordering::Acquire)
     {
-        done(false, Some("abgebrochen"));
-        return Err("KI-Theme-Lauf abgebrochen.".to_string());
+        let message = i18n::t("errors.ai.themeRunAborted");
+        done(false, Some(&message));
+        return Err(message);
     }
     let raw_response = match raw_response {
         Ok(response) => response,
         Err(error) => {
-            let message = error.to_string();
+            let message = request_failed(&error);
             done(false, Some(&message));
             return Err(message);
         }
     };
 
-    let draft = author::parse_draft(&raw_response)
+    let draft_result = author::parse_draft(&raw_response)
         .and_then(|raw| author::validate_draft(raw, None))
-        .inspect_err(|error| done(false, Some(error)))?;
+        .map_err(|detail| i18n::t_args("errors.ai.invalidThemeDraft", &[("detail", &detail)]));
+    let draft = match draft_result {
+        Ok(draft) => draft,
+        Err(message) => {
+            done(false, Some(&message));
+            return Err(message);
+        }
+    };
 
     tracing::info!(
         target: "folio::ai",
@@ -620,7 +660,8 @@ pub async fn ai_actions_list() -> Result<Vec<actions::ActionTemplate>, String> {
 pub async fn ai_action_template_save(
     template: actions::ActionTemplate,
 ) -> Result<actions::ActionTemplate, String> {
-    let saved = actions::save_template(template)?;
+    let saved = actions::save_template(template)
+        .map_err(|detail| i18n::t_args("errors.ai.templateSaveFailed", &[("detail", &detail)]))?;
     tracing::info!(
         target: "folio::ai",
         id = saved.id,
@@ -631,7 +672,11 @@ pub async fn ai_action_template_save(
 
 #[tauri::command]
 pub async fn ai_action_template_delete(id: String) -> Result<(), String> {
-    actions::delete_template(&id)?;
+    if actions::is_builtin_template(&id) {
+        return Err(i18n::t("errors.ai.builtinTemplateDelete"));
+    }
+    actions::delete_template(&id)
+        .map_err(|detail| i18n::t_args("errors.ai.templateDeleteFailed", &[("detail", &detail)]))?;
     tracing::info!(
         target: "folio::ai",
         id,
@@ -685,19 +730,24 @@ pub async fn ai_action_run(
 ) -> Result<AiActionOutcome, String> {
     // === Preflight: laeuft komplett VOR der Guard-Annahme. Fehler hier
     // gehen nur ueber den Command-Return — kein Started, kein Done. ===
-    actions::validate_slug(&request.suffix, "Datei-Suffix")?;
+    actions::validate_slug(&request.suffix, "Datei-Suffix").map_err(|detail| {
+        i18n::t_args("errors.ai.actionValidationFailed", &[("detail", &detail)])
+    })?;
     if let Some(action_id) = request.action_id.as_deref() {
         // Verhindert freie Strings im Log (Redaction-Vertrag) —
         // action_id ist reine Korrelation, kein Inhaltstransport.
-        actions::validate_slug(action_id, "Aktions-Kürzel")?;
+        actions::validate_slug(action_id, "Aktions-Kürzel").map_err(|detail| {
+            i18n::t_args("errors.ai.actionValidationFailed", &[("detail", &detail)])
+        })?;
     }
     if request.prompt.trim().is_empty() {
-        return Err("Der Prompt darf nicht leer sein.".to_string());
+        return Err(i18n::t("errors.ai.emptyPrompt"));
     }
     if request.prompt.chars().count() > actions::PROMPT_MAX_CHARS {
-        return Err(format!(
-            "Der Prompt darf höchstens {} Zeichen haben.",
-            actions::PROMPT_MAX_CHARS
+        let detail = actions::PROMPT_MAX_CHARS.to_string();
+        return Err(i18n::t_args(
+            "errors.ai.promptTooLong",
+            &[("detail", &detail)],
         ));
     }
 
@@ -708,16 +758,17 @@ pub async fn ai_action_run(
             .map_err(|_| "tabs lock poisoned".to_string())?;
         let tab = tabs
             .tab(request.source_tab_id)
-            .ok_or_else(|| "Der Quell-Tab existiert nicht mehr.".to_string())?;
+            .ok_or_else(|| i18n::t("errors.ai.sourceTabMissing"))?;
         let store = &tab.document_store;
-        let path = store.path.clone().ok_or_else(|| {
-            "Für KI-Aktionen muss ein gespeichertes Dokument geöffnet sein.".to_string()
-        })?;
+        let path = store
+            .path
+            .clone()
+            .ok_or_else(|| i18n::t("errors.ai.actionsNeedSavedDoc"))?;
         if path.replace('\\', "/") != request.source_path.replace('\\', "/") {
-            return Err("Die Quelle hat sich geändert — bitte erneut starten.".to_string());
+            return Err(i18n::t("errors.ai.sourceChangedDuringRun"));
         }
         if classify(&path) != FileKind::Markdown {
-            return Err("KI-Aktionen sind nur für Markdown-Dokumente verfügbar.".to_string());
+            return Err(i18n::t("errors.ai.actionsMarkdownOnly"));
         }
         store.text.clone()
     };
@@ -725,29 +776,29 @@ pub async fn ai_action_run(
     // Monaco-Modell waeren bei Lone-CR nicht identisch, jede Offset-
     // Rechnung falsch (Koordinatenvertrag der Spec).
     if mask::has_lone_carriage_return(&source_text) {
-        return Err(
-            "Dieses Dokument verwendet nicht unterstützte Zeilenenden (einzelne CR).".to_string(),
-        );
+        return Err(i18n::t("errors.ai.unsupportedLineEndings"));
     }
     if actions::sha256_hex(&source_text) != request.source_text_sha256 {
-        return Err("Die Quelle hat sich geändert — bitte erneut starten.".to_string());
+        return Err(i18n::t("errors.ai.sourceChangedDuringRun"));
     }
 
     let (base_url, api_key) =
         resolve_provider(state.inner(), &request.provider_id, &request.model_id)?;
 
     let selection = match &request.scope {
-        Some(scope) => Some(actions::resolve_selection(
-            &source_text,
-            scope.start,
-            scope.length,
-        )?),
+        Some(scope) => Some(
+            actions::resolve_selection(&source_text, scope.start, scope.length).map_err(
+                |detail| i18n::t_args("errors.ai.selectionInvalid", &[("detail", &detail)]),
+            )?,
+        ),
         None => None,
     };
     let (work_text, masked) = match (&selection, request.masking) {
         (Some(range), true) => {
-            let masked =
-                mask::mask_selection(&source_text, range.clone()).map_err(|e| e.to_string())?;
+            let masked = mask::mask_selection(&source_text, range.clone()).map_err(|error| {
+                let detail = error.to_string();
+                i18n::t_args("errors.ai.selectionInvalid", &[("detail", &detail)])
+            })?;
             (masked.text.clone(), Some(masked))
         }
         (Some(range), false) => (source_text[range.clone()].to_string(), None),
@@ -796,7 +847,8 @@ pub async fn ai_action_run(
         "ai:action_started",
         serde_json::json!({ "runId": run_id, "requestId": request.request_id }),
     ) {
-        let message = error.to_string();
+        let detail = error.to_string();
+        let message = i18n::t_args("errors.ai.eventFailed", &[("detail", &detail)]);
         done(false, Some(&message));
         return Err(message);
     }
@@ -878,13 +930,14 @@ async fn run_action_replace(
     .await;
 
     if matches!(raw, Err(client::ChatError::Cancelled)) || cancel.load(Ordering::Acquire) {
-        done(false, Some("abgebrochen"));
-        return Err("KI-Aktion abgebrochen.".to_string());
+        let message = i18n::t("errors.ai.actionAborted");
+        done(false, Some(&message));
+        return Err(message);
     }
     let raw = match raw {
         Ok(raw) => raw,
         Err(error) => {
-            let message = error.to_string();
+            let message = request_failed(&error);
             done(false, Some(&message));
             return Err(message);
         }
@@ -893,7 +946,8 @@ async fn run_action_replace(
         Some(masked) => match mask::unmask(&raw, masked) {
             Ok(text) => text,
             Err(error) => {
-                let message = error.to_string();
+                let detail = error.to_string();
+                let message = i18n::t_args("errors.ai.responseInvalid", &[("detail", &detail)]);
                 done(false, Some(&message));
                 return Err(message);
             }
@@ -902,7 +956,7 @@ async fn run_action_replace(
     };
     let text = actions::normalize_output_eol(&text);
     if text.trim().is_empty() {
-        let message = "Das Modell hat eine leere Antwort geliefert.".to_string();
+        let message = i18n::t("errors.ai.emptyModelResponse");
         done(false, Some(&message));
         return Err(message);
     }
@@ -939,13 +993,21 @@ async fn run_action_new_file(
         Ok(transition) => transition,
         Err(error) => {
             remove_derived_file(&path);
-            return Err(fail(error.to_string(), &done));
+            let detail = error.to_string();
+            return Err(fail(
+                i18n::t_args("errors.ai.openTargetFailed", &[("detail", &detail)]),
+                &done,
+            ));
         }
     };
     let tab_id = transition.tab.id;
     if let Err(error) = crate::commands::tabs::emit_navigation_changed(handle, &transition, None) {
         cleanup_action_target(state, handle, tab_id, &path);
-        return Err(fail(error.to_string(), &done));
+        let detail = error.to_string();
+        return Err(fail(
+            i18n::t_args("errors.ai.eventFailed", &[("detail", &detail)]),
+            &done,
+        ));
     }
 
     let cancel = state.ai_action_cancel.clone();
@@ -976,14 +1038,15 @@ async fn run_action_new_file(
 
     if matches!(raw, Err(client::ChatError::Cancelled)) || cancel.load(Ordering::Acquire) {
         cleanup_action_target(state, handle, tab_id, &path);
-        done(false, Some("abgebrochen"));
-        return Err("KI-Aktion abgebrochen.".to_string());
+        let message = i18n::t("errors.ai.actionAborted");
+        done(false, Some(&message));
+        return Err(message);
     }
     let raw = match raw {
         Ok(raw) => raw,
         Err(error) => {
             cleanup_action_target(state, handle, tab_id, &path);
-            return Err(fail(error.to_string(), &done));
+            return Err(fail(request_failed(&error), &done));
         }
     };
     let text = match masked {
@@ -991,7 +1054,11 @@ async fn run_action_new_file(
             Ok(text) => text,
             Err(error) => {
                 cleanup_action_target(state, handle, tab_id, &path);
-                return Err(fail(error.to_string(), &done));
+                let detail = error.to_string();
+                return Err(fail(
+                    i18n::t_args("errors.ai.responseInvalid", &[("detail", &detail)]),
+                    &done,
+                ));
             }
         },
         None => raw,
@@ -999,10 +1066,7 @@ async fn run_action_new_file(
     let text = actions::normalize_output_eol(&text);
     if text.trim().is_empty() {
         cleanup_action_target(state, handle, tab_id, &path);
-        return Err(fail(
-            "Das Modell hat eine leere Antwort geliefert.".to_string(),
-            &done,
-        ));
+        return Err(fail(i18n::t("errors.ai.emptyModelResponse"), &done));
     }
 
     // Erfolgs-Finalisierung: Ownership-Check, Write und Tab-Reload laufen
@@ -1023,8 +1087,9 @@ async fn run_action_new_file(
             // löscht nur die leere Reservierung (Datei mit vom User
             // gespeichertem Inhalt bleibt erhalten).
             cleanup_action_target(state, handle, tab_id, &path);
-            done(false, Some("abgebrochen"));
-            return Err("KI-Aktion abgebrochen (Ziel-Tab geschlossen).".to_string());
+            let message = i18n::t("errors.ai.actionTargetClosed");
+            done(false, Some(&message));
+            return Err(message);
         }
         Ok(FinalizeResult::Conflict) => {
             tracing::warn!(
@@ -1043,7 +1108,11 @@ async fn run_action_new_file(
                     Ok(transition) => transition,
                     Err(error) => {
                         remove_derived_file(&fallback);
-                        return Err(fail(error.to_string(), &done));
+                        let detail = error.to_string();
+                        return Err(fail(
+                            i18n::t_args("errors.ai.openTargetFailed", &[("detail", &detail)]),
+                            &done,
+                        ));
                     }
                 };
             let fallback_tab = transition.tab.id;
@@ -1051,17 +1120,18 @@ async fn run_action_new_file(
                 crate::commands::tabs::emit_navigation_changed(handle, &transition, None)
             {
                 cleanup_action_target(state, handle, fallback_tab, &fallback);
-                return Err(fail(error.to_string(), &done));
+                let detail = error.to_string();
+                return Err(fail(
+                    i18n::t_args("errors.ai.eventFailed", &[("detail", &detail)]),
+                    &done,
+                ));
             }
             match finalize_action_file(state, fallback_tab, &fallback, &fallback_normalized, &text)
             {
                 Ok(FinalizeResult::Written) => {}
                 Ok(_) | Err(_) => {
                     cleanup_action_target(state, handle, fallback_tab, &fallback);
-                    return Err(fail(
-                        "Die Ausweich-Zieldatei konnte nicht geschrieben werden.".to_string(),
-                        &done,
-                    ));
+                    return Err(fail(i18n::t("errors.ai.fallbackTargetWriteFailed"), &done));
                 }
             }
             fallback_normalized
@@ -1123,7 +1193,8 @@ fn finalize_action_file(
         tab.document_store.load_silent(normalized)
     }
     .map_err(|error| {
-        format!("Zieldatei '{normalized}' konnte nicht neu geladen werden: {error}")
+        let detail = format!("{normalized}: {error}");
+        i18n::t_args("errors.ai.reloadTargetFailed", &[("detail", &detail)])
     })?;
     Ok(FinalizeResult::Written)
 }
@@ -1231,8 +1302,10 @@ pub async fn ai_auth_set(
         .ai_auth
         .lock()
         .map_err(|_| "AI auth lock poisoned".to_string())?;
-    auth.set(provider_id.clone(), key)
-        .map_err(|error| error.to_string())?;
+    auth.set(provider_id.clone(), key).map_err(|error| {
+        let detail = error.to_string();
+        i18n::t_args("errors.ai.authUpdateFailed", &[("detail", &detail)])
+    })?;
     let status = auth.status();
     drop(auth);
     tracing::info!(
@@ -1252,8 +1325,10 @@ pub async fn ai_auth_remove(
         .ai_auth
         .lock()
         .map_err(|_| "AI auth lock poisoned".to_string())?;
-    auth.remove(&provider_id)
-        .map_err(|error| error.to_string())?;
+    auth.remove(&provider_id).map_err(|error| {
+        let detail = error.to_string();
+        i18n::t_args("errors.ai.authUpdateFailed", &[("detail", &detail)])
+    })?;
     let status = auth.status();
     drop(auth);
     tracing::info!(
@@ -1289,7 +1364,10 @@ fn mutate_config(
         .ai_config
         .lock()
         .map_err(|_| "AI config lock poisoned".to_string())?;
-    mutation(&mut service).map_err(|error| error.to_string())?;
+    mutation(&mut service).map_err(|error| {
+        let detail = error.to_string();
+        i18n::t_args("errors.ai.configUpdateFailed", &[("detail", &detail)])
+    })?;
     Ok(service.data())
 }
 
@@ -1297,6 +1375,7 @@ fn provider_base_url(
     config: &AiConfig,
     catalog: &Catalog,
     provider_id: &str,
+    tr: Option<&i18n::Translator>,
 ) -> Result<String, String> {
     let configured = config.provider.get(provider_id);
     let endpoint = if configured.is_some_and(|provider| provider.custom) {
@@ -1311,9 +1390,16 @@ fn provider_base_url(
             .map(str::trim)
             .filter(|url| !url.is_empty())
     };
-    endpoint
-        .map(str::to_string)
-        .ok_or_else(|| format!("Provider '{provider_id}' hat keinen bekannten Endpoint."))
+    endpoint.map(str::to_string).ok_or_else(|| match tr {
+        Some(tr) => tr.t_args(
+            "errors.ai.providerEndpointMissing",
+            &[("detail", provider_id)],
+        ),
+        None => i18n::t_args(
+            "errors.ai.providerEndpointMissing",
+            &[("detail", provider_id)],
+        ),
+    })
 }
 
 /// Liefert `(base_url, api_key)` fuer einen freigeschalteten Provider +
@@ -1329,19 +1415,26 @@ fn resolve_provider(
 ) -> Result<(String, Option<String>), String> {
     let config = config_data(state)?;
     let catalog = catalog::load().catalog;
-    let provider = config
-        .provider
-        .get(provider_id)
-        .ok_or_else(|| format!("KI-Provider '{provider_id}' ist nicht konfiguriert."))?;
+    let provider = config.provider.get(provider_id).ok_or_else(|| {
+        i18n::t_args(
+            "errors.ai.providerNotConfigured",
+            &[("detail", provider_id)],
+        )
+    })?;
     if !provider.enabled {
-        return Err(format!("KI-Provider '{provider_id}' ist nicht aktiviert."));
-    }
-    if !provider.whitelist.iter().any(|id| id == model_id) {
-        return Err(format!(
-            "Modell '{model_id}' ist für Provider '{provider_id}' nicht freigeschaltet."
+        return Err(i18n::t_args(
+            "errors.ai.providerDisabled",
+            &[("detail", provider_id)],
         ));
     }
-    let base_url = provider_base_url(&config, &catalog, provider_id)?;
+    if !provider.whitelist.iter().any(|id| id == model_id) {
+        let detail = format!("{provider_id}/{model_id}");
+        return Err(i18n::t_args(
+            "errors.ai.modelNotWhitelisted",
+            &[("detail", &detail)],
+        ));
+    }
+    let base_url = provider_base_url(&config, &catalog, provider_id, None)?;
     let key = state
         .ai_auth
         .lock()
@@ -1350,7 +1443,10 @@ fn resolve_provider(
     Ok((base_url, key))
 }
 
-fn normalize_languages(languages: Vec<String>) -> Result<Vec<String>, String> {
+fn normalize_languages(
+    languages: Vec<String>,
+    tr: Option<&i18n::Translator>,
+) -> Result<Vec<String>, String> {
     let mut normalized = Vec::new();
     for language in languages {
         let language = language.trim().to_ascii_lowercase();
@@ -1361,16 +1457,20 @@ fn normalize_languages(languages: Vec<String>) -> Result<Vec<String>, String> {
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
         {
-            return Err(format!(
-                "Ungültiger Sprachcode '{language}': erlaubt sind Buchstaben, Zahlen und '-'."
-            ));
+            return Err(match tr {
+                Some(tr) => tr.t_args("errors.ai.invalidLanguageCode", &[("detail", &language)]),
+                None => i18n::t_args("errors.ai.invalidLanguageCode", &[("detail", &language)]),
+            });
         }
         if !normalized.contains(&language) {
             normalized.push(language);
         }
     }
     if normalized.is_empty() {
-        return Err("Bitte mindestens eine Zielsprache auswählen.".to_string());
+        return Err(match tr {
+            Some(tr) => tr.t("errors.ai.noTargetLanguage"),
+            None => i18n::t("errors.ai.noTargetLanguage"),
+        });
     }
     Ok(normalized)
 }
@@ -1379,12 +1479,12 @@ fn reserve_derived_file(source_path: &str, suffix: &str) -> Result<PathBuf, Stri
     let source = Path::new(source_path);
     let parent = source
         .parent()
-        .ok_or_else(|| "Das Quelldokument hat kein Zielverzeichnis.".to_string())?;
+        .ok_or_else(|| i18n::t("errors.ai.sourceDirectoryMissing"))?;
     let stem = source
         .file_stem()
         .and_then(|value| value.to_str())
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| "Der Dateiname des Quelldokuments ist ungültig.".to_string())?;
+        .ok_or_else(|| i18n::t("errors.ai.invalidSourceFilename"))?;
 
     for attempt in 0usize.. {
         let filename = if attempt == 0 {
@@ -1397,9 +1497,10 @@ fn reserve_derived_file(source_path: &str, suffix: &str) -> Result<PathBuf, Stri
             Ok(_) => return Ok(path),
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(error) => {
-                return Err(format!(
-                    "Zieldatei '{}' konnte nicht angelegt werden: {error}",
-                    path.display()
+                let detail = format!("{}: {error}", path.display());
+                return Err(i18n::t_args(
+                    "errors.ai.createTargetFailed",
+                    &[("detail", &detail)],
                 ));
             }
         }
@@ -1409,10 +1510,8 @@ fn reserve_derived_file(source_path: &str, suffix: &str) -> Result<PathBuf, Stri
 
 fn write_derived_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
     std::fs::write(path, bytes).map_err(|error| {
-        format!(
-            "Zieldatei '{}' konnte nicht geschrieben werden: {error}",
-            path.display()
-        )
+        let detail = format!("{}: {error}", path.display());
+        i18n::t_args("errors.ai.writeTargetFailed", &[("detail", &detail)])
     })
 }
 
@@ -1422,16 +1521,22 @@ fn reload_derived_tab(state: &AppState, tab_id: u64, path: &str) -> Result<(), S
         .lock()
         .map_err(|_| "tabs lock poisoned".to_string())?;
     let active = tabs.is_active(tab_id);
-    let tab = tabs
-        .tab_mut(tab_id)
-        .ok_or_else(|| format!("derived-file tab {tab_id} no longer exists"))?;
+    let tab = tabs.tab_mut(tab_id).ok_or_else(|| {
+        i18n::t_args(
+            "errors.ai.derivedTabMissing",
+            &[("detail", &tab_id.to_string())],
+        )
+    })?;
     if active {
         tab.document_store.load(path)
     } else {
         tab.document_store.load_silent(path)
     }
     .map(|_| ())
-    .map_err(|error| format!("Zieldatei '{path}' konnte nicht neu geladen werden: {error}"))
+    .map_err(|error| {
+        let detail = format!("{path}: {error}");
+        i18n::t_args("errors.ai.reloadTargetFailed", &[("detail", &detail)])
+    })
 }
 
 fn remove_derived_file(path: &Path) {
@@ -1479,12 +1584,17 @@ fn cleanup_derived_tab(state: &AppState, handle: &AppHandle, tab_id: u64, path: 
 }
 
 fn translation_error(language: &str, created: &[String], error: String) -> String {
-    if created.is_empty() {
-        format!("Übersetzung für '{language}' fehlgeschlagen: {error}")
+    let detail = if created.is_empty() {
+        format!("{language}: {error}")
     } else {
-        format!(
-            "Übersetzung für '{language}' fehlgeschlagen: {error} Bereits erzeugt: {}",
-            created.join(", ")
+        format!("{language}: {error}; {}", created.join(", "))
+    };
+    if created.is_empty() {
+        i18n::t_args("errors.ai.translateLanguageFailed", &[("detail", &detail)])
+    } else {
+        i18n::t_args(
+            "errors.ai.translateLanguageFailedWithCreated",
+            &[("detail", &detail)],
         )
     }
 }
@@ -1500,10 +1610,12 @@ struct OpenAiModel {
 }
 
 fn custom_models_url(base_url: &str) -> Result<Url, String> {
-    let mut url = Url::parse(base_url.trim())
-        .map_err(|error| format!("Ungültige Basis-URL für Custom-Provider: {error}"))?;
+    let mut url = Url::parse(base_url.trim()).map_err(|error| {
+        let detail = error.to_string();
+        i18n::t_args("errors.ai.invalidCustomBaseUrl", &[("detail", &detail)])
+    })?;
     if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
-        return Err("Basis-URL des Custom-Providers muss eine HTTP(S)-URL sein".to_string());
+        return Err(i18n::t("errors.ai.customBaseUrlHttpOnly"));
     }
     let path = url.path().trim_end_matches('/').to_string();
     if !path.ends_with("/models") {
@@ -1544,9 +1656,11 @@ fn http_error(provider_id: &str, status: StatusCode, body: &str, api_key: Option
 mod tests {
     use super::{
         custom_models_url, http_error, normalize_languages, parse_custom_models, provider_base_url,
-        reserve_derived_file, write_derived_file,
+        request_failed_with, reserve_derived_file, write_derived_file,
     };
+    use crate::ai::client::ChatError;
     use crate::ai::types::{AiConfig, AiProviderConfig, AiProviderOptions, CatalogProvider};
+    use crate::i18n::{CatalogRegistry, ResolvedLanguage, Translator};
     use std::collections::BTreeMap;
     use tempfile::TempDir;
 
@@ -1592,6 +1706,19 @@ mod tests {
     }
 
     #[test]
+    fn chat_request_error_gets_exactly_one_localized_frame() {
+        let error = ChatError::Request("disk".to_string());
+        assert_eq!(
+            "KI-Anfrage fehlgeschlagen: disk",
+            request_failed_with(&error, Some(&translator("de")))
+        );
+        assert_eq!(
+            "AI request failed: disk",
+            request_failed_with(&error, Some(&translator("en")))
+        );
+    }
+
+    #[test]
     fn provider_endpoint_prefers_custom_config_and_catalog_api() {
         let mut config = AiConfig::default();
         config.provider.insert(
@@ -1621,25 +1748,34 @@ mod tests {
 
         assert_eq!(
             "http://localhost:1234/v1",
-            provider_base_url(&config, &catalog, "local").unwrap()
+            provider_base_url(&config, &catalog, "local", Some(&translator("en"))).unwrap()
         );
         assert_eq!(
             "https://provider.test/v1",
-            provider_base_url(&config, &catalog, "hosted").unwrap()
+            provider_base_url(&config, &catalog, "hosted", Some(&translator("en"))).unwrap()
         );
-        assert!(provider_base_url(&config, &catalog, "missing")
+        let error = provider_base_url(&config, &catalog, "missing", Some(&translator("en")))
             .unwrap_err()
-            .contains("keinen bekannten Endpoint"));
+            .to_string();
+        assert!(error.contains("known endpoint"), "unexpected: {error}");
+        assert!(error.contains("missing"), "missing detail: {error}");
     }
 
     #[test]
     fn languages_are_normalized_deduplicated_and_validated() {
         assert_eq!(
             vec!["de", "en-us"],
-            normalize_languages(vec![" DE ".into(), "en-US".into(), "de".into()]).unwrap()
+            normalize_languages(
+                vec![" DE ".into(), "en-US".into(), "de".into()],
+                Some(&translator("en")),
+            )
+            .unwrap()
         );
-        assert!(normalize_languages(vec!["../de".into()]).is_err());
-        assert!(normalize_languages(vec![" ".into()]).is_err());
+        let invalid =
+            normalize_languages(vec!["../de".into()], Some(&translator("en"))).unwrap_err();
+        assert!(invalid.contains("Invalid language code"));
+        assert!(invalid.contains("../de"));
+        assert!(normalize_languages(vec![" ".into()], Some(&translator("en"))).is_err());
     }
 
     #[test]
@@ -1658,5 +1794,17 @@ mod tests {
             std::fs::read_to_string(temp.path().join("notes.de.md")).unwrap()
         );
         assert_eq!("translated", std::fs::read_to_string(created).unwrap());
+    }
+
+    fn translator(tag: &str) -> Translator {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("locales");
+        let registry = CatalogRegistry::load_from_dir(&dir).expect("load locales");
+        Translator::new(
+            registry,
+            ResolvedLanguage {
+                catalog_tag: tag.to_string(),
+                format_locale: "en-US".to_string(),
+            },
+        )
     }
 }

@@ -1,5 +1,6 @@
 use crate::menu::strings as menu_strings;
 use crate::state::AppState;
+use crate::{i18n, i18n::t_args};
 use std::{fs, path::Path};
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_dialog::DialogExt;
@@ -41,7 +42,7 @@ pub fn run_rename_dialog(
             .document_store
             .path
             .clone()
-            .ok_or_else(|| "Kein Dokument geöffnet.".to_string())?
+            .ok_or_else(|| i18n::t("errors.document.noneOpen"))?
     };
 
     let labels = menu_strings::labels();
@@ -96,15 +97,19 @@ fn perform_rename(
     let (old_path, new_path) = (old_path.as_str(), new_path.as_str());
     let target = Path::new(new_path);
     if target.exists() {
-        return Err(format!(
-            "Zieldatei existiert bereits: {}",
-            target
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or(new_path)
+        let detail = target
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(new_path);
+        return Err(t_args(
+            "errors.file.targetAlreadyExists",
+            &[("detail", detail)],
         ));
     }
-    fs::rename(old_path, new_path).map_err(|error| error.to_string())?;
+    fs::rename(old_path, new_path).map_err(|error| {
+        let detail = error.to_string();
+        t_args("errors.file.renameFailed", &[("detail", &detail)])
+    })?;
 
     let (is_open, is_current) = {
         let mut tabs = state
@@ -122,13 +127,17 @@ fn perform_rename(
                 tab.retarget_pending_path(new_path.to_string());
             } else {
                 if is_active {
-                    tab.document_store
-                        .rename_to(new_path)
-                        .map_err(|error| error.to_string())?;
+                    tab.document_store.rename_to(new_path).map_err(|error| {
+                        let detail = error.to_string();
+                        t_args("errors.file.renameFailed", &[("detail", &detail)])
+                    })?;
                 } else {
                     tab.document_store
                         .rename_to_silent(new_path)
-                        .map_err(|error| error.to_string())?;
+                        .map_err(|error| {
+                            let detail = error.to_string();
+                            t_args("errors.file.renameFailed", &[("detail", &detail)])
+                        })?;
                 }
                 tab.navigation.navigate(new_path.to_string(), None);
             }

@@ -1,5 +1,6 @@
 use crate::document_service::{self, DirtyPolicy, OpenDocumentOptions, ReloadPolicy};
 use crate::file_kind::{classify, editor_language, FileKind};
+use crate::i18n;
 use crate::state::AppState;
 use std::path::Path;
 use tauri::{AppHandle, Emitter, State};
@@ -14,12 +15,13 @@ pub async fn read_file(
 ) -> Result<FileData, String> {
     let kind = classify(&path);
     if matches!(kind, FileKind::Binary) {
-        return Err(format!(
-            "Dateityp wird nicht unterstützt: {}",
-            Path::new(&path)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or(&path)
+        let detail = Path::new(&path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(&path);
+        return Err(i18n::t_args(
+            "errors.file.unsupportedType",
+            &[("detail", detail)],
         ));
     }
     // Bereits in einem anderen Tab offen? Dann dorthin springen statt
@@ -54,7 +56,10 @@ pub async fn read_file(
             apply_default_mode: true,
         },
     )
-    .map_err(|error| error.to_string())?;
+    .map_err(|error| {
+        let detail = error.to_string();
+        i18n::t_args("errors.file.openFailedWithDetail", &[("detail", &detail)])
+    })?;
     if let Some(mode) = outcome.mode_override.as_deref() {
         let _ = handle.emit("app:set_mode", serde_json::json!({ "mode": mode }));
     }
@@ -79,5 +84,8 @@ pub async fn reload_document(state: State<'_, AppState>) -> Result<bool, String>
         .active_mut()
         .document_store
         .reload_if_changed()
-        .map_err(|error| error.to_string())
+        .map_err(|error| {
+            let detail = error.to_string();
+            i18n::t_args("errors.file.reloadFailed", &[("detail", &detail)])
+        })
 }

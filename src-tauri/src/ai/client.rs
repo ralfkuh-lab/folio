@@ -36,26 +36,25 @@ impl ChatMessage {
 
 #[derive(Debug, Error)]
 pub enum ChatError {
-    #[error("Ungültige Provider-Basis-URL: {0}")]
+    #[error("invalid provider base URL: {0}")]
     InvalidBaseUrl(String),
-    #[error("Provider-Basis-URL muss eine HTTP(S)-URL sein")]
+    #[error("provider base URL must be an HTTP(S) URL")]
     UnsupportedUrl,
-    #[error("KI-Anfrage fehlgeschlagen: {0}")]
+    #[error("{0}")]
     Request(String),
-    #[error("KI-Antwort konnte nicht gelesen werden: {0}")]
+    #[error("could not read provider response: {0}")]
     ResponseRead(String),
-    #[error("KI-Provider antwortete mit HTTP-Status {status}: {message}")]
+    #[error("provider returned HTTP {status}: {message}")]
     Http { status: StatusCode, message: String },
-    #[error("KI-Antwort enthält ungültiges JSON: {0}")]
+    #[error("provider response contains invalid JSON: {0}")]
     InvalidJson(String),
-    #[error("KI-Antwort enthält keine Text-Antwort in choices[0]")]
+    #[error("provider response has no text in choices[0]")]
     MissingChoice,
-    #[error("KI-Übersetzung abgebrochen")]
+    #[error("request cancelled")]
     Cancelled,
     #[error(
-        "Die KI-Antwort wurde am Output-Limit des Modells abgeschnitten \
-         (finish_reason=length). Das Dokument in kleinere Dateien teilen \
-         oder ein Modell mit größerem Output-Limit wählen."
+        "provider response was truncated at the model output limit \
+         (finish_reason=length)"
     )]
     TruncatedOutput,
 }

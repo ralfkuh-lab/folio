@@ -7,6 +7,7 @@
 //! reagiert nur auf die Felder in `changed`, vermeidet unnoetige
 //! Side-Effects (Menue-Rebuild u.a.).
 
+use crate::i18n;
 use crate::settings::{SettingsData, SettingsPatch};
 use crate::state::AppState;
 use tauri::{AppHandle, Emitter, State};
@@ -49,7 +50,10 @@ pub(crate) fn update_settings(
             .settings
             .lock()
             .map_err(|_| "settings lock poisoned".to_string())?;
-        let changed = svc.apply_patch(patch).map_err(|e| e.to_string())?;
+        let changed = svc.apply_patch(patch).map_err(|error| {
+            let detail = error.to_string();
+            i18n::t_args("errors.app.settingsUpdateFailed", &[("detail", &detail)])
+        })?;
         (svc.data(), changed)
     };
     // Side-Effect: VaultAutoRefresh-Toggle muss den Watcher live ein-/

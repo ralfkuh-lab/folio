@@ -534,9 +534,9 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 | 128 | `Zielverzeichnis kann nicht angelegt werden: {error}` | format!( | `errors.file.mkdirFailed` | Rust error/literal |
 | 135 | `Bild kopieren fehlgeschlagen: {error}` | format!( | `errors.file.copyFailed` | Rust error/literal |
 | 162 | `Alle Dateien` | add_filter( | `menu.filter.all` | Rust error/literal |
-| 251 | `Kein Dokument geoeffnet — absoluter Pfad eingefuegt.` | literal | `editor.imageInsert.absolutePath.hint` | German string found |
-| 258 | `Dokumentpfad ohne Verzeichnis — absoluter Pfad eingefuegt.` | literal | `editor.imageInsert.absolutePath.hint` | German string found |
-| 267 | `Bild liegt ausserhalb des Dokumentbaums — absoluter Pfad eingefuegt.` | literal | `editor.imageInsert.absolutePath.hint` | German string found |
+| 251 | `Kein Dokument geoeffnet — absoluter Pfad eingefuegt.` | warning | `dialogs.image.noDocOpen.warning` | I4b-Fix F2: am Backend-Rand lokalisiert |
+| 258 | `Dokumentpfad ohne Verzeichnis — absoluter Pfad eingefuegt.` | warning | `dialogs.image.docPathNoDirectory.warning` | I4b-Fix F2: am Backend-Rand lokalisiert |
+| 267 | `Bild liegt ausserhalb des Dokumentbaums — absoluter Pfad eingefuegt.` | warning | `dialogs.image.outsideDocumentTree.warning` | I4b-Fix F2: am Backend-Rand lokalisiert |
 
 ## src-tauri/src/commands/file/read.rs
 
@@ -848,7 +848,7 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 | 145 | `Asset schreiben fehlgeschlagen: {error}` | format!( | `errors.theme.assetFailed` | Rust error/literal |
 | 147 | `Asset umbenennen fehlgeschlagen: {error}` | format!( | `errors.theme.assetFailed` | Rust error/literal |
 | 150 | `Asset-Datei ` | format!( | `errors.theme.assetFailed` | Rust error/literal |
-| 207 | `Eingebautes Theme '{id}' kann nicht gelöscht werden` | literal | `errors.theme.cannotDeleteBuiltin` | German string found |
+| 207 | `Eingebautes Theme '{id}' kann nicht gelöscht werden` | Domainfehler | `errors.theme.builtinDelete` | I4b-Fix F3: ohne Operationsrahmen |
 | 215 | `Theme-Verzeichnis '{}' kann nicht gelöscht werden: {error}` | literal | `errors.theme.operationFailed` | German string found |
 | 268 | `Temporäres Theme-Verzeichnis kann nicht angelegt werden: {error}` | format!( | `errors.theme.operationFailed` | Rust error/literal |
 | 279 | `Theme-Verzeichnis '{}' kann nicht veröffentlicht werden: {error}` | literal | `errors.theme.publishFailed` | German string found |
@@ -867,7 +867,7 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 | 376 | `Asset kann nicht kopiert werden: {error}` | format!( | `errors.theme.assetFailed` | Rust error/literal |
 | 390 | `Legacy-Theme-Datei '{}' kann nicht gelöscht werden: {error}` | literal | `errors.theme.legacyDeleteFailed` | German string found |
 | 409 | `Ungültige Theme-ID: ` | format!( | `errors.theme.invalidId` | Rust error/literal |
-| 417 | `Eingebautes Theme '{id}' kann nicht geändert werden` | literal | `errors.theme.cannotModifyBuiltin` | German string found |
+| 417 | `Eingebautes Theme '{id}' kann nicht geändert werden` | Domainfehler | `errors.theme.builtinReadOnly` | I4b-Fix F3: ohne Operationsrahmen |
 
 ## src-tauri/src/vault.rs
 
@@ -1401,7 +1401,7 @@ Folgende Stellen rufen locale-abhängige JS-Funktionen auf und müssen auf die n
 | Tabellen-Zeilen (Surface-Fundstellen inkl. OOS) | 807 |
 | In-Scope (zu extrahieren) | 696 |
 | OUT-OF-SCOPE (Vollständigkeitsnachweis) | 111 |
-| Eindeutige In-Scope-Key-Strings | 533 |
+| Eindeutige In-Scope-Key-Strings | 558 |
 | Ungültige Top-Level-Namespaces | 0 |
 | `common.*` außer `dialogs.common.*` | 0 |
 | Wortlaut-/Transliterations-Verdacht | 0 |
@@ -1410,12 +1410,12 @@ Folgende Stellen rufen locale-abhängige JS-Funktionen auf und müssen auf die n
 
 | Namespace | Anzahl |
 | :--- | ---: |
-| `errors` | 111 |
+| `errors` | 134 |
 | `settings` | 110 |
 | `ai` | 64 |
 | `toolbar` | 47 |
 | `theme` | 38 |
-| `dialogs` | 37 |
+| `dialogs` | 39 |
 | `menu` | 35 |
 | `vault` | 25 |
 | `export` | 23 |
@@ -1512,10 +1512,15 @@ Nach Etappe I3b + Fix-Paket. Regeln (F2): (a) Validierung/Fehler → `errors.<mo
 | `errors.ai.sourceTabClosed` | Der Quell-Tab wurde geschlossen — Übernehmen ist nicht mehr möglich. | Map-alt |
 | `errors.ai.tauriUnavailable` | Tauri-Schnittstelle ist nicht verfügbar. | |
 | `errors.ai.generationFailed` | Generierung fehlgeschlagen. | F4 (war errors.export.generationFailed) |
+| `errors.ai.builtinTemplateDelete` | Eingebaute Aktionen können nicht gelöscht werden. | I4b-Fix F5: eigentliche Nutzerbotschaft, kein Diagnose-Detail |
 | `errors.export.aiGenerateFailed` | KI-Generierung fehlgeschlagen. | Export-Draft-Status |
 | `errors.export.failed` | Export fehlgeschlagen | Map-alt |
 | `errors.theme.assetTooLarge` | Das Asset darf höchstens 5 MB groß sein. | |
 | `errors.theme.baseRequired` | Bitte ein Basis-Theme wählen. | Map-alt |
+| `errors.theme.assetDirectoryRequired` | Verzeichnis-Theme `{id}` für Asset-Vorgang erforderlich | I4b-Fix F3, direkter Domainfehler |
+| `errors.theme.builtinDelete` / `.builtinReadOnly` | Eingebautes Theme kann nicht gelöscht/geändert werden | I4b-Fix F3, direkter Domainfehler |
+| `errors.theme.cloneUnsupported` | Theme kann nicht dupliziert werden | I4b-Fix F3, direkter Domainfehler |
+| `errors.theme.idTaken` / `.invalidId` | Theme-ID bereits vergeben / ungültig | I4b-Fix F3, direkter Domainfehler |
 
 ### Export / Image / Theme
 
@@ -1530,7 +1535,7 @@ Nach Etappe I3b + Fix-Paket. Regeln (F2): (a) Validierung/Fehler → `errors.<mo
 | `export.aiDraft.saveDialog.idInvalid` / `.displayNameEmpty` | … | |
 | `export.aiDraft.themeSaved.status` | Theme gespeichert: {name} | Map-alt |
 | `export.aiDraft.transientLabel` | Transientes KI-Layout… | Map-alt |
-| `dialogs.image.*` | loadFailed, noClipboardImage, noFileChosen, pick*, insert*, targetDirEmpty, noDocOpen.warning, canvasContextUnavailable | I3b |
+| `dialogs.image.*` | loadFailed, noClipboardImage, noFileChosen, pick*, insert*, targetDirEmpty, noDocOpen.warning, docPathNoDirectory.warning, outsideDocumentTree.warning, canvasContextUnavailable | I3b + I4b-Fix F2 |
 | `theme.editor.assets.logo.badge` / `.remove.tooltip` | als Logo / Asset entfernen | Map-alt |
 | `theme.editor.aiDialog.generating` / `.status.cancelling` / `.status.charCount` | … | |
 
@@ -1608,6 +1613,31 @@ Built-in-Registry: `THEME_BUILTIN_CATALOG` / `AI_ACTION_BUILTIN_CATALOG` mit
 literalen Keys (kein `format!`, keine Allowlist-Präfixe).
 
 *I4a 2026-07-14 · native Dialoge, Built-ins, Export · Fix-Paket F1–F8*
+
+## I4b — Kanonische Error-Ränder
+
+Die Rust-Ränder verwenden `errors.<modul>.<fall>`; OS-/IO-/Provider-Texte,
+Pfade und IDs werden ausschließlich als `{detail}` interpoliert. Die in den
+obigen Rust-Zeilen vorgeschlagenen Keys wurden dabei wie folgt versöhnt:
+
+| Modul | Kanonische I4b-Keys (zusätzlich zu bereits vorhandenen) |
+| :--- | :--- |
+| `commands/file/*` | `errors.file.alreadyExists`, `.clipboardDecodeFailed`, `.closeFailed`, `.copyFailed`, `.createFailed`, `.deleteFailed`, `.imageBufferInvalid`, `.imageDataInvalid`, `.imageDimensionsOverflow`, `.listFailed`, `.mkdirFailed`, `.notExecutable`, `.openFailedWithDetail`, `.pngEncodeFailed`, `.reloadFailed`, `.renameFailed`, `.saveFailed`, `.sourceMissing`, `.targetAlreadyExists`, `.tempCreateFailed`, `.unsupportedType` |
+| `commands/editor.rs` | `errors.editor.discardFailed`, `.saveFailed`, `.sourceTabMissing`, `.unsupportedLineEndings` |
+| `commands/export.rs` | `errors.export.pdfFailed`, `.writeFailed`; dokumentlos weiter `errors.document.noneOpen` |
+| `commands/theme.rs`, `theme/store.rs`, `theme/archive.rs` | IO-/Systemrahmen: `errors.theme.assetDecodeFailed`, `.assetFailed`, `.cloneFailed`, `.createFailed`, `.deleteFailed`, `.eventFailed`, `.exportFailed`, `.importFailed`, `.writeFailed`; direkte Domainfälle: `.assetDirectoryRequired`, `.builtinDelete`, `.builtinReadOnly`, `.cloneUnsupported`, `.idTaken`, `.invalidId`, `.unknown` |
+| `commands/app/*` | `errors.app.fileManagerFailed`, `.iconNoOutput`, `.iconScriptFailed`, `.iconSetupFailed`, `.openDefaultFailed`, `.runFileFailed`, `.settingsUpdateFailed`, `.terminalFailed` |
+| `commands/ai.rs` / KI-Ränder | `errors.ai.*` gemäß den literalen `t`/`t_args`-Referenzen; `AiConfigError`, `CatalogError`, `AuthError` und `ChatError` werden am Command-Rand gewrappt |
+| `search.rs` | `errors.search.queryTooShort`, `.rootNotFound`, `.invalidScope`, `.invalidQuery`; `SearchError::Display` delegiert an `localized`, vor Prozess-Init mit Key-Fallback |
+| `vault.rs` | keine `Result<_, String>`-UI-Fehlergrenze; Renderfehler bleiben Log + leerer Baum (kein neuer Error-Key) |
+
+Stichprobentests verwenden lokale `Translator`-Instanzen für Datei-, Theme-,
+KI- und Suchfehler. Angepasste Alt-Asserts: `commands/file/create.rs`
+(`existiert bereits`, exakter deutscher Dateiname), `commands/theme.rs`
+(`Unbekanntes Theme`), `commands/ai.rs` (`keinen bekannten Endpoint`) — nun
+englischer Rahmen plus unverändertes technisches Detail.
+
+*I4b 2026-07-14 · Backend-Fehlergrenzen, thiserror-Entscheidung, Contract*
 
 
 ### Hinweis

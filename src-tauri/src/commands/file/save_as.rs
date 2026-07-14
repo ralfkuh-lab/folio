@@ -1,4 +1,5 @@
 use crate::file_kind::{classify, FileKind};
+use crate::i18n;
 use crate::menu::strings as menu_strings;
 use crate::state::AppState;
 use std::path::Path;
@@ -25,7 +26,7 @@ pub fn run_save_as(
             .map_err(|_| "tabs lock poisoned".to_string())?;
         let store = &tabs.active().document_store;
         if store.path.is_none() {
-            return Err("Kein Dokument geöffnet.".into());
+            return Err(i18n::t("errors.document.noneOpen"));
         }
         store.path.clone()
     };
@@ -89,7 +90,10 @@ pub fn run_save_as(
     tabs.active_mut()
         .document_store
         .save_as(&target_path)
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| {
+            let detail = error.to_string();
+            i18n::t_args("errors.file.saveFailed", &[("detail", &detail)])
+        })?;
     drop(tabs);
 
     // 4) Workspace + Vault + Navigation nachziehen — Lock-Fehler werden

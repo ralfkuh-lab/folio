@@ -1,3 +1,4 @@
+use crate::i18n;
 use crate::state::AppState;
 use tauri::{AppHandle, Emitter, State};
 
@@ -24,6 +25,9 @@ pub async fn close_document(state: State<'_, AppState>, handle: AppHandle) -> Re
             "document:closed",
             serde_json::json!({ "tabId": closed_id, "seq": crate::state::next_doc_seq() }),
         )
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| {
+            let detail = error.to_string();
+            i18n::t_args("errors.file.closeFailed", &[("detail", &detail)])
+        })?;
     AppState::emit_tabs_changed(&handle)
 }

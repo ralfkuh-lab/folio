@@ -20,7 +20,6 @@ use std::time::Instant;
 use ignore::WalkBuilder;
 use regex::Regex;
 use serde::Serialize;
-use thiserror::Error;
 
 use crate::file_kind::{classify, FileKind};
 use crate::workspace::PinnedItem;
@@ -140,22 +139,67 @@ pub struct SearchStats {
 }
 
 /// Fehlerfälle der Suche.
-#[derive(Debug, Error)]
+#[derive(Debug)]
 pub enum SearchError {
     /// Suchbegriff kürzer als [`MIN_QUERY_LEN`].
-    #[error("Suchbegriff muss mindestens 2 Zeichen lang sein")]
     QueryTooShort,
     /// Ein zu durchsuchender Root existiert nicht (mehr).
-    #[error("Suchpfad existiert nicht: {0}")]
     RootNotFound(String),
     /// Ein Root existiert, hat aber den falschen Typ oder ist relativ
     /// (Ordner-Root ist keine absolute Verzeichnis; Datei-Root ist keine Datei).
-    #[error("Ungültiger Suchpfad: {0}")]
     InvalidScope(String),
     /// Der aus dem Suchbegriff kompilierte Regex war ungültig (S1b).
-    #[error("Ungültiger Suchausdruck: {0}")]
     InvalidPattern(String),
 }
+
+impl SearchError {
+    fn translation_parts(&self) -> (&'static str, Option<&str>) {
+        match self {
+            Self::QueryTooShort => ("errors.search.queryTooShort", None),
+            Self::RootNotFound(detail) => ("errors.search.rootNotFound", Some(detail)),
+            Self::InvalidScope(detail) => ("errors.search.invalidScope", Some(detail)),
+            Self::InvalidPattern(detail) => ("errors.search.invalidQuery", Some(detail)),
+        }
+    }
+
+    /// Lokalisierte UI-/Diagnosedarstellung mit einer expliziten Translator-Instanz.
+    /// Produktiv verwendet `Display` die einmal initialisierte Prozess-Fassade;
+    /// Tests können damit ohne globalen Zustand arbeiten.
+    pub fn localized(&self, tr: &crate::i18n::Translator) -> String {
+        match self {
+            Self::QueryTooShort => tr.t("errors.search.queryTooShort"),
+            Self::RootNotFound(detail) => {
+                tr.t_args("errors.search.rootNotFound", &[("detail", detail)])
+            }
+            Self::InvalidScope(detail) => {
+                tr.t_args("errors.search.invalidScope", &[("detail", detail)])
+            }
+            Self::InvalidPattern(detail) => {
+                tr.t_args("errors.search.invalidQuery", &[("detail", detail)])
+            }
+        }
+    }
+
+    fn key_fallback(&self) -> String {
+        let (key, detail) = self.translation_parts();
+        match detail {
+            Some(detail) => format!("{key}: {detail}"),
+            None => key.to_string(),
+        }
+    }
+}
+
+impl std::fmt::Display for SearchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let message = match crate::i18n::process_translator() {
+            Some(tr) => self.localized(tr),
+            None => self.key_fallback(),
+        };
+        f.write_str(&message)
+    }
+}
+
+impl std::error::Error for SearchError {}
 
 /// Löst einen [`SearchScope`] gegen die angepinnten Einträge in einen
 /// deduplizierten [`SearchRoots`] auf (Overlap-Dedup, Forward-Slash-
@@ -619,11 +663,41 @@ pub fn run_search(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::i18n::{CatalogRegistry, ResolvedLanguage, Translator};
     use crate::workspace::PinnedItem;
     use std::fs;
     use std::path::Path;
     use std::sync::atomic::AtomicBool;
     use tempfile::TempDir;
+
+    fn translator(tag: &str) -> Translator {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("locales");
+        let registry = CatalogRegistry::load_from_dir(&dir).expect("load locales");
+        Translator::new(
+            registry,
+            ResolvedLanguage {
+                catalog_tag: tag.to_string(),
+                format_locale: "en-US".to_string(),
+            },
+        )
+    }
+
+    #[test]
+    fn search_error_localizes_frame_and_preserves_detail() {
+        let error = SearchError::InvalidScope("/technical/path".to_string());
+        let message = error.localized(&translator("en"));
+        assert!(message.contains("Invalid search path"), "message={message}");
+        assert!(message.contains("/technical/path"), "message={message}");
+    }
+
+    #[test]
+    fn search_error_has_a_preboot_key_fallback_with_detail() {
+        let error = SearchError::RootNotFound("/technical/path".to_string());
+        assert_eq!(
+            "errors.search.rootNotFound: /technical/path",
+            error.key_fallback()
+        );
+    }
 
     // --- Fixture-Helfer ------------------------------------------------------
 

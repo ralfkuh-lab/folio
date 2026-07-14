@@ -80,7 +80,7 @@ pub(in crate::automation) async fn post_search(
             Ok(result) => result,
             Err(_) => {
                 cancel.store(true, std::sync::atomic::Ordering::Release);
-                return Err(ApiError::internal("Suche hat das Zeitlimit überschritten"));
+                return Err(ApiError::internal("search timed out"));
             }
         },
         None => join.await,

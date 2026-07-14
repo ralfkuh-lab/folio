@@ -1,5 +1,6 @@
 use crate::commands::theme::ThemeWriteFiles;
 use crate::export::{self, LayoutInfo};
+use crate::i18n;
 use crate::pdf_export;
 use crate::settings::ExportDirMode;
 use crate::state::AppState;
@@ -83,7 +84,10 @@ pub async fn export_html(
         &strings,
         &crate::persist::themes_dir(),
     )?;
-    fs::write(&target_path, html).map_err(|e| e.to_string())
+    fs::write(&target_path, html).map_err(|error| {
+        let detail = error.to_string();
+        i18n::t_args("errors.export.writeFailed", &[("detail", &detail)])
+    })
 }
 
 #[tauri::command]
@@ -104,7 +108,10 @@ pub async fn export_html_draft(
         base_theme_id.as_deref(),
         mermaid_svgs,
     );
-    fs::write(&target_path, html).map_err(|e| e.to_string())
+    fs::write(&target_path, html).map_err(|error| {
+        let detail = error.to_string();
+        i18n::t_args("errors.export.writeFailed", &[("detail", &detail)])
+    })
 }
 
 #[tauri::command]
@@ -129,6 +136,7 @@ pub async fn export_pdf(
         .and_then(|p| Path::new(p).parent())
         .map(|p| p.to_path_buf());
     pdf_export::render_pdf(&html, source_dir.as_deref(), Path::new(&target_path))
+        .map_err(|detail| i18n::t_args("errors.export.pdfFailed", &[("detail", &detail)]))
 }
 
 #[tauri::command]
@@ -154,6 +162,7 @@ pub async fn export_pdf_draft(
         .and_then(|p| Path::new(p).parent())
         .map(|p| p.to_path_buf());
     pdf_export::render_pdf(&html, source_dir.as_deref(), Path::new(&target_path))
+        .map_err(|detail| i18n::t_args("errors.export.pdfFailed", &[("detail", &detail)]))
 }
 
 #[tauri::command]
@@ -235,7 +244,7 @@ fn current_document(state: &State<'_, AppState>) -> Result<(Option<String>, Stri
         .map_err(|_| "tabs lock poisoned".to_string())?;
     let store = &tabs.active().document_store;
     if store.path.is_none() {
-        return Err("Kein Dokument geöffnet.".into());
+        return Err(i18n::t("errors.document.noneOpen"));
     }
     Ok((store.path.clone(), store.text.clone()))
 }
@@ -262,4 +271,31 @@ fn file_path_to_string(path: FilePath) -> String {
     path.into_path()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::i18n::{CatalogRegistry, ResolvedLanguage, Translator};
+
+    #[test]
+    fn export_error_frame_is_localized_and_keeps_detail() {
+        let message = translator("en").t_args(
+            "errors.export.writeFailed",
+            &[("detail", "/tmp/report.html: disk full")],
+        );
+        assert!(message.contains("Could not write export"));
+        assert!(message.contains("/tmp/report.html: disk full"));
+    }
+
+    fn translator(tag: &str) -> Translator {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("locales");
+        let registry = CatalogRegistry::load_from_dir(&dir).expect("load locales");
+        Translator::new(
+            registry,
+            ResolvedLanguage {
+                catalog_tag: tag.to_string(),
+                format_locale: "en-US".to_string(),
+            },
+        )
+    }
 }
