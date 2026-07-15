@@ -678,7 +678,7 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
 
 ## E2E-Test-Suite
 
-Vollständige UI-Coverage in `tests/e2e/` (45 Szenarien, Python +
+Vollständige UI-Coverage in `tests/e2e/` (47 Szenarien, Python +
 Pillow): Boot, View-/Edit-/Split-Mode, Theme, Vault, Find (inkl.
 Code-View), Workspace, Save-Roundtrip durch alle BOM/EOL-Kombis,
 Undo/Redo, Toolbar-Commands (Bold/Italic/Heading), Menü-Coverage
@@ -686,8 +686,10 @@ Undo/Redo, Toolbar-Commands (Bold/Italic/Heading), Menü-Coverage
 History-Back/Forward, Rechtsklick-Kontextmenüs, echter TOC-DOM-Klick,
 HTML-View, Tabs (API/UI/Restore/Reorder), View-/Custom-Themes,
 Theme-CRUD/-Browser/-Import-Export, Export-Highlighting, Mermaid
-(View + Export), Link-in-neuem-Tab sowie KI-Settings, KI-Übersetzung,
-KI-Theme-Autor, Export-KI-Draft und KI-Aktionen (Mock-Provider).
+(View + Export), Link-in-neuem-Tab, Vault-Volltextsuche (API + UI)
+sowie KI-Settings, KI-Übersetzung, KI-Theme-Autor, Export-KI-Draft und
+KI-Aktionen (Mock-Provider). Der englische Boot ist über
+`scripts/run-e2e.sh --lang-smoke` separat abgedeckt.
 
 Wrapper: `bash scripts/run-e2e.sh` (Linux+Xvfb). Visual-Baselines in
 `tests/e2e/baselines/`, Artefakte (gitignored) in
