@@ -217,6 +217,17 @@ fn normalized_file_filter(raw: &str) -> &'static str {
     }
 }
 
+/// Normalisiert den persistierten Sortiermodus (S5). Unbekannte/leere Werte
+/// fallen auf `none` (Fundreihenfolge) zurück, damit das Sort-Control im
+/// Ergebnis-Header nie einen undefinierten Zustand bekommt.
+fn normalized_sort(raw: &str) -> &'static str {
+    match raw {
+        "name" => "name",
+        "path" => "path",
+        _ => "none",
+    }
+}
+
 #[tauri::command]
 pub async fn search_options_get(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
     let data = state
@@ -230,6 +241,8 @@ pub async fn search_options_get(state: State<'_, AppState>) -> Result<serde_json
         "regex": data.search_regex,
         "fileFilter": normalized_file_filter(&data.search_file_filter),
         "customExtensions": data.search_custom_extensions,
+        "showPaths": data.search_show_paths,
+        "sort": normalized_sort(&data.search_sort),
     }))
 }
 
@@ -241,6 +254,8 @@ pub async fn set_search_options(
     regex: Option<bool>,
     file_filter: Option<String>,
     custom_extensions: Option<String>,
+    show_paths: Option<bool>,
+    sort: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     // Neue Felder sind optional, damit die App zwischen Backend- und
@@ -261,6 +276,9 @@ pub async fn set_search_options(
     // 1:1 vorbefüllen kann.
     crate::search::FileFilter::from_raw(&file_filter, &custom_extensions)
         .map_err(|error| error.to_string())?;
+    // S5: Sortiermodus wird roh persistiert, aber vor dem Speichern normalisiert
+    // (unbekannt → none), damit ein defekter Client-Wert nie in die Datei leckt.
+    let sort = normalized_sort(&sort.unwrap_or(current.search_sort)).to_string();
     guard
         .set_search_options(
             case_sensitive,
@@ -268,6 +286,8 @@ pub async fn set_search_options(
             regex.unwrap_or(current.search_regex),
             file_filter,
             custom_extensions,
+            show_paths.unwrap_or(current.search_show_paths),
+            sort,
         )
         .map_err(|error| error.to_string())
 }
@@ -361,5 +381,18 @@ mod tests {
         // Unbekannt bzw. leer → allText.
         assert_eq!("allText", normalized_file_filter("bogus"));
         assert_eq!("allText", normalized_file_filter(""));
+    }
+
+    // S5: `search_options_get` reicht `normalized_sort(&data.search_sort)` ans
+    // Frontend. Ein unbekannter/leerer gespeicherter Wert fällt auf `none`
+    // (Fundreihenfolge) zurück.
+    #[test]
+    fn normalized_sort_falls_back_to_none() {
+        assert_eq!("name", normalized_sort("name"));
+        assert_eq!("path", normalized_sort("path"));
+        assert_eq!("none", normalized_sort("none"));
+        // Unbekannt bzw. leer → none.
+        assert_eq!("none", normalized_sort("bogus"));
+        assert_eq!("none", normalized_sort(""));
     }
 }

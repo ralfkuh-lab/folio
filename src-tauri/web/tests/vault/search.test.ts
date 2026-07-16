@@ -46,15 +46,26 @@ function buildDom(): void {
     document.body.innerHTML = `
         <div id="vault-region">
             <div class="vault-search">
-                <button id="vault-search-summary">
-                    <span id="vault-search-summary-text"></span>
-                    <span id="vault-search-summary-opts"></span>
-                </button>
+                <div class="vault-search-bar">
+                    <button id="vault-search-summary">
+                        <span id="vault-search-summary-text"></span>
+                        <span id="vault-search-summary-opts"></span>
+                    </button>
+                    <button id="vault-search-exit"></button>
+                </div>
                 <div id="vault-search-scope" hidden></div>
             </div>
-            <ul id="vault-tree"><li>tree</li></ul>
+            <ul id="vault-tree" class="tree">
+                <li class="section" data-section="pinned">
+                    <ul class="children">
+                        <li class="node" data-path="/vault"></li>
+                    </ul>
+                </li>
+            </ul>
             <div id="vault-search-results" hidden>
                 <div id="vault-search-results-head">
+                    <button id="vault-search-sort"><span id="vault-search-sort-label"></span></button>
+                    <button id="vault-search-paths" aria-pressed="false"></button>
                     <button id="vault-search-collapse-all"></button>
                     <button id="vault-search-expand-all"></button>
                 </div>
@@ -623,6 +634,292 @@ describe('vault/search — Keyboard + Klick + Sprung', () => {
         await vi.advanceTimersByTimeAsync(120); // Settle-Debounce
         await flushMicro();
         expect(mocks.findNext).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('vault/search — S5 Suche beenden (× / Escape)', () => {
+    it('× beendet die Suche (Ergebnisse weg, Suchmodus aus)', async () => {
+        await importAndInit();
+        await runSearch('needle');
+        const region = $('vault-region');
+        expect(region.classList.contains('vault-searching')).toBe(true);
+        $('vault-search-exit').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        expect(region.classList.contains('vault-searching')).toBe(false);
+        expect(($('vault-search-results') as HTMLElement).hidden).toBe(true);
+    });
+
+    it('Escape auf dem Summary-Button beendet die Suche (bubbelt zur Region)', async () => {
+        await importAndInit();
+        await runSearch('needle');
+        const region = $('vault-region');
+        expect(region.classList.contains('vault-searching')).toBe(true);
+        key($('vault-search-summary'), 'Escape');
+        expect(region.classList.contains('vault-searching')).toBe(false);
+    });
+
+    it('× verschiebt den Fokus vom ausgeblendeten Exit-Button auf den Summary-Button', async () => {
+        await importAndInit();
+        await runSearch('needle');
+        const exit = $('vault-search-exit');
+        exit.focus();
+        expect(document.activeElement).toBe(exit);
+        exit.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        // Exit-Button ist jetzt display:none → Fokus liegt auf dem Summary.
+        expect(document.activeElement).toBe($('vault-search-summary'));
+    });
+
+    it('Escape aus der Ergebnisliste verschiebt den Fokus auf den Summary-Button', async () => {
+        await importAndInit();
+        await runSearch('needle');
+        const list = $('vault-search-list');
+        list.focus();
+        expect(document.activeElement).toBe(list);
+        key(list, 'Escape');
+        expect($('vault-region').classList.contains('vault-searching')).toBe(false);
+        expect(document.activeElement).toBe($('vault-search-summary'));
+    });
+
+    it('Exit ohne Fokus im Suchbereich laesst den Fokus unangetastet', async () => {
+        await importAndInit();
+        await runSearch('needle');
+        // Fokus liegt außerhalb (z. B. Body) → kein Fokus-Diebstahl.
+        (document.activeElement as HTMLElement | null)?.blur?.();
+        key($('vault-region'), 'Escape');
+        expect(document.activeElement).not.toBe($('vault-search-summary'));
+    });
+
+    it('Escape feuert nicht, wenn kein Suchmodus aktiv ist', async () => {
+        await importAndInit();
+        const region = $('vault-region');
+        expect(region.classList.contains('vault-searching')).toBe(false);
+        // Darf nicht crashen und nichts umschalten.
+        key(region, 'Escape');
+        expect(region.classList.contains('vault-searching')).toBe(false);
+    });
+});
+
+describe('vault/search — S5 Sortierung', () => {
+    function names(): string[] {
+        return Array.from($('vault-search-list').querySelectorAll('.vs-fname')).map(
+            (e) => e.textContent || '',
+        );
+    }
+
+    it('none → name → path zyklisch; Reihenfolge folgt dem Modus', async () => {
+        await importAndInit();
+        await runSearch('needle');
+        tauri.emitEvent('search:hits', {
+            runId: 1,
+            files: [
+                fileFixture({ path: '/vault/z/a.md', fileName: 'a.md' }),
+                fileFixture({ path: '/vault/a/c.md', fileName: 'c.md' }),
+                fileFixture({ path: '/vault/m/b.md', fileName: 'b.md' }),
+            ],
+        });
+        await flushMicro();
+        // none = Fundreihenfolge.
+        expect(names()).toEqual(['a.md', 'c.md', 'b.md']);
+
+        // Klick → name.
+        $('vault-search-sort').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        expect(names()).toEqual(['a.md', 'b.md', 'c.md']);
+        expect(tauri.invoke).toHaveBeenCalledWith(
+            'set_search_options',
+            expect.objectContaining({ sort: 'name' }),
+        );
+
+        // Klick → path (Namen ergeben sich aus der Pfadordnung a/ < m/ < z/).
+        $('vault-search-sort').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        expect(names()).toEqual(['c.md', 'b.md', 'a.md']);
+    });
+
+    it('Streaming-Nachzügler wird gemäß Modus stabil einsortiert', async () => {
+        await importAndInit();
+        await runSearch('needle');
+        tauri.emitEvent('search:hits', {
+            runId: 1,
+            files: [
+                fileFixture({ path: '/vault/a.md', fileName: 'a.md' }),
+                fileFixture({ path: '/vault/b.md', fileName: 'b.md' }),
+                fileFixture({ path: '/vault/c.md', fileName: 'c.md' }),
+            ],
+        });
+        await flushMicro();
+        $('vault-search-sort').dispatchEvent(new MouseEvent('click', { bubbles: true })); // name
+        expect(names()).toEqual(['a.md', 'b.md', 'c.md']);
+
+        // Nachzügler bb.md landet zwischen b.md und c.md.
+        tauri.emitEvent('search:hits', {
+            runId: 1,
+            files: [fileFixture({ path: '/vault/bb.md', fileName: 'bb.md' })],
+        });
+        await flushMicro();
+        expect(names()).toEqual(['a.md', 'b.md', 'bb.md', 'c.md']);
+    });
+
+    it('Rueckkehr zu none stellt die Fundreihenfolge wieder her (path → none)', async () => {
+        await importAndInit();
+        await runSearch('needle');
+        tauri.emitEvent('search:hits', {
+            runId: 1,
+            files: [
+                fileFixture({ path: '/vault/z/a.md', fileName: 'a.md' }),
+                fileFixture({ path: '/vault/a/c.md', fileName: 'c.md' }),
+                fileFixture({ path: '/vault/m/b.md', fileName: 'b.md' }),
+            ],
+        });
+        await flushMicro();
+        const sort = $('vault-search-sort');
+        sort.dispatchEvent(new MouseEvent('click', { bubbles: true })); // name
+        sort.dispatchEvent(new MouseEvent('click', { bubbles: true })); // path
+        expect(names()).toEqual(['c.md', 'b.md', 'a.md']);
+        sort.dispatchEvent(new MouseEvent('click', { bubbles: true })); // none
+        // Fundreihenfolge wiederhergestellt (nicht die letzte Pfadsortierung).
+        expect(names()).toEqual(['a.md', 'c.md', 'b.md']);
+        expect(tauri.invoke).toHaveBeenCalledWith(
+            'set_search_options',
+            expect.objectContaining({ sort: 'none' }),
+        );
+    });
+
+    it('Streaming-Nachzügler landet nach Sortierwechseln in none an der Ankunftsposition', async () => {
+        await importAndInit();
+        await runSearch('needle');
+        tauri.emitEvent('search:hits', {
+            runId: 1,
+            files: [
+                fileFixture({ path: '/vault/a.md', fileName: 'a.md' }),
+                fileFixture({ path: '/vault/c.md', fileName: 'c.md' }),
+            ],
+        });
+        await flushMicro();
+        const sort = $('vault-search-sort');
+        sort.dispatchEvent(new MouseEvent('click', { bubbles: true })); // name
+        // Nachzügler trifft WÄHREND der Namenssortierung ein.
+        tauri.emitEvent('search:hits', {
+            runId: 1,
+            files: [fileFixture({ path: '/vault/b.md', fileName: 'b.md' })],
+        });
+        await flushMicro();
+        expect(names()).toEqual(['a.md', 'b.md', 'c.md']);
+        // Zurück auf none (über path): Ankunftsreihenfolge a, c, b.
+        sort.dispatchEvent(new MouseEvent('click', { bubbles: true })); // path
+        sort.dispatchEvent(new MouseEvent('click', { bubbles: true })); // none
+        expect(names()).toEqual(['a.md', 'c.md', 'b.md']);
+    });
+
+    it('aktiver Treffer + Arrow-Navigation ueberleben alle Sortierwechsel', async () => {
+        await importAndInit();
+        await runSearch('needle');
+        tauri.emitEvent('search:hits', {
+            runId: 1,
+            files: [
+                fileFixture({ path: '/vault/z/a.md', fileName: 'a.md' }),
+                fileFixture({ path: '/vault/a/c.md', fileName: 'c.md' }),
+                fileFixture({ path: '/vault/m/b.md', fileName: 'b.md' }),
+            ],
+        });
+        await flushMicro();
+        const list = $('vault-search-list');
+        const sort = $('vault-search-sort');
+        const activePath = (): string | null => {
+            const hit = list.querySelector('.vs-hit.active');
+            if (!hit) return null;
+            const group = hit.closest('.vs-group');
+            const head = group && group.querySelector('.vs-group-head');
+            return head ? (head as HTMLElement).title : null;
+        };
+
+        key(list, 'ArrowDown'); // erster Treffer (Fundreihenfolge) = z/a.md
+        expect(activePath()).toBe('/vault/z/a.md');
+
+        sort.dispatchEvent(new MouseEvent('click', { bubbles: true })); // name
+        expect(activePath()).toBe('/vault/z/a.md'); // Anker bleibt
+
+        key(list, 'ArrowDown'); // in Namensordnung folgt b.md
+        expect(activePath()).toBe('/vault/m/b.md');
+
+        sort.dispatchEvent(new MouseEvent('click', { bubbles: true })); // path
+        expect(activePath()).toBe('/vault/m/b.md');
+
+        sort.dispatchEvent(new MouseEvent('click', { bubbles: true })); // none
+        expect(activePath()).toBe('/vault/m/b.md');
+
+        key(list, 'ArrowUp'); // in Fundreihenfolge steht davor c.md
+        expect(activePath()).toBe('/vault/a/c.md');
+    });
+
+    it('gleichnamige Dateien (README.md) sind deterministisch nach Pfad geordnet', async () => {
+        await importAndInit();
+        await runSearch('needle');
+        // In „falscher" Pfadreihenfolge emittieren.
+        tauri.emitEvent('search:hits', {
+            runId: 1,
+            files: [
+                fileFixture({ path: '/vault/z/README.md', fileName: 'README.md' }),
+                fileFixture({ path: '/vault/a/README.md', fileName: 'README.md' }),
+            ],
+        });
+        await flushMicro();
+        $('vault-search-sort').dispatchEvent(new MouseEvent('click', { bubbles: true })); // name
+        // Namen identisch → sekundär nach Pfad: a/ vor z/.
+        const paths = Array.from($('vault-search-list').querySelectorAll('.vs-group-head')).map(
+            (e) => (e as HTMLElement).title,
+        );
+        expect(paths).toEqual(['/vault/a/README.md', '/vault/z/README.md']);
+    });
+});
+
+describe('vault/search — S5 Pfadanzeige-Toggle', () => {
+    it('blendet Verzeichnispfade ein/aus und persistiert die Wahl', async () => {
+        await importAndInit();
+        await runSearch('needle');
+        tauri.emitEvent('search:hits', {
+            runId: 1,
+            files: [fileFixture({ path: '/vault/sub/deep.md', fileName: 'deep.md' })],
+        });
+        await flushMicro();
+        // Aus: kein Pfad-Span.
+        expect($('vault-search-list').querySelector('.vs-fpath')).toBeNull();
+
+        $('vault-search-paths').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        const fpath = $('vault-search-list').querySelector('.vs-fpath');
+        expect(fpath).not.toBeNull();
+        // Relativ zur Pin-Wurzel /vault → „sub".
+        expect(fpath!.textContent).toBe('sub');
+        expect($('vault-search-paths').getAttribute('aria-pressed')).toBe('true');
+        expect(tauri.invoke).toHaveBeenCalledWith(
+            'set_search_options',
+            expect.objectContaining({ showPaths: true }),
+        );
+
+        // Aus schalten.
+        $('vault-search-paths').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        expect($('vault-search-list').querySelector('.vs-fpath')).toBeNull();
+        expect($('vault-search-paths').getAttribute('aria-pressed')).toBe('false');
+    });
+});
+
+describe('vault/search — S5 Dauer-Format', () => {
+    it('unter 1 s in ms, ab 1 s in Sekunden mit Nachkommastelle (de-Locale)', async () => {
+        await importAndInit();
+        await runSearch('needle');
+        tauri.emitEvent('search:hits', { runId: 1, files: [fileFixture()] });
+        tauri.emitEvent('search:done', {
+            runId: 1,
+            stats: { filesScanned: 1, filesMatched: 1, hits: 1, skippedLarge: 0, truncated: false, elapsedMs: 999 },
+        });
+        await flushMicro();
+        expect($('vault-search-status').textContent).toContain('999 ms');
+
+        await runSearch('needle2');
+        tauri.emitEvent('search:hits', { runId: 2, files: [fileFixture()] });
+        tauri.emitEvent('search:done', {
+            runId: 2,
+            stats: { filesScanned: 1, filesMatched: 1, hits: 1, skippedLarge: 0, truncated: false, elapsedMs: 30052 },
+        });
+        await flushMicro();
+        expect($('vault-search-status').textContent).toContain('30,1 s');
     });
 });
 

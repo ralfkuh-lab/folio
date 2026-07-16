@@ -253,6 +253,32 @@ html.theme-dark .vault-region .git-branch--detached {
   border-bottom: 1px solid var(--border);
   background: var(--rail-bg);
 }
+/* Summary + × (S5): Summary füllt die Breite, × erscheint nur im Suchmodus. */
+.vault-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.vault-search-exit {
+  display: none;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--rail-fg-muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.vault-search-exit:hover {
+  border-color: var(--rail-accent);
+  color: var(--rail-fg);
+}
+.vault-region.vault-searching .vault-search-exit { display: inline-flex; align-items: center; justify-content: center; }
 /* Summary-Button (S4): öffnet den Such-Dialog, zeigt Begriff + Options-Glyphen. */
 .vault-search-summary {
   display: flex;
@@ -355,13 +381,18 @@ html.theme-dark .vault-region .git-branch--detached {
 .vault-search-results-head {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 2px;
   padding: 3px 6px;
   border-bottom: 1px solid var(--border);
 }
+/* Sortieren + Pfad-Toggle links, Collapse/Expand-All rechts (S5). */
+#vault-search-collapse-all { margin-left: auto; }
 .vs-head-btn {
   box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   min-width: 22px;
   height: 20px;
   padding: 0 4px;
@@ -377,6 +408,24 @@ html.theme-dark .vault-region .git-branch--detached {
   background: var(--rail-hover-bg);
   color: var(--rail-fg);
 }
+/* Aktiver Zustand (Pfad-Toggle an / Sortierung != none). */
+.vs-head-btn.active,
+.vs-head-btn[aria-pressed="true"] {
+  color: var(--rail-accent);
+  border-color: var(--rail-accent);
+}
+.vs-head-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.vs-head-icon svg { width: 14px; height: 14px; }
+.vs-sort-label {
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+}
+.vs-sort-label:empty { display: none; }
 
 .vault-search-status {
   display: flex;
@@ -432,10 +481,25 @@ html.theme-dark .vault-region .git-branch--detached {
 }
 .vs-caret.collapsed { transform: rotate(-90deg); }
 .vs-fname {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* Dimmer Verzeichnispfad hinter dem Dateinamen (S5). Linksseitige Kürzung
+   (direction:rtl-Trick), damit das Pfad-ENDE sichtbar bleibt. */
+.vs-fpath {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+  color: var(--rail-fg-muted);
+  font-weight: 400;
+  font-size: 10px;
+  opacity: 0.8;
 }
 .vs-count {
   flex: 0 0 auto;
@@ -545,6 +609,11 @@ html.theme-dark .vs-snippet mark {
   font-size: 13px;
   color: var(--fg);
   cursor: pointer;
+}
+/* display:flex wuerde das hidden-Attribut sonst aushebeln (Ordner-Zeile
+   erschien als leerer Radio-Button, wenn kein Ordner-Draft aktiv ist). */
+.vsd-radio[hidden] {
+  display: none;
 }
 .vsd-check input:disabled + span {
   opacity: 0.55;

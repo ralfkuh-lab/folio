@@ -87,18 +87,23 @@
     <button class="vault-cmd ti-emoji" data-cmd="addFolder" title="Ordner hinzufügen…" data-i18n-title="vault.header.addFolder.tooltip" aria-label="Ordner hinzufügen" data-i18n-aria-label="vault.header.addFolder.ariaLabel">&#x1F4C1;</button>
   </header>
   <div class="vault-search" id="vault-search">
-    <button type="button" id="vault-search-summary" class="vault-search-summary" title="In Dateien suchen…" data-i18n-title="search.summary.edit.tooltip" aria-label="In Dateien suchen…" data-i18n-aria-label="search.summary.edit.tooltip">
-      <span class="vs-summary-icon" aria-hidden="true">&#x1F50D;</span>
-      <span class="vs-summary-text" id="vault-search-summary-text">In Dateien suchen…</span>
-      <span class="vs-summary-opts" id="vault-search-summary-opts" aria-hidden="true"></span>
-    </button>
+    <div class="vault-search-bar">
+      <button type="button" id="vault-search-summary" class="vault-search-summary" title="In Dateien suchen…" data-i18n-title="search.summary.edit.tooltip" aria-label="In Dateien suchen…" data-i18n-aria-label="search.summary.edit.tooltip">
+        <span class="vs-summary-icon" aria-hidden="true">&#x1F50D;</span>
+        <span class="vs-summary-text" id="vault-search-summary-text">In Dateien suchen…</span>
+        <span class="vs-summary-opts" id="vault-search-summary-opts" aria-hidden="true"></span>
+      </button>
+      <button type="button" id="vault-search-exit" class="vault-search-exit" title="Suche beenden" data-i18n-title="search.exit.tooltip" aria-label="Suche beenden" data-i18n-aria-label="search.exit.ariaLabel">&#x2715;</button>
+    </div>
     <div class="vault-search-scope" id="vault-search-scope" hidden></div>
   </div>
   <ul id="vault-tree" class="tree"></ul>
   <div class="vault-search-results" id="vault-search-results" hidden>
     <div class="vault-search-results-head" id="vault-search-results-head">
-      <button type="button" id="vault-search-collapse-all" class="vs-head-btn" title="Alle einklappen" data-i18n-title="search.results.collapseAll.tooltip" aria-label="Alle einklappen" data-i18n-aria-label="search.results.collapseAll.tooltip">&#x2212;</button>
-      <button type="button" id="vault-search-expand-all" class="vs-head-btn" title="Alle aufklappen" data-i18n-title="search.results.expandAll.tooltip" aria-label="Alle aufklappen" data-i18n-aria-label="search.results.expandAll.tooltip">&#x002B;</button>
+      <button type="button" id="vault-search-sort" class="vs-head-btn vs-sort-btn"><span class="vs-head-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h9M3 8h6M3 12h3"/></svg></span><span class="vs-sort-label" id="vault-search-sort-label" aria-hidden="true"></span></button>
+      <button type="button" id="vault-search-paths" class="vs-head-btn vs-paths-btn" aria-pressed="false" title="Verzeichnispfade anzeigen" data-i18n-title="search.paths.toggle.tooltip" aria-label="Verzeichnispfade anzeigen" data-i18n-aria-label="search.paths.toggle.ariaLabel"><span class="vs-head-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4a1 1 0 0 1 1-1h3l1.5 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/></svg></span></button>
+      <button type="button" id="vault-search-collapse-all" class="vs-head-btn" title="Alle einklappen" data-i18n-title="search.results.collapseAll.tooltip" aria-label="Alle einklappen" data-i18n-aria-label="search.results.collapseAll.tooltip"><span class="vs-head-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7l4-4 4 4"/><path d="M4 12l4-4 4 4"/></svg></span></button>
+      <button type="button" id="vault-search-expand-all" class="vs-head-btn" title="Alle aufklappen" data-i18n-title="search.results.expandAll.tooltip" aria-label="Alle aufklappen" data-i18n-aria-label="search.results.expandAll.tooltip"><span class="vs-head-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4l4 4 4-4"/><path d="M4 9l4 4 4-4"/></svg></span></button>
     </div>
     <div class="vault-search-status" id="vault-search-status" role="status"></div>
     <div class="vault-search-list" id="vault-search-list" tabindex="0"></div>

@@ -405,6 +405,60 @@ Kontextmenü, Regex-View-Jump (Term = gematchter Text), Auto-Collapse (>10) +
 Collapse-/Expand-All, Spinner (`vs-running` gesetzt→entfernt) und dirty-Tab-
 Sprung ohne Save-Prompt ab. Neuer Screenshot `47_search_dialog`.
 
+### ✅ Etappe S5 — UX-Nachschliff nach User-Test (2026-07-16)
+
+Fünf Feinschliff-Punkte, rein Frontend + Persistenz (Suchkern `search.rs`
+unverändert):
+
+1. **Suche beenden**: ×-Button in der Summary-Zeile (`#vault-search-exit`,
+   Geschwister des Summary-Buttons in `.vault-search-bar`, nur im Suchmodus
+   sichtbar) ruft `exitSearch()`. Zusätzlich ein Escape-Handler auf
+   `#vault-region` (`onRegionKeydown`), der bei aktiver `vault-searching`-Klasse
+   beendet — greift auch mit Fokus auf Summary/Exit/Ergebnis-Header. Guards:
+   kein Feuern bei offenem Dialog (eigenes Escape) und nur im Suchmodus; die
+   Ergebnisliste behält ihren eigenen Escape-Handler (`onListKeydown`) und
+   entfernt die Klasse zuerst, sodass der Region-Handler nicht doppelt
+   ausführt. Die Find-Bar behandelt Escape nur am eigenen Input → keine
+   Interferenz. Liegt der Fokus beim Beenden im gleich ausgeblendeten Exit-/
+   Ergebnisbereich, verschiebt `exitSearch()` ihn auf den weiterhin sichtbaren
+   Summary-Button (kein Fokus auf display:none) [Sol-S5#2].
+2. **Collapse-/Expand-All-Icons**: statt `−`/`+` zwei gestapelte
+   Doppel-Chevron-SVGs (`currentColor`, Muster `FOLDER_SEARCH_SVG`),
+   aria-Labels/Tooltips unverändert.
+3. **Pfadanzeige-Toggle** (`#vault-search-paths`, `aria-pressed`): gedimmter
+   `<span class="vs-fpath">` mit dem Verzeichnisanteil hinter dem Dateinamen.
+   Relativierung: Folder-Scope gegen `scopePath`, Vault-Scope gegen die längste
+   passende Pin-Wurzel (`pinRoots()` liest die Top-Level-`li.node[data-path]`
+   der Pinned-Section aus `#vault-tree`), OpenTabs/kein Treffer → voller Pfad.
+   CSS-Kürzung linksseitig (`direction:rtl`-Trick) → Pfad-Ende bleibt sichtbar.
+4. **Sortierung** (`#vault-search-sort`, ein durchcyclender Button
+   none→name→path): locale-aware + numerisch (`Intl.Collator`, `numeric:true`),
+   Dateiname sekundär nach Pfad (deterministisch bei gleichnamigen Dateien).
+   Auch beim Streaming nach jedem `applyHits` stabil einsortiert; der aktive
+   Treffer bleibt über (Pfad, Hit-Index) erhalten (`activeAnchor`/
+   `restoreActive`), das pfadbasierte `collapsed`-Set bleibt korrekt.
+   Die Fundreihenfolge wird als frontend-vergebene Ankunftssequenz
+   (`FileResult.arrival`, Reset pro Lauf) festgehalten; `none` sortiert
+   explizit danach — der Rückweg aus name/path stellt sie damit wieder her,
+   auch für Streaming-Nachzügler [Sol-S5#1].
+5. **Dauer-Anzeige**: `search.status.done` trägt statt `{ms} ms` einen
+   vorformatierten `{duration}`-Platzhalter (alle 9 Kataloge + keys.json,
+   Platzhalter-Parität). `formatDuration`: unter 1 s `<n> ms`, ab 1 s Sekunden
+   mit einer Nachkommastelle in Locale-Schreibweise (z. B. „30,1 s"); Einheiten
+   als SI-Symbole (Muster `fmtBytes`).
+
+Persistenz (`panel_state.rs` / `set_search_options` / `search_options_get`):
+neue Felder `search_show_paths: bool` (`#[serde(default)]`) und `search_sort:
+String` (`#[serde(default = "default_search_sort")]` → `"none"`; unbekannt →
+`none` via `normalized_sort` beim Lesen). `set_search_options` (Tauri) nimmt
+`show_paths`/`sort` optional (fehlend → bisheriger Wert). Frontend persistiert
+über den gemeinsamen `persistSearchOptions()` (Dialog-Submit **und** die beiden
+Header-Toggles). Neue i18n-Keys: `search.exit.{ariaLabel,tooltip}`,
+`search.paths.toggle.{ariaLabel,tooltip}`, `search.sort.ariaLabel`,
+`search.sort.mode.{none,name,path}`, `search.sort.tooltip`. Tests: vitest
+(×/Escape-Exit, Sortierung inkl. Streaming + README-Duplikate, Pfad-Toggle,
+Dauer-Format) + Rust-Unit (`panel_state`-Roundtrip, `normalized_sort`).
+
 ## Risiken / bewusste Entscheidungen
 
 - **Kein Index in V1** — jede Suche ist ein frischer Walk. Für

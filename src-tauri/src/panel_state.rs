@@ -53,6 +53,15 @@ pub struct PanelStateData {
     pub search_file_filter: String,
     #[serde(default)]
     pub search_custom_extensions: String,
+    // Vault-Suche S5: Verzeichnispfad-Anzeige neben dem Dateinamen (Default aus)
+    // und Sortiermodus der Ergebnisgruppen als roher UI-Wert
+    // (`none` | `name` | `path`, Default `none` via serde-default-Funktion, weil
+    // der String-Default sonst leer wäre). Unbekannte/leere Sortierwerte fallen
+    // beim Lesen auf `none` zurück (siehe `commands::app::search_options_get`).
+    #[serde(default)]
+    pub search_show_paths: bool,
+    #[serde(default = "default_search_sort")]
+    pub search_sort: String,
 }
 
 fn default_split_mid_percent() -> f64 {
@@ -61,6 +70,10 @@ fn default_split_mid_percent() -> f64 {
 
 fn default_search_file_filter() -> String {
     "allText".to_string()
+}
+
+fn default_search_sort() -> String {
+    "none".to_string()
 }
 
 impl Default for PanelStateData {
@@ -86,6 +99,8 @@ impl Default for PanelStateData {
             search_regex: false,
             search_file_filter: default_search_file_filter(),
             search_custom_extensions: String::new(),
+            search_show_paths: false,
+            search_sort: default_search_sort(),
         }
     }
 }
@@ -154,6 +169,7 @@ impl PanelState {
         self.save()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn set_search_options(
         &mut self,
         case_sensitive: bool,
@@ -161,12 +177,16 @@ impl PanelState {
         regex: bool,
         file_filter: String,
         custom_extensions: String,
+        show_paths: bool,
+        sort: String,
     ) -> io::Result<()> {
         self.data.search_case_sensitive = case_sensitive;
         self.data.search_whole_word = whole_word;
         self.data.search_regex = regex;
         self.data.search_file_filter = file_filter;
         self.data.search_custom_extensions = custom_extensions;
+        self.data.search_show_paths = show_paths;
+        self.data.search_sort = sort;
         self.save()
     }
 
@@ -332,6 +352,9 @@ mod tests {
         assert!(!default.search_regex);
         assert_eq!("allText", default.search_file_filter);
         assert_eq!("", default.search_custom_extensions);
+        // S5-Defaults.
+        assert!(!default.search_show_paths);
+        assert_eq!("none", default.search_sort);
 
         let temp = TempDir::new().unwrap();
         let path = temp.path().join("panel.json");
@@ -343,6 +366,8 @@ mod tests {
                 true,
                 "custom".to_string(),
                 "foobar,md".to_string(),
+                true,
+                "path".to_string(),
             )
             .unwrap();
         let reloaded = PanelState::load_from(path).data();
@@ -351,6 +376,8 @@ mod tests {
         assert!(reloaded.search_regex);
         assert_eq!("custom", reloaded.search_file_filter);
         assert_eq!("foobar,md", reloaded.search_custom_extensions);
+        assert!(reloaded.search_show_paths);
+        assert_eq!("path", reloaded.search_sort);
     }
 
     #[test]
@@ -384,6 +411,9 @@ mod tests {
         assert!(!data.search_regex);
         assert_eq!("allText", data.search_file_filter);
         assert_eq!("", data.search_custom_extensions);
+        // S5-Felder fehlen im Alt-Stand → serde-Defaults.
+        assert!(!data.search_show_paths);
+        assert_eq!("none", data.search_sort);
     }
 
     #[test]

@@ -50,10 +50,12 @@ function wordCountLine(words: number, chars: number, lines: number): string {
 }
 
 function searchDone(hits: number, files: number, ms: number): string {
+    // S5: `done` trägt jetzt einen vorformatierten `{duration}`-Platzhalter.
+    // Unter 1 s ist das `<n> ms` (Muster von search.ts::formatDuration).
     return t('search.status.done', {
         hitsPart: tPlural('search.status.hitsPart', hits),
         filesPart: tPlural('search.status.filesPart', files),
-        ms: fmtNumber(ms),
+        duration: `${fmtNumber(ms)} ms`,
     });
 }
 

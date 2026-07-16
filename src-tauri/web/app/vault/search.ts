@@ -33,7 +33,7 @@ import { activateTab, findTabIdByPath, getActiveTabId } from '../state/tabs';
 // Direct modules — not the app/i18n barrel (that re-exports event-queue,
 // whose import side-effect patches listen() and suppresses handlers until uiReady).
 import { t, tPlural } from '../i18n/translate';
-import { fmtNumber } from '../i18n/format';
+import { fmtNumber, getFormatLocale } from '../i18n/format';
 
 type Deps = {
     openDocument: (path: string) => void;
@@ -43,6 +43,7 @@ type Deps = {
 
 type FileFilter = 'markdown' | 'allText' | 'custom';
 type ScopeMode = 'vault' | 'folder' | 'openTabs';
+type SortMode = 'none' | 'name' | 'path';
 
 type Range = [number, number];
 interface Hit {
@@ -58,6 +59,10 @@ interface FileResult {
     fileName: string;
     hits: Hit[];
     truncated: boolean;
+    /** [S5/Sol#1] Frontend-vergebene Ankunftssequenz (Fundreihenfolge). Wird in
+     *  applyHits gesetzt; `none` sortiert explizit danach, damit der Rückweg
+     *  aus name/path die Fundreihenfolge wiederherstellt. */
+    arrival?: number;
 }
 interface Stats {
     filesScanned: number;
@@ -91,6 +96,9 @@ let summaryOptsEl: HTMLElement | null = null;
 let resultsEl: HTMLElement | null = null;
 let statusEl: HTMLElement | null = null;
 let listEl: HTMLElement | null = null;
+let sortBtn: HTMLElement | null = null;
+let sortLabelEl: HTMLElement | null = null;
+let pathsBtn: HTMLElement | null = null;
 
 // ----- Committed State (ändert sich nur bei gültigem Submit) ----------------
 let activeQuery = '';
@@ -99,6 +107,11 @@ let wholeWord = false;
 let regex = false;
 let fileFilter: FileFilter = 'allText';
 let customExtensions = '';
+// S5-Ergebnis-Header-Optionen: Verzeichnispfad-Anzeige + Sortiermodus. Persistiert
+// über set_search_options/search_options_get (Muster der S4-Felder). Anders als
+// die Dialog-Optionen leben diese Toggles im Ergebnis-Header und wirken sofort.
+let showPaths = false;
+let searchSort: SortMode = 'none';
 // Scope: folder (scopePath gesetzt) | openTabs (openTabs=true) | vault (beides leer).
 let scopePath: string | null = null;
 let openTabs = false;
@@ -114,6 +127,7 @@ let pendingHits: Record<number, FileResult[]> = {};
 let pendingDone: Record<number, any> = {};
 
 let files: FileResult[] = [];
+let arrivalCounter = 0; // monotone Ankunftssequenz pro Lauf (Fundreihenfolge)
 let doneStats: Stats | null = null;
 const collapsed = new Set<string>(); // eingeklappte Datei-Gruppen (per Pfad)
 let collapseMode: 'auto' | 'collapsed' | 'expanded' = 'auto';
@@ -147,6 +161,37 @@ function normalizeFilter(v: unknown): FileFilter {
     return v === 'markdown' || v === 'custom' ? v : 'allText';
 }
 
+function normalizeSort(v: unknown): SortMode {
+    return v === 'name' || v === 'path' ? v : 'none';
+}
+
+// Locale-aware, numerische Sortierung (Monaco-nahe „natürliche" Ordnung, z. B.
+// f2 < f10). Collator wird bei Locale-Wechsel neu erzeugt.
+let sortCollator: Intl.Collator | null = null;
+let sortCollatorLocale = '';
+function nameCompare(a: string, b: string): number {
+    const loc = getFormatLocale();
+    if (!sortCollator || sortCollatorLocale !== loc) {
+        try {
+            sortCollator = new Intl.Collator(loc, { numeric: true, sensitivity: 'base' });
+        } catch {
+            sortCollator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+        }
+        sortCollatorLocale = loc;
+    }
+    return sortCollator.compare(a, b);
+}
+
+/** [S5-Punkt 5] Preformatierte, locale-aware Dauer: unter 1 s in Millisekunden,
+ *  ab 1 s in Sekunden mit einer Nachkommastelle (z. B. „30,1 s"). Einheiten sind
+ *  bewusst SI-Symbole (Muster fmtBytes). */
+function formatDuration(ms: number): string {
+    if (!isFinite(ms) || ms < 0) ms = 0;
+    if (ms < 1000) return fmtNumber(Math.round(ms)) + ' ms';
+    const secs = ms / 1000;
+    return fmtNumber(secs, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' s';
+}
+
 function escapeHtml(s: string): string {
     return s
         .replace(/&/g, '&amp;')
@@ -172,6 +217,54 @@ function markedSnippet(snippet: string, ranges: Range[]): string {
     }
     html += escapeHtml(snippet.slice(cursor));
     return html;
+}
+
+// ----- Pfadanzeige (S5-Punkt 3) ---------------------------------------------
+
+/** Die angepinnten Top-Level-Wurzeln aus dem Vault-Baum (forward-slash-
+ *  normalisiert). Nur die direkten `li.node`-Kinder der Pinned-Section — die
+ *  Kandidaten für die Präfix-Relativierung im Vault-Scope. */
+function pinRoots(): string[] {
+    const tree = $('vault-tree');
+    if (!tree) return [];
+    const ul = tree.querySelector('li.section[data-section="pinned"] > ul.children');
+    if (!ul) return [];
+    const roots: string[] = [];
+    const nodes = ul.querySelectorAll(':scope > li.node[data-path]');
+    nodes.forEach((n) => {
+        const p = n.getAttribute('data-path');
+        if (p) roots.push(normalizePath(p).replace(/\/+$/, ''));
+    });
+    return roots;
+}
+
+/** Ermittelt die Basis, gegen die `path` relativiert wird: Folder-Scope →
+ *  scopePath; Vault-Scope → längste passende Pin-Wurzel; OpenTabs bzw. kein
+ *  Treffer → null (voller Pfad). */
+function scopeRootFor(path: string): string | null {
+    if (openTabs) return null;
+    if (scopePath) {
+        const r = scopePath.replace(/\/+$/, '');
+        return path === r || path.startsWith(r + '/') ? r : null;
+    }
+    let best: string | null = null;
+    for (const root of pinRoots()) {
+        if (path === root || path.startsWith(root + '/')) {
+            if (!best || root.length > best.length) best = root;
+        }
+    }
+    return best;
+}
+
+/** Verzeichnis-Anteil (ohne Dateiname), relativ zur passenden Wurzel bzw. voll.
+ *  Leer, wenn die Datei direkt in der Wurzel liegt → kein Pfad-Span. */
+function pathTail(path: string): string {
+    const p = normalizePath(path);
+    const root = scopeRootFor(p);
+    let rel = p;
+    if (root) rel = p.slice(root.length).replace(/^\/+/, '');
+    const idx = rel.lastIndexOf('/');
+    return idx >= 0 ? rel.slice(0, idx) : '';
 }
 
 function setStatus(msg: string): void {
@@ -204,6 +297,14 @@ function enterSearch(): void {
 }
 
 function exitSearch(): void {
+    // [Sol#2] Liegt der Fokus im gleich ausgeblendeten Exit-/Ergebnisbereich
+    // (×-Button, Ergebnis-Header, Liste), würde er auf einem display:none-
+    // Element stranden — vorher merken und nach dem Ausblenden auf den weiter
+    // sichtbaren Summary-Button verschieben.
+    const active = document.activeElement as HTMLElement | null;
+    const focusWasHidden =
+        !!active &&
+        ((resultsEl ? resultsEl.contains(active) : false) || active.id === 'vault-search-exit');
     // Generation erhöhen, damit ausstehende Start-Promises nicht mehr adoptiert
     // werden, und alle Puffer + einen scharfen Sprung fallenlassen.
     gen++;
@@ -216,6 +317,7 @@ function exitSearch(): void {
     if (resultsEl) resultsEl.hidden = true;
     activeQuery = '';
     files = [];
+    arrivalCounter = 0;
     doneStats = null;
     flat = [];
     activeIdx = -1;
@@ -223,6 +325,9 @@ function exitSearch(): void {
     if (listEl) listEl.innerHTML = '';
     setStatus('');
     renderSummary();
+    if (focusWasHidden && summaryBtn && typeof summaryBtn.focus === 'function') {
+        summaryBtn.focus();
+    }
 }
 
 function cancelCurrent(): void {
@@ -247,6 +352,7 @@ function runSearch(): void {
         pendingHits = {};
         pendingDone = {};
         files = [];
+        arrivalCounter = 0;
         doneStats = null;
         activeIdx = -1;
         resetCollapseState();
@@ -262,6 +368,7 @@ function runSearch(): void {
     pendingHits = {};
     pendingDone = {};
     files = [];
+    arrivalCounter = 0;
     doneStats = null;
     activeIdx = -1;
     resetCollapseState();
@@ -364,9 +471,17 @@ function onDone(payload: any): void {
 }
 
 function applyHits(newFiles: FileResult[]): void {
-    for (const f of newFiles) files.push(f);
+    const anchor = activeAnchor();
+    for (const f of newFiles) {
+        f.arrival = arrivalCounter++;
+        files.push(f);
+    }
     applyCollapsePolicy(newFiles);
+    // Beim Streaming die neue Gruppe stabil einsortieren (Modus-abhängig); der
+    // aktive Treffer bleibt über (Pfad, Hit-Index) erhalten.
+    sortFiles();
     renderResults();
+    restoreActive(anchor);
     setStatus(t('search.status.running', {
         hitsPart: tPlural('search.status.hitsPart', totalHits()),
         filesPart: tPlural('search.status.filesPart', files.length),
@@ -407,7 +522,7 @@ function finalStatus(): void {
         msg = t('search.status.done', {
             hitsPart: tPlural('search.status.hitsPart', s.hits),
             filesPart: tPlural('search.status.filesPart', s.filesMatched),
-            ms: fmtNumber(s.elapsedMs),
+            duration: formatDuration(s.elapsedMs),
         });
     }
     // 2. … DANN die Zusätze anhängen (auch im „alle zu groß"-Fall sichtbar).
@@ -466,6 +581,117 @@ function expandAll(): void {
     renderResults();
 }
 
+// ----- Sortierung + Pfad-Toggle (S5) ----------------------------------------
+
+/** Persistiert den kompletten committed Optionssatz (Dialog-Optionen + die
+ *  Ergebnis-Header-Toggles Pfad/Sortierung). Scope bleibt flüchtig. */
+function persistSearchOptions(): void {
+    safeInvoke(
+        'set_search_options',
+        {
+            caseSensitive,
+            wholeWord,
+            regex,
+            fileFilter,
+            customExtensions,
+            showPaths,
+            sort: searchSort,
+        },
+        'set_search_options',
+        'debug',
+    );
+}
+
+/** Ordnet die Gruppen gemäß aktivem Modus. `none` sortiert explizit nach der
+ *  Ankunftssequenz (`arrival`) — die Fundreihenfolge ist damit auch nach einem
+ *  Ausflug über name/path wiederherstellbar [Sol#1]. Array.sort ist stabil;
+ *  Dateiname sekundär nach Pfad → deterministisch bei gleichnamigen Dateien
+ *  (README.md). */
+function sortFiles(): void {
+    if (searchSort === 'none') {
+        files.sort((a, b) => (a.arrival ?? 0) - (b.arrival ?? 0));
+        return;
+    }
+    files.sort((a, b) => {
+        if (searchSort === 'name') {
+            const c = nameCompare(a.fileName, b.fileName);
+            return c !== 0 ? c : nameCompare(a.path, b.path);
+        }
+        return nameCompare(a.path, b.path);
+    });
+}
+
+/** Aktiven Treffer über (Pfad, Hit-Index) festhalten — überlebt Re-Sort und
+ *  Collapse (das collapsed-Set ist pfadbasiert). */
+function activeAnchor(): { path: string; h: number } | null {
+    if (activeIdx < 0 || activeIdx >= flat.length) return null;
+    const { f, h } = flat[activeIdx];
+    const file = files[f];
+    return file ? { path: file.path, h } : null;
+}
+
+function restoreActive(anchor: { path: string; h: number } | null): void {
+    if (!anchor) {
+        activeIdx = -1;
+        return;
+    }
+    const fi = files.findIndex((x) => x.path === anchor.path);
+    if (fi < 0) {
+        activeIdx = -1;
+        return;
+    }
+    activeIdx = flat.findIndex((x) => x.f === fi && x.h === anchor.h);
+    paintActive();
+}
+
+const SORT_CYCLE: SortMode[] = ['none', 'name', 'path'];
+
+function cycleSort(): void {
+    optionsTouched = true; // Boot-Restore-Guard: nutzergewählt, nicht überschreiben
+    const idx = SORT_CYCLE.indexOf(searchSort);
+    searchSort = SORT_CYCLE[(idx + 1) % SORT_CYCLE.length];
+    const anchor = activeAnchor();
+    sortFiles();
+    renderResults();
+    restoreActive(anchor);
+    renderSortButton();
+    persistSearchOptions();
+}
+
+function sortModeLabel(): string {
+    // Literale Keys (der i18n-Referenz-Gate erkennt keine String-Konkatenation).
+    if (searchSort === 'name') return t('search.sort.mode.name');
+    if (searchSort === 'path') return t('search.sort.mode.path');
+    return t('search.sort.mode.none');
+}
+
+function renderSortButton(): void {
+    if (sortBtn) {
+        sortBtn.classList.toggle('active', searchSort !== 'none');
+        const mode = sortModeLabel();
+        sortBtn.title = t('search.sort.tooltip', { mode });
+        sortBtn.setAttribute('aria-label', t('search.sort.ariaLabel', { mode }));
+    }
+    if (sortLabelEl) {
+        // Kurzlabel nur in den sortierten Modi; „none" zeigt nur das Icon.
+        sortLabelEl.textContent = searchSort === 'none' ? '' : sortModeLabel();
+    }
+}
+
+function togglePaths(): void {
+    optionsTouched = true; // Boot-Restore-Guard: nutzergewählt, nicht überschreiben
+    showPaths = !showPaths;
+    renderPathsToggle();
+    renderResults();
+    persistSearchOptions();
+}
+
+function renderPathsToggle(): void {
+    if (!pathsBtn) return;
+    pathsBtn.classList.toggle('active', showPaths);
+    pathsBtn.setAttribute('aria-pressed', showPaths ? 'true' : 'false');
+}
+
 // ----- Rendering ------------------------------------------------------------
 
 function renderResults(): void {
@@ -501,6 +727,15 @@ function renderResults(): void {
 
         head.appendChild(caret);
         head.appendChild(fname);
+        if (showPaths) {
+            const dir = pathTail(f.path);
+            if (dir) {
+                const fpath = document.createElement('span');
+                fpath.className = 'vs-fpath';
+                fpath.textContent = dir;
+                head.appendChild(fpath);
+            }
+        }
         head.appendChild(countEl);
         group.appendChild(head);
 
@@ -1069,19 +1304,9 @@ async function submitDialog(): Promise<void> {
         openTabs = false;
     }
 
-    // 4. Persistieren (flüchtiger Scope wird nicht persistiert).
-    safeInvoke(
-        'set_search_options',
-        {
-            caseSensitive,
-            wholeWord,
-            regex,
-            fileFilter,
-            customExtensions,
-        },
-        'set_search_options',
-        'debug',
-    );
+    // 4. Persistieren (flüchtiger Scope wird nicht persistiert). Enthält auch
+    //    die Ergebnis-Header-Toggles Pfad/Sortierung.
+    persistSearchOptions();
 
     // 5. Dialog schließen, Suche starten, Summary/Chip rendern.
     closeDialog(false);
@@ -1183,6 +1408,21 @@ function onGlobalKey(e: KeyboardEvent): void {
     }
 }
 
+/** [S5-Punkt 1] Escape großzügiger: verlässt den Suchmodus auch mit Fokus auf
+ *  Summary/Exit/Ergebnis-Header (bubbelt bis `#vault-region`). Feuert NICHT bei
+ *  offenem Dialog (der hat sein eigenes Escape) und nur bei aktivem Suchmodus.
+ *  Die Ergebnisliste hat weiterhin ihren eigenen Escape-Handler
+ *  (`onListKeydown`), der zuerst greift und die Klasse entfernt → die Guard hier
+ *  verhindert eine doppelte Ausführung. Die Find-Bar behandelt Escape nur am
+ *  eigenen Input, daher keine Interferenz. */
+function onRegionKeydown(e: KeyboardEvent): void {
+    if (e.key !== 'Escape') return;
+    if (dialogOpen) return;
+    if (!region || !region.classList.contains('vault-searching')) return;
+    exitSearch();
+    e.preventDefault();
+}
+
 // ----- Init / Dispose -------------------------------------------------------
 
 /** Initialisiert das Such-Panel. Gibt eine Dispose-Funktion zurück, die alle
@@ -1198,6 +1438,9 @@ export function initVaultSearch(d: Deps): () => void {
     statusEl = $('vault-search-status');
     listEl = $('vault-search-list');
     scopeEl = $('vault-search-scope');
+    sortBtn = $('vault-search-sort');
+    sortLabelEl = $('vault-search-sort-label');
+    pathsBtn = $('vault-search-paths');
     if (!summaryBtn || !resultsEl || !listEl) return () => {};
 
     optionsTouched = false;
@@ -1207,6 +1450,8 @@ export function initVaultSearch(d: Deps): () => void {
     folderDraftPath = null;
     renderScopeChip();
     renderSummary();
+    renderSortButton();
+    renderPathsToggle();
 
     // Persistierte Optionen laden — aber einen inzwischen per Submit gesetzten
     // Zustand nicht überschreiben.
@@ -1216,6 +1461,8 @@ export function initVaultSearch(d: Deps): () => void {
         regex?: boolean;
         fileFilter?: string;
         customExtensions?: string;
+        showPaths?: boolean;
+        sort?: string;
     }>('search_options_get', undefined, 'search_options_get', 'debug').then((opts) => {
         if (optionsTouched) return;
         if (opts && typeof opts === 'object') {
@@ -1224,15 +1471,25 @@ export function initVaultSearch(d: Deps): () => void {
             regex = !!opts.regex;
             fileFilter = normalizeFilter(opts.fileFilter);
             customExtensions = typeof opts.customExtensions === 'string' ? opts.customExtensions : '';
+            showPaths = !!opts.showPaths;
+            searchSort = normalizeSort(opts.sort);
+            renderSortButton();
+            renderPathsToggle();
         }
     });
 
     const summaryClick = (): void => openVaultSearchDialog();
     const collapseAllBtn = $('vault-search-collapse-all');
     const expandAllBtn = $('vault-search-expand-all');
+    const exitBtn = $('vault-search-exit');
+    const localSort = sortBtn;
+    const localPaths = pathsBtn;
     summaryBtn.addEventListener('click', summaryClick);
     if (collapseAllBtn) collapseAllBtn.addEventListener('click', collapseAll);
     if (expandAllBtn) expandAllBtn.addEventListener('click', expandAll);
+    if (exitBtn) exitBtn.addEventListener('click', exitSearch);
+    if (localSort) localSort.addEventListener('click', cycleSort);
+    if (localPaths) localPaths.addEventListener('click', togglePaths);
     listEl.addEventListener('click', onResultClick as EventListener);
     listEl.addEventListener('auxclick', onResultAux as EventListener);
     listEl.addEventListener('keydown', onListKeydown as EventListener);
@@ -1240,6 +1497,7 @@ export function initVaultSearch(d: Deps): () => void {
         if ((e.target as HTMLElement).closest('.vs-scope-x')) clearScope();
     };
     if (scopeEl) scopeEl.addEventListener('click', scopeClick as EventListener);
+    if (region) region.addEventListener('keydown', onRegionKeydown as EventListener);
     window.addEventListener('folio-doc-kind-changed', onDocKindChanged);
     document.addEventListener('keydown', onGlobalKey, { capture: true });
 
@@ -1253,17 +1511,23 @@ export function initVaultSearch(d: Deps): () => void {
     const localSummary = summaryBtn;
     const localCollapseAll = collapseAllBtn;
     const localExpandAll = expandAllBtn;
+    const localExit = exitBtn;
     const localList = listEl;
     const localScope = scopeEl;
+    const localRegion = region;
     return function dispose(): void {
         if (dialogOpen) closeDialog(false);
         localSummary.removeEventListener('click', summaryClick);
         if (localCollapseAll) localCollapseAll.removeEventListener('click', collapseAll);
         if (localExpandAll) localExpandAll.removeEventListener('click', expandAll);
+        if (localExit) localExit.removeEventListener('click', exitSearch);
+        if (localSort) localSort.removeEventListener('click', cycleSort);
+        if (localPaths) localPaths.removeEventListener('click', togglePaths);
         localList.removeEventListener('click', onResultClick as EventListener);
         localList.removeEventListener('auxclick', onResultAux as EventListener);
         localList.removeEventListener('keydown', onListKeydown as EventListener);
         if (localScope) localScope.removeEventListener('click', scopeClick as EventListener);
+        if (localRegion) localRegion.removeEventListener('keydown', onRegionKeydown as EventListener);
         window.removeEventListener('folio-doc-kind-changed', onDocKindChanged);
         document.removeEventListener('keydown', onGlobalKey, { capture: true } as any);
         unlistenPromises.forEach((p) => p.then((fn) => fn()).catch(() => {}));
