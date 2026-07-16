@@ -898,6 +898,63 @@ describe('vault/search — S5 Pfadanzeige-Toggle', () => {
         expect($('vault-search-list').querySelector('.vs-fpath')).toBeNull();
         expect($('vault-search-paths').getAttribute('aria-pressed')).toBe('false');
     });
+
+    it('[S7] Wechsel auf Pfad-Sortierung blendet die Pfadzeile einmalig ein (Einbahn-Kopplung)', async () => {
+        await importAndInit();
+        await runSearch('needle');
+        tauri.emitEvent('search:hits', {
+            runId: 1,
+            files: [fileFixture({ path: '/vault/sub/deep.md', fileName: 'deep.md' })],
+        });
+        await flushMicro();
+        const list = $('vault-search-list');
+        const sort = $('vault-search-sort');
+        const paths = $('vault-search-paths');
+        // Ausgangslage: Pfade aus.
+        expect(list.querySelector('.vs-fpath')).toBeNull();
+
+        // none → name: noch keine Pfade.
+        sort.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        expect(list.querySelector('.vs-fpath')).toBeNull();
+        expect(paths.getAttribute('aria-pressed')).toBe('false');
+
+        // name → path: Pfadzeile automatisch eingeblendet, Toggle-State + Persist mit.
+        sort.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        expect(list.querySelector('.vs-fpath')).not.toBeNull();
+        expect(paths.getAttribute('aria-pressed')).toBe('true');
+        expect(tauri.invoke).toHaveBeenCalledWith(
+            'set_search_options',
+            expect.objectContaining({ sort: 'path', showPaths: true }),
+        );
+
+        // Keine Rück-Kopplung: path → none lässt die Pfade sichtbar.
+        sort.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        expect(list.querySelector('.vs-fpath')).not.toBeNull();
+        expect(paths.getAttribute('aria-pressed')).toBe('true');
+    });
+
+    it('[S7] respektiert manuelles Ausblenden bei aktiver Pfad-Sortierung (kein Re-Trigger)', async () => {
+        await importAndInit();
+        await runSearch('needle');
+        tauri.emitEvent('search:hits', {
+            runId: 1,
+            files: [fileFixture({ path: '/vault/sub/deep.md', fileName: 'deep.md' })],
+        });
+        await flushMicro();
+        const list = $('vault-search-list');
+        const sort = $('vault-search-sort');
+        const paths = $('vault-search-paths');
+
+        // Auf path wechseln → Pfade auto-ein.
+        sort.dispatchEvent(new MouseEvent('click', { bubbles: true })); // name
+        sort.dispatchEvent(new MouseEvent('click', { bubbles: true })); // path
+        expect(list.querySelector('.vs-fpath')).not.toBeNull();
+
+        // Manuell ausblenden — bleibt aus, obwohl path weiter aktiv ist.
+        paths.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        expect(list.querySelector('.vs-fpath')).toBeNull();
+        expect(paths.getAttribute('aria-pressed')).toBe('false');
+    });
 });
 
 describe('vault/search — S5 Dauer-Format', () => {
@@ -1042,15 +1099,24 @@ describe('vault/search — S7 Pfad-Darstellung (zweizeilig)', () => {
     });
 
     it('sort=path setzt die Emphasis-Klasse NICHT, wenn die Pfadzeile aus ist [Sol-Rev S7#4]', async () => {
+        // Der Zustand sort=path + showPaths=false ist über die frische UI nicht
+        // mehr herstellbar (Einbahn-Kopplung blendet die Pfade beim Wechsel auf
+        // path ein), bleibt aber via Boot-Restore erreichbar: persistierte Wahl
+        // bzw. manuell ausgeblendet + Neustart. Genau den Restore simulieren wir.
+        tauri.invoke.mockImplementation((cmd: string) => {
+            if (cmd === 'vault_search_start') return Promise.resolve(nextRunId++);
+            if (cmd === 'vault_search_validate') return Promise.resolve(undefined);
+            if (cmd === 'search_options_get') {
+                return Promise.resolve({ sort: 'path', showPaths: false, fileFilter: 'allText' });
+            }
+            return Promise.resolve(undefined);
+        });
         await importAndInit();
+        await flushMicro(); // Boot-Restore anwenden (sort=path, showPaths=false)
         await runSearch('needle');
         tauri.emitEvent('search:hits', { runId: 1, files: [fileFixture()] });
         await flushMicro();
-        // showPaths bleibt aus (KEIN enablePaths()).
         const list = $('vault-search-list');
-        const sort = $('vault-search-sort');
-        sort.dispatchEvent(new MouseEvent('click', { bubbles: true })); // name
-        sort.dispatchEvent(new MouseEvent('click', { bubbles: true })); // path
         // Ohne sichtbare Pfadzeile darf der einzige sichtbare Dateiname nicht in
         // die gedimmte Zweitzeile getauscht werden → Modifier-Klasse bleibt aus.
         expect(list.classList.contains('vs-sort-path')).toBe(false);

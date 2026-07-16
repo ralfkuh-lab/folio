@@ -268,6 +268,83 @@ def run(ctx):
 
             ctx.screenshot("47_search_results")
 
+            with ctx.step("Sort=path blendet Pfade automatisch ein (Einbahn-Kopplung)"):
+                # [S7] sort=path ohne sichtbare Pfade ist nicht nachvollziehbar
+                # (die Reihenfolge waere unerklaerlich). Der Wechsel auf 'path'
+                # blendet die Pfadzeile daher einmalig ein; verlaesst der User
+                # 'path' wieder, bleiben die Pfade sichtbar (keine Rueck-Kopplung).
+                # Am Ende raeumen wir exakt auf den Vorzustand (sort=name, Pfade
+                # aus) zurueck, damit spaetere Ergebnislisten-Screenshots
+                # (47_folder_scope) stabil bleiben — showPaths/sort persistieren
+                # ueber Suchlaeufe hinweg.
+                def _paths_pressed():
+                    return _evalv(
+                        ctx,
+                        "document.getElementById('vault-search-paths')"
+                        ".getAttribute('aria-pressed')",
+                    )
+
+                def _click_sort():
+                    ctx.api.eval(
+                        "document.getElementById('vault-search-sort')"
+                        ".dispatchEvent(new MouseEvent('click',{bubbles:true}))"
+                    )
+                    time.sleep(0.12)
+
+                # Vorbedingung: aus dem name-Sort-Block sind die Pfade aus.
+                ctx.expect(
+                    _count(ctx, "#vault-search-list .vs-fpath") == 0
+                    and _paths_pressed() == "false",
+                    f"Pfade unerwartet sichtbar vor path-Sort: pressed={_paths_pressed()}",
+                )
+
+                # name → path: Pfadzeile automatisch eingeblendet + Emphasis-Klasse.
+                _click_sort()
+                fpaths_on = _poll(
+                    ctx, lambda: _count(ctx, "#vault-search-list .vs-fpath") > 0
+                )
+                ctx.expect(fpaths_on is True, "path-Sort blendete die Pfadzeile nicht ein")
+                ctx.expect(
+                    _paths_pressed() == "true",
+                    "paths-Toggle nicht gedrueckt nach path-Sort",
+                )
+                ctx.expect(
+                    _evalv(
+                        ctx,
+                        "document.getElementById('vault-search-list')"
+                        ".classList.contains('vs-sort-path')",
+                    )
+                    is True,
+                    "Emphasis-Klasse vs-sort-path fehlt bei path+showPaths",
+                )
+
+                # path → none: keine Rueck-Kopplung, Pfade bleiben sichtbar.
+                _click_sort()
+                ctx.expect(
+                    _count(ctx, "#vault-search-list .vs-fpath") > 0
+                    and _paths_pressed() == "true",
+                    "Rueck-Kopplung: Pfade beim Verlassen von 'path' ausgeblendet",
+                )
+
+                # Aufraeumen auf den Vorzustand: Pfade aus, dann sort none → name.
+                ctx.api.eval(
+                    "document.getElementById('vault-search-paths')"
+                    ".dispatchEvent(new MouseEvent('click',{bubbles:true}))"
+                )
+                time.sleep(0.12)
+                _click_sort()  # none → name (Kopplung greift nur bei 'path')
+                restored = _poll(
+                    ctx,
+                    lambda: _count(ctx, "#vault-search-list .vs-fpath") == 0
+                    and _fname_order() == expected_order
+                    and _sort_active() is True,
+                )
+                ctx.expect(
+                    restored is True,
+                    f"Vorzustand nicht wiederhergestellt: pressed={_paths_pressed()} "
+                    f"order={_fname_order()}",
+                )
+
             with ctx.step("Cancel/Reopen: Draft verworfen, committed Lauf unveraendert"):
                 groups_before = _count(ctx, "#vault-search-list .vs-group")
                 _open_dialog_via_summary(ctx)

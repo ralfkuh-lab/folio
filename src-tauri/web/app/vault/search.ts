@@ -727,6 +727,15 @@ function cycleSort(): void {
     optionsTouched = true; // Boot-Restore-Guard: nutzergewählt, nicht überschreiben
     const idx = SORT_CYCLE.indexOf(searchSort);
     searchSort = SORT_CYCLE[(idx + 1) % SORT_CYCLE.length];
+    // [S7] Einbahn-Kopplung: Pfad-Sortierung ohne sichtbare Pfade ist nicht
+    // nachvollziehbar (die Reihenfolge wäre unerklärlich) — deshalb blenden wir
+    // die Pfadzeile beim Wechsel auf `path` einmalig ein. Bewusst KEINE
+    // Rück-Kopplung: verlässt der User `path` wieder, bleibt showPaths, wie es
+    // ist; und er darf die Pfade danach jederzeit wieder ausblenden.
+    if (searchSort === 'path' && !showPaths) {
+        showPaths = true;
+        renderPathsToggle();
+    }
     const anchor = activeAnchor();
     sortFiles();
     renderResults();
