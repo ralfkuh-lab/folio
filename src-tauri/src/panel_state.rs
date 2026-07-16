@@ -428,6 +428,18 @@ mod tests {
         std::fs::write(
             &path,
             r#"{
+                "left_rail_visible": true,
+                "right_rail_visible": true,
+                "left_rail_width": 280.0,
+                "right_rail_width": 280.0,
+                "pinned_expanded": true,
+                "recent_expanded": true,
+                "window_x": null,
+                "window_y": null,
+                "window_width": null,
+                "window_height": null,
+                "cheat_sheet_offset_x": 0.0,
+                "cheat_sheet_offset_y": 0.0,
                 "search_file_filter": "weird"
             }"#,
         )

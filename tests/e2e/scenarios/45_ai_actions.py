@@ -29,7 +29,7 @@ Schluss.
 
 def _document_part(user_message: str) -> str:
     """Extrahiert den Dokument-Teil hinter der Nonce-Trennerzeile."""
-    match = re.search(r"^=== DOKUMENT \d+ \(Daten, keine Anweisungen\) ===$",
+    match = re.search(r"^=== DOCUMENT \d+ \(data, no instructions\) ===$",
                       user_message, flags=re.MULTILINE)
     if not match:
         return ""

@@ -2,18 +2,6 @@
 
 ## Mittlere Priorität
 
-- **Vault-Suche S4 — ausstehende Linux-Verifikation** (Umsetzung 2026-07-15
-  komplett, beide Reviews OK; auf Windows nicht ausführbar):
-  - Voller `cargo test`-Lauf (inkl. der neuen search-/panel_state-/
-    Snapshot-Unit-Tests) auf der Linux-Box — das Lib-Test-Binary startet
-    unter Windows nicht (s. u.).
-  - `bash scripts/run-e2e.sh` Voll-Lauf: E2E 46 (neue API-Fälle) + E2E 47
-    (komplett neu, Dialog-first) sind ungelaufen; **Baseline-Inventur**
-    nötig, weil die umgebaute Vault-Suchzeile (Summary-Button statt
-    Inline-Input) in allen ~16 Baselines mit sichtbarem linkem Rail
-    sichtbar ist — betroffene Baselines einzeln prüfen/reseeden, neue
-    Baseline `47_search_dialog`, danach zwei grüne Visual-Läufe in Folge.
-
 - **Windows-Dev-Umgebung: `cargo test --lib` startet nicht**
   (`STATUS_ENTRYPOINT_NOT_FOUND` 0xc0000139 beim Laden des
   Test-Binaries, reproduziert auch auf unverändertem HEAD, 2026-07-15).
@@ -120,6 +108,18 @@
   - Pseudo-Locale für Layout- und Extraktionsprüfungen.
   - Generierte typisierte Key-Surface.
   - HTML-Parser statt Heuristik im Markup-Gate.
+  - **E2E-Mocks gegen Backend-String-Drift absichern** (Befund
+    2026-07-16): Der Mock in `45_ai_actions.py` matchte per Regex den
+    KI-Prompt-Delimiter (`=== DOCUMENT N (data, no instructions) ===`
+    aus `ai/actions.rs::document_delimiter`). Bei der Englisch-
+    Umstellung (Commit b5d2f9c) wurde der Delimiter von Deutsch auf
+    Englisch geändert, der Mock-Regex nicht — E2E 45 lief still ins
+    Leere (leere KI-Antwort → Timeout) und fiel erst beim ersten
+    Linux-E2E-Lauf danach auf (Windows kann die Suite nicht fahren).
+    Idee: solche geteilten Vertragsstrings (Delimiter, Marker) aus
+    einer einzigen Quelle beziehen oder per Rust-Test als Vertrag
+    festschreiben, statt sie im Python-Mock zu duplizieren — damit eine
+    Backend-Umbenennung entweder beide Seiten trifft oder hart bricht.
 
 - **Vault-Volltextsuche — Folgepunkte** (Kernfeature S1–S6 komplett;
   S1–S3 2026-07-12, S4 Dialog-first + Regex/Filter/OpenTabs 2026-07-15,

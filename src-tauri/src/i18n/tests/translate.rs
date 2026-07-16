@@ -40,12 +40,16 @@ fn t_fallback_active_then_en_then_key() {
 #[test]
 fn t_args_interpolates_named_placeholders() {
     let de = tr_for("de");
-    // search.status.done uses hitsPart, filesPart, ms
+    // search.status.done uses hitsPart, filesPart, duration
     let hits = de.t_plural("search.status.hitsPart", 2, &[]).unwrap();
     let files = de.t_plural("search.status.filesPart", 3, &[]).unwrap();
     let out = de.t_args(
         "search.status.done",
-        &[("hitsPart", &hits), ("filesPart", &files), ("ms", "42")],
+        &[
+            ("hitsPart", &hits),
+            ("filesPart", &files),
+            ("duration", "42"),
+        ],
     );
     assert!(out.contains(&hits), "out={out}");
     assert!(out.contains(&files), "out={out}");
@@ -98,7 +102,7 @@ fn segment_composition_0_1_2_matrix_de_and_en() {
                     &[
                         ("hitsPart", &hits_part),
                         ("filesPart", &files_part),
-                        ("ms", "10"),
+                        ("duration", "10"),
                     ],
                 );
                 assert!(
