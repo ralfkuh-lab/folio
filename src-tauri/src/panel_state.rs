@@ -41,10 +41,26 @@ pub struct PanelStateData {
     pub search_case_sensitive: bool,
     #[serde(default)]
     pub search_whole_word: bool,
+    // Vault-Suche S4: Regex-Modus (Default aus). Dateityp-Filter als roher
+    // UI-Wert (`markdown` | `allText` | `custom`, Default `allText` via
+    // serde-default-Funktion, weil String-Default sonst leer wäre) und die
+    // benutzerdefinierte Endungsliste als roher Feldtext (damit der Dialog das
+    // Feld 1:1 vorbefüllen kann). Unbekannte/leere Filterwerte fallen beim
+    // Lesen auf `allText` zurück (siehe `commands::app::search_options_get`).
+    #[serde(default)]
+    pub search_regex: bool,
+    #[serde(default = "default_search_file_filter")]
+    pub search_file_filter: String,
+    #[serde(default)]
+    pub search_custom_extensions: String,
 }
 
 fn default_split_mid_percent() -> f64 {
     50.0
+}
+
+fn default_search_file_filter() -> String {
+    "allText".to_string()
 }
 
 impl Default for PanelStateData {
@@ -67,6 +83,9 @@ impl Default for PanelStateData {
             split_mid_percent: 50.0,
             search_case_sensitive: false,
             search_whole_word: false,
+            search_regex: false,
+            search_file_filter: default_search_file_filter(),
+            search_custom_extensions: String::new(),
         }
     }
 }
@@ -135,9 +154,19 @@ impl PanelState {
         self.save()
     }
 
-    pub fn set_search_options(&mut self, case_sensitive: bool, whole_word: bool) -> io::Result<()> {
+    pub fn set_search_options(
+        &mut self,
+        case_sensitive: bool,
+        whole_word: bool,
+        regex: bool,
+        file_filter: String,
+        custom_extensions: String,
+    ) -> io::Result<()> {
         self.data.search_case_sensitive = case_sensitive;
         self.data.search_whole_word = whole_word;
+        self.data.search_regex = regex;
+        self.data.search_file_filter = file_filter;
+        self.data.search_custom_extensions = custom_extensions;
         self.save()
     }
 
@@ -295,6 +324,86 @@ mod tests {
     #[test]
     fn split_mid_percent_default_is_fifty() {
         assert_eq!(50.0, PanelStateData::default().split_mid_percent);
+    }
+
+    #[test]
+    fn search_option_defaults_and_roundtrip() {
+        let default = PanelStateData::default();
+        assert!(!default.search_regex);
+        assert_eq!("allText", default.search_file_filter);
+        assert_eq!("", default.search_custom_extensions);
+
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("panel.json");
+        let mut state = PanelState::load_from(path.clone());
+        state
+            .set_search_options(
+                true,
+                false,
+                true,
+                "custom".to_string(),
+                "foobar,md".to_string(),
+            )
+            .unwrap();
+        let reloaded = PanelState::load_from(path).data();
+        assert!(reloaded.search_case_sensitive);
+        assert!(!reloaded.search_whole_word);
+        assert!(reloaded.search_regex);
+        assert_eq!("custom", reloaded.search_file_filter);
+        assert_eq!("foobar,md", reloaded.search_custom_extensions);
+    }
+
+    #[test]
+    fn search_options_load_legacy_json_without_new_fields() {
+        // Alt-Stand ohne die S4-Felder: serde-Defaults greifen (allText/false/"").
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("panel.json");
+        std::fs::write(
+            &path,
+            r#"{
+                "left_rail_visible": true,
+                "right_rail_visible": true,
+                "left_rail_width": 280.0,
+                "right_rail_width": 280.0,
+                "pinned_expanded": true,
+                "recent_expanded": true,
+                "window_x": null,
+                "window_y": null,
+                "window_width": null,
+                "window_height": null,
+                "cheat_sheet_offset_x": 0.0,
+                "cheat_sheet_offset_y": 0.0,
+                "search_case_sensitive": true,
+                "search_whole_word": true
+            }"#,
+        )
+        .unwrap();
+        let data = PanelState::load_from(path).data();
+        assert!(data.search_case_sensitive);
+        assert!(data.search_whole_word);
+        assert!(!data.search_regex);
+        assert_eq!("allText", data.search_file_filter);
+        assert_eq!("", data.search_custom_extensions);
+    }
+
+    #[test]
+    fn search_options_unknown_stored_filter_loads_raw() {
+        // Ein explizit gespeicherter, unbekannter Filterwert wird auf
+        // PanelState-Ebene ROH geladen (kein serde-Default, da das Feld
+        // vorhanden ist). Die Normalisierung auf `allText` passiert erst im
+        // Command-Layer (`normalized_file_filter`, dort getestet) — so bleibt
+        // hier sichtbar, wo der Fallback greift.
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("panel.json");
+        std::fs::write(
+            &path,
+            r#"{
+                "search_file_filter": "weird"
+            }"#,
+        )
+        .unwrap();
+        let data = PanelState::load_from(path).data();
+        assert_eq!("weird", data.search_file_filter);
     }
 
     #[test]

@@ -15,7 +15,8 @@ use tauri::Manager;
 
 use crate::automation::context::AutomationContext;
 use crate::automation::error::{json_payload, ApiError, ApiResult};
-use crate::search::{self, FileResult, SearchError, SearchOptions, SearchScope, SearchStats};
+use crate::commands::search_cmd::{build_scope_and_options, snapshot_open_tab_docs};
+use crate::search::{self, FileResult, SearchScopeEx, SearchStats};
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -29,6 +30,19 @@ pub(in crate::automation) struct SearchRequest {
     case_sensitive: bool,
     #[serde(default)]
     whole_word: bool,
+    /// Regex-Modus (S4). Default aus → S1-Literalsuche.
+    #[serde(default)]
+    regex: bool,
+    /// Dateityp-Filter (`markdown` | `allText` | `custom`). Fehlt → `allText`.
+    #[serde(default)]
+    file_filter: Option<String>,
+    /// Roher Endungs-Feldtext für `fileFilter=custom` (gleiche Zerlegung wie
+    /// UI/Tauri).
+    #[serde(default)]
+    custom_extensions: String,
+    /// OpenTabs-Scope (S4): durchsucht die offenen Tab-Puffer statt des Vaults.
+    #[serde(default)]
+    open_tabs: bool,
     /// Optionales Zeitlimit; danach wird der Lauf abgebrochen und 500 geliefert.
     #[serde(default)]
     timeout_ms: Option<u64>,
@@ -45,22 +59,46 @@ pub(in crate::automation) async fn post_search(
     payload: Result<Json<SearchRequest>, JsonRejection>,
 ) -> ApiResult<Json<SearchResponse>> {
     let Json(request) = json_payload(payload)?;
-    let options = SearchOptions {
-        case_sensitive: request.case_sensitive,
-        whole_word: request.whole_word,
-    };
-
     let state = context.app_handle.state::<AppState>();
-    let roots = {
-        let workspace = state
-            .workspace
-            .lock()
-            .map_err(|_| ApiError::internal("workspace lock poisoned"))?;
-        let scope = match request.scope {
-            Some(path) => SearchScope::Folder(path),
-            None => SearchScope::Vault,
-        };
-        search::resolve_scope(workspace.pinned(), &scope)
+
+    // Grenz-Validierung synchron → 400 (openTabs+scope-Konflikt, unbekannter
+    // Filter, leere Custom-Liste, verbotene Endungszeichen).
+    let (scope_ex, options) = build_scope_and_options(
+        request.scope,
+        request.open_tabs,
+        request.case_sensitive,
+        request.whole_word,
+        request.regex,
+        request.file_filter.as_deref().unwrap_or("allText"),
+        &request.custom_extensions,
+    )
+    .map_err(|error| ApiError::bad_request(error.to_string()))?;
+
+    // Ziel auflösen (Roots vs. OpenTabs-Snapshot) — beides vor dem Blocking-Task
+    // und ohne die tabs/workspace-Locks über den Task zu halten.
+    enum Work {
+        Roots(search::SearchRoots),
+        Buffers(Vec<search::BufferDoc>),
+    }
+    let work = match scope_ex {
+        SearchScopeEx::OpenTabs => {
+            Work::Buffers(snapshot_open_tab_docs(state.inner()).map_err(ApiError::internal)?)
+        }
+        SearchScopeEx::Vault | SearchScopeEx::Folder(_) => {
+            let scope = match scope_ex {
+                SearchScopeEx::Folder(path) => Some(path),
+                _ => None,
+            };
+            let workspace = state
+                .workspace
+                .lock()
+                .map_err(|_| ApiError::internal("workspace lock poisoned"))?;
+            let scope = match scope {
+                Some(path) => crate::search::SearchScope::Folder(path),
+                None => crate::search::SearchScope::Vault,
+            };
+            Work::Roots(search::resolve_scope(workspace.pinned(), &scope))
+        }
     };
 
     let query = request.query;
@@ -69,9 +107,18 @@ pub(in crate::automation) async fn post_search(
 
     let join = tauri::async_runtime::spawn_blocking(move || {
         let mut files: Vec<FileResult> = Vec::new();
-        let stats = search::run_search(&roots, &query, &options, &cancel_task, &mut |file| {
-            files.push(file)
-        });
+        let stats = match &work {
+            Work::Roots(roots) => {
+                search::run_search_ex(roots, &query, &options, &cancel_task, &mut |file| {
+                    files.push(file)
+                })
+            }
+            Work::Buffers(docs) => {
+                search::run_search_buffers(docs, &query, &options, &cancel_task, &mut |file| {
+                    files.push(file)
+                })
+            }
+        };
         stats.map(|stats| SearchResponse { files, stats })
     });
 
@@ -87,13 +134,8 @@ pub(in crate::automation) async fn post_search(
     };
 
     let outcome = joined.map_err(|error| ApiError::internal(error.to_string()))?;
-    match outcome {
-        Ok(response) => Ok(Json(response)),
-        Err(
-            error @ (SearchError::QueryTooShort
-            | SearchError::RootNotFound(_)
-            | SearchError::InvalidScope(_)),
-        ) => Err(ApiError::bad_request(error.to_string())),
-        Err(error) => Err(ApiError::internal(error.to_string())),
-    }
+    // Alle SearchError sind Client-Fehler (inkl. InvalidPattern, früher 500) → 400.
+    outcome
+        .map(Json)
+        .map_err(|error| ApiError::bad_request(error.to_string()))
 }

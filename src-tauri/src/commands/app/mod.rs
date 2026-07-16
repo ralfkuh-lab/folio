@@ -206,6 +206,17 @@ pub async fn set_split_mid_percent(
 /// Liefert die persistierten Vault-Such-Optionen (Aa/W) ans Frontend.
 /// Beim Boot des Such-Panels gerufen, damit die Toggle-Buttons synchron
 /// zum persistierten Zustand starten.
+/// Normalisiert den persistierten `fileFilter`-Wert. Unbekannte/leere Werte
+/// fallen auf `allText` zurück, damit die Radio-Gruppe im Dialog nie einen
+/// undefinierten Zustand bekommt.
+fn normalized_file_filter(raw: &str) -> &'static str {
+    match raw {
+        "markdown" => "markdown",
+        "custom" => "custom",
+        _ => "allText",
+    }
+}
+
 #[tauri::command]
 pub async fn search_options_get(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
     let data = state
@@ -216,20 +227,48 @@ pub async fn search_options_get(state: State<'_, AppState>) -> Result<serde_json
     Ok(serde_json::json!({
         "caseSensitive": data.search_case_sensitive,
         "wholeWord": data.search_whole_word,
+        "regex": data.search_regex,
+        "fileFilter": normalized_file_filter(&data.search_file_filter),
+        "customExtensions": data.search_custom_extensions,
     }))
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn set_search_options(
     case_sensitive: bool,
     whole_word: bool,
+    regex: Option<bool>,
+    file_filter: Option<String>,
+    custom_extensions: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    state
+    // Neue Felder sind optional, damit die App zwischen Backend- und
+    // Frontend-Etappe lauffähig bleibt (alter Aufrufer sendet nur Aa/W). Fehlt
+    // ein Feld, bleibt der bisher persistierte Wert erhalten.
+    let mut guard = state
         .panel_state
         .lock()
-        .map_err(|_| "panel state lock poisoned".to_string())?
-        .set_search_options(case_sensitive, whole_word)
+        .map_err(|_| "panel state lock poisoned".to_string())?;
+    let current = guard.data();
+    let file_filter = file_filter.unwrap_or(current.search_file_filter);
+    let custom_extensions = custom_extensions.unwrap_or(current.search_custom_extensions.clone());
+    // Persistenz prüft denselben Vertrag wie Suchstart/Submit: die finalen
+    // Werte werden über FileFilter::from_raw validiert. Custom-Rohtext wird nur
+    // bei aktivem `custom`-Filter geparst/abgelehnt (verbotene Zeichen bzw.
+    // leere aktive Liste → Err); ein unbekannter Filterwert → Err. Inaktiver
+    // Custom-Rohtext wird unverändert roh persistiert, damit der Dialog das Feld
+    // 1:1 vorbefüllen kann.
+    crate::search::FileFilter::from_raw(&file_filter, &custom_extensions)
+        .map_err(|error| error.to_string())?;
+    guard
+        .set_search_options(
+            case_sensitive,
+            whole_word,
+            regex.unwrap_or(current.search_regex),
+            file_filter,
+            custom_extensions,
+        )
         .map_err(|error| error.to_string())
 }
 
@@ -304,4 +343,23 @@ pub async fn cli_pending_open(
     // Das Frontend darf den Pfad nicht noch einmal ueber openDocument
     // ersetzen; die Boot-Operation ist oben vollstaendig abgeschlossen.
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // `search_options_get` reicht `normalized_file_filter(&data.search_file_filter)`
+    // ans Frontend. Ein unbekannter/leerer gespeicherter Filterwert fällt hier
+    // auf `allText` zurück, damit die Radio-Gruppe im Dialog nie einen
+    // undefinierten Zustand bekommt.
+    #[test]
+    fn normalized_file_filter_falls_back_to_all_text() {
+        assert_eq!("markdown", normalized_file_filter("markdown"));
+        assert_eq!("custom", normalized_file_filter("custom"));
+        assert_eq!("allText", normalized_file_filter("allText"));
+        // Unbekannt bzw. leer → allText.
+        assert_eq!("allText", normalized_file_filter("bogus"));
+        assert_eq!("allText", normalized_file_filter(""));
+    }
 }

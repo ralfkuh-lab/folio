@@ -1,10 +1,14 @@
-/* Vault-Volltextsuche — Such-Panel im linken Rail (Etappe S2 + Fix-Paket).
+/* Vault-Volltextsuche — Such-Panel im linken Rail (Etappe S2/S3 + S4-Dialog).
 
-   Verdrahtet das #vault-search-Feld mit dem Backend-Streaming
-   (vault_search_start / vault_search_cancel + search:hits/search:done),
-   rendert die Treffer-Gruppen (mit <mark> exakt über die UTF-16-Ranges) und
-   springt beim Klick zur Fundstelle (Edit/Split via Monaco revealMatch,
-   View-Mode via Find-Bar). Optionen (Aa/W) persistieren über panel-state.
+   S4 verlagert die Bedienung von der Inline-Zeile (Input + Aa/W) in einen
+   modalen Dialog (`#vault-search-dialog`, Muster wie `.unsaved-dialog__panel`).
+   Der linke Rail zeigt nur noch einen Summary-Button (`#vault-search-summary`)
+   mit dem aktiven Begriff + Options-Glyphen sowie darunter die Ergebnisse.
+
+   Draft vs. Committed [Sol#7]: Der Dialog arbeitet ausschließlich auf dem
+   DOM-Draft (Felder). Der committed State (activeQuery, Optionen, Scope) ändert
+   sich NUR bei gültigem Submit. Abbrechen verwirft den Draft und lässt einen
+   laufenden Lauf unangetastet. `openVaultSearchDialog()` ist idempotent.
 
    Stale-Guard nach dem renderGen-Muster (view/preview.ts): jede neue Suche
    erhöht eine lokale Generation, cancelt den alten runId und akzeptiert nur
@@ -16,11 +20,16 @@
    Sprung-Korrelation: statt roh auf `document:loaded` zu hören, wird auf das
    in-window CustomEvent `folio-doc-kind-changed` reagiert, das state/document.ts
    NACH dem Anwenden des Dokument-States dispatcht (erbt den seq-Stale-Guard,
-   CLAUDE.md-Konvention „KI-Button-Gating"). Der Pfad kommt aus getCurrentPath(). */
+   CLAUDE.md-Konvention „KI-Button-Gating"). Der Pfad kommt aus getCurrentPath().
+
+   OpenTabs-Sprung [Sol#2]: Treffer in offenen Tabs werden NICHT über
+   openDocument geöffnet (Save-Prompt + Reload würden den dirty Puffer
+   zerstören), sondern über Pfad→Tab-ID (findTabIdByPath) + activateTab. */
 
 import { folioLog, safeInvoke } from '../util/log';
 import { setEditorFindTerm, findNext } from '../ui/find-bar';
-import { getCurrentPath } from '../state/document';
+import { getCurrentPath, syncEditorTextToStoreRequired } from '../state/document';
+import { activateTab, findTabIdByPath, getActiveTabId } from '../state/tabs';
 // Direct modules — not the app/i18n barrel (that re-exports event-queue,
 // whose import side-effect patches listen() and suppresses handlers until uiReady).
 import { t, tPlural } from '../i18n/translate';
@@ -31,6 +40,9 @@ type Deps = {
     showStatus?: (msg: string) => void;
     openLeftRail: () => void;
 };
+
+type FileFilter = 'markdown' | 'allText' | 'custom';
+type ScopeMode = 'vault' | 'folder' | 'openTabs';
 
 type Range = [number, number];
 interface Hit {
@@ -66,25 +78,35 @@ interface Jump {
     wholeWord: boolean;
 }
 
-const DEBOUNCE_MS = 250;
 const MIN_QUERY_LEN = 2;
 const VIEW_FIND_CAP = 200;
 const VIEW_SETTLE_TIMEOUT_MS = 2000;
+const AUTO_COLLAPSE_THRESHOLD = 10; // > 10 Treffergruppen → Auto-Einklappen
 
 let deps: Deps = { openDocument: () => {}, openLeftRail: () => {} };
 let region: HTMLElement | null = null;
-let input: HTMLInputElement | null = null;
-let caseBtn: HTMLElement | null = null;
-let wordBtn: HTMLElement | null = null;
+let summaryBtn: HTMLElement | null = null;
+let summaryTextEl: HTMLElement | null = null;
+let summaryOptsEl: HTMLElement | null = null;
 let resultsEl: HTMLElement | null = null;
 let statusEl: HTMLElement | null = null;
 let listEl: HTMLElement | null = null;
 
+// ----- Committed State (ändert sich nur bei gültigem Submit) ----------------
+let activeQuery = '';
 let caseSensitive = false;
 let wholeWord = false;
-let optionsTouched = false; // User hat einen Toggle bedient (Boot-Restore-Guard)
+let regex = false;
+let fileFilter: FileFilter = 'allText';
+let customExtensions = '';
+// Scope: folder (scopePath gesetzt) | openTabs (openTabs=true) | vault (beides leer).
+let scopePath: string | null = null;
+let openTabs = false;
+// Zuletzt bekannter Ordner-Kontext (Kontextmenü ODER committed Folder-Scope).
+// Steuert die Sichtbarkeit der Folder-Radio-Option im Dialog.
+let folderDraftPath: string | null = null;
+let optionsTouched = false; // Submit hat Optionen committed (Boot-Restore-Guard)
 
-let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let gen = 0; // lokale Generation für Stale-Guard
 let currentRunId = -1; // Backend-runId, dessen Events wir anwenden
 let maxRunId = -1; // höchste je gesehene runId (verwirft abgebrochene Läufe)
@@ -94,6 +116,8 @@ let pendingDone: Record<number, any> = {};
 let files: FileResult[] = [];
 let doneStats: Stats | null = null;
 const collapsed = new Set<string>(); // eingeklappte Datei-Gruppen (per Pfad)
+let collapseMode: 'auto' | 'collapsed' | 'expanded' = 'auto';
+let autoCollapseApplied = false; // einmaliges Auto-Einklappen pro Lauf
 let flat: Array<{ f: number; h: number }> = [];
 let activeIdx = -1;
 
@@ -102,12 +126,14 @@ let pendingJump: Jump | null = null;
 // unseren Sprung mit Cursor/Scroll aus dem Entry überschreiben.
 let navRestoreSkipPath: string | null = null;
 
-// Ordner-Scope (S3): absoluter, normalisierter Pfad oder null = gesamter Vault.
-// Flüchtig (nicht persistiert).
-let scopePath: string | null = null;
 let scopeEl: HTMLElement | null = null;
 const FOLDER_SEARCH_SVG =
     '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4a1 1 0 0 1 1-1h3l1.5 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/></svg>';
+
+// ----- Dialog-State ---------------------------------------------------------
+let dialogOpen = false;
+let dialogPrevFocus: HTMLElement | null = null;
+let dialogUnwire: (() => void) | null = null;
 
 function $(id: string): HTMLElement | null {
     return document.getElementById(id);
@@ -115,6 +141,10 @@ function $(id: string): HTMLElement | null {
 
 function normalizePath(p: string | null | undefined): string {
     return (p || '').replace(/\\/g, '/');
+}
+
+function normalizeFilter(v: unknown): FileFilter {
+    return v === 'markdown' || v === 'custom' ? v : 'allText';
 }
 
 function escapeHtml(s: string): string {
@@ -148,15 +178,27 @@ function setStatus(msg: string): void {
     if (statusEl) statusEl.textContent = msg;
 }
 
+/** [Sol#14] Zentraler Spinner-Toggle, gekoppelt an den adoptierten Lauf. */
+function setRunning(on: boolean): void {
+    if (statusEl) statusEl.classList.toggle('vs-running', on);
+}
+
 function totalHits(): number {
     let n = 0;
     for (const f of files) n += f.hits.length;
     return n;
 }
 
+function currentScopeMode(): ScopeMode {
+    if (openTabs) return 'openTabs';
+    if (scopePath) return 'folder';
+    return 'vault';
+}
+
 // ----- Such-Modus an/aus (Tree ↔ Ergebnisse) --------------------------------
 
 function enterSearch(): void {
+    if (document.body.classList.contains('vault-hidden')) deps.openLeftRail();
     if (region) region.classList.add('vault-searching');
     if (resultsEl) resultsEl.hidden = false;
 }
@@ -169,18 +211,18 @@ function exitSearch(): void {
     pendingHits = {};
     pendingDone = {};
     pendingJump = null;
-    if (debounceTimer) {
-        clearTimeout(debounceTimer);
-        debounceTimer = null;
-    }
+    setRunning(false);
     if (region) region.classList.remove('vault-searching');
     if (resultsEl) resultsEl.hidden = true;
+    activeQuery = '';
     files = [];
     doneStats = null;
     flat = [];
     activeIdx = -1;
+    collapsed.clear();
     if (listEl) listEl.innerHTML = '';
     setStatus('');
+    renderSummary();
 }
 
 function cancelCurrent(): void {
@@ -192,24 +234,13 @@ function cancelCurrent(): void {
 
 // ----- Suche starten --------------------------------------------------------
 
-function onInput(): void {
-    if (debounceTimer) clearTimeout(debounceTimer);
-    const q = input ? input.value : '';
-    if (q === '') {
-        exitSearch();
-        return;
-    }
-    enterSearch();
-    debounceTimer = setTimeout(() => {
-        debounceTimer = null;
-        runSearch(q);
-    }, DEBOUNCE_MS);
-}
-
-function runSearch(q: string): void {
+/** Startet einen Lauf aus dem committed State. Wird von Submit, Scope-Fallback
+ *  und Scope-Chip-× gerufen. */
+function runSearch(): void {
     // Ein neuer Lauf macht einen scharfen Sprung aus einer früheren Suche
     // gegenstandslos.
     pendingJump = null;
+    const q = activeQuery;
     if (Array.from(q).length < MIN_QUERY_LEN) {
         gen++;
         cancelCurrent();
@@ -218,36 +249,49 @@ function runSearch(q: string): void {
         files = [];
         doneStats = null;
         activeIdx = -1;
+        resetCollapseState();
         renderResults();
+        setRunning(false);
         setStatus(t('search.query.minLength.hint'));
         return;
     }
     const myGen = ++gen;
-    const scopedAtStart = scopePath;
+    const scopedAtStart = openTabs ? null : scopePath;
+    const openTabsAtStart = openTabs;
     cancelCurrent();
     pendingHits = {};
     pendingDone = {};
     files = [];
     doneStats = null;
     activeIdx = -1;
+    resetCollapseState();
     renderResults();
+    setRunning(true);
     setStatus(t('search.status.runningSimple'));
     // Raw invoke (nicht safeInvoke), damit wir die Scope-Fehler
     // (RootNotFound/InvalidScope) vom generischen Startfehler unterscheiden.
     rawInvoke('vault_search_start', {
         query: q,
         scope: scopedAtStart,
+        openTabs: openTabsAtStart,
         caseSensitive,
         wholeWord,
+        regex,
+        fileFilter,
+        customExtensions,
     }).then(
         (runId: any) => {
             if (typeof runId !== 'number') {
-                if (myGen === gen) setStatus(t('errors.search.startFailed'));
+                if (myGen === gen) {
+                    setRunning(false);
+                    setStatus(t('errors.search.startFailed'));
+                }
                 return;
             }
             if (runId > maxRunId) maxRunId = runId;
             if (myGen !== gen) {
                 // Während des Await von einer neueren Suche überholt → canceln.
+                // Der neuere Lauf besitzt den Spinner-Zustand.
                 safeInvoke('vault_search_cancel', { runId }, 'vault_search_cancel', 'debug');
                 return;
             }
@@ -265,9 +309,11 @@ function runSearch(q: string): void {
                 });
                 scopePath = null;
                 renderScopeChip();
-                runSearch(q);
+                renderSummary();
+                runSearch();
                 setStatus(t('search.scope.folderMissing.fallback'));
             } else {
+                setRunning(false);
                 setStatus(t('errors.search.startFailed'));
             }
         },
@@ -319,6 +365,7 @@ function onDone(payload: any): void {
 
 function applyHits(newFiles: FileResult[]): void {
     for (const f of newFiles) files.push(f);
+    applyCollapsePolicy(newFiles);
     renderResults();
     setStatus(t('search.status.running', {
         hitsPart: tPlural('search.status.hitsPart', totalHits()),
@@ -327,6 +374,7 @@ function applyHits(newFiles: FileResult[]): void {
 }
 
 function applyDone(payload: any): void {
+    setRunning(false);
     if (payload.error) {
         setStatus(t('search.status.error', { detail: String(payload.error) }));
         folioLog.warn('search', 'search done with error', { error: String(payload.error) });
@@ -342,10 +390,13 @@ function finalStatus(): void {
     // 1. Basissatz wählen …
     let msg: string;
     if (s.hits === 0) {
-        // Vault-Scope + 0 gescannte Dateien = nichts Durchsuchbares im Vault
-        // (leere Pins ODER nur Binärdateien); Ordner-Scope oder Pins mit
-        // 0 Treffern liefern filesScanned>0.
-        if (scopePath === null && s.filesScanned === 0) {
+        if (openTabs && s.filesScanned === 0) {
+            // OpenTabs-Scope ohne durchsuchbare offene Dateien.
+            msg = t('search.status.noOpenFiles');
+        } else if (scopePath === null && !openTabs && s.filesScanned === 0) {
+            // Vault-Scope + 0 gescannte Dateien = nichts Durchsuchbares im Vault
+            // (leere Pins ODER nur Binärdateien); Ordner-Scope oder Pins mit
+            // 0 Treffern liefern filesScanned>0.
             msg = t('search.status.noFiles');
         } else {
             msg = t('search.status.empty', {
@@ -367,6 +418,52 @@ function finalStatus(): void {
         });
     }
     setStatus(msg);
+}
+
+// ----- Auto-Collapse (Modus auto|collapsed|expanded) [Sol#8] ----------------
+
+function resetCollapseState(): void {
+    collapsed.clear();
+    collapseMode = 'auto';
+    autoCollapseApplied = false;
+}
+
+/** Wendet den Collapse-Modus auf die neu eingetroffenen Gruppen an. Im
+ *  Auto-Modus wird beim ersten Überschreiten der Schwelle EINMALIG alles
+ *  eingeklappt; danach kommen weitere Gruppen ebenfalls eingeklappt. */
+function applyCollapsePolicy(newFiles: FileResult[]): void {
+    if (collapseMode === 'expanded') {
+        for (const f of newFiles) collapsed.delete(f.path);
+        return;
+    }
+    if (collapseMode === 'collapsed') {
+        for (const f of newFiles) collapsed.add(f.path);
+        return;
+    }
+    // auto
+    if (!autoCollapseApplied) {
+        if (files.length > AUTO_COLLAPSE_THRESHOLD) {
+            for (const f of files) collapsed.add(f.path);
+            autoCollapseApplied = true;
+        }
+    } else {
+        for (const f of newFiles) collapsed.add(f.path);
+    }
+}
+
+function collapseAll(): void {
+    collapseMode = 'collapsed';
+    autoCollapseApplied = true;
+    for (const f of files) collapsed.add(f.path);
+    activeIdx = -1;
+    renderResults();
+}
+
+function expandAll(): void {
+    collapseMode = 'expanded';
+    autoCollapseApplied = true;
+    collapsed.clear();
+    renderResults();
 }
 
 // ----- Rendering ------------------------------------------------------------
@@ -474,7 +571,33 @@ function paintActive(): void {
     }
 }
 
-// ----- Keyboard-Navigation --------------------------------------------------
+// ----- Summary-Button -------------------------------------------------------
+
+function renderSummary(): void {
+    if (summaryBtn) summaryBtn.classList.toggle('has-query', !!activeQuery);
+    if (summaryTextEl) {
+        summaryTextEl.textContent = activeQuery ? activeQuery : t('search.summary.empty');
+    }
+    if (summaryOptsEl) {
+        summaryOptsEl.replaceChildren();
+        if (!activeQuery) return;
+        const glyphs: string[] = [];
+        if (caseSensitive) glyphs.push('Aa');
+        if (wholeWord) glyphs.push('W');
+        if (regex) glyphs.push('.*');
+        if (fileFilter === 'markdown') glyphs.push('md');
+        else if (fileFilter === 'custom') glyphs.push('*.…');
+        if (openTabs) glyphs.push('⧉');
+        for (const g of glyphs) {
+            const span = document.createElement('span');
+            span.className = 'vs-summary-opt';
+            span.textContent = g;
+            summaryOptsEl.appendChild(span);
+        }
+    }
+}
+
+// ----- Keyboard-Navigation (auf der Ergebnisliste) --------------------------
 
 function moveActive(dir: number): void {
     if (flat.length === 0) return;
@@ -492,9 +615,8 @@ function openActive(newTab: boolean): void {
     openHit(f, h, newTab);
 }
 
-function onInputKeydown(e: KeyboardEvent): void {
+function onListKeydown(e: KeyboardEvent): void {
     if (e.key === 'Escape') {
-        if (input) input.value = '';
         exitSearch();
         e.preventDefault();
         return;
@@ -520,12 +642,23 @@ function onInputKeydown(e: KeyboardEvent): void {
 
 // ----- Treffer öffnen + Sprung ---------------------------------------------
 
+/** [Sol#3] Bei Regex-Läufen ist der Suchbegriff ein Pattern — als Jump-Term
+ *  wird der konkret gematchte Text (aus Snippet + erster Range) genutzt und im
+ *  View-Mode als Literal ohne Whole-Word gesucht. */
+function jumpTerm(h: Hit): string {
+    if (regex && h.snippet && h.ranges && h.ranges.length) {
+        const [start, len] = h.ranges[0];
+        const matched = h.snippet.slice(start, start + len);
+        if (matched) return matched;
+    }
+    return activeQuery;
+}
+
 function openHit(fi: number, hi: number, newTab: boolean): void {
     const f = files[fi];
     if (!f) return;
     const h = f.hits[hi];
     if (!h) return;
-    const term = input ? input.value : '';
     let matchOrdinal = 0;
     for (let i = 0; i < hi; i++) matchOrdinal += f.hits[i].ranges.length;
     pendingJump = {
@@ -534,10 +667,37 @@ function openHit(fi: number, hi: number, newTab: boolean): void {
         colUtf16: h.colUtf16,
         lenUtf16: h.lenUtf16,
         matchOrdinal,
-        term,
+        term: jumpTerm(h),
         caseSensitive,
-        wholeWord,
+        wholeWord: regex ? false : wholeWord,
     };
+    if (openTabs) {
+        // [Sol#2] Der dirty Puffer darf nicht durch openDocument (Reload) zerstört
+        // werden — Pfad→Tab-ID, dann aktivieren. Beim schon aktiven Tab direkt
+        // springen (kein document:loaded, das onDocKindChanged triggern würde).
+        const tabId = findTabIdByPath(normalizePath(f.path));
+        if (tabId != null) {
+            if (getActiveTabId() === tabId) {
+                const jump = pendingJump;
+                pendingJump = null;
+                requestAnimationFrame(() => performJump(jump));
+            } else {
+                navRestoreSkipPath = normalizePath(f.path);
+                activateTab(tabId);
+            }
+            return;
+        }
+        // [Sol#2] Tab seit dem Snapshot geschlossen (Frontend-Tabliste war beim
+        // Klick nicht mehr synchron): NIEMALS über tab_open/openDocument
+        // nachladen — das würde für ein Ergebnis aus einem inzwischen
+        // verworfenen dirty Puffer den Disk-Inhalt öffnen bzw. einen
+        // Save-Prompt auslösen. Scharfen Sprung + Skip zurücknehmen und den
+        // Treffer als veraltet melden; kein Öffnungspfad.
+        pendingJump = null;
+        navRestoreSkipPath = null;
+        setStatus(t('search.status.hitStale'));
+        return;
+    }
     if (newTab) {
         // Der Entry-Restore (navigation:changed) würde unseren Sprung sonst mit
         // Cursor/Scroll aus dem Entry überschreiben → einmal überspringen.
@@ -691,39 +851,7 @@ function onResultAux(e: MouseEvent): void {
     }
 }
 
-// ----- Optionen-Toggles -----------------------------------------------------
-
-function syncOptButtons(): void {
-    if (caseBtn) {
-        caseBtn.classList.toggle('active', caseSensitive);
-        caseBtn.setAttribute('aria-pressed', caseSensitive ? 'true' : 'false');
-    }
-    if (wordBtn) {
-        wordBtn.classList.toggle('active', wholeWord);
-        wordBtn.setAttribute('aria-pressed', wholeWord ? 'true' : 'false');
-    }
-}
-
-function toggleOpt(which: 'case' | 'word'): void {
-    optionsTouched = true;
-    if (debounceTimer) {
-        clearTimeout(debounceTimer);
-        debounceTimer = null;
-    }
-    if (which === 'case') caseSensitive = !caseSensitive;
-    else wholeWord = !wholeWord;
-    syncOptButtons();
-    safeInvoke(
-        'set_search_options',
-        { caseSensitive, wholeWord },
-        'set_search_options',
-        'debug',
-    );
-    const q = input ? input.value : '';
-    if (q !== '') runSearch(q); // laufende Suche mit neuen Optionen re-triggern
-}
-
-// ----- Ordner-Scope (S3) ----------------------------------------------------
+// ----- Ordner-Scope-Chip (S3) -----------------------------------------------
 
 function scopeFolderName(p: string): string {
     const trimmed = p.replace(/\/+$/, '');
@@ -767,51 +895,291 @@ function renderScopeChip(): void {
     scopeEl.appendChild(chip);
 }
 
-function retriggerIfQuery(): void {
-    const q = input ? input.value : '';
-    if (Array.from(q).length >= MIN_QUERY_LEN) {
-        // enterSearch, falls das Panel noch im Baum-Modus stand (Scope aus dem
-        // Kontextmenü bei bereits gefülltem Suchfeld) — sonst blieben die
-        // Ergebnisse unsichtbar.
-        enterSearch();
-        runSearch(q);
-    }
-}
-
-/** Kontextmenü „In diesem Ordner suchen": Scope setzen, Panel fokussieren
- *  (Rail öffnen falls zu), laufende/letzte Suche mit neuem Scope re-triggern. */
-export function searchInFolder(path: string): void {
-    if (!path) return;
-    scopePath = normalizePath(path);
-    renderScopeChip();
-    focusVaultSearch();
-    retriggerIfQuery();
-}
-
 function clearScope(): void {
     if (!scopePath) return;
     scopePath = null;
     renderScopeChip();
-    retriggerIfQuery();
-}
-
-// ----- Strg+Shift+F / Menü --------------------------------------------------
-
-export function focusVaultSearch(): void {
-    if (document.body.classList.contains('vault-hidden')) {
-        deps.openLeftRail();
-    }
-    if (input) {
-        input.focus();
-        input.select();
+    renderSummary();
+    if (Array.from(activeQuery).length >= MIN_QUERY_LEN) {
+        enterSearch();
+        runSearch();
     }
 }
+
+// ----- Dialog ---------------------------------------------------------------
+
+function clearDialogError(): void {
+    const err = $('vsd-error');
+    if (err) {
+        err.hidden = true;
+        err.textContent = '';
+    }
+}
+
+function showDialogError(msg: string): void {
+    const err = $('vsd-error');
+    if (err) {
+        err.textContent = msg;
+        err.hidden = false;
+    }
+}
+
+function radioValue(name: string): string | null {
+    const el = document.querySelector(
+        'input[name="' + name + '"]:checked',
+    ) as HTMLInputElement | null;
+    return el ? el.value : null;
+}
+
+function setRadio(name: string, value: string): void {
+    const el = document.querySelector(
+        'input[name="' + name + '"][value="' + value + '"]',
+    ) as HTMLInputElement | null;
+    if (el) el.checked = true;
+}
+
+function syncFilterDependents(): void {
+    const filter = radioValue('vsd-filter');
+    const ext = $('vsd-custom-ext') as HTMLInputElement | null;
+    if (ext) ext.disabled = filter !== 'custom';
+}
+
+function syncRegexDependents(): void {
+    const regexEl = $('vsd-regex') as HTMLInputElement | null;
+    const wordEl = $('vsd-word') as HTMLInputElement | null;
+    if (regexEl && wordEl) {
+        // Regex + Whole-Word schließen sich aus (Backend lehnt sie ab).
+        wordEl.disabled = regexEl.checked;
+        if (regexEl.checked) wordEl.checked = false;
+    }
+}
+
+/** Befüllt die Dialog-Felder aus dem committed State (bzw. dem Folder-Draft). */
+function populateDialog(preselectScope?: ScopeMode): void {
+    const query = $('vsd-query') as HTMLInputElement | null;
+    const caseEl = $('vsd-case') as HTMLInputElement | null;
+    const wordEl = $('vsd-word') as HTMLInputElement | null;
+    const regexEl = $('vsd-regex') as HTMLInputElement | null;
+    const ext = $('vsd-custom-ext') as HTMLInputElement | null;
+    const folderRow = $('vsd-scope-folder-row');
+    const folderLabel = $('vsd-scope-folder-label');
+
+    if (query) query.value = activeQuery;
+    if (caseEl) caseEl.checked = caseSensitive;
+    if (wordEl) wordEl.checked = wholeWord;
+    if (regexEl) regexEl.checked = regex;
+    setRadio('vsd-filter', fileFilter);
+    if (ext) ext.value = customExtensions;
+
+    // Folder-Option nur, wenn ein Folder-Draft existiert.
+    if (folderRow) folderRow.hidden = !folderDraftPath;
+    if (folderLabel) {
+        folderLabel.textContent = folderDraftPath
+            ? t('search.dialog.scope.folder', { name: scopeFolderName(folderDraftPath) })
+            : '';
+    }
+
+    let scopeMode: ScopeMode = preselectScope || currentScopeMode();
+    if (scopeMode === 'folder' && !folderDraftPath) scopeMode = 'vault';
+    setRadio('vsd-scope', scopeMode);
+
+    syncRegexDependents();
+    syncFilterDependents();
+}
+
+function focusDialogQuery(): void {
+    const query = $('vsd-query') as HTMLInputElement | null;
+    if (query) {
+        query.focus();
+        query.select();
+    }
+}
+
+function closeDialog(restoreFocus: boolean): void {
+    const dlg = $('vault-search-dialog');
+    if (dlg) dlg.hidden = true;
+    if (dialogUnwire) {
+        dialogUnwire();
+        dialogUnwire = null;
+    }
+    dialogOpen = false;
+    const prev = dialogPrevFocus;
+    dialogPrevFocus = null;
+    if (restoreFocus && prev && typeof prev.focus === 'function') prev.focus();
+}
+
+async function submitDialog(): Promise<void> {
+    const query = ($('vsd-query') as HTMLInputElement | null)?.value ?? '';
+    const dCase = !!($('vsd-case') as HTMLInputElement | null)?.checked;
+    const dRegex = !!($('vsd-regex') as HTMLInputElement | null)?.checked;
+    // Whole-Word ist bei aktivem Regex disabled → als false werten.
+    const dWord = !dRegex && !!($('vsd-word') as HTMLInputElement | null)?.checked;
+    const dFilter = normalizeFilter(radioValue('vsd-filter'));
+    const dExt = ($('vsd-custom-ext') as HTMLInputElement | null)?.value ?? '';
+    const dScope = (radioValue('vsd-scope') as ScopeMode | null) || 'vault';
+
+    // 1. Feld-Validierung (Query/Regex/Filter/Custom-Endungen) vor jeder Aktion.
+    try {
+        await rawInvoke('vault_search_validate', {
+            query,
+            caseSensitive: dCase,
+            wholeWord: dWord,
+            regex: dRegex,
+            fileFilter: dFilter,
+            customExtensions: dExt,
+        });
+    } catch (err) {
+        showDialogError(String(err));
+        return; // Dialog bleibt offen, laufender Lauf unangetastet.
+    }
+
+    // 2. OpenTabs-Scope: der Editor-Puffer muss VOR dem Snapshot im Backend
+    //    liegen, sonst durchsucht das Backend veralteten DocumentStore-Text.
+    if (dScope === 'openTabs') {
+        try {
+            await syncEditorTextToStoreRequired();
+        } catch (err) {
+            folioLog.warn('search', 'editor sync before open-tabs search failed', {
+                error: String(err),
+            });
+            showDialogError(t('errors.search.startFailed'));
+            return;
+        }
+    }
+
+    // 3. Alten Lauf canceln, committed State setzen.
+    cancelCurrent();
+    gen++; // späte Events des alten Laufs verwerfen
+    setRunning(false);
+    activeQuery = query;
+    caseSensitive = dCase;
+    wholeWord = dWord;
+    regex = dRegex;
+    fileFilter = dFilter;
+    customExtensions = dExt;
+    optionsTouched = true;
+    if (dScope === 'folder' && folderDraftPath) {
+        scopePath = folderDraftPath;
+        openTabs = false;
+    } else if (dScope === 'openTabs') {
+        scopePath = null;
+        openTabs = true;
+    } else {
+        scopePath = null;
+        openTabs = false;
+    }
+
+    // 4. Persistieren (flüchtiger Scope wird nicht persistiert).
+    safeInvoke(
+        'set_search_options',
+        {
+            caseSensitive,
+            wholeWord,
+            regex,
+            fileFilter,
+            customExtensions,
+        },
+        'set_search_options',
+        'debug',
+    );
+
+    // 5. Dialog schließen, Suche starten, Summary/Chip rendern.
+    closeDialog(false);
+    renderScopeChip();
+    renderSummary();
+    enterSearch();
+    runSearch();
+    if (listEl && typeof listEl.focus === 'function') listEl.focus();
+}
+
+function onDialogKeydown(e: KeyboardEvent): void {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        void submitDialog();
+        return;
+    }
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        closeDialog(true);
+    }
+}
+
+function wireDialog(): void {
+    const dlg = $('vault-search-dialog');
+    const cancel = $('vsd-cancel');
+    const submit = $('vsd-submit');
+    const regexEl = $('vsd-regex');
+    const filterRadios = Array.from(
+        document.querySelectorAll('input[name="vsd-filter"]'),
+    ) as HTMLInputElement[];
+    if (!dlg) return;
+
+    const onCancel = (): void => closeDialog(true);
+    const onSubmit = (): void => {
+        void submitDialog();
+    };
+    const onRegexChange = (): void => syncRegexDependents();
+    const onFilterChange = (): void => syncFilterDependents();
+
+    if (cancel) cancel.addEventListener('click', onCancel);
+    if (submit) submit.addEventListener('click', onSubmit);
+    if (regexEl) regexEl.addEventListener('change', onRegexChange);
+    filterRadios.forEach((r) => r.addEventListener('change', onFilterChange));
+    dlg.addEventListener('keydown', onDialogKeydown as EventListener);
+
+    dialogUnwire = (): void => {
+        if (cancel) cancel.removeEventListener('click', onCancel);
+        if (submit) submit.removeEventListener('click', onSubmit);
+        if (regexEl) regexEl.removeEventListener('change', onRegexChange);
+        filterRadios.forEach((r) => r.removeEventListener('change', onFilterChange));
+        dlg.removeEventListener('keydown', onDialogKeydown as EventListener);
+    };
+}
+
+/** Öffnet den Such-Dialog (Strg+Shift+F, Menü, Summary-Klick, Kontextmenü).
+ *  Idempotent: erneutes Öffnen re-populiert nur die Felder und fokussiert das
+ *  Query-Feld — kein doppeltes Wiring, laufender Lauf bleibt. */
+export function openVaultSearchDialog(opts?: { folder?: string }): void {
+    const dlg = $('vault-search-dialog');
+    if (!dlg) return;
+    let preselect: ScopeMode | undefined;
+    if (opts && opts.folder) {
+        folderDraftPath = normalizePath(opts.folder);
+        preselect = 'folder';
+    } else if (scopePath) {
+        folderDraftPath = scopePath;
+    }
+    if (dialogOpen) {
+        populateDialog(preselect);
+        clearDialogError();
+        focusDialogQuery();
+        return;
+    }
+    dialogOpen = true;
+    dialogPrevFocus = document.activeElement as HTMLElement | null;
+    populateDialog(preselect);
+    clearDialogError();
+    dlg.hidden = false;
+    wireDialog();
+    focusDialogQuery();
+}
+
+/** Kontextmenü „In diesem Ordner suchen": Folder-Draft setzen und den Dialog
+ *  öffnen [Sol#7] — der committed Scope ändert sich erst beim Submit. */
+export function searchInFolder(path: string): void {
+    if (!path) return;
+    openVaultSearchDialog({ folder: path });
+}
+
+// ----- Strg+Shift+F --------------------------------------------------------
 
 function onGlobalKey(e: KeyboardEvent): void {
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'f' || e.key === 'F')) {
         e.preventDefault();
         e.stopPropagation();
-        focusVaultSearch();
+        openVaultSearchDialog();
     }
 }
 
@@ -823,43 +1191,51 @@ function onGlobalKey(e: KeyboardEvent): void {
 export function initVaultSearch(d: Deps): () => void {
     deps = d;
     region = $('vault-region');
-    input = $('vault-search-input') as HTMLInputElement | null;
-    caseBtn = $('vault-search-case');
-    wordBtn = $('vault-search-word');
+    summaryBtn = $('vault-search-summary');
+    summaryTextEl = $('vault-search-summary-text');
+    summaryOptsEl = $('vault-search-summary-opts');
     resultsEl = $('vault-search-results');
     statusEl = $('vault-search-status');
     listEl = $('vault-search-list');
     scopeEl = $('vault-search-scope');
-    if (!input || !resultsEl || !listEl) return () => {};
+    if (!summaryBtn || !resultsEl || !listEl) return () => {};
 
     optionsTouched = false;
     scopePath = null;
+    openTabs = false;
+    activeQuery = '';
+    folderDraftPath = null;
     renderScopeChip();
+    renderSummary();
 
-    // Persistierte Optionen laden — aber einen inzwischen vom User gesetzten
+    // Persistierte Optionen laden — aber einen inzwischen per Submit gesetzten
     // Zustand nicht überschreiben.
-    safeInvoke<{ caseSensitive?: boolean; wholeWord?: boolean }>(
-        'search_options_get',
-        undefined,
-        'search_options_get',
-        'debug',
-    ).then((opts) => {
+    safeInvoke<{
+        caseSensitive?: boolean;
+        wholeWord?: boolean;
+        regex?: boolean;
+        fileFilter?: string;
+        customExtensions?: string;
+    }>('search_options_get', undefined, 'search_options_get', 'debug').then((opts) => {
         if (optionsTouched) return;
         if (opts && typeof opts === 'object') {
             caseSensitive = !!opts.caseSensitive;
             wholeWord = !!opts.wholeWord;
-            syncOptButtons();
+            regex = !!opts.regex;
+            fileFilter = normalizeFilter(opts.fileFilter);
+            customExtensions = typeof opts.customExtensions === 'string' ? opts.customExtensions : '';
         }
     });
 
-    const caseHandler = () => toggleOpt('case');
-    const wordHandler = () => toggleOpt('word');
-    input.addEventListener('input', onInput);
-    input.addEventListener('keydown', onInputKeydown);
-    if (caseBtn) caseBtn.addEventListener('click', caseHandler);
-    if (wordBtn) wordBtn.addEventListener('click', wordHandler);
+    const summaryClick = (): void => openVaultSearchDialog();
+    const collapseAllBtn = $('vault-search-collapse-all');
+    const expandAllBtn = $('vault-search-expand-all');
+    summaryBtn.addEventListener('click', summaryClick);
+    if (collapseAllBtn) collapseAllBtn.addEventListener('click', collapseAll);
+    if (expandAllBtn) expandAllBtn.addEventListener('click', expandAll);
     listEl.addEventListener('click', onResultClick as EventListener);
     listEl.addEventListener('auxclick', onResultAux as EventListener);
+    listEl.addEventListener('keydown', onListKeydown as EventListener);
     const scopeClick = (e: MouseEvent) => {
         if ((e.target as HTMLElement).closest('.vs-scope-x')) clearScope();
     };
@@ -874,18 +1250,19 @@ export function initVaultSearch(d: Deps): () => void {
         unlistenPromises.push(ev.listen('search:done', (e: any) => onDone(e && e.payload)));
     }
 
-    const localInput = input;
-    const localCase = caseBtn;
-    const localWord = wordBtn;
+    const localSummary = summaryBtn;
+    const localCollapseAll = collapseAllBtn;
+    const localExpandAll = expandAllBtn;
     const localList = listEl;
     const localScope = scopeEl;
     return function dispose(): void {
-        localInput.removeEventListener('input', onInput);
-        localInput.removeEventListener('keydown', onInputKeydown);
-        if (localCase) localCase.removeEventListener('click', caseHandler);
-        if (localWord) localWord.removeEventListener('click', wordHandler);
+        if (dialogOpen) closeDialog(false);
+        localSummary.removeEventListener('click', summaryClick);
+        if (localCollapseAll) localCollapseAll.removeEventListener('click', collapseAll);
+        if (localExpandAll) localExpandAll.removeEventListener('click', expandAll);
         localList.removeEventListener('click', onResultClick as EventListener);
         localList.removeEventListener('auxclick', onResultAux as EventListener);
+        localList.removeEventListener('keydown', onListKeydown as EventListener);
         if (localScope) localScope.removeEventListener('click', scopeClick as EventListener);
         window.removeEventListener('folio-doc-kind-changed', onDocKindChanged);
         document.removeEventListener('keydown', onGlobalKey, { capture: true } as any);

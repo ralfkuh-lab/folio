@@ -71,6 +71,140 @@ pub struct SearchOptions {
     pub whole_word: bool,
 }
 
+/// Erweitertes Scope-Modell (S4). Wird an der Command-/HTTP-Grenze aus den
+/// flachen Argumenten (`scope`, `open_tabs`) gebaut und intern in konkrete
+/// Roots bzw. einen OpenTabs-Snapshot übersetzt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SearchScopeEx {
+    /// Gesamter Vault (Union der angepinnten Einträge).
+    Vault,
+    /// Ein einzelner Ordner (absoluter Pfad), rekursiv.
+    Folder(String),
+    /// Alle aktuell offenen Tabs (Editor-Puffer bzw. pending-Pfad von Platte).
+    OpenTabs,
+}
+
+/// Dateityp-Filter (S4). `Markdown` = nur echte Markdown-Dateien, `AllText` =
+/// das S1-Verhalten (Markdown + Text via `FileKind`), `Custom` = eine
+/// benutzerdefinierte Endungsliste (siehe [`parse_custom_extensions`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FileFilter {
+    Markdown,
+    AllText,
+    Custom(Vec<String>),
+}
+
+/// Erweiterte Such-Optionen (S4): kapselt die S1-[`SearchOptions`] plus
+/// Regex-Modus und Dateityp-Filter. Öffentliche Erweiterungs-API, damit
+/// [`run_search`]/[`SearchOptions`] (S1) unverändert bleiben.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtendedSearchOptions {
+    pub base: SearchOptions,
+    pub regex: bool,
+    pub filter: FileFilter,
+}
+
+/// Herkunft des zu durchsuchenden Inhalts eines offenen Tabs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BufferSource {
+    /// Editor-Puffer (geladener textueller Store) — unabhängig von Textleere.
+    InMemory(String),
+    /// Kein Puffer (pending/opaque Tab) — Inhalt von Platte lesen.
+    OnDisk,
+}
+
+/// Ein zu durchsuchender offener Tab (OpenTabs-Scope). `path` ist bereits
+/// forward-slash-normalisiert.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BufferDoc {
+    pub path: String,
+    pub source: BufferSource,
+}
+
+impl FileFilter {
+    /// Ob `path` unter diesem Filter durchsucht wird. Ersetzt das frühere
+    /// `is_searchable_kind` an beiden Call-Sites.
+    fn accepts(&self, path: &Path) -> bool {
+        match self {
+            FileFilter::Markdown => path
+                .to_str()
+                .map(|s| matches!(classify(s), FileKind::Markdown))
+                .unwrap_or(false),
+            FileFilter::AllText => path
+                .to_str()
+                .map(|s| matches!(classify(s), FileKind::Markdown | FileKind::Text))
+                .unwrap_or(false),
+            FileFilter::Custom(exts) => path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| {
+                    let e = e.to_ascii_lowercase();
+                    exts.contains(&e)
+                })
+                .unwrap_or(false),
+        }
+    }
+
+    /// Baut den Filter aus dem UI-/API-Wert. `custom_extensions` ist der rohe
+    /// Feldtext (nur bei `"custom"` relevant, sonst ignoriert).
+    pub fn from_raw(file_filter: &str, custom_extensions: &str) -> Result<FileFilter, SearchError> {
+        match file_filter {
+            "markdown" => Ok(FileFilter::Markdown),
+            "allText" => Ok(FileFilter::AllText),
+            "custom" => {
+                let exts = parse_custom_extensions(custom_extensions)?;
+                if exts.is_empty() {
+                    return Err(SearchError::EmptyCustomExtensions);
+                }
+                Ok(FileFilter::Custom(exts))
+            }
+            other => Err(SearchError::UnknownFileFilter(other.to_string())),
+        }
+    }
+}
+
+/// Zerlegt den rohen Endungs-Feldtext in eine normalisierte, deduplizierte
+/// Liste. **Einzige** Zerlegungsstelle (UI/Tauri/HTTP laufen hier durch):
+/// Trennung an Komma, Semikolon und Whitespace; pro Token trimmen, führenden
+/// Punkt entfernen, lowercase; erlaubte Zeichen `[a-z0-9_-]`. Leere Tokens
+/// werden ignoriert (die Leerlisten-Policy greift erst beim `Custom`-Filter,
+/// siehe [`FileFilter::from_raw`]).
+pub fn parse_custom_extensions(raw: &str) -> Result<Vec<String>, SearchError> {
+    let mut out: Vec<String> = Vec::new();
+    for token in raw.split(|c: char| c == ',' || c == ';' || c.is_whitespace()) {
+        let token = token.trim();
+        if token.is_empty() {
+            continue;
+        }
+        let ext = token.trim_start_matches('.').to_ascii_lowercase();
+        if ext.is_empty() {
+            continue;
+        }
+        let allowed = ext
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-');
+        if !allowed {
+            return Err(SearchError::InvalidCustomExtension(token.to_string()));
+        }
+        if !out.contains(&ext) {
+            out.push(ext);
+        }
+    }
+    Ok(out)
+}
+
+/// Baut das erweiterte Scope-Modell aus den flachen Grenz-Argumenten.
+/// `open_tabs=true` **und** ein gesetzter `scope` schließen sich aus
+/// (Client-Fehler).
+pub fn to_scope_ex(scope: Option<String>, open_tabs: bool) -> Result<SearchScopeEx, SearchError> {
+    match (open_tabs, scope) {
+        (true, Some(_)) => Err(SearchError::ScopeConflict),
+        (true, None) => Ok(SearchScopeEx::OpenTabs),
+        (false, Some(path)) => Ok(SearchScopeEx::Folder(path)),
+        (false, None) => Ok(SearchScopeEx::Vault),
+    }
+}
+
 /// Aufgelöster, deduplizierter Such-Umfang. Verschachtelte Ordner sind
 /// eingeklappt (ein Kind-Ordner unter einem enthaltenen Eltern-Ordner
 /// entfällt) und Einzeldateien, die schon von einem Ordner abgedeckt sind,
@@ -150,6 +284,16 @@ pub enum SearchError {
     InvalidScope(String),
     /// Der aus dem Suchbegriff kompilierte Regex war ungültig (S1b).
     InvalidPattern(String),
+    /// Regex-Modus + Nur-ganze-Wörter kombiniert (nicht unterstützt, S4).
+    RegexWholeWordConflict,
+    /// Eine benutzerdefinierte Endung enthält verbotene Zeichen (S4).
+    InvalidCustomExtension(String),
+    /// `Custom`-Filter aktiv, aber keine gültige Endung angegeben (S4).
+    EmptyCustomExtensions,
+    /// Unbekannter `fileFilter`-Wert an der Grenze (S4).
+    UnknownFileFilter(String),
+    /// OpenTabs-Scope mit gesetztem Ordner-Scope kombiniert (S4).
+    ScopeConflict,
 }
 
 impl SearchError {
@@ -159,6 +303,13 @@ impl SearchError {
             Self::RootNotFound(detail) => ("errors.search.rootNotFound", Some(detail)),
             Self::InvalidScope(detail) => ("errors.search.invalidScope", Some(detail)),
             Self::InvalidPattern(detail) => ("errors.search.invalidQuery", Some(detail)),
+            Self::RegexWholeWordConflict => ("errors.search.regexWholeWord", None),
+            Self::InvalidCustomExtension(detail) => {
+                ("errors.search.invalidCustomExtension", Some(detail))
+            }
+            Self::EmptyCustomExtensions => ("errors.search.emptyCustomExtensions", None),
+            Self::UnknownFileFilter(detail) => ("errors.search.unknownFileFilter", Some(detail)),
+            Self::ScopeConflict => ("errors.search.scopeConflict", None),
         }
     }
 
@@ -177,6 +328,16 @@ impl SearchError {
             Self::InvalidPattern(detail) => {
                 tr.t_args("errors.search.invalidQuery", &[("detail", detail)])
             }
+            Self::RegexWholeWordConflict => tr.t("errors.search.regexWholeWord"),
+            Self::InvalidCustomExtension(detail) => tr.t_args(
+                "errors.search.invalidCustomExtension",
+                &[("detail", detail)],
+            ),
+            Self::EmptyCustomExtensions => tr.t("errors.search.emptyCustomExtensions"),
+            Self::UnknownFileFilter(detail) => {
+                tr.t_args("errors.search.unknownFileFilter", &[("detail", detail)])
+            }
+            Self::ScopeConflict => tr.t("errors.search.scopeConflict"),
         }
     }
 
@@ -284,6 +445,15 @@ pub fn validate(
         return Err(SearchError::QueryTooShort);
     }
     let re = compile_regex(query, options)?;
+    validate_roots(roots)?;
+    Ok(re)
+}
+
+/// Prüft nur die Roots (Existenz/Typ/absolut). Ausgelagert aus [`validate`],
+/// damit die Query-Validierung (S4) roots-frei laufen kann und der
+/// Command-Layer die Roots separat für den `scope:`-Fehler-Fallback prüfen
+/// kann.
+pub fn validate_roots(roots: &SearchRoots) -> Result<(), SearchError> {
     for d in &roots.dirs {
         // Relativ zuerst prüfen: ein relativer Pfad ist grundsätzlich ungültig
         // (nicht bloß „nicht gefunden"). Danach Existenz, danach Typ.
@@ -305,19 +475,62 @@ pub fn validate(
             return Err(SearchError::InvalidScope(normalize_path(f)));
         }
     }
-    Ok(re)
+    Ok(())
 }
 
-/// Baut aus dem (escapten) Suchbegriff das Match-Regex.
+/// Baut aus dem (escapten) Suchbegriff das Match-Regex (S1-Pfad ohne
+/// Regex-Modus). Delegiert an [`compile_pattern`].
 fn compile_regex(query: &str, options: &SearchOptions) -> Result<Regex, SearchError> {
-    let mut pat = regex::escape(query);
-    if options.whole_word {
+    compile_pattern(
+        query,
+        &ExtendedSearchOptions {
+            base: *options,
+            regex: false,
+            filter: FileFilter::AllText,
+        },
+    )
+}
+
+/// Kompiliert das Match-Regex aus Query + erweiterten Optionen (S4).
+/// - `regex=false`: Query wird als Literal escaped.
+/// - `regex=true`: Query wird direkt als Regex kompiliert (kein `escape`).
+/// - `regex=true && whole_word=true`: Client-Fehler — Rust-`regex` kennt keine
+///   Lookarounds; ein `\b`-Wrap wäre bei Satzzeichen/Anchor/Alternation
+///   semantisch überraschend, daher lehnen wir die Kombination ab statt sie
+///   still umzudeuten.
+/// - `case_sensitive=false`: `(?i)`-Präfix.
+fn compile_pattern(query: &str, o: &ExtendedSearchOptions) -> Result<Regex, SearchError> {
+    if o.regex && o.base.whole_word {
+        return Err(SearchError::RegexWholeWordConflict);
+    }
+    let mut pat = if o.regex {
+        query.to_string()
+    } else {
+        regex::escape(query)
+    };
+    if o.base.whole_word {
         pat = format!(r"\b{pat}\b");
     }
-    if !options.case_sensitive {
+    if !o.base.case_sensitive {
         pat = format!("(?i){pat}");
     }
     Regex::new(&pat).map_err(|e| SearchError::InvalidPattern(e.to_string()))
+}
+
+/// Query-Validierung (Mindestlänge + Regex-Kompilierung), roots-frei. Liefert
+/// das kompilierte Regex zur Wiederverwendung.
+fn compile_validated_pattern(query: &str, o: &ExtendedSearchOptions) -> Result<Regex, SearchError> {
+    if query.chars().count() < MIN_QUERY_LEN {
+        return Err(SearchError::QueryTooShort);
+    }
+    compile_pattern(query, o)
+}
+
+/// Öffentliche, roots-freie Query-/Options-Validierung für die Dialog-
+/// Vorabprüfung (`vault_search_validate`). Fängt zu kurze Begriffe, ungültige
+/// Regex-Patterns und die Regex+WholeWord-Kombination ab.
+pub fn validate_query_ex(query: &str, o: &ExtendedSearchOptions) -> Result<(), SearchError> {
+    compile_validated_pattern(query, o).map(|_| ())
 }
 
 /// Erzeugt einen Zeilen-Hit aus allen Match-Byte-Ranges dieser (bereits
@@ -405,8 +618,13 @@ fn build_file_hits(
             return (hits, truncated, true);
         }
         let line = raw.strip_suffix('\r').unwrap_or(raw);
-        let matches: Vec<(usize, usize)> =
-            re.find_iter(line).map(|m| (m.start(), m.end())).collect();
+        // Zero-Width-Matches (z. B. Regex `a*`) überspringen — ein Hit mit
+        // `lenUtf16 == 0` ist nutzlos und würde die UI verwirren.
+        let matches: Vec<(usize, usize)> = re
+            .find_iter(line)
+            .filter(|m| m.start() < m.end())
+            .map(|m| (m.start(), m.end()))
+            .collect();
         if matches.is_empty() {
             continue;
         }
@@ -419,11 +637,28 @@ fn build_file_hits(
     (hits, truncated, false)
 }
 
-/// Liest eine (bereits als Markdown/Text klassifizierte) Datei, wenn sie
-/// durchsuchbar ist: Größe ≤ [`MAX_FILE_SIZE`] und keine NUL-Bytes in den
-/// ersten [`NUL_SNIFF_BYTES`]. `None` = überspringen. Übergröße wird nur bei
-/// `count_large` in [`SearchStats::skipped_large`] gezählt (Voll-Scan-Modus;
-/// der Probe-Modus zählt nicht).
+/// Gemeinsames Content-Gate für Disk-Reads **und** In-Memory-Puffer (S4):
+/// Größen-Cap ([`MAX_FILE_SIZE`]) + NUL-Sniff (erste [`NUL_SNIFF_BYTES`]).
+/// `None` = überspringen. Übergröße wird nur bei `count_large` in
+/// [`SearchStats::skipped_large`] gezählt (Voll-Scan-Modus; der Probe-Modus
+/// zählt nicht) — das schließt gecappte Puffer ein.
+fn inspect_content(bytes: &[u8], stats: &mut SearchStats, count_large: bool) -> Option<String> {
+    if bytes.len() as u64 > MAX_FILE_SIZE {
+        if count_large {
+            stats.skipped_large += 1;
+        }
+        return None;
+    }
+    let sniff_end = bytes.len().min(NUL_SNIFF_BYTES);
+    if bytes[..sniff_end].contains(&0u8) {
+        return None;
+    }
+    Some(String::from_utf8_lossy(bytes).into_owned())
+}
+
+/// Liest eine (bereits als durchsuchbar gefilterte) Datei über das gemeinsame
+/// [`inspect_content`]-Gate. Der Disk-Pfad behält die Metadaten-Größenprüfung
+/// **vor** `fs::read`, damit kein Riesenblob nur zum Verwerfen eingelesen wird.
 fn read_searchable(path: &Path, stats: &mut SearchStats, count_large: bool) -> Option<String> {
     let meta = fs::metadata(path).ok()?;
     if meta.len() > MAX_FILE_SIZE {
@@ -433,11 +668,8 @@ fn read_searchable(path: &Path, stats: &mut SearchStats, count_large: bool) -> O
         return None;
     }
     let bytes = fs::read(path).ok()?;
-    let sniff_end = bytes.len().min(NUL_SNIFF_BYTES);
-    if bytes[..sniff_end].contains(&0u8) {
-        return None;
-    }
-    Some(String::from_utf8_lossy(&bytes).into_owned())
+    // Größe bereits per Metadaten geprüft/gezählt → hier nicht erneut zählen.
+    inspect_content(&bytes, stats, false)
 }
 
 /// Ergebnis eines Voll-Scan-Kandidaten.
@@ -453,10 +685,10 @@ enum ScanOutcome {
     Cancelled,
 }
 
-/// Voll-Scan einer Datei: liest, durchsucht, aktualisiert `stats` und streamt
-/// bei Treffern über `on_file`. Klassifizierung ist bereits durch den Aufrufer
+/// Voll-Scan einer Disk-Datei: liest über das Content-Gate, dann
+/// [`process_content`]. Klassifizierung/Filter ist bereits durch den Aufrufer
 /// erfolgt.
-fn process_file(
+fn scan_disk(
     path: &Path,
     norm: &str,
     re: &Regex,
@@ -464,22 +696,36 @@ fn process_file(
     stats: &mut SearchStats,
     on_file: &mut dyn FnMut(FileResult),
 ) -> ScanOutcome {
-    // Deckel VOR jedem IO prüfen (defensiv; regulär wechselt der Aufrufer beim
-    // exakten Erreichen bereits in den Probe-Modus, sodass das hier nicht greift).
+    let content = match read_searchable(path, stats, true) {
+        Some(c) => c,
+        None => return ScanOutcome::Continue,
+    };
+    process_content(content.as_str(), norm, re, cancel, stats, on_file)
+}
+
+/// Durchsucht einen bereits gelesenen/gepufferten Inhalt: aktualisiert `stats`,
+/// streamt bei Treffern über `on_file` und meldet über [`ScanOutcome`], wie der
+/// Aufrufer weiterfahren soll (Cap-/Probe-/Cancel-Logik identisch zu S1).
+/// Gemeinsam genutzt von Disk-Scan und OpenTabs-Puffer-Scan.
+fn process_content(
+    content: &str,
+    norm: &str,
+    re: &Regex,
+    cancel: &AtomicBool,
+    stats: &mut SearchStats,
+    on_file: &mut dyn FnMut(FileResult),
+) -> ScanOutcome {
+    // Deckel prüfen (defensiv; regulär wechselt der Aufrufer beim exakten
+    // Erreichen bereits in den Probe-Modus, sodass das hier nicht greift).
     let remaining_global = MAX_HITS_TOTAL - stats.hits;
     if remaining_global == 0 {
         stats.truncated = true;
         return ScanOutcome::Stop;
     }
-
-    let content = match read_searchable(path, stats, true) {
-        Some(c) => c,
-        None => return ScanOutcome::Continue,
-    };
     stats.files_scanned += 1;
 
     let (mut hits, perfile_truncated, cancelled) =
-        build_file_hits(&content, re, MAX_HITS_PER_FILE, cancel);
+        build_file_hits(content, re, MAX_HITS_PER_FILE, cancel);
     if cancelled {
         return ScanOutcome::Cancelled;
     }
@@ -524,55 +770,45 @@ fn process_file(
     ScanOutcome::Continue
 }
 
-/// Leichter Probe-Modus (nach exaktem Erreichen des Deckels): liest einen
-/// Kandidaten nur bis zum ERSTEN Regex-Match. `true` = es gibt weitere Treffer
-/// (→ `stats.truncated`). Kein `on_file`, kein `files_scanned`-Increment.
-fn probe_has_match(path: &Path, re: &Regex, cancel: &AtomicBool) -> bool {
-    let mut sink = SearchStats::default();
-    let content = match read_searchable(path, &mut sink, false) {
-        Some(c) => c,
-        None => return false,
-    };
+/// Probe-Scan eines bereits gelesenen/gepufferten Inhalts: `true`, sobald eine
+/// Zeile mindestens einen **nicht-leeren** Treffer hat. Zero-Width-Matches
+/// (`start == end`) zählen bewusst nicht — sonst würde ein Zero-Width-only-
+/// Kandidat nach dem Deckel fälschlich `truncated` setzen [Sol-Rev2#2].
+fn probe_str(content: &str, re: &Regex, cancel: &AtomicBool) -> bool {
     for raw in content.split('\n') {
         if cancel.load(Ordering::Relaxed) {
             return false;
         }
         let line = raw.strip_suffix('\r').unwrap_or(raw);
-        if re.is_match(line) {
+        if re.find_iter(line).any(|m| m.start() < m.end()) {
             return true;
         }
     }
     false
 }
 
-/// Prüft, ob `path` als durchsuchbare Text-/Markdown-Datei in Frage kommt.
-/// Klassifikation läuft VOR Normalisierung/`seen`-Insert, damit Binär-/Bild-
-/// Dateien keine Allokation kosten.
-fn is_searchable_kind(path: &Path) -> bool {
-    path.to_str()
-        .map(|s| matches!(classify(s), FileKind::Markdown | FileKind::Text))
-        .unwrap_or(false)
+/// Leichter Probe-Modus (nach exaktem Erreichen des Deckels): liest einen
+/// Disk-Kandidaten und prüft über [`probe_str`], ob es weitere Treffer gibt.
+/// Kein `on_file`, kein `files_scanned`-Increment.
+fn probe_has_match(path: &Path, re: &Regex, cancel: &AtomicBool) -> bool {
+    let mut sink = SearchStats::default();
+    match read_searchable(path, &mut sink, false) {
+        Some(content) => probe_str(&content, re, cancel),
+        None => false,
+    }
 }
 
-/// Synchroner Suchkern. Läuft über [`SearchRoots`], ruft `on_file` je Datei
-/// **mit mindestens einem Treffer** (Streaming) und liefert am Ende die
-/// aggregierten [`SearchStats`].
-///
-/// - `cancel`: kooperatives Abbruch-Flag; ist es gesetzt, bricht der Lauf ab
-///   und liefert die bis dahin gesammelte Statistik (keine weiteren `on_file`).
-/// - Query kürzer als [`MIN_QUERY_LEN`] → [`SearchError::QueryTooShort`].
-/// - Nicht existierender Root → [`SearchError::RootNotFound`];
-///   falscher Typ / relativ → [`SearchError::InvalidScope`].
-pub fn run_search(
+/// Läuft über [`SearchRoots`] (Verzeichnis-Walk + explizit gepinnte Dateien)
+/// mit einem bereits kompilierten Regex und einem [`FileFilter`]. Gemeinsamer
+/// Kern von [`run_search`]/[`run_search_ex`] (ohne Query-/Root-Validierung und
+/// ohne `elapsed_ms` — das setzt der Aufrufer).
+fn run_over_roots(
     roots: &SearchRoots,
-    query: &str,
-    options: &SearchOptions,
+    re: &Regex,
+    filter: &FileFilter,
     cancel: &AtomicBool,
     on_file: &mut dyn FnMut(FileResult),
-) -> Result<SearchStats, SearchError> {
-    let re = validate(roots, query, options)?;
-
-    let start = Instant::now();
+) -> SearchStats {
     let mut stats = SearchStats::default();
     let mut seen: HashSet<String> = HashSet::new();
     // Nach exaktem Erreichen des Deckels ohne Cut läuft der Walk in einem
@@ -598,9 +834,9 @@ pub fn run_search(
             if !entry.file_type().is_some_and(|t| t.is_file()) {
                 continue;
             }
-            // Klassifikation vor Normalisierung/seen (Perf: keine Allokation
-            // für Binär-/Bild-Dateien).
-            if !is_searchable_kind(entry.path()) {
+            // Filter vor Normalisierung/seen (Perf: keine Allokation für
+            // gefilterte Dateien).
+            if !filter.accepts(entry.path()) {
                 continue;
             }
             let norm = normalize_path(entry.path());
@@ -608,14 +844,14 @@ pub fn run_search(
                 continue;
             }
             if probing {
-                if probe_has_match(entry.path(), &re, cancel) {
+                if probe_has_match(entry.path(), re, cancel) {
                     stats.truncated = true;
                     stopped = true;
                     break 'walk;
                 }
                 continue;
             }
-            match process_file(entry.path(), &norm, &re, cancel, &mut stats, on_file) {
+            match scan_disk(entry.path(), &norm, re, cancel, &mut stats, on_file) {
                 ScanOutcome::Continue => {}
                 ScanOutcome::Probe => probing = true,
                 ScanOutcome::Stop | ScanOutcome::Cancelled => {
@@ -628,13 +864,13 @@ pub fn run_search(
 
     // Einzeln angepinnte Dateien (nicht von einem Ordner abgedeckt). Explizite
     // Pins umgehen den hidden-/gitignore-Filter bewusst (Nutzer-Intention),
-    // durchlaufen aber weiterhin Kind-/Größen-/NUL-Filter.
+    // durchlaufen aber weiterhin Filter-/Größen-/NUL-Prüfung.
     if !stopped {
         for f in &roots.files {
             if cancel.load(Ordering::Relaxed) {
                 break;
             }
-            if !is_searchable_kind(f) {
+            if !filter.accepts(f) {
                 continue;
             }
             let norm = normalize_path(f);
@@ -642,17 +878,126 @@ pub fn run_search(
                 continue;
             }
             if probing {
-                if probe_has_match(f, &re, cancel) {
+                if probe_has_match(f, re, cancel) {
                     stats.truncated = true;
                     break;
                 }
                 continue;
             }
-            match process_file(f, &norm, &re, cancel, &mut stats, on_file) {
+            match scan_disk(f, &norm, re, cancel, &mut stats, on_file) {
                 ScanOutcome::Continue => {}
                 ScanOutcome::Probe => probing = true,
                 ScanOutcome::Stop | ScanOutcome::Cancelled => break,
             }
+        }
+    }
+
+    stats
+}
+
+/// Synchroner Suchkern (S1-API). Läuft über [`SearchRoots`], ruft `on_file` je
+/// Datei **mit mindestens einem Treffer** (Streaming) und liefert am Ende die
+/// aggregierten [`SearchStats`]. Delegiert an [`run_search_ex`] mit dem
+/// S1-Standardverhalten (kein Regex, [`FileFilter::AllText`]).
+///
+/// - `cancel`: kooperatives Abbruch-Flag; ist es gesetzt, bricht der Lauf ab
+///   und liefert die bis dahin gesammelte Statistik (keine weiteren `on_file`).
+/// - Query kürzer als [`MIN_QUERY_LEN`] → [`SearchError::QueryTooShort`].
+/// - Nicht existierender Root → [`SearchError::RootNotFound`];
+///   falscher Typ / relativ → [`SearchError::InvalidScope`].
+pub fn run_search(
+    roots: &SearchRoots,
+    query: &str,
+    options: &SearchOptions,
+    cancel: &AtomicBool,
+    on_file: &mut dyn FnMut(FileResult),
+) -> Result<SearchStats, SearchError> {
+    let ext = ExtendedSearchOptions {
+        base: *options,
+        regex: false,
+        filter: FileFilter::AllText,
+    };
+    run_search_ex(roots, query, &ext, cancel, on_file)
+}
+
+/// Erweiterter Root-basierter Suchlauf (S4): validiert Query + Roots,
+/// kompiliert das Regex (inkl. Regex-Modus) und läuft mit dem gewählten
+/// [`FileFilter`]. Der `on_file`-/Streaming-/Cap-Vertrag ist identisch zu
+/// [`run_search`].
+pub fn run_search_ex(
+    roots: &SearchRoots,
+    query: &str,
+    options: &ExtendedSearchOptions,
+    cancel: &AtomicBool,
+    on_file: &mut dyn FnMut(FileResult),
+) -> Result<SearchStats, SearchError> {
+    let re = compile_validated_pattern(query, options)?;
+    validate_roots(roots)?;
+
+    let start = Instant::now();
+    let mut stats = run_over_roots(roots, &re, &options.filter, cancel, on_file);
+    stats.elapsed_ms = start.elapsed().as_millis() as u64;
+    Ok(stats)
+}
+
+/// Durchsucht offene Tab-Puffer (OpenTabs-Scope, S4). Nutzt dieselbe Cap-/
+/// Probe-/Dedup-Maschinerie wie der Root-Lauf; der Inhalt je Dokument kommt aus
+/// dem Editor-Puffer ([`BufferSource::InMemory`], unabhängig von Textleere)
+/// oder von Platte ([`BufferSource::OnDisk`], pending/opaque Tabs). Query-
+/// Validierung roots-frei; das gemeinsame Content-Gate ([`inspect_content`])
+/// gilt auch für Puffer, sodass `skippedLarge` gecappte Puffer mitzählt.
+pub fn run_search_buffers(
+    docs: &[BufferDoc],
+    query: &str,
+    options: &ExtendedSearchOptions,
+    cancel: &AtomicBool,
+    on_file: &mut dyn FnMut(FileResult),
+) -> Result<SearchStats, SearchError> {
+    let re = compile_validated_pattern(query, options)?;
+
+    let start = Instant::now();
+    let mut stats = SearchStats::default();
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut probing = false;
+
+    for doc in docs {
+        if cancel.load(Ordering::Relaxed) {
+            break;
+        }
+        let path = Path::new(&doc.path);
+        if !options.filter.accepts(path) {
+            continue;
+        }
+        if !seen.insert(doc.path.clone()) {
+            continue;
+        }
+
+        if probing {
+            let mut sink = SearchStats::default();
+            let content = match &doc.source {
+                BufferSource::InMemory(text) => inspect_content(text.as_bytes(), &mut sink, false),
+                BufferSource::OnDisk => read_searchable(path, &mut sink, false),
+            };
+            if let Some(content) = content {
+                if probe_str(&content, &re, cancel) {
+                    stats.truncated = true;
+                    break;
+                }
+            }
+            continue;
+        }
+
+        let content = match &doc.source {
+            BufferSource::InMemory(text) => inspect_content(text.as_bytes(), &mut stats, true),
+            BufferSource::OnDisk => read_searchable(path, &mut stats, true),
+        };
+        let Some(content) = content else {
+            continue;
+        };
+        match process_content(&content, &doc.path, &re, cancel, &mut stats, on_file) {
+            ScanOutcome::Continue => {}
+            ScanOutcome::Probe => probing = true,
+            ScanOutcome::Stop | ScanOutcome::Cancelled => break,
         }
     }
 
@@ -1346,5 +1691,395 @@ mod tests {
 
         let (files, _) = collect(&roots, "needle", &SearchOptions::default());
         assert_eq!(vec![".hidden.md".to_string()], names(&files));
+    }
+
+    // --- S4-Additionen: FileFilter / Regex / OpenTabs-Puffer ----------------
+
+    fn ext_opts(regex: bool, filter: FileFilter) -> ExtendedSearchOptions {
+        ExtendedSearchOptions {
+            base: SearchOptions::default(),
+            regex,
+            filter,
+        }
+    }
+
+    fn collect_ex(
+        roots: &SearchRoots,
+        query: &str,
+        o: &ExtendedSearchOptions,
+    ) -> (Vec<FileResult>, SearchStats) {
+        let cancel = AtomicBool::new(false);
+        let mut files: Vec<FileResult> = Vec::new();
+        let stats = run_search_ex(roots, query, o, &cancel, &mut |f| files.push(f)).unwrap();
+        (files, stats)
+    }
+
+    fn collect_buffers(
+        docs: &[BufferDoc],
+        query: &str,
+        o: &ExtendedSearchOptions,
+    ) -> (Vec<FileResult>, SearchStats) {
+        let cancel = AtomicBool::new(false);
+        let mut files: Vec<FileResult> = Vec::new();
+        let stats = run_search_buffers(docs, query, o, &cancel, &mut |f| files.push(f)).unwrap();
+        (files, stats)
+    }
+
+    fn buffer_in_memory(path: &Path, text: &str) -> BufferDoc {
+        BufferDoc {
+            path: normalize_path(path),
+            source: BufferSource::InMemory(text.to_string()),
+        }
+    }
+
+    fn buffer_on_disk(path: &Path) -> BufferDoc {
+        BufferDoc {
+            path: normalize_path(path),
+            source: BufferSource::OnDisk,
+        }
+    }
+
+    #[test]
+    fn parse_custom_extensions_grammar() {
+        // Komma/Semikolon/Whitespace-Trennung, Punkt weg, lowercase.
+        assert_eq!(
+            vec!["md".to_string(), "txt".to_string(), "log".to_string()],
+            parse_custom_extensions(".MD, txt ;log").unwrap()
+        );
+        // Dups (verschieden geschrieben) werden zusammengefasst, Reihenfolge
+        // = erstes Vorkommen.
+        assert_eq!(
+            vec!["md".to_string()],
+            parse_custom_extensions("md .md MD").unwrap()
+        );
+        // Nur Leerwerte/Trenner → leere Liste (Parse-Ebene kein Fehler).
+        assert!(parse_custom_extensions("   , ; ").unwrap().is_empty());
+        assert!(parse_custom_extensions("").unwrap().is_empty());
+        // Erlaubt sind [a-z0-9_-].
+        assert_eq!(
+            vec!["c-h".to_string(), "a_b".to_string(), "h1".to_string()],
+            parse_custom_extensions("c-h a_b h1").unwrap()
+        );
+        // Verbotene Zeichen → Fehler mit Original-Token.
+        assert!(matches!(
+            parse_custom_extensions("c++"),
+            Err(SearchError::InvalidCustomExtension(t)) if t == "c++"
+        ));
+        assert!(matches!(
+            parse_custom_extensions("mä"),
+            Err(SearchError::InvalidCustomExtension(_))
+        ));
+    }
+
+    #[test]
+    fn file_filter_from_raw_maps_values_and_rejects_bad_input() {
+        assert_eq!(
+            FileFilter::Markdown,
+            FileFilter::from_raw("markdown", "").unwrap()
+        );
+        assert_eq!(
+            FileFilter::AllText,
+            FileFilter::from_raw("allText", "").unwrap()
+        );
+        assert_eq!(
+            FileFilter::Custom(vec!["foobar".to_string()]),
+            FileFilter::from_raw("custom", ".FOOBAR").unwrap()
+        );
+        // Custom-Filter aktiv, aber leere Liste → Fehler.
+        assert!(matches!(
+            FileFilter::from_raw("custom", "  "),
+            Err(SearchError::EmptyCustomExtensions)
+        ));
+        // Unbekannter Filter → Fehler mit Wert.
+        assert!(matches!(
+            FileFilter::from_raw("bogus", ""),
+            Err(SearchError::UnknownFileFilter(v)) if v == "bogus"
+        ));
+    }
+
+    #[test]
+    fn file_filter_markdown_only_matches_markdown() {
+        let tmp = TempDir::new().unwrap();
+        write(tmp.path(), "note.md", "needle\n");
+        write(tmp.path(), "data.txt", "needle\n");
+        let o = ext_opts(false, FileFilter::Markdown);
+        let (files, _) = collect_ex(&dir_roots(tmp.path()), "needle", &o);
+        assert_eq!(vec!["note.md".to_string()], names(&files));
+    }
+
+    #[test]
+    fn file_filter_custom_matches_unknown_text_extension() {
+        // `.foobar` liegt außerhalb TEXT_EXT → AllText überspringt es,
+        // Custom(["foobar"]) nimmt es (classify()-Bypass, bewusstes Opt-in).
+        let tmp = TempDir::new().unwrap();
+        write(tmp.path(), "weird.foobar", "needle here\n");
+        write(tmp.path(), "note.md", "needle here\n");
+
+        let all_text = ext_opts(false, FileFilter::AllText);
+        let (all, _) = collect_ex(&dir_roots(tmp.path()), "needle", &all_text);
+        assert_eq!(vec!["note.md".to_string()], names(&all));
+
+        let custom = ext_opts(false, FileFilter::Custom(vec!["foobar".to_string()]));
+        let (files, _) = collect_ex(&dir_roots(tmp.path()), "needle", &custom);
+        assert_eq!(vec!["weird.foobar".to_string()], names(&files));
+    }
+
+    #[test]
+    fn file_filter_custom_still_skips_nul_binaries() {
+        let tmp = TempDir::new().unwrap();
+        write_bytes(tmp.path(), "bin.foobar", b"pre \0\0 needle\n");
+        write(tmp.path(), "ok.foobar", "needle\n");
+        let custom = ext_opts(false, FileFilter::Custom(vec!["foobar".to_string()]));
+        let (files, _) = collect_ex(&dir_roots(tmp.path()), "needle", &custom);
+        assert_eq!(vec!["ok.foobar".to_string()], names(&files));
+    }
+
+    #[test]
+    fn regex_mode_matches_pattern() {
+        let tmp = TempDir::new().unwrap();
+        write(tmp.path(), "note.md", "color colour\n");
+        let o = ext_opts(true, FileFilter::AllText);
+        let (files, _) = collect_ex(&dir_roots(tmp.path()), "colou?r", &o);
+        assert_eq!(1, files.len());
+        // "color" + "colour" auf derselben Zeile = 1 Hit mit 2 Ranges.
+        assert_eq!(2, files[0].hits[0].ranges.len());
+    }
+
+    #[test]
+    fn regex_off_treats_query_as_literal() {
+        let tmp = TempDir::new().unwrap();
+        write(tmp.path(), "note.md", "a.b axb\n");
+        // Ohne Regex ist "a.b" ein Literal → matcht nur "a.b", nicht "axb".
+        let o = ext_opts(false, FileFilter::AllText);
+        let (files, _) = collect_ex(&dir_roots(tmp.path()), "a.b", &o);
+        assert_eq!(vec![[0u32, 3]], files[0].hits[0].ranges);
+    }
+
+    #[test]
+    fn invalid_regex_pattern_is_rejected() {
+        let tmp = TempDir::new().unwrap();
+        write(tmp.path(), "note.md", "needle\n");
+        let o = ext_opts(true, FileFilter::AllText);
+        let cancel = AtomicBool::new(false);
+        assert!(matches!(
+            run_search_ex(
+                &dir_roots(tmp.path()),
+                "(unclosed",
+                &o,
+                &cancel,
+                &mut |_| {}
+            ),
+            Err(SearchError::InvalidPattern(_))
+        ));
+    }
+
+    #[test]
+    fn regex_with_whole_word_is_rejected() {
+        let o = ExtendedSearchOptions {
+            base: SearchOptions {
+                case_sensitive: false,
+                whole_word: true,
+            },
+            regex: true,
+            filter: FileFilter::AllText,
+        };
+        assert!(matches!(
+            validate_query_ex("needle", &o),
+            Err(SearchError::RegexWholeWordConflict)
+        ));
+        // Auch über den vollen Lauf (nicht nur die Vorabprüfung).
+        let cancel = AtomicBool::new(false);
+        let roots = SearchRoots::default();
+        assert!(matches!(
+            run_search_ex(&roots, "needle", &o, &cancel, &mut |_| {}),
+            Err(SearchError::RegexWholeWordConflict)
+        ));
+    }
+
+    #[test]
+    fn zero_width_regex_matches_are_skipped() {
+        let tmp = TempDir::new().unwrap();
+        // "no such thing" enthält kein 'a' → `a*` matcht nur zero-width →
+        // keine Treffer.
+        write(tmp.path(), "note.md", "no such thing\n");
+        let o = ext_opts(true, FileFilter::AllText);
+        let (files, stats) = collect_ex(&dir_roots(tmp.path()), "a*", &o);
+        assert!(files.is_empty(), "zero-width-only darf keine Hits liefern");
+        assert_eq!(0, stats.hits);
+
+        // Mit echten 'a's: nur die nicht-leeren Treffer zählen.
+        write(tmp.path(), "note.md", "yaay\n");
+        let (files2, _) = collect_ex(&dir_roots(tmp.path()), "a*", &o);
+        assert_eq!(1, files2.len());
+        assert_eq!(vec![[1u32, 2]], files2[0].hits[0].ranges); // "aa"
+    }
+
+    #[test]
+    fn probe_mode_ignores_zero_width_only_candidate_after_cap() {
+        let tmp = TempDir::new().unwrap();
+        // 10 Dateien × exakt 50 Treffer-Zeilen = 500 = MAX_HITS_TOTAL ohne
+        // per-Datei-Cut → Probe-Modus. Danach ein Kandidat, dessen einzige
+        // "Treffer" zero-width sind → `truncated` darf NICHT gesetzt werden
+        // [Sol-Rev2#2].
+        for f in 0..10 {
+            let body = "aaa\n".repeat(50);
+            write(tmp.path(), &format!("cap_{f:02}.md"), &body);
+        }
+        write(tmp.path(), "zzz_zero.md", "no such thing here\n");
+        let o = ext_opts(true, FileFilter::AllText);
+        let (_files, stats) = collect_ex(&dir_roots(tmp.path()), "a*", &o);
+        assert_eq!(MAX_HITS_TOTAL, stats.hits);
+        assert!(
+            !stats.truncated,
+            "zero-width-only Kandidat im Probe-Modus darf truncated nicht setzen"
+        );
+    }
+
+    #[test]
+    fn buffers_search_in_memory_and_on_disk() {
+        let tmp = TempDir::new().unwrap();
+        let disk = tmp.path().join("disk.md");
+        fs::write(&disk, "needle on disk\n").unwrap();
+        let mem_path = tmp.path().join("buf.md");
+        let docs = vec![
+            buffer_in_memory(&mem_path, "needle in buffer\n"),
+            buffer_on_disk(&disk),
+        ];
+        let o = ext_opts(false, FileFilter::AllText);
+        let (files, stats) = collect_buffers(&docs, "needle", &o);
+        assert_eq!(2, stats.files_matched);
+        assert_eq!(2, files.len());
+    }
+
+    #[test]
+    fn buffers_empty_in_memory_shadows_disk_content() {
+        // Ein geladener, bewusst geleerter Puffer darf NICHT auf den alten
+        // Disk-Inhalt zurückfallen [Sol-Rev2#1].
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("doc.md");
+        fs::write(&path, "needle on disk only\n").unwrap();
+        let docs = vec![buffer_in_memory(&path, "")];
+        let o = ext_opts(false, FileFilter::AllText);
+        let (files, stats) = collect_buffers(&docs, "needle", &o);
+        assert!(files.is_empty());
+        assert_eq!(1, stats.files_scanned);
+        assert_eq!(0, stats.hits);
+    }
+
+    #[test]
+    fn buffers_dedup_by_normalized_path() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("dup.md");
+        let docs = vec![
+            buffer_in_memory(&path, "needle one\nneedle two\n"),
+            buffer_in_memory(&path, "needle three\n"),
+        ];
+        let o = ext_opts(false, FileFilter::AllText);
+        let (files, _) = collect_buffers(&docs, "needle", &o);
+        assert_eq!(1, files.len());
+        assert_eq!(2, files[0].hits.len()); // erster Doc gewinnt
+    }
+
+    #[test]
+    fn buffers_missing_on_disk_pending_is_skipped() {
+        let tmp = TempDir::new().unwrap();
+        let missing = tmp.path().join("gone.md");
+        let docs = vec![buffer_on_disk(&missing)];
+        let o = ext_opts(false, FileFilter::AllText);
+        let (files, stats) = collect_buffers(&docs, "needle", &o);
+        assert!(files.is_empty());
+        assert_eq!(0, stats.files_scanned);
+    }
+
+    #[test]
+    fn buffers_oversized_in_memory_counts_skipped_large() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("huge.md");
+        let mut big = String::from("needle\n");
+        big.push_str(&"a".repeat(MAX_FILE_SIZE as usize + 10));
+        let docs = vec![buffer_in_memory(&path, &big)];
+        let o = ext_opts(false, FileFilter::AllText);
+        let (files, stats) = collect_buffers(&docs, "needle", &o);
+        assert!(files.is_empty());
+        assert_eq!(1, stats.skipped_large);
+    }
+
+    #[test]
+    fn buffers_respect_file_filter() {
+        let tmp = TempDir::new().unwrap();
+        let md = tmp.path().join("a.md");
+        let txt = tmp.path().join("b.txt");
+        let docs = vec![
+            buffer_in_memory(&md, "needle\n"),
+            buffer_in_memory(&txt, "needle\n"),
+        ];
+        let o = ext_opts(false, FileFilter::Markdown);
+        let (files, _) = collect_buffers(&docs, "needle", &o);
+        assert_eq!(vec!["a.md".to_string()], names(&files));
+    }
+
+    #[test]
+    fn buffers_global_cap_truncates_with_extra_hit() {
+        // Cap-Parität zum Root-Pfad: 10 Puffer × exakt 50 Treffer-Zeilen =
+        // 500 = MAX_HITS_TOTAL. Ein weiterer Puffer mit echtem Treffer läuft
+        // in den Probe-Modus und muss `truncated` setzen.
+        let tmp = TempDir::new().unwrap();
+        let mut docs = Vec::new();
+        for f in 0..10 {
+            let body = "aaa\n".repeat(50);
+            docs.push(buffer_in_memory(
+                &tmp.path().join(format!("cap_{f:02}.md")),
+                &body,
+            ));
+        }
+        docs.push(buffer_in_memory(&tmp.path().join("zzz_more.md"), "aaa\n"));
+        let o = ext_opts(false, FileFilter::AllText);
+        let (_files, stats) = collect_buffers(&docs, "aaa", &o);
+        assert_eq!(MAX_HITS_TOTAL, stats.hits);
+        assert!(
+            stats.truncated,
+            "echter Zusatztreffer nach Cap muss truncated setzen"
+        );
+    }
+
+    #[test]
+    fn buffers_probe_mode_ignores_zero_width_only_after_cap() {
+        // Cap-/Probe-Parität zum Root-Pfad [Sol-Rev2#2]: nach exakt
+        // MAX_HITS_TOTAL ein Puffer, dessen einzige "Treffer" unter `a*`
+        // zero-width sind → `truncated` darf NICHT gesetzt werden.
+        let tmp = TempDir::new().unwrap();
+        let mut docs = Vec::new();
+        for f in 0..10 {
+            let body = "aaa\n".repeat(50);
+            docs.push(buffer_in_memory(
+                &tmp.path().join(format!("cap_{f:02}.md")),
+                &body,
+            ));
+        }
+        docs.push(buffer_in_memory(
+            &tmp.path().join("zzz_zero.md"),
+            "no such thing here\n",
+        ));
+        let o = ext_opts(true, FileFilter::AllText);
+        let (_files, stats) = collect_buffers(&docs, "a*", &o);
+        assert_eq!(MAX_HITS_TOTAL, stats.hits);
+        assert!(
+            !stats.truncated,
+            "zero-width-only Kandidat im Probe-Modus darf truncated nicht setzen"
+        );
+    }
+
+    #[test]
+    fn to_scope_ex_rejects_open_tabs_with_folder() {
+        assert!(matches!(
+            to_scope_ex(Some("/x".to_string()), true),
+            Err(SearchError::ScopeConflict)
+        ));
+        assert_eq!(SearchScopeEx::OpenTabs, to_scope_ex(None, true).unwrap());
+        assert_eq!(SearchScopeEx::Vault, to_scope_ex(None, false).unwrap());
+        assert_eq!(
+            SearchScopeEx::Folder("/x".to_string()),
+            to_scope_ex(Some("/x".to_string()), false).unwrap()
+        );
     }
 }

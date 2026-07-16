@@ -87,17 +87,21 @@
     <button class="vault-cmd ti-emoji" data-cmd="addFolder" title="Ordner hinzufügen…" data-i18n-title="vault.header.addFolder.tooltip" aria-label="Ordner hinzufügen" data-i18n-aria-label="vault.header.addFolder.ariaLabel">&#x1F4C1;</button>
   </header>
   <div class="vault-search" id="vault-search">
-    <div class="vault-search-row">
-      <input type="search" id="vault-search-input" class="vault-search-input" placeholder="Im Vault suchen…" data-i18n-placeholder="vault.search.placeholder" aria-label="Im Vault suchen" data-i18n-aria-label="vault.search.ariaLabel" spellcheck="false" autocomplete="off" />
-      <button type="button" id="vault-search-case" class="vault-search-opt" title="Groß-/Kleinschreibung beachten" data-i18n-title="vault.search.caseSensitive.tooltip" aria-label="Groß-/Kleinschreibung beachten" data-i18n-aria-label="vault.search.caseSensitive.ariaLabel" aria-pressed="false">Aa</button>
-      <button type="button" id="vault-search-word" class="vault-search-opt" title="Ganzes Wort" data-i18n-title="vault.search.wholeWord.tooltip" aria-label="Ganzes Wort" data-i18n-aria-label="vault.search.wholeWord.ariaLabel" aria-pressed="false">W</button>
-    </div>
+    <button type="button" id="vault-search-summary" class="vault-search-summary" title="In Dateien suchen…" data-i18n-title="search.summary.edit.tooltip" aria-label="In Dateien suchen…" data-i18n-aria-label="search.summary.edit.tooltip">
+      <span class="vs-summary-icon" aria-hidden="true">&#x1F50D;</span>
+      <span class="vs-summary-text" id="vault-search-summary-text">In Dateien suchen…</span>
+      <span class="vs-summary-opts" id="vault-search-summary-opts" aria-hidden="true"></span>
+    </button>
     <div class="vault-search-scope" id="vault-search-scope" hidden></div>
   </div>
   <ul id="vault-tree" class="tree"></ul>
   <div class="vault-search-results" id="vault-search-results" hidden>
+    <div class="vault-search-results-head" id="vault-search-results-head">
+      <button type="button" id="vault-search-collapse-all" class="vs-head-btn" title="Alle einklappen" data-i18n-title="search.results.collapseAll.tooltip" aria-label="Alle einklappen" data-i18n-aria-label="search.results.collapseAll.tooltip">&#x2212;</button>
+      <button type="button" id="vault-search-expand-all" class="vs-head-btn" title="Alle aufklappen" data-i18n-title="search.results.expandAll.tooltip" aria-label="Alle aufklappen" data-i18n-aria-label="search.results.expandAll.tooltip">&#x002B;</button>
+    </div>
     <div class="vault-search-status" id="vault-search-status" role="status"></div>
-    <div class="vault-search-list" id="vault-search-list"></div>
+    <div class="vault-search-list" id="vault-search-list" tabindex="0"></div>
   </div>
 </aside>
 <div class="splitter-left" id="splitter-left"></div>
@@ -534,6 +538,39 @@
     <div class="unsaved-dialog__actions">
       <button type="button" id="run-confirm-cancel" data-i18n="dialogs.common.cancel">Abbrechen</button>
       <button type="button" id="run-confirm-ok" class="primary" data-i18n="dialogs.run.submit.action">Ausführen</button>
+    </div>
+  </div>
+</div>
+
+<div id="vault-search-dialog" hidden>
+  <div class="unsaved-dialog__panel vault-search-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="vsd-title">
+    <div class="unsaved-dialog__title" id="vsd-title" data-i18n="search.dialog.title">In Dateien suchen</div>
+    <div class="vsd-field">
+      <label class="vsd-field-label" for="vsd-query" data-i18n="search.dialog.query.label">Suchbegriff</label>
+      <input type="search" id="vsd-query" class="vsd-input" placeholder="Suchbegriff eingeben…" data-i18n-placeholder="search.dialog.query.placeholder" spellcheck="false" autocomplete="off" />
+    </div>
+    <div class="vsd-checks">
+      <label class="vsd-check"><input type="checkbox" id="vsd-case" /><span data-i18n="search.dialog.caseSensitive.label">Groß-/Kleinschreibung beachten</span></label>
+      <label class="vsd-check"><input type="checkbox" id="vsd-word" /><span data-i18n="search.dialog.wholeWord.label">Ganzes Wort</span></label>
+      <label class="vsd-check"><input type="checkbox" id="vsd-regex" /><span data-i18n="search.dialog.regex.label">Regulärer Ausdruck</span></label>
+    </div>
+    <fieldset class="vsd-group">
+      <legend class="vsd-legend" data-i18n="search.dialog.fileType.label">Dateityp</legend>
+      <label class="vsd-radio"><input type="radio" name="vsd-filter" value="markdown" /><span data-i18n="search.dialog.fileType.markdown">Nur Markdown</span></label>
+      <label class="vsd-radio"><input type="radio" name="vsd-filter" value="allText" /><span data-i18n="search.dialog.fileType.allText">Alle Textdateien</span></label>
+      <label class="vsd-radio"><input type="radio" name="vsd-filter" value="custom" /><span data-i18n="search.dialog.fileType.custom">Benutzerdefinierte Endungen</span></label>
+      <input type="text" id="vsd-custom-ext" class="vsd-input vsd-custom-ext" placeholder="z. B. md, txt, log" data-i18n-placeholder="search.dialog.customExt.placeholder" aria-label="Endungen" data-i18n-aria-label="search.dialog.customExt.label" spellcheck="false" autocomplete="off" />
+    </fieldset>
+    <fieldset class="vsd-group" id="vsd-scope-group">
+      <legend class="vsd-legend" data-i18n="search.dialog.scope.label">Bereich</legend>
+      <label class="vsd-radio"><input type="radio" name="vsd-scope" value="vault" /><span data-i18n="search.dialog.scope.vault">Gesamter Vault</span></label>
+      <label class="vsd-radio"><input type="radio" name="vsd-scope" value="openTabs" /><span data-i18n="search.dialog.scope.openTabs">Alle offenen Dateien</span></label>
+      <label class="vsd-radio" id="vsd-scope-folder-row" hidden><input type="radio" name="vsd-scope" value="folder" /><span id="vsd-scope-folder-label"></span></label>
+    </fieldset>
+    <div class="vsd-error" id="vsd-error" role="alert" hidden></div>
+    <div class="unsaved-dialog__actions">
+      <button type="button" id="vsd-cancel" data-i18n="dialogs.common.cancel">Abbrechen</button>
+      <button type="button" id="vsd-submit" class="primary" data-i18n="search.dialog.submit.action">Suchen</button>
     </div>
   </div>
 </div>

@@ -228,16 +228,20 @@ Request:
 
 ```json
 {
-  "query": "needle",
+  "query": "ne+dle",
   "scope": "/abs/pfad/zum/ordner",
   "caseSensitive": false,
   "wholeWord": false,
+  "regex": true,
+  "fileFilter": "custom",
+  "customExtensions": "md, txt, log",
+  "openTabs": false,
   "timeoutMs": 5000
 }
 ```
 
-- `query` (Pflicht): Suchbegriff, wird als Literal gematcht (kein Regex).
-  Mindestlänge **2 Zeichen** (Zeichen, nicht Bytes) → sonst HTTP 400.
+- `query` (Pflicht): Suchbegriff. Mindestlänge **2 Zeichen** (Zeichen, nicht
+  Bytes) → sonst HTTP 400. Ohne `regex` als Literal gematcht.
 - `scope` (optional): absoluter Ordnerpfad → durchsucht genau diesen Ordner
   rekursiv. Fehlt/`null` → **gesamter Vault** (Union aller angepinnten Ordner
   rekursiv + angepinnter Einzeldateien; „Zuletzt geöffnet" ist nicht Teil des
@@ -249,10 +253,36 @@ Request:
 - `caseSensitive`/`wholeWord` (optional, Default `false`): Groß-/Kleinschreibung
   bzw. ganze Wörter (Unicode-Wortgrenzen). Case-insensitive nutzt Unicode
   *simple* case folding (`ß` faltet auf sich selbst, nicht auf `ss`).
+- `regex` (optional, Default `false`): Regex-Modus. `query` wird als
+  Rust-`regex`-Pattern kompiliert (keine Lookarounds). **Regex + `wholeWord`
+  zusammen → HTTP 400** (nicht unterstützt; `\b`-Wrap wäre bei Anchor-/
+  Alternations-Patterns überraschend). Ungültiges Pattern → **HTTP 400**.
+  Zero-Width-Matches (z. B. `a*`) werden übersprungen.
+- `fileFilter` (optional, Default `"allText"`): `"markdown"` (nur
+  `FileKind::Markdown`), `"allText"` (Markdown + Text wie die S1-Engine) oder
+  `"custom"`. Unbekannter Wert → **HTTP 400**.
+- `customExtensions` (optional, roher Feldtext): nur bei `fileFilter="custom"`
+  relevant. Zerlegung an Komma/Semikolon/Whitespace; führender Punkt entfernt,
+  lowercase, dedupliziert; erlaubte Zeichen `[a-z0-9_-]`. Verbotene Zeichen →
+  **HTTP 400**; leere Liste bei aktivem `custom` → **HTTP 400**. Match nur über
+  die letzte `Path::extension()` (keine Globs). Der Filter **umgeht bewusst die
+  `classify()`-Kind-Prüfung** (unbekannte Textendungen wie `.foobar` werden
+  suchbar); Schutz bleiben das 2-MiB-Cap + NUL-Sniff (Best-Effort).
+- `openTabs` (optional, Default `false`): durchsucht statt des Vaults die
+  **offenen Tab-Puffer** — geladene textuelle Tabs über ihren Editor-Puffer
+  (auch leer; ein geleerter dirty Puffer fällt NICHT auf den Disk-Inhalt
+  zurück), `pending`/opaque Tabs von Platte. `openTabs=true` **und** ein
+  gesetzter `scope` → **HTTP 400** (Konflikt). Virtuelle Frontend-Tabs
+  (Settings/Theme-Editor/Diff) sind nicht Teil des Backend-Snapshots.
 - `timeoutMs` (optional): Zeitlimit; danach wird der Lauf abgebrochen und
   HTTP 500 geliefert.
 
-Filter (wie die Vault-Engine): nur `FileKind::Markdown`/`Text`, gitignorierte
+Alle Validierungsfehler (zu kurzer Begriff, ungültiges Pattern,
+Regex+WholeWord, unbekannter/leerer Filter, verbotene Endungszeichen,
+`openTabs+scope`) liefern **HTTP 400**; nur das `timeoutMs`-Limit bzw. interne
+Fehler liefern 500.
+
+Filter (wie die Vault-Engine): standardmäßig nur `FileKind::Markdown`/`Text`, gitignorierte
 und versteckte (Dotfile-)Einträge werden übersprungen, Dateien > 2 MiB und
 solche mit NUL-Bytes in den ersten 8 KiB ebenfalls (Letztere in `stats`
 gezählt bzw. gar nicht gelesen). **Explizit gepinnte Einzeldateien werden immer
@@ -308,10 +338,13 @@ Feldsemantik:
 - Pfade sind Forward-Slash-normalisiert.
 
 Die WebView nutzt für die Live-Suche stattdessen die Tauri-Commands
-`vault_search_start { query, scope?, caseSensitive, wholeWord } → runId` und
+`vault_search_start { query, scope?, openTabs?, caseSensitive, wholeWord,
+regex?, fileFilter?, customExtensions? } → runId` und
 `vault_search_cancel { runId }` mit den Events `search:hits { runId, files }`
-und `search:done { runId, stats }` (bzw. `{ runId, error }`). `POST /search`
-bündelt diesen Ablauf synchron für die Tests.
+und `search:done { runId, stats }` (bzw. `{ runId, error }`); die S4-Parameter
+sind optional (Weglassen = altes Verhalten). Der Dialog prüft Felder vorab über
+`vault_search_validate { query, caseSensitive, wholeWord, regex?, fileFilter?,
+customExtensions? }`. `POST /search` bündelt den Ablauf synchron für die Tests.
 
 ### Security-Gates (Middleware `security_guard`)
 

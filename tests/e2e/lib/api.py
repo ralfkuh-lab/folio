@@ -251,6 +251,10 @@ class AutomationApi:
         scope: Optional[str] = None,
         case_sensitive: bool = False,
         whole_word: bool = False,
+        regex: bool = False,
+        file_filter: Optional[str] = None,
+        custom_extensions: Optional[str] = None,
+        open_tabs: bool = False,
         timeout_ms: Optional[int] = None,
     ) -> dict:
         body: dict = {
@@ -260,6 +264,14 @@ class AutomationApi:
         }
         if scope is not None:
             body["scope"] = scope
+        if regex:
+            body["regex"] = regex
+        if file_filter is not None:
+            body["fileFilter"] = file_filter
+        if custom_extensions is not None:
+            body["customExtensions"] = custom_extensions
+        if open_tabs:
+            body["openTabs"] = open_tabs
         transport_timeout = None
         if timeout_ms is not None:
             body["timeoutMs"] = timeout_ms

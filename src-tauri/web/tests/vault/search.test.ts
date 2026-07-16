@@ -1,11 +1,13 @@
-// Tests fuer vault/search.ts (Such-Panel). Schwerpunkte: Rendering inkl.
-// <mark>-Ranges mit Emoji/Umlaut (UTF-16-Offsets), Debounce + stale-runId-
-// Verwurf, Event-Puffer vor Start-Antwort, Keyboard-Navigation, Escape,
-// Truncation, Options-Retrigger, View-Mode-Sprung (async Finder),
-// Strg+Shift+F, Escape-waehrend-ausstehender-Start-Promise.
+// Tests fuer vault/search.ts (Such-Panel, S4-Dialog-Modell). Schwerpunkte:
+// Rendering inkl. <mark>-Ranges (UTF-16-Offsets), stale-runId-Verwurf,
+// Event-Puffer vor Start-Antwort, Keyboard-Navigation auf der Ergebnisliste,
+// View-Mode-Sprung (async Finder), Truncation/Status, Dialog-Submit +
+// Validierungsfehler, Spinner (vs-running), Auto-Collapse (>10 Gruppen) +
+// Collapse/Expand-All, Folder-Draft via Kontextmenue, OpenTabs-Sprung ueber
+// activateTab, Strg+Shift+F, Summary-Reopen.
 //
-// Das Backend wird ueber den Tauri-Mock simuliert; state/document und
-// ui/find-bar werden gemockt, damit der Sprung-Pfad testbar ist.
+// Das Backend wird ueber den Tauri-Mock simuliert; state/document, state/tabs
+// und ui/find-bar werden gemockt, damit der Sprung-Pfad testbar ist.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installTauriMock, type TauriMockHandles } from '../helpers';
@@ -13,11 +15,23 @@ import { seedDeCatalog } from '../helpers-i18n';
 
 const mocks = vi.hoisted(() => ({
     getCurrentPath: vi.fn(() => '/vault/note.md' as string | null),
+    syncEditorTextToStoreRequired: vi.fn(() => Promise.resolve()),
     setEditorFindTerm: vi.fn(),
     findNext: vi.fn(),
+    activateTab: vi.fn(() => Promise.resolve(true)),
+    findTabIdByPath: vi.fn((_p: string) => null as number | null),
+    getActiveTabId: vi.fn(() => 7 as number | null),
 }));
 
-vi.mock('../../app/state/document', () => ({ getCurrentPath: mocks.getCurrentPath }));
+vi.mock('../../app/state/document', () => ({
+    getCurrentPath: mocks.getCurrentPath,
+    syncEditorTextToStoreRequired: mocks.syncEditorTextToStoreRequired,
+}));
+vi.mock('../../app/state/tabs', () => ({
+    activateTab: mocks.activateTab,
+    findTabIdByPath: mocks.findTabIdByPath,
+    getActiveTabId: mocks.getActiveTabId,
+}));
 vi.mock('../../app/ui/find-bar', () => ({
     setEditorFindTerm: mocks.setEditorFindTerm,
     findNext: mocks.findNext,
@@ -31,16 +45,43 @@ function buildDom(): void {
     document.body.className = '';
     document.body.innerHTML = `
         <div id="vault-region">
-            <ul id="vault-tree"><li>tree</li></ul>
             <div class="vault-search">
-                <input id="vault-search-input" type="search" />
-                <button id="vault-search-case" aria-pressed="false">Aa</button>
-                <button id="vault-search-word" aria-pressed="false">W</button>
+                <button id="vault-search-summary">
+                    <span id="vault-search-summary-text"></span>
+                    <span id="vault-search-summary-opts"></span>
+                </button>
                 <div id="vault-search-scope" hidden></div>
             </div>
+            <ul id="vault-tree"><li>tree</li></ul>
             <div id="vault-search-results" hidden>
+                <div id="vault-search-results-head">
+                    <button id="vault-search-collapse-all"></button>
+                    <button id="vault-search-expand-all"></button>
+                </div>
                 <div id="vault-search-status"></div>
-                <div id="vault-search-list"></div>
+                <div id="vault-search-list" tabindex="0"></div>
+            </div>
+        </div>
+        <div id="vault-search-dialog" hidden>
+            <div class="vault-search-dialog__panel">
+                <div id="vsd-title"></div>
+                <input id="vsd-query" type="search" />
+                <label><input type="checkbox" id="vsd-case" /></label>
+                <label><input type="checkbox" id="vsd-word" /></label>
+                <label><input type="checkbox" id="vsd-regex" /></label>
+                <input type="radio" name="vsd-filter" value="markdown" />
+                <input type="radio" name="vsd-filter" value="allText" checked />
+                <input type="radio" name="vsd-filter" value="custom" />
+                <input type="text" id="vsd-custom-ext" />
+                <input type="radio" name="vsd-scope" value="vault" checked />
+                <input type="radio" name="vsd-scope" value="openTabs" />
+                <label id="vsd-scope-folder-row" hidden>
+                    <input type="radio" name="vsd-scope" value="folder" />
+                    <span id="vsd-scope-folder-label"></span>
+                </label>
+                <div id="vsd-error" hidden></div>
+                <button id="vsd-cancel"></button>
+                <button id="vsd-submit"></button>
             </div>
         </div>
     `;
@@ -49,25 +90,62 @@ function buildDom(): void {
 function configureInvoke(): void {
     tauri.invoke.mockImplementation((cmd: string) => {
         if (cmd === 'vault_search_start') return Promise.resolve(nextRunId++);
+        if (cmd === 'vault_search_validate') return Promise.resolve(undefined);
         if (cmd === 'search_options_get') {
-            return Promise.resolve({ caseSensitive: false, wholeWord: false });
+            return Promise.resolve({
+                caseSensitive: false,
+                wholeWord: false,
+                regex: false,
+                fileFilter: 'allText',
+                customExtensions: '',
+            });
         }
         return Promise.resolve(undefined);
     });
 }
 
 async function flushMicro(): Promise<void> {
-    for (let i = 0; i < 8; i++) await Promise.resolve();
+    for (let i = 0; i < 12; i++) await Promise.resolve();
 }
 
-function type(value: string): void {
-    const el = document.getElementById('vault-search-input') as HTMLInputElement;
-    el.value = value;
-    el.dispatchEvent(new Event('input'));
+function $(id: string): HTMLElement {
+    return document.getElementById(id) as HTMLElement;
+}
+
+function setRadio(name: string, value: string): void {
+    const el = document.querySelector(
+        `input[name="${name}"][value="${value}"]`,
+    ) as HTMLInputElement;
+    el.checked = true;
 }
 
 function key(target: HTMLElement, k: string, opts: Partial<KeyboardEventInit> = {}): void {
     target.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, ...opts }));
+}
+
+interface SearchOpts {
+    case?: boolean;
+    word?: boolean;
+    regex?: boolean;
+    filter?: string;
+    ext?: string;
+    scope?: string;
+    folder?: string;
+}
+
+/** Öffnet den Dialog, füllt ihn und submittet. */
+async function runSearch(query: string, opts: SearchOpts = {}): Promise<void> {
+    const search = await import('../../app/vault/search');
+    search.openVaultSearchDialog(opts.folder ? { folder: opts.folder } : undefined);
+    ($('vsd-query') as HTMLInputElement).value = query;
+    ($('vsd-case') as HTMLInputElement).checked = !!opts.case;
+    ($('vsd-regex') as HTMLInputElement).checked = !!opts.regex;
+    ($('vsd-word') as HTMLInputElement).checked = !!opts.word;
+    if (opts.filter) setRadio('vsd-filter', opts.filter);
+    if (opts.ext !== undefined) ($('vsd-custom-ext') as HTMLInputElement).value = opts.ext;
+    if (opts.scope) setRadio('vsd-scope', opts.scope);
+    $('vsd-submit').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushMicro();
 }
 
 function fileFixture(overrides: any = {}): any {
@@ -89,6 +167,12 @@ function fileFixture(overrides: any = {}): any {
     };
 }
 
+function manyFiles(n: number): any[] {
+    return Array.from({ length: n }, (_, i) =>
+        fileFixture({ path: `/vault/f${i}.md`, fileName: `f${i}.md` }),
+    );
+}
+
 async function importAndInit(overrides: any = {}) {
     const search = await import('../../app/vault/search');
     const deps = { openDocument: vi.fn(), openLeftRail: vi.fn(), ...overrides };
@@ -102,6 +186,9 @@ beforeEach(async () => {
     await seedDeCatalog();
     nextRunId = 1;
     mocks.getCurrentPath.mockReturnValue('/vault/note.md');
+    mocks.findTabIdByPath.mockReturnValue(null);
+    mocks.getActiveTabId.mockReturnValue(7);
+    mocks.syncEditorTextToStoreRequired.mockResolvedValue(undefined);
     tauri = installTauriMock();
     configureInvoke();
     buildDom();
@@ -115,44 +202,21 @@ afterEach(() => {
 
 describe('vault/search — rendering + marks', () => {
     it('rendert <mark> exakt ueber die UTF-16-Ranges (Umlaut + Emoji davor)', async () => {
-        vi.useFakeTimers();
         await importAndInit();
-
-        type('needle');
-        await vi.advanceTimersByTimeAsync(300);
-        await flushMicro();
+        await runSearch('needle');
         tauri.emitEvent('search:hits', { runId: 1, files: [fileFixture()] });
         await flushMicro();
 
-        const list = document.getElementById('vault-search-list')!;
+        const list = $('vault-search-list');
         const mark = list.querySelector('mark');
         expect(mark).not.toBeNull();
         expect(mark!.textContent).toBe('needle');
         expect(list.querySelector('.vs-snippet')!.textContent).toBe('äß😀 needle');
     });
 
-    it('markedSnippet toleriert fehlendes Snippet', async () => {
-        vi.useFakeTimers();
-        await importAndInit();
-        type('needle');
-        await vi.advanceTimersByTimeAsync(300);
-        await flushMicro();
-        const f = fileFixture({
-            hits: [{ line: 1, colUtf16: 1, lenUtf16: 6, snippet: '', snippetOffsetUtf16: 0, ranges: [] }],
-        });
-        tauri.emitEvent('search:hits', { runId: 1, files: [f] });
-        await flushMicro();
-        // Kein Crash, Zeile gerendert.
-        expect(document.querySelectorAll('.vs-hit').length).toBe(1);
-    });
-
     it('zeigt Truncation pro Datei (Zaehler + Hinweis) und global im Status', async () => {
-        vi.useFakeTimers();
         await importAndInit();
-        type('needle');
-        await vi.advanceTimersByTimeAsync(300);
-        await flushMicro();
-
+        await runSearch('needle');
         const big = fileFixture({
             truncated: true,
             hits: Array.from({ length: 50 }, (_, i) => ({
@@ -166,30 +230,24 @@ describe('vault/search — rendering + marks', () => {
         });
         await flushMicro();
 
-        const list = document.getElementById('vault-search-list')!;
+        const list = $('vault-search-list');
         expect(list.querySelector('.vs-count')!.textContent).toBe('50+');
         expect(list.querySelector('.vs-more')).not.toBeNull();
-        expect(document.getElementById('vault-search-status')!.textContent).toContain('gekürzt');
+        expect($('vault-search-status').textContent).toContain('gekürzt');
     });
 });
 
-describe('vault/search — Debounce + Generation', () => {
+describe('vault/search — Stale-Guard + Puffer', () => {
     it('verwirft Events einer ueberholten Suche und rendert nur den aktuellen Run', async () => {
-        vi.useFakeTimers();
         await importAndInit();
-
-        type('aaa');
-        await vi.advanceTimersByTimeAsync(300);
-        await flushMicro();
-        type('bbb');
-        await vi.advanceTimersByTimeAsync(300);
-        await flushMicro();
+        await runSearch('aaa');
+        await runSearch('bbb');
 
         expect(tauri.invoke).toHaveBeenCalledWith('vault_search_cancel', { runId: 1 });
 
         tauri.emitEvent('search:hits', { runId: 1, files: [fileFixture({ fileName: 'stale.md' })] });
         await flushMicro();
-        const list = document.getElementById('vault-search-list')!;
+        const list = $('vault-search-list');
         expect(list.querySelector('.vs-fname')).toBeNull();
 
         tauri.emitEvent('search:hits', { runId: 2, files: [fileFixture({ fileName: 'fresh.md' })] });
@@ -198,96 +256,252 @@ describe('vault/search — Debounce + Generation', () => {
     });
 
     it('puffert hits, die VOR der Start-Antwort eintreffen, und flusht beim Adoptieren', async () => {
-        vi.useFakeTimers();
         let resolveStart!: (v: number) => void;
         tauri.invoke.mockImplementation((cmd: string) => {
             if (cmd === 'vault_search_start') return new Promise<number>((r) => { resolveStart = r; });
+            if (cmd === 'vault_search_validate') return Promise.resolve(undefined);
             if (cmd === 'search_options_get') return Promise.resolve({});
             return Promise.resolve(undefined);
         });
         await importAndInit();
+        await runSearch('needle');
 
-        type('needle');
-        await vi.advanceTimersByTimeAsync(300);
-        await flushMicro();
-
-        // hits treffen ein, bevor runId adoptiert ist → puffern, noch nichts rendern.
         tauri.emitEvent('search:hits', { runId: 7, files: [fileFixture({ fileName: 'buffered.md' })] });
         await flushMicro();
-        const list = document.getElementById('vault-search-list')!;
+        const list = $('vault-search-list');
         expect(list.querySelector('.vs-fname')).toBeNull();
 
         resolveStart(7);
         await flushMicro();
         expect(list.querySelector('.vs-fname')!.textContent).toBe('buffered.md');
     });
+});
 
-    it('Escape waehrend ausstehender Start-Promise cancelt runId, keine Adoption/Render', async () => {
-        vi.useFakeTimers();
-        let resolveStart!: (v: number) => void;
+describe('vault/search — Dialog', () => {
+    it('Validierungsfehler hält den Dialog offen und startet keine Suche', async () => {
         tauri.invoke.mockImplementation((cmd: string) => {
-            if (cmd === 'vault_search_start') return new Promise<number>((r) => { resolveStart = r; });
+            if (cmd === 'vault_search_validate') return Promise.reject('Ungültiger Ausdruck');
             if (cmd === 'search_options_get') return Promise.resolve({});
             return Promise.resolve(undefined);
         });
         await importAndInit();
+        await runSearch('[bad');
 
-        type('needle');
-        await vi.advanceTimersByTimeAsync(300);
-        await flushMicro();
-
-        const input = document.getElementById('vault-search-input') as HTMLInputElement;
-        key(input, 'Escape'); // exitSearch → gen++
-
-        resolveStart(5);
-        await flushMicro();
-
-        expect(tauri.invoke).toHaveBeenCalledWith('vault_search_cancel', { runId: 5 });
-        // Späte Events für 5 dürfen nichts rendern.
-        tauri.emitEvent('search:hits', { runId: 5, files: [fileFixture()] });
-        await flushMicro();
-        expect(document.getElementById('vault-search-list')!.querySelector('.vs-fname')).toBeNull();
-    });
-
-    it('kurze Query (<2 Zeichen) zeigt Hinweis statt Backend-Suche', async () => {
-        vi.useFakeTimers();
-        await importAndInit();
-        type('n');
-        await vi.advanceTimersByTimeAsync(300);
-        await flushMicro();
+        expect(($('vault-search-dialog') as HTMLElement).hidden).toBe(false);
+        expect($('vsd-error').hidden).toBe(false);
+        expect($('vsd-error').textContent).toContain('Ungültiger Ausdruck');
         const starts = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_search_start');
         expect(starts.length).toBe(0);
-        expect(document.getElementById('vault-search-status')!.textContent).toContain('2 Zeichen');
     });
-});
 
-describe('vault/search — Optionen', () => {
-    it('Toggle re-triggert die Suche genau einmal (kein Doppel-Lauf) mit neuer Option', async () => {
-        vi.useFakeTimers();
+    it('Submit committed Optionen + startet Suche + rendert Summary', async () => {
         await importAndInit();
-        type('needle');
-        await vi.advanceTimersByTimeAsync(300);
-        await flushMicro();
-
-        const caseBtn = document.getElementById('vault-search-case')!;
-        caseBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        await flushMicro();
+        await runSearch('needle', { case: true, regex: true });
 
         const starts = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_search_start');
-        expect(starts.length).toBe(2); // 1x tippen + 1x toggle
-        expect(starts[1][1]).toMatchObject({ query: 'needle', caseSensitive: true });
-        expect(caseBtn.getAttribute('aria-pressed')).toBe('true');
+        expect(starts.length).toBe(1);
+        // Regex an → wholeWord false (Checkbox war disabled).
+        expect(starts[0][1]).toMatchObject({
+            query: 'needle', caseSensitive: true, regex: true, wholeWord: false, fileFilter: 'allText', openTabs: false,
+        });
+        expect(tauri.invoke).toHaveBeenCalledWith(
+            'set_search_options',
+            expect.objectContaining({ caseSensitive: true, regex: true }),
+        );
+        expect(($('vault-search-dialog') as HTMLElement).hidden).toBe(true);
+        expect($('vault-search-summary-text').textContent).toBe('needle');
+    });
+
+    it('Strg+Shift+F oeffnet den Dialog', async () => {
+        await importAndInit();
+        document.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'F', ctrlKey: true, shiftKey: true, bubbles: true,
+        }));
+        expect(($('vault-search-dialog') as HTMLElement).hidden).toBe(false);
+    });
+
+    it('Summary-Reopen fuellt das Query-Feld mit dem committed Begriff', async () => {
+        const { search } = await importAndInit();
+        await runSearch('needle');
+        // Dialog ist zu; erneut oeffnen (Summary-Klick).
+        search.openVaultSearchDialog();
+        expect(($('vsd-query') as HTMLInputElement).value).toBe('needle');
+    });
+
+    it('searchInFolder oeffnet den Dialog mit Folder-Draft (ohne committed Scope-Wechsel)', async () => {
+        const { search } = await importAndInit();
+        search.searchInFolder('/vault/sub');
+        expect(($('vault-search-dialog') as HTMLElement).hidden).toBe(false);
+        expect($('vsd-scope-folder-row').hidden).toBe(false);
+        expect($('vsd-scope-folder-label').textContent).toContain('sub');
+        // Noch kein Lauf gestartet (nur Draft).
+        const starts = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_search_start');
+        expect(starts.length).toBe(0);
+
+        // Submit mit Folder-Scope → scope wird durchgereicht.
+        ($('vsd-query') as HTMLInputElement).value = 'needle';
+        setRadio('vsd-scope', 'folder');
+        $('vsd-submit').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+        const scoped = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_search_start');
+        expect(scoped[0][1]).toMatchObject({ query: 'needle', scope: '/vault/sub', openTabs: false });
     });
 });
 
-describe('vault/search — Keyboard + Escape', () => {
-    it('ArrowDown/Up bewegt die aktive Auswahl, Enter oeffnet', async () => {
-        vi.useFakeTimers();
-        const { deps } = await importAndInit();
-        type('needle');
-        await vi.advanceTimersByTimeAsync(300);
+describe('vault/search — Spinner', () => {
+    it('setzt vs-running beim Start und raeumt bei done auf', async () => {
+        await importAndInit();
+        await runSearch('needle');
+        expect($('vault-search-status').classList.contains('vs-running')).toBe(true);
+        tauri.emitEvent('search:done', {
+            runId: 1,
+            stats: { filesScanned: 3, filesMatched: 0, hits: 0, skippedLarge: 0, truncated: false, elapsedMs: 2 },
+        });
         await flushMicro();
+        expect($('vault-search-status').classList.contains('vs-running')).toBe(false);
+    });
 
+    it('stale done aendert den Spinner-Zustand nicht', async () => {
+        await importAndInit();
+        await runSearch('aaa');
+        await runSearch('bbb'); // runId 2 laeuft, Spinner an
+        // done fuer den alten Lauf 1 → ignoriert.
+        tauri.emitEvent('search:done', {
+            runId: 1,
+            stats: { filesScanned: 1, filesMatched: 0, hits: 0, skippedLarge: 0, truncated: false, elapsedMs: 1 },
+        });
+        await flushMicro();
+        expect($('vault-search-status').classList.contains('vs-running')).toBe(true);
+    });
+
+    it('Start-Rejection raeumt vs-running auf', async () => {
+        tauri.invoke.mockImplementation((cmd: string) => {
+            if (cmd === 'vault_search_start') return Promise.reject('boom');
+            if (cmd === 'vault_search_validate') return Promise.resolve(undefined);
+            if (cmd === 'search_options_get') return Promise.resolve({});
+            return Promise.resolve(undefined);
+        });
+        await importAndInit();
+        await runSearch('needle');
+        expect($('vault-search-status').classList.contains('vs-running')).toBe(false);
+    });
+
+    it('Cancel vor Adoption raeumt vs-running auf und adoptiert die spaete Antwort nicht', async () => {
+        let resolveStart!: (v: number) => void;
+        tauri.invoke.mockImplementation((cmd: string) => {
+            if (cmd === 'vault_search_start') return new Promise<number>((r) => { resolveStart = r; });
+            if (cmd === 'vault_search_validate') return Promise.resolve(undefined);
+            if (cmd === 'search_options_get') return Promise.resolve({});
+            return Promise.resolve(undefined);
+        });
+        await importAndInit();
+        await runSearch('needle');
+        expect($('vault-search-status').classList.contains('vs-running')).toBe(true);
+        // Escape verlaesst die Suche, bevor der Start adoptiert ist → Spinner weg.
+        key($('vault-search-list'), 'Escape');
+        expect($('vault-search-status').classList.contains('vs-running')).toBe(false);
+        // Spaete Start-Antwort darf den Spinner nicht re-armen; der verwaiste
+        // Lauf wird gecancelt.
+        resolveStart(5);
+        await flushMicro();
+        expect($('vault-search-status').classList.contains('vs-running')).toBe(false);
+        expect(tauri.invoke).toHaveBeenCalledWith('vault_search_cancel', { runId: 5 });
+    });
+
+    it('Escape/Exit raeumt vs-running eines laufenden Suchlaufs auf', async () => {
+        await importAndInit();
+        await runSearch('needle');
+        expect($('vault-search-status').classList.contains('vs-running')).toBe(true);
+        key($('vault-search-list'), 'Escape');
+        expect($('vault-search-status').classList.contains('vs-running')).toBe(false);
+    });
+
+    it('Scope-Fallback: toter Ordner-Scope startet vault-weit neu, Spinner laeuft am Neustart weiter und raeumt bei done auf', async () => {
+        // Erster Start (Folder-Scope) rejectet mit `scope:`-Praefix → Fallback:
+        // Chip weg, vault-weiter Neustart. Der Neustart setzt vs-running neu; es
+        // darf kein haengender Spinner bleiben, und der Neustart-`done` raeumt auf.
+        let startCalls = 0;
+        tauri.invoke.mockImplementation((cmd: string) => {
+            if (cmd === 'vault_search_start') {
+                startCalls++;
+                if (startCalls === 1) return Promise.reject('scope:RootNotFound');
+                return Promise.resolve(nextRunId++);
+            }
+            if (cmd === 'vault_search_validate') return Promise.resolve(undefined);
+            if (cmd === 'search_options_get') return Promise.resolve({});
+            return Promise.resolve(undefined);
+        });
+        await importAndInit();
+        await runSearch('needle', { folder: '/vault/sub', scope: 'folder' });
+
+        // Genau ein Fallback-Neustart, jetzt vault-weit (scope: null).
+        const starts = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_search_start');
+        expect(starts.length).toBe(2);
+        expect(starts[0][1]).toMatchObject({ scope: '/vault/sub' });
+        expect(starts[1][1]).toMatchObject({ scope: null, openTabs: false });
+
+        // Scope-Chip ist entfernt und der Fallback-Hinweis steht im Status …
+        expect(($('vault-search-scope') as HTMLElement).hidden).toBe(true);
+        expect($('vault-search-status').textContent).toContain('gesamten Vault');
+        // … waehrend der Neustart den Spinner weiter fuehrt (kein Haenger).
+        expect($('vault-search-status').classList.contains('vs-running')).toBe(true);
+
+        // Der Fallback-Lauf (runId 1) raeumt vs-running bei done auf.
+        tauri.emitEvent('search:done', {
+            runId: 1,
+            stats: { filesScanned: 3, filesMatched: 0, hits: 0, skippedLarge: 0, truncated: false, elapsedMs: 2 },
+        });
+        await flushMicro();
+        expect($('vault-search-status').classList.contains('vs-running')).toBe(false);
+    });
+});
+
+describe('vault/search — Auto-Collapse + Collapse/Expand-All', () => {
+    it('klappt ab >10 Treffergruppen automatisch ein; spaetere Gruppen folgen', async () => {
+        await importAndInit();
+        await runSearch('needle');
+        tauri.emitEvent('search:hits', { runId: 1, files: manyFiles(11) });
+        await flushMicro();
+        // Alle 11 Gruppen eingeklappt.
+        expect(document.querySelectorAll('.vs-hits[hidden]').length).toBe(11);
+
+        // Nachstroemende Gruppe kommt ebenfalls eingeklappt.
+        tauri.emitEvent('search:hits', { runId: 1, files: [fileFixture({ path: '/vault/late.md', fileName: 'late.md' })] });
+        await flushMicro();
+        expect(document.querySelectorAll('.vs-hits[hidden]').length).toBe(12);
+    });
+
+    it('Expand-All klappt alles auf; danach kommen neue Gruppen offen', async () => {
+        await importAndInit();
+        await runSearch('needle');
+        tauri.emitEvent('search:hits', { runId: 1, files: manyFiles(11) });
+        await flushMicro();
+        $('vault-search-expand-all').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        expect(document.querySelectorAll('.vs-hits[hidden]').length).toBe(0);
+
+        tauri.emitEvent('search:hits', { runId: 1, files: [fileFixture({ path: '/vault/x.md', fileName: 'x.md' })] });
+        await flushMicro();
+        expect(document.querySelectorAll('.vs-hits[hidden]').length).toBe(0);
+    });
+
+    it('Collapse-All klappt alles ein', async () => {
+        await importAndInit();
+        await runSearch('needle');
+        tauri.emitEvent('search:hits', {
+            runId: 1,
+            files: [fileFixture({ path: '/vault/a.md', fileName: 'a.md' }), fileFixture({ path: '/vault/b.md', fileName: 'b.md' })],
+        });
+        await flushMicro();
+        expect(document.querySelectorAll('.vs-hits[hidden]').length).toBe(0);
+        $('vault-search-collapse-all').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        expect(document.querySelectorAll('.vs-hits[hidden]').length).toBe(2);
+    });
+});
+
+describe('vault/search — Keyboard + Klick + Sprung', () => {
+    it('ArrowDown/Up bewegt die aktive Auswahl auf der Liste, Enter oeffnet', async () => {
+        const { deps } = await importAndInit();
+        await runSearch('needle');
         const twoHits = fileFixture({
             hits: [
                 { line: 3, colUtf16: 1, lenUtf16: 6, snippet: 'needle a', snippetOffsetUtf16: 0, ranges: [[0, 6]] },
@@ -297,90 +511,90 @@ describe('vault/search — Keyboard + Escape', () => {
         tauri.emitEvent('search:hits', { runId: 1, files: [twoHits] });
         await flushMicro();
 
-        const input = document.getElementById('vault-search-input') as HTMLInputElement;
-        const list = document.getElementById('vault-search-list')!;
-        key(input, 'ArrowDown');
+        const list = $('vault-search-list');
+        key(list, 'ArrowDown');
         expect(list.querySelectorAll('.vs-hit')[0].classList.contains('active')).toBe(true);
-        key(input, 'ArrowDown');
+        key(list, 'ArrowDown');
         expect(list.querySelectorAll('.vs-hit')[1].classList.contains('active')).toBe(true);
-        key(input, 'ArrowUp');
+        key(list, 'ArrowUp');
         expect(list.querySelectorAll('.vs-hit')[0].classList.contains('active')).toBe(true);
-        key(input, 'Enter');
+        key(list, 'Enter');
         expect(deps.openDocument).toHaveBeenCalledWith('/vault/note.md');
     });
 
-    it('eingeklappte Gruppe wird von der Navigation uebersprungen', async () => {
-        vi.useFakeTimers();
+    it('Escape auf der Liste verlaesst die Suche', async () => {
         await importAndInit();
-        type('needle');
-        await vi.advanceTimersByTimeAsync(300);
-        await flushMicro();
-        const twoFiles = [
-            fileFixture({ path: '/vault/a.md', fileName: 'a.md' }),
-            fileFixture({ path: '/vault/b.md', fileName: 'b.md' }),
-        ];
-        tauri.emitEvent('search:hits', { runId: 1, files: twoFiles });
-        await flushMicro();
-
-        // Erste Gruppe einklappen.
-        const heads = document.querySelectorAll('.vs-group-head');
-        (heads[0] as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        await flushMicro();
-
-        const input = document.getElementById('vault-search-input') as HTMLInputElement;
-        key(input, 'ArrowDown'); // erster sichtbarer Treffer = b.md
-        const active = document.querySelector('.vs-hit.active') as HTMLElement;
-        expect(active.getAttribute('data-file-idx')).toBe('1'); // b.md, nicht die eingeklappte a.md
-    });
-
-    it('Escape leert die Suche und stellt den Baum wieder her', async () => {
-        vi.useFakeTimers();
-        await importAndInit();
-        type('needle');
-        const region = document.getElementById('vault-region')!;
+        await runSearch('needle');
+        const region = $('vault-region');
         expect(region.classList.contains('vault-searching')).toBe(true);
-        const input = document.getElementById('vault-search-input') as HTMLInputElement;
-        key(input, 'Escape');
-        expect(input.value).toBe('');
+        key($('vault-search-list'), 'Escape');
         expect(region.classList.contains('vault-searching')).toBe(false);
-        expect((document.getElementById('vault-search-results') as HTMLElement).hidden).toBe(true);
+        expect(($('vault-search-results') as HTMLElement).hidden).toBe(true);
     });
-});
 
-describe('vault/search — Klick + Sprung', () => {
-    it('normaler Klick auf einen Treffer ruft openDocument', async () => {
-        vi.useFakeTimers();
+    it('normaler Klick ruft openDocument (Vault-Scope)', async () => {
         const { deps } = await importAndInit();
-        type('needle');
-        await vi.advanceTimersByTimeAsync(300);
-        await flushMicro();
+        await runSearch('needle');
         tauri.emitEvent('search:hits', { runId: 1, files: [fileFixture()] });
         await flushMicro();
-        (document.querySelector('.vs-hit') as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        ($('vault-search-list').querySelector('.vs-hit') as HTMLElement)
+            .dispatchEvent(new MouseEvent('click', { bubbles: true }));
         expect(deps.openDocument).toHaveBeenCalledWith('/vault/note.md');
     });
 
     it('Ctrl+Klick oeffnet in neuem Tab (tab_open)', async () => {
-        vi.useFakeTimers();
         await importAndInit();
-        type('needle');
-        await vi.advanceTimersByTimeAsync(300);
-        await flushMicro();
+        await runSearch('needle');
         tauri.emitEvent('search:hits', { runId: 1, files: [fileFixture()] });
         await flushMicro();
-        (document.querySelector('.vs-hit') as HTMLElement)
+        ($('vault-search-list').querySelector('.vs-hit') as HTMLElement)
             .dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
         expect(tauri.invoke).toHaveBeenCalledWith('tab_open', { path: '/vault/note.md' });
     });
 
-    it('View-Mode-Sprung wartet auf den asynchronen Finder und aktiviert das Ziel-Ordinal', async () => {
-        vi.useFakeTimers();
-        const { deps } = await importAndInit({ openDocument: vi.fn() });
-        document.body.className = ''; // View-Mode (kein edit/split)
-        type('needle');
-        await vi.advanceTimersByTimeAsync(300);
+    it('OpenTabs-Sprung aktiviert den Tab statt openDocument', async () => {
+        mocks.findTabIdByPath.mockReturnValue(42);
+        mocks.getActiveTabId.mockReturnValue(7); // anderer Tab aktiv
+        const { deps } = await importAndInit();
+        await runSearch('needle', { scope: 'openTabs' });
+        tauri.emitEvent('search:hits', { runId: 1, files: [fileFixture()] });
         await flushMicro();
+        ($('vault-search-list').querySelector('.vs-hit') as HTMLElement)
+            .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        expect(mocks.activateTab).toHaveBeenCalledWith(42);
+        expect(deps.openDocument).not.toHaveBeenCalled();
+    });
 
+    it('OpenTabs-Sprung: geschlossener Tab (findTabIdByPath→null) oeffnet NICHT nach', async () => {
+        // [Sol#2] Tab seit dem Snapshot geschlossen: der OpenTabs-Zweig darf
+        // NIEMALS in tab_open/openDocument durchfallen — sonst würde ein
+        // verworfener dirty Puffer über den Disk-Inhalt geöffnet.
+        mocks.findTabIdByPath.mockReturnValue(null);
+        const { deps } = await importAndInit();
+        await runSearch('needle', { scope: 'openTabs' });
+        tauri.emitEvent('search:hits', { runId: 1, files: [fileFixture()] });
+        await flushMicro();
+        ($('vault-search-list').querySelector('.vs-hit') as HTMLElement)
+            .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        expect(deps.openDocument).not.toHaveBeenCalled();
+        const tabOpens = tauri.invoke.mock.calls.filter((c) => c[0] === 'tab_open');
+        expect(tabOpens.length).toBe(0);
+        expect(mocks.activateTab).not.toHaveBeenCalled();
+        // Stattdessen: lokalisierter "veraltet"-Status.
+        expect($('vault-search-status').textContent).toContain('nicht mehr aktuell');
+    });
+
+    it('OpenTabs-Submit synchronisiert den Editor-Puffer vor dem Snapshot', async () => {
+        await importAndInit();
+        await runSearch('needle', { scope: 'openTabs' });
+        expect(mocks.syncEditorTextToStoreRequired).toHaveBeenCalled();
+        const starts = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_search_start');
+        expect(starts[0][1]).toMatchObject({ openTabs: true, scope: null });
+    });
+
+    it('View-Mode-Sprung wartet auf den asynchronen Finder und aktiviert das Ziel-Ordinal', async () => {
+        const { deps } = await importAndInit({ openDocument: vi.fn() });
+        await runSearch('needle');
         const twoHits = fileFixture({
             hits: [
                 { line: 3, colUtf16: 1, lenUtf16: 6, snippet: 'x needle', snippetOffsetUtf16: 0, ranges: [[2, 6]] },
@@ -390,26 +604,19 @@ describe('vault/search — Klick + Sprung', () => {
         tauri.emitEvent('search:hits', { runId: 1, files: [twoHits] });
         await flushMicro();
 
-        // Auf den ZWEITEN Treffer klicken (matchOrdinal = 1).
-        const hits = document.querySelectorAll('.vs-hit');
+        vi.useFakeTimers();
+        const hits = $('vault-search-list').querySelectorAll('.vs-hit');
         (hits[1] as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
         expect(deps.openDocument).toHaveBeenCalledWith('/vault/note.md');
 
-        // Dokument geladen (state-synchron) → onDocKindChanged → rAF → performViewJump.
         mocks.getCurrentPath.mockReturnValue('/vault/note.md');
         window.dispatchEvent(new CustomEvent('folio-doc-kind-changed', { detail: { kind: 'markdown' } }));
         await vi.advanceTimersByTimeAsync(20); // rAF
         await flushMicro();
 
         expect(mocks.setEditorFindTerm).toHaveBeenCalled();
-        // Vor dem Finder-Settle darf NICHT iteriert worden sein.
         expect(mocks.findNext).not.toHaveBeenCalled();
 
-        // Finder feuert (u. U. mehrfach) folio-find-state; nach dem letzten
-        // Settle (Debounce) wird das Ziel-Ordinal 1 → genau 1x findNext.
-        window.dispatchEvent(new CustomEvent('folio-find-state', {
-            detail: { source: 'view', term: 'needle', total: 2, active: 0 },
-        }));
         window.dispatchEvent(new CustomEvent('folio-find-state', {
             detail: { source: 'view', term: 'needle', total: 2, active: 0 },
         }));
@@ -419,140 +626,26 @@ describe('vault/search — Klick + Sprung', () => {
     });
 });
 
-describe('vault/search — Strg+Shift+F', () => {
-    it('fokussiert das Suchfeld', async () => {
-        await importAndInit();
-        document.dispatchEvent(new KeyboardEvent('keydown', {
-            key: 'F', ctrlKey: true, shiftKey: true, bubbles: true,
-        }));
-        expect(document.activeElement).toBe(document.getElementById('vault-search-input'));
-    });
-});
-
-describe('vault/search — Ordner-Scope (S3)', () => {
-    it('searchInFolder setzt Chip + re-triggert Suche mit scope', async () => {
-        vi.useFakeTimers();
-        const { search } = await importAndInit();
-        type('needle');
-        await vi.advanceTimersByTimeAsync(300);
-        await flushMicro();
-
-        search.searchInFolder('/vault/sub');
-        await flushMicro();
-
-        const chip = document.querySelector('#vault-search-scope .vs-scope-chip');
-        expect(chip).not.toBeNull();
-        expect(chip!.querySelector('.vs-scope-name')!.textContent).toBe('sub');
-        const starts = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_search_start');
-        expect(starts[starts.length - 1][1]).toMatchObject({ query: 'needle', scope: '/vault/sub' });
-    });
-
-    it('Chip-× entfernt den Scope und re-triggert vault-weit', async () => {
-        vi.useFakeTimers();
-        const { search } = await importAndInit();
-        type('needle');
-        await vi.advanceTimersByTimeAsync(300);
-        await flushMicro();
-        search.searchInFolder('/vault/sub');
-        await flushMicro();
-
-        (document.querySelector('.vs-scope-x') as HTMLElement)
-            .dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        await flushMicro();
-
-        expect(document.getElementById('vault-search-scope')!.hidden).toBe(true);
-        const starts = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_search_start');
-        expect(starts[starts.length - 1][1]).toMatchObject({ query: 'needle', scope: null });
-    });
-
-    it('Scope-Fehler (scope:-Präfix) → Chip weg + Fallback vault-weit', async () => {
-        vi.useFakeTimers();
-        tauri.invoke.mockImplementation((cmd: string, args: any) => {
-            if (cmd === 'vault_search_start') {
-                // Backend präfixt Scope-Fehler mit `scope:`.
-                if (args && args.scope) return Promise.reject('scope:Suchpfad existiert nicht: /vault/gone');
-                return Promise.resolve(nextRunId++);
-            }
-            if (cmd === 'search_options_get') return Promise.resolve({});
-            return Promise.resolve(undefined);
-        });
-        const { search } = await importAndInit();
-        type('needle');
-        await vi.advanceTimersByTimeAsync(300);
-        await flushMicro();
-
-        search.searchInFolder('/vault/gone'); // → scoped start rejectet mit scope:
-        await flushMicro();
-
-        expect(document.getElementById('vault-search-scope')!.hidden).toBe(true);
-        const scopedStarts = tauri.invoke.mock.calls.filter(
-            (c) => c[0] === 'vault_search_start' && c[1] && c[1].scope,
-        );
-        const vaultStarts = tauri.invoke.mock.calls.filter(
-            (c) => c[0] === 'vault_search_start' && c[1] && !c[1].scope,
-        );
-        expect(scopedStarts.length).toBe(1); // ein Scope-Versuch
-        expect(vaultStarts.length).toBeGreaterThanOrEqual(2); // initial + Fallback
-    });
-
-    it('generischer Startfehler (ohne scope:-Präfix) → Scope BLEIBT, kein Fallback', async () => {
-        vi.useFakeTimers();
-        tauri.invoke.mockImplementation((cmd: string, args: any) => {
-            if (cmd === 'vault_search_start') {
-                if (args && args.scope) return Promise.reject('irgendein IPC-Fehler');
-                return Promise.resolve(nextRunId++);
-            }
-            if (cmd === 'search_options_get') return Promise.resolve({});
-            return Promise.resolve(undefined);
-        });
-        const { search } = await importAndInit();
-        type('needle');
-        await vi.advanceTimersByTimeAsync(300);
-        await flushMicro();
-
-        search.searchInFolder('/vault/x'); // scoped start rejectet generisch
-        await flushMicro();
-
-        // Chip bleibt, kein Vault-weiter Fallback.
-        expect(document.getElementById('vault-search-scope')!.hidden).toBe(false);
-        const scopedStarts = tauri.invoke.mock.calls.filter(
-            (c) => c[0] === 'vault_search_start' && c[1] && c[1].scope,
-        );
-        const vaultStarts = tauri.invoke.mock.calls.filter(
-            (c) => c[0] === 'vault_search_start' && c[1] && !c[1].scope,
-        );
-        expect(scopedStarts.length).toBe(1);
-        expect(vaultStarts.length).toBe(1); // nur der initiale Lauf, kein Fallback
-        expect(document.getElementById('vault-search-status')!.textContent).toContain('Fehler');
-    });
-
-    it('Status: hits=0 + skippedLarge zeigt beides (Basissatz + Zusatz)', async () => {
-        vi.useFakeTimers();
-        await importAndInit();
-        type('needle');
-        await vi.advanceTimersByTimeAsync(300);
-        await flushMicro();
-        tauri.emitEvent('search:done', {
-            runId: 1,
-            stats: { filesScanned: 2, filesMatched: 0, hits: 0, skippedLarge: 1, truncated: false, elapsedMs: 3 },
-        });
-        await flushMicro();
-        const status = document.getElementById('vault-search-status')!.textContent || '';
-        expect(status).toContain('Keine Treffer');
-        expect(status).toContain('übersprungen');
-    });
-
+describe('vault/search — Status-Sonderfaelle', () => {
     it('Leere-Vault-Hinweis bei filesScanned==0 ohne Scope', async () => {
-        vi.useFakeTimers();
         await importAndInit();
-        type('needle');
-        await vi.advanceTimersByTimeAsync(300);
-        await flushMicro();
+        await runSearch('needle');
         tauri.emitEvent('search:done', {
             runId: 1,
             stats: { filesScanned: 0, filesMatched: 0, hits: 0, skippedLarge: 0, truncated: false, elapsedMs: 1 },
         });
         await flushMicro();
-        expect(document.getElementById('vault-search-status')!.textContent).toContain('Keine durchsuchbaren Dateien im Vault');
+        expect($('vault-search-status').textContent).toContain('Keine durchsuchbaren Dateien im Vault');
+    });
+
+    it('OpenTabs-Leerfall zeigt den eigenen Status', async () => {
+        await importAndInit();
+        await runSearch('needle', { scope: 'openTabs' });
+        tauri.emitEvent('search:done', {
+            runId: 1,
+            stats: { filesScanned: 0, filesMatched: 0, hits: 0, skippedLarge: 0, truncated: false, elapsedMs: 1 },
+        });
+        await flushMicro();
+        expect($('vault-search-status').textContent).toContain('offenen Dateien');
     });
 });

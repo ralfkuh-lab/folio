@@ -1,5 +1,5 @@
-#unsaved-dialog[hidden], #rename-dialog[hidden], #run-confirm-dialog[hidden], #confirm-dialog[hidden] { display: none; }
-#unsaved-dialog, #rename-dialog, #run-confirm-dialog, #confirm-dialog {
+#unsaved-dialog[hidden], #rename-dialog[hidden], #run-confirm-dialog[hidden], #confirm-dialog[hidden], #vault-search-dialog[hidden] { display: none; }
+#unsaved-dialog, #rename-dialog, #run-confirm-dialog, #confirm-dialog, #vault-search-dialog {
   position: fixed;
   inset: 0;
   /* Blockierende System-Modals — müssen über ALLEN anderen Overlays liegen,
@@ -13,6 +13,13 @@
   justify-content: center;
   background: rgba(0, 0, 0, 0.28);
 }
+/* Der Vault-Suchdialog teilt Positionierung/Backdrop mit den System-Modals,
+   ist aber selbst KEIN blockierendes Modal. Er muss unter unsaved-/confirm-
+   Dialogen (10070) liegen: sonst überdeckt sein vollflächiges Overlay eine
+   während offener Suche ausgelöste Dirty-/Quit-Bestätigung, weil er im DOM
+   nach #unsaved-dialog steht. Gleiche Spezifität (1 ID), spätere Regel →
+   überschreibt den z-index oben. Liegt über dem Save-Overlay (10060). */
+#vault-search-dialog { z-index: 10065; }
 .unsaved-dialog__panel {
   width: min(420px, calc(100vw - 32px));
   background: var(--bg);

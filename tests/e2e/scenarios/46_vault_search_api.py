@@ -23,6 +23,12 @@ def _write(path, text):
         f.write(text)
 
 
+def _write_bytes(path, data):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(data)
+
+
 def _by_name(resp, name):
     for f in resp.get("files") or []:
         if f["fileName"] == name:
@@ -68,6 +74,17 @@ def run(ctx):
                 os.path.join(td, "capdir", f"cap_{f:02}.md"),
                 "".join("cap here\n" for _ in range(60)),
             )
+
+        # S4-Dateityp-Filter (eigener Suchbegriff "zzcustom", damit die
+        # "needle"-Vault-Liste unberührt bleibt). `.foobar` liegt außerhalb
+        # TEXT_EXT → nur der Custom-Filter nimmt es; die NUL-Variante bleibt
+        # auch unter Custom geskippt.
+        _write(os.path.join(td, "ff", "note.md"), "zzcustom in md\n")
+        _write(os.path.join(td, "ff", "data.txt"), "zzcustom in txt\n")
+        _write(os.path.join(td, "ff", "weird.foobar"), "zzcustom in foobar\n")
+        _write_bytes(
+            os.path.join(td, "ff", "bin.foobar"), b"pre \x00\x00 zzcustom here\n"
+        )
 
         pinned = False
         try:
@@ -173,7 +190,120 @@ def run(ctx):
                 except ApiError as err:
                     ctx.expect(400 <= err.status < 500, f"status={err.status}")
 
+            # --- S4: Regex-Modus -------------------------------------------
+
+            with ctx.step("regex mode matches pattern"):
+                resp = ctx.api.search(
+                    "ne+dle", scope=os.path.join(td, "sub"), regex=True
+                )
+                # sub/gamma.md: "gamma has a needle too" → "ne+dle" trifft "needle".
+                ctx.expect(
+                    _by_name(resp, "gamma.md") is not None,
+                    "regex pattern should match 'needle'",
+                )
+
+            with ctx.step("invalid regex → 400"):
+                try:
+                    ctx.api.search("(unclosed", regex=True)
+                    ctx.expect(False, "invalid regex accepted")
+                except ApiError as err:
+                    ctx.expect(err.status == 400, f"status={err.status}")
+
+            with ctx.step("regex + wholeWord → 400"):
+                try:
+                    ctx.api.search("needle", regex=True, whole_word=True)
+                    ctx.expect(False, "regex+wholeWord accepted")
+                except ApiError as err:
+                    ctx.expect(err.status == 400, f"status={err.status}")
+
+            # --- S4: Dateityp-Filter ---------------------------------------
+
+            with ctx.step("fileFilter markdown restricts to .md"):
+                resp = ctx.api.search(
+                    "zzcustom", scope=os.path.join(td, "ff"), file_filter="markdown"
+                )
+                found = sorted(f["fileName"] for f in resp.get("files") or [])
+                ctx.expect(found == ["note.md"], f"markdown filter: {found}")
+
+            with ctx.step("fileFilter allText covers .md + .txt, skips .foobar"):
+                resp = ctx.api.search(
+                    "zzcustom", scope=os.path.join(td, "ff"), file_filter="allText"
+                )
+                found = sorted(f["fileName"] for f in resp.get("files") or [])
+                ctx.expect(found == ["data.txt", "note.md"], f"allText filter: {found}")
+
+            with ctx.step("fileFilter custom matches .foobar, still skips NUL binary"):
+                resp = ctx.api.search(
+                    "zzcustom",
+                    scope=os.path.join(td, "ff"),
+                    file_filter="custom",
+                    custom_extensions="foobar",
+                )
+                found = sorted(f["fileName"] for f in resp.get("files") or [])
+                # weird.foobar trifft; bin.foobar (NUL) bleibt geskippt.
+                ctx.expect(found == ["weird.foobar"], f"custom filter: {found}")
+
+            with ctx.step("empty custom extension list → 400"):
+                try:
+                    ctx.api.search(
+                        "zzcustom", file_filter="custom", custom_extensions="  "
+                    )
+                    ctx.expect(False, "empty custom list accepted")
+                except ApiError as err:
+                    ctx.expect(err.status == 400, f"status={err.status}")
+
+            with ctx.step("unknown fileFilter → 400"):
+                try:
+                    ctx.api.search("zzcustom", file_filter="bogus")
+                    ctx.expect(False, "unknown filter accepted")
+                except ApiError as err:
+                    ctx.expect(err.status == 400, f"status={err.status}")
+
+            # --- S4: OpenTabs-Scope ----------------------------------------
+
+            with ctx.step("openTabs searches dirty editor buffer, not disk"):
+                # Isolierter Tab-Zustand, dann eine Datei öffnen und den Puffer
+                # überschreiben (Treffer existiert NUR im Puffer, nicht auf Platte).
+                ctx.api.tabs_close_all()
+                ctx.api.tab_open(os.path.join(td, "ff", "note.md"))
+                ctx.api.editor_text_set("buffer holds zzuniquebuf now\n")
+                # Explizites Sync-Await: POST /editor/text schreibt den Store
+                # synchron; wir bestätigen den Puffer-Stand, bevor /search folgt.
+                txt = (ctx.api.editor_text_get() or {}).get("text") or ""
+                ctx.expect("zzuniquebuf" in txt, f"store not synced: {txt!r}")
+                resp = ctx.api.search("zzuniquebuf", open_tabs=True)
+                found = sorted(f["fileName"] for f in resp.get("files") or [])
+                ctx.expect(found == ["note.md"], f"openTabs dirty buffer: {found}")
+
+            with ctx.step("openTabs: emptied buffer yields no disk hits"):
+                ctx.api.tabs_close_all()
+                # data.txt hat "zzcustom" auf Platte; der Puffer wird geleert.
+                ctx.api.tab_open(os.path.join(td, "ff", "data.txt"))
+                ctx.api.editor_text_set("")
+                txt = (ctx.api.editor_text_get() or {}).get("text")
+                ctx.expect(txt == "", f"buffer not emptied: {txt!r}")
+                resp = ctx.api.search("zzcustom", open_tabs=True)
+                ctx.expect(
+                    _by_name(resp, "data.txt") is None,
+                    "emptied buffer must not fall back to disk content",
+                )
+
+            with ctx.step("openTabs + scope conflict → 400"):
+                try:
+                    ctx.api.search(
+                        "zzcustom", scope=os.path.join(td, "ff"), open_tabs=True
+                    )
+                    ctx.expect(False, "openTabs+scope accepted")
+                except ApiError as err:
+                    ctx.expect(err.status == 400, f"status={err.status}")
+
         finally:
+            # Offene (evtl. dirty) Tabs aus den OpenTabs-Schritten aufräumen,
+            # bevor der Fixture-Tempordner verschwindet.
+            try:
+                ctx.api.tabs_close_all()
+            except Exception:
+                pass
             if pinned:
                 # Unpin-Fehler NICHT still schlucken — aber einen bereits
                 # laufenden Original-Fehler nicht maskieren.

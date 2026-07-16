@@ -202,35 +202,45 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   `automation/handlers/search.rs`; Frontend `vault/search.ts` +
   `#vault-search`; Spec + Etappen in
   [`docs/spec-vault-search.md`](docs/spec-vault-search.md)):
-  Backend-Suchkern `run_search` läuft single-threaded über
-  `ignore::WalkBuilder` (hidden/gitignore-Filter), Filter nur
-  `FileKind::{Markdown,Text}` + 2-MiB-Cap (`skipped_large`) + NUL-Sniff
-  (8 KiB); `regex`-Literal escaped mit `(?i)`/`\b…\b`. **Scope-Modell**:
-  Vault = Union angepinnter Ordner (rekursiv) + Einzeldateien mit
-  Overlap-Dedup; **explizit gepinnte Einzeldateien umgehen den
-  hidden-/gitignore-Filter bewusst** (Kind-/Größen-/NUL-Filter greifen
-  weiter); Ordner-Scope über Kontextmenü „In diesem Ordner suchen"
-  (`resolve_scope` → `RootNotFound`/`InvalidScope` bei totem/relativem
-  Ordner). Tote Vault-Pins werden STILL verworfen. **Caps**: 50
-  Zeilen-Hits/Datei, 500 gesamt — beim exakten Erreichen läuft der Walk
-  in einem leichten **Probe-Modus** weiter (liest jeden Kandidaten
-  vollständig ein, bricht aber die Match-Prüfung beim ersten Treffer ab)
-  und setzt `truncated` nur bei real weggefallenen Treffern.
-  Spalten/Ranges in **UTF-16-Code-Units** (Monaco-Konvention),
-  Snippet-Fensterung ~240 (Fenster reicht immer bis zum Ende des 1.
-  Matches). **Frontend**: `vault_search_start`→`runId`, Events
-  `search:hits`/`search:done`; Stale-Guard per lokaler Generation +
-  `maxRunId` (Events abgebrochener Läufe verworfen, Events eines noch
-  nicht adoptierten neueren runId gepuffert); Sprung zur Fundstelle
-  korreliert über das state-synchrone CustomEvent `folio-doc-kind-changed`
-  + `getCurrentPath()` (erbt den seq-Stale-Guard), Edit/Split via
-  `FolioEditor.revealMatch(line,colUtf16,lenUtf16)`, View-Mode via
-  Find-Bar nach **Finder-Settle** (`folio-find-state`-Quiesce-Debounce,
-  Ordinal auf `total-1` geklammert). Bei `tab_open`-Öffnen überspringt
-  `consumeNavRestoreSkip(path)` (main.ts navigation:changed) den
-  Entry-Restore einmalig, damit er den Sprung nicht überschreibt.
-  Aa/W-Toggles persistieren in `panel_state.rs`; Scope + Query flüchtig.
-  Automation: `POST /search` (synchron, `{files,stats}`).
+  Backend-Suchkern `run_search`/`run_search_ex` läuft single-threaded über
+  `ignore::WalkBuilder` (hidden/gitignore-Filter), Filter über `FileFilter`
+  (`markdown` = nur `FileKind::Markdown` | `allText` = Markdown+Text |
+  `custom` = Endungsliste mit bewusstem `classify`-Bypass) + 2-MiB-Cap
+  (`skipped_large`) + NUL-Sniff (8 KiB); Literalsuche escaped `(?i)`/`\b…\b`
+  ODER **Regex-Modus** (kein Whole-Word — Rust-`regex` hat keine Lookarounds;
+  Zero-Width-Matches werden übersprungen, `probe_has_match` auch im
+  Probe-Modus). **Scope-Modell** `SearchScopeEx { Vault, Folder, OpenTabs }`
+  (Grenz-Validierung zentral in `build_scope_and_options`/`to_scope_ex`):
+  Vault = Union angepinnter Ordner (rekursiv) + Einzeldateien mit Overlap-Dedup
+  (**explizit gepinnte Einzeldateien umgehen hidden/gitignore bewusst**);
+  Folder über Kontextmenü „In diesem Ordner suchen"
+  (`RootNotFound`/`InvalidScope` bei totem/relativem Ordner, `scope:`-Präfix →
+  Frontend-Fallback); OpenTabs durchsucht die offenen Tab-Puffer
+  (`snapshot_open_tab_docs`: geladene Text-Tabs `InMemory` **auch leer** —
+  geleerter Puffer schattet Disk —, `pending`/opaque via `FileKind` `OnDisk`;
+  virtuelle Frontend-Tabs außen vor). Tote Vault-Pins werden STILL verworfen.
+  **Caps**: 50 Zeilen-Hits/Datei, 500 gesamt (Probe-Modus, `truncated` nur bei
+  realem Wegfall). Spalten/Ranges in **UTF-16-Code-Units**, Snippet ~240.
+  **Frontend = Dialog-first** (`#vault-search-dialog`/`#vsd-*`; der linke Rail
+  zeigt nur Summary-Button `#vault-search-summary` + Ergebnisse): Draft vs.
+  committed strikt getrennt (Submit prüft via `vault_search_validate`, bei
+  OpenTabs zwingend `syncEditorTextToStoreRequired`, committed State ändert
+  sich nur bei gültigem Submit; Abbrechen verwirft nur den Draft, laufender
+  Lauf bleibt). `vault_search_start`→`runId`, Events `search:hits`/`search:done`;
+  Stale-Guard per Generation + `maxRunId`. **Spinner** `vs-running` auf
+  `#vault-search-status` (zentrale `setRunning`, alle Endpfade räumen auf).
+  **Auto-Collapse** als Modus `auto|collapsed|expanded`: >10 Treffergruppen →
+  einmalig alles einklappen; Collapse-/Expand-All im
+  `#vault-search-results-head` setzen den Modus. Sprung korreliert über
+  `folio-doc-kind-changed` + `getCurrentPath()`; OpenTabs-Treffer springen über
+  `findTabIdByPath`+`activateTab` (NICHT `openDocument` → dirty Puffer bleibt),
+  Edit/Split via `FolioEditor.revealMatch`, View-Mode via Find-Bar nach
+  Finder-Settle (Regex: `Jump.term` = konkret gematchter Text). `tab_open`
+  überspringt `consumeNavRestoreSkip(path)` einmalig. Optionen (Aa/W/Regex/
+  fileFilter/customExtensions roh) persistieren in `panel_state.rs`
+  (`search_file_filter` default `allText`); Scope + Query flüchtig.
+  Automation: `POST /search` (synchron, additive Felder `regex`/`fileFilter`/
+  `customExtensions`/`openTabs`; alle Client-Fehler → 400).
 - **main-Badge-Farbe**: `git-branch--main` (und dark) jetzt `var(--rail-accent)` statt `--rail-fg-muted` (Detached bleibt rot, Feature-Branches bernstein) — Unterscheidbarkeit zum Dimming.
 - **Dateityp-Klassifizierung**: zentral in `file_kind.rs`
   (`FileKind::{Markdown, Text, Image, Binary}`, `classify(path)`).

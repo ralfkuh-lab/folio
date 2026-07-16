@@ -33,6 +33,18 @@ export function getActiveTabId(): number | null {
     return active ? active.id : null;
 }
 
+/** Pfad → Tab-ID (Forward-Slash-normalisierter Vergleich, weil das Backend
+ *  Vault-/Suchpfade normalisiert liefert). null = kein passender Dokument-Tab.
+ *  Genutzt vom OpenTabs-Treffer-Sprung der Vault-Suche, um den dirty Puffer
+ *  über tab_activate zu erreichen statt über openDocument neu zu laden. */
+export function findTabIdByPath(path: string): number | null {
+    const norm = (path || '').replace(/\\/g, '/');
+    const hit = current.tabs.find(function (tab) {
+        return !!tab.path && tab.path.replace(/\\/g, '/') === norm;
+    });
+    return hit ? hit.id : null;
+}
+
 export interface VirtualTab {
     slug: string;
     label: () => string;

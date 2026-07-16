@@ -230,6 +230,181 @@ API-first → testbar wie bei den Tabs (T2). **TDD-Zusatz (vereinbart
 
 **Status: Feature komplett — S1–S3 abgeschlossen (2026-07-13).**
 
+### ✅ Etappe S4 — Dialog-first + Regex/Filter/OpenTabs (2026-07-15)
+
+Sechs Erweiterungen aus User-Feedback (Rev. 2 nach Sol-Review). Harte
+Randbedingung: `search.rs::mod tests` bleibt **additiv-only** — `run_search`/
+`SearchOptions` unverändert, alle Erweiterungen über neue Typen/Funktionen, die
+alten Symbole delegieren.
+
+#### ✅ Dialog-first-Flow (statt Inline-Zeile)
+
+Strg+Shift+F / Menü / Summary-Klick / Kontextmenü öffnen `#vault-search-dialog`
+(Muster `.unsaved-dialog__panel`). Der linke Rail zeigt nur noch den
+Summary-Button `#vault-search-summary` (committed Begriff + Options-Glyphen)
+plus die Ergebnisse mit `#vault-search-results-head` (Collapse-/Expand-All).
+**Draft vs. Committed strikt getrennt** [Sol#7]: Der Dialog arbeitet auf den
+DOM-Feldern; committed State (`activeQuery`, Optionen, Scope) ändert sich NUR
+bei gültigem Submit. `openVaultSearchDialog()` ist idempotent (re-populiert +
+fokussiert), Abbrechen verwirft nur den Draft und lässt einen laufenden Lauf
+unangetastet. Submit läuft: Feld-Validierung (`vault_search_validate`) → bei
+OpenTabs zwingend `syncEditorTextToStoreRequired()` → alten Lauf canceln →
+committed State setzen → `set_search_options` persistieren → Dialog zu →
+`runSearch()`. Keyboard-Nav (↑/↓/Enter/Escape) hängt jetzt an der
+fokussierbaren Ergebnisliste, nicht mehr am Inline-Input.
+
+#### ✅ Spinner
+
+Zentrale `setRunning(bool)` an den adoptierten Lauf gekoppelt, Klasse
+`vs-running` auf `#vault-search-status` (CSS analog `.ai-status-running::before`
+inkl. `prefers-reduced-motion`). Alle Endpfade räumen auf (`applyDone`, Fehler,
+Start-Rejection, Scope-Fallback, Cancel-vor-Adoption, neuer Submit,
+`exitSearch`); stale Events ändern den Zustand nicht. [Sol#14]
+
+#### ✅ Auto-Collapse als expliziter Modus (`auto | collapsed | expanded`)
+
+Jeder Lauf startet in `auto` (Reset von Modus + `collapsed`-Set + aktiver
+Selektion). Beim **ersten Überschreiten von 10 Treffergruppen**
+(`AUTO_COLLAPSE_THRESHOLD = 10`, streng `> 10`) wird einmalig alles eingeklappt;
+weitere gestreamte Gruppen kommen dann ebenfalls eingeklappt. Collapse-All →
+Modus `collapsed`, Expand-All → `expanded`; danach folgen auch später
+gestreamte Gruppen der Nutzerwahl. `toggleCollapse`/`rebuildFlat`/`.vs-caret`
+wiederverwendet. [Sol#8]
+
+#### ✅ Dateityp-Filter (`FileFilter`)
+
+`enum FileFilter { Markdown, AllText, Custom(Vec<String>) }`. `Markdown` → nur
+`FileKind::Markdown`; `AllText` → wie S1 (`Markdown | Text`); `Custom` →
+direkter lowercase-`Path::extension()`-Match. `parse_custom_extensions(raw)` ist
+die **einzige** Zerlegungsstelle (UI/Tauri/HTTP laufen durch — Tauri/HTTP
+akzeptieren daher den Roh-Feldtext, nicht vorzerlegte Listen) [Sol-Rev2#5].
+Grammatik: Trennung an **Komma, Semikolon und Whitespace**; pro Token trimmen,
+führenden Punkt entfernen, lowercase, deduplizieren; erlaubte Zeichen
+`[a-z0-9_-]` (sonst `InvalidCustomExtension`). Nur `Path::extension()` (letzte
+Endung, keine Globs/Compound-Suffixe). Leere Liste ist NUR bei aktivem
+`Custom`-Filter ein Fehler (`EmptyCustomExtensions`). Der `classify()`-**Bypass
+ist bewusstes Opt-in** [Sol#9] (Zweck: unbekannte Textendungen wie `.foobar`
+suchbar machen); bekannte Bild-/Binärendungen werden zugelassen (User hat
+explizit gewählt), Schutz sind das 2-MiB-Cap + NUL-Sniff — **Best-Effort-
+Binärerkennung**, in Kauf genommen.
+
+#### ✅ Scope „alle offenen Dateien" (OpenTabs) + Snapshot-Semantik
+
+`snapshot_open_tab_docs(state)` [Sol#4] lockt **nur** `state.tabs`, klont pro Tab
+Pfad + ggf. Text und gibt den Lock vor jedem IO frei. Die per-Tab-Auswahl ist
+in die freie Funktion `buffer_doc_for_tab(&Tab) -> Option<BufferDoc>`
+ausgelagert (der Helper delegiert + ergänzt nur Lock + Pfad-Dedup), damit der
+Kern ohne `AppState` als Rust-Unit-Test läuft [Sol-Impl#4]. **FileKind (nicht
+Textleere) entscheidet** über die Quelle [Sol-Rev2#1]: jeder geladene
+`Markdown`/`Text`-Store → `BufferSource::InMemory(text)` **auch bei leerem
+Puffer** (ein bewusst geleertes dirty Dokument darf nicht auf den alten Disk-
+Inhalt zurückfallen → „geleerter Puffer schattet Disk"); opaque/Image-Stores →
+`OnDisk` (via `FileKind`); `pending_path`-Tabs → `OnDisk` (lazy von Platte);
+Dedup über normalisierte Pfade. **Virtuelle Frontend-Tabs** (Settings, Theme-
+Editor, Diff-Review) existieren im Backend-TabManager nicht → automatisch außen
+vor. Gemeinsames Content-Gate `inspect_content` (2-MiB-Cap + NUL-Sniff) für
+Disk **und** Puffer [Sol#5]; der Disk-Pfad behält die Metadaten-Größenprüfung
+**vor** `fs::read`. Zwischen Snapshot und Scan verschwundene Dateien werden
+still übersprungen (zählen nicht in `filesScanned`); `skippedLarge` zählt auch
+gecappte Puffer. **Treffer-Sprung** [Sol#2]: OpenTabs-Treffer öffnen NICHT über
+`openDocument` (Save-Prompt + Reload würden den dirty Puffer zerstören), sondern
+mappen Pfad → Tab-ID (`findTabIdByPath`) + `activateTab`; beim bereits aktiven
+Tab direkt `performJump`. Pending Tabs lädt `tab_activate` kanonisch lazy.
+Liefert `findTabIdByPath` **null** (Tab seit dem Snapshot geschlossen / Tabliste
+kurz nicht synchron), fällt der Zweig **NICHT** in `tab_open`/`openDocument`
+zurück (das würde ein Ergebnis aus einem verworfenen dirty Puffer über den
+Disk-Inhalt öffnen bzw. einen Save-Prompt auslösen), sondern räumt Sprung/
+Nav-Skip auf und zeigt `search.status.hitStale` [Sol-Impl#1]. Andere Scopes
+behalten den `openDocument`-Pfad.
+
+#### ✅ Regex-Modus (ohne Whole-Word)
+
+Regex-Toggle an → `compile_regex` ohne `regex::escape`. **Regex + Whole-Word
+schließen sich aus** (`RegexWholeWordConflict`, UI disabled die Wort-Checkbox,
+Backend lehnt die Kombination ab statt sie still umzudeuten). Grund: Rust-
+`regex` hat **keine Lookarounds**; ein `\b`-Wrap liefert bei Satzzeichen-/
+Anchor-/Alternations-Patterns überraschende Semantik. **Zero-Width-Matches**
+(z. B. `a*`) werden beim Scan übersprungen (kein Hit mit `lenUtf16 == 0`) —
+**auch im Probe-Modus**: `probe_has_match` prüft `find_iter().any(|m| m.start()
+< m.end())` statt `is_match`, sonst setzt ein Zero-Width-only-Kandidat nach dem
+Cap fälschlich `truncated=true` [Sol-Rev2#2]. `MIN_QUERY_LEN = 2` gilt auch für
+Patterns. Ungültiges Pattern → `InvalidPattern` (Key `errors.search.invalidQuery`).
+**View-Mode-Jump** [Sol#3]: `Jump.term` trägt bei Regex-Läufen den konkret
+gematchten Text (aus Snippet + erster Range) und wird als Literal (ohne
+Whole-Word) gesucht; Edit/Split nutzen weiter die Backend-Koordinaten
+(`revealMatch`).
+
+#### ✅ Scope-Modell `SearchScopeEx` + Grenzvalidierung
+
+Getaggter Scope statt Flag-Kombination [Sol#6]: intern
+`SearchScopeEx { Vault, Folder(String), OpenTabs }`. Flache Tauri-/HTTP-Args
+(`scope: Option<String>`, `openTabs: bool`) werden in **genau einer** Funktion
+(`build_scope_and_options`, geteilt zwischen Command und HTTP-Handler) validiert
+und konvertiert (`to_scope_ex`). Client-Fehler: `openTabs=true` **und**
+`scope!=null` → `ScopeConflict`; unbekannter `fileFilter` → `UnknownFileFilter`;
+leere Custom-Liste bei `fileFilter="custom"` → `EmptyCustomExtensions`;
+Regex+WholeWord → `RegexWholeWordConflict`; ungültiges Pattern →
+`InvalidPattern`. Toter/relativer Ordner-Scope bleibt `RootNotFound`/
+`InvalidScope` (Command-Pfad mit `scope:`-Präfix für den Frontend-Fallback).
+
+#### ✅ Schmale öffentliche API [Sol#11]
+
+Statt vier `_ex`-Helfern: `ExtendedSearchOptions { base: SearchOptions, regex:
+bool, filter: FileFilter }`. `compile_regex`/Query-Validierung bleiben privat;
+`run_search` delegiert an die gemeinsame private Candidate-/Content-Pipeline.
+Öffentlich neu: `run_search_ex`, `run_search_buffers`, `validate_query_ex`
+(roots-frei; Root-Validierung separat), `to_scope_ex`,
+`parse_custom_extensions`, `FileFilter::from_raw`, Typen `BufferSource`/
+`BufferDoc`. Neue Commands: `vault_search_start` additiv erweitert (`open_tabs`,
+`regex`, `file_filter`, `custom_extensions` alle optional → altes Verhalten bei
+Weglassen) und `vault_search_validate` (Dialog-Vorabprüfung vor Submit).
+
+#### ✅ Neue Fehler-Keys (i18n, alle 9 Kataloge)
+
+`errors.search.regexWholeWord`, `errors.search.invalidCustomExtension`
+(`{detail}`), `errors.search.emptyCustomExtensions`,
+`errors.search.unknownFileFilter` (`{detail}`), `errors.search.scopeConflict`.
+Wiederverwendet: `errors.search.invalidQuery` (InvalidPattern),
+`errors.search.queryTooShort`, `…rootNotFound`, `…invalidScope`. UI-Keys neu im
+Namespace `search.dialog.*` (Titel/Query/Checkboxen/fileType/customExt/scope/
+submit), `search.summary.*`, `search.results.{collapseAll,expandAll}.tooltip`,
+`search.status.noOpenFiles` (OpenTabs-Leerfall), `search.status.hitStale`
+(OpenTabs-Treffer, dessen Tab seit dem Snapshot geschlossen wurde) [Sol-Impl#1].
+
+#### ✅ Persistenz (`panel_state.rs`)
+
+Neue Felder: `search_regex: bool` (`#[serde(default)]`), `search_file_filter:
+String` mit `#[serde(default = "default_search_file_filter")]` → `"allText"`
+[Sol#12], `search_custom_extensions: String` (**roher** Feldtext, roh
+persistiert, damit der Dialog das Feld 1:1 vorbefüllen kann). `set_search_options`
+prüft beim Setzen **denselben Vertrag wie Suchstart/Submit** über
+`FileFilter::from_raw(&file_filter, &custom_extensions)` [Sol-Impl#2]: Custom-
+Rohtext wird nur bei aktivem `custom`-Filter geparst/abgelehnt (verbotene
+Zeichen bzw. leere aktive Liste → Err); unbekannter Filterwert → Err; inaktiver
+Custom-Rohtext bleibt unverändert roh gespeichert. Unbekannter/leerer
+**gespeicherter** Filterwert fällt beim Lesen (`normalized_file_filter` in
+`search_options_get`) auf `allText` zurück. **Scope bleibt flüchtig**
+(Decision 8). Tests: Laden alter JSON ohne die neuen Felder, Roundtrip,
+unbekannter gespeicherter Filterwert (roh geladen) + `normalized_file_filter`-
+Fallback, `FileFilter::from_raw`-Persistenzvertrag.
+
+#### ✅ Automation / E2E
+
+`POST /search` additiv (`regex`, `fileFilter`, `customExtensions`, `openTabs`);
+`SearchError` → HTTP 400 (inkl. `InvalidPattern`, früher 500). E2E 46 (API)
+deckt Regex (Match/invalid/+WholeWord), FileFilter-Varianten (`.foobar` außer
+TEXT_EXT, NUL-Skip), OpenTabs mit dirtem/geleertem Puffer + `openTabs+scope`-
+Konflikt ab; **Pending-/Snapshot-Semantik** (`buffer_doc_for_tab`) sowie die
+**Buffer-Global-Cap-/Probe-Parität** (`run_search_buffers`: echter Zusatztreffer
+nach Cap → `truncated`; Zero-Width-only nach Cap → nicht) sind **Rust-Unit-Tests**
+(Harness hat keinen Restart-Pfad) [Sol#10, Sol-Impl#4]. jsdom deckt zusätzlich
+die Spinner-Endpfade (Start-Rejection, Cancel-vor-Adoption, Escape/Exit) und den
+OpenTabs-Sprung bei geschlossenem Tab (kein Nachladen) ab. E2E 47 (UI, Dialog-first) deckt Dialog öffnen/
+füllen/submitten, Cancel/Reopen (Draft verworfen), Folder-Draft via
+Kontextmenü, Regex-View-Jump (Term = gematchter Text), Auto-Collapse (>10) +
+Collapse-/Expand-All, Spinner (`vs-running` gesetzt→entfernt) und dirty-Tab-
+Sprung ohne Save-Prompt ab. Neuer Screenshot `47_search_dialog`.
+
 ## Risiken / bewusste Entscheidungen
 
 - **Kein Index in V1** — jede Suche ist ein frischer Walk. Für

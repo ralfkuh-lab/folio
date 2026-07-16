@@ -444,6 +444,7 @@ pub fn builder(settings: crate::settings::SettingsService) -> tauri::Builder<tau
             commands::vault_cmd::context,
             commands::search_cmd::vault_search_start,
             commands::search_cmd::vault_search_cancel,
+            commands::search_cmd::vault_search_validate,
             commands::nav::navigate,
             commands::nav::go_back,
             commands::nav::go_forward,

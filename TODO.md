@@ -2,6 +2,25 @@
 
 ## Mittlere Priorität
 
+- **Vault-Suche S4 — ausstehende Linux-Verifikation** (Umsetzung 2026-07-15
+  komplett, beide Reviews OK; auf Windows nicht ausführbar):
+  - Voller `cargo test`-Lauf (inkl. der neuen search-/panel_state-/
+    Snapshot-Unit-Tests) auf der Linux-Box — das Lib-Test-Binary startet
+    unter Windows nicht (s. u.).
+  - `bash scripts/run-e2e.sh` Voll-Lauf: E2E 46 (neue API-Fälle) + E2E 47
+    (komplett neu, Dialog-first) sind ungelaufen; **Baseline-Inventur**
+    nötig, weil die umgebaute Vault-Suchzeile (Summary-Button statt
+    Inline-Input) in allen ~16 Baselines mit sichtbarem linkem Rail
+    sichtbar ist — betroffene Baselines einzeln prüfen/reseeden, neue
+    Baseline `47_search_dialog`, danach zwei grüne Visual-Läufe in Folge.
+
+- **Windows-Dev-Umgebung: `cargo test --lib` startet nicht**
+  (`STATUS_ENTRYPOINT_NOT_FOUND` 0xc0000139 beim Laden des
+  Test-Binaries, reproduziert auch auf unverändertem HEAD, 2026-07-15).
+  Integrationstests (`tests/`) und `--test i18n_ref` laden dagegen
+  normal. Ursache unklar (vermutlich DLL-/Toolchain-Thema); bis zum Fix
+  laufen Lib-Unit-Tests nur auf Linux.
+
 - **E2E `30_tabs_ui` flaky — Fix 2026-07-09, Beobachtung offen**: dreimal
   im Voll-Lauf gefailt („Undo-Stack hat den Tab-Wechsel nicht ueberlebt",
   2026-07-06/08/09), nie im Einzellauf. Race-Analyse (codex+agy+Claude):
@@ -102,13 +121,13 @@
   - Generierte typisierte Key-Surface.
   - HTML-Parser statt Heuristik im Markup-Gate.
 
-- **Vault-Volltextsuche — Folgepunkte** (Kernfeature S1–S3 komplett
-  2026-07-12, Spec [`docs/spec-vault-search.md`](docs/spec-vault-search.md)):
+- **Vault-Volltextsuche — Folgepunkte** (Kernfeature S1–S4 komplett;
+  S1–S3 2026-07-12, S4 Dialog-first + Regex/Filter/OpenTabs 2026-07-15,
+  Spec [`docs/spec-vault-search.md`](docs/spec-vault-search.md)):
   paralleler Walk (`WalkBuilder::build_parallel`), falls große Pins
-  spürbar werden; Regex-Toggle im Suchfeld (Feature-Idee #10 — Backend
-  kompiliert ohnehin regex, wäre ein Einzeiler); Opt-in-Toggle für
-  hidden/gitignorierte Dateien; optionaler persistenter Index (tantivy)
-  nur bei echtem Bedarf (bewusst verworfen für V1).
+  spürbar werden; Opt-in-Toggle für hidden/gitignorierte Dateien;
+  optionaler persistenter Index (tantivy) nur bei echtem Bedarf (bewusst
+  verworfen für V1). (Regex-Toggle Feature-Idee #10 → mit S4 erledigt.)
 
 - **KI-Aktionen — Folgepunkte** (Kernfeature 2026-07-10 komplett, Spec
   [`docs/spec-ki-actions.md`](docs/spec-ki-actions.md)): Kontextmenü

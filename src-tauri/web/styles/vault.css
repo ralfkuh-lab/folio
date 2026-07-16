@@ -253,49 +253,55 @@ html.theme-dark .vault-region .git-branch--detached {
   border-bottom: 1px solid var(--border);
   background: var(--rail-bg);
 }
-.vault-search-row {
+/* Summary-Button (S4): öffnet den Such-Dialog, zeigt Begriff + Options-Glyphen. */
+.vault-search-summary {
   display: flex;
   align-items: center;
-  gap: 4px;
-}
-.vault-search-input {
-  flex: 1 1 auto;
-  min-width: 0;
+  gap: 6px;
+  width: 100%;
   box-sizing: border-box;
   height: 26px;
   padding: 2px 8px;
   border: 1px solid var(--border);
   border-radius: 4px;
   background: var(--bg);
-  color: var(--fg);
+  color: var(--rail-fg-muted);
   font-size: 12px;
   font-family: inherit;
+  text-align: left;
+  cursor: pointer;
 }
-.vault-search-input:focus {
+.vault-search-summary:hover { border-color: var(--rail-accent); }
+.vault-search-summary:focus-visible {
   outline: none;
   border-color: var(--rail-accent);
 }
-.vault-search-input::placeholder { color: var(--rail-fg-muted); }
-.vault-search-opt {
+.vault-search-summary.has-query { color: var(--rail-fg); }
+.vs-summary-icon {
   flex: 0 0 auto;
-  box-sizing: border-box;
-  min-width: 24px;
-  height: 26px;
-  padding: 0 5px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: transparent;
-  color: var(--rail-fg-muted);
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
+  font-size: 12px;
+  opacity: 0.8;
   line-height: 1;
 }
-.vault-search-opt:hover { background: var(--rail-hover-bg); }
-.vault-search-opt.active {
-  color: #fff;
+.vs-summary-text {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vs-summary-opts {
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: 3px;
+}
+.vs-summary-opt {
+  padding: 0 3px;
+  border-radius: 3px;
   background: var(--rail-accent);
-  border-color: var(--rail-accent);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 14px;
 }
 
 /* Ordner-Scope-Chip (S3) */
@@ -345,13 +351,66 @@ html.theme-dark .vault-region .git-branch--detached {
 .vault-search-results { display: none; }
 .vault-region.vault-searching .vault-search-results { display: block; }
 
+/* Ergebnis-Header mit Collapse-/Expand-All-Buttons (S4). */
+.vault-search-results-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.vs-head-btn {
+  box-sizing: border-box;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--rail-fg-muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.vs-head-btn:hover {
+  background: var(--rail-hover-bg);
+  color: var(--rail-fg);
+}
+
 .vault-search-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 5px 10px;
   color: var(--rail-fg-muted);
   font-size: 11px;
   border-bottom: 1px solid var(--border);
 }
+/* [Sol#14] Spinner nur im Lauf-Zustand (.vs-running), Muster wie
+   .ai-status-running::before (translate-dialog.css). */
+.vault-search-status.vs-running::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  border: 2px solid transparent;
+  border-top-color: var(--rail-accent);
+  border-radius: 50%;
+  animation: vs-status-spin 0.9s linear infinite;
+}
+@keyframes vs-status-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Muss den .vs-running-Selektor spiegeln (Media-Queries erhöhen die
+     Spezifität nicht). */
+  .vault-search-status.vs-running::before {
+    animation: none;
+  }
+}
 .vault-search-list { padding: 2px 0 24px 0; }
+.vault-search-list:focus-visible { outline: none; }
 
 .vs-group + .vs-group { margin-top: 1px; }
 .vs-group-head {
@@ -431,4 +490,97 @@ html.theme-dark .vault-region .git-branch--detached {
 html.theme-dark .vs-snippet mark {
   background: #b58900;
   color: #fff;
+}
+
+/* ============================================================
+   Vault-Suche — Dialog (S4). Baut auf .unsaved-dialog__panel auf
+   (dialogs.css); hier nur die Feld-/Gruppen-Layouts.
+   ============================================================ */
+.vault-search-dialog__panel {
+  width: min(420px, 92vw);
+  text-align: left;
+}
+.vsd-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.vsd-field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.vsd-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 30px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 13px;
+  font-family: inherit;
+}
+.vsd-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.vsd-input:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.vsd-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-bottom: 12px;
+}
+.vsd-check,
+.vsd-radio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--fg);
+  cursor: pointer;
+}
+.vsd-check input:disabled + span {
+  opacity: 0.55;
+}
+.vsd-group {
+  margin: 0 0 12px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.vsd-legend {
+  padding: 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--rail-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.vsd-group .vsd-radio + .vsd-radio,
+.vsd-group .vsd-radio + .vsd-input {
+  margin-top: 6px;
+}
+.vsd-custom-ext {
+  margin-top: 8px;
+  height: 28px;
+  font-size: 12px;
+}
+.vsd-error {
+  margin-bottom: 12px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: var(--danger-bg, rgba(220, 53, 69, 0.12));
+  color: var(--danger-fg, #c0392b);
+  font-size: 12px;
+}
+html.theme-dark .vsd-error {
+  background: rgba(220, 53, 69, 0.2);
+  color: #ff8b8b;
 }
