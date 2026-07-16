@@ -29,6 +29,7 @@ export type SettingsLanguage = string;
 export type DefaultViewMode = 'view' | 'edit' | 'current';
 export type ExportDirMode = 'document' | 'last';
 export type OpenFileTarget = 'newtab' | 'replace';
+export type SearchPathDisplay = 'relative' | 'absolute';
 export type LogLevel = 'off' | 'error' | 'warn' | 'info' | 'debug';
 
 export type SettingsData = {
@@ -42,6 +43,7 @@ export type SettingsData = {
     documentAutoReload: boolean;
     exportDirMode: ExportDirMode;
     openFileTarget: OpenFileTarget;
+    searchPathDisplay: SearchPathDisplay;
     logLevel: LogLevel;
 };
 
@@ -55,6 +57,10 @@ function isLogLevel(v: string): v is LogLevel {
 
 function isOpenFileTarget(v: string): v is OpenFileTarget {
     return v === 'newtab' || v === 'replace';
+}
+
+function isSearchPathDisplay(v: string): v is SearchPathDisplay {
+    return v === 'relative' || v === 'absolute';
 }
 
 function isExportDirMode(v: string): v is ExportDirMode {
@@ -127,6 +133,7 @@ function applySettingsToForm(data: SettingsData): void {
     var docReload = $('settings-document-auto-reload') as HTMLInputElement | null;
     var exportDirMode = $('settings-export-dir-mode') as HTMLSelectElement | null;
     var openFileTarget = $('settings-open-file-target') as HTMLSelectElement | null;
+    var searchPathDisplay = $('settings-search-path-display') as HTMLSelectElement | null;
     var logLevel = $('settings-log-level') as HTMLSelectElement | null;
     var langHint = $('settings-language-hint');
 
@@ -141,6 +148,7 @@ function applySettingsToForm(data: SettingsData): void {
     if (docReload) docReload.checked = !!data.documentAutoReload;
     if (exportDirMode) exportDirMode.value = data.exportDirMode || 'document';
     if (openFileTarget) openFileTarget.value = data.openFileTarget || 'newtab';
+    if (searchPathDisplay) searchPathDisplay.value = data.searchPathDisplay || 'relative';
     if (logLevel) logLevel.value = data.logLevel || 'info';
     syncSettingsThemeState(data);
 
@@ -370,6 +378,14 @@ function bindInputs(): void {
             var v = openFileTarget.value;
             if (!isOpenFileTarget(v)) return;
             patchSettings({ openFileTarget: v });
+        });
+    }
+    var searchPathDisplay = $('settings-search-path-display') as HTMLSelectElement | null;
+    if (searchPathDisplay) {
+        searchPathDisplay.addEventListener('change', function () {
+            var v = searchPathDisplay.value;
+            if (!isSearchPathDisplay(v)) return;
+            patchSettings({ searchPathDisplay: v });
         });
     }
     var logLevel = $('settings-log-level') as HTMLSelectElement | null;

@@ -44,6 +44,7 @@ type Deps = {
 type FileFilter = 'markdown' | 'allText' | 'custom';
 type ScopeMode = 'vault' | 'folder' | 'openTabs';
 type SortMode = 'none' | 'name' | 'path';
+type PathDisplay = 'relative' | 'absolute';
 
 type Range = [number, number];
 interface Hit {
@@ -112,6 +113,16 @@ let customExtensions = '';
 // die Dialog-Optionen leben diese Toggles im Ergebnis-Header und wirken sofort.
 let showPaths = false;
 let searchSort: SortMode = 'none';
+// [S7] Pfad-Darstellung der Pfadzeile: `relative` (Pin-/Ordnername + Rest) oder
+// `absolute` (voller Verzeichnispfad). Anders als showPaths/searchSort ist das
+// ein echtes App-Setting (`searchPathDisplay` in settings.json), NICHT Teil der
+// panel_state-Suchoptionen — beim Boot aus settings_get gelesen, live über
+// `settings:changed` aktualisiert. Unbekannt → `relative`.
+let pathDisplay: PathDisplay = 'relative';
+// [Sol-Rev S7#5] Boot-Race-Guard: sobald ein Live-`settings:changed` die
+// Pfad-Darstellung gesetzt hat, darf eine (evtl. langsamere) `settings_get`-
+// Boot-Antwort sie nicht mehr still zurücksetzen.
+let pathDisplaySettingsEventSeen = false;
 // Scope: folder (scopePath gesetzt) | openTabs (openTabs=true) | vault (beides leer).
 let scopePath: string | null = null;
 let openTabs = false;
@@ -163,6 +174,10 @@ function normalizeFilter(v: unknown): FileFilter {
 
 function normalizeSort(v: unknown): SortMode {
     return v === 'name' || v === 'path' ? v : 'none';
+}
+
+function normalizePathDisplay(v: unknown): PathDisplay {
+    return v === 'absolute' ? 'absolute' : 'relative';
 }
 
 // Locale-aware, numerische Sortierung (Monaco-nahe „natürliche" Ordnung, z. B.
@@ -221,6 +236,23 @@ function markedSnippet(snippet: string, ranges: Range[]): string {
 
 // ----- Pfadanzeige (S5-Punkt 3) ---------------------------------------------
 
+/** [Sol-Rev S7#6] Trailing-Separatoren entfernen, aber laufwerks-/dateisystem-
+ *  wurzel-sicher: die Unix-Wurzel `/` bleibt `/` (nicht `""`) — sonst verliert
+ *  eine direkt darunter liegende Datei ihre Pfadzeile (S7-Garantie „nie leer"). */
+function trimTrailingSlash(p: string): string {
+    const t = p.replace(/\/+$/, '');
+    return t === '' ? '/' : t;
+}
+
+/** Ob `path` unter `root` liegt (Gleichheit oder echtes Präfix an Separator-
+ *  Grenze). Root-sicher: eine bereits auf `/` endende Wurzel (Unix-Root `/`)
+ *  bekommt kein zweites `/` angehängt. */
+function isUnderRoot(path: string, root: string): boolean {
+    if (path === root) return true;
+    const prefix = root.endsWith('/') ? root : root + '/';
+    return path.startsWith(prefix);
+}
+
 /** Die angepinnten Top-Level-Wurzeln aus dem Vault-Baum (forward-slash-
  *  normalisiert). Nur die direkten `li.node`-Kinder der Pinned-Section — die
  *  Kandidaten für die Präfix-Relativierung im Vault-Scope. */
@@ -233,7 +265,7 @@ function pinRoots(): string[] {
     const nodes = ul.querySelectorAll(':scope > li.node[data-path]');
     nodes.forEach((n) => {
         const p = n.getAttribute('data-path');
-        if (p) roots.push(normalizePath(p).replace(/\/+$/, ''));
+        if (p) roots.push(trimTrailingSlash(normalizePath(p)));
     });
     return roots;
 }
@@ -244,27 +276,60 @@ function pinRoots(): string[] {
 function scopeRootFor(path: string): string | null {
     if (openTabs) return null;
     if (scopePath) {
-        const r = scopePath.replace(/\/+$/, '');
-        return path === r || path.startsWith(r + '/') ? r : null;
+        const r = trimTrailingSlash(normalizePath(scopePath));
+        return isUnderRoot(path, r) ? r : null;
     }
     let best: string | null = null;
     for (const root of pinRoots()) {
-        if (path === root || path.startsWith(root + '/')) {
+        if (isUnderRoot(path, root)) {
             if (!best || root.length > best.length) best = root;
         }
     }
     return best;
 }
 
-/** Verzeichnis-Anteil (ohne Dateiname), relativ zur passenden Wurzel bzw. voll.
- *  Leer, wenn die Datei direkt in der Wurzel liegt → kein Pfad-Span. */
-function pathTail(path: string): string {
+/** Basisname (letztes Segment) einer Wurzel — der angezeigte Pin-/Ordnername.
+ *  Die Unix-Wurzel `/` wird als `/` angezeigt (nie leer). */
+function rootBaseName(root: string): string {
+    const r = trimTrailingSlash(root);
+    if (r === '/') return '/';
+    const idx = r.lastIndexOf('/');
+    return idx >= 0 ? r.slice(idx + 1) : r;
+}
+
+/** Reiner Verzeichnisanteil (ohne Dateiname) eines Pfads. Eine Datei direkt
+ *  unter der Unix-Wurzel hat den Verzeichnisanteil `/` (nicht leer). */
+function dirOf(p: string): string {
+    const idx = p.lastIndexOf('/');
+    if (idx < 0) return '';
+    if (idx === 0) return '/';
+    return p.slice(0, idx);
+}
+
+/** Fügt Wurzel-Anzeigenamen und relativen Rest zusammen, ohne Doppel-Slash
+ *  (`/` + `sub` → `/sub`, nicht `//sub`). */
+function joinDisplay(a: string, b: string): string {
+    return a.endsWith('/') ? a + b : a + '/' + b;
+}
+
+/** [S7] Die angezeigte Pfadzeile (Verzeichnisanteil — der Dateiname steht
+ *  separat in Zeile 1, deshalb nie mitgeführt). Diese Zeichenkette ist zugleich
+ *  der Sortierschlüssel für `sort=path` (und Sekundärschlüssel bei `sort=name`).
+ *
+ *  - `absolute`: voller normalisierter Verzeichnispfad.
+ *  - `relative` mit Root-Match: Wurzel-Basisname + relativer Rest-Verzeichnis-
+ *    pfad; liegt die Datei direkt in der Wurzel, nur der Basisname (nie leer).
+ *  - `relative` ohne Root-Match (OpenTabs / kein passender Pin): voller
+ *    Verzeichnispfad (wie `absolute`). */
+function displayPath(path: string): string {
     const p = normalizePath(path);
+    if (pathDisplay === 'absolute') return dirOf(p);
     const root = scopeRootFor(p);
-    let rel = p;
-    if (root) rel = p.slice(root.length).replace(/^\/+/, '');
-    const idx = rel.lastIndexOf('/');
-    return idx >= 0 ? rel.slice(0, idx) : '';
+    if (!root) return dirOf(p);
+    const name = rootBaseName(root);
+    const rel = p.slice(root.length).replace(/^\/+/, '');
+    const relDir = dirOf(rel);
+    return relDir ? joinDisplay(name, relDir) : name;
 }
 
 function setStatus(msg: string): void {
@@ -612,12 +677,24 @@ function sortFiles(): void {
         files.sort((a, b) => (a.arrival ?? 0) - (b.arrival ?? 0));
         return;
     }
+    // [S7] Schlüssel/Sekundärschlüssel = angezeigte Pfad-Zeichenkette (nicht der
+    // absolute Pfad). Memoisiert, damit displayPath (DOM-Query über pinRoots)
+    // pro Datei nur einmal je Sortierdurchlauf läuft.
+    const dispCache = new Map<string, string>();
+    const disp = (p: string): string => {
+        let d = dispCache.get(p);
+        if (d === undefined) {
+            d = displayPath(p);
+            dispCache.set(p, d);
+        }
+        return d;
+    };
     files.sort((a, b) => {
         if (searchSort === 'name') {
             const c = nameCompare(a.fileName, b.fileName);
-            return c !== 0 ? c : nameCompare(a.path, b.path);
+            return c !== 0 ? c : nameCompare(disp(a.path), disp(b.path));
         }
-        return nameCompare(a.path, b.path);
+        return nameCompare(disp(a.path), disp(b.path));
     });
 }
 
@@ -692,10 +769,38 @@ function renderPathsToggle(): void {
     pathsBtn.setAttribute('aria-pressed', showPaths ? 'true' : 'false');
 }
 
+/** [S7] Setzt die Pfad-Darstellung (App-Setting) und rendert bei Änderung neu:
+ *  Anzeige UND Sortierschlüssel hängen davon ab. Der aktive Treffer bleibt über
+ *  den (Pfad, Hit-Index)-Anker erhalten. */
+function setPathDisplay(next: PathDisplay): void {
+    if (next === pathDisplay) return;
+    pathDisplay = next;
+    if (!files.length) return;
+    const anchor = activeAnchor();
+    sortFiles();
+    renderResults();
+    restoreActive(anchor);
+}
+
+/** [S7] Live-Reaktion auf `settings:changed`: nur `searchPathDisplay` ist hier
+ *  relevant. Andere Settings-Felder ignorieren. */
+function onSettingsChanged(payload: any): void {
+    if (!payload || !payload.settings || typeof payload.settings !== 'object') return;
+    pathDisplaySettingsEventSeen = true;
+    setPathDisplay(normalizePathDisplay(payload.settings.searchPathDisplay));
+}
+
 // ----- Rendering ------------------------------------------------------------
 
 function renderResults(): void {
     if (!listEl) return;
+    // [S7] Emphasis-Swap ohne DOM-Umbau: die Modifier-Klasse auf der Liste
+    // steuert per CSS Reihenfolge (order) + Farb-Betonung von Datei-/Pfadzeile.
+    // Nur wirksam, wenn die Pfadzeile überhaupt sichtbar ist (`showPaths`):
+    // ohne sie gäbe es keine `.vs-fpath`, und der Swap würde den einzigen
+    // sichtbaren Dateinamen fälschlich dimmen [Sol-Rev S7#4]. Die Sortierung
+    // selbst bleibt davon unabhängig (läuft weiter über `displayPath`).
+    listEl.classList.toggle('vs-sort-path', searchSort === 'path' && showPaths);
     // DOM construction + textContent for user/t() values (i18n Spec).
     // Snippet HTML is the sole exception: controlled <mark> around escapeHtml.
     listEl.replaceChildren();
@@ -717,25 +822,33 @@ function renderResults(): void {
         caret.className = 'vs-caret' + (isCollapsed ? ' collapsed' : '');
         caret.textContent = '▾';
 
+        // [S7] Zweizeiliger Kopf: Dateiname (Zeile 1) + Pfad (Zeile 2). Die
+        // Reihenfolge/Betonung tauscht CSS (`vs-sort-path`); der Zähler-Badge
+        // ist Geschwister des Textblocks und dadurch über beide Zeilen zentriert.
+        const main = document.createElement('span');
+        main.className = 'vs-main';
+
         const fname = document.createElement('span');
         fname.className = 'vs-fname';
         fname.textContent = f.fileName;
+        main.appendChild(fname);
+
+        if (showPaths) {
+            const disp = displayPath(f.path);
+            if (disp) {
+                const fpath = document.createElement('span');
+                fpath.className = 'vs-fpath';
+                fpath.textContent = disp;
+                main.appendChild(fpath);
+            }
+        }
 
         const countEl = document.createElement('span');
         countEl.className = 'vs-count';
         countEl.textContent = String(count);
 
         head.appendChild(caret);
-        head.appendChild(fname);
-        if (showPaths) {
-            const dir = pathTail(f.path);
-            if (dir) {
-                const fpath = document.createElement('span');
-                fpath.className = 'vs-fpath';
-                fpath.textContent = dir;
-                head.appendChild(fpath);
-            }
-        }
+        head.appendChild(main);
         head.appendChild(countEl);
         group.appendChild(head);
 
@@ -1478,6 +1591,24 @@ export function initVaultSearch(d: Deps): () => void {
         }
     });
 
+    // [S7] Pfad-Darstellung ist ein App-Setting (nicht Teil der panel_state-
+    // Suchoptionen): Startwert aus settings_get, Live-Update via settings:changed.
+    safeInvoke<{ searchPathDisplay?: string }>(
+        'settings_get',
+        undefined,
+        'settings_get',
+        'debug',
+    ).then((data) => {
+        // [Sol-Rev S7#5] Ein zwischenzeitliches Live-`settings:changed` gewinnt:
+        // in dem Fall die Boot-Antwort verwerfen (sonst könnte sie einen bereits
+        // korrekt angewandten neueren Wert still überschreiben). Sonst über
+        // `setPathDisplay()` anwenden (Re-Sort/Re-Render statt roher Zuweisung).
+        if (pathDisplaySettingsEventSeen) return;
+        if (data && typeof data === 'object') {
+            setPathDisplay(normalizePathDisplay(data.searchPathDisplay));
+        }
+    });
+
     const summaryClick = (): void => openVaultSearchDialog();
     const collapseAllBtn = $('vault-search-collapse-all');
     const expandAllBtn = $('vault-search-expand-all');
@@ -1506,6 +1637,9 @@ export function initVaultSearch(d: Deps): () => void {
     if (ev && typeof ev.listen === 'function') {
         unlistenPromises.push(ev.listen('search:hits', (e: any) => onHits(e && e.payload)));
         unlistenPromises.push(ev.listen('search:done', (e: any) => onDone(e && e.payload)));
+        unlistenPromises.push(
+            ev.listen('settings:changed', (e: any) => onSettingsChanged(e && e.payload)),
+        );
     }
 
     const localSummary = summaryBtn;

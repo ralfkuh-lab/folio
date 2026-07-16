@@ -9,15 +9,23 @@
 //! Größen-/NUL-Filter, `regex`-Matching, UTF-16-Spalten, Snippet-Fensterung,
 //! Per-File-/Global-Caps mit Probe-Modus, kooperativer Cancel).
 //!
+//! S6: [`run_search_parallel`] ist die parallele Variante von
+//! [`run_search_ex`] (identischer Vertrag). Sie fächert die Verzeichnis-
+//! Phase über `WalkBuilder::build_parallel()` auf; die Worker senden fertige
+//! Ergebnisse über `mpsc` an den aufrufenden Thread, der als EINZIGER
+//! `on_file` ruft und Caps/Stats exakt führt (Completion-Order, nicht
+//! deterministisch). Die sequenzielle Pipeline bleibt unverändert.
+//!
 //! Grundlage: [`docs/spec-vault-search.md`], Architektur-Entscheidungen 1–5.
 
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::mpsc;
 use std::time::Instant;
 
-use ignore::WalkBuilder;
+use ignore::{WalkBuilder, WalkState};
 use regex::Regex;
 use serde::Serialize;
 
@@ -394,14 +402,7 @@ pub fn resolve_scope(pinned: &[PinnedItem], scope: &SearchScope) -> SearchRoots 
     }
 
     // Overlap-Dedup Ordner: verschachtelte + doppelte Ordner entfernen.
-    let mut kept_dirs: Vec<PathBuf> = Vec::new();
-    for d in &dirs {
-        let covered_by_other = dirs.iter().any(|other| other != d && d.starts_with(other));
-        if covered_by_other || kept_dirs.iter().any(|k| k == d) {
-            continue;
-        }
-        kept_dirs.push(d.clone());
-    }
+    let kept_dirs = collapse_overlapping_dirs(&dirs);
 
     // Dateien verwerfen, die schon von einem Ordner abgedeckt sind (+ Duplikate).
     let mut kept_files: Vec<PathBuf> = Vec::new();
@@ -417,6 +418,25 @@ pub fn resolve_scope(pinned: &[PinnedItem], scope: &SearchScope) -> SearchRoots 
         dirs: kept_dirs,
         files: kept_files,
     }
+}
+
+/// Klappt überlappende Verzeichnis-Roots ein: ein Kind-Root, der von einem
+/// anderen (Eltern-)Root abgedeckt ist, entfällt; exakte Duplikate ebenfalls.
+/// Nutzt `PathBuf::starts_with` (komponentenweise, also separator-grenzen-sicher —
+/// `/a/b` deckt `/a/bc` NICHT ab). Ergebnis: jede Datei liegt unter höchstens
+/// einem Root, sodass ein rekursiver Walk pro Root jede Datei genau einmal
+/// besucht. Gemeinsame Grundlage von [`resolve_scope`] und
+/// [`walk_dirs_parallel`].
+fn collapse_overlapping_dirs(dirs: &[PathBuf]) -> Vec<PathBuf> {
+    let mut kept: Vec<PathBuf> = Vec::new();
+    for d in dirs {
+        let covered_by_other = dirs.iter().any(|other| other != d && d.starts_with(other));
+        if covered_by_other || kept.iter().any(|k| k == d) {
+            continue;
+        }
+        kept.push(d.clone());
+    }
+    kept
 }
 
 /// Backslashes → Forward-Slashes (Pfad-Normalisierung wie überall in folio).
@@ -637,23 +657,68 @@ fn build_file_hits(
     (hits, truncated, false)
 }
 
+/// Rohes, statistikfreies Ergebnis des Content-Gates. Trennt die reine
+/// Größen-/NUL-Klassifikation von der `SearchStats`-Buchführung, sodass die
+/// parallelen Worker (S6) das Gate ohne Zugriff auf die Consumer-Stats nutzen
+/// können. `TooLarge` und `Skip` (NUL) unterscheiden sich nur darin, dass
+/// `TooLarge` beim Aufrufer `skipped_large` erhöhen kann.
+enum ContentGate {
+    /// Über [`MAX_FILE_SIZE`] — überspringen, ggf. `skipped_large` zählen.
+    TooLarge,
+    /// NUL-Sniff / kein Content — still überspringen.
+    Skip,
+    /// Durchsuchbarer Text (lossy dekodiert).
+    Ok(String),
+}
+
+/// Reine Byte-Klassifikation ohne Statistik: Größen-Cap ([`MAX_FILE_SIZE`]) +
+/// NUL-Sniff (erste [`NUL_SNIFF_BYTES`]). Einzige Zerlegungsstelle für
+/// [`inspect_content`] (sequenziell) und [`worker_read_disk`] (parallel).
+fn gate_bytes(bytes: &[u8]) -> ContentGate {
+    if bytes.len() as u64 > MAX_FILE_SIZE {
+        return ContentGate::TooLarge;
+    }
+    let sniff_end = bytes.len().min(NUL_SNIFF_BYTES);
+    if bytes[..sniff_end].contains(&0u8) {
+        return ContentGate::Skip;
+    }
+    ContentGate::Ok(String::from_utf8_lossy(bytes).into_owned())
+}
+
 /// Gemeinsames Content-Gate für Disk-Reads **und** In-Memory-Puffer (S4):
 /// Größen-Cap ([`MAX_FILE_SIZE`]) + NUL-Sniff (erste [`NUL_SNIFF_BYTES`]).
 /// `None` = überspringen. Übergröße wird nur bei `count_large` in
 /// [`SearchStats::skipped_large`] gezählt (Voll-Scan-Modus; der Probe-Modus
 /// zählt nicht) — das schließt gecappte Puffer ein.
 fn inspect_content(bytes: &[u8], stats: &mut SearchStats, count_large: bool) -> Option<String> {
-    if bytes.len() as u64 > MAX_FILE_SIZE {
-        if count_large {
-            stats.skipped_large += 1;
+    match gate_bytes(bytes) {
+        ContentGate::TooLarge => {
+            if count_large {
+                stats.skipped_large += 1;
+            }
+            None
         }
-        return None;
+        ContentGate::Skip => None,
+        ContentGate::Ok(content) => Some(content),
     }
-    let sniff_end = bytes.len().min(NUL_SNIFF_BYTES);
-    if bytes[..sniff_end].contains(&0u8) {
-        return None;
+}
+
+/// Disk-Read für die parallelen Worker (S6): Metadaten-Größenprüfung **vor**
+/// `fs::read` (kein Riesenblob nur zum Verwerfen), dann [`gate_bytes`]. Gibt
+/// keine `SearchStats` an — die Buchführung (`skipped_large`/`files_scanned`)
+/// macht ausschließlich der Consumer aus den Worker-Events.
+fn worker_read_disk(path: &Path) -> ContentGate {
+    let meta = match fs::metadata(path) {
+        Ok(m) => m,
+        Err(_) => return ContentGate::Skip,
+    };
+    if meta.len() > MAX_FILE_SIZE {
+        return ContentGate::TooLarge;
     }
-    Some(String::from_utf8_lossy(bytes).into_owned())
+    match fs::read(path) {
+        Ok(bytes) => gate_bytes(&bytes),
+        Err(_) => ContentGate::Skip,
+    }
 }
 
 /// Liest eine (bereits als durchsuchbar gefilterte) Datei über das gemeinsame
@@ -862,37 +927,65 @@ fn run_over_roots(
         }
     }
 
-    // Einzeln angepinnte Dateien (nicht von einem Ordner abgedeckt). Explizite
-    // Pins umgehen den hidden-/gitignore-Filter bewusst (Nutzer-Intention),
-    // durchlaufen aber weiterhin Filter-/Größen-/NUL-Prüfung.
+    // Einzeln angepinnte Dateien (nicht von einem Ordner abgedeckt).
     if !stopped {
-        for f in &roots.files {
-            if cancel.load(Ordering::Relaxed) {
-                break;
-            }
-            if !filter.accepts(f) {
-                continue;
-            }
-            let norm = normalize_path(f);
-            if !seen.insert(norm.clone()) {
-                continue;
-            }
-            if probing {
-                if probe_has_match(f, re, cancel) {
-                    stats.truncated = true;
-                    break;
-                }
-                continue;
-            }
-            match scan_disk(f, &norm, re, cancel, &mut stats, on_file) {
-                ScanOutcome::Continue => {}
-                ScanOutcome::Probe => probing = true,
-                ScanOutcome::Stop | ScanOutcome::Cancelled => break,
-            }
-        }
+        scan_pinned_files(
+            &roots.files,
+            re,
+            filter,
+            cancel,
+            &mut stats,
+            &mut seen,
+            &mut probing,
+            on_file,
+        );
     }
 
     stats
+}
+
+/// Sequenzielle Einzeldatei-Phase (explizit angepinnte Dateien, die von keinem
+/// Ordner abgedeckt sind). Aus [`run_over_roots`] ausgelagert, damit die
+/// parallele Variante ([`run_search_parallel`]) genau denselben Code nach der
+/// Verzeichnis-Phase wiederverwendet (gemeinsame `stats`/`seen`/`probing`-
+/// Maschinerie, statt zu duplizieren). Explizite Pins umgehen den hidden-/
+/// gitignore-Filter bewusst (Nutzer-Intention), durchlaufen aber weiterhin
+/// Filter-/Größen-/NUL-Prüfung.
+#[allow(clippy::too_many_arguments)]
+fn scan_pinned_files(
+    files: &[PathBuf],
+    re: &Regex,
+    filter: &FileFilter,
+    cancel: &AtomicBool,
+    stats: &mut SearchStats,
+    seen: &mut HashSet<String>,
+    probing: &mut bool,
+    on_file: &mut dyn FnMut(FileResult),
+) {
+    for f in files {
+        if cancel.load(Ordering::Relaxed) {
+            break;
+        }
+        if !filter.accepts(f) {
+            continue;
+        }
+        let norm = normalize_path(f);
+        if !seen.insert(norm.clone()) {
+            continue;
+        }
+        if *probing {
+            if probe_has_match(f, re, cancel) {
+                stats.truncated = true;
+                break;
+            }
+            continue;
+        }
+        match scan_disk(f, &norm, re, cancel, stats, on_file) {
+            ScanOutcome::Continue => {}
+            ScanOutcome::Probe => *probing = true,
+            ScanOutcome::Stop | ScanOutcome::Cancelled => break,
+        }
+    }
 }
 
 /// Synchroner Suchkern (S1-API). Läuft über [`SearchRoots`], ruft `on_file` je
@@ -1003,6 +1096,323 @@ pub fn run_search_buffers(
 
     stats.elapsed_ms = start.elapsed().as_millis() as u64;
     Ok(stats)
+}
+
+/// Fertiges Worker-Ergebnis, das über `mpsc` an den Consumer-Thread geht (S6).
+/// Alle Varianten tragen den **forward-slash-normalisierten** Pfad, damit der
+/// Consumer über beide Phasen hinweg deduplizieren kann. Die Worker senden
+/// diese Events; nur der Consumer ruft `on_file` und führt Caps/Stats.
+enum WalkEvent {
+    /// Datei mit gültigem Inhalt, aber **ohne** Treffer (zählt als
+    /// `files_scanned`, solange der globale Deckel noch nicht erreicht ist).
+    NoHit { path: String },
+    /// Datei mit mindestens einem Treffer; `hits` ist bereits per-Datei auf
+    /// [`MAX_HITS_PER_FILE`] gekappt (`truncated` = per-Datei-Cut). Den
+    /// globalen Cut macht der Consumer.
+    Matched(FileResult),
+    /// Datei über [`MAX_FILE_SIZE`] (Voll-Scan-Modus) → `skipped_large`.
+    SkippedLarge { path: String },
+    /// Probe-Modus (nach exaktem Erreichen des Deckels) hat einen **echten**
+    /// (nicht zero-width) Treffer gefunden → `truncated`.
+    ProbeHit { path: String },
+}
+
+/// Parallele Variante von [`run_search_ex`] (S6) — identischer Vertrag
+/// (`on_file`-Streaming, Caps, Cancel, Rückgabe). Fächert die Verzeichnis-
+/// Phase über `WalkBuilder::build_parallel()` auf und lässt die anschließende
+/// Einzeldatei-Phase ([`scan_pinned_files`]) unverändert sequenziell laufen.
+///
+/// Reihenfolge ist **Completion-Order** (nichtdeterministisch) — das Frontend
+/// behandelt Ankunft als Fundreihenfolge (Sortiermodi Name/Pfad existieren).
+/// Bei aktiver Truncation kann die parallele Variante wegen der nebenläufigen,
+/// nur näherungsweise gekoppelten Deckel-Erkennung **bis zu**
+/// [`MAX_HITS_TOTAL`] Treffer melden (ggf. minimal weniger als der sequenzielle
+/// Lauf) — `truncated` wird dabei genau dann gesetzt, wenn real Treffer
+/// weggefallen sind.
+pub fn run_search_parallel(
+    roots: &SearchRoots,
+    query: &str,
+    options: &ExtendedSearchOptions,
+    cancel: &AtomicBool,
+    on_file: &mut dyn FnMut(FileResult),
+) -> Result<SearchStats, SearchError> {
+    let re = compile_validated_pattern(query, options)?;
+    validate_roots(roots)?;
+
+    let start = Instant::now();
+    let mut stats = SearchStats::default();
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut probing = false;
+
+    let stopped = walk_dirs_parallel(
+        &roots.dirs,
+        &re,
+        &options.filter,
+        cancel,
+        &mut stats,
+        &mut seen,
+        &mut probing,
+        on_file,
+    );
+    if !stopped {
+        scan_pinned_files(
+            &roots.files,
+            &re,
+            &options.filter,
+            cancel,
+            &mut stats,
+            &mut seen,
+            &mut probing,
+            on_file,
+        );
+    }
+
+    stats.elapsed_ms = start.elapsed().as_millis() as u64;
+    Ok(stats)
+}
+
+/// Visitor-Kern eines parallelen Workers: Filter + Content-Gate + Match, dann
+/// ein `WalkEvent` an den Consumer. Berührt **kein** `on_file` und keine
+/// Consumer-Stats. Der globale Hit-Zähler (`hit_counter`) ist eine
+/// Näherung: erreicht er den Deckel, schalten die Worker in den Probe-Modus.
+/// `cancel`/`stop_flag` → [`WalkState::Quit`].
+#[allow(clippy::too_many_arguments)]
+fn walk_worker_visit(
+    result: Result<ignore::DirEntry, ignore::Error>,
+    re: &Regex,
+    filter: &FileFilter,
+    cancel: &AtomicBool,
+    hit_counter: &AtomicUsize,
+    stop_flag: &AtomicBool,
+    tx: &mpsc::Sender<WalkEvent>,
+) -> WalkState {
+    if cancel.load(Ordering::Relaxed) || stop_flag.load(Ordering::Relaxed) {
+        return WalkState::Quit;
+    }
+    let entry = match result {
+        Ok(e) => e,
+        Err(_) => return WalkState::Continue,
+    };
+    if !entry.file_type().is_some_and(|t| t.is_file()) {
+        return WalkState::Continue;
+    }
+    if !filter.accepts(entry.path()) {
+        return WalkState::Continue;
+    }
+    let norm = normalize_path(entry.path());
+
+    // Probe-Modus: der globale Deckel ist (näherungsweise) erreicht. Nur noch
+    // prüfen, ob es weitere echte Treffer gibt — kein voller Scan, kein
+    // `files_scanned`.
+    if hit_counter.load(Ordering::Relaxed) >= MAX_HITS_TOTAL {
+        if let ContentGate::Ok(content) = worker_read_disk(entry.path()) {
+            if probe_str(&content, re, cancel) {
+                let _ = tx.send(WalkEvent::ProbeHit { path: norm });
+                stop_flag.store(true, Ordering::Relaxed);
+                return WalkState::Quit;
+            }
+        }
+        return WalkState::Continue;
+    }
+
+    match worker_read_disk(entry.path()) {
+        ContentGate::TooLarge => {
+            let _ = tx.send(WalkEvent::SkippedLarge { path: norm });
+        }
+        ContentGate::Skip => {}
+        ContentGate::Ok(content) => {
+            let (hits, perfile_truncated, cancelled) =
+                build_file_hits(&content, re, MAX_HITS_PER_FILE, cancel);
+            if cancelled {
+                return WalkState::Quit;
+            }
+            if hits.is_empty() {
+                let _ = tx.send(WalkEvent::NoHit { path: norm });
+            } else {
+                // Näherungszähler früh erhöhen, damit andere Worker zeitnah in
+                // den Probe-Modus schalten (exakte Buchführung bleibt Consumer).
+                hit_counter.fetch_add(hits.len(), Ordering::Relaxed);
+                let file_name = Path::new(&norm)
+                    .file_name()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let _ = tx.send(WalkEvent::Matched(FileResult {
+                    path: norm,
+                    file_name,
+                    hits,
+                    truncated: perfile_truncated,
+                }));
+            }
+        }
+    }
+    WalkState::Continue
+}
+
+/// Consumer-Seite der parallelen Verzeichnis-Phase (läuft auf dem aufrufenden
+/// Thread): konsumiert Worker-Events, dedupliziert über `seen`, führt Stats +
+/// Caps exakt (die per-Datei-50 haben die Worker geklemmt, den globalen 500er
+/// klemmt hier der Consumer) und ruft als EINZIGER `on_file`. Rückgabe
+/// `true` = Lauf gestoppt (kein Einzeldatei-Nachlauf mehr). Spiegelt die
+/// Cap-/Probe-Semantik von [`process_content`].
+///
+/// **Cancel-Vertrag** [Sol-Rev S6#1]: `cancel` wird vor JEDEM Event geprüft.
+/// Ist das Flag gesetzt (Nutzer-Abbruch / Timeout), setzt der Consumer den
+/// internen `stop_flag` (bremst die Worker) und kehrt sofort mit „stopped"
+/// zurück — es werden also keine bereits gepufferten Events mehr angewandt
+/// (kein weiterer `on_file`) und die Einzeldatei-Nachlaufphase entfällt.
+fn consume_walk_events(
+    rx: mpsc::Receiver<WalkEvent>,
+    cancel: &AtomicBool,
+    stats: &mut SearchStats,
+    seen: &mut HashSet<String>,
+    probing: &mut bool,
+    stop_flag: &AtomicBool,
+    on_file: &mut dyn FnMut(FileResult),
+) -> bool {
+    for event in rx {
+        // Vor jedem gepufferten Event auf Abbruch prüfen: nach einem Cancel
+        // darf der Consumer keine nachlaufenden Treffer mehr melden.
+        if cancel.load(Ordering::Relaxed) {
+            stop_flag.store(true, Ordering::Relaxed);
+            return true;
+        }
+        match event {
+            WalkEvent::SkippedLarge { path } => {
+                if seen.insert(path) {
+                    stats.skipped_large += 1;
+                }
+            }
+            WalkEvent::NoHit { path } => {
+                if !seen.insert(path) {
+                    continue;
+                }
+                // Nach dem Deckel zählt sequenziell nur noch der Probe-Modus
+                // (kein `files_scanned`) — dieselbe Grenze hier.
+                if stats.hits < MAX_HITS_TOTAL {
+                    stats.files_scanned += 1;
+                }
+            }
+            WalkEvent::ProbeHit { path } => {
+                if !seen.insert(path) {
+                    continue;
+                }
+                stats.truncated = true;
+                stop_flag.store(true, Ordering::Relaxed);
+                return true;
+            }
+            WalkEvent::Matched(file) => {
+                if !seen.insert(file.path.clone()) {
+                    continue;
+                }
+                let remaining = MAX_HITS_TOTAL - stats.hits;
+                if remaining == 0 {
+                    // Voll-Scan-Ergebnis nach bereits vollem Deckel → es gibt
+                    // real mehr Treffer, als gemeldet werden.
+                    stats.truncated = true;
+                    stop_flag.store(true, Ordering::Relaxed);
+                    return true;
+                }
+                stats.files_scanned += 1;
+                let perfile_truncated = file.truncated;
+                let mut hits = file.hits;
+                let mut cut = false;
+                if hits.len() > remaining {
+                    hits.truncate(remaining);
+                    cut = true;
+                }
+                stats.hits += hits.len();
+                stats.files_matched += 1;
+                on_file(FileResult {
+                    path: file.path,
+                    file_name: file.file_name,
+                    hits,
+                    truncated: perfile_truncated || cut,
+                });
+                if cut {
+                    stats.truncated = true;
+                    stop_flag.store(true, Ordering::Relaxed);
+                    return true;
+                }
+                if stats.hits == MAX_HITS_TOTAL {
+                    if perfile_truncated {
+                        // Die Datei, die den Deckel exakt füllt, war selbst
+                        // gekappt → es gibt real mehr Treffer.
+                        stats.truncated = true;
+                        stop_flag.store(true, Ordering::Relaxed);
+                        return true;
+                    }
+                    // Exakt gefüllt, kein Cut → Probe-Modus. Die Worker sind
+                    // über den Näherungszähler bereits (≥500) umgeschaltet.
+                    *probing = true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Parallele Verzeichnis-Phase: pro Root-Ordner ein `build_parallel()`-Walk
+/// (gleiche Filterkonfiguration wie sequenziell — hidden/gitignore-Defaults).
+/// Ein Producer-Thread treibt die Walks und speist einen `mpsc`-Kanal; dieser
+/// Thread (Consumer) liest ihn über [`consume_walk_events`]. `on_file`/`stats`/
+/// `seen`/`probing` gehören exklusiv dem Consumer-Thread (der `&mut dyn FnMut`-
+/// Vertrag wandert nie in einen Worker). Rückgabe `true` = gestoppt.
+#[allow(clippy::too_many_arguments)]
+fn walk_dirs_parallel(
+    dirs: &[PathBuf],
+    re: &Regex,
+    filter: &FileFilter,
+    cancel: &AtomicBool,
+    stats: &mut SearchStats,
+    seen: &mut HashSet<String>,
+    probing: &mut bool,
+    on_file: &mut dyn FnMut(FileResult),
+) -> bool {
+    if dirs.is_empty() {
+        return false;
+    }
+
+    // [Sol-Rev S6#2] Überlappende Dir-Roots VOR dem Parallel-Walk kollabieren.
+    // Sonst besuchen zwei Walks (Kind + Eltern) dieselbe Datei; der worker-
+    // seitige Näherungs-Hit-Zähler zählt sie doppelt gegen `MAX_HITS_TOTAL` und
+    // könnte den Walk in den Probe-Modus zwingen, bevor nicht-redundante Dateien
+    // besucht sind — Ergebnis wäre unvollständig, ohne dass `truncated` gesetzt
+    // wird. Nach dem Kollabieren trifft jede Datei höchstens ein Walk, der
+    // Consumer-`seen` bleibt nur noch Netz für die geteilte Pinned-Phase.
+    let dirs = collapse_overlapping_dirs(dirs);
+
+    let hit_counter = AtomicUsize::new(0);
+    let stop_flag = AtomicBool::new(false);
+    let (tx, rx) = mpsc::channel::<WalkEvent>();
+
+    let hc = &hit_counter;
+    let sf = &stop_flag;
+    let dirs = &dirs;
+    let mut stopped = false;
+
+    std::thread::scope(|scope| {
+        // Producer: treibt die parallelen Walks und schließt beim Verlassen
+        // seine `tx`-Instanz (→ `rx` endet, sobald alle Worker-Clones weg sind).
+        scope.spawn(move || {
+            for dir in dirs {
+                if cancel.load(Ordering::Relaxed) || sf.load(Ordering::Relaxed) {
+                    break;
+                }
+                let dir_tx = tx.clone();
+                WalkBuilder::new(dir).build_parallel().run(|| {
+                    let wtx = dir_tx.clone();
+                    Box::new(move |result| {
+                        walk_worker_visit(result, re, filter, cancel, hc, sf, &wtx)
+                    })
+                });
+            }
+        });
+
+        // Consumer (dieser Thread): einziger Aufrufer von `on_file`.
+        stopped = consume_walk_events(rx, cancel, stats, seen, probing, sf, on_file);
+    });
+
+    stopped
 }
 
 #[cfg(test)]
@@ -2081,5 +2491,305 @@ mod tests {
             SearchScopeEx::Folder("/x".to_string()),
             to_scope_ex(Some("/x".to_string()), false).unwrap()
         );
+    }
+
+    // --- S6-Additionen: paralleler Walk (run_search_parallel) ----------------
+
+    fn collect_parallel(
+        roots: &SearchRoots,
+        query: &str,
+        o: &ExtendedSearchOptions,
+    ) -> (Vec<FileResult>, SearchStats) {
+        let cancel = AtomicBool::new(false);
+        let mut files: Vec<FileResult> = Vec::new();
+        let stats = run_search_parallel(roots, query, o, &cancel, &mut |f| files.push(f)).unwrap();
+        (files, stats)
+    }
+
+    /// Ergebnis nach Pfad indizieren (Completion-Order ist nichtdeterministisch;
+    /// verglichen wird ordnungs-insensitiv über eine Map).
+    fn as_map(files: &[FileResult]) -> std::collections::HashMap<String, FileResult> {
+        files.iter().cloned().map(|f| (f.path.clone(), f)).collect()
+    }
+
+    /// Stats-Vergleich ohne `elapsed_ms` (Laufzeit variiert).
+    fn assert_stats_core_eq(a: &SearchStats, b: &SearchStats) {
+        assert_eq!(a.files_scanned, b.files_scanned, "files_scanned");
+        assert_eq!(a.files_matched, b.files_matched, "files_matched");
+        assert_eq!(a.hits, b.hits, "hits");
+        assert_eq!(a.skipped_large, b.skipped_large, "skipped_large");
+        assert_eq!(a.truncated, b.truncated, "truncated");
+    }
+
+    /// Reicher, NICHT truncierender Baum: nested Ordner, gitignore/hidden,
+    /// NUL-Binär, Übergröße, Unicode/CRLF, .md/.txt/.rs, plus eine außerhalb
+    /// liegende explizit gepinnte Einzeldatei (übt die geteilte Einzeldatei-
+    /// Phase). Liefert die SearchRoots.
+    fn build_parity_tree(tmp: &TempDir) -> SearchRoots {
+        let root = tmp.path().join("root");
+        fs::create_dir_all(&root).unwrap();
+        init_git(&root);
+        write(&root, ".gitignore", "secret.md\n");
+
+        write(
+            &root,
+            "a.md",
+            "needle here\nline two needle\nno match line\n",
+        );
+        write(&root, "notes.txt", "plain needle in text\n");
+        write(&root, "code.rs", "fn main() {} // no hit here\n");
+        write(&root, "sub/b.md", "deep needle inside\n");
+        write(&root, "sub/deeper/c.md", "even deeper needle\n");
+        write(&root, "uni.md", "äß😀 needle da\n");
+        write_bytes(&root, "crlf.md", b"foo\r\nbar needle baz\r\nlast\r\n");
+
+        // Gefiltert/übersprungen:
+        write(&root, "secret.md", "needle gitignored\n"); // gitignore
+        write(&root, ".hidden.md", "needle hidden\n"); // hidden
+        write_bytes(&root, "fake.md", b"pre \0\0 needle post\n"); // NUL
+        let mut big = String::from("needle\n");
+        big.push_str(&"a".repeat(MAX_FILE_SIZE as usize + 10));
+        write(&root, "big.md", &big); // oversized
+
+        // Explizit gepinnte Einzeldatei außerhalb von `root`.
+        let outside = tmp.path().join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        write(&outside, "pinned.md", "pinned needle line\n");
+
+        SearchRoots {
+            dirs: vec![root],
+            files: vec![outside.join("pinned.md")],
+        }
+    }
+
+    #[test]
+    fn parallel_matches_sequential_on_rich_tree() {
+        let tmp = TempDir::new().unwrap();
+        let roots = build_parity_tree(&tmp);
+        let o = ext_opts(false, FileFilter::AllText);
+
+        let (seq_files, seq_stats) = collect_ex(&roots, "needle", &o);
+        let (par_files, par_stats) = collect_parallel(&roots, "needle", &o);
+
+        assert!(!seq_stats.truncated, "Fixture darf nicht truncaten");
+        assert_stats_core_eq(&seq_stats, &par_stats);
+        assert_eq!(
+            as_map(&seq_files),
+            as_map(&par_files),
+            "parallele Ergebnismenge muss der sequenziellen entsprechen"
+        );
+        // skipped_large: die Übergröße-Datei; NUL/hidden/gitignore zählen nicht.
+        assert_eq!(1, par_stats.skipped_large);
+    }
+
+    #[test]
+    fn parallel_respects_file_filter() {
+        let tmp = TempDir::new().unwrap();
+        let roots = build_parity_tree(&tmp);
+        let o = ext_opts(false, FileFilter::Markdown);
+
+        let (seq_files, seq_stats) = collect_ex(&roots, "needle", &o);
+        let (par_files, par_stats) = collect_parallel(&roots, "needle", &o);
+
+        assert_stats_core_eq(&seq_stats, &par_stats);
+        assert_eq!(as_map(&seq_files), as_map(&par_files));
+        // Nur .md — .txt/.rs sind unter Markdown gefiltert.
+        assert!(
+            par_files.iter().all(|f| f.file_name.ends_with(".md")),
+            "Markdown-Filter darf nur .md liefern: {:?}",
+            names(&par_files)
+        );
+    }
+
+    #[test]
+    fn parallel_dedups_overlapping_dirs() {
+        // Verschachtelte Roots (Parent + Kind) direkt gebaut (umgeht das
+        // resolve_scope-Dedup) → jede Datei wird von beiden Walks besucht und
+        // muss vom Consumer-`seen` auf genau einmal dedupliziert werden.
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("root");
+        let sub = root.join("sub");
+        fs::create_dir_all(&sub).unwrap();
+        write(&root, "a.md", "needle\n");
+        write(&sub, "b.md", "needle\n");
+        let roots = SearchRoots {
+            dirs: vec![root.clone(), sub.clone()],
+            files: vec![],
+        };
+
+        let (files, _) = collect_parallel(&roots, "needle", &ext_opts(false, FileFilter::AllText));
+        assert_eq!(
+            2,
+            files.len(),
+            "keine Duplikate erwartet: {:?}",
+            names(&files)
+        );
+        assert_eq!(1, files.iter().filter(|f| f.file_name == "a.md").count());
+        assert_eq!(1, files.iter().filter(|f| f.file_name == "b.md").count());
+    }
+
+    #[test]
+    fn parallel_cap_flags_truncated_and_respects_caps() {
+        // 12 Dateien × 60 Treffer-Zeilen (>500 gesamt) → truncated; wegen der
+        // nichtdeterministischen Completion-Order wird die exakte Trefferzahl
+        // NICHT verglichen, aber die Invarianten müssen halten.
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("caproot");
+        fs::create_dir_all(&root).unwrap();
+        for f in 0..12 {
+            let body = "z match line\n".repeat(60);
+            write(&root, &format!("cap_{f:02}.md"), &body);
+        }
+        let roots = SearchRoots {
+            dirs: vec![root],
+            files: vec![],
+        };
+
+        let (files, stats) =
+            collect_parallel(&roots, "match", &ext_opts(false, FileFilter::AllText));
+        assert!(stats.truncated, "globaler Deckel muss greifen");
+        assert!(
+            stats.hits > 0 && stats.hits <= MAX_HITS_TOTAL,
+            "hits={}",
+            stats.hits
+        );
+        assert!(
+            files.iter().all(|f| f.hits.len() <= MAX_HITS_PER_FILE),
+            "per-Datei-Cap verletzt"
+        );
+    }
+
+    #[test]
+    fn parallel_cancel_before_start_aborts() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("root");
+        fs::create_dir_all(&root).unwrap();
+        write(&root, "a.md", "needle\n");
+        write(&root, "b.md", "needle\n");
+        let roots = SearchRoots {
+            dirs: vec![root],
+            files: vec![],
+        };
+
+        let cancel = AtomicBool::new(true); // schon vor Start gesetzt
+        let mut files: Vec<FileResult> = Vec::new();
+        let stats = run_search_parallel(
+            &roots,
+            "needle",
+            &ext_opts(false, FileFilter::AllText),
+            &cancel,
+            &mut |f| files.push(f),
+        )
+        .unwrap();
+
+        assert!(files.is_empty());
+        assert_eq!(0, stats.files_scanned);
+        assert_eq!(0, stats.hits);
+    }
+
+    #[test]
+    fn parallel_cancel_mid_run_stops_after_first_callback() {
+        // [Sol-Rev S6#1] Deterministischer Mid-Run-Cancel: der erste on_file-
+        // Callback setzt das Abbruch-Flag. Danach darf der Consumer KEINE weiteren
+        // gepufferten Events mehr anwenden → exakt ein on_file-Call. (Der frühere
+        // Cancel-Test setzte das Flag schon vor Start und deckte diesen Pfad nicht
+        // ab.)
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("root");
+        fs::create_dir_all(&root).unwrap();
+        for f in 0..8 {
+            write(&root, &format!("f{f:02}.md"), "needle line\n");
+        }
+        let roots = SearchRoots {
+            dirs: vec![root],
+            files: vec![],
+        };
+
+        let cancel = AtomicBool::new(false);
+        let mut calls = 0usize;
+        let stats = run_search_parallel(
+            &roots,
+            "needle",
+            &ext_opts(false, FileFilter::AllText),
+            &cancel,
+            &mut |_f| {
+                calls += 1;
+                cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            1, calls,
+            "nach Cancel im ersten Callback dürfen keine weiteren on_file-Calls folgen"
+        );
+        assert_eq!(1, stats.files_matched);
+    }
+
+    #[test]
+    fn parallel_overlap_child_then_parent_matches_sequential() {
+        // [Sol-Rev S6#2] Roots in Reihenfolge Kind→Eltern, viele doppelte Treffer
+        // und eine NUR im Eltern-Root liegende Trefferdatei. Ohne das Kollabieren
+        // überlappender Roots würde der Kind-Walk die Sub-Dateien doppelt gegen
+        // den Deckel zählen und den Walk in den Probe-Modus zwingen, bevor die
+        // Eltern-only-Datei besucht ist → unvollständiges Ergebnis, teils ohne
+        // `truncated`. Ergebnismenge + `truncated` müssen dem sequenziellen
+        // Referenzlauf entsprechen, und das reproduzierbar (Stress ≥20×).
+        let tmp = TempDir::new().unwrap();
+        let parent = tmp.path().join("parent");
+        let sub = parent.join("sub");
+        fs::create_dir_all(&sub).unwrap();
+        // 8 Sub-Dateien × 50 Treffer = 400; parent-only 50 → 450 < 500 (kein Cap).
+        for f in 0..8 {
+            write(&sub, &format!("s{f:02}.md"), &"needle line\n".repeat(50));
+        }
+        write(&parent, "parent_only.md", &"needle line\n".repeat(50));
+        // Kind zuerst, dann Eltern — die Reihenfolge, die das Doppelzählen provoziert.
+        let roots = SearchRoots {
+            dirs: vec![sub.clone(), parent.clone()],
+            files: vec![],
+        };
+        let o = ext_opts(false, FileFilter::AllText);
+
+        // Sequenzieller Referenzlauf (dedupliziert über `seen`).
+        let (seq_files, seq_stats) = collect_ex(&roots, "needle", &o);
+        assert!(!seq_stats.truncated, "Referenzlauf darf nicht truncaten");
+        assert_eq!(9, seq_files.len(), "Referenz: 8 Sub + 1 Eltern-Datei");
+
+        for _ in 0..20 {
+            let (par_files, par_stats) = collect_parallel(&roots, "needle", &o);
+            assert_eq!(
+                as_map(&seq_files),
+                as_map(&par_files),
+                "parallele Ergebnismenge muss der sequenziellen entsprechen"
+            );
+            assert_eq!(seq_stats.truncated, par_stats.truncated, "truncated");
+            assert_eq!(seq_stats.hits, par_stats.hits, "hits");
+            assert_eq!(
+                seq_stats.files_matched, par_stats.files_matched,
+                "files_matched"
+            );
+            assert!(
+                par_files.iter().any(|f| f.file_name == "parent_only.md"),
+                "die nur im Eltern-Root liegende Trefferdatei muss enthalten sein: {:?}",
+                names(&par_files)
+            );
+        }
+    }
+
+    #[test]
+    fn parallel_empty_tree_yields_nothing() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("empty");
+        fs::create_dir_all(&root).unwrap();
+        let roots = SearchRoots {
+            dirs: vec![root],
+            files: vec![],
+        };
+        let (files, stats) =
+            collect_parallel(&roots, "needle", &ext_opts(false, FileFilter::AllText));
+        assert!(files.is_empty());
+        assert_eq!(0, stats.files_scanned);
+        assert!(!stats.truncated);
     }
 }

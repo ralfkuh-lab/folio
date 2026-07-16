@@ -109,7 +109,8 @@ pub(in crate::automation) async fn post_search(
         let mut files: Vec<FileResult> = Vec::new();
         let stats = match &work {
             Work::Roots(roots) => {
-                search::run_search_ex(roots, &query, &options, &cancel_task, &mut |file| {
+                // S6: Verzeichnis-Scopes (Vault/Folder) laufen parallel.
+                search::run_search_parallel(roots, &query, &options, &cancel_task, &mut |file| {
                     files.push(file)
                 })
             }

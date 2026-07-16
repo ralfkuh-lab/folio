@@ -121,13 +121,14 @@
   - Generierte typisierte Key-Surface.
   - HTML-Parser statt Heuristik im Markup-Gate.
 
-- **Vault-Volltextsuche — Folgepunkte** (Kernfeature S1–S4 komplett;
+- **Vault-Volltextsuche — Folgepunkte** (Kernfeature S1–S6 komplett;
   S1–S3 2026-07-12, S4 Dialog-first + Regex/Filter/OpenTabs 2026-07-15,
+  S5 UX-Nachschliff + S6 paralleler Walk 2026-07-16,
   Spec [`docs/spec-vault-search.md`](docs/spec-vault-search.md)):
-  paralleler Walk (`WalkBuilder::build_parallel`), falls große Pins
-  spürbar werden; Opt-in-Toggle für hidden/gitignorierte Dateien;
-  optionaler persistenter Index (tantivy) nur bei echtem Bedarf (bewusst
-  verworfen für V1). (Regex-Toggle Feature-Idee #10 → mit S4 erledigt.)
+  Opt-in-Toggle für hidden/gitignorierte Dateien; optionaler
+  persistenter Index (tantivy) nur bei echtem Bedarf (bewusst verworfen
+  für V1). (Regex-Toggle Feature-Idee #10 → mit S4 erledigt; paralleler
+  Walk `WalkBuilder::build_parallel` → mit S6 erledigt.)
 
 - **KI-Aktionen — Folgepunkte** (Kernfeature 2026-07-10 komplett, Spec
   [`docs/spec-ki-actions.md`](docs/spec-ki-actions.md)): Kontextmenü

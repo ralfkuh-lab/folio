@@ -885,8 +885,8 @@ describe('vault/search — S5 Pfadanzeige-Toggle', () => {
         $('vault-search-paths').dispatchEvent(new MouseEvent('click', { bubbles: true }));
         const fpath = $('vault-search-list').querySelector('.vs-fpath');
         expect(fpath).not.toBeNull();
-        // Relativ zur Pin-Wurzel /vault → „sub".
-        expect(fpath!.textContent).toBe('sub');
+        // [S7] Pin-Name + Rest: Pin-Wurzel /vault → „vault/sub".
+        expect(fpath!.textContent).toBe('vault/sub');
         expect($('vault-search-paths').getAttribute('aria-pressed')).toBe('true');
         expect(tauri.invoke).toHaveBeenCalledWith(
             'set_search_options',
@@ -944,5 +944,222 @@ describe('vault/search — Status-Sonderfaelle', () => {
         });
         await flushMicro();
         expect($('vault-search-status').textContent).toContain('offenen Dateien');
+    });
+});
+
+describe('vault/search — S7 Pfad-Darstellung (zweizeilig)', () => {
+    /** Ersetzt die angepinnten Top-Level-Wurzeln im Vault-Baum. */
+    function setPins(paths: string[]): void {
+        const ul = document.querySelector(
+            'li.section[data-section="pinned"] > ul.children',
+        ) as HTMLElement;
+        ul.innerHTML = paths
+            .map((p) => `<li class="node" data-path="${p}"></li>`)
+            .join('');
+    }
+    function fpaths(): string[] {
+        return Array.from($('vault-search-list').querySelectorAll('.vs-fpath')).map(
+            (e) => e.textContent || '',
+        );
+    }
+    function names(): string[] {
+        return Array.from($('vault-search-list').querySelectorAll('.vs-fname')).map(
+            (e) => e.textContent || '',
+        );
+    }
+    function enablePaths(): void {
+        $('vault-search-paths').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    }
+
+    it('Pfadzeile = Pin-Name + Rest-Pfad (eigene .vs-fpath-Zeile)', async () => {
+        await importAndInit();
+        await runSearch('needle');
+        tauri.emitEvent('search:hits', {
+            runId: 1,
+            files: [fileFixture({ path: '/vault/a/b/deep.md', fileName: 'deep.md' })],
+        });
+        await flushMicro();
+        enablePaths();
+        // .vs-fpath liegt im zweizeiligen Kopf (.vs-main), nicht mehr inline.
+        const head = $('vault-search-list').querySelector('.vs-group-head')!;
+        expect(head.querySelector('.vs-main .vs-fname')!.textContent).toBe('deep.md');
+        expect(head.querySelector('.vs-main .vs-fpath')!.textContent).toBe('vault/a/b');
+        // Absoluter Pfad bleibt im Tooltip.
+        expect((head as HTMLElement).title).toBe('/vault/a/b/deep.md');
+    });
+
+    it('Datei direkt in der Pin-Wurzel → nur Pin-Name (nie leer)', async () => {
+        await importAndInit();
+        await runSearch('needle');
+        tauri.emitEvent('search:hits', {
+            runId: 1,
+            files: [fileFixture({ path: '/vault/deep.md', fileName: 'deep.md' })],
+        });
+        await flushMicro();
+        enablePaths();
+        expect(fpaths()).toEqual(['vault']);
+    });
+
+    it('sort=path folgt der ANGEZEIGTEN Zeichenkette (divergiert vom absoluten Pfad)', async () => {
+        // Zwei Pins mit Basisnamen, die die Ordnung gegenüber dem absoluten
+        // Pfad umdrehen: absolute Sortierung /aaa/omega < /zzz/alpha ⇒ [y,x];
+        // die angezeigten relativen Strings „alpha" < „omega" ⇒ [x,y].
+        await importAndInit();
+        setPins(['/zzz/alpha', '/aaa/omega']);
+        await runSearch('needle');
+        tauri.emitEvent('search:hits', {
+            runId: 1,
+            files: [
+                fileFixture({ path: '/zzz/alpha/x.md', fileName: 'x.md' }),
+                fileFixture({ path: '/aaa/omega/y.md', fileName: 'y.md' }),
+            ],
+        });
+        await flushMicro();
+        enablePaths();
+        const sort = $('vault-search-sort');
+        sort.dispatchEvent(new MouseEvent('click', { bubbles: true })); // name
+        sort.dispatchEvent(new MouseEvent('click', { bubbles: true })); // path
+        // Anzeige-String-Ordnung, NICHT die absolute (die wäre [y.md, x.md]).
+        expect(names()).toEqual(['x.md', 'y.md']);
+        expect(fpaths()).toEqual(['alpha', 'omega']);
+    });
+
+    it('Emphasis-Modifier-Klasse nur bei sort=path (mit sichtbarer Pfadzeile)', async () => {
+        await importAndInit();
+        await runSearch('needle');
+        tauri.emitEvent('search:hits', { runId: 1, files: [fileFixture()] });
+        await flushMicro();
+        enablePaths();
+        const list = $('vault-search-list');
+        const sort = $('vault-search-sort');
+        expect(list.classList.contains('vs-sort-path')).toBe(false); // none
+        sort.dispatchEvent(new MouseEvent('click', { bubbles: true })); // name
+        expect(list.classList.contains('vs-sort-path')).toBe(false);
+        sort.dispatchEvent(new MouseEvent('click', { bubbles: true })); // path
+        expect(list.classList.contains('vs-sort-path')).toBe(true);
+        sort.dispatchEvent(new MouseEvent('click', { bubbles: true })); // none
+        expect(list.classList.contains('vs-sort-path')).toBe(false);
+    });
+
+    it('sort=path setzt die Emphasis-Klasse NICHT, wenn die Pfadzeile aus ist [Sol-Rev S7#4]', async () => {
+        await importAndInit();
+        await runSearch('needle');
+        tauri.emitEvent('search:hits', { runId: 1, files: [fileFixture()] });
+        await flushMicro();
+        // showPaths bleibt aus (KEIN enablePaths()).
+        const list = $('vault-search-list');
+        const sort = $('vault-search-sort');
+        sort.dispatchEvent(new MouseEvent('click', { bubbles: true })); // name
+        sort.dispatchEvent(new MouseEvent('click', { bubbles: true })); // path
+        // Ohne sichtbare Pfadzeile darf der einzige sichtbare Dateiname nicht in
+        // die gedimmte Zweitzeile getauscht werden → Modifier-Klasse bleibt aus.
+        expect(list.classList.contains('vs-sort-path')).toBe(false);
+        expect(list.querySelector('.vs-fpath')).toBeNull();
+        expect(list.querySelector('.vs-fname')!.textContent).toBe('note.md');
+        // Pfadzeile einschalten → jetzt greift der Swap (Sortierung war schon path).
+        enablePaths();
+        expect(list.classList.contains('vs-sort-path')).toBe(true);
+    });
+
+    it('Pfadzeile nie leer bei Datei direkt unter der Unix-Wurzel `/` (Root-Pin) [Sol-Rev S7#6]', async () => {
+        await importAndInit();
+        setPins(['/']);
+        await runSearch('needle');
+        tauri.emitEvent('search:hits', {
+            runId: 1,
+            files: [
+                fileFixture({ path: '/deep.md', fileName: 'deep.md' }),
+                fileFixture({ path: '/sub/inner.md', fileName: 'inner.md' }),
+            ],
+        });
+        await flushMicro();
+        enablePaths();
+        // Datei direkt unter `/` → Wurzel-Anzeigename `/` (nie leer); tiefere
+        // Datei → `/sub` (kein Doppel-Slash).
+        expect(fpaths()).toEqual(['/', '/sub']);
+    });
+
+    it('Pfadzeile nie leer bei Root-Folder-Scope `/` [Sol-Rev S7#6]', async () => {
+        await importAndInit();
+        // Folder-Scope auf die Unix-Wurzel committen.
+        await runSearch('needle', { folder: '/', scope: 'folder' });
+        tauri.emitEvent('search:hits', {
+            runId: 1,
+            files: [fileFixture({ path: '/deep.md', fileName: 'deep.md' })],
+        });
+        await flushMicro();
+        enablePaths();
+        expect(fpaths()).toEqual(['/']);
+    });
+
+    it('Pfad-Toggle blendet die Pfadzeile aus', async () => {
+        await importAndInit();
+        await runSearch('needle');
+        tauri.emitEvent('search:hits', {
+            runId: 1,
+            files: [fileFixture({ path: '/vault/sub/deep.md', fileName: 'deep.md' })],
+        });
+        await flushMicro();
+        enablePaths();
+        expect($('vault-search-list').querySelector('.vs-fpath')).not.toBeNull();
+        // Wieder aus → keine Pfadzeile mehr.
+        $('vault-search-paths').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        expect($('vault-search-list').querySelector('.vs-fpath')).toBeNull();
+    });
+
+    it('searchPathDisplay=absolute (Boot) ändert Anzeige UND Sortierung', async () => {
+        tauri.invoke.mockImplementation((cmd: string) => {
+            if (cmd === 'vault_search_start') return Promise.resolve(nextRunId++);
+            if (cmd === 'vault_search_validate') return Promise.resolve(undefined);
+            if (cmd === 'search_options_get') return Promise.resolve({});
+            if (cmd === 'settings_get') return Promise.resolve({ searchPathDisplay: 'absolute' });
+            return Promise.resolve(undefined);
+        });
+        await importAndInit();
+        setPins(['/zzz/alpha', '/aaa/omega']);
+        await runSearch('needle');
+        tauri.emitEvent('search:hits', {
+            runId: 1,
+            files: [
+                fileFixture({ path: '/zzz/alpha/x.md', fileName: 'x.md' }),
+                fileFixture({ path: '/aaa/omega/y.md', fileName: 'y.md' }),
+            ],
+        });
+        await flushMicro();
+        enablePaths();
+        const sort = $('vault-search-sort');
+        sort.dispatchEvent(new MouseEvent('click', { bubbles: true })); // name
+        sort.dispatchEvent(new MouseEvent('click', { bubbles: true })); // path
+        // Absolut: /aaa/omega < /zzz/alpha ⇒ [y.md, x.md]; Pfadzeile = voller Dir.
+        expect(names()).toEqual(['y.md', 'x.md']);
+        expect(fpaths()).toEqual(['/aaa/omega', '/zzz/alpha']);
+    });
+
+    it('settings:changed schaltet die Pfad-Darstellung live um', async () => {
+        await importAndInit();
+        setPins(['/zzz/alpha']);
+        await runSearch('needle');
+        tauri.emitEvent('search:hits', {
+            runId: 1,
+            files: [fileFixture({ path: '/zzz/alpha/sub/deep.md', fileName: 'deep.md' })],
+        });
+        await flushMicro();
+        enablePaths();
+        // Relativ (Default): Pin-Name + Rest.
+        expect(fpaths()).toEqual(['alpha/sub']);
+        // Live-Wechsel auf absolute.
+        tauri.emitEvent('settings:changed', {
+            settings: { searchPathDisplay: 'absolute' },
+            changed: ['searchPathDisplay'],
+        });
+        await flushMicro();
+        expect(fpaths()).toEqual(['/zzz/alpha/sub']);
+        // Und wieder zurück.
+        tauri.emitEvent('settings:changed', {
+            settings: { searchPathDisplay: 'relative' },
+            changed: ['searchPathDisplay'],
+        });
+        await flushMicro();
+        expect(fpaths()).toEqual(['alpha/sub']);
     });
 });

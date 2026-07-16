@@ -61,6 +61,20 @@ pub enum OpenFileTarget {
     Replace,
 }
 
+/// Darstellung der Pfadzeile in den Vault-Suchergebnissen (Etappe S7).
+/// `Relative` zeigt den Pin-/Ordnernamen samt relativem Rest-Pfad,
+/// `Absolute` den vollen normalisierten Verzeichnispfad. Rein
+/// Frontend-wirksam: `search.ts` liest den Wert beim Boot und reagiert
+/// live auf `settings:changed`; unbekannte gespeicherte Werte fallen auf
+/// `Relative` zurueck (Whole-Object-Default in `persist::load_json`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SearchPathDisplay {
+    #[default]
+    Relative,
+    Absolute,
+}
+
 /// Log-Level fuer das `tracing`-Subscriber-Setup. `Off` schaltet die
 /// Ausgabe stumm (Filter auf `"off"`) — der Subscriber und der
 /// File-Appender bleiben registriert, sodass ein Live-Wechsel zurueck
@@ -162,6 +176,10 @@ pub struct SettingsData {
     /// Ziel fuer extern geoeffnete Dateien (siehe [`OpenFileTarget`]).
     #[serde(default)]
     pub open_file_target: OpenFileTarget,
+    /// Pfad-Darstellung in den Vault-Suchergebnissen (siehe
+    /// [`SearchPathDisplay`]).
+    #[serde(default)]
+    pub search_path_display: SearchPathDisplay,
     /// Log-Level fuer den `tracing`-Subscriber. `Off` schaltet die
     /// Ausgabe stumm (Subscriber bleibt registriert, Filter auf
     /// `"off"`). `RUST_LOG`-ENV uebersteuert dies beim Boot und sperrt
@@ -206,6 +224,7 @@ impl Default for SettingsData {
             document_auto_reload: default_true(),
             export_dir_mode: ExportDirMode::default(),
             open_file_target: OpenFileTarget::default(),
+            search_path_display: SearchPathDisplay::default(),
             log_level: LogLevel::default(),
         }
     }
@@ -231,6 +250,7 @@ pub struct SettingsPatch {
     pub document_auto_reload: Option<bool>,
     pub export_dir_mode: Option<ExportDirMode>,
     pub open_file_target: Option<OpenFileTarget>,
+    pub search_path_display: Option<SearchPathDisplay>,
     pub log_level: Option<LogLevel>,
 }
 
@@ -248,6 +268,7 @@ impl SettingsPatch {
             && self.document_auto_reload.is_none()
             && self.export_dir_mode.is_none()
             && self.open_file_target.is_none()
+            && self.search_path_display.is_none()
             && self.log_level.is_none()
     }
 }
@@ -424,6 +445,12 @@ impl SettingsService {
                 changed.push("openFileTarget");
             }
         }
+        if let Some(value) = patch.search_path_display {
+            if self.data.search_path_display != value {
+                self.data.search_path_display = value;
+                changed.push("searchPathDisplay");
+            }
+        }
         if let Some(value) = patch.log_level {
             if self.data.log_level != value {
                 self.data.log_level = value;
@@ -455,7 +482,40 @@ mod tests {
         assert!(data.document_auto_reload);
         assert_eq!(ExportDirMode::Document, data.export_dir_mode);
         assert_eq!(OpenFileTarget::Newtab, data.open_file_target);
+        assert_eq!(SearchPathDisplay::Relative, data.search_path_display);
         assert_eq!(LogLevel::Info, data.log_level);
+    }
+
+    #[test]
+    fn search_path_display_round_trips_and_rejects_unknown() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("settings.json");
+        let mut svc = SettingsService::load_from(path.clone());
+        let changed = svc
+            .apply_patch(SettingsPatch {
+                search_path_display: Some(SearchPathDisplay::Absolute),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(vec!["searchPathDisplay"], changed);
+        assert_eq!(
+            SearchPathDisplay::Absolute,
+            SettingsService::load_from(path.clone())
+                .data()
+                .search_path_display
+        );
+
+        // Unbekannter Wert in settings.json -> Whole-Object-Default (relative).
+        std::fs::write(&path, r#"{"searchPathDisplay":"deep"}"#).unwrap();
+        let svc = SettingsService::load_from(path);
+        assert_eq!(SearchPathDisplay::Relative, svc.data().search_path_display);
+    }
+
+    #[test]
+    fn search_path_display_deserializes_from_camel_case_patch() {
+        let patch: SettingsPatch =
+            serde_json::from_str(r#"{"searchPathDisplay":"absolute"}"#).unwrap();
+        assert_eq!(Some(SearchPathDisplay::Absolute), patch.search_path_display);
     }
 
     #[test]
@@ -872,10 +932,11 @@ mod tests {
                 document_auto_reload: Some(false),
                 export_dir_mode: Some(ExportDirMode::Last),
                 open_file_target: Some(OpenFileTarget::Replace),
+                search_path_display: Some(SearchPathDisplay::Absolute),
                 log_level: Some(LogLevel::Debug),
             })
             .unwrap();
-        assert_eq!(13, changed.len());
+        assert_eq!(14, changed.len());
 
         let reloaded = SettingsService::load_from(path).data();
         assert_eq!("en", reloaded.language);
@@ -886,6 +947,7 @@ mod tests {
         assert_eq!(vec!["github".to_string()], reloaded.theme_favorites);
         assert_eq!(ExportDirMode::Last, reloaded.export_dir_mode);
         assert_eq!(OpenFileTarget::Replace, reloaded.open_file_target);
+        assert_eq!(SearchPathDisplay::Absolute, reloaded.search_path_display);
     }
 
     #[test]

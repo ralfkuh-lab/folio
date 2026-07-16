@@ -50,8 +50,9 @@ angepinnten Einträge. Daraus folgt:
    Einträge werden übersprungen** (konsistent mit dem Dimming; `.git`
    & Co. fallen damit automatisch raus). `sort_by_file_name` für
    deterministische Reihenfolge (E2E-Baselines), **single-threaded
-   Walk in V1** — paralleler Walk ist ein benannter Folgepunkt, kein
-   V1-Ziel.
+   Walk in V1**. Seit S6 (2026-07-16) laufen Verzeichnis-Scopes über
+   `run_search_parallel` (`build_parallel`, Completion-Order); die
+   sequenzielle Pipeline bleibt als geteilter Kern erhalten.
 2. **Datei-Filter über `file_kind::classify`**: nur
    `FileKind::Markdown` und `FileKind::Text`. Zusätzlich Größen-Cap
    (Konstante `MAX_FILE_SIZE = 2 MiB`, größere Dateien werden
@@ -431,6 +432,10 @@ unverändert):
    passende Pin-Wurzel (`pinRoots()` liest die Top-Level-`li.node[data-path]`
    der Pinned-Section aus `#vault-tree`), OpenTabs/kein Treffer → voller Pfad.
    CSS-Kürzung linksseitig (`direction:rtl`-Trick) → Pfad-Ende bleibt sichtbar.
+   **Durch S7 ersetzt**: die inline hinter dem Dateinamen gerenderte Pfad-
+   Zeichenkette (nur Verzeichnisanteil relativ zur Wurzel, ohne Wurzelnamen)
+   ist einem zweizeiligen Kopf gewichen (Pin-Name + Rest, siehe S7); der
+   Toggle selbst blendet weiterhin die Pfadzeile ein/aus.
 4. **Sortierung** (`#vault-search-sort`, ein durchcyclender Button
    none→name→path): locale-aware + numerisch (`Intl.Collator`, `numeric:true`),
    Dateiname sekundär nach Pfad (deterministisch bei gleichnamigen Dateien).
@@ -459,14 +464,127 @@ Header-Toggles). Neue i18n-Keys: `search.exit.{ariaLabel,tooltip}`,
 (×/Escape-Exit, Sortierung inkl. Streaming + README-Duplikate, Pfad-Toggle,
 Dauer-Format) + Rust-Unit (`panel_state`-Roundtrip, `normalized_sort`).
 
+### ✅ Etappe S6 — Paralleler Such-Walk (2026-07-16)
+
+Motivation: vault-weite Suche über mehrere große Pins dauerte beim User ~30 s;
+der Kern lief strikt single-threaded.
+
+- **Neue Funktion `search::run_search_parallel(roots, query, o, cancel, on_file)`**
+  mit **identischem Vertrag** wie `run_search_ex` (Streaming über `on_file`,
+  Caps, Cancel, `SearchStats`-Rückgabe). `run_search`/`run_search_ex`/
+  `run_search_buffers` und die sequenzielle Pipeline bleiben unverändert; die
+  31 additiv-only `mod tests` behalten ihre deterministische Reihenfolge.
+- **Architektur**: pro Root-Ordner ein `WalkBuilder::build_parallel()` (gleiche
+  Filterkonfiguration wie sequenziell — hidden/gitignore-Defaults, ignore-
+  Default-Threadzahl, kein neues Setting). Ein Producer-Thread (`std::thread::
+  scope`) treibt die Walks; die Worker-Visitoren machen Filter +
+  `worker_read_disk` (Content-Gate) + `build_file_hits` selbst und senden
+  fertige `WalkEvent`s (`NoHit`/`Matched`/`SkippedLarge`/`ProbeHit`) über
+  `std::sync::mpsc`. Der aufrufende Thread ist **Consumer** und einziger
+  `on_file`-Aufrufer; er dedupliziert (`seen`, normalisierte Pfade über beide
+  Phasen), zählt `files_scanned`/`skipped_large`/`hits` exakt und erzwingt die
+  Caps (per-Datei-50 klemmen die Worker, den globalen 500er der Consumer —
+  Cap-/Probe-/`truncated`-Semantik gespiegelt aus `process_content`). Der
+  `&mut dyn FnMut`-Vertrag wandert nie in einen Worker-Thread. Content-Gate
+  geteilt via `gate_bytes` (statistikfrei) unter `inspect_content` (sequenziell)
+  und `worker_read_disk` (parallel); die Einzeldatei-Phase (`scan_pinned_files`)
+  ist aus `run_over_roots` ausgelagert und wird von beiden Läufen geteilt.
+- **Overlap-Collapse vor dem Walk** (Sol-Rev S6#2): `walk_dirs_parallel` klappt
+  überlappende Dir-Roots über `collapse_overlapping_dirs` ein (Kind-Root entfällt
+  unter einem Eltern-Root; separator-grenzen-sicher via `PathBuf::starts_with`,
+  gemeinsam mit `resolve_scope`). Damit trifft jede Datei höchstens einen Walk und
+  der worker-seitige Näherungszähler zählt sie nie doppelt gegen den Deckel — der
+  Consumer-`seen` bleibt nur noch Netz für die geteilte Pinned-Phase.
+- **Early-Stop/Probe**: globaler `AtomicUsize`-Hit-Zähler als Näherung — Worker
+  addieren ihre (gekappten) Treffer und schalten ab Erreichen des Deckels in den
+  Probe-Modus (`probe_str`, Zero-Width zählt nie); die exakte Buchführung bleibt
+  beim Consumer. `cancel`/interner `stop_flag` → `WalkState::Quit`; unbounded
+  Channel, damit Worker beim Consumer-Stop nie blockieren. Der Consumer prüft
+  `cancel` **vor jedem** gepufferten Event und kehrt bei Abbruch sofort mit
+  „stopped" zurück (kein Anwenden nachlaufender Events, kein weiterer `on_file`,
+  keine Einzeldatei-Nachlaufphase) — Sol-Rev S6#1.
+- **Reihenfolge = Completion-Order (nichtdeterministisch)** — bewusste
+  Entscheidung: das Frontend behandelt Ankunft als „Fundreihenfolge" (S5-`none`-
+  Sortiermodus), Sortiermodi Name/Pfad existieren; **keine** End-Sortierung,
+  weil sie das Streaming der Treffer zunichtemachen würde. Konsequenz: bei
+  aktiver Truncation kann der parallele Lauf wegen der nur näherungsweise
+  gekoppelten Deckel-Erkennung **bis zu** (ggf. minimal weniger als) 500 Treffer
+  melden; `truncated` wird genau dann gesetzt, wenn real Treffer weggefallen
+  sind. `SearchStats` (Summen), Treffer-Menge pro Datei und die Hit-Reihenfolge
+  **innerhalb** einer Datei bleiben deterministisch.
+- **Aufrufer**: `vault_search_start` (Vault/Folder-Scope) und `POST /search`
+  nutzen `run_search_parallel`; OpenTabs-Puffer laufen unverändert über
+  `run_search_buffers`.
+- **Tests**: additive `mod tests`-Fälle (parallel-vs-sequenziell-Parität auf
+  reichem Baum ordnungs-insensitiv, FileFilter parallel, Dedup überlappender
+  Roots, Cap/`truncated`-Invarianten, Cancel vor Start, leerer Baum) plus zwei
+  Sol-Rev-Regressionstests: Mid-Run-Cancel (erster `on_file` setzt das Flag →
+  exakt kein weiterer Callback, S6#1) und Kind→Eltern-Overlap nahe am Cap mit
+  einer nur im Eltern-Root liegenden Trefferdatei, Ergebnismenge+`truncated`
+  gegen den sequenziellen Referenzlauf, ≥20× als Stress (S6#2). **Funktionale**
+  E2E-46/47-Asserts sind ordnungs-insensitiv (46 `sorted(...)`, 47 gruppenweise
+  per Dateiname); der **Visual-Screenshot** `47_search_results` ist es jedoch
+  nicht — seit S6 ist die Completion-Order (Sort `none`) nichtdeterministisch,
+  deshalb schaltet das Szenario vor der Aufnahme deterministisch auf Sort `name`
+  (alphabetisch: inner/more/notes) und wartet auf Spinner-Ende (S6#3; Baseline
+  unter Linux neu zu erzeugen). Lokale Verifikation über einen temporären
+  Integrationstest (`cargo test --lib` startet auf der Windows-Dev-Maschine
+  nicht, STATUS_ENTRYPOINT_NOT_FOUND); die permanenten Unit-Tests laufen in der
+  Linux-CI.
+
+### ✅ Etappe S7 — Pfad-Darstellung zweizeilig (2026-07-16)
+
+Rein Frontend + ein neues App-Setting (Suchkern `search.rs` unverändert).
+
+1. **Zweizeilige Treffergruppen-Köpfe** (`vault/search.ts::renderResults`):
+   der Kopf (`.vs-group-head`, `align-items:center`) enthält Caret, einen
+   gestapelten Textblock (`.vs-main`, flex-column: Zeile 1 `.vs-fname`, Zeile 2
+   `.vs-fpath`) und den Zähler-Badge (`.vs-count`, dadurch vertikal über beide
+   Zeilen zentriert). Die Pfadzeile ist kein Inline-Span mehr. `displayPath()`
+   liefert den Verzeichnisanteil (Dateiname steht separat in Zeile 1, deshalb
+   nie mitgeführt): im Modus `relative` **Pin-/Scope-Wurzel-Basisname + relativer
+   Rest** (Datei direkt in der Wurzel → nur der Basisname, nie leer), ohne
+   Root-Match (OpenTabs/kein Pin) den vollen Verzeichnispfad. Der absolute
+   Dateipfad bleibt im `title`-Tooltip des Kopfes. Linksseitige Kürzung
+   (`direction:rtl`) unverändert. Der S5-Pfad-Toggle blendet die Pfadzeile weiter
+   ein/aus.
+2. **Sortierschlüssel = angezeigte Pfad-Zeichenkette**: `sortFiles()` nutzt für
+   `sort=path` (und als Sekundärschlüssel bei `sort=name`) `displayPath(path)`
+   statt des absoluten Pfads — die Pfadsortierung ist damit visuell
+   nachvollziehbar und divergiert bei mehreren Pins bewusst vom absoluten Pfad.
+   Memoisiert pro Sortierdurchlauf (eine `displayPath`/`pinRoots`-Auswertung je
+   Datei).
+3. **Emphasis-Swap bei `sort=path`**: Modifier-Klasse `vs-sort-path` auf
+   `#vault-search-list` (Toggle in `renderResults`). CSS tauscht per `order` die
+   Zeilenreihenfolge (Pfad nach oben) UND die Betonung (Pfad normal, Dateiname
+   gedimmt); bei none/name das heutige Muster. Kein DOM-Umbau pro Modus.
+4. **Setting `searchPathDisplay`** (`relative` | `absolute`, Default `relative`,
+   unbekannt → `relative`): echtes App-Setting in `settings.rs`
+   (`SearchPathDisplay`-Enum, `#[serde(default)]`, Patch-Feld + `apply_patch`),
+   Settings-UI-Dropdown im neuen Bereich „Suche" (`#settings-search-path-display`,
+   `settings-dialog.ts`). i18n-Keys `settings.search.sectionTitle` +
+   `settings.search.pathDisplay.{label,optionRelative,optionAbsolute,hint}` in
+   allen 9 Katalogen + `context/keys.json`. `search.ts` liest den Wert beim Boot
+   über `settings_get` und reagiert live auf `settings:changed`
+   (`onSettingsChanged` → `setPathDisplay`, re-sort + re-render mit Anker-Erhalt).
+   `absolute` zeigt den vollen Verzeichnispfad; der Sortierschlüssel bleibt in
+   beiden Modi die angezeigte Zeichenkette. Automation `GET/POST /settings` trägt
+   das Feld generisch mit (SettingsData/-Patch-Serde), keine Extra-Route.
+5. **Tests**: vitest (Pin-Name-Pfadzeile, Datei in Pin-Wurzel → nur Pin-Name,
+   sort=path folgt Anzeige-String mit absolut-divergierendem Zwei-Pin-Fixture,
+   Emphasis-Klasse nur bei sort=path, Toggle blendet aus, `absolute` ändert
+   Anzeige+Sortierung, `settings:changed`-Livewechsel) + Rust-Unit
+   (`search_path_display`-Roundtrip/Unknown-Fallback/camelCase-Patch). E2E 47
+   unberührt (referenziert `.vs-fname`, nicht `.vs-fpath`).
+
 ## Risiken / bewusste Entscheidungen
 
 - **Kein Index in V1** — jede Suche ist ein frischer Walk. Für
   realistische Vaults (SSD, tausende MD-Dateien) im 100-ms-Bereich;
   Caps + Cancel + Debounce fangen den Rest. Ein persistenter Index
   (tantivy o. ä.) wäre massiver Overkill und ein Cache-Invalidierungs-
-  Problem (externe Änderungen). Folgepunkt: paralleler Walk
-  (`build_parallel`), falls große Pins spürbar werden.
+  Problem (externe Änderungen). Paralleler Walk (`build_parallel`) ist
+  seit S6 umgesetzt (`run_search_parallel`).
 - **Hidden Files werden übersprungen**, obwohl der Vault-Baum
   Dotfiles anzeigt — bewusste Abweichung (`.git`-Traversal wäre
   sonst Pflicht-Sonderfall). Falls es stört: später Opt-in-Toggle.

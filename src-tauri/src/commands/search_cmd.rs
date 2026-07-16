@@ -219,7 +219,8 @@ pub async fn vault_search_start(
         };
         let result = match &work {
             SearchWork::Roots(roots) => {
-                search::run_search_ex(roots, &query, &options, &cancel, &mut on_file)
+                // S6: Verzeichnis-Scopes (Vault/Folder) laufen parallel.
+                search::run_search_parallel(roots, &query, &options, &cancel, &mut on_file)
             }
             SearchWork::Buffers(docs) => {
                 search::run_search_buffers(docs, &query, &options, &cancel, &mut on_file)

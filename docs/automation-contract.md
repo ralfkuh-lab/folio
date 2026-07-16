@@ -171,8 +171,9 @@ Aufruf frisch aus `<config>/folio/themes/` gelesenen Custom-Theme-IDs.
 `standard` ist darin nicht erlaubt. `openFileTarget`
 (`newtab` Default | `replace`) steuert, ob extern geoeffnete Dateien
 (Single-Instance-Reinvoke) einen neuen Tab bekommen oder das Dokument im
-aktiven Tab ersetzen. Unbekannte oder ungueltige Werte werden
-beim Patch mit HTTP 400 abgelehnt.
+aktiven Tab ersetzen. `searchPathDisplay` (`relative` Default | `absolute`)
+steuert die Pfadzeile in den Vault-Suchergebnissen. Unbekannte oder
+ungueltige Werte werden beim Patch mit HTTP 400 abgelehnt.
 
 ### Tabs
 

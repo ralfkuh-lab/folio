@@ -478,19 +478,31 @@ html.theme-dark .vault-region .git-branch--detached {
   font-size: 9px;
   color: var(--rail-fg-muted);
   transition: transform 0.1s;
+  /* Zweizeiliger Kopf: Caret an der ersten Zeile ausrichten. */
+  align-self: flex-start;
+  margin-top: 3px;
 }
 .vs-caret.collapsed { transform: rotate(-90deg); }
+/* [S7] Zweizeiliger Textblock: Zeile 1 Dateiname, Zeile 2 Pfad (gestapelt).
+   Der Zähler-Badge ist Geschwister und über align-items:center des Kopfes
+   vertikal über beide Zeilen zentriert. */
+.vs-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 .vs-fname {
-  flex: 0 1 auto;
+  order: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Dimmer Verzeichnispfad hinter dem Dateinamen (S5). Linksseitige Kürzung
+/* Dimmer Verzeichnispfad als eigene Zeile (S5→S7). Linksseitige Kürzung
    (direction:rtl-Trick), damit das Pfad-ENDE sichtbar bleibt. */
 .vs-fpath {
-  flex: 1 1 auto;
-  min-width: 0;
+  order: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -500,6 +512,21 @@ html.theme-dark .vault-region .git-branch--detached {
   font-weight: 400;
   font-size: 10px;
   opacity: 0.8;
+}
+/* [S7] sort=path: Pfad nach oben mit voller Betonung, Dateiname nach unten
+   gedimmt — Emphasis-Swap rein über CSS (Reihenfolge + Farbe), kein DOM-Umbau. */
+.vs-sort-path .vs-fpath {
+  order: 0;
+  color: var(--rail-fg);
+  font-weight: 600;
+  font-size: inherit;
+  opacity: 1;
+}
+.vs-sort-path .vs-fname {
+  order: 1;
+  color: var(--rail-fg-muted);
+  font-weight: 400;
+  font-size: 10px;
 }
 .vs-count {
   flex: 0 0 auto;

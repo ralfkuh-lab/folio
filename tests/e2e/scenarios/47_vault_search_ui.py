@@ -210,6 +210,62 @@ def run(ctx):
                 ctx.expect(info.get("mark") == TOKEN, f"mark={info.get('mark')}")
                 ctx.expect(info.get("line") == "2", f"line={info.get('line')}")
 
+            with ctx.step("Deterministische Sortierung (name) vor dem Screenshot"):
+                # [Sol-Rev S6#3] Seit S6 laeuft der Walk parallel → die Ankunfts-/
+                # Completion-Order (Sortiermodus 'none') ist nichtdeterministisch.
+                # Der Screenshot 47_search_results ist damit nur baseline-stabil,
+                # wenn vorher auf einen deterministischen Modus geschaltet wird.
+                # Sort 'name' ordnet die drei Gruppen alphabetisch nach Dateiname
+                # (inner.md < more.md < notes.md) — unabhaengig von der Ankunft.
+                # HINWEIS: Nach dieser Aenderung muss die Baseline 47_search_results
+                # unter Linux (run-e2e.sh --update-baselines) neu erzeugt werden.
+                # Erst sicherstellen, dass der Lauf fertig ist (kein Spinner).
+                spinner_gone = _poll(
+                    ctx,
+                    lambda: _evalv(
+                        ctx,
+                        "document.getElementById('vault-search-status')"
+                        ".classList.contains('vs-running')",
+                    )
+                    is False,
+                )
+                ctx.expect(spinner_gone is True, "spinner still running before results screenshot")
+                expected_order = ["inner.md", "more.md", "notes.md"]
+
+                def _fname_order():
+                    return _evalv(
+                        ctx,
+                        "(function(){return Array.from(document.querySelectorAll("
+                        "'#vault-search-list .vs-group .vs-fname')).map("
+                        "function(e){return e.textContent;});})()",
+                    )
+
+                def _sort_active():
+                    return _evalv(
+                        ctx,
+                        "document.getElementById('vault-search-sort')"
+                        ".classList.contains('active')",
+                    )
+
+                # Sort-Button zyklisch (none→name→path→none) klicken, bis wir im
+                # 'name'-Modus sind (Button aktiv UND alphabetische Reihenfolge).
+                # Robust gegen einen aus einem frueheren Lauf persistierten Modus.
+                reached = False
+                for _ in range(4):
+                    if _sort_active() is True and _fname_order() == expected_order:
+                        reached = True
+                        break
+                    ctx.api.eval(
+                        "document.getElementById('vault-search-sort')"
+                        ".dispatchEvent(new MouseEvent('click',{bubbles:true}))"
+                    )
+                    time.sleep(0.12)
+                ctx.expect(
+                    reached,
+                    f"deterministischer name-Sort nicht erreicht: active={_sort_active()} "
+                    f"order={_fname_order()}",
+                )
+
             ctx.screenshot("47_search_results")
 
             with ctx.step("Cancel/Reopen: Draft verworfen, committed Lauf unveraendert"):

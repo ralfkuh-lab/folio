@@ -247,6 +247,17 @@
           </div>
           <p class="settings-hint" data-i18n="settings.watch.reloadOnExternal.hint">Ohne Häkchen erscheint stattdessen ein Reload-Button in der Toolbar — sinnvoll für Log-Dateien o. ä. mit ständigen Schreibvorgängen.</p>
         </section>
+        <section class="settings-section">
+          <h3 class="settings-section__title" data-i18n="settings.search.sectionTitle">Suche</h3>
+          <div class="settings-row">
+            <label for="settings-search-path-display" data-i18n="settings.search.pathDisplay.label">Pfadanzeige in den Ergebnissen</label>
+            <select id="settings-search-path-display" class="settings-input">
+              <option value="relative" data-i18n="settings.search.pathDisplay.optionRelative">Relativ zu Pin oder Ordner</option>
+              <option value="absolute" data-i18n="settings.search.pathDisplay.optionAbsolute">Vollständiger Pfad</option>
+            </select>
+          </div>
+          <p class="settings-hint" data-i18n="settings.search.pathDisplay.hint">Relativ zeigt den Pin- oder Ordnernamen samt darunterliegendem Pfad; vollständig zeigt den kompletten Dateisystempfad.</p>
+        </section>
       </div>
       <div class="settings-dialog__tabpanel" id="settings-panel-themes" role="tabpanel" aria-labelledby="settings-tab-themes" data-settings-tab="themes" hidden>
         <section class="settings-theme-browser">

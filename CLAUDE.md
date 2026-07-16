@@ -202,8 +202,11 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   `automation/handlers/search.rs`; Frontend `vault/search.ts` +
   `#vault-search`; Spec + Etappen in
   [`docs/spec-vault-search.md`](docs/spec-vault-search.md)):
-  Backend-Suchkern `run_search`/`run_search_ex` läuft single-threaded über
-  `ignore::WalkBuilder` (hidden/gitignore-Filter), Filter über `FileFilter`
+  Backend-Suchkern `run_search`/`run_search_ex` läuft sequenziell über
+  `ignore::WalkBuilder`, Verzeichnis-Scopes (Vault/Folder) seit S6 parallel
+  über `run_search_parallel` (`build_parallel` + `mpsc`-Consumer, nur der
+  Consumer ruft `on_file`, Completion-Order; OpenTabs-Puffer bleiben
+  sequenziell) (hidden/gitignore-Filter), Filter über `FileFilter`
   (`markdown` = nur `FileKind::Markdown` | `allText` = Markdown+Text |
   `custom` = Endungsliste mit bewusstem `classify`-Bypass) + 2-MiB-Cap
   (`skipped_large`) + NUL-Sniff (8 KiB); Literalsuche escaped `(?i)`/`\b…\b`
