@@ -260,7 +260,7 @@ pub(in crate::automation) async fn post_key(
         return Err(ApiError::bad_request("key must not be empty"));
     }
     let target = payload.target.as_deref().unwrap_or("document");
-    if !matches!(target, "document" | "editor") {
+    if !matches!(target, "document" | "editor" | "find-input") {
         return Err(ApiError::bad_request(format!("unknown target '{target}'")));
     }
     let state = context.app_handle.state::<AppState>();
@@ -429,6 +429,7 @@ pub(in crate::automation) async fn post_workspace_pin(
     // Sync GitHeadWatcher on pin (new git root may appear) — use shared helper
     crate::commands::workspace_cmd::sync_git_head_watcher(state.inner());
     let (request_id, receiver) = ack::register(state.inner()).map_err(ApiError::internal)?;
+    let _guard = ack::PendingGuard::new(&state.inner().pending_acks, request_id);
     let mut event_payload =
         serde_json::to_value(delta).map_err(|e| ApiError::internal(e.to_string()))?;
     event_payload["requestId"] = serde_json::json!(request_id);
@@ -469,6 +470,7 @@ pub(in crate::automation) async fn post_workspace_unpin(
     // Sync GitHeadWatcher on unpin (git root may be removed) — use shared helper
     crate::commands::workspace_cmd::sync_git_head_watcher(state.inner());
     let (request_id, receiver) = ack::register(state.inner()).map_err(ApiError::internal)?;
+    let _guard = ack::PendingGuard::new(&state.inner().pending_acks, request_id);
     let mut event_payload =
         serde_json::to_value(delta).map_err(|e| ApiError::internal(e.to_string()))?;
     event_payload["requestId"] = serde_json::json!(request_id);

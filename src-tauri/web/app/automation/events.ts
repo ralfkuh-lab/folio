@@ -11,12 +11,15 @@
    Selektor-Fallback-Reihenfolge in `automation:click` ist Teil des
    Automation-Vertrags — siehe `docs/automation-contract.md`.
 
-   `automation:key` dispatcht keydown+keyup an `document` (Default) oder
-   ans Editor-Wrapper-Element. Monaco-eigene Shortcuts (Strg+Z, Tab-Indent)
-   sind ueber synthetische Events fragil und sollen spaeter ueber einen
-   separaten `POST /editor/command` mit `editor.trigger('keyboard', ...)`
-   laufen — dieser Listener bedient nur DOM-Listener, die auf `keydown`
-   reagieren (Find-Bar, Toolbar-Actions, Zoom, Dialogs).
+   `automation:key` dispatcht keydown+keyup an `document` (Default),
+   ans Editor-Wrapper-Element (`target: "editor"`) oder ans Find-Input
+   (`target: "find-input"` → `#find-input`; fehlt das Element, kein
+   Dispatch — analog zu click bei fehlendem Ziel). Monaco-eigene
+   Shortcuts (Strg+Z, Tab-Indent) sind ueber synthetische Events fragil
+   und sollen spaeter ueber einen separaten `POST /editor/command` mit
+   `editor.trigger('keyboard', ...)` laufen — dieser Listener bedient
+   nur DOM-Listener, die auf `keydown` reagieren (Find-Bar,
+   Toolbar-Actions, Zoom, Dialogs).
 
    Ack-Semantik (Design in TODO.md / Codex-Synthese): Events mit
    `requestId` triggern nach Handler-Ende einen `invoke('automation_ack',
@@ -88,6 +91,12 @@ function dispatchAutomationKey(data: any): void {
             || document.querySelector('.monaco-editor')
             || document.body;
         element = host;
+    } else if (target === 'find-input') {
+        // Escape-Close haengt am Find-Input (find-bar.ts), nicht am
+        // document — Allowlist-Target, kein freier CSS-Selektor.
+        var findInput = document.getElementById('find-input');
+        if (!findInput) return;
+        element = findInput;
     }
     try {
         element.dispatchEvent(new KeyboardEvent('keydown', init));

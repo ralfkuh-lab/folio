@@ -218,6 +218,24 @@ und ungültige oder nicht existente Dateipfade HTTP 400.
   mit dem vollen Payload; kein Ack (wie andere reine UI-Öffner). Die Find-Bar
   ignoriert Aufrufe bei `kind-image`/`kind-binary`.
 
+### Key
+
+`POST /key` dispatcht ein synthetisches `KeyboardEvent` (keydown + keyup)
+ans gewählte Ziel. Body: `{ "key": "Escape", "modifiers"?: { ctrl, shift,
+alt, meta }, "target"?: "document" | "editor" | "find-input" }`. Antwort im
+Ack-Format `{ ok, acked, requestId }`.
+
+- `target` ist eine **Allowlist** (kein freier CSS-Selektor). Default:
+  `document`. Unbekannte Targets → HTTP 400.
+- `document` — Root-Listener (Mode-Switch, Strg+F, Strg+S, …).
+- `editor` — `#editor-mount` (Fallback `.monaco-editor` / `body`).
+- `find-input` — `#find-input`. Benötigt für Escape-Close der Find-Bar
+  (Handler hängt am Input, nicht am `document`). Fehlt das Element,
+  kein Dispatch (analog zu `/click` bei fehlendem Ziel).
+
+Monaco-eigene Shortcuts (Strg+Z, Tab-Indent) bleiben über synthetische
+Events fragil — dafür `POST /editor/command`.
+
 ### Workspace
 
 - `POST /workspace/clear_recents` leert die Recent-Liste („Zuletzt

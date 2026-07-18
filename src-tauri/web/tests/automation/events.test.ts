@@ -560,6 +560,45 @@ describe('automation/events — automation:key', () => {
         expect(onDoc).toHaveBeenCalledTimes(1);
     });
 
+    it('target find-input dispatcht auf #find-input', async () => {
+        const input = document.createElement('input');
+        input.id = 'find-input';
+        document.body.appendChild(input);
+
+        const events = await import('../../app/automation/events');
+        events.initAutomationEvents();
+
+        const onInput = vi.fn();
+        input.addEventListener('keydown', onInput);
+
+        tauri.emitEvent('automation:key', {
+            key: 'Escape',
+            modifiers: {},
+            target: 'find-input',
+        });
+
+        expect(onInput).toHaveBeenCalledTimes(1);
+        expect(onInput.mock.calls[0][0].key).toBe('Escape');
+        expect(onInput.mock.calls[0][0].target).toBe(input);
+    });
+
+    it('target find-input ohne Element: kein Dispatch', async () => {
+        // #find-input fehlt bewusst.
+        const events = await import('../../app/automation/events');
+        events.initAutomationEvents();
+
+        const captured: KeyboardEvent[] = [];
+        document.addEventListener('keydown', (e) => captured.push(e));
+
+        tauri.emitEvent('automation:key', {
+            key: 'Escape',
+            modifiers: {},
+            target: 'find-input',
+        });
+
+        expect(captured).toHaveLength(0);
+    });
+
     it('ignoriert Events ohne key-Feld', async () => {
         const events = await import('../../app/automation/events');
         events.initAutomationEvents();
