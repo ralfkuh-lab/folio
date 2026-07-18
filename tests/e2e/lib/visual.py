@@ -54,14 +54,6 @@ class VisualSuite:
 
     Im `update_baselines`-Mode werden Baselines nur geschrieben (keine
     Vergleichs-Aussage).
-
-    Im `record_only`-Mode (Teil-Lauf via Szenario-Auswahl) werden
-    Aufnahmen nur in den Artefaktordner geschrieben — kein Vergleich,
-    kein Baseline-Schreiben. Grund: die committed Baselines kodieren
-    den kumulierten Voll-Lauf-Zustand (Theme aus 04, offene Find-Bar
-    aus 06, Recent-Liste, …); ein einzeln gestartetes Szenario kann
-    dagegen prinzipiell nicht bestehen und dürfte die Baselines erst
-    recht nicht überschreiben.
     """
 
     def __init__(
@@ -69,7 +61,6 @@ class VisualSuite:
         baselines_dir: Path,
         artifacts_dir: Path,
         update_baselines: bool = False,
-        record_only: bool = False,
         threshold_ratio: float = 0.01,
         diff_threshold: int = 12,
     ):
@@ -80,7 +71,6 @@ class VisualSuite:
         self.diffs_dir.mkdir(parents=True, exist_ok=True)
         self.baselines_dir.mkdir(parents=True, exist_ok=True)
         self.update_baselines = update_baselines
-        self.record_only = record_only
         self.threshold_ratio = threshold_ratio
         self.diff_threshold = diff_threshold
         self.results: list[CompareResult] = []
@@ -95,20 +85,6 @@ class VisualSuite:
         captured_path.write_bytes(png_bytes)
 
         baseline_path = self.baselines_dir / f"{name}.png"
-
-        if self.record_only:
-            result = CompareResult(
-                name=name,
-                captured_path=captured_path,
-                baseline_path=None,
-                diff_path=None,
-                mismatch_ratio=0.0,
-                threshold_ratio=threshold,
-                passed=True,
-                message="captured only (Teil-Lauf, kein Baseline-Vergleich)",
-            )
-            self.results.append(result)
-            return result
 
         if self.update_baselines:
             baseline_path.write_bytes(png_bytes)

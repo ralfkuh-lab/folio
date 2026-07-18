@@ -42,6 +42,10 @@ pub(super) fn build_router(context: AutomationContext) -> Router {
         .route("/editor/command", post(ui::post_editor_command))
         .route("/workspace/pin", post(ui::post_workspace_pin))
         .route("/workspace/unpin", post(ui::post_workspace_unpin))
+        .route(
+            "/workspace/clear_recents",
+            post(ui::post_workspace_clear_recents),
+        )
         .route("/history/back", post(ui::post_history_back))
         .route("/history/forward", post(ui::post_history_forward))
         .route("/focus", post(ui::post_focus))

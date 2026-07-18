@@ -186,6 +186,12 @@ impl Workspace {
         self.save()
     }
 
+    /// Leert die gesamte Recent-Liste (E2E-Reset auf kanonischen Zustand).
+    pub fn clear_recent(&mut self) -> io::Result<()> {
+        self.data.recent.clear();
+        self.save()
+    }
+
     pub fn pin(&mut self, path: String, is_directory: bool) -> io::Result<()> {
         let path = normalize_path(&path);
         if !self.is_pinned(&path) {
@@ -291,6 +297,20 @@ mod tests {
         workspace.add_recent("/20.md".into()).unwrap();
         assert_eq!(20, workspace.recent().len());
         assert_eq!("/20.md", workspace.recent()[0].path);
+    }
+
+    #[test]
+    fn clear_recent_empties_and_persists() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("workspace.json");
+        let mut workspace = Workspace::load_from(path.clone());
+        workspace.add_recent("/a.md".into()).unwrap();
+        workspace.add_recent("/b.md".into()).unwrap();
+        workspace.clear_recent().unwrap();
+        assert!(workspace.recent().is_empty());
+        // Persistiert: nach erneutem Load bleibt die Liste leer.
+        let reloaded = Workspace::load_from(path);
+        assert!(reloaded.recent().is_empty());
     }
 
     #[test]

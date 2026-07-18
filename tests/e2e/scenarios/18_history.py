@@ -33,11 +33,11 @@ def _wait_for_file(ctx, expected_basename: str, timeout_s: float = 2.0) -> str:
 
 def run(ctx):
     # Ganz nach links in der Historie navigieren, um den Stack davor zu minimieren.
-    # Dadurch bleibt genau 1 Element an Index 0 uebrig, wenn wir neu oeffnen.
-    # Mit Iterations-Cap: ein Regression-Bug, der am Stack-Edge moved=true
-    # liefert (der 2026-05-19-Bug, gegen den dieses Szenario testet),
-    # wuerde sonst die gesamte Suite haengen — der Orchestrator hat kein
-    # globales Timeout.
+    # Seit dem kanonischen Reset startet der leere Tab mit LEEREM Stack —
+    # die Schleife ist nur noch ein Sicherheitsnetz (Iterations-Cap: ein
+    # Regression-Bug, der am Stack-Edge moved=true liefert — der
+    # 2026-05-19-Bug, gegen den dieses Szenario testet — wuerde sonst die
+    # gesamte Suite haengen; der Orchestrator hat kein globales Timeout).
     for _ in range(100):
         res = ctx.api.history_back()
         if not res.get("moved"):
@@ -54,6 +54,14 @@ def run(ctx):
     file_a.write_text("# A\n")
     file_b = tmp / "history-b.md"
     file_b.write_text("# B\n")
+
+    # Der Edge-Test unten braucht einen Basis-Eintrag an Index 0
+    # (Basis, A, B) — frueher lieferte den der kumulierte Voll-Lauf-Stack,
+    # jetzt stellt das Szenario ihn selbst her.
+    with ctx.step("Basis-Eintrag an Index 0 oeffnen"):
+        ctx.api.open(ctx.fixture("sample.md"))
+        f = _wait_for_file(ctx, "sample.md")
+        ctx.expect(f and "sample.md" in f, f"open base: state.file={f!r}")
 
     with ctx.step("open A"):
         ctx.api.open(str(file_a))

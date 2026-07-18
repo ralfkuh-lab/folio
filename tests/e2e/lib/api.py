@@ -197,8 +197,13 @@ class AutomationApi:
         return self._request("POST", "/find/text", {"term": term})
 
     def find_close(self) -> dict:
-        # Es gibt keinen dedizierten Close-Endpunkt; Escape an die Find-Bar.
-        return self.key("Escape", target="document")
+        # Es gibt keinen dedizierten Close-Endpunkt. NICHT Escape:
+        # der Close-Handler haengt am Find-INPUT (find-bar.ts), ein
+        # synthetisches Escape auf `document` erreicht ihn nie — die
+        # Bar blieb so frueher offen (Leck aus 06/12). Der Klick auf
+        # den Close-Button ruft denselben close()-Pfad und ist
+        # idempotent (Bar bereits zu → no-op).
+        return self.click("find-close")
 
     def editor_text_get(self) -> dict:
         return self._request("GET", "/editor/text")
@@ -244,6 +249,9 @@ class AutomationApi:
 
     def workspace_unpin(self, path: str) -> dict:
         return self._request("POST", "/workspace/unpin", {"path": path})
+
+    def workspace_clear_recents(self) -> dict:
+        return self._request("POST", "/workspace/clear_recents", {})
 
     def search(
         self,

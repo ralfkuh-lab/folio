@@ -48,7 +48,8 @@ Das Skript
    `TODO.md` mit Verweis auf den Run-Log,
 8. stoppt Folio + Xvfb sauber.
 
-Exit-Code `0` = alle Szenarien grün, `1` = mindestens ein Fehler.
+Exit-Code `0` = alle Szenarien grün, `1` = mindestens ein Fehler,
+`2` = Aufruf-Fehler (z. B. unbekanntes Szenario).
 
 ## Artefakte
 
@@ -83,6 +84,7 @@ tests/e2e/
 ├── lib/
 │   ├── app.py             # Folio-Lifecycle (start/stop, Health-Polling)
 │   ├── api.py             # Automation-API-Client
+│   ├── reset.py           # Kanonischer UI-Reset vor jedem Szenario
 │   ├── visual.py          # Screenshot + Pillow-Diff
 │   ├── report.py          # Markdown-Report-Writer
 │   └── todo.py            # TODO.md-Auto-Update bei Errors
@@ -101,6 +103,33 @@ Aktuell gibt es 23 Szenarien: Boot, View/Edit/Split, Theme, Vault,
 Find, Workspace/Recent, Save-Roundtrip, Undo/Redo, Toolbar-Commands,
 File/Edit/View/Help-Menüs, DOM-Keybindings, Vault-Tree, Pin/Unpin,
 History, Kontextmenüs, TOC-DOM-Klick, HTML-View und Settings-/Split-API.
+
+## Kanonischer Reset pro Szenario
+
+Vor jedem Szenario stellt `lib/reset.py::reset_canonical_state` einen
+definierten UI-Ausgangszustand her: alle Tabs zu, Settings auf dem
+Run-Start-Snapshot, Theme light, Find-Bar zu, Mode view (best effort),
+linke Rail sichtbar, Split 50 %, Recent-Liste leer
+(`POST /workspace/clear_recents`). Der Reset läuft in Voll- wie in
+Auswahl-Läufen identisch — dadurch kodiert jede Baseline nur den
+Zustand ihres eigenen Szenarios.
+
+**Attach-Modus** (`bash scripts/run-e2e.sh --attach` bzw.
+`python tests/e2e/run.py --attach`): der Reset ist standardmäßig
+**aus** — er würde offene Tabs verwerfen und die echte Recent-Liste
+der angedockten Instanz persistent leeren. Opt-in:
+`--attach --attach-reset`. Der normale Wrapper-Pfad (Xvfb + selbst
+gestartetes Folio im Temp-Home) schaltet den Reset immer ein.
+
+Konsequenzen:
+
+- **Einzelszenario-Läufe vergleichen gegen Baselines**:
+  `bash scripts/run-e2e.sh 21_split_mode` (Name oder Präfix, mehrere
+  möglich).
+- **Einzelne Baselines direkt erneuern**:
+  `bash scripts/run-e2e.sh 21_split_mode --update-baselines`.
+- Ein Reset-Schritt, der fehlschlägt, bricht den Lauf mit Fehler ab
+  (kein Weiterlaufen mit vergiftetem Zustand).
 
 ## Szenario-Vertrag
 

@@ -134,6 +134,7 @@ fn needs_frontend_ready(method: &Method, path: &str) -> bool {
             | ("POST", "/editor/command")
             | ("POST", "/workspace/pin")
             | ("POST", "/workspace/unpin")
+            | ("POST", "/workspace/clear_recents")
             | ("POST", "/history/back")
             | ("POST", "/history/forward")
             | ("POST", "/focus")

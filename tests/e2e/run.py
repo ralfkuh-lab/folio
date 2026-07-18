@@ -10,26 +10,28 @@ Aufruf-Varianten:
 - Default (Linux Headless + Wrapper-Skript handhabt Xvfb):
     python tests/e2e/run.py
 
-- Gegen eine bereits laufende Folio-Instanz (Windows-Debugging):
+- Gegen eine bereits laufende Folio-Instanz (Windows-Debugging).
+  Der kanonische Reset (lib/reset.py) wird dabei standardmaessig
+  UEBERSPRUNGEN — er wuerde offene Tabs verwerfen und die echte
+  Recent-Liste der Instanz persistent leeren (Warnung im Log, Visual-
+  Vergleiche ggf. nicht aussagekraeftig). Explizit einschalten:
     python tests/e2e/run.py --attach
+    python tests/e2e/run.py --attach --attach-reset
 
 - Baselines updaten:
     python tests/e2e/run.py --update-baselines
 
-- Nur einzelne Szenarien (Name oder Praefix) — fuer funktionales
-  Debugging. Screenshots werden dabei nur aufgenommen, NICHT gegen
-  Baselines verglichen: die Baselines kodieren den kumulierten
-  Voll-Lauf-Zustand (Theme aus 04, offene Find-Bar aus 06, Recents),
-  gegen den ein Einzellauf prinzipiell nicht bestehen kann.
+- Nur einzelne Szenarien (Name oder Praefix). Vergleicht wie der
+  Voll-Lauf gegen die Baselines: der kanonische Reset vor jedem
+  Szenario (lib/reset.py) stellt sicher, dass eine Baseline nur den
+  Zustand ihres eigenen Szenarios kodiert. Auch einzelne Baselines
+  lassen sich so direkt erneuern:
     python tests/e2e/run.py 21_split_mode
     python tests/e2e/run.py 21 05
-
-- Eine einzelne Baseline erneuern: Datei in `baselines/` loeschen und
-  einen VOLLEN Lauf starten (Auto-Seed legt sie neu an).
-  `--update-baselines` ist mit Szenario-Auswahl deshalb gesperrt.
+    python tests/e2e/run.py 21_split_mode --update-baselines
 
 Exit-Code: 0 = alle Szenarien gruen, 1 = mind. ein Fehler,
-2 = Aufruf-Fehler (unbekanntes Szenario / verbotene Options-Kombi).
+2 = Aufruf-Fehler (unbekanntes Szenario).
 """
 
 from __future__ import annotations
@@ -53,6 +55,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 from lib.api import AutomationApi  # noqa: E402
 from lib.app import AppController, discover_folio_binary, ensure_xvfb_or_no_op  # noqa: E402
 from lib.report import ReportWriter, ScenarioAbort, ScenarioContext  # noqa: E402
+from lib.reset import reset_canonical_state  # noqa: E402
 from lib.todo import append_e2e_failure_entry  # noqa: E402
 from lib.visual import VisualSuite  # noqa: E402
 
@@ -124,6 +127,12 @@ def main(argv: list[str]) -> int:
         help="Nicht selbst starten — gegen bereits laufende Folio-Instanz testen.",
     )
     parser.add_argument(
+        "--attach-reset", action="store_true",
+        help="Auch im --attach-Modus den kanonischen Reset vor jedem Szenario "
+             "ausfuehren. ACHTUNG: verwirft offene Tabs und leert die echte "
+             "Recent-Liste der angedockten Instanz persistent.",
+    )
+    parser.add_argument(
         "--update-baselines", action="store_true",
         help="Aufnahmen als neue Baselines schreiben statt zu vergleichen.",
     )
@@ -156,19 +165,10 @@ def main(argv: list[str]) -> int:
     # haengt).
     all_scenarios = discover_scenarios(Path(args.scenarios_dir))
     if args.only:
-        if args.update_baselines:
-            print("[ERR] --update-baselines ist mit Szenario-Auswahl gesperrt: "
-                  "Baselines kodieren den kumulierten Voll-Lauf-Zustand "
-                  "(Theme/Find-Bar/Recents aus frueheren Szenarien) — ein "
-                  "Teil-Lauf wuerde sie vergiften. Einzelne Baseline erneuern: "
-                  "Datei in baselines/ loeschen + voller Lauf.")
-            return 2
         maybe = select_scenarios(all_scenarios, args.only, args.include_desktop_only)
         if maybe is None:
             return 2
         scenarios = maybe
-        print("[i] Teil-Lauf: Screenshots werden nur aufgenommen, nicht "
-              "gegen Baselines verglichen (siehe Modul-Docstring).")
     else:
         scenarios = []
         for name, run_fn, desktop_only in all_scenarios:
@@ -267,6 +267,26 @@ def main(argv: list[str]) -> int:
     fixtures_dir = SCRIPT_DIR / "fixtures"
     baselines_dir = SCRIPT_DIR / "baselines"
 
+    # Settings-Snapshot fuer den kanonischen Reset (lib/reset.py): einmal
+    # nach frontendReady, vor Szenario 1. POST /settings akzeptiert das
+    # vollstaendige Objekt als Patch (unbekannte Felder ignoriert serde,
+    # alle SettingsData-Felder existieren auch im SettingsPatch).
+    try:
+        settings_snapshot = api.settings_get()
+    except Exception as e:
+        print(f"[ERR] Settings-Snapshot fehlgeschlagen: {e}")
+        if app is not None:
+            app.stop(api)
+        return 1
+
+    # Im Attach-Modus ist der Reset opt-in: er wuerde offene Tabs
+    # verwerfen und die echte Recent-Liste der angedockten Instanz
+    # persistent leeren.
+    do_reset = not args.attach or args.attach_reset
+    if args.attach and not args.attach_reset:
+        print("[WARN] --attach ohne --attach-reset: kanonischer Reset wird "
+              "uebersprungen — Visual-Vergleiche ggf. nicht aussagekraeftig.")
+
     # Fixtures sind git-getrackte Test-Daten, die schreibende Szenarien
     # (03/08/10/11/15) in place modifizieren (Save-Roundtrip, append via
     # Editor). Ohne Reset akkumulieren die Aenderungen ueber Laeufe UND
@@ -292,7 +312,6 @@ def main(argv: list[str]) -> int:
         baselines_dir=baselines_dir,
         artifacts_dir=artifacts_dir,
         update_baselines=args.update_baselines,
-        record_only=bool(args.only),
     )
 
     run_start = time.monotonic()
@@ -307,6 +326,13 @@ def main(argv: list[str]) -> int:
     try:
         for name, run_fn in scenarios:
             restore_fixtures()
+            # Kanonischer UI-Zustand vor JEDEM Szenario (Voll- wie
+            # Auswahl-Lauf): Baselines kodieren nur noch den Zustand
+            # ihres eigenen Szenarios. Ein Reset-Fehler ist hart —
+            # der Run soll nicht mit vergiftetem Zustand weiterlaufen.
+            # Im Attach-Modus nur mit explizitem --attach-reset.
+            if do_reset:
+                reset_canonical_state(api, settings_snapshot)
             print(f"[>] {name}")
             ctx = ScenarioContext(name, api, visual, fixtures_dir)
             try:

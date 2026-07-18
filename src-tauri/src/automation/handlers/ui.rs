@@ -482,6 +482,46 @@ pub(in crate::automation) async fn post_workspace_unpin(
     }))
 }
 
+pub(in crate::automation) async fn post_workspace_clear_recents(
+    AxumState(context): AxumState<AutomationContext>,
+    ApiQuery(options): ApiQuery<AckOptions>,
+) -> ApiResult<Json<AckedResponse>> {
+    let state = context.app_handle.state::<AppState>();
+    let delta = {
+        let mut workspace = state
+            .workspace
+            .lock()
+            .map_err(|_| ApiError::internal("workspace lock poisoned"))?;
+        workspace
+            .clear_recent()
+            .map_err(|error| ApiError::internal(error.to_string()))?;
+        // Vault-Delta separat berechnen, damit das Frontend genauso
+        // refresht wie nach einem Tauri-Command-Unpin.
+        let vault = state
+            .vault
+            .lock()
+            .map_err(|_| ApiError::internal("vault lock poisoned"))?;
+        vault.compute_refresh_delta(&workspace)
+    };
+    // Recents-Menue im nativen Menuebaum nachziehen (analog
+    // workspace_remove_recent-Command). Kein GitHeadWatcher-Sync noetig:
+    // Recents tragen keine Git-Roots, nur Pins tun das.
+    crate::menu::refresh_recent_from_workspace(&context.app_handle);
+    let (request_id, receiver) = ack::register(state.inner()).map_err(ApiError::internal)?;
+    let _guard = ack::PendingGuard::new(&state.inner().pending_acks, request_id);
+    let mut event_payload =
+        serde_json::to_value(delta).map_err(|e| ApiError::internal(e.to_string()))?;
+    event_payload["requestId"] = serde_json::json!(request_id);
+    emit(&context, "vault:refresh", event_payload)?;
+    let timeout_ms = options.ack_timeout_ms.unwrap_or(DEFAULT_ACK_TIMEOUT_MS);
+    let acked = ack::wait_for_ack(state.inner(), request_id, receiver, timeout_ms).await;
+    Ok(Json(AckedResponse {
+        ok: true,
+        acked,
+        request_id,
+    }))
+}
+
 pub(in crate::automation) async fn post_history_back(
     AxumState(context): AxumState<AutomationContext>,
     ApiQuery(options): ApiQuery<AckOptions>,

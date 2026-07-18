@@ -12,12 +12,17 @@
 #   bash scripts/run-e2e.sh --lang-smoke    # kurzer en-Boot + DOM-Checks
 #   bash scripts/run-e2e.sh 21_split_mode    # nur einzelne Szenarien
 #                                              (Name oder Praefix, z. B. 21;
-#                                              funktional — Screenshots ohne
-#                                              Baseline-Vergleich)
+#                                              vergleicht gegen Baselines)
+#   bash scripts/run-e2e.sh 21 --update-baselines
+#                                              # einzelne Baselines erneuern
 #   bash scripts/run-e2e.sh --attach         # bypass Xvfb+folio, gegen
 #                                              laufende Instanz testen
+#                                              (kanonischer Reset dabei
+#                                              uebersprungen; opt-in:
+#                                              --attach-reset)
 #
-# Exit-Code: 0 bei Erfolg, 1 bei Fehlern in der Suite oder im Setup.
+# Exit-Code: 0 bei Erfolg, 1 bei Fehlern in der Suite oder im Setup,
+# 2 bei Aufruf-Fehlern (z. B. unbekanntes Szenario).
 
 set -euo pipefail
 
@@ -210,10 +215,13 @@ if [[ "$LANG_SMOKE" -eq 1 ]]; then
     exit "${SMOKE_CODE}"
 fi
 
-# 6b) Python-Suite anwerfen (im --attach-Mode, weil Folio schon laeuft)
+# 6b) Python-Suite anwerfen (im --attach-Mode, weil Folio schon laeuft).
+# --attach-reset ist hier Pflicht: der Wrapper besitzt die Instanz (frischer
+# XDG-Temp-Home), der kanonische Reset muss laufen. Reines User-`--attach`
+# (oben, ohne Reset) bleibt opt-in via --attach-reset im PASSTHROUGH.
 log "starte E2E-Suite ..."
 set +e
-python3 "tests/e2e/run.py" --attach "${PASSTHROUGH_ARGS[@]}"
+python3 "tests/e2e/run.py" --attach --attach-reset "${PASSTHROUGH_ARGS[@]}"
 SUITE_CODE=$?
 set -e
 

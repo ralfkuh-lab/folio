@@ -713,14 +713,18 @@ single-instance-Plugin würde die Test-Instanz sonst sofort still
 beenden — Symptom: „Folio-Prozess ist gestorben", Log endet nach der
 Logging-Init-Zeile).
 
+**Kanonischer Reset pro Szenario**: `run.py` ruft vor jedem Szenario
+`lib/reset.py::reset_canonical_state` auf — Tabs schließen, Settings
+auf den Run-Start-Snapshot zurück, Theme light, Find-Bar zu, Mode view
+(best effort), linke Rail sichtbar, Split 50 %, Recent-Liste leeren
+(`POST /workspace/clear_recents`), danach `/sync/render`. Damit kodiert
+jede Baseline nur noch den Zustand ihres eigenen Szenarios; der Reset
+läuft in Voll- wie Auswahl-Läufen identisch.
+
 **Einzelszenario-Läufe**: `bash scripts/run-e2e.sh 21_split_mode`
-(Name oder Präfix, mehrere möglich) — für funktionales Debugging.
-Screenshots werden dabei nur aufgenommen, **nicht** gegen Baselines
-verglichen, und `--update-baselines` ist mit Auswahl gesperrt: die
-Baselines kodieren den kumulierten Voll-Lauf-Zustand (Dark-Theme aus
-04, offene Find-Bar aus 06, Recent-Liste), gegen den ein Einzellauf
-prinzipiell nicht bestehen kann. Einzelne Baseline erneuern = Datei in
-`baselines/` löschen + voller Lauf (Auto-Seed).
+(Name oder Präfix, mehrere möglich) — vergleicht wie der Voll-Lauf
+gegen die Baselines. Einzelne Baselines lassen sich direkt erneuern:
+`bash scripts/run-e2e.sh 21_split_mode --update-baselines`.
 
 **Screenshot-Sync**: `report.py::screenshot` ruft vor jeder Aufnahme
 `POST /sync/render` (deterministischer rAF-Roundtrip-Ack, siehe

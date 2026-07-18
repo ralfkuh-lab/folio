@@ -174,21 +174,20 @@
     automatisieren; Clipboard-Pfad braucht echten Display, daher
     Xvfb-Skip-Marker oder `--include-desktop-only`.
 
-
-
-- **E2E: Zustands-Leaks zwischen Szenarien beseitigen** (Befund
-  2026-07-04 beim Bau der Einzelszenario-Läufe): Szenarien hinterlassen
-  Zustand, der in die Visual-Baselines *späterer* Szenarien einfließt —
-  04_theme lässt Dark-Theme aktiv, 06_find die Find-Bar offen, dazu
-  wächst die Recent-Liste über den Lauf. Im festen Voll-Lauf ist das
-  deterministisch, aber fragil: ein neu einsortiertes Szenario
-  verschiebt die Baselines aller nachfolgenden, und Einzelläufe können
-  visuell nicht verglichen werden (deshalb heute `record_only` bei
-  Szenario-Auswahl). Sauberer Fix: Reset auf kanonischen Zustand vor
-  jedem Szenario (Theme light, Find-Bar zu, View-Mode; Recents wären
-  per Automation-API zu leeren oder aus dem Capture-Bereich zu nehmen)
-  + einmalige Baseline-Neuaufnahme mit Sichtprüfung. Danach könnten
-  auch Einzelläufe wieder visuell vergleichen.
+- **E2E — Folgepunkte aus dem Zustands-Leak-Fix** (kanonischer Reset
+  pro Szenario umgesetzt 2026-07-18; Einzelläufe vergleichen wieder
+  visuell):
+  - **Escape-Test für die Find-Bar**: `find_close` klickt jetzt den
+    Close-Button (das synthetische Escape auf `document` erreichte den
+    Close-Handler am Find-Input nie — deshalb leakte die Bar früher).
+    Damit testet kein Szenario mehr den Escape-Pfad. Dafür müsste
+    `/key` ein Target am `#find-input` unterstützen (heute nur
+    `document|editor`), dann Escape-Step in `06_find` ergänzen.
+  - **Ack-Leak-Altmuster in pin/unpin-Handlern**: `post_workspace_pin`/
+    `post_workspace_unpin` legen nach `ack::register` keinen
+    `PendingGuard` an — ein `?`-Fehlerpfad vor `wait_for_ack` lässt die
+    request_id dauerhaft in `pending_acks` (bei `clear_recents` und in
+    `tabs.rs` bereits mit Guard gelöst; bewusst nicht drive-by gefixt).
 
 - **E2E-Suite auf Windows lauffähig machen**: Aus dem Windows-Run 2026-05-18
   bleibt ein Stolperstein: **Visual-Baselines an Linux 1280×800

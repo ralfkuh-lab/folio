@@ -218,6 +218,18 @@ und ungültige oder nicht existente Dateipfade HTTP 400.
   mit dem vollen Payload; kein Ack (wie andere reine UI-Öffner). Die Find-Bar
   ignoriert Aufrufe bei `kind-image`/`kind-binary`.
 
+### Workspace
+
+- `POST /workspace/clear_recents` leert die Recent-Liste („Zuletzt
+  geöffnet") komplett und persistiert das. Danach emittiert der Handler —
+  wie bei `/workspace/pin` und `/workspace/unpin` — `vault:refresh` mit dem
+  frisch berechneten Vault-Delta (Pinned- + Recent-HTML) plus `requestId`,
+  sodass die Rail-Ansicht sofort aktualisiert; Antwort im Ack-Format
+  `{ ok, acked, requestId }`. Zusätzlich wird das native Recents-Menü
+  neu aufgebaut (analog zum `workspace_remove_recent`-Command). Der
+  Endpunkt ist vor allem für den E2E-Reset auf kanonischen Zustand
+  gedacht (`tests/e2e/lib/reset.py`). Kein Request-Body.
+
 ### Vault-Suche
 
 `POST /search` durchsucht die angepinnten Vault-Einträge (bzw. einen Ordner)

@@ -26,5 +26,5 @@ def run(ctx):
     with ctx.step("screenshot find-bar offen"):
         ctx.screenshot("find_open_abschnitt")
 
-    with ctx.step("find-bar schliessen via Escape"):
+    with ctx.step("find-bar schliessen (Close-Button)"):
         ctx.api.find_close()
