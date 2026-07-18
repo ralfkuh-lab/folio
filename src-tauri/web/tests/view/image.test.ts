@@ -117,4 +117,31 @@ describe('view/image', () => {
         // Pfad im State bleibt erhalten
         expect(getImageViewState().path).toBe('/a.png');
     });
+
+    it('stales onload/onerror greifen nicht mehr nach Remount', () => {
+        const mount = ensureMount();
+        mountImageView('/old.png');
+        const oldImg = mount.querySelector('img') as HTMLImageElement;
+        expect(oldImg).not.toBeNull();
+        // Handler waren gesetzt; nach Remount muessen sie geloest sein.
+        const oldOnLoad = oldImg.onload;
+        const oldOnError = oldImg.onerror;
+        mountImageView('/new.png');
+        const newImg = mount.querySelector('img') as HTMLImageElement;
+        expect(newImg).not.toBe(oldImg);
+        // Alte Handler geloest (null) — spaetes Event ist No-op.
+        expect(oldImg.onload).toBeNull();
+        expect(oldImg.onerror).toBeNull();
+        // Selbst wenn jemand die alten Closures haelt und aufruft:
+        // Stale-Guard (getImg() !== img) verhindert DOM-Schaden.
+        if (typeof oldOnLoad === 'function') {
+            oldOnLoad.call(oldImg, new Event('load'));
+        }
+        if (typeof oldOnError === 'function') {
+            oldOnError.call(oldImg, new Event('error'));
+        }
+        expect(mount.querySelector('img')).toBe(newImg);
+        expect(getImageViewState().path).toBe('/new.png');
+        expect(getImageViewState().lastError).toBeNull();
+    });
 });

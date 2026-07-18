@@ -184,11 +184,8 @@
 - **Image-View Folgepunkte** (Hauptfeature 2026-05-21 implementiert,
   siehe `view/image.ts`, `file_kind.rs::FileKind::Image`,
   `document_store.rs::load_opaque`; Image-Watcher/Live-Reload bei
-  externen Änderungen ist seit 2026-07-08 umgesetzt):
-  - **Zoom / Pan** für große Bilder. Heute wird via `max-width/max-height`
-    proportional runterskaliert; ein Mausrad-Zoom + Drag-Pan wäre
-    sinnvoll. Achtung: muss mit `<img>` und CSS-Transform laufen, da
-    der `#image-view-mount` keinen Editor mitbringt.
+  externen Änderungen ist seit 2026-07-08 umgesetzt; Zoom/Pan seit
+  2026-07-18 in `view/image-transform.ts` + `view/image.ts`):
   - **PDF-View**: WebView2 (Windows) hat einen eingebauten PDF-Viewer;
     WebKitGTK (Linux) **nicht** — bräuchte PDF.js (~2 MB extra Bundle).
     Plattform-Split ist unschön; abwägen ob lohnt.

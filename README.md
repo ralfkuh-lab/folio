@@ -191,7 +191,7 @@ cargo fmt --check
 cd web && npm test                         # frontend (Vitest / jsdom)
 ```
 
-The end-to-end suite (47 scenarios, Python + Pillow, visual regression) runs
+The end-to-end suite (48 scenarios, Python + Pillow, visual regression) runs
 headless on Linux via Xvfb:
 
 ```bash

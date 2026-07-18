@@ -119,12 +119,11 @@ body.edit-mode .html-view-region { display: none; }
 }
 
 /* Image-View-Region: nur sichtbar bei kind=image. Bild laeuft ueber
-   `convertFileSrc` und wird in Originalgroesse zentriert; max-width/
-   max-height begrenzen auf den Container, sodass groessere Bilder
-   proportional runterskalieren. Kleinere Bilder bleiben in
-   Originalgroesse. Drag-Drop des `<img>` ist im View-Mode unerwuenscht
-   (verwirrt das Folio-Drop-Handling), daher draggable=false +
-   pointer-events selektiv. */
+   `convertFileSrc`. Fit/Zoom/Pan steuert image.ts per expliziter
+   Pixelgroesse + CSS-transform (translate+scale, origin 0 0) — kein
+   object-fit, weil die Transform-Mathe sonst mehrdeutig waere.
+   overflow:hidden: Pan ersetzt Scrollen. Drag-Drop des `<img>` ist
+   unerwuenscht (Folio-Drop-Handling), daher draggable=false. */
 body:not(.kind-image) .image-view-region,
 body.edit-mode .image-view-region { display: none; }
 body.kind-image .view-region,
@@ -138,16 +137,19 @@ body.kind-image .code-view-region { display: none; }
 #image-view-mount {
   width: 100%;
   height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: auto;
+  position: relative;
+  overflow: hidden;
+  /* cursor: grab/grabbing setzt image.ts bei scale > 1 / Drag. */
 }
 #image-view-mount img {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
+  position: absolute;
+  left: 0;
+  top: 0;
+  max-width: none;
+  max-height: none;
+  transform-origin: 0 0;
   user-select: none;
+  -webkit-user-drag: none;
 }
 .view-region {
   flex: 1 1 auto;

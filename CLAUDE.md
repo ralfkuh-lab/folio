@@ -359,10 +359,16 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
 - **Image-View** (`view/image.ts`, Surface `#image-view-mount` in
   `dist/index.html`): `FileKind::Image` (png/jpg/jpeg/gif/webp/svg/
   bmp/ico/avif) wird read-only über `<img src={convertFileSrc(path)}>`
-  gerendert. CSS in `content.css` zentriert das Bild und skaliert
-  größere Bilder via `max-width/height: 100%` proportional runter;
-  kleinere Bilder bleiben in Originalgröße. Edit-Mode ist für Image
-  **gesperrt** (`applyDocKind` setzt `tb-mode-edit.disabled = true`,
+  gerendert. Fit/Zoom/Pan laufen per CSS-`transform: translate+scale`
+  (`transform-origin: 0 0`) auf dem `<img>`; Fit-Basis ist die
+  per `naturalWidth/Height` vs. Container berechnete Pixelgröße
+  (nicht `object-fit`, sonst mehrdeutige Transform-Mathe). Mathe
+  DOM-frei in `view/image-transform.ts` (scale relativ zu Fit=1.0,
+  Clamp `[1, 20]`, cursor-zentrierter Mausrad-Zoom, Drag-Pan bei
+  scale>1 mit `setPointerCapture`, Doppelklick→Fit). Reset auf Fit
+  bei `mountImageView`/`reloadImageView` (Dokumentwechsel bzw.
+  externe Änderung). Edit-Mode ist für Image **gesperrt**
+  (`applyDocKind` setzt `tb-mode-edit.disabled = true`,
   `menu_set_enabled view.mode.edit/file.save_as = false`); Backend
   zwingt beim Open via `document_service::apply_default_mode` auf
   View-Mode. `document_store::load_opaque(path)` setzt nur den Pfad,
@@ -703,7 +709,7 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
 
 ## E2E-Test-Suite
 
-Vollständige UI-Coverage in `tests/e2e/` (47 Szenarien, Python +
+Vollständige UI-Coverage in `tests/e2e/` (48 Szenarien, Python +
 Pillow): Boot, View-/Edit-/Split-Mode, Theme, Vault, Find (inkl.
 Code-View), Workspace, Save-Roundtrip durch alle BOM/EOL-Kombis,
 Undo/Redo, Toolbar-Commands (Bold/Italic/Heading), Menü-Coverage
