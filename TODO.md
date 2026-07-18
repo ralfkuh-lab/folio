@@ -142,19 +142,18 @@
   KI-Funktionen erst nach konkretem Bedarf. (Chunking sehr großer Dokumente
   bewusst verworfen, 2026-07-05 — kein erwarteter Bedarf.)
 
-- **Live-Preview Folgepunkte** (Hauptfeature 2026-05-22 implementiert,
-  siehe `view/preview.ts`, Backend-Command `render_markdown_preview`):
-  - **Adaptive Debounce für große Docs**: 150 ms ist bei >10k-Zeilen-MD
-    spürbar. render-on-idle (`requestIdleCallback`) oder messen +
-    dynamisch erhöhen.
-  - **Heading-Anchor-Restore statt scrollTop**: bei Mitten-Edits springt
-    scrollTop um. Sauberer wäre, das nächstgelegene Heading vor dem
-    Re-Render zu merken und nach dem Render dorthin scrollen.
-  - **Live-Preview für HTML-iframe** (kind=text + .html): iframe-srcdoc
-    Update bei Editor-Change, debounced wie der MD-Pfad.
-  - **Live-Preview für Code-View** (kind=text mit Monaco read-only):
-    setText auf der Code-View-Instanz bei Editor-Change.
-  - **Settings-Toggle** für Debounce-Delay (z. B. 100/150/300 ms).
+- **Live-Preview Rest** (Hauptfeature 2026-05-22; Code-View-Live + adaptive
+  Debounce 2026-07-18):
+  - **Heading-Anchor-Restore**: bewusst verworfen 2026-07-18 — zeilenbasierter
+    Scroll-Sync deckt den Alltag ab; Heading-Restore wäre M-Aufwand ohne
+    spürbaren Mehrwert im Split-Mode.
+  - **Settings-Toggle für Debounce-Delay**: bewusst verworfen 2026-07-18 —
+    adaptive Debounce (`clamp(150, measured*2, 600)`) macht manuelle
+    Delay-Wahl überflüssig.
+  - **edit→view mit dirty Non-MD-Text**: Code-View bleibt auf loaded/saved-
+    Stand (Live-Pfad und Flush nur im Split-Mode). Fix-Skizze: beim Mode-
+    Switch in `shell.ts` bei dirty Text
+    `FolioCodeView.setText(editorText, '', { autoFormat: false })` nachziehen.
 
 - **Image-Insert Folgepunkte** (Hauptfeature 2026-05-19 implementiert,
   siehe `commands/file/image.rs`, `ui/image-dialog.ts`,

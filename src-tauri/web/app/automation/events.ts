@@ -397,6 +397,15 @@ export function initAutomationEvents(): void {
             // hier nicht mehr im Scope. Ueber die Getter holen, sonst
             // ReferenceError beim ersten automation:set_editor_text.
             if (getCurrentPath()) markDirty(text !== getCleanText());
+            // loadEditorText laeuft unter withProgrammaticWrite und
+            // unterdrueckt damit onDidChangeModelContent → kein
+            // editorTextChanged / folio-editor-text-updated. Live-
+            // Preview-Pfade (MD/HTML/Code-View) brauchen den Event
+            // trotzdem, sonst bleibt die View-Seite nach /editor/text
+            // stehen (E2E + Automation).
+            try {
+                window.dispatchEvent(new CustomEvent('folio-editor-text-updated', { detail: text }));
+            } catch (_) { /* ignore */ }
         });
     });
     ev.listen('automation:set_editor_selection', function (event: any) {

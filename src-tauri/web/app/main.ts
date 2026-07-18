@@ -39,6 +39,7 @@ import {
 } from './view/markdown';
 import { initPreview } from './view/preview';
 import { initHtmlLiveUpdate } from './view/html';
+import { initCodeLiveUpdate } from './view/code-live';
 import { initViewTheme, reapplyCurrentViewTheme } from './view/theme';
 import { initCodeCopy } from './view/code-copy';
 import { initMarkdownScrollSync, syncViewSlugToEditor, tocClickToEditor } from './view/scroll-sync';
@@ -137,6 +138,7 @@ function runModuleInits(): void {
     initDocumentState({ setActiveMode });
     initPreview({ getCurrentPath });
     initHtmlLiveUpdate();
+    initCodeLiveUpdate({ getCurrentPath });
     initCodeCopy();
     initMarkdownScrollSync();
     initHtmlScrollSync();

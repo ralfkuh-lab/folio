@@ -1,11 +1,12 @@
 /* Live-Preview im View-/Split-Mode.
 
    Beim Tippen im Monaco-Editor wird der aktuelle Text debounced
-   (150 ms) ans Backend (`render_markdown_preview`) geschickt; das
-   Ergebnis (HTML + TOC) wird in die View-Region geschrieben — ohne
-   dass die Datei gespeichert sein muss. Im Edit-Mode (View versteckt)
-   wird der dirty-Text nur gecacht und beim Mode-Switch
-   (`flushPreviewRender`) sofort gerendert.
+   (adaptiv 150–600 ms, siehe DEBOUNCE_*) ans Backend
+   (`render_markdown_preview`) geschickt; das Ergebnis (HTML + TOC)
+   wird in die View-Region geschrieben — ohne dass die Datei
+   gespeichert sein muss. Im Edit-Mode (View versteckt) wird der
+   dirty-Text nur gecacht und beim Mode-Switch (`flushPreviewRender`)
+   sofort gerendert.
 
    Race-Schutz: jeder Render-Aufruf erhaelt eine `renderGen`-Generation;
    Antworten mit alter Generation werden verworfen. Bei document-
@@ -17,9 +18,11 @@
    `editor/bridge.ts` — bewusst nicht ueber den Tauri-`editor:event`-
    Channel, weil das ein IPC-Round-Trip pro Tastendruck waere.
 
-   Gating: nur bei `body.kind-markdown` UND `currentPath != null` UND
-   `isDirty()`. Nicht-Markdown-Dateien (Text/Code/HTML/Image) bleiben
-   beim kanonischen Backend-Render aus `document:loaded`/`saved`. */
+   Gating: nur bei `body.kind-markdown` UND `currentPath != null`.
+   Bewusst KEIN isDirty-Gate (Revert-auf-clean, s. gateOpen).
+   Nicht-Markdown-Dateien (Text/Code/HTML/Image) bleiben beim
+   kanonischen Backend-Render aus `document:loaded`/`saved` bzw.
+   den eigenen Live-Pfaden (html.ts, code-live.ts). */
 
 import { setTocList, rewriteRelativeAssets, ViewFinder } from './markdown';
 import { highlightCodeBlocks } from './code-highlight';
@@ -32,11 +35,30 @@ type Deps = {
     getCurrentPath: () => string | null;
 };
 
-const DEBOUNCE_MS = 150;
+// Adaptive Debounce: Basis 150 ms fuer normale Docs; bei teuren
+// Renders (grosse Docs) streckt sich das Delay bis max 600 ms, damit
+// sich Render-Roundtrips nicht stauen. Formel: clamp(MIN, measured*2, MAX).
+// Faktor 2: naechster Tipp-Burst bekommt Puffer in der Groessenordnung
+// des letzten Roundtrips. Cap 600: spuerbar, aber kein "tot" wirkendes
+// Preview. Glättung nur ueber die letzte Messung (kein EMA) — bei Doc-
+// Wechsel reset, und ein Ausreisser heilt sich beim naechsten Render
+// von selbst; EMA waere fuer den Nutzen hier Overkill.
+const DEBOUNCE_MS_MIN = 150;
+const DEBOUNCE_MS_MAX = 600;
+const DEBOUNCE_FACTOR = 2;
 
 let deps: Deps | null = null;
 let renderGen = 0;
 let pendingTimer: number | null = null;
+let currentDebounceMs = DEBOUNCE_MS_MIN;
+
+/** Ableitung des naechsten Debounce-Delays aus der gemessenen Render-
+ *  Dauer (ms). Exportiert fuer Unit-Tests. */
+export function deriveDebounceMs(renderMs: number): number {
+    if (!Number.isFinite(renderMs) || renderMs < 0) return DEBOUNCE_MS_MIN;
+    const scaled = renderMs * DEBOUNCE_FACTOR;
+    return Math.min(DEBOUNCE_MS_MAX, Math.max(DEBOUNCE_MS_MIN, scaled));
+}
 
 function $(id: string): HTMLElement | null { return document.getElementById(id); }
 
@@ -99,6 +121,7 @@ async function runRender(text: string, scrollToEnd = false): Promise<void> {
     const myGen = ++renderGen;
     const viewContent = $('view-content');
     const preInvokeScroll = viewContent ? viewContent.scrollTop : 0;
+    const t0 = performance.now();
 
     let result: RenderPreview;
     try {
@@ -130,7 +153,18 @@ async function runRender(text: string, scrollToEnd = false): Promise<void> {
     const targetScroll = userScrolledDuringRender ? viewContent.scrollTop : preInvokeScroll;
 
     applyToDom(result, targetScroll, userScrolledDuringRender, scrollToEnd);
-    folioLog.debug('preview', 'applied', { gen: myGen, textLen: text.length });
+
+    // Debounce-Messung: Invoke-Start bis Antwort angewandt (nach
+    // synchronem DOM-Write). Nur hier — stale/gate-closed Renders
+    // steuern das Delay nicht.
+    const elapsed = performance.now() - t0;
+    currentDebounceMs = deriveDebounceMs(elapsed);
+    folioLog.debug('preview', 'applied', {
+        gen: myGen,
+        textLen: text.length,
+        renderMs: Math.round(elapsed),
+        nextDebounceMs: currentDebounceMs,
+    });
 }
 
 function applyToDom(
@@ -180,9 +214,10 @@ function applyToDom(
     }
 }
 
-/** Editor-Text ist zu rendern; debounced 150 ms. Im Edit-Mode (View
- *  versteckt) tut der Pfad nichts — der Mode-Switch in shell.ts ruft
- *  `flushPreviewRender`, das den aktuellen Editor-Stand direkt nachholt. */
+/** Editor-Text ist zu rendern; debounced (adaptiv 150–600 ms). Im
+ *  Edit-Mode (View versteckt) tut der Pfad nichts — der Mode-Switch in
+ *  shell.ts ruft `flushPreviewRender`, das den aktuellen Editor-Stand
+ *  direkt nachholt. */
 export function schedulePreviewRender(text: string): void {
     if (!gateOpen() || !viewVisible()) return;
     if (pendingTimer != null) {
@@ -197,8 +232,8 @@ export function schedulePreviewRender(text: string): void {
         // Timer beim Feuern den richtigen Stand ab.
         const latest = currentEditorText();
         runRender(latest != null ? latest : text);
-    }, DEBOUNCE_MS);
-    folioLog.debug('preview', 'scheduled', { textLen: text.length });
+    }, currentDebounceMs);
+    folioLog.debug('preview', 'scheduled', { textLen: text.length, debounceMs: currentDebounceMs });
 }
 
 /** Sofort rendern (kein Debounce). Wird beim Mode-Switch in view/split
@@ -227,12 +262,17 @@ export async function renderPreviewText(text: string): Promise<void> {
 }
 
 /** Bei document:loaded/saved/closed aufgerufen. Bumpt die Generation,
- *  sodass pending Preview-Renders ignoriert werden. */
-export function invalidatePreview(): void {
+ *  sodass pending Preview-Renders ignoriert werden.
+ *  `resetDebounce: true` bei Dokumentwechsel (loaded/closed) — neues
+ *  Dokument, frische Messung ab 150 ms. */
+export function invalidatePreview(opts?: { resetDebounce?: boolean }): void {
     renderGen++;
     if (pendingTimer != null) {
         window.clearTimeout(pendingTimer);
         pendingTimer = null;
+    }
+    if (opts && opts.resetDebounce) {
+        currentDebounceMs = DEBOUNCE_MS_MIN;
     }
 }
 

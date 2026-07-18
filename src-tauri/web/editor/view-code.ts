@@ -81,7 +81,13 @@ function runAutoFormat(language: string): void {
     }, 50);
 }
 
-type MountOptions = { autoFormat?: boolean };
+type MountOptions = {
+    autoFormat?: boolean;
+    // Live-Tippen im Split-Mode: Scroll-Position halten (applyContent
+    // setzt sonst auf 0 — gewollt fuer Document-Wechsel, nicht fuer
+    // Live-Updates).
+    preserveScroll?: boolean;
+};
 
 export function mount(elementId: string, text: string, language: string, options?: MountOptions): Promise<void> {
     const autoFormat = !!(options && options.autoFormat);
@@ -94,7 +100,9 @@ export function mount(elementId: string, text: string, language: string, options
         }
         if (editor && mountedElementId === elementId) {
             // Re-Use: vorhandene Instanz auf neuen Text/Lang updaten.
-            applyContent(text, language);
+            // recomputeFindIfActive hier (nicht in applyContent) — eine
+            // Ebene, analog setText.
+            applyContent(text, language, false);
             recomputeFindIfActive();
             if (autoFormat) runAutoFormat(language || 'plaintext');
             return;
@@ -135,7 +143,7 @@ export function mount(elementId: string, text: string, language: string, options
     });
 }
 
-function applyContent(text: string, language: string): void {
+function applyContent(text: string, language: string, preserveScroll: boolean): void {
     if (!editor || !model) return;
     const monaco = getMonaco();
     if (!monaco) return;
@@ -144,6 +152,7 @@ function applyContent(text: string, language: string): void {
     // Model-Wechsel erzwingen und das Highlighting verlieren.
     const lang = language || model.getLanguageId() || 'plaintext';
     const content = text || '';
+    const preScroll = preserveScroll ? editor.getScrollTop() : 0;
     if (model.getLanguageId() !== lang) {
         // Sprache aendert sich → frisches Model. setModelLanguage wuerde
         // den Tokenizer-State des alten Models nicht resetten.
@@ -154,10 +163,10 @@ function applyContent(text: string, language: string): void {
     } else if (model.getValue() !== content) {
         model.setValue(content);
     }
-    // Beim Inhalt-Update scrollen wir zurueck nach oben — der User soll
-    // jede neue Datei "von vorn" sehen.
-    editor.setScrollTop(0);
-    recomputeFindIfActive();
+    // Document-Wechsel: nach oben. Live-Update: Scroll halten.
+    // Find-Recompute ist Aufgabe der Aufrufer (setText / mount-Reuse),
+    // damit pro Content-Update nur einmal gerechnet wird.
+    editor.setScrollTop(preserveScroll ? preScroll : 0);
 }
 
 export function setText(text: string, language: string, options?: MountOptions): void {
@@ -166,9 +175,15 @@ export function setText(text: string, language: string, options?: MountOptions):
         return;
     }
     const autoFormat = !!(options && options.autoFormat);
-    applyContent(text, language);
+    const preserveScroll = !!(options && options.preserveScroll);
+    applyContent(text, language, preserveScroll);
     recomputeFindIfActive();
     if (autoFormat) runAutoFormat(language || 'plaintext');
+}
+
+/** Aktueller Model-Text der Code-View (fuer Live-Update-Polling / E2E). */
+export function getText(): string {
+    return model ? model.getValue() : '';
 }
 
 export function setTheme(mode: 'light' | 'dark'): void {

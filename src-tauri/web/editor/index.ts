@@ -102,6 +102,7 @@ import * as diffView from './diff-view';
 (window as any).FolioCodeView = {
     mount: codeView.mount,
     setText: codeView.setText,
+    getText: codeView.getText,
     setTheme: codeView.setTheme,
     layout: codeView.layout,
     dispose: codeView.dispose,

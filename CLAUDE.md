@@ -277,8 +277,11 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   ordnet nur DOM-Kinder um), Drag nach rechts vergroessert ihn.
 - **Live-Preview** (`view/preview.ts`, Backend-Command
   `render_markdown_preview`): im Split-/View-Mode rendert das Frontend
-  den aktuellen Editor-Text debounced 150 ms ohne Save. Trigger ist das
-  in-window CustomEvent `folio-editor-text-updated` aus
+  den aktuellen Editor-Text debounced ohne Save. Debounce ist adaptiv:
+  `clamp(150, gemessene_Renderdauer_ms * 2, 600)` — normale Docs bleiben
+  bei effektiv 150 ms; grosse Docs strecken bis 600 ms, damit teure
+  Roundtrips sich nicht stauen (Reset auf 150 ms bei document:loaded/closed).
+  Trigger ist das in-window CustomEvent `folio-editor-text-updated` aus
   `editor/bridge.ts` (kein Tauri-IPC-Roundtrip pro Tastendruck).
   Race-Schutz per monoton steigender `renderGen`-Generation —
   verspätete Antworten alter Renders werden verworfen.
@@ -293,7 +296,13 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   verlorengegangene `editorTextChanged`-Events.
   Analoges Muster (debounce 150 ms + renderGen + invalidate + KEIN isDirty-Gate +
   Scroll-Erhalt) gilt seit 2026-07-09 auch fuer HTML-Split-Live-Update
-  (`html.ts`: scheduleHtmlLiveUpdate + run + mount + post-load HtmlFinder.refresh).
+  (`html.ts`: scheduleHtmlLiveUpdate + run + mount + post-load HtmlFinder.refresh)
+  und seit 2026-07-18 fuer die Code-View im Split-Mode (`view/code-live.ts`:
+  `body.split-mode` + `kind-text` + nicht HTML + `FolioCodeView.isMounted()`;
+  `setText(..., { autoFormat: false, preserveScroll: true })` — Auto-Format
+  pro Tastendruck waere teuer und wuerde den Text unter dem User
+  wegformatieren; der kanonische `viewAutoFormat`-Pfad greift weiter bei
+  loaded/saved).
 - **Mermaid** (`view/mermaid.ts` + `mermaid/index.ts`): ```mermaid`-Fences
   werden nur in der App-View (View/Split/Live-Preview) per Frontend-Post-
   Prozessor zu SVG-Diagrammen (`<div class="mermaid-diagram">`). Eigenes

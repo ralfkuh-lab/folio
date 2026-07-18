@@ -181,4 +181,52 @@ describe('view/preview', () => {
         expect(markdownBody().innerHTML).toBe('<p>streaming</p>');
         expect(viewContent.scrollTop).toBe(500);
     });
+
+    it('deriveDebounceMs: clamp(150, measured*2, 600)', () => {
+        // normale Docs (<75 ms Render) bleiben bei 150
+        expect(preview.deriveDebounceMs(0)).toBe(150);
+        expect(preview.deriveDebounceMs(50)).toBe(150);
+        expect(preview.deriveDebounceMs(74.9)).toBe(150);
+        // Grenze: 75 ms * 2 = 150
+        expect(preview.deriveDebounceMs(75)).toBe(150);
+        // skaliert linear
+        expect(preview.deriveDebounceMs(100)).toBe(200);
+        expect(preview.deriveDebounceMs(200)).toBe(400);
+        // Cap 600
+        expect(preview.deriveDebounceMs(300)).toBe(600);
+        expect(preview.deriveDebounceMs(1000)).toBe(600);
+        // ungueltig → Min
+        expect(preview.deriveDebounceMs(-1)).toBe(150);
+        expect(preview.deriveDebounceMs(Number.NaN)).toBe(150);
+    });
+
+    it('invalidatePreview({ resetDebounce }) setzt Delay auf 150 ms', async () => {
+        // Einen langsamen Render simulieren, damit currentDebounceMs steigt.
+        // Messpunkt liegt NACH applyToDom (Spec: bis Antwort angewandt) —
+        // daher zwei now()-Samples: t0 vor Invoke, t1 nach DOM-Write.
+        const start = performance.now();
+        vi.spyOn(performance, 'now')
+            .mockReturnValueOnce(start) // t0 in runRender
+            .mockReturnValueOnce(start + 200); // nach applyToDom → debounce 400
+
+        preview.schedulePreviewRender('slow');
+        await vi.advanceTimersByTimeAsync(150);
+        expect(renderCalls().length).toBe(1);
+        renderResolvers[0]('<p>slow</p>');
+        await flushMicrotasks();
+        expect(markdownBody().innerHTML).toBe('<p>slow</p>');
+
+        // Naechster Schedule nutzt 400 ms — vor advance 150 noch kein Render.
+        preview.schedulePreviewRender('next');
+        await vi.advanceTimersByTimeAsync(150);
+        expect(renderCalls().length).toBe(1); // noch debounced
+        await vi.advanceTimersByTimeAsync(250);
+        expect(renderCalls().length).toBe(2);
+
+        // Reset bei Doc-Wechsel
+        preview.invalidatePreview({ resetDebounce: true });
+        preview.schedulePreviewRender('after-reset');
+        await vi.advanceTimersByTimeAsync(150);
+        expect(renderCalls().length).toBe(3);
+    });
 });

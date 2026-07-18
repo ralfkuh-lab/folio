@@ -30,6 +30,11 @@ vi.mock('../../app/view/html', () => ({
     scheduleHtmlLiveUpdate: vi.fn(),
     initHtmlLiveUpdate: vi.fn(),
 }));
+vi.mock('../../app/view/code-live', () => ({
+    invalidateCodeLive: vi.fn(),
+    scheduleCodeLiveUpdate: vi.fn(),
+    initCodeLiveUpdate: vi.fn(),
+}));
 vi.mock('../../app/vault/tree', () => ({
     setVaultActive: vi.fn(),
 }));

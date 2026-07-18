@@ -16,6 +16,7 @@ import { addCodeCopyButtons } from '../view/code-copy';
 import { renderMermaidBlocks } from '../view/mermaid';
 import { clearHtmlView, HtmlFinder, invalidateHtmlLive, isHtmlDocument, mountHtmlView } from '../view/html';
 import { clearImageView, isImageDocument, mountImageView, reloadImageView } from '../view/image';
+import { invalidateCodeLive } from '../view/code-live';
 import { invalidatePreview } from '../view/preview';
 import { clearMarkdownHeadingMap, setMarkdownHeadingMap } from '../view/scroll-sync';
 import { setVaultActive } from '../vault/tree';
@@ -415,8 +416,9 @@ export function initDocumentState(d: Deps): void {
         // Pending Live-Preview-Renders verwerfen — sonst koennte eine
         // verspaetete Antwort aus dem alten Dirty-Text den frischen
         // kanonischen Render aus dem document:loaded ueberschreiben.
-        invalidatePreview();
+        invalidatePreview({ resetDebounce: true });
         invalidateHtmlLive();
+        invalidateCodeLive();
 
         // 1. State-Setup
         currentPath = data.path || null;
@@ -561,8 +563,9 @@ export function initDocumentState(d: Deps): void {
         const data = (event && event.payload) || {};
         if (isStaleLifecycleEvent(data)) return;
         commitLifecycleSeq(data);
-        invalidatePreview();
+        invalidatePreview({ resetDebounce: true });
         invalidateHtmlLive();
+        invalidateCodeLive();
         currentPath = null;
         cleanText = '';
         lastLoadedTabId = null;
@@ -614,6 +617,7 @@ export function initDocumentState(d: Deps): void {
         // dem Pre-Save-Dirty-Text duerfen den nicht ueberschreiben.
         invalidatePreview();
         invalidateHtmlLive();
+        invalidateCodeLive();
         cleanText = data.text || editorText();
         markDirty(false);
         setReloadButtonPending(false);

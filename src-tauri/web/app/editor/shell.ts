@@ -14,6 +14,7 @@ import { cheatsheetSyncMode, syncCheatsheetMenu } from '../ui/cheatsheet';
 import { afterModeSwitch as findBarAfterModeSwitch, openEditorFind, setEditorFindTerm } from '../ui/find-bar';
 import { highlightCodeBlocks } from '../view/code-highlight';
 import { renderMermaidBlocks } from '../view/mermaid';
+import { flushCodeLiveUpdate } from '../view/code-live';
 import { flushPreviewRender } from '../view/preview';
 import { reapplyCurrentViewTheme } from '../view/theme';
 import { folioLog, safeInvoke } from '../util/log';
@@ -265,11 +266,15 @@ export function initEditorShell(d: Deps): void {
             // 150 ms-Debounce). Sonst sieht der User kurz die alte
             // gespeicherte Version, bevor das naechste editorTextChanged
             // den Render anstoesst. flushPreviewRender ist gated auf
-            // kind-markdown + dirty — fuer andere Pfade No-Op.
+            // kind-markdown — fuer andere Pfade No-Op. Code-View-Flush
+            // nur bei split (Gating in flushCodeLiveUpdate).
             if (mode === 'view' || mode === 'split') {
                 flushPreviewRender().catch(function (err) {
                     folioLog.warn('preview', 'flush on mode-switch failed', { error: String(err) });
                 });
+            }
+            if (mode === 'split') {
+                flushCodeLiveUpdate();
             }
         });
     });

@@ -83,6 +83,52 @@ def run(ctx):
             ctx.expect(_wait_code_view(ctx), "Code-View wurde fuer JSON B nicht gemountet")
             counter = _wait_counter(ctx, 4)
             ctx.expect(counter.endswith("/4") and not counter.startswith("0/"), f"counter B={counter!r}")
+
+        # T1 Live-Preview Code-View: Split-Mode + Editor-Text aendern →
+        # Read-Only-Code-View uebernimmt debounced (kein Screenshot).
+        with ctx.step("Split-Mode Live-Update der Code-View"):
+            try:
+                ctx.api.find_close()
+            except Exception:
+                pass
+            ctx.api.tabs_close_all()
+            ctx.api.open(str(file_a), discard=True)
+            ctx.api.mode("split")
+            ctx.expect(_wait_code_view(ctx), "Code-View im Split-Mode nicht gemountet")
+            marker = "code-live-preview-marker-xyz"
+            # Vorher: Code-View hat den Disk-Stand (ohne Marker).
+            before = ctx.api.eval(
+                "(function(){var cv=window.FolioCodeView;"
+                "return (cv&&cv.getText)?cv.getText():'';})()"
+            )
+            ctx.expect(
+                before.get("ok") is True and marker not in (before.get("value") or ""),
+                f"Precondition: Marker darf vor Edit nicht in Code-View sein: {before!r}",
+            )
+            ctx.api.editor_text_set(
+                '{\n'
+                '  "title": "needle",\n'
+                '  "items": ["needle", "other"],\n'
+                f'  "live": "{marker}"\n'
+                '}\n'
+            )
+            deadline = time.monotonic() + 4.0
+            seen = ""
+            while time.monotonic() < deadline:
+                result = ctx.api.eval(
+                    "(function(){var cv=window.FolioCodeView;"
+                    "if(!cv||!cv.isMounted||!cv.isMounted())return null;"
+                    "return typeof cv.getText==='function'?cv.getText():null;})()"
+                )
+                if result.get("ok") and isinstance(result.get("value"), str) and marker in result["value"]:
+                    seen = result["value"]
+                    break
+                time.sleep(0.05)
+            ctx.expect(
+                marker in seen,
+                f"Code-View Live-Update im Split-Mode fehlgeschlagen "
+                f"(Marker {marker!r} nicht in FolioCodeView.getText(); last={seen!r})",
+            )
     finally:
         try:
             ctx.api.find_close()
