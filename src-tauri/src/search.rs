@@ -77,6 +77,10 @@ pub struct SearchOptions {
     pub case_sensitive: bool,
     /// Nur ganze Wörter (an Unicode-Wortgrenzen, regex `\b…\b`).
     pub whole_word: bool,
+    /// Auch versteckte und gitignorierte Dateien durchsuchen (Default aus).
+    /// Deaktiviert im Walk den hidden-Filter und alle ignore/gitignore-Filter.
+    #[serde(default)]
+    pub include_hidden: bool,
 }
 
 /// Erweitertes Scope-Modell (S4). Wird an der Command-/HTTP-Grenze aus den
@@ -375,7 +379,11 @@ impl std::error::Error for SearchError {}
 /// Normalisierung).
 ///
 /// - [`SearchScope::Vault`]: Union aller angepinnten Ordner + Einzeldateien,
-///   verschachtelte Ordner eingeklappt, abgedeckte Dateien verworfen.
+///   verschachtelte Ordner eingeklappt. Explizit gepinnte Einzeldateien
+///   bleiben auch dann erhalten, wenn sie unter einem gepinnten Ordner
+///   liegen — der Pin-Bypass (hidden/gitignore umgehen) greift nur über die
+///   Einzeldatei-Phase; der Walk-Dedup läuft über das gemeinsame `seen`-Set.
+///   Nur exakte Duplikat-Pins werden entfernt.
 /// - [`SearchScope::Folder`]: genau dieser Ordner (Pins irrelevant).
 pub fn resolve_scope(pinned: &[PinnedItem], scope: &SearchScope) -> SearchRoots {
     if let SearchScope::Folder(path) = scope {
@@ -404,11 +412,13 @@ pub fn resolve_scope(pinned: &[PinnedItem], scope: &SearchScope) -> SearchRoots 
     // Overlap-Dedup Ordner: verschachtelte + doppelte Ordner entfernen.
     let kept_dirs = collapse_overlapping_dirs(&dirs);
 
-    // Dateien verwerfen, die schon von einem Ordner abgedeckt sind (+ Duplikate).
+    // Einzeldatei-Pins: nur exakte Duplikate entfernen. Abdeckung durch einen
+    // Elternordner-Pin verwirft den Datei-Pin NICHT — sonst bricht der
+    // dokumentierte Pin-Bypass für hidden/gitignorierte Dateien, wenn der
+    // Ordner-Walk sie (includeHidden=false) nicht sieht.
     let mut kept_files: Vec<PathBuf> = Vec::new();
     for f in &files {
-        let covered = kept_dirs.iter().any(|d| f.starts_with(d));
-        if covered || kept_files.iter().any(|k| k == f) {
+        if kept_files.iter().any(|k| k == f) {
             continue;
         }
         kept_files.push(f.clone());
@@ -863,6 +873,23 @@ fn probe_has_match(path: &Path, re: &Regex, cancel: &AtomicBool) -> bool {
     }
 }
 
+/// Konfiguriert den `WalkBuilder` für den Opt-in-Toggle „auch versteckte und
+/// ignorierte Dateien". Default (`include_hidden = false`): Crate-Defaults
+/// (`standard_filters` an). An: `standard_filters(false)` schaltet hidden/
+/// parents/ignore/git_ignore/git_global/git_exclude als Gruppe ab
+/// (`require_git` unangetastet). Zusätzlich bleiben `.git`-Verzeichnisse per
+/// `filter_entry` draußen (Object-Store/hooks/logs wären sonst Kosten + Rausch-
+/// Treffer).
+fn apply_include_hidden(builder: &mut WalkBuilder, include_hidden: bool) {
+    if include_hidden {
+        builder.standard_filters(false).filter_entry(|entry| {
+            // Verzeichnisname ".git" (nicht Pfad-Substring) — weder eintragen
+            // noch absteigen.
+            entry.file_name() != std::ffi::OsStr::new(".git")
+        });
+    }
+}
+
 /// Läuft über [`SearchRoots`] (Verzeichnis-Walk + explizit gepinnte Dateien)
 /// mit einem bereits kompilierten Regex und einem [`FileFilter`]. Gemeinsamer
 /// Kern von [`run_search`]/[`run_search_ex`] (ohne Query-/Root-Validierung und
@@ -871,6 +898,7 @@ fn run_over_roots(
     roots: &SearchRoots,
     re: &Regex,
     filter: &FileFilter,
+    include_hidden: bool,
     cancel: &AtomicBool,
     on_file: &mut dyn FnMut(FileResult),
 ) -> SearchStats {
@@ -882,11 +910,11 @@ fn run_over_roots(
     let mut stopped = false;
 
     'walk: for dir in &roots.dirs {
-        // Single-threaded Walk; Standard-Filter (hidden + gitignore) an,
-        // deterministische Reihenfolge via sort_by_file_name.
-        let walker = WalkBuilder::new(dir)
-            .sort_by_file_name(|a, b| a.cmp(b))
-            .build();
+        // Single-threaded Walk; Filter (hidden + gitignore) an, sofern nicht
+        // `include_hidden`; deterministische Reihenfolge via sort_by_file_name.
+        let mut builder = WalkBuilder::new(dir);
+        apply_include_hidden(&mut builder, include_hidden);
+        let walker = builder.sort_by_file_name(|a, b| a.cmp(b)).build();
         for result in walker {
             if cancel.load(Ordering::Relaxed) {
                 stopped = true;
@@ -1028,7 +1056,14 @@ pub fn run_search_ex(
     validate_roots(roots)?;
 
     let start = Instant::now();
-    let mut stats = run_over_roots(roots, &re, &options.filter, cancel, on_file);
+    let mut stats = run_over_roots(
+        roots,
+        &re,
+        &options.filter,
+        options.base.include_hidden,
+        cancel,
+        on_file,
+    );
     stats.elapsed_ms = start.elapsed().as_millis() as u64;
     Ok(stats)
 }
@@ -1148,6 +1183,7 @@ pub fn run_search_parallel(
         &roots.dirs,
         &re,
         &options.filter,
+        options.base.include_hidden,
         cancel,
         &mut stats,
         &mut seen,
@@ -1352,7 +1388,8 @@ fn consume_walk_events(
 }
 
 /// Parallele Verzeichnis-Phase: pro Root-Ordner ein `build_parallel()`-Walk
-/// (gleiche Filterkonfiguration wie sequenziell — hidden/gitignore-Defaults).
+/// (gleiche Filterkonfiguration wie sequenziell — hidden/gitignore-Defaults
+/// bzw. `include_hidden`-Opt-in).
 /// Ein Producer-Thread treibt die Walks und speist einen `mpsc`-Kanal; dieser
 /// Thread (Consumer) liest ihn über [`consume_walk_events`]. `on_file`/`stats`/
 /// `seen`/`probing` gehören exklusiv dem Consumer-Thread (der `&mut dyn FnMut`-
@@ -1362,6 +1399,7 @@ fn walk_dirs_parallel(
     dirs: &[PathBuf],
     re: &Regex,
     filter: &FileFilter,
+    include_hidden: bool,
     cancel: &AtomicBool,
     stats: &mut SearchStats,
     seen: &mut HashSet<String>,
@@ -1399,7 +1437,9 @@ fn walk_dirs_parallel(
                     break;
                 }
                 let dir_tx = tx.clone();
-                WalkBuilder::new(dir).build_parallel().run(|| {
+                let mut builder = WalkBuilder::new(dir);
+                apply_include_hidden(&mut builder, include_hidden);
+                builder.build_parallel().run(|| {
                     let wtx = dir_tx.clone();
                     Box::new(move |result| {
                         walk_worker_visit(result, re, filter, cancel, hc, sf, &wtx)
@@ -1605,7 +1645,7 @@ mod tests {
     // --- Overlap-Dedup -------------------------------------------------------
 
     #[test]
-    fn resolve_scope_collapses_nested_and_covered_files() {
+    fn resolve_scope_collapses_nested_dirs_keeps_file_pins() {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path();
         let sub = root.join("sub");
@@ -1616,10 +1656,10 @@ mod tests {
         let pinned = vec![pin_dir(root), pin_dir(&sub), pin_file(&file)];
         let roots = resolve_scope(&pinned, &SearchScope::Vault);
 
-        // Nur der oberste Ordner bleibt; verschachtelter Unterordner + darin
-        // liegende gepinnte Datei sind bereits abgedeckt.
+        // Nur der oberste Ordner bleibt; verschachtelter Unterordner fällt weg.
+        // Explizit gepinnte Einzeldatei bleibt (Pin-Bypass / seen-Dedup).
         assert_eq!(vec![root.to_path_buf()], roots.dirs);
-        assert!(roots.files.is_empty());
+        assert_eq!(vec![file], roots.files);
     }
 
     #[test]
@@ -1655,6 +1695,182 @@ mod tests {
 
         let (files, _) = collect(&dir_roots(root), "needle", &SearchOptions::default());
         assert_eq!(vec!["visible.md".to_string()], names(&files));
+    }
+
+    #[test]
+    fn include_hidden_finds_hidden_and_gitignored() {
+        // Opt-in: hidden Datei, Datei in hidden Dir und gitignorierte Datei.
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        init_git(root);
+        write(root, ".gitignore", "secret.md\n");
+        write(root, "visible.md", "needle\n");
+        write(root, "secret.md", "needle gitignored\n");
+        write(root, ".hidden.md", "needle hidden file\n");
+        write(root, ".hiddendir/inside.md", "needle hidden dir\n");
+
+        let opts = SearchOptions {
+            include_hidden: true,
+            ..SearchOptions::default()
+        };
+        let (files, stats) = collect(&dir_roots(root), "needle", &opts);
+        let mut found = names(&files);
+        found.sort();
+        assert_eq!(
+            vec![
+                ".hidden.md".to_string(),
+                "inside.md".to_string(),
+                "secret.md".to_string(),
+                "visible.md".to_string(),
+            ],
+            found
+        );
+        assert!(!stats.truncated);
+    }
+
+    #[test]
+    fn include_hidden_still_skips_binary_and_oversized() {
+        // Flag an ändert nichts an Cap/Binary-Sniff.
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        init_git(root);
+        write(root, ".gitignore", "secret.md\n");
+        write(root, "visible.md", "needle\n");
+        write(root, "secret.md", "needle\n");
+        write(root, ".hidden.md", "needle\n");
+        write_bytes(root, "fake.md", b"vorher \0\0 needle nachher\n");
+        let mut big = String::from("needle\n");
+        big.push_str(&"a".repeat(MAX_FILE_SIZE as usize + 10));
+        write(root, "big.md", &big);
+
+        let opts = SearchOptions {
+            include_hidden: true,
+            ..SearchOptions::default()
+        };
+        let (files, stats) = collect(&dir_roots(root), "needle", &opts);
+        let mut found = names(&files);
+        found.sort();
+        assert_eq!(
+            vec![
+                ".hidden.md".to_string(),
+                "secret.md".to_string(),
+                "visible.md".to_string(),
+            ],
+            found
+        );
+        assert_eq!(1, stats.skipped_large);
+        assert!(!found.iter().any(|n| n == "fake.md"));
+        assert!(!found.iter().any(|n| n == "big.md"));
+    }
+
+    #[test]
+    fn include_hidden_parallel_matches_sequential() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        init_git(root);
+        write(root, ".gitignore", "secret.md\n");
+        write(root, "visible.md", "needle\n");
+        write(root, "secret.md", "needle secret\n");
+        write(root, ".hidden.md", "needle hidden\n");
+        write(root, ".hiddendir/inside.md", "needle deep\n");
+
+        let o = ExtendedSearchOptions {
+            base: SearchOptions {
+                include_hidden: true,
+                ..SearchOptions::default()
+            },
+            regex: false,
+            filter: FileFilter::AllText,
+        };
+        let roots = dir_roots(root);
+        let (seq_files, seq_stats) = collect_ex(&roots, "needle", &o);
+        let (par_files, par_stats) = collect_parallel(&roots, "needle", &o);
+        assert_stats_core_eq(&seq_stats, &par_stats);
+        assert_eq!(as_map(&seq_files), as_map(&par_files));
+        assert_eq!(4, par_files.len());
+    }
+
+    #[test]
+    fn include_hidden_skips_dot_git_directory() {
+        // Auch mit includeHidden bleibt .git draußen (Produktentscheid).
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        init_git(root);
+        write(root, "visible.md", "needle\n");
+        // Datei unter .git/ — würde nur bei abgeschaltetem hidden-Filter sichtbar.
+        write(root, ".git/hooks/pre-commit.md", "needle in git hooks\n");
+        write(root, ".git/COMMIT_EDITMSG.md", "needle in commit msg\n");
+
+        let opts = SearchOptions {
+            include_hidden: true,
+            ..SearchOptions::default()
+        };
+        let (files, _) = collect(&dir_roots(root), "needle", &opts);
+        assert_eq!(vec!["visible.md".to_string()], names(&files));
+    }
+
+    #[test]
+    fn pinned_hidden_and_gitignored_under_dir_found_once_seq_and_parallel() {
+        // Pin-Bypass: Ordner-Pin + explizit gepinnte hidden/gitignorierte Dateien
+        // darunter, includeHidden=false → Einzeldatei-Phase findet sie (genau 1×).
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        init_git(root);
+        write(root, ".gitignore", "secret.md\n");
+        write(root, "visible.md", "needle\n");
+        write(root, "secret.md", "needle secret\n");
+        write(root, ".hidden.md", "needle hidden\n");
+
+        let hidden = root.join(".hidden.md");
+        let secret = root.join("secret.md");
+        let pinned = vec![pin_dir(root), pin_file(&hidden), pin_file(&secret)];
+        let roots = resolve_scope(&pinned, &SearchScope::Vault);
+        // Beide Datei-Pins bleiben trotz Elternordner-Überdeckung.
+        assert!(roots.files.iter().any(|f| f == &hidden));
+        assert!(roots.files.iter().any(|f| f == &secret));
+
+        let o = ExtendedSearchOptions {
+            base: SearchOptions::default(), // include_hidden: false
+            regex: false,
+            filter: FileFilter::AllText,
+        };
+        let (seq_files, seq_stats) = collect_ex(&roots, "needle", &o);
+        let (par_files, par_stats) = collect_parallel(&roots, "needle", &o);
+        assert_stats_core_eq(&seq_stats, &par_stats);
+        assert_eq!(as_map(&seq_files), as_map(&par_files));
+
+        let mut found = names(&seq_files);
+        found.sort();
+        assert_eq!(
+            vec![
+                ".hidden.md".to_string(),
+                "secret.md".to_string(),
+                "visible.md".to_string(),
+            ],
+            found
+        );
+        // Genau einmal je Datei (Walk + Pin-Phase über seen dedupliziert).
+        assert_eq!(
+            1,
+            seq_files
+                .iter()
+                .filter(|f| f.file_name == ".hidden.md")
+                .count()
+        );
+        assert_eq!(
+            1,
+            seq_files
+                .iter()
+                .filter(|f| f.file_name == "secret.md")
+                .count()
+        );
+        assert_eq!(
+            1,
+            seq_files
+                .iter()
+                .filter(|f| f.file_name == "visible.md")
+                .count()
+        );
     }
 
     // --- NUL-Sniff -----------------------------------------------------------
@@ -1732,6 +1948,7 @@ mod tests {
         let opts = SearchOptions {
             case_sensitive: false,
             whole_word: false,
+            include_hidden: false,
         };
         let (files, _) = collect(&dir_roots(tmp.path()), "hallo", &opts);
         assert_eq!(1, files.len());
@@ -1746,6 +1963,7 @@ mod tests {
         let opts = SearchOptions {
             case_sensitive: true,
             whole_word: false,
+            include_hidden: false,
         };
         let (files, _) = collect(&dir_roots(tmp.path()), "hallo", &opts);
         assert_eq!(1, files.len());
@@ -1780,6 +1998,7 @@ mod tests {
         let ww = SearchOptions {
             case_sensitive: false,
             whole_word: true,
+            include_hidden: false,
         };
         let (files, _) = collect(&dir_roots(tmp.path()), "foo", &ww);
         assert_eq!(1, files.len());
@@ -1790,6 +2009,7 @@ mod tests {
         let off = SearchOptions {
             case_sensitive: false,
             whole_word: false,
+            include_hidden: false,
         };
         let (files2, _) = collect(&dir_roots(tmp.path()), "foo", &off);
         assert_eq!(vec![[0u32, 3], [7u32, 3]], files2[0].hits[0].ranges);
@@ -1802,6 +2022,7 @@ mod tests {
         let ww = SearchOptions {
             case_sensitive: false,
             whole_word: true,
+            include_hidden: false,
         };
 
         // "caf" ist kein ganzes Wort (é ist Wortzeichen) → kein Treffer.
@@ -2289,6 +2510,7 @@ mod tests {
             base: SearchOptions {
                 case_sensitive: false,
                 whole_word: true,
+                include_hidden: false,
             },
             regex: true,
             filter: FileFilter::AllText,

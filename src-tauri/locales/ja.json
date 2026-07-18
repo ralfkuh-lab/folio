@@ -377,6 +377,7 @@
   "search.dialog.fileType.custom": "カスタム拡張子",
   "search.dialog.fileType.label": "ファイルの種類",
   "search.dialog.fileType.markdown": "Markdown のみ",
+  "search.dialog.includeHidden.label": "隠しファイルと無視対象のファイルも含める",
   "search.dialog.query.label": "検索語",
   "search.dialog.query.placeholder": "検索語を入力…",
   "search.dialog.regex.label": "正規表現",

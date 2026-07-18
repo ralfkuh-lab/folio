@@ -27,9 +27,13 @@ angepinnten Einträge. Daraus folgt:
   was der User als „seinen Vault“ versteht).
 - **Scope „Ordner“**: ein beliebiger Ordner aus dem Baum (auch nicht
   selbst gepinnte Unterordner eines Pins), rekursiv.
-- **Overlap-Dedup**: gepinnter Ordner + gepinnter Unterordner/Datei
-  darin → jede Datei wird genau einmal durchsucht (Dedup über
-  normalisierte absolute Pfade, Forward-Slashes wie überall).
+- **Overlap-Dedup**: gepinnter Ordner + gepinnter Unterordner →
+  verschachtelte Ordner eingeklappt; jede Datei wird genau einmal
+  durchsucht (Dedup über `seen` + normalisierte absolute Pfade,
+  Forward-Slashes wie überall). Explizit gepinnte Einzeldateien unter
+  einem gepinnten Elternordner werden in den Roots **behalten** (nur
+  exakte Duplikat-Pins fallen weg), damit der Pin-Bypass greift, wenn
+  der Walk sie wegen hidden/gitignore überspringt.
 - **Explizit gepinnte Einzeldateien werden immer durchsucht** — hidden-/
   gitignore-Filter gelten nur für den Verzeichnis-Walk (bewusst: Pin =
   Nutzer-Intention; der Vault-Baum zeigt gepinnte Dateien ebenfalls
@@ -48,11 +52,20 @@ angepinnten Einträge. Daraus folgt:
    „kein WalkBuilder“-Notiz in CLAUDE.md betraf nur das Dimming-
    Feature). Standard-Filter des Walkers: **gitignorierte und hidden
    Einträge werden übersprungen** (konsistent mit dem Dimming; `.git`
-   & Co. fallen damit automatisch raus). `sort_by_file_name` für
-   deterministische Reihenfolge (E2E-Baselines), **single-threaded
-   Walk in V1**. Seit S6 (2026-07-16) laufen Verzeichnis-Scopes über
-   `run_search_parallel` (`build_parallel`, Completion-Order); die
-   sequenzielle Pipeline bleibt als geteilter Kern erhalten.
+   & Co. fallen damit automatisch raus). Opt-in-Toggle
+   `includeHidden` (Default aus, persistiert in `panel_state` als
+   `search_include_hidden`, Dialog-Checkbox `#vsd-include-hidden`)
+   schaltet per `WalkBuilder::standard_filters(false)` hidden/parents/
+   ignore/git_ignore/git_global/git_exclude als Gruppe ab (ein Schalter,
+   nicht zwei; `require_git` unangetastet). **Bewusste Ausnahme:**
+   Verzeichnisse namens `.git` bleiben per `filter_entry` draußen
+   (Object-Store/hooks/logs wären Kosten + Rausch-Treffer). Beide
+   Walk-Pfade (sequenziell + parallel) teilen dieselbe
+   Filterkonfiguration. `sort_by_file_name` für deterministische
+   Reihenfolge (E2E-Baselines). Seit S6 (2026-07-16) laufen
+   Verzeichnis-Scopes über `run_search_parallel` (`build_parallel`,
+   Completion-Order); die sequenzielle Pipeline bleibt als geteilter
+   Kern erhalten (historisch: V1 startete single-threaded).
 2. **Datei-Filter über `file_kind::classify`**: nur
    `FileKind::Markdown` und `FileKind::Text`. Zusätzlich Größen-Cap
    (Konstante `MAX_FILE_SIZE = 2 MiB`, größere Dateien werden
@@ -123,7 +136,7 @@ angepinnten Einträge. Daraus folgt:
    (Ordnername, Tooltip = voller Pfad, „ד entfernt ihn → zurück auf
    Gesamt-Vault), fokussiert das Suchfeld und re-triggert eine
    laufende Suche. Scope wird **nicht** persistiert.
-9. **Persistenz**: die Options-Toggles (Aa/W) wandern nach
+9. **Persistenz**: die Options-Toggles (Aa/W/`includeHidden`) wandern nach
    Projekt-Konvention in `panel_state.rs`/`panel-state.json`
    (UI-Toggle-Persistenz-Regel). Suchbegriff, Scope und Ergebnisse
    sind flüchtig. **Keine neuen `settings.json`-Keys** in V1.
@@ -475,9 +488,9 @@ der Kern lief strikt single-threaded.
   `run_search_buffers` und die sequenzielle Pipeline bleiben unverändert; die
   31 additiv-only `mod tests` behalten ihre deterministische Reihenfolge.
 - **Architektur**: pro Root-Ordner ein `WalkBuilder::build_parallel()` (gleiche
-  Filterkonfiguration wie sequenziell — hidden/gitignore-Defaults, ignore-
-  Default-Threadzahl, kein neues Setting). Ein Producer-Thread (`std::thread::
-  scope`) treibt die Walks; die Worker-Visitoren machen Filter +
+  Filterkonfiguration wie sequenziell — hidden/gitignore-Defaults bzw.
+  `includeHidden`-Opt-in, ignore-Default-Threadzahl). Ein Producer-Thread
+  (`std::thread::scope`) treibt die Walks; die Worker-Visitoren machen Filter +
   `worker_read_disk` (Content-Gate) + `build_file_hits` selbst und senden
   fertige `WalkEvent`s (`NoHit`/`Matched`/`SkippedLarge`/`ProbeHit`) über
   `std::sync::mpsc`. Der aufrufende Thread ist **Consumer** und einziger
@@ -585,9 +598,11 @@ Rein Frontend + ein neues App-Setting (Suchkern `search.rs` unverändert).
   (tantivy o. ä.) wäre massiver Overkill und ein Cache-Invalidierungs-
   Problem (externe Änderungen). Paralleler Walk (`build_parallel`) ist
   seit S6 umgesetzt (`run_search_parallel`).
-- **Hidden Files werden übersprungen**, obwohl der Vault-Baum
-  Dotfiles anzeigt — bewusste Abweichung (`.git`-Traversal wäre
-  sonst Pflicht-Sonderfall). Falls es stört: später Opt-in-Toggle.
+- **Hidden/gitignorierte Files werden standardmäßig übersprungen**,
+  obwohl der Vault-Baum Dotfiles anzeigt. Opt-in-Toggle `includeHidden`
+  (Dialog + Persistenz + Automation) schaltet `standard_filters` ab;
+  **`.git`-Verzeichnisse bleiben auch dann ausgeschlossen** (bewusst,
+  kein Object-Store-Rauschen).
 - **Dateien ohne Endung** (LICENSE, Makefile) klassifiziert
   `file_kind` als Binary → nicht durchsucht. Konsistent mit dem
   restlichen App-Verhalten; kein Sonderfall in V1.

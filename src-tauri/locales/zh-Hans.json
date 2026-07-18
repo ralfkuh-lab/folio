@@ -377,6 +377,7 @@
   "search.dialog.fileType.custom": "自定义扩展名",
   "search.dialog.fileType.label": "文件类型",
   "search.dialog.fileType.markdown": "仅 Markdown",
+  "search.dialog.includeHidden.label": "包含隐藏和忽略的文件",
   "search.dialog.query.label": "搜索词",
   "search.dialog.query.placeholder": "输入搜索词…",
   "search.dialog.regex.label": "正则表达式",

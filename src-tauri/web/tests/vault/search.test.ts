@@ -80,6 +80,7 @@ function buildDom(): void {
                 <label><input type="checkbox" id="vsd-case" /></label>
                 <label><input type="checkbox" id="vsd-word" /></label>
                 <label><input type="checkbox" id="vsd-regex" /></label>
+                <label><input type="checkbox" id="vsd-include-hidden" /></label>
                 <input type="radio" name="vsd-filter" value="markdown" />
                 <input type="radio" name="vsd-filter" value="allText" checked />
                 <input type="radio" name="vsd-filter" value="custom" />
@@ -138,6 +139,7 @@ interface SearchOpts {
     case?: boolean;
     word?: boolean;
     regex?: boolean;
+    includeHidden?: boolean;
     filter?: string;
     ext?: string;
     scope?: string;
@@ -152,6 +154,7 @@ async function runSearch(query: string, opts: SearchOpts = {}): Promise<void> {
     ($('vsd-case') as HTMLInputElement).checked = !!opts.case;
     ($('vsd-regex') as HTMLInputElement).checked = !!opts.regex;
     ($('vsd-word') as HTMLInputElement).checked = !!opts.word;
+    ($('vsd-include-hidden') as HTMLInputElement).checked = !!opts.includeHidden;
     if (opts.filter) setRadio('vsd-filter', opts.filter);
     if (opts.ext !== undefined) ($('vsd-custom-ext') as HTMLInputElement).value = opts.ext;
     if (opts.scope) setRadio('vsd-scope', opts.scope);
@@ -321,6 +324,55 @@ describe('vault/search — Dialog', () => {
         );
         expect(($('vault-search-dialog') as HTMLElement).hidden).toBe(true);
         expect($('vault-search-summary-text').textContent).toBe('needle');
+    });
+
+    it('includeHidden in Validate/Start/Persist + Summary-Glyph; Cancel verwirft Draft', async () => {
+        await importAndInit();
+        // Erster Submit mit includeHidden → Payload + Glyph.
+        await runSearch('needle', { includeHidden: true });
+        const validates = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_search_validate');
+        expect(validates[validates.length - 1][1]).toMatchObject({
+            query: 'needle',
+            includeHidden: true,
+        });
+        const starts = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_search_start');
+        expect(starts[starts.length - 1][1]).toMatchObject({ includeHidden: true });
+        expect(tauri.invoke).toHaveBeenCalledWith(
+            'set_search_options',
+            expect.objectContaining({ includeHidden: true }),
+        );
+        const glyphs = Array.from(
+            document.querySelectorAll('#vault-search-summary-opts .vs-summary-opt'),
+        ).map((el) => el.textContent);
+        expect(glyphs).toContain('·');
+
+        // Dialog erneut: Draft-Toggle aus, Abbrechen → committed bleibt an.
+        const search = await import('../../app/vault/search');
+        search.openVaultSearchDialog();
+        ($('vsd-include-hidden') as HTMLInputElement).checked = false;
+        $('vsd-cancel').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+        search.openVaultSearchDialog();
+        expect(($('vsd-include-hidden') as HTMLInputElement).checked).toBe(true);
+    });
+
+    it('ungueltiger Submit committet includeHidden nicht', async () => {
+        tauri.invoke.mockImplementation((cmd: string) => {
+            if (cmd === 'vault_search_validate') return Promise.reject('Mindestens 2 Zeichen');
+            if (cmd === 'search_options_get') {
+                return Promise.resolve({ includeHidden: false });
+            }
+            return Promise.resolve(undefined);
+        });
+        await importAndInit();
+        await runSearch('x', { includeHidden: true });
+        // Kein Start, kein Persist.
+        expect(tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_search_start')).toHaveLength(0);
+        expect(tauri.invoke.mock.calls.filter((c) => c[0] === 'set_search_options')).toHaveLength(0);
+        // Reopen: committed bleibt Default (false).
+        const search = await import('../../app/vault/search');
+        search.openVaultSearchDialog();
+        expect(($('vsd-include-hidden') as HTMLInputElement).checked).toBe(false);
     });
 
     it('Strg+Shift+F oeffnet den Dialog', async () => {

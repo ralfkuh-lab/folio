@@ -43,6 +43,9 @@ pub(in crate::automation) struct SearchRequest {
     /// OpenTabs-Scope (S4): durchsucht die offenen Tab-Puffer statt des Vaults.
     #[serde(default)]
     open_tabs: bool,
+    /// Auch versteckte und gitignorierte Dateien (Default aus).
+    #[serde(default)]
+    include_hidden: bool,
     /// Optionales Zeitlimit; danach wird der Lauf abgebrochen und 500 geliefert.
     #[serde(default)]
     timeout_ms: Option<u64>,
@@ -71,6 +74,7 @@ pub(in crate::automation) async fn post_search(
         request.regex,
         request.file_filter.as_deref().unwrap_or("allText"),
         &request.custom_extensions,
+        request.include_hidden,
     )
     .map_err(|error| ApiError::bad_request(error.to_string()))?;
 

@@ -53,6 +53,9 @@ pub struct PanelStateData {
     pub search_file_filter: String,
     #[serde(default)]
     pub search_custom_extensions: String,
+    // Vault-Suche: auch versteckte und gitignorierte Dateien (Default aus).
+    #[serde(default)]
+    pub search_include_hidden: bool,
     // Vault-Suche S5: Verzeichnispfad-Anzeige neben dem Dateinamen (Default aus)
     // und Sortiermodus der Ergebnisgruppen als roher UI-Wert
     // (`none` | `name` | `path`, Default `none` via serde-default-Funktion, weil
@@ -99,6 +102,7 @@ impl Default for PanelStateData {
             search_regex: false,
             search_file_filter: default_search_file_filter(),
             search_custom_extensions: String::new(),
+            search_include_hidden: false,
             search_show_paths: false,
             search_sort: default_search_sort(),
         }
@@ -177,6 +181,7 @@ impl PanelState {
         regex: bool,
         file_filter: String,
         custom_extensions: String,
+        include_hidden: bool,
         show_paths: bool,
         sort: String,
     ) -> io::Result<()> {
@@ -185,6 +190,7 @@ impl PanelState {
         self.data.search_regex = regex;
         self.data.search_file_filter = file_filter;
         self.data.search_custom_extensions = custom_extensions;
+        self.data.search_include_hidden = include_hidden;
         self.data.search_show_paths = show_paths;
         self.data.search_sort = sort;
         self.save()
@@ -352,6 +358,7 @@ mod tests {
         assert!(!default.search_regex);
         assert_eq!("allText", default.search_file_filter);
         assert_eq!("", default.search_custom_extensions);
+        assert!(!default.search_include_hidden);
         // S5-Defaults.
         assert!(!default.search_show_paths);
         assert_eq!("none", default.search_sort);
@@ -367,6 +374,7 @@ mod tests {
                 "custom".to_string(),
                 "foobar,md".to_string(),
                 true,
+                true,
                 "path".to_string(),
             )
             .unwrap();
@@ -376,6 +384,7 @@ mod tests {
         assert!(reloaded.search_regex);
         assert_eq!("custom", reloaded.search_file_filter);
         assert_eq!("foobar,md", reloaded.search_custom_extensions);
+        assert!(reloaded.search_include_hidden);
         assert!(reloaded.search_show_paths);
         assert_eq!("path", reloaded.search_sort);
     }
@@ -411,6 +420,7 @@ mod tests {
         assert!(!data.search_regex);
         assert_eq!("allText", data.search_file_filter);
         assert_eq!("", data.search_custom_extensions);
+        assert!(!data.search_include_hidden);
         // S5-Felder fehlen im Alt-Stand → serde-Defaults.
         assert!(!data.search_show_paths);
         assert_eq!("none", data.search_sort);

@@ -241,6 +241,7 @@ pub async fn search_options_get(state: State<'_, AppState>) -> Result<serde_json
         "regex": data.search_regex,
         "fileFilter": normalized_file_filter(&data.search_file_filter),
         "customExtensions": data.search_custom_extensions,
+        "includeHidden": data.search_include_hidden,
         "showPaths": data.search_show_paths,
         "sort": normalized_sort(&data.search_sort),
     }))
@@ -254,6 +255,7 @@ pub async fn set_search_options(
     regex: Option<bool>,
     file_filter: Option<String>,
     custom_extensions: Option<String>,
+    include_hidden: Option<bool>,
     show_paths: Option<bool>,
     sort: Option<String>,
     state: State<'_, AppState>,
@@ -286,6 +288,7 @@ pub async fn set_search_options(
             regex.unwrap_or(current.search_regex),
             file_filter,
             custom_extensions,
+            include_hidden.unwrap_or(current.search_include_hidden),
             show_paths.unwrap_or(current.search_show_paths),
             sort,
         )

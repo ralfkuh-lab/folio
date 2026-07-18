@@ -379,6 +379,7 @@
   "search.dialog.fileType.custom": "Benutzerdefinierte Endungen",
   "search.dialog.fileType.label": "Dateityp",
   "search.dialog.fileType.markdown": "Nur Markdown",
+  "search.dialog.includeHidden.label": "Auch versteckte und ignorierte Dateien",
   "search.dialog.query.label": "Suchbegriff",
   "search.dialog.query.placeholder": "Suchbegriff eingeben…",
   "search.dialog.regex.label": "Regulärer Ausdruck",

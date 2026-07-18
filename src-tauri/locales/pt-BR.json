@@ -381,6 +381,7 @@
   "search.dialog.fileType.custom": "Extensões personalizadas",
   "search.dialog.fileType.label": "Tipo de arquivo",
   "search.dialog.fileType.markdown": "Apenas Markdown",
+  "search.dialog.includeHidden.label": "Incluir arquivos ocultos e ignorados",
   "search.dialog.query.label": "Termo de pesquisa",
   "search.dialog.query.placeholder": "Digite o termo de pesquisa…",
   "search.dialog.regex.label": "Expressão regular",

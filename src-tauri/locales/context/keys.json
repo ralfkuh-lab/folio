@@ -367,6 +367,7 @@
   "search.dialog.fileType.custom": "Radio option in the vault search dialog searching a custom list of file extensions.",
   "search.dialog.fileType.label": "Group heading for the file type filter options in the vault search dialog.",
   "search.dialog.fileType.markdown": "Radio option in the vault search dialog restricting the search to Markdown files only.",
+  "search.dialog.includeHidden.label": "Label for the checkbox that includes hidden and gitignored files in the vault search dialog.",
   "search.dialog.query.label": "Label for the search term input field in the vault search dialog.",
   "search.dialog.query.placeholder": "Placeholder text in the search term input field of the vault search dialog.",
   "search.dialog.regex.label": "Label for the 'regular expression' checkbox in the vault search dialog.",

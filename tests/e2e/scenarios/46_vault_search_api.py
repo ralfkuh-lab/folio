@@ -4,6 +4,9 @@ Deckt den synchronen Automation-Endpunkt und damit den Suchkern
 (commands/search.rs + search.rs) ab: Treffer + Zeilen/Spalten (UTF-16),
 Ordner- vs. Vault-Scope (Scope via Pin des Fixture-Ordners), caseSensitive,
 wholeWord, per-Datei-Truncation, QueryTooShort-Fehler und gitignore-Skip.
+Zusätzlich includeHidden: eigenes Fake-Repo (`.git` + `.gitignore`) mit
+`.hidden.md`, Datei unter hidden Dir und gitignorierter Datei — ohne Flag
+übersprungen, mit Flag gefunden (kein Screenshot, kein fixtures/-Pfad).
 
 Kein Screenshot-Vergleich (reines API-Szenario). Die Fixtures liegen in einem
 System-Temp-Ordner (auto-cleanup); der einzige persistente Seiteneffekt ist
@@ -11,6 +14,7 @@ der Verzeichnis-Pin, der im finally wieder entfernt wird.
 """
 
 import os
+import shutil
 import sys
 import tempfile
 
@@ -296,6 +300,50 @@ def run(ctx):
                     ctx.expect(False, "openTabs+scope accepted")
                 except ApiError as err:
                     ctx.expect(err.status == 400, f"status={err.status}")
+
+            # --- includeHidden: versteckte + gitignorierte Dateien ----------
+            # Eigenes Temp-Verzeichnis (nicht fixtures/), Fake-Repo wie Rust-
+            # Helper, damit .gitignore greift. Kein Screenshot.
+            with ctx.step("includeHidden finds hidden + gitignored files"):
+                hidden_td = tempfile.mkdtemp(prefix="folio-e2e-search-hidden-")
+                try:
+                    _write(
+                        os.path.join(hidden_td, ".git", "HEAD"),
+                        "ref: refs/heads/main\n",
+                    )
+                    _write(os.path.join(hidden_td, ".gitignore"), "secret.md\n")
+                    _write(os.path.join(hidden_td, "visible.md"), "hidtok visible\n")
+                    _write(os.path.join(hidden_td, "secret.md"), "hidtok secret\n")
+                    _write(os.path.join(hidden_td, ".hidden.md"), "hidtok dotfile\n")
+                    _write(
+                        os.path.join(hidden_td, "sub", ".hiddendir", "x.md"),
+                        "hidtok nested\n",
+                    )
+                    ctx.api.workspace_pin(hidden_td, is_directory=True)
+                    try:
+                        off = ctx.api.search("hidtok", scope=hidden_td)
+                        off_names = sorted(
+                            f["fileName"] for f in off.get("files") or []
+                        )
+                        ctx.expect(
+                            off_names == ["visible.md"],
+                            f"default must skip hidden/gitignored: {off_names}",
+                        )
+                        on = ctx.api.search(
+                            "hidtok", scope=hidden_td, include_hidden=True
+                        )
+                        on_names = sorted(
+                            f["fileName"] for f in on.get("files") or []
+                        )
+                        ctx.expect(
+                            on_names
+                            == [".hidden.md", "secret.md", "visible.md", "x.md"],
+                            f"includeHidden must find all: {on_names}",
+                        )
+                    finally:
+                        ctx.api.workspace_unpin(hidden_td)
+                finally:
+                    shutil.rmtree(hidden_td, ignore_errors=True)
 
         finally:
             # Offene (evtl. dirty) Tabs aus den OpenTabs-Schritten aufräumen,

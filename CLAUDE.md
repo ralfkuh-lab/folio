@@ -206,7 +206,9 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   `ignore::WalkBuilder`, Verzeichnis-Scopes (Vault/Folder) seit S6 parallel
   über `run_search_parallel` (`build_parallel` + `mpsc`-Consumer, nur der
   Consumer ruft `on_file`, Completion-Order; OpenTabs-Puffer bleiben
-  sequenziell) (hidden/gitignore-Filter), Filter über `FileFilter`
+  sequenziell) (hidden/gitignore-Filter; Opt-in `includeHidden` →
+  `standard_filters(false)`, `.git`-Dirs bleiben per `filter_entry`
+  draußen), Filter über `FileFilter`
   (`markdown` = nur `FileKind::Markdown` | `allText` = Markdown+Text |
   `custom` = Endungsliste mit bewusstem `classify`-Bypass) + 2-MiB-Cap
   (`skipped_large`) + NUL-Sniff (8 KiB); Literalsuche escaped `(?i)`/`\b…\b`
@@ -240,10 +242,11 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   Edit/Split via `FolioEditor.revealMatch`, View-Mode via Find-Bar nach
   Finder-Settle (Regex: `Jump.term` = konkret gematchter Text). `tab_open`
   überspringt `consumeNavRestoreSkip(path)` einmalig. Optionen (Aa/W/Regex/
-  fileFilter/customExtensions roh) persistieren in `panel_state.rs`
-  (`search_file_filter` default `allText`); Scope + Query flüchtig.
+  fileFilter/customExtensions roh/`includeHidden`) persistieren in
+  `panel_state.rs` (`search_file_filter` default `allText`,
+  `search_include_hidden` default aus); Scope + Query flüchtig.
   Automation: `POST /search` (synchron, additive Felder `regex`/`fileFilter`/
-  `customExtensions`/`openTabs`; alle Client-Fehler → 400).
+  `customExtensions`/`openTabs`/`includeHidden`; alle Client-Fehler → 400).
 - **main-Badge-Farbe**: `git-branch--main` (und dark) jetzt `var(--rail-accent)` statt `--rail-fg-muted` (Detached bleibt rot, Feature-Branches bernstein) — Unterscheidbarkeit zum Dimming.
 - **Dateityp-Klassifizierung**: zentral in `file_kind.rs`
   (`FileKind::{Markdown, Text, Image, Binary}`, `classify(path)`).

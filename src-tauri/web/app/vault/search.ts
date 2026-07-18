@@ -108,6 +108,7 @@ let wholeWord = false;
 let regex = false;
 let fileFilter: FileFilter = 'allText';
 let customExtensions = '';
+let includeHidden = false;
 // S5-Ergebnis-Header-Optionen: Verzeichnispfad-Anzeige + Sortiermodus. Persistiert
 // über set_search_options/search_options_get (Muster der S4-Felder). Anders als
 // die Dialog-Optionen leben diese Toggles im Ergebnis-Header und wirken sofort.
@@ -451,6 +452,7 @@ function runSearch(): void {
         regex,
         fileFilter,
         customExtensions,
+        includeHidden,
     }).then(
         (runId: any) => {
             if (typeof runId !== 'number') {
@@ -659,6 +661,7 @@ function persistSearchOptions(): void {
             regex,
             fileFilter,
             customExtensions,
+            includeHidden,
             showPaths,
             sort: searchSort,
         },
@@ -938,17 +941,23 @@ function renderSummary(): void {
     if (summaryOptsEl) {
         summaryOptsEl.replaceChildren();
         if (!activeQuery) return;
-        const glyphs: string[] = [];
-        if (caseSensitive) glyphs.push('Aa');
-        if (wholeWord) glyphs.push('W');
-        if (regex) glyphs.push('.*');
-        if (fileFilter === 'markdown') glyphs.push('md');
-        else if (fileFilter === 'custom') glyphs.push('*.…');
-        if (openTabs) glyphs.push('⧉');
+        // Kurze Optionen-Glyphen; optionaler title (Tooltip) bei weniger
+        // selbsterklärenden Schaltern (includeHidden).
+        const glyphs: Array<{ text: string; title?: string }> = [];
+        if (caseSensitive) glyphs.push({ text: 'Aa' });
+        if (wholeWord) glyphs.push({ text: 'W' });
+        if (regex) glyphs.push({ text: '.*' });
+        if (includeHidden) {
+            glyphs.push({ text: '·', title: t('search.dialog.includeHidden.label') });
+        }
+        if (fileFilter === 'markdown') glyphs.push({ text: 'md' });
+        else if (fileFilter === 'custom') glyphs.push({ text: '*.…' });
+        if (openTabs) glyphs.push({ text: '⧉' });
         for (const g of glyphs) {
             const span = document.createElement('span');
             span.className = 'vs-summary-opt';
-            span.textContent = g;
+            span.textContent = g.text;
+            if (g.title) span.title = g.title;
             summaryOptsEl.appendChild(span);
         }
     }
@@ -1317,6 +1326,7 @@ function populateDialog(preselectScope?: ScopeMode): void {
     const caseEl = $('vsd-case') as HTMLInputElement | null;
     const wordEl = $('vsd-word') as HTMLInputElement | null;
     const regexEl = $('vsd-regex') as HTMLInputElement | null;
+    const hiddenEl = $('vsd-include-hidden') as HTMLInputElement | null;
     const ext = $('vsd-custom-ext') as HTMLInputElement | null;
     const folderRow = $('vsd-scope-folder-row');
     const folderLabel = $('vsd-scope-folder-label');
@@ -1325,6 +1335,7 @@ function populateDialog(preselectScope?: ScopeMode): void {
     if (caseEl) caseEl.checked = caseSensitive;
     if (wordEl) wordEl.checked = wholeWord;
     if (regexEl) regexEl.checked = regex;
+    if (hiddenEl) hiddenEl.checked = includeHidden;
     setRadio('vsd-filter', fileFilter);
     if (ext) ext.value = customExtensions;
 
@@ -1371,6 +1382,7 @@ async function submitDialog(): Promise<void> {
     const dRegex = !!($('vsd-regex') as HTMLInputElement | null)?.checked;
     // Whole-Word ist bei aktivem Regex disabled → als false werten.
     const dWord = !dRegex && !!($('vsd-word') as HTMLInputElement | null)?.checked;
+    const dHidden = !!($('vsd-include-hidden') as HTMLInputElement | null)?.checked;
     const dFilter = normalizeFilter(radioValue('vsd-filter'));
     const dExt = ($('vsd-custom-ext') as HTMLInputElement | null)?.value ?? '';
     const dScope = (radioValue('vsd-scope') as ScopeMode | null) || 'vault';
@@ -1384,6 +1396,7 @@ async function submitDialog(): Promise<void> {
             regex: dRegex,
             fileFilter: dFilter,
             customExtensions: dExt,
+            includeHidden: dHidden,
         });
     } catch (err) {
         showDialogError(String(err));
@@ -1412,6 +1425,7 @@ async function submitDialog(): Promise<void> {
     caseSensitive = dCase;
     wholeWord = dWord;
     regex = dRegex;
+    includeHidden = dHidden;
     fileFilter = dFilter;
     customExtensions = dExt;
     optionsTouched = true;
@@ -1583,6 +1597,7 @@ export function initVaultSearch(d: Deps): () => void {
         regex?: boolean;
         fileFilter?: string;
         customExtensions?: string;
+        includeHidden?: boolean;
         showPaths?: boolean;
         sort?: string;
     }>('search_options_get', undefined, 'search_options_get', 'debug').then((opts) => {
@@ -1593,6 +1608,7 @@ export function initVaultSearch(d: Deps): () => void {
             regex = !!opts.regex;
             fileFilter = normalizeFilter(opts.fileFilter);
             customExtensions = typeof opts.customExtensions === 'string' ? opts.customExtensions : '';
+            includeHidden = !!opts.includeHidden;
             showPaths = !!opts.showPaths;
             searchSort = normalizeSort(opts.sort);
             renderSortButton();

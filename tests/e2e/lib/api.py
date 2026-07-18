@@ -263,6 +263,7 @@ class AutomationApi:
         file_filter: Optional[str] = None,
         custom_extensions: Optional[str] = None,
         open_tabs: bool = False,
+        include_hidden: bool = False,
         timeout_ms: Optional[int] = None,
     ) -> dict:
         body: dict = {
@@ -280,6 +281,8 @@ class AutomationApi:
             body["customExtensions"] = custom_extensions
         if open_tabs:
             body["openTabs"] = open_tabs
+        if include_hidden:
+            body["includeHidden"] = include_hidden
         transport_timeout = None
         if timeout_ms is not None:
             body["timeoutMs"] = timeout_ms

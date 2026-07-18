@@ -383,6 +383,7 @@
   "search.dialog.fileType.custom": "Свои расширения",
   "search.dialog.fileType.label": "Тип файла",
   "search.dialog.fileType.markdown": "Только Markdown",
+  "search.dialog.includeHidden.label": "Включить скрытые и игнорируемые файлы",
   "search.dialog.query.label": "Поисковый запрос",
   "search.dialog.query.placeholder": "Введите поисковый запрос…",
   "search.dialog.regex.label": "Регулярное выражение",

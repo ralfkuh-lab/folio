@@ -94,6 +94,7 @@ fn buffer_doc_for_tab(tab: &Tab) -> Option<BufferDoc> {
 /// (dort mit der eigenen Fehler-in-400-Abbildung). Fehler sind lokalisierte
 /// [`SearchError`] (openTabs+scope-Konflikt, unbekannter Filter, leere
 /// Custom-Liste, verbotene Endungszeichen).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_scope_and_options(
     scope: Option<String>,
     open_tabs: bool,
@@ -102,6 +103,7 @@ pub(crate) fn build_scope_and_options(
     regex: bool,
     file_filter: &str,
     custom_extensions: &str,
+    include_hidden: bool,
 ) -> Result<(SearchScopeEx, ExtendedSearchOptions), SearchError> {
     let scope_ex = search::to_scope_ex(scope, open_tabs)?;
     let filter = FileFilter::from_raw(file_filter, custom_extensions)?;
@@ -109,6 +111,7 @@ pub(crate) fn build_scope_and_options(
         base: SearchOptions {
             case_sensitive,
             whole_word,
+            include_hidden,
         },
         regex,
         filter,
@@ -140,6 +143,7 @@ pub async fn vault_search_start(
     regex: Option<bool>,
     file_filter: Option<String>,
     custom_extensions: Option<String>,
+    include_hidden: Option<bool>,
     state: State<'_, AppState>,
     handle: AppHandle,
 ) -> Result<u64, String> {
@@ -147,6 +151,7 @@ pub async fn vault_search_start(
     let regex = regex.unwrap_or(false);
     let file_filter = file_filter.unwrap_or_else(|| "allText".to_string());
     let custom_extensions = custom_extensions.unwrap_or_default();
+    let include_hidden = include_hidden.unwrap_or(false);
 
     let (scope_ex, options) = build_scope_and_options(
         scope,
@@ -156,6 +161,7 @@ pub async fn vault_search_start(
         regex,
         &file_filter,
         &custom_extensions,
+        include_hidden,
     )
     .map_err(|error| error.to_string())?;
 
@@ -257,16 +263,20 @@ pub async fn vault_search_validate(
     regex: Option<bool>,
     file_filter: Option<String>,
     custom_extensions: Option<String>,
+    include_hidden: Option<bool>,
 ) -> Result<(), String> {
     let regex = regex.unwrap_or(false);
     let file_filter = file_filter.unwrap_or_else(|| "allText".to_string());
     let custom_extensions = custom_extensions.unwrap_or_default();
+    // include_hidden steuert nur den Walk-Filter, nicht die Query-Validierung.
+    let include_hidden = include_hidden.unwrap_or(false);
     let filter = FileFilter::from_raw(&file_filter, &custom_extensions)
         .map_err(|error| error.to_string())?;
     let options = ExtendedSearchOptions {
         base: SearchOptions {
             case_sensitive,
             whole_word,
+            include_hidden,
         },
         regex,
         filter,
