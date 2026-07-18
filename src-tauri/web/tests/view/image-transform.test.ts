@@ -9,14 +9,17 @@ import {
     ZOOM_STEP,
     clampPan,
     clampScale,
+    computeFitScale,
     computeFitSize,
     fitTransform,
+    formatZoomPercent,
     panBy,
     reanchorOnViewportResize,
     resolveIntrinsicSize,
     toCssTransform,
     wheelDeltaToScaleFactor,
     zoomAt,
+    zoomPercentOfOriginal,
     type Size,
     type Transform,
 } from '../../app/view/image-transform';
@@ -278,6 +281,53 @@ describe('view/image-transform', () => {
             expect(toCssTransform({ scale: 1.5, tx: 10, ty: -20 })).toBe(
                 'translate(10px, -20px) scale(1.5)',
             );
+        });
+    });
+
+    describe('zoomPercentOfOriginal / formatZoomPercent', () => {
+        it('fit < 1: Anzeige = fitScale × 100 bei scale 1', () => {
+            // 800×600 in 400×300 → fitScale 0.5 → 50 %
+            const intrinsic = { width: 800, height: 600 };
+            const fitted = computeFitSize(intrinsic, VIEW);
+            const fs = computeFitScale(intrinsic, fitted);
+            expect(fs).toBeCloseTo(0.5);
+            expect(zoomPercentOfOriginal(fs, MIN_SCALE)).toBe(50);
+            expect(formatZoomPercent(fs, MIN_SCALE)).toBe('50 %');
+        });
+
+        it('fit = 1: kleines Bild in Originalgroesse → 100 %', () => {
+            const intrinsic = { width: 100, height: 80 };
+            const fitted = computeFitSize(intrinsic, VIEW);
+            const fs = computeFitScale(intrinsic, fitted);
+            expect(fs).toBeCloseTo(1);
+            expect(zoomPercentOfOriginal(fs, MIN_SCALE)).toBe(100);
+            expect(formatZoomPercent(fs, MIN_SCALE)).toBe('100 %');
+        });
+
+        it('gezoomt: fitScale × scale × 100', () => {
+            // fit 0.5 × scale 2.4 = 120 %
+            expect(zoomPercentOfOriginal(0.5, 2.4)).toBe(120);
+            expect(formatZoomPercent(0.5, 2.4)).toBe('120 %');
+            // fit 1 × scale ZOOM_STEP ≈ 120 %
+            expect(zoomPercentOfOriginal(1, ZOOM_STEP)).toBe(Math.round(ZOOM_STEP * 100));
+        });
+
+        it('SVG-Fallback: Viewport-Basis als 100 % bei Fit', () => {
+            const intrinsic = resolveIntrinsicSize({ width: 0, height: 0 }, VIEW);
+            const fitted = computeFitSize(intrinsic, VIEW);
+            const fs = computeFitScale(intrinsic, fitted);
+            expect(fs).toBeCloseTo(1);
+            expect(zoomPercentOfOriginal(fs, MIN_SCALE)).toBe(100);
+            expect(formatZoomPercent(fs, MIN_SCALE)).toBe('100 %');
+            // Zoom darueber: 1 × 1.2 = 120 %
+            expect(zoomPercentOfOriginal(fs, ZOOM_STEP)).toBe(Math.round(ZOOM_STEP * 100));
+        });
+
+        it('rundet ganzzahlig; ungueltige Eingaben → 0', () => {
+            expect(zoomPercentOfOriginal(1 / 3, 1)).toBe(33);
+            expect(zoomPercentOfOriginal(0, 1)).toBe(0);
+            expect(zoomPercentOfOriginal(1, 0)).toBe(0);
+            expect(zoomPercentOfOriginal(NaN, 1)).toBe(0);
         });
     });
 });

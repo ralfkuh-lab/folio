@@ -569,6 +569,7 @@
   "statusBar.exportMarkdownOnly": "エクスポートは Markdown のみ利用できます",
   "statusBar.externalChangedClean": "ファイルが外部で変更されました。「再読み込み」ボタンで反映してください",
   "statusBar.externalChangedDirty": "ファイルが外部で変更されました（未保存の変更あり）。「保存」または「破棄」から再読み込みしてください",
+  "statusBar.imageZoom.tooltip": "元のサイズに対するズーム倍率",
   "statusBar.modeEdit": "編集",
   "statusBar.modeSplit": "分割",
   "statusBar.modeView": "表示",

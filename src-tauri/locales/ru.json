@@ -584,6 +584,7 @@
   "statusBar.exportMarkdownOnly": "Экспорт доступен только для Markdown",
   "statusBar.externalChangedClean": "Файл изменен извне — используйте кнопку перезагрузки",
   "statusBar.externalChangedDirty": "Файл изменен извне (несохраненные изменения) — перезагрузите после сохранения или сброса",
+  "statusBar.imageZoom.tooltip": "Масштаб относительно исходного размера",
   "statusBar.modeEdit": "Правка",
   "statusBar.modeSplit": "Разделение",
   "statusBar.modeView": "Просмотр",

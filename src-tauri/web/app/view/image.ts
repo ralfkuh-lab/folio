@@ -17,8 +17,10 @@
 import { t } from '../i18n/translate';
 import {
     MIN_SCALE,
+    computeFitScale,
     computeFitSize,
     fitTransform,
+    formatZoomPercent,
     panBy,
     reanchorOnViewportResize,
     resolveIntrinsicSize,
@@ -35,6 +37,8 @@ let lastError: string | null = null;
 /** Aktuelle Fit-Pixelgroesse des <img> (Basis vor dem Zoom-Scale). */
 let fitted: Size = { width: 0, height: 0 };
 let viewport: Size = { width: 0, height: 0 };
+/** fitted/intrinsic — Anzeige-Zoom = fitScale × transform.scale. */
+let fitScale = 0;
 let transform: Transform = { scale: MIN_SCALE, tx: 0, ty: 0 };
 let dragging = false;
 let lastPointerX = 0;
@@ -65,6 +69,35 @@ function measureViewport(): Size {
     return { width: mount.clientWidth, height: mount.clientHeight };
 }
 
+function getZoomStatusEl(): HTMLElement | null {
+    return document.getElementById('status-image-zoom');
+}
+
+/**
+ * Statusleisten-Zelle `#status-image-zoom`: Zoom % relativ zur
+ * Originalgroesse. Sichtbar nur bei gemountetem Bild mit Fit-Basis;
+ * sonst hidden. Kein Body-Class-Observer — Aufrufer verdrahten mount/clear.
+ */
+function updateImageZoomStatus(): void {
+    const el = getZoomStatusEl();
+    if (!el) return;
+    const img = getImg();
+    if (!img || !currentPath || fitScale <= 0 || fitted.width <= 0) {
+        el.hidden = true;
+        el.textContent = '';
+        return;
+    }
+    el.hidden = false;
+    el.textContent = formatZoomPercent(fitScale, transform.scale);
+}
+
+function hideImageZoomStatus(): void {
+    const el = getZoomStatusEl();
+    if (!el) return;
+    el.hidden = true;
+    el.textContent = '';
+}
+
 function applyTransform(): void {
     const img = getImg();
     const mount = getMount();
@@ -79,6 +112,7 @@ function applyTransform(): void {
             mount.style.cursor = '';
         }
     }
+    updateImageZoomStatus();
 }
 
 /** Loest onload/onerror am gegebenen img, damit spaete Events keine
@@ -106,6 +140,8 @@ function syncFitBasis(img: HTMLImageElement, reanchor: boolean): boolean {
     );
     const newFit = computeFitSize(intrinsic, newVp);
     if (newFit.width <= 0 || newFit.height <= 0) return false;
+    const newFitScale = computeFitScale(intrinsic, newFit);
+    if (newFitScale <= 0) return false;
 
     const basisChanged =
         oldFit.width !== newFit.width ||
@@ -125,6 +161,7 @@ function syncFitBasis(img: HTMLImageElement, reanchor: boolean): boolean {
 
     viewport = newVp;
     fitted = newFit;
+    fitScale = newFitScale;
     img.style.width = fitted.width + 'px';
     img.style.height = fitted.height + 'px';
     return true;
@@ -249,10 +286,12 @@ function ensureListeners(): void {
 function clearTransformState(): void {
     fitted = { width: 0, height: 0 };
     viewport = { width: 0, height: 0 };
+    fitScale = 0;
     transform = { scale: MIN_SCALE, tx: 0, ty: 0 };
     dragging = false;
     const mount = getMount();
     if (mount) mount.style.cursor = '';
+    hideImageZoomStatus();
 }
 
 /** Liefert `kind === 'image'` zurueck. Aufrufer entscheiden damit, ob

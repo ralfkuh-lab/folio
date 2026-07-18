@@ -574,6 +574,7 @@
   "statusBar.exportMarkdownOnly": "Export available for Markdown only",
   "statusBar.externalChangedClean": "File changed externally — use Reload button to apply",
   "statusBar.externalChangedDirty": "File changed externally (unsaved changes) — reload via Save or Discard",
+  "statusBar.imageZoom.tooltip": "Zoom factor relative to original size",
   "statusBar.modeEdit": "Edit",
   "statusBar.modeSplit": "Split",
   "statusBar.modeView": "View",

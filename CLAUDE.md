@@ -365,7 +365,10 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   (nicht `object-fit`, sonst mehrdeutige Transform-Mathe). Mathe
   DOM-frei in `view/image-transform.ts` (scale relativ zu Fit=1.0,
   Clamp `[1, 20]`, cursor-zentrierter Mausrad-Zoom, Drag-Pan bei
-  scale>1 mit `setPointerCapture`, Doppelklick→Fit). Reset auf Fit
+  scale>1 mit `setPointerCapture`, Doppelklick→Fit). Die Statusleiste
+  zeigt unter `#status-image-zoom` den Zoomfaktor relativ zur
+  Originalgröße (`fitScale × scale`, ganzzahlig „N %“; nur bei
+  gemountetem Bild, Live-Update über `applyTransform`). Reset auf Fit
   bei `mountImageView`/`reloadImageView` (Dokumentwechsel bzw.
   externe Änderung). Edit-Mode ist für Image **gesperrt**
   (`applyDocKind` setzt `tb-mode-edit.disabled = true`,

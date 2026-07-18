@@ -187,3 +187,29 @@ export function wheelDeltaToScaleFactor(deltaY: number): number {
 export function toCssTransform(t: Transform): string {
     return `translate(${t.tx}px, ${t.ty}px) scale(${t.scale})`;
 }
+
+/**
+ * Zoomfaktor relativ zur Originalgroesse (intrinsisch bzw. SVG-
+ * Fallback-Basis), ganzzahlig gerundet. Intern ist `scale` relativ
+ * zur Fit-Groesse (Fit=1); Anzeige = fitScale × scale × 100.
+ * Bei SVG-Viewport-Fallback ist fitScale typ. 1 → Fit zeigt 100 %.
+ */
+export function zoomPercentOfOriginal(fitScale: number, scale: number): number {
+    if (!Number.isFinite(fitScale) || !Number.isFinite(scale)) return 0;
+    if (fitScale <= 0 || scale <= 0) return 0;
+    return Math.round(fitScale * scale * 100);
+}
+
+/** Anzeigetext „N %“ (sprachneutral, Space wie zoom-indicator). */
+export function formatZoomPercent(fitScale: number, scale: number): string {
+    return zoomPercentOfOriginal(fitScale, scale) + ' %';
+}
+
+/**
+ * Fit-Scale-Faktor (≤ 1): fitted / intrinsic. 0 bei ungueltigen Maßen.
+ * SVG-Fallback (intrinsic = Viewport) liefert 1.
+ */
+export function computeFitScale(intrinsic: Size, fitted: Size): number {
+    if (intrinsic.width <= 0 || fitted.width <= 0) return 0;
+    return fitted.width / intrinsic.width;
+}

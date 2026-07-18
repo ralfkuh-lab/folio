@@ -153,6 +153,26 @@ def run(ctx):
                 f"erwartete Fit-scale≈1, got {scale0!r} transform={snap.get('transform')!r}",
             )
 
+        with ctx.step("Statuszelle Zoom: Ausgangswert lesen"):
+            zoom0 = ctx.api.eval(
+                """
+                (() => {
+                    const el = document.getElementById('status-image-zoom');
+                    return {
+                        hidden: !el || el.hidden,
+                        text: el ? (el.textContent || '') : '',
+                    };
+                })()
+                """,
+                timeout_ms=1000,
+            )
+            ctx.expect(zoom0.get("ok") is True, f"status-image-zoom eval: {zoom0!r}")
+            z0 = zoom0.get("value") or {}
+            ctx.expect(z0.get("hidden") is False, f"Zoom-Zelle hidden vor Wheel: {z0!r}")
+            text0 = (z0.get("text") or "").strip()
+            ctx.expect(text0.endswith("%"), f"Zoom-Text endet nicht auf %: {text0!r}")
+            ctx.expect(len(text0) > 0, f"leerer Zoom-Text: {z0!r}")
+
         with ctx.step("WheelEvent zoomt (scale waechst)"):
             value = _wheel_zoom(ctx)
             scale_before = _parse_scale(value.get("before") or "")
@@ -165,6 +185,29 @@ def run(ctx):
                 scale_after > scale_before + 1e-6,
                 f"scale wuchs nicht: before={scale_before!r} after={scale_after!r} "
                 f"raw={value!r}",
+            )
+
+        with ctx.step("Statuszelle Zoom aendert sich nach Wheel und endet auf %"):
+            zoom1 = ctx.api.eval(
+                """
+                (() => {
+                    const el = document.getElementById('status-image-zoom');
+                    return {
+                        hidden: !el || el.hidden,
+                        text: el ? (el.textContent || '') : '',
+                    };
+                })()
+                """,
+                timeout_ms=1000,
+            )
+            ctx.expect(zoom1.get("ok") is True, f"status-image-zoom eval: {zoom1!r}")
+            z1 = zoom1.get("value") or {}
+            ctx.expect(z1.get("hidden") is False, f"Zoom-Zelle hidden nach Wheel: {z1!r}")
+            text1 = (z1.get("text") or "").strip()
+            ctx.expect(text1.endswith("%"), f"Zoom-Text nach Wheel endet nicht auf %: {text1!r}")
+            ctx.expect(
+                text1 != text0,
+                f"Zoom-Text unveraendert nach Wheel: before={text0!r} after={text1!r}",
             )
 
         with ctx.step("Doppelklick resettet auf Fit (scale 1)"):
@@ -182,10 +225,13 @@ def run(ctx):
                         clientY: 10,
                     });
                     mount.dispatchEvent(ev);
+                    const el = document.getElementById('status-image-zoom');
                     return {
                         ok: true,
                         before,
                         after: img.style.transform || '',
+                        zoomText: el ? (el.textContent || '') : '',
+                        zoomHidden: !el || el.hidden,
                     };
                 })()
                 """,
@@ -198,6 +244,12 @@ def run(ctx):
             ctx.expect(
                 abs(scale_reset - 1.0) < 1e-6,
                 f"Reset-scale nicht 1: {scale_reset!r} raw={value!r}",
+            )
+            zoom_reset = (value.get("zoomText") or "").strip()
+            ctx.expect(value.get("zoomHidden") is False, f"Zoom-Zelle hidden nach Reset: {value!r}")
+            ctx.expect(
+                zoom_reset == text0,
+                f"Zoom-Text nach Doppelklick nicht zurueck: expected={text0!r} got={zoom_reset!r}",
             )
 
         with ctx.step("SVG nur viewBox: Fit-Fallback + Zoom"):

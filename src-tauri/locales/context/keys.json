@@ -553,6 +553,7 @@
   "statusBar.exportMarkdownOnly": "Status bar warning message showing that exporting is only supported for Markdown documents.",
   "statusBar.externalChangedClean": "Status bar warning message shown when the active document is modified externally, offering a reload button.",
   "statusBar.externalChangedDirty": "Status bar warning message shown when the active document is modified externally and has unsaved local changes.",
+  "statusBar.imageZoom.tooltip": "Tooltip for the image zoom percentage cell in the status bar (zoom relative to the image\u2019s original size).",
   "statusBar.modeEdit": "Status bar indicator label for the active editor view mode ('Edit').",
   "statusBar.modeSplit": "Status bar indicator label for the active editor view mode ('Split').",
   "statusBar.modeView": "Status bar indicator label for the active editor view mode ('View').",

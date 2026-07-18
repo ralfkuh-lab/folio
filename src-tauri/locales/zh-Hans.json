@@ -569,6 +569,7 @@
   "statusBar.exportMarkdownOnly": "导出仅适用于 Markdown 文档",
   "statusBar.externalChangedClean": "文件在外部已被更改——请使用重新加载按钮更新",
   "statusBar.externalChangedDirty": "文件已在外部更改（有未保存的本地更改）——请保存或放弃后重新加载",
+  "statusBar.imageZoom.tooltip": "相对于原始大小的缩放比例",
   "statusBar.modeEdit": "编辑",
   "statusBar.modeSplit": "分栏",
   "statusBar.modeView": "阅读",
