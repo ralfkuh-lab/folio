@@ -5,7 +5,8 @@
 // - Timer-Fire holt Live-Editor-Text
 // - autoFormat:false + preserveScroll:true
 // - invalidateCodeLive cancelt pending Timer
-// - flushCodeLiveUpdate wendet sofort an (Mode-Switch-Pfad)
+// - flushCodeViewOnModeSwitch wendet sofort an (Mode-Switch-Pfad)
+// - flushCodeViewOnModeSwitch: view|split, No-Op edit/html
 // - Window-Event folio-editor-text-updated → schedule
 
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
@@ -20,6 +21,20 @@ describe('view/code-live', () => {
 
     function openGate(): void {
         document.body.className = 'split-mode kind-text';
+        path = '/tmp/sample.json';
+        setText = vi.fn();
+        (window as any).FolioCodeView = {
+            isMounted: () => true,
+            setText,
+        };
+        (window as any).FolioEditor = {
+            hasEditor: () => true,
+            getText: () => editorText,
+        };
+    }
+
+    function openViewGate(): void {
+        document.body.className = 'kind-text';
         path = '/tmp/sample.json';
         setText = vi.fn();
         (window as any).FolioCodeView = {
@@ -75,6 +90,25 @@ describe('view/code-live', () => {
         path = '/tmp/a.json';
         (window as any).FolioCodeView = { isMounted: () => false, setText: vi.fn() };
         expect(codeLive.gateCodeSplitLiveForTest()).toBe(false);
+    });
+
+    it('mode-switch gate: view ok, edit/html no-op, split ok', () => {
+        path = '/tmp/a.json';
+        (window as any).FolioCodeView = { isMounted: () => true, setText: vi.fn() };
+
+        document.body.className = 'kind-text';
+        expect(codeLive.gateCodeViewOnModeSwitchForTest()).toBe(true);
+        expect(codeLive.gateCodeSplitLiveForTest()).toBe(false);
+
+        document.body.className = 'split-mode kind-text';
+        expect(codeLive.gateCodeViewOnModeSwitchForTest()).toBe(true);
+        expect(codeLive.gateCodeSplitLiveForTest()).toBe(true);
+
+        document.body.className = 'edit-mode kind-text';
+        expect(codeLive.gateCodeViewOnModeSwitchForTest()).toBe(false);
+
+        document.body.className = 'kind-text html-preview-mode';
+        expect(codeLive.gateCodeViewOnModeSwitchForTest()).toBe(false);
     });
 
     it('debounced Live-Update mit aktueller Editor-Text und autoFormat:false', async () => {
@@ -144,10 +178,10 @@ describe('view/code-live', () => {
         });
     });
 
-    it('flushCodeLiveUpdate wendet sofort an (kein Debounce, Mode-Switch)', async () => {
+    it('flushCodeViewOnModeSwitch wendet sofort an (kein Debounce, Mode-Switch split)', async () => {
         openGate();
         editorText = 'FLUSH-NOW';
-        codeLive.flushCodeLiveUpdate();
+        codeLive.flushCodeViewOnModeSwitch();
         expect(setText).toHaveBeenCalledTimes(1);
         expect(setText).toHaveBeenCalledWith('FLUSH-NOW', '', {
             autoFormat: false,
@@ -158,7 +192,7 @@ describe('view/code-live', () => {
         editorText = 'pending';
         codeLive.scheduleCodeLiveUpdate('pending');
         editorText = 'flushed-over-pending';
-        codeLive.flushCodeLiveUpdate();
+        codeLive.flushCodeViewOnModeSwitch();
         expect(setText).toHaveBeenCalledWith('flushed-over-pending', '', {
             autoFormat: false,
             preserveScroll: true,
@@ -168,13 +202,44 @@ describe('view/code-live', () => {
         expect(setText).not.toHaveBeenCalled();
     });
 
-    it('flushCodeLiveUpdate ist No-Op ohne Gate', () => {
+    it('flushCodeViewOnModeSwitch ist No-Op ohne Gate (edit-mode)', () => {
         document.body.className = 'edit-mode kind-text';
         path = '/tmp/a.json';
         setText = vi.fn();
         (window as any).FolioCodeView = { isMounted: () => true, setText };
         (window as any).FolioEditor = { hasEditor: () => true, getText: () => 'x' };
-        codeLive.flushCodeLiveUpdate();
+        codeLive.flushCodeViewOnModeSwitch();
+        expect(setText).not.toHaveBeenCalled();
+    });
+
+    it('flushCodeViewOnModeSwitch: view-mode + kind-text wendet Text an', () => {
+        openViewGate();
+        editorText = 'VIEW-FLUSH';
+        codeLive.flushCodeViewOnModeSwitch();
+        expect(setText).toHaveBeenCalledTimes(1);
+        expect(setText).toHaveBeenCalledWith('VIEW-FLUSH', '', {
+            autoFormat: false,
+            preserveScroll: true,
+        });
+    });
+
+    it('flushCodeViewOnModeSwitch: edit-mode → No-Op', () => {
+        document.body.className = 'edit-mode kind-text';
+        path = '/tmp/a.json';
+        setText = vi.fn();
+        (window as any).FolioCodeView = { isMounted: () => true, setText };
+        (window as any).FolioEditor = { hasEditor: () => true, getText: () => 'x' };
+        codeLive.flushCodeViewOnModeSwitch();
+        expect(setText).not.toHaveBeenCalled();
+    });
+
+    it('flushCodeViewOnModeSwitch: html-preview-mode → No-Op', () => {
+        document.body.className = 'kind-text html-preview-mode';
+        path = '/tmp/a.html';
+        setText = vi.fn();
+        (window as any).FolioCodeView = { isMounted: () => true, setText };
+        (window as any).FolioEditor = { hasEditor: () => true, getText: () => 'x' };
+        codeLive.flushCodeViewOnModeSwitch();
         expect(setText).not.toHaveBeenCalled();
     });
 });
