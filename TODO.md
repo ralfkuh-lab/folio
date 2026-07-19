@@ -2,6 +2,19 @@
 
 ## Mittlere Priorität
 
+- **Fenster-Geometrie-Restore: Off-Screen-Clamp beim Boot** (User-Report
+  2026-07-19): Folio startete mit Fenster auf der Windows-Parkposition
+  -32000/-32000 — unsichtbar, ohne angeschlossene externe Monitore
+  (Laptop solo; vermutlich Kombination aus persistierter Geometrie von
+  einem abgesteckten Monitor und/oder nächtlichem Windows-Update).
+  Workaround war manuelles `SetWindowPos` per Skript. Fix: beim
+  Geometrie-Restore (`panel_state.rs`-Window-Geometrie im Boot-Pfad)
+  prüfen, ob das wiederhergestellte Fenster-Rechteck einen sichtbaren
+  Monitor schneidet (Tauri `available_monitors()`); wenn nicht, auf den
+  primären Monitor zentrieren statt die gespeicherte Position blind zu
+  übernehmen. Offensichtlich ungültige Positionen (z. B. -32000) beim
+  **Speichern** gar nicht erst persistieren.
+
 - **Windows-Dev-Umgebung: `cargo test --lib` startet nicht**
   (`STATUS_ENTRYPOINT_NOT_FOUND` 0xc0000139 beim Laden des
   Test-Binaries, reproduziert auch auf unverändertem HEAD, 2026-07-15).
