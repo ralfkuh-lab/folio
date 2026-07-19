@@ -89,9 +89,6 @@
     Fundstellen, u. a. `logging.rs`, `theme/*` — rein diagnostisch,
     niedrigste Dringlichkeit; Fehlerdetails selbst sind seit
     2026-07-14 englisch).
-  - Dropdown-Optionstexte werden bei langen Übersetzungen abgeschnitten
-    (Settings-Selects, z. B. es „Abrir en una pestaña nueva", ru
-    „Открыть в новой вкладке") — Select-Breite oder Ellipsis prüfen.
   - Weitere Sprachen (pl, ko, …): Ablauf = Katalog per KI mit
     Kontextdatei übersetzen, Kreuz-Review, `scripts/lang-boot-smoke.sh
     <tag>` für den Sichttest.
@@ -141,10 +138,6 @@
   - **Settings-Toggle für Debounce-Delay**: bewusst verworfen 2026-07-18 —
     adaptive Debounce (`clamp(150, measured*2, 600)`) macht manuelle
     Delay-Wahl überflüssig.
-  - **edit→view mit dirty Non-MD-Text**: Code-View bleibt auf loaded/saved-
-    Stand (Live-Pfad und Flush nur im Split-Mode). Fix-Skizze: beim Mode-
-    Switch in `shell.ts` bei dirty Text
-    `FolioCodeView.setText(editorText, '', { autoFormat: false })` nachziehen.
 
 - **Image-Insert Folgepunkte** (Hauptfeature 2026-05-19 implementiert,
   siehe `commands/file/image.rs`, `ui/image-dialog.ts`,
@@ -173,6 +166,14 @@
   Plattform, oder Visual-Tests im `--attach`-Mode standardmäßig skippen.
   (Der zweite Stolperstein — `/open` blockte mit 409 bei dirty
   Recent-Datei — ist über das `discard`-Flag im `/open`-Body gelöst.)
+
+- **vitest: Unhandled Rejection aus `theme-editor.test.ts`** (Befund
+  2026-07-19, vorbestehend): im Voll-Lauf feuert ein Debounce-Timer aus
+  `app/ui/theme-editor.ts` (`runPreview`, ~Z. 399) nach dem Environment-
+  Teardown (`window is not defined`) — Tests bleiben grün, vitest meldet
+  aber „1 unhandled error". Timer im Test-Teardown clearen bzw.
+  `clearTimeout` beim Tab-Close sicherstellen; Einzel-Lauf reproduziert
+  nicht (Race nur im parallelen Voll-Lauf).
 
 - **Image-View Folgepunkte** (Hauptfeature 2026-05-21 implementiert,
   siehe `view/image.ts`, `file_kind.rs::FileKind::Image`,
