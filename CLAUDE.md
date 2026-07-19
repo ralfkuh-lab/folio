@@ -454,6 +454,21 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   `panel_state.rs::PanelStateData` und werden in `panel-state.json`
   unter dem App-Config-Verzeichnis persistiert. Neue Toggles dort
   ergänzen, nicht eigene JSON-Files erfinden.
+- **Fenster-Geometrie-Restore mit Off-Screen-Clamp**
+  (`window_geometry.rs` + Boot-Pfad in `lib.rs`): die persistierte
+  Position wird beim Boot nur angewendet, wenn ein greifbarer
+  Titelleisten-Streifen (≥100×50 logische px) auf einer Monitor-
+  **Work-Area** liegt; sonst Zentrierung auf dem primären Monitor bzw.
+  (ohne Primary) OS-Default. Die Entscheidung fällt bewusst in
+  **physischen** Pixeln — pro Monitor durch dessen Scale geteilte
+  „logische" Rechtecke ergäben bei Mixed-DPI keine gemeinsame Fläche,
+  und `set_position(LogicalPosition)` rechnet mit dem Scale des
+  *Fensters*; Recenter wird deshalb als `PhysicalPosition` gesetzt.
+  Save-Seite: `Moved`-Handler ignoriert minimierte Fenster,
+  `set_window_position_in_memory` verwirft die Windows-Parkposition
+  (≤ -30000, nur `cfg(windows)`) — sonst startete Folio nach
+  Minimieren+Beenden bzw. Monitor-Abstecken unsichtbar
+  (User-Report 2026-07-19).
 - **Editor-`applyReplace`**: nutzt `editor.executeEdits(...)` (nicht
   `setValue`!) — letzteres clearet Monacos Undo-Stack und macht
   Bold-Wrap/Heading-Toggle/etc. destruktiv. Bei Erweiterungen rund um

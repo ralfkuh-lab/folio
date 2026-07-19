@@ -2,25 +2,24 @@
 
 ## Mittlere Priorität
 
-- **Fenster-Geometrie-Restore: Off-Screen-Clamp beim Boot** (User-Report
-  2026-07-19): Folio startete mit Fenster auf der Windows-Parkposition
-  -32000/-32000 — unsichtbar, ohne angeschlossene externe Monitore
-  (Laptop solo; vermutlich Kombination aus persistierter Geometrie von
-  einem abgesteckten Monitor und/oder nächtlichem Windows-Update).
-  Workaround war manuelles `SetWindowPos` per Skript. Fix: beim
-  Geometrie-Restore (`panel_state.rs`-Window-Geometrie im Boot-Pfad)
-  prüfen, ob das wiederhergestellte Fenster-Rechteck einen sichtbaren
-  Monitor schneidet (Tauri `available_monitors()`); wenn nicht, auf den
-  primären Monitor zentrieren statt die gespeicherte Position blind zu
-  übernehmen. Offensichtlich ungültige Positionen (z. B. -32000) beim
-  **Speichern** gar nicht erst persistieren.
-
 - **Windows-Dev-Umgebung: `cargo test --lib` startet nicht**
   (`STATUS_ENTRYPOINT_NOT_FOUND` 0xc0000139 beim Laden des
   Test-Binaries, reproduziert auch auf unverändertem HEAD, 2026-07-15).
   Integrationstests (`tests/`) und `--test i18n_ref` laden dagegen
-  normal. Ursache unklar (vermutlich DLL-/Toolchain-Thema); bis zum Fix
-  laufen Lib-Unit-Tests nur auf Linux.
+  normal. Bis zum Fix laufen Lib-Unit-Tests nur auf Linux;
+  `cargo test --lib --no-run` taugt als Kompilier-Check.
+  - **Root Cause identifiziert 2026-07-19** (GUI-Fehlerdialog beim
+    Startversuch des Test-Binaries): Der Loader findet den
+    Prozedureinsprungpunkt **`TaskDialogIndirect`** nicht — die API
+    existiert nur in **comctl32.dll v6**, die Windows nur lädt, wenn das
+    Binary ein Application-Manifest mit der Common-Controls-6.0-
+    Dependency einbettet. Das echte `folio.exe` bekommt das Manifest von
+    Tauri beim Build; das `cargo test --lib`-Binary (`folio_lib-*.exe`)
+    nicht → comctl32 v5 → 0xc0000139. Import kommt vermutlich über eine
+    Dialog-Dependency (rfd/tauri-plugin-dialog). Fix-Idee: Manifest per
+    Linker-Flag auch in Test-Binaries einbetten, z. B. `.cargo/
+    config.toml` mit `-C link-arg=/MANIFESTDEPENDENCY:...` (+
+    `/MANIFEST:EMBED`) für das MSVC-Target.
 
 - **E2E `30_tabs_ui` flaky — Fix 2026-07-09, Beobachtung offen**: dreimal
   im Voll-Lauf gefailt („Undo-Stack hat den Tab-Wechsel nicht ueberlebt",

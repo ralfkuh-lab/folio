@@ -30,12 +30,14 @@ pub mod theme;
 pub mod toc;
 pub mod vault;
 pub mod vault_watcher;
+pub mod window_geometry;
 pub mod workspace;
 
 use state::AppState;
 use std::path::Path;
 use tauri::{
-    webview::Color, Emitter, Listener, LogicalPosition, LogicalSize, Manager, Theme, WindowEvent,
+    webview::Color, Emitter, Listener, LogicalPosition, LogicalSize, Manager, PhysicalPosition,
+    Theme, WindowEvent,
 };
 
 /// Findet im Argv-Stream den ersten Pfad, der wie eine zu öffnende Datei aussieht.
@@ -57,6 +59,27 @@ where
         }
     }
     None
+}
+
+/// Default-Fenstergroesse (logisch) fuer die Off-Screen-Pruefung, falls keine
+/// gueltige Groesse persistiert ist. Muss mit der `app.windows`-Default-Groesse
+/// in `tauri.conf.json` (1200x800) uebereinstimmen — genau die Groesse hat das
+/// Fenster beim Boot, wenn `set_size` nicht greift.
+const DEFAULT_WINDOW_WIDTH: f64 = 1200.0;
+const DEFAULT_WINDOW_HEIGHT: f64 = 800.0;
+
+/// Physisches Work-Area-Rechteck eines Tauri-Monitors (ohne Taskleiste/Dock).
+/// Bewusst die Work-Area und nicht `position()`/`size()` — sonst koennte der
+/// Sichtbarkeits-Streifen hinter einer Taskleiste liegen und der Recenter das
+/// Fenster unter sie schieben.
+fn monitor_work_area_rect(monitor: &tauri::window::Monitor) -> window_geometry::Rect {
+    let wa = monitor.work_area();
+    window_geometry::Rect {
+        x: wa.position.x as f64,
+        y: wa.position.y as f64,
+        width: wa.size.width as f64,
+        height: wa.size.height as f64,
+    }
 }
 
 pub fn builder(settings: crate::settings::SettingsService) -> tauri::Builder<tauri::Wry> {
@@ -152,7 +175,13 @@ pub fn builder(settings: crate::settings::SettingsService) -> tauri::Builder<tau
                     }
                 }
                 WindowEvent::Moved(_) => {
-                    if window.is_maximized().unwrap_or(false) {
+                    // Maximiert: die maximize-induzierte Position nicht
+                    // speichern. Minimiert: Windows feuert beim Minimieren ein
+                    // Moved mit der Parkposition (-32000/-32000) — das darf die
+                    // gespeicherte Position nicht ueberschreiben.
+                    if window.is_maximized().unwrap_or(false)
+                        || window.is_minimized().unwrap_or(false)
+                    {
                         return;
                     }
                     if let Ok(pos) = window.outer_position() {
@@ -269,11 +298,92 @@ pub fn builder(settings: crate::settings::SettingsService) -> tauri::Builder<tau
                     .lock()
                     .map_err(|_| "panel state lock poisoned".to_string())?
                     .data();
-                if let (Some(w), Some(h)) = (panel.window_width, panel.window_height) {
-                    let _ = window.set_size(LogicalSize::new(w, h));
+                // Groesse als Paar behandeln: nur zwei finite, positive
+                // gespeicherte Dimensionen werden per set_size angewendet —
+                // sonst behaelt das Fenster die tauri.conf.json-Default-Groesse
+                // (1200x800). Der Sichtbarkeitstest nimmt exakt dieselbe Groesse
+                // an, damit das gepruefte Rechteck das reale Fenster beschreibt.
+                let (used_w, used_h) = window_geometry::effective_size(
+                    panel.window_width,
+                    panel.window_height,
+                    DEFAULT_WINDOW_WIDTH,
+                    DEFAULT_WINDOW_HEIGHT,
+                );
+                if window_geometry::stored_size_valid(panel.window_width, panel.window_height) {
+                    let _ = window.set_size(LogicalSize::new(used_w, used_h));
                 }
                 if let (Some(x), Some(y)) = (panel.window_x, panel.window_y) {
-                    let _ = window.set_position(LogicalPosition::new(x, y));
+                    // Off-Screen-Clamp: die gespeicherte Position nur anwenden,
+                    // wenn ein greifbarer Streifen der Titelleiste auf einem
+                    // Monitor liegt. Sonst haette ein abgesteckter Monitor oder
+                    // eine gespeicherte Windows-Parkposition (-32000/-32000) das
+                    // Fenster unsichtbar gemacht.
+                    //
+                    // Einheiten: Die Entscheidung faellt PHYSISCH — genau in dem
+                    // System, in dem set_position(Logical…) landet. Tao rechnet
+                    // Logical mit dem aktuellen Fenster-Scale in physisch um;
+                    // deshalb die gespeicherten logischen Werte hier einmal mit
+                    // window.scale_factor() konvertieren und gegen die
+                    // (unveraenderten physischen) Monitor-Work-Areas pruefen.
+                    let scale = window.scale_factor().unwrap_or(1.0);
+                    let win_rect = window_geometry::Rect {
+                        x: window_geometry::to_physical(x, scale),
+                        y: window_geometry::to_physical(y, scale),
+                        width: window_geometry::to_physical(used_w, scale),
+                        height: window_geometry::to_physical(used_h, scale),
+                    };
+                    let monitors: Vec<window_geometry::Rect> = match window.available_monitors() {
+                        Ok(list) => list.iter().map(monitor_work_area_rect).collect(),
+                        Err(error) => {
+                            // Nicht still schlucken: eine leere Liste zwingt
+                            // decide_position in den Recenter/Leave-Fallback,
+                            // niemals in ein blindes Keep.
+                            tracing::warn!(
+                                target: "folio::settings",
+                                %error,
+                                "available_monitors() failed; falling back to primary-monitor recenter"
+                            );
+                            Vec::new()
+                        }
+                    };
+                    let primary_rect = window
+                        .primary_monitor()
+                        .ok()
+                        .flatten()
+                        .map(|m| monitor_work_area_rect(&m));
+                    let min_w = window_geometry::MIN_VISIBLE_WIDTH_LOGICAL * scale;
+                    let min_h = window_geometry::MIN_VISIBLE_HEIGHT_LOGICAL * scale;
+                    match window_geometry::decide_position(
+                        &win_rect,
+                        &monitors,
+                        primary_rect.as_ref(),
+                        min_w,
+                        min_h,
+                    ) {
+                        window_geometry::PositionDecision::Keep => {
+                            let _ = window.set_position(LogicalPosition::new(x, y));
+                        }
+                        window_geometry::PositionDecision::Recenter { x: px, y: py } => {
+                            // Ergebnis ist physisch -> als PhysicalPosition setzen.
+                            tracing::info!(
+                                target: "folio::settings",
+                                stored_x = x,
+                                stored_y = y,
+                                physical_x = px,
+                                physical_y = py,
+                                "restored window position off-screen; recentering on primary monitor"
+                            );
+                            let _ = window.set_position(PhysicalPosition::new(px, py));
+                        }
+                        window_geometry::PositionDecision::Leave => {
+                            tracing::info!(
+                                target: "folio::settings",
+                                stored_x = x,
+                                stored_y = y,
+                                "restored window position off-screen and no monitor to recenter on; leaving OS default"
+                            );
+                        }
+                    }
                 }
                 if panel.window_maximized {
                     let _ = window.maximize();

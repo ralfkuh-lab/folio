@@ -206,7 +206,9 @@ impl PanelState {
     }
 
     pub fn set_window_position(&mut self, x: f64, y: f64) -> io::Result<()> {
-        self.set_window_position_in_memory(x, y);
+        if !self.set_window_position_in_memory(x, y) {
+            return Ok(());
+        }
         self.save()
     }
 
@@ -214,12 +216,25 @@ impl PanelState {
     /// waehrend eines Fenster-Drags feuert das Event dutzendfach pro
     /// Sekunde — die Persistenz laeuft debounced in
     /// `lib.rs::schedule_panel_geometry_save` statt pro Tick.
-    pub fn set_window_position_in_memory(&mut self, x: f64, y: f64) {
+    ///
+    /// Liefert `false` bei verworfenen, offensichtlich ungueltigen
+    /// Parkpositionen (analog zum Verwerfen nicht-positiver Groessen in
+    /// `set_window_size_in_memory`): Windows schiebt das Fenster beim
+    /// Minimieren auf -32000/-32000; wird genau das gespeichert, waere das
+    /// Fenster beim naechsten Start unsichtbar. Defense-in-depth zum
+    /// is_minimized()-Guard im Moved-Handler. Bei einer verworfenen Position
+    /// bleiben `prev_window_*`/`last_position_change_at` bewusst unveraendert,
+    /// damit der Maximize-Revert nicht durcheinandergeraet.
+    pub fn set_window_position_in_memory(&mut self, x: f64, y: f64) -> bool {
+        if is_park_position(x, y) {
+            return false;
+        }
         self.prev_window_x = self.data.window_x;
         self.prev_window_y = self.data.window_y;
         self.last_position_change_at = Some(Instant::now());
         self.data.window_x = Some(x);
         self.data.window_y = Some(y);
+        true
     }
 
     pub fn set_window_size(&mut self, width: f64, height: f64) -> io::Result<()> {
@@ -271,6 +286,21 @@ impl PanelState {
     pub fn save(&self) -> io::Result<()> {
         persist::save_json_atomic(&self.path, &self.data)
     }
+}
+
+/// Erkennt die Windows-Parkposition (-32000/-32000 beim Minimieren). Die
+/// numerische Heuristik ist Windows-spezifisch: auf Linux/macOS sind solche
+/// stark negativen Koordinaten bei sehr grossen virtuellen Desktops legal und
+/// duerfen nicht stillschweigend verworfen werden. Der plattformneutrale
+/// is_minimized()-Guard im Moved-Handler bleibt davon unberuehrt.
+#[cfg(target_os = "windows")]
+fn is_park_position(x: f64, y: f64) -> bool {
+    x <= -30000.0 || y <= -30000.0
+}
+
+#[cfg(not(target_os = "windows"))]
+fn is_park_position(_x: f64, _y: f64) -> bool {
+    false
 }
 
 #[cfg(test)]
@@ -326,6 +356,76 @@ mod tests {
         assert_eq!(Some(250.0), reloaded.window_x);
         assert_eq!(Some(250.0), reloaded.window_y);
         assert!(reloaded.window_maximized);
+    }
+
+    #[test]
+    fn valid_position_is_accepted_and_persisted() {
+        // Plattformneutral: eine gewoehnliche Position wird angenommen.
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("panel.json");
+        let mut state = PanelState::load_from(path.clone());
+        assert!(state.set_window_position_in_memory(120.0, 80.0));
+        state.set_window_position(250.0, 160.0).unwrap();
+        let reloaded = PanelState::load_from(path).data();
+        assert_eq!(Some(250.0), reloaded.window_x);
+        assert_eq!(Some(160.0), reloaded.window_y);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn in_memory_setter_discards_park_position() {
+        // Minimaler Test fuer set_window_position_in_memory: die Parkposition
+        // wird verworfen (false) und der bestehende In-Memory-Wert bleibt.
+        let mut state = PanelState::load_from(TempDir::new().unwrap().path().join("panel.json"));
+        assert!(state.set_window_position_in_memory(120.0, 80.0));
+        assert!(!state.set_window_position_in_memory(-32000.0, -32000.0));
+        assert_eq!(Some(120.0), state.data().window_x);
+        assert_eq!(Some(80.0), state.data().window_y);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn set_window_position_does_not_persist_park_position() {
+        // Minimaler Test fuer set_window_position: eine Parkposition wird nicht
+        // in die Datei geschrieben (die zuvor gespeicherte bleibt erhalten).
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("panel.json");
+        let mut state = PanelState::load_from(path.clone());
+        state.set_window_position(120.0, 80.0).unwrap();
+        state.set_window_position(-32000.0, -32000.0).unwrap();
+        let reloaded = PanelState::load_from(path).data();
+        assert_eq!(Some(120.0), reloaded.window_x);
+        assert_eq!(Some(80.0), reloaded.window_y);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn single_axis_park_position_is_discarded() {
+        let mut state = PanelState::load_from(TempDir::new().unwrap().path().join("panel.json"));
+        assert!(!state.set_window_position_in_memory(200.0, -30001.0));
+        assert!(!state.set_window_position_in_memory(-30001.0, 200.0));
+        // Knapp ueber der Grenze bleibt gueltig.
+        assert!(state.set_window_position_in_memory(-29999.0, -29999.0));
+        assert_eq!(Some(-29999.0), state.data().window_x);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn is_park_position_threshold_windows() {
+        assert!(is_park_position(-32000.0, 100.0));
+        assert!(is_park_position(100.0, -30000.0));
+        assert!(!is_park_position(-29999.0, -29999.0));
+        assert!(!is_park_position(100.0, 100.0));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn is_park_position_is_noop_off_windows() {
+        // Auf Nicht-Windows wird nichts verworfen — stark negative
+        // Koordinaten sind auf grossen virtuellen Desktops legal.
+        assert!(!is_park_position(-32000.0, -32000.0));
+        let mut state = PanelState::load_from(TempDir::new().unwrap().path().join("panel.json"));
+        assert!(state.set_window_position_in_memory(-32000.0, -32000.0));
     }
 
     #[test]
