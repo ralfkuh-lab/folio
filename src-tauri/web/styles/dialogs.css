@@ -794,7 +794,7 @@ body.settings-open .content-panes { display: none; }
 }
 .settings-row {
   display: grid;
-  grid-template-columns: 1fr 200px;
+  grid-template-columns: 1fr minmax(200px, max-content);
   align-items: center;
   gap: 12px;
 }
@@ -822,6 +822,7 @@ body.settings-open .content-panes { display: none; }
   padding: 5px 8px;
   font: inherit;
   font-size: 12.5px;
+  max-width: 380px;
 }
 .settings-input:focus {
   outline: 2px solid var(--accent);
