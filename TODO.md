@@ -2,25 +2,6 @@
 
 ## Mittlere Priorität
 
-- **Windows-Dev-Umgebung: `cargo test --lib` startet nicht**
-  (`STATUS_ENTRYPOINT_NOT_FOUND` 0xc0000139 beim Laden des
-  Test-Binaries, reproduziert auch auf unverändertem HEAD, 2026-07-15).
-  Integrationstests (`tests/`) und `--test i18n_ref` laden dagegen
-  normal. Bis zum Fix laufen Lib-Unit-Tests nur auf Linux;
-  `cargo test --lib --no-run` taugt als Kompilier-Check.
-  - **Root Cause identifiziert 2026-07-19** (GUI-Fehlerdialog beim
-    Startversuch des Test-Binaries): Der Loader findet den
-    Prozedureinsprungpunkt **`TaskDialogIndirect`** nicht — die API
-    existiert nur in **comctl32.dll v6**, die Windows nur lädt, wenn das
-    Binary ein Application-Manifest mit der Common-Controls-6.0-
-    Dependency einbettet. Das echte `folio.exe` bekommt das Manifest von
-    Tauri beim Build; das `cargo test --lib`-Binary (`folio_lib-*.exe`)
-    nicht → comctl32 v5 → 0xc0000139. Import kommt vermutlich über eine
-    Dialog-Dependency (rfd/tauri-plugin-dialog). Fix-Idee: Manifest per
-    Linker-Flag auch in Test-Binaries einbetten, z. B. `.cargo/
-    config.toml` mit `-C link-arg=/MANIFESTDEPENDENCY:...` (+
-    `/MANIFEST:EMBED`) für das MSVC-Target.
-
 - **E2E `30_tabs_ui` flaky — Fix 2026-07-09, Beobachtung offen**: dreimal
   im Voll-Lauf gefailt („Undo-Stack hat den Tab-Wechsel nicht ueberlebt",
   2026-07-06/08/09), nie im Einzellauf. Race-Analyse (codex+agy+Claude):

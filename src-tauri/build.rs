@@ -57,7 +57,51 @@ fn main() {
         }
     }
 
+    emit_test_manifest_link_args();
+
     tauri_build::build();
+}
+
+/// Bettet unter Windows/MSVC ein Common-Controls-6.0-Manifest in die
+/// Test-Binaries ein. Ohne dieses Manifest laedt Windows nur comctl32
+/// v5, in der `TaskDialogIndirect` fehlt — die Dialog-Dependency-Kette
+/// (rfd/tauri-plugin-dialog) importiert das Symbol aber statisch, sodass
+/// der Loader das Test-Binary mit `STATUS_ENTRYPOINT_NOT_FOUND`
+/// (0xc0000139) killt, bevor ein einziger Test laeuft. Das echte
+/// `folio.exe` bekommt sein Manifest von tauri-build (embed-resource,
+/// wirkt nur auf bins); Test-Binaries gehen sonst leer aus.
+///
+/// Zielgenauigkeit ist hier heikel: das von `cargo test --lib` gelinkte
+/// Unit-Test-Binary ist das LIB-Target im Test-Modus — `rustc-link-arg-tests`
+/// erreicht es NICHT (das greift nur bei echten Integrationstest-Targets in
+/// `tests/`, verifiziert). Nur das ungetypte `rustc-link-arg` erreicht auch
+/// das Lib-Unit-Test-Binary — es faellt aber ebenso auf das `folio`-bin, und
+/// dort waere ein zweites, vom Linker erzeugtes RT_MANIFEST neben Tauris
+/// eingebettetem Manifest ein `CVT1100 duplicate resource`-Fehler. Deshalb:
+/// `/MANIFEST:EMBED` + `/MANIFESTDEPENDENCY` global fuer alle gelinkten
+/// Targets, und fuer das `folio`-bin gezielt `/MANIFEST:NO` obendrauf — das
+/// unterdrueckt dort die Linker-Manifest-Generierung, sodass allein Tauris
+/// Manifest (das Common-Controls v6 bereits enthaelt) im bin bleibt. Globale
+/// rustflags in `.cargo/config.toml` scheiden aus demselben Grund aus: sie
+/// wuerden das bin ungeschuetzt treffen.
+///
+/// build.rs laeuft auf dem Host, daher pruefen wir das Ziel-Triple ueber
+/// die von Cargo gesetzten `CARGO_CFG_TARGET_*`-Variablen statt ueber das
+/// `cfg!`-Makro des Host-Builds.
+fn emit_test_manifest_link_args() {
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let target_env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+    if target_os != "windows" || target_env != "msvc" {
+        return;
+    }
+    println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
+    println!(
+        "cargo:rustc-link-arg=/MANIFESTDEPENDENCY:type='win32' \
+         name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
+         publicKeyToken='6595b64144ccf1df' language='*' \
+         processorArchitecture='*'"
+    );
+    println!("cargo:rustc-link-arg-bin=folio=/MANIFEST:NO");
 }
 
 fn build_date_utc() -> String {
