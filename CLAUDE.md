@@ -251,15 +251,23 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   Funnel-Button im `vault-header` + Filterzeile `#vault-filter`; Spec
   [`docs/spec-vault-filter.md`](docs/spec-vault-filter.md)): Namensfilter
   (case-insensitive Substring auf Datei-/Ordnernamen, KEIN Unicode-Case-
-  Folding) + „nur Markdown"-Toggle. Zwei Modi: md-only ohne Query bleibt
-  im **Lazy-Tree** (`build_dir_children_html` filtert pro Expand;
-  `dir_contains_markdown`-Probe mit Early-Exit, 2k-Visit-Cap fail-open,
-  kein Abstieg in Link-Dirs), auch Pin-Wurzeln werden gefiltert;
-  nichtleere Query schaltet in den **Filter-Render-Modus**
+  Folding; Ordner-Match zieht NICHT den Subtree — Kinder bleiben
+  namensgefiltert; Treffer-Hervorhebung `span.vf-hit` clientseitig,
+  Text-Node-sicher) + „nur Markdown"-Toggle + Match-Art-Chips
+  Dateien/Ordner (steuern, was matchen darf; Ahnen von Treffern bleiben;
+  Umschalt-Geste statt beide-aus, Backend fail-open). **UX-Modell
+  (Spec A7): Schließen = Aufräumen** — Zeilen-X/Funnel/Escape leeren die
+  Query und stellen den Lazy-Baum wieder her; Funnel-Badge nur für
+  persistente Präferenzen (md-only, Match-Art). Zwei Modi: md-only ohne
+  Query bleibt im **Lazy-Tree** (`build_dir_children_html` filtert pro
+  Expand; `dir_contains_markdown`-Probe mit Early-Exit, 2k-Visit-Cap
+  fail-open, kein Abstieg in Link-Dirs), auch Pin-Wurzeln werden
+  gefiltert; nichtleere Query schaltet in den **Filter-Render-Modus**
   (`vault_filter`-Command → gestutzter, voll aufgeklappter Pin-Baum,
   zweiphasig: Walk-Deckel 50k Einträge, Render-Cap 2k Knoten →
   `truncated`; `expanded_dirs` bleibt unberührt, Recent-Section per CSS
-  `filtering` ausgeblendet, Expand-Klicks + Pin-Drag inert,
+  `filtering` ausgeblendet, Expand/Collapse rein clientseitig
+  (DOM-Klassen, kein expand-dir-Post), Pin-Drag inert,
   `vault:refresh`/`dir_changed` werden gepuffert und beim Verlassen via
   `refreshVault()` nachgezogen — der seinerseits Filter-Render-stale
   Antworten verwirft). Der Lazy-Typ-Filter lebt als Spiegel-State
