@@ -167,14 +167,6 @@
   (Der zweite Stolperstein — `/open` blockte mit 409 bei dirty
   Recent-Datei — ist über das `discard`-Flag im `/open`-Body gelöst.)
 
-- **vitest: Unhandled Rejection aus `theme-editor.test.ts`** (Befund
-  2026-07-19, vorbestehend): im Voll-Lauf feuert ein Debounce-Timer aus
-  `app/ui/theme-editor.ts` (`runPreview`, ~Z. 399) nach dem Environment-
-  Teardown (`window is not defined`) — Tests bleiben grün, vitest meldet
-  aber „1 unhandled error". Timer im Test-Teardown clearen bzw.
-  `clearTimeout` beim Tab-Close sicherstellen; Einzel-Lauf reproduziert
-  nicht (Race nur im parallelen Voll-Lauf).
-
 - **Image-View Folgepunkte** (Hauptfeature 2026-05-21 implementiert,
   siehe `view/image.ts`, `file_kind.rs::FileKind::Image`,
   `document_store.rs::load_opaque`; Image-Watcher/Live-Reload bei
