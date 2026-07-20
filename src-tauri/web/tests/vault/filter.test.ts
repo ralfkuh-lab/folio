@@ -28,7 +28,10 @@ function buildDom(): void {
                 <div class="vault-filter-bar">
                     <input type="search" id="vault-filter-input" />
                     <button type="button" id="vault-filter-md" aria-pressed="false">.md</button>
+                    <button type="button" id="vault-filter-files" aria-pressed="true">📄</button>
+                    <button type="button" id="vault-filter-dirs" aria-pressed="true">📁</button>
                     <button type="button" id="vault-filter-clear" hidden></button>
+                    <button type="button" id="vault-filter-close"></button>
                 </div>
             </div>
             <div class="vault-filter-truncated" id="vault-filter-truncated" hidden>truncated</div>
@@ -80,6 +83,8 @@ function filterHtml(path = '/vault/hit.md', name = 'hit.md'): string {
 function configureInvoke(opts?: {
     barVisible?: boolean;
     markdownOnly?: boolean;
+    matchFiles?: boolean;
+    matchDirs?: boolean;
     filterHtml?: string;
     truncated?: boolean;
     delayed?: boolean;
@@ -91,6 +96,8 @@ function configureInvoke(opts?: {
             return Promise.resolve({
                 markdownOnly: !!opts?.markdownOnly,
                 barVisible: !!opts?.barVisible,
+                matchFiles: opts?.matchFiles !== false,
+                matchDirs: opts?.matchDirs !== false,
             });
         }
         if (cmd === 'vault_filter_options_set') {
@@ -277,6 +284,50 @@ describe('vault/filter — Escape-Kaskade', () => {
     });
 });
 
+describe('vault/filter — closeBar (A7)', () => {
+    it('X close clears query, leaves filter mode, hides bar', async () => {
+        configureInvoke({ barVisible: true });
+        await initModules();
+        await typeQuery('hit');
+        await vi.advanceTimersByTimeAsync(150);
+        await flushMicro();
+        expect($('vault-tree').classList.contains('filtering')).toBe(true);
+        expect($('vault-filter').hidden).toBe(false);
+
+        const buildBefore = tauri.invoke.mock.calls.filter(
+            (c) => c[0] === 'vault_build_tree',
+        ).length;
+        $('vault-filter-close').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+
+        expect(input().value).toBe('');
+        expect($('vault-tree').classList.contains('filtering')).toBe(false);
+        expect($('vault-filter').hidden).toBe(true);
+        const buildAfter = tauri.invoke.mock.calls.filter(
+            (c) => c[0] === 'vault_build_tree',
+        ).length;
+        expect(buildAfter).toBeGreaterThan(buildBefore);
+        const setCalls = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_filter_options_set');
+        expect(setCalls.some((c) => c[1]?.barVisible === false)).toBe(true);
+    });
+
+    it('funnel click while open closes bar and clears query', async () => {
+        configureInvoke({ barVisible: true });
+        await initModules();
+        await typeQuery('hit');
+        await vi.advanceTimersByTimeAsync(150);
+        await flushMicro();
+        expect($('vault-tree').classList.contains('filtering')).toBe(true);
+
+        $('vault-filter-toggle').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+
+        expect(input().value).toBe('');
+        expect($('vault-tree').classList.contains('filtering')).toBe(false);
+        expect($('vault-filter').hidden).toBe(true);
+    });
+});
+
 describe('vault/filter — markdown chip', () => {
     it('without query: options_set + vault_build_tree (lazy mode)', async () => {
         configureInvoke();
@@ -366,16 +417,17 @@ describe('vault/filter — filter mode UI', () => {
         expect($('vault-filter-truncated').hidden).toBe(true);
     });
 
-    it('funnel badge filter-active when query or markdown_only active', async () => {
+    it('funnel badge only for persistent prefs (not query)', async () => {
         configureInvoke();
         await initModules();
         const funnel = $('vault-filter-toggle');
         expect(funnel.classList.contains('filter-active')).toBe(false);
 
+        // Query allein erzeugt KEIN Badge (A7).
         await typeQuery('x');
         await vi.advanceTimersByTimeAsync(150);
         await flushMicro();
-        expect(funnel.classList.contains('filter-active')).toBe(true);
+        expect(funnel.classList.contains('filter-active')).toBe(false);
 
         input().value = '';
         input().dispatchEvent(new Event('input', { bubbles: true }));
@@ -383,9 +435,18 @@ describe('vault/filter — filter mode UI', () => {
         await flushMicro();
         expect(funnel.classList.contains('filter-active')).toBe(false);
 
+        // markdownOnly erzeugt Badge.
         $('vault-filter-md').click();
         await flushMicro();
         expect(funnel.classList.contains('filter-active')).toBe(true);
+    });
+
+    it('funnel badge when matchFiles is off', async () => {
+        configureInvoke({ matchFiles: false, matchDirs: true });
+        await initModules();
+        expect($('vault-filter-toggle').classList.contains('filter-active')).toBe(true);
+        expect($('vault-filter-files').getAttribute('aria-pressed')).toBe('false');
+        expect($('vault-filter-dirs').getAttribute('aria-pressed')).toBe('true');
     });
 
     it('funnel toggles bar visibility and persists options', async () => {
@@ -400,12 +461,71 @@ describe('vault/filter — filter mode UI', () => {
     });
 });
 
-describe('vault/filter — expand inert in filter mode', () => {
-    it('dir click does not emit expand-dir while filter-render is active', async () => {
+describe('vault/filter — match-kind chips (A7)', () => {
+    it('clicking last active chip switches to the other (never both off)', async () => {
+        configureInvoke({ barVisible: true });
+        await initModules();
+        // Both on by default.
+        expect($('vault-filter-files').getAttribute('aria-pressed')).toBe('true');
+        expect($('vault-filter-dirs').getAttribute('aria-pressed')).toBe('true');
+
+        // Turn off files → dirs stays on.
+        $('vault-filter-files').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+        expect($('vault-filter-files').getAttribute('aria-pressed')).toBe('false');
+        expect($('vault-filter-dirs').getAttribute('aria-pressed')).toBe('true');
+
+        // Click dirs (last active) → switches to files-only.
+        $('vault-filter-dirs').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+        expect($('vault-filter-files').getAttribute('aria-pressed')).toBe('true');
+        expect($('vault-filter-dirs').getAttribute('aria-pressed')).toBe('false');
+
+        // Click files (last active) → switches to dirs-only.
+        $('vault-filter-files').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+        expect($('vault-filter-files').getAttribute('aria-pressed')).toBe('false');
+        expect($('vault-filter-dirs').getAttribute('aria-pressed')).toBe('true');
+
+        // Neither both-off ever.
+        expect(
+            $('vault-filter-files').getAttribute('aria-pressed') === 'true' ||
+                $('vault-filter-dirs').getAttribute('aria-pressed') === 'true',
+        ).toBe(true);
+    });
+
+    it('with query: match chip re-runs vault_filter with matchFiles/matchDirs', async () => {
+        configureInvoke();
+        await initModules();
+        await typeQuery('hit');
+        await vi.advanceTimersByTimeAsync(150);
+        await flushMicro();
+        tauri.invoke.mockClear();
+        configureInvoke();
+
+        $('vault-filter-files').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+
+        const filterCalls = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_filter');
+        expect(filterCalls.length).toBeGreaterThanOrEqual(1);
+        expect(filterCalls[filterCalls.length - 1][1]).toMatchObject({
+            query: 'hit',
+            matchFiles: false,
+            matchDirs: true,
+        });
+        const setCalls = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_filter_options_set');
+        expect(setCalls.some((c) => c[1]?.matchFiles === false && c[1]?.matchDirs === true)).toBe(
+            true,
+        );
+    });
+});
+
+describe('vault/filter — client-side expand/collapse in filter mode (A7)', () => {
+    it('dir click toggles DOM classes without expand-dir post', async () => {
         configureInvoke({
             filterHtml: `
                 <li class="node" data-kind="dir" data-path="/vault">
-                    <div class="row"><span class="caret open"></span><span class="label">vault</span></div>
+                    <div class="row"><span class="caret open"></span><span class="icon">📂</span><span class="label">vault</span></div>
                     <ul class="children">
                         <li class="node" data-kind="file" data-path="/vault/hit.md">
                             <div class="row"><span class="label">hit.md</span></div>
@@ -419,12 +539,29 @@ describe('vault/filter — expand inert in filter mode', () => {
         await flushMicro();
         expect(filter.isVaultFilterRenderMode()).toBe(true);
 
+        const caret = document.querySelector(
+            '#vault-tree .node[data-kind="dir"] > .row > .caret',
+        ) as HTMLElement;
+        const ul = document.querySelector(
+            '#vault-tree .node[data-kind="dir"] > ul.children',
+        ) as HTMLElement;
+        const icon = document.querySelector(
+            '#vault-tree .node[data-kind="dir"] > .row > .icon',
+        ) as HTMLElement;
+        expect(caret.classList.contains('open')).toBe(true);
+        expect(ul.classList.contains('collapsed')).toBe(false);
+
         tauri.emit.mockClear();
         const dirRow = document.querySelector(
             '#vault-tree .node[data-kind="dir"] > .row',
         ) as HTMLElement;
         expect(dirRow).toBeTruthy();
         dirRow.click();
+
+        // Client-side collapse.
+        expect(caret.classList.contains('open')).toBe(false);
+        expect(ul.classList.contains('collapsed')).toBe(true);
+        expect(icon.textContent).toBe('📁');
 
         const expandCalls = tauri.emit.mock.calls.filter(
             (c: any[]) => c[0] === 'shell:event' && c[1]?.type === 'expand-dir',
@@ -434,6 +571,17 @@ describe('vault/filter — expand inert in filter mode', () => {
             (c: any[]) => c[0] === 'shell:event' && c[1]?.type === 'collapse-dir',
         );
         expect(collapseCalls).toHaveLength(0);
+
+        // Toggle open again.
+        dirRow.click();
+        expect(caret.classList.contains('open')).toBe(true);
+        expect(ul.classList.contains('collapsed')).toBe(false);
+        expect(icon.textContent).toBe('📂');
+        expect(
+            tauri.emit.mock.calls.filter(
+                (c: any[]) => c[0] === 'shell:event' && c[1]?.type === 'expand-dir',
+            ),
+        ).toHaveLength(0);
     });
 });
 

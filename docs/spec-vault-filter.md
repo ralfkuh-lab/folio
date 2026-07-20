@@ -137,8 +137,42 @@ Probe-Ergebnisse pro Lauf in einer lokalen Map gememoized.
 - `vault_filter_markdown_only: bool` (`#[serde(default)]`, Default aus)
 - `vault_filter_bar_visible: bool` (`#[serde(default)]`, Default aus) —
   Sichtbarkeit der Filterzeile.
+- `vault_filter_match_files: bool` / `vault_filter_match_dirs: bool`
+  (serde-default **true**) — Match-Art (A7). Beide-aus wird im Frontend
+  verhindert; liest das Backend dennoch beide false, behandelt es das
+  wie beide true (fail-open, kein leerer Baum durch kaputten State).
 
 Der Namensfilter-Text ist flüchtig.
+
+### A7 — UX-Modell (Revision 2 · 2026-07-20, User-Feedback)
+
+Die erste Fassung hielt Filterzustand und Zeilen-Sichtbarkeit
+unabhängig — Ergebnis: gefilterte Ansicht ohne sichtbares
+Bedienelement (Zeile zu, Filter aktiv) = unbedienbarer Baum. Neu:
+
+- **Schließen = Aufräumen**: Zeile schließen (Funnel-Toggle, das
+  X am Zeilenende, Escape bei leerem Input) leert IMMER die Query und
+  verlässt den Filter-Render-Modus → Lazy-Baum. Ein aktiver
+  Namensfilter ohne sichtbare Zeile kann nicht mehr existieren.
+- **Zwei X**: das Zeilen-X (`#vault-filter-close`, immer sichtbar)
+  schließt die Zeile; das Text-Lösch-✕ (`#vault-filter-clear`, nur bei
+  nichtleerem Input) leert nur die Query, Zeile bleibt offen.
+- **Persistente Präferenzen vs. flüchtiger Filter**: `.md`-Toggle und
+  Match-Art überleben das Schließen (sie wirken im Lazy-Baum bzw. beim
+  nächsten Öffnen) — NUR sie erzeugen das `filter-active`-Badge am
+  Funnel. Die Query ist flüchtig.
+- **Match-Art-Chips**: zwei Toggle-Chips „Dateien" (📄) / „Ordner" (📁)
+  neben `.md`, beide default an. Sie steuern, was **matchen** darf —
+  Ordner erscheinen bei „nur Dateien" weiterhin als Ahnen von
+  Datei-Treffern, matchen aber nicht selbst (und umgekehrt erscheinen
+  Dateien bei „nur Ordner" gar nicht, da sie weder matchen noch Ahnen
+  sein können). Beide-aus wird abgefangen: der Klick, der den letzten
+  aktiven Chip deaktivieren würde, aktiviert stattdessen den anderen
+  (Umschalt-Geste).
+- **Expand/Collapse im Filtermodus**: erlaubt, aber rein clientseitig —
+  der Caret-Klick togglet nur die `collapsed`-Klasse im Filter-HTML;
+  es gibt weiterhin KEIN `expand-dir`/`collapse-dir`-Post und keine
+  Änderung an `expanded_dirs`.
 
 ## Backend (Etappe F1)
 
@@ -149,6 +183,8 @@ Command-Anbindung in `commands/vault_cmd.rs`.
 pub struct VaultFilterOptions {
     pub query: String,          // roher Filtertext; leer = kein Namensfilter
     pub markdown_only: bool,
+    pub match_files: bool,      // A7: dürfen Dateien matchen? (Default true)
+    pub match_dirs: bool,       // A7: dürfen Ordner matchen? (Default true)
 }
 
 pub struct VaultFilterResult {
@@ -178,8 +214,9 @@ pub fn dir_contains_markdown(dir: &Path) -> bool;  // A4-Probe
   `vault_expand_dir`-Command, `item_html`-Expanded-Pfad) reichen ihn
   durch. Quelle des Werts: `panel_state.vault_filter_markdown_only`.
 - Neue/angepasste Commands:
-  - `vault_filter(query, markdownOnly, runId) -> { html, truncated, nodeCount, runId }`
-  - `vault_filter_options_get/set` für die beiden Panel-State-Felder
+  - `vault_filter(query, markdownOnly, matchFiles, matchDirs, runId) ->
+    { html, truncated, nodeCount, runId }`
+  - `vault_filter_options_get/set` für die vier Panel-State-Felder
     (bzw. in bestehende Panel-State-Commands integrieren, falls dort ein
     generisches Muster existiert — Implementierer entscheidet, aber
     KEINE neuen JSON-Dateien).

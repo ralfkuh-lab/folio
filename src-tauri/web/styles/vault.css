@@ -729,11 +729,12 @@ html.theme-dark .vault-header .vault-cmd.filter-active {
   -webkit-appearance: none;
   display: none;
 }
+.vault-filter-chip,
 .vault-filter-md {
   flex: 0 0 auto;
   box-sizing: border-box;
   height: 26px;
-  min-width: 34px;
+  min-width: 28px;
   padding: 0 6px;
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -745,21 +746,34 @@ html.theme-dark .vault-header .vault-cmd.filter-active {
   cursor: pointer;
   line-height: 1;
 }
+.vault-filter-files,
+.vault-filter-dirs {
+  font-size: 13px;
+  font-weight: 400;
+  min-width: 26px;
+  padding: 0 4px;
+}
+.vault-filter-chip:hover,
 .vault-filter-md:hover {
   background: var(--rail-hover-bg);
   color: var(--rail-fg);
 }
+.vault-filter-chip.active,
+.vault-filter-chip[aria-pressed="true"],
 .vault-filter-md.active,
 .vault-filter-md[aria-pressed="true"] {
   color: var(--rail-accent);
   border-color: var(--rail-accent);
   background: color-mix(in srgb, var(--rail-accent) 12%, transparent);
 }
+html.theme-dark .vault-filter-chip.active,
+html.theme-dark .vault-filter-chip[aria-pressed="true"],
 html.theme-dark .vault-filter-md.active,
 html.theme-dark .vault-filter-md[aria-pressed="true"] {
   background: color-mix(in srgb, var(--rail-accent) 18%, transparent);
 }
-.vault-filter-clear {
+.vault-filter-clear,
+.vault-filter-close {
   flex: 0 0 auto;
   box-sizing: border-box;
   width: 26px;
@@ -773,7 +787,8 @@ html.theme-dark .vault-filter-md[aria-pressed="true"] {
   line-height: 1;
   cursor: pointer;
 }
-.vault-filter-clear:hover {
+.vault-filter-clear:hover,
+.vault-filter-close:hover {
   background: var(--rail-hover-bg);
   color: var(--rail-fg);
 }

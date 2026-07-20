@@ -324,9 +324,18 @@ export function initVaultTree(d: Deps): void {
         if (node) {
             const kind = node.getAttribute('data-kind');
             if (kind === 'dir') {
-                // Filter-Render-Modus: Baum ist voll aufgeklappt — Expand/
-                // Collapse würde expanded_dirs verschmutzen (Spec F2).
-                if (isVaultFilterRenderMode()) return;
+                // Filter-Render-Modus (A7): rein clientseitiges Toggling —
+                // kein expand-dir/collapse-dir-Post, expanded_dirs unberührt.
+                if (isVaultFilterRenderMode()) {
+                    const caret = node.querySelector(':scope > .row > .caret');
+                    const ul = node.querySelector(':scope > ul.children');
+                    const iconEl = node.querySelector(':scope > .row > .icon');
+                    const wasOpen = !!(caret && caret.classList.contains('open'));
+                    if (caret) caret.classList.toggle('open');
+                    if (ul) ul.classList.toggle('collapsed');
+                    if (iconEl) iconEl.textContent = wasOpen ? '📁' : '📂';
+                    return;
+                }
                 toggleDir(node);
                 return;
             }

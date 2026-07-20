@@ -101,8 +101,11 @@
   <div class="vault-filter" id="vault-filter" hidden>
     <div class="vault-filter-bar">
       <input type="search" id="vault-filter-input" class="vault-filter-input" placeholder="Nach Name filtern…" data-i18n-placeholder="vault.filter.input.placeholder" autocomplete="off" spellcheck="false" />
-      <button type="button" id="vault-filter-md" class="vault-filter-md" aria-pressed="false" title="Nur Markdown" data-i18n-title="vault.filter.md.tooltip" aria-label="Nur Markdown-Dateien anzeigen" data-i18n-aria-label="vault.filter.md.ariaLabel">.md</button>
+      <button type="button" id="vault-filter-md" class="vault-filter-chip vault-filter-md" aria-pressed="false" title="Nur Markdown" data-i18n-title="vault.filter.md.tooltip" aria-label="Nur Markdown-Dateien anzeigen" data-i18n-aria-label="vault.filter.md.ariaLabel">.md</button>
+      <button type="button" id="vault-filter-files" class="vault-filter-chip vault-filter-files" aria-pressed="true" title="Dateien matchen" data-i18n-title="vault.filter.matchFiles.tooltip" aria-label="Dateinamen matchen" data-i18n-aria-label="vault.filter.matchFiles.ariaLabel">&#x1F4C4;</button>
+      <button type="button" id="vault-filter-dirs" class="vault-filter-chip vault-filter-dirs" aria-pressed="true" title="Ordner matchen" data-i18n-title="vault.filter.matchDirs.tooltip" aria-label="Ordnernamen matchen" data-i18n-aria-label="vault.filter.matchDirs.ariaLabel">&#x1F4C1;</button>
       <button type="button" id="vault-filter-clear" class="vault-filter-clear" hidden title="Filter löschen" data-i18n-title="vault.filter.clear.tooltip" aria-label="Filter löschen" data-i18n-aria-label="vault.filter.clear.ariaLabel">&#x2715;</button>
+      <button type="button" id="vault-filter-close" class="vault-filter-close" title="Filterzeile schließen" data-i18n-title="vault.filter.close.tooltip" aria-label="Filterzeile schließen" data-i18n-aria-label="vault.filter.close.ariaLabel">&#x2715;</button>
     </div>
   </div>
   <div class="vault-filter-truncated" id="vault-filter-truncated" hidden role="status" data-i18n="vault.filter.truncated">Zu viele Treffer — Filter verfeinern</div>

@@ -104,6 +104,8 @@ pub async fn vault_build_tree(state: State<'_, AppState>) -> Result<String, Stri
 pub async fn vault_filter(
     query: String,
     markdown_only: bool,
+    match_files: bool,
+    match_dirs: bool,
     run_id: u64,
     state: State<'_, AppState>,
 ) -> Result<VaultFilterResponse, String> {
@@ -120,6 +122,8 @@ pub async fn vault_filter(
     let opts = VaultFilterOptions {
         query,
         markdown_only,
+        match_files,
+        match_dirs,
     };
     let result = run_vault_filter(&pinned, &vault, &opts);
     Ok(VaultFilterResponse {
@@ -142,6 +146,8 @@ pub async fn vault_filter_options_get(
     Ok(serde_json::json!({
         "markdownOnly": data.vault_filter_markdown_only,
         "barVisible": data.vault_filter_bar_visible,
+        "matchFiles": data.vault_filter_match_files,
+        "matchDirs": data.vault_filter_match_dirs,
     }))
 }
 
@@ -149,13 +155,15 @@ pub async fn vault_filter_options_get(
 pub async fn vault_filter_options_set(
     markdown_only: bool,
     bar_visible: bool,
+    match_files: bool,
+    match_dirs: bool,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     state
         .panel_state
         .lock()
         .map_err(|_| "panel state lock poisoned".to_string())?
-        .set_vault_filter_options(markdown_only, bar_visible)
+        .set_vault_filter_options(markdown_only, bar_visible, match_files, match_dirs)
         .map_err(|error| error.to_string())?;
     // Lazy-Tree-Spiegel: poisoned Vault-Lock ist Fehler (FX4), nicht still.
     state

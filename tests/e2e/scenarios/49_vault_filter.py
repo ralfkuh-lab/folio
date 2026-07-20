@@ -252,6 +252,52 @@ def run(ctx):
             ctx.api.sync_render()
             ctx.screenshot("49_filter_cleared")
 
+        with ctx.step("close bar clears filter and returns to lazy tree (A7)"):
+            # Filter aktivieren, dann Zeilen-X: Query leer, Filtermodus aus,
+            # Zeile zu, Lazy-Baum zurück (Usability-Bug: gefilterte Ansicht
+            # ohne sichtbare Zeile).
+            if not _filter_bar_open(ctx):
+                ctx.api.eval(
+                    "document.getElementById('vault-filter-toggle')"
+                    ".dispatchEvent(new MouseEvent('click',{bubbles:true}))"
+                )
+                ctx.expect(
+                    _poll(ctx, lambda: _filter_bar_open(ctx)),
+                    "Filterzeile öffnet nicht vor Close-Test",
+                )
+            _set_query(ctx, "alp")
+            ok = _poll(
+                ctx,
+                lambda: _filtering(ctx) and "Alpha.md" in _tree_html(ctx),
+                timeout=4.0,
+            )
+            ctx.expect(ok, f"Vor Close: Filter nicht aktiv: {_tree_html(ctx)[:400]}")
+            ctx.api.eval(
+                "document.getElementById('vault-filter-close')"
+                ".dispatchEvent(new MouseEvent('click',{bubbles:true}))"
+            )
+            ok = _poll(
+                ctx,
+                lambda: (not _filtering(ctx))
+                and (not _filter_bar_open(ctx))
+                and "Alpha.md" in _tree_html(ctx)
+                and "notes.txt" in _tree_html(ctx),
+                timeout=4.0,
+            )
+            ctx.expect(
+                ok,
+                f"Close: Filteransicht nicht verlassen / Zeile nicht zu: "
+                f"filtering={_filtering(ctx)} bar={_filter_bar_open(ctx)} "
+                f"html={_tree_html(ctx)[:400]}",
+            )
+            query_val = _evalv(
+                ctx,
+                "document.getElementById('vault-filter-input')?.value||''",
+            )
+            ctx.expect(query_val == "", f"Query sollte leer sein, got {query_val!r}")
+            ctx.api.sync_render()
+            ctx.screenshot("49_filter_closed")
+
     finally:
         try:
             ctx.api.workspace_unpin(root_norm)

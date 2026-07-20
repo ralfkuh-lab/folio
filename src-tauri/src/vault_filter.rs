@@ -29,6 +29,11 @@ pub struct VaultFilterOptions {
     /// volles Unicode-Case-Folding, keine NFC-Normalisierung).
     pub query: String,
     pub markdown_only: bool,
+    /// Dürfen Dateien matchen? (A7, Default true).
+    pub match_files: bool,
+    /// Dürfen Ordner selbst matchen? (A7, Default true).
+    /// Ahnen von Treffern erscheinen unabhängig davon.
+    pub match_dirs: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,6 +66,8 @@ enum FilterNode {
 struct WalkCtx {
     query_lower: String,
     markdown_only: bool,
+    match_files: bool,
+    match_dirs: bool,
     walk_visits: usize,
     walk_truncated: bool,
     /// Memo nur innerhalb eines `run_vault_filter` (FX7); Lazy bleibt ungecacht.
@@ -105,9 +112,19 @@ pub fn run_vault_filter(
     let dir_roots: HashSet<String> = roots.dirs.iter().map(|p| normalize_path(p)).collect();
     let file_roots: HashSet<String> = roots.files.iter().map(|p| normalize_path(p)).collect();
 
+    // A6 fail-open: beide false → wie beide true (kein leerer Baum durch
+    // kaputten State). Frontend verhindert beide-aus ohnehin.
+    let (match_files, match_dirs) = if !opts.match_files && !opts.match_dirs {
+        (true, true)
+    } else {
+        (opts.match_files, opts.match_dirs)
+    };
+
     let mut walk = WalkCtx {
         query_lower: opts.query.to_lowercase(),
         markdown_only: opts.markdown_only,
+        match_files,
+        match_dirs,
         walk_visits: 0,
         walk_truncated: false,
         md_memo: HashMap::new(),
@@ -195,6 +212,10 @@ fn collect_pin_file(path: &Path, walk: &mut WalkCtx) -> Option<FilterNode> {
     if !walk.note_visit() {
         return None;
     }
+    // Datei-Treffer nur wenn match_files erlaubt (A7).
+    if !walk.match_files {
+        return None;
+    }
     let name = entry_name(path);
     if !name_matches(&name, &walk.query_lower) {
         return None;
@@ -222,14 +243,15 @@ fn collect_pin_dir(path: &Path, walk: &mut WalkCtx) -> Option<FilterNode> {
     }
     let info = classify_entry(path);
     let name = entry_name(path);
-    let name_match = name_matches(&name, &walk.query_lower);
+    // Selbst-Match nur wenn match_dirs (A7); Ahnen von Treffern bleiben.
+    let self_match = walk.match_dirs && name_matches(&name, &walk.query_lower);
     let parent = path.parent().unwrap_or(path);
     let matcher = crate::git_ignore::matcher_for(parent);
     let ignored = matcher.as_ref().is_some_and(|m| m.is_ignored(path, true));
 
     // FX5: als Ordner gepinnte Link-Wurzel = Blatt (nicht rekursiv walken).
     if info.is_link {
-        if !name_match {
+        if !self_match {
             return None;
         }
         if walk.markdown_only && !walk.contains_md(path) {
@@ -248,7 +270,7 @@ fn collect_pin_dir(path: &Path, walk: &mut WalkCtx) -> Option<FilterNode> {
     // Namensfilter gilt immer auch für Kinder (Revision 2026-07-20):
     // Ordner-Namensmatch zieht nicht mehr den kompletten Subtree.
     let children = collect_children(path, walk);
-    if name_match {
+    if self_match {
         if walk.markdown_only && !walk.contains_md(path) {
             return None;
         }
@@ -295,11 +317,11 @@ fn collect_children(dir: &Path, walk: &mut WalkCtx) -> Vec<FilterNode> {
 
         if info.is_directory {
             let name = entry_name(&path);
-            let name_match = name_matches(&name, &walk.query_lower);
+            let self_match = walk.match_dirs && name_matches(&name, &walk.query_lower);
 
             if info.is_link {
                 // Ordner-Links: Blatt-Knoten (Spec A3 / FX5).
-                if !name_match {
+                if !self_match {
                     continue;
                 }
                 if walk.markdown_only && !walk.contains_md(&path) {
@@ -317,7 +339,7 @@ fn collect_children(dir: &Path, walk: &mut WalkCtx) -> Vec<FilterNode> {
             }
 
             let children = collect_children(&path, walk);
-            if name_match {
+            if self_match {
                 if walk.markdown_only && !walk.contains_md(&path) {
                     continue;
                 }
@@ -340,6 +362,10 @@ fn collect_children(dir: &Path, walk: &mut WalkCtx) -> Vec<FilterNode> {
                 });
             }
         } else {
+            // Datei-Treffer nur wenn match_files (A7).
+            if !walk.match_files {
+                continue;
+            }
             let name = entry_name(&path);
             if !name_matches(&name, &walk.query_lower) {
                 continue;
@@ -523,6 +549,22 @@ mod tests {
         VaultFilterOptions {
             query: query.to_string(),
             markdown_only,
+            match_files: true,
+            match_dirs: true,
+        }
+    }
+
+    fn opts_kind(
+        query: &str,
+        markdown_only: bool,
+        match_files: bool,
+        match_dirs: bool,
+    ) -> VaultFilterOptions {
+        VaultFilterOptions {
+            query: query.to_string(),
+            markdown_only,
+            match_files,
+            match_dirs,
         }
     }
 
@@ -1028,9 +1070,13 @@ mod tests {
         let o = VaultFilterOptions {
             query: String::new(),
             markdown_only: false,
+            match_files: true,
+            match_dirs: true,
         };
         assert!(o.query.is_empty());
         assert!(!o.markdown_only);
+        assert!(o.match_files);
+        assert!(o.match_dirs);
         let r = VaultFilterResult {
             html: String::new(),
             truncated: false,
@@ -1039,6 +1085,121 @@ mod tests {
         assert_eq!(0, r.node_count);
         assert_eq!(2_000, MAX_FILTER_NODES);
         assert_eq!(2_000, DIR_CONTAINS_MD_VISIT_CAP);
+    }
+
+    // --- A7 Match-Art: nur Dateien / nur Ordner / beide-false fail-open ------
+
+    #[test]
+    fn match_files_only_hides_dir_name_hits_keeps_file_ancestors() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        // Ordner "Notes" matcht "notes", Kinder-Namen nicht.
+        write(root, "Notes/deep/file.md", "# f\n");
+        write(root, "Notes/other.md", "# o\n");
+        // Datei matcht "notes" — Ahnen-Ordner müssen sichtbar bleiben.
+        write(root, "docs/notes.txt", "n\n");
+        write(root, "sibling.md", "# s\n");
+
+        let pinned = vec![pin_dir(root)];
+        let vault = Vault::new();
+        let result = run_vault_filter(&pinned, &vault, &opts_kind("notes", false, true, false));
+
+        // Ordner-Selbst-Match (Notes) darf nicht mehr als leerer Treffer erscheinen.
+        assert!(
+            !result.html.contains(&data_path_attr(&root.join("Notes"))),
+            "match_dirs=false: Ordner-Namensmatch darf nicht selbst erscheinen; html={}",
+            result.html
+        );
+        // Datei-Treffer + Ahnen.
+        assert!(
+            result
+                .html
+                .contains(&data_path_attr(&root.join("docs/notes.txt"))),
+            "Datei-Treffer muss da sein"
+        );
+        assert!(
+            result.html.contains(&data_path_attr(&root.join("docs"))),
+            "Ahnen-Ordner von Datei-Treffer bleibt sichtbar"
+        );
+        assert!(
+            !result
+                .html
+                .contains(&data_path_attr(&root.join("sibling.md"))),
+            "sibling.md matcht 'notes' nicht"
+        );
+    }
+
+    #[test]
+    fn match_dirs_only_hides_files() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        write(root, "Notes/deep/file.md", "# f\n");
+        write(root, "notes.txt", "n\n");
+        write(root, "Alpha.md", "# a\n");
+
+        let pinned = vec![pin_dir(root)];
+        let vault = Vault::new();
+        let result = run_vault_filter(&pinned, &vault, &opts_kind("notes", false, false, true));
+
+        assert!(
+            result.html.contains(&data_path_attr(&root.join("Notes"))),
+            "Ordner-Namensmatch muss da sein"
+        );
+        assert!(
+            !result
+                .html
+                .contains(&data_path_attr(&root.join("notes.txt"))),
+            "match_files=false: Datei darf nicht erscheinen"
+        );
+        assert!(
+            !result
+                .html
+                .contains(&data_path_attr(&root.join("Alpha.md"))),
+            "Alpha.md matcht nicht"
+        );
+        // Kinder des matchenden Ordners bleiben namensgefiltert und ohne
+        // match_files ohnehin ausgeblendet → leerer Knoten.
+        assert!(
+            !result
+                .html
+                .contains(&data_path_attr(&root.join("Notes/deep/file.md"))),
+            "Datei unter matchendem Ordner bleibt ausgeblendet"
+        );
+    }
+
+    #[test]
+    fn both_match_kinds_false_equals_both_true() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        write(root, "Notes/file.md", "# f\n");
+        write(root, "notes.txt", "n\n");
+        write(root, "Alpha.md", "# a\n");
+
+        let pinned = vec![pin_dir(root)];
+        let vault = Vault::new();
+        let both_true = run_vault_filter(&pinned, &vault, &opts_kind("notes", false, true, true));
+        let both_false =
+            run_vault_filter(&pinned, &vault, &opts_kind("notes", false, false, false));
+
+        // Fail-open: beide false ≡ beide true (gleiche Treffer-Menge).
+        assert!(
+            both_true
+                .html
+                .contains(&data_path_attr(&root.join("Notes"))),
+            "beide true: Ordner-Match"
+        );
+        assert!(
+            both_true
+                .html
+                .contains(&data_path_attr(&root.join("notes.txt"))),
+            "beide true: Datei-Match"
+        );
+        assert_eq!(
+            both_true.html, both_false.html,
+            "beide false muss wie beide true behandeln"
+        );
+        assert_eq!(both_true.node_count, both_false.node_count);
+        assert_eq!(both_true.truncated, both_false.truncated);
     }
 
     // --- Additive Tests (FX1/FX5/FX6; abgenommene 1–10 unantastbar) ---------
