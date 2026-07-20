@@ -53,13 +53,25 @@ Für jeden Knoten unterhalb der Pin-Wurzeln:
 
 - **Datei**: drin, wenn Name den Filter matcht UND (Typ-Toggle aus ODER
   `FileKind::Markdown`).
-- **Ordner, dessen Name matcht**: drin, samt **komplettem Subtree** —
-  auf den Subtree wird nur noch der Typ-Filter angewandt, nicht mehr der
-  Namensfilter (VS-Code-Explorer-Verhalten: wer den Ordner sucht, will
-  seinen Inhalt sehen). **Der Typ-Filter gewinnt trotzdem**: enthält ein
-  namens-gematchter Ordner bei aktivem „nur Markdown" rekursiv kein
-  Markdown, wird er ausgeblendet — das Toggle-Versprechen („Ordner ohne
-  MD verschwinden") gilt ausnahmslos.
+- **Ordner, dessen Name matcht**: wird als Knoten angezeigt, zieht aber
+  **NICHT** seinen Subtree mit — die Kinder bleiben ganz normal dem
+  Namensfilter unterworfen. *(Revision 2026-07-20 auf User-Feedback: die
+  ursprüngliche VS-Code-Subtree-Regel produzierte mit
+  Substring-Matching mitten im Wort — „ext" ∈ „next-…" — große,
+  scheinbar zusammenhanglose Treffermengen. Wer den Ordnerinhalt sehen
+  will, deaktiviert den Filter oder pinnt den Ordner.)* Ein matchender
+  Ordner ohne matchende Nachfahren erscheint als leerer, aufgeklappter
+  Knoten. **Der Typ-Filter gewinnt**: enthält ein namens-gematchter
+  Ordner bei aktivem „nur Markdown" rekursiv kein Markdown, wird er
+  ausgeblendet — das Toggle-Versprechen („Ordner ohne MD verschwinden")
+  gilt ausnahmslos.
+- **Treffer-Hervorhebung**: das Frontend markiert im Filter-Render-Modus
+  in jedem `.label` das erste Vorkommen der Query (case-insensitive)
+  mit `<span class="vf-hit">…</span>` — Farben analog Find-Bar
+  (`#FFD700`, Dark-Variante gedämpft). Rein clientseitige
+  Nachbearbeitung in `applyPinnedHtml` (Text-Node-sicher, kein
+  innerHTML-String-Replace über Markup), Backend-HTML bleibt
+  unverändert.
 - **Leere Query** bedeutet in `run_vault_filter` **Match-all** (kein
   Namensfilter; es filtert dann nur der Typ-Filter). Das Frontend ruft
   den Filter-Render-Modus zwar nur mit nichtleerer Query auf (A1), der
@@ -178,8 +190,9 @@ pub fn dir_contains_markdown(dir: &Path) -> bool;  // A4-Probe
 Rust-Unit-Tests in `vault_filter.rs` (TempDir-Fixtures):
 
 1. Namensmatch case-insensitive auf Dateiname; Nicht-Treffer gestutzt.
-2. Ordner-Name-Match zieht kompletten Subtree (Typ-Filter greift darin
-   weiter, Namensfilter nicht).
+2. Ordner-Name-Match zeigt den Ordner-Knoten, zieht aber NICHT den
+   Subtree — Kinder bleiben namensgefiltert; matchender Ordner ohne
+   matchende Nachfahren erscheint leer (Revision 2026-07-20).
 3. Ordner ohne Treffer verschwindet; verschachtelte Treffer halten die
    gesamte Ahnenkette sichtbar.
 4. `markdown_only` filtert Nicht-MD-Dateien; Ordner ohne MD verschwindet

@@ -798,3 +798,14 @@ html.theme-dark .vault-filter-truncated {
 #vault-tree.filtering li.section[data-section="pinned"] > ul.children > li.node > .row {
   cursor: pointer;
 }
+
+/* Treffer-Hervorhebung im Filter-Render-Modus (analog Find-Bar #FFD700). */
+#vault-tree .vf-hit {
+  background: #FFD700;
+  color: #000;
+  border-radius: 2px;
+}
+html.theme-dark #vault-tree .vf-hit {
+  background: rgba(255, 215, 0, 0.45);
+  color: #1f2328;
+}

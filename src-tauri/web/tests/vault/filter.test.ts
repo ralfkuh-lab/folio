@@ -661,3 +661,60 @@ describe('vault/filter — FX9 dir_changed buffered', () => {
         expect(buildAfter).toBeGreaterThan(buildBefore);
     });
 });
+
+describe('vault/filter — vf-hit highlight', () => {
+    it('wraps first case-insensitive match in span.vf-hit', async () => {
+        configureInvoke({
+            filterHtml: filterHtml('/vault/Notes.md', 'Notes.md'),
+        });
+        await initModules();
+        await typeQuery('notes');
+        await vi.advanceTimersByTimeAsync(150);
+        await flushMicro();
+
+        const hit = document.querySelector(
+            '#vault-tree li.section[data-section="pinned"] .vf-hit',
+        ) as HTMLElement | null;
+        expect(hit).not.toBeNull();
+        expect(hit!.textContent).toBe('Notes');
+        const label = hit!.parentElement!;
+        expect(label.classList.contains('label')).toBe(true);
+        expect(label.textContent).toBe('Notes.md');
+    });
+
+    it('does not highlight when query is empty (lazy mode)', async () => {
+        configureInvoke({ filterHtml: filterHtml('/vault/Notes.md', 'Notes.md') });
+        await initModules();
+        await typeQuery('notes');
+        await vi.advanceTimersByTimeAsync(150);
+        await flushMicro();
+        expect(document.querySelector('.vf-hit')).not.toBeNull();
+
+        input().value = '';
+        input().dispatchEvent(new Event('input', { bubbles: true }));
+        await vi.advanceTimersByTimeAsync(150);
+        await flushMicro();
+        expect(document.querySelector('.vf-hit')).toBeNull();
+    });
+
+    it('treats special characters literally (no regex)', async () => {
+        configureInvoke({
+            filterHtml: filterHtml('/vault/a(b).md', 'a(b).md'),
+        });
+        await initModules();
+        await typeQuery('(b)');
+        await vi.advanceTimersByTimeAsync(150);
+        await flushMicro();
+
+        const hit = document.querySelector(
+            '#vault-tree li.section[data-section="pinned"] .vf-hit',
+        ) as HTMLElement | null;
+        expect(hit).not.toBeNull();
+        expect(hit!.textContent).toBe('(b)');
+        expect(
+            document.querySelector(
+                '#vault-tree li.section[data-section="pinned"] .label',
+            )!.textContent,
+        ).toBe('a(b).md');
+    });
+});

@@ -113,6 +113,37 @@ function setTruncatedVisible(show: boolean): void {
     truncatedEl.hidden = !show;
 }
 
+/**
+ * Markiert in jedem `.label` das erste case-insensitive Vorkommen der
+ * Query mit `<span class="vf-hit">`. Text-Node-sicher (kein innerHTML-
+ * String-Replace) — Escaping bleibt intakt.
+ */
+function highlightQueryInLabels(root: Element, query: string): void {
+    if (!query) return;
+    const qLower = query.toLowerCase();
+    if (!qLower) return;
+    const labels = root.querySelectorAll('.label');
+    for (let i = 0; i < labels.length; i++) {
+        const label = labels[i] as HTMLElement;
+        const text = label.textContent ?? '';
+        if (!text) continue;
+        const idx = text.toLowerCase().indexOf(qLower);
+        if (idx < 0) continue;
+        const matchLen = qLower.length;
+        const before = text.slice(0, idx);
+        const hit = text.slice(idx, idx + matchLen);
+        const after = text.slice(idx + matchLen);
+        // Text-Nodes neu aufbauen — kein Markup-String-Replace.
+        while (label.firstChild) label.removeChild(label.firstChild);
+        if (before) label.appendChild(document.createTextNode(before));
+        const span = document.createElement('span');
+        span.className = 'vf-hit';
+        span.appendChild(document.createTextNode(hit));
+        label.appendChild(span);
+        if (after) label.appendChild(document.createTextNode(after));
+    }
+}
+
 function applyPinnedHtml(html: string): void {
     if (!treeEl) return;
     const section = treeEl.querySelector('li.section[data-section="pinned"]');
@@ -120,6 +151,9 @@ function applyPinnedHtml(html: string): void {
     const ul = section.querySelector(':scope > ul.children');
     if (!ul) return;
     ul.innerHTML = html || '';
+    if (committedQuery.length > 0) {
+        highlightQueryInLabels(ul, committedQuery);
+    }
     reapplyVaultActive();
 }
 

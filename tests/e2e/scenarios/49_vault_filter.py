@@ -168,28 +168,40 @@ def run(ctx):
             ctx.api.sync_render()
             ctx.screenshot("49_filter_name_match")
 
-        with ctx.step("folder name match pulls subtree"):
+        with ctx.step("folder name match shows node without full subtree"):
             _set_query(ctx, "notes")
+            # Ordner Notes + notes.txt matchen; file.md/skip.txt nicht.
             ok = _poll(
                 ctx,
                 lambda: _filtering(ctx)
-                and "file.md" in _tree_html(ctx)
-                and "skip.txt" in _tree_html(ctx)
+                and "Notes" in _tree_html(ctx)
+                and "notes.txt" in _tree_html(ctx)
+                and "file.md" not in _tree_html(ctx)
+                and "skip.txt" not in _tree_html(ctx)
                 and "Alpha.md" not in _tree_html(ctx),
                 timeout=4.0,
             )
-            ctx.expect(ok, f"Ordner-Match Subtree: {_tree_html(ctx)[:400]}")
+            ctx.expect(ok, f"Ordner-Match (kein Subtree): {_tree_html(ctx)[:400]}")
+            hit = _evalv(
+                ctx,
+                "!!document.querySelector('#vault-tree .vf-hit')",
+            )
+            ctx.expect(hit is True, "span.vf-hit erwartet im Filterbaum")
             ctx.api.sync_render()
             ctx.screenshot("49_filter_folder_match")
 
-        with ctx.step(".md chip hides non-md in subtree"):
+        with ctx.step(".md chip hides non-md while name filter stays"):
             ctx.api.eval(
                 "document.getElementById('vault-filter-md')"
                 ".dispatchEvent(new MouseEvent('click',{bubbles:true}))"
             )
+            # notes.txt (Non-MD) weg; Notes bleibt (rekursiv MD, leerer Knoten).
             ok = _poll(
                 ctx,
-                lambda: "file.md" in _tree_html(ctx)
+                lambda: _filtering(ctx)
+                and "Notes" in _tree_html(ctx)
+                and "notes.txt" not in _tree_html(ctx)
+                and "file.md" not in _tree_html(ctx)
                 and "skip.txt" not in _tree_html(ctx),
                 timeout=4.0,
             )

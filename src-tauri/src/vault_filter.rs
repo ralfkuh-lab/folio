@@ -245,11 +245,14 @@ fn collect_pin_dir(path: &Path, walk: &mut WalkCtx) -> Option<FilterNode> {
         });
     }
 
+    // Namensfilter gilt immer auch für Kinder (Revision 2026-07-20):
+    // Ordner-Namensmatch zieht nicht mehr den kompletten Subtree.
+    let children = collect_children(path, walk);
     if name_match {
         if walk.markdown_only && !walk.contains_md(path) {
             return None;
         }
-        let children = collect_children(path, walk, false);
+        // Matchender Ordner ohne matchende Nachfahren → leerer, aufgeklappter Knoten.
         Some(FilterNode::Dir {
             path: path.to_path_buf(),
             info,
@@ -258,11 +261,9 @@ fn collect_pin_dir(path: &Path, walk: &mut WalkCtx) -> Option<FilterNode> {
             force_open: true,
             with_branch: true,
         })
+    } else if children.is_empty() {
+        None
     } else {
-        let children = collect_children(path, walk, true);
-        if children.is_empty() {
-            return None;
-        }
         Some(FilterNode::Dir {
             path: path.to_path_buf(),
             info,
@@ -274,8 +275,9 @@ fn collect_pin_dir(path: &Path, walk: &mut WalkCtx) -> Option<FilterNode> {
     }
 }
 
-/// Phase-1: Kinder-Struktur (kein Render-Cap).
-fn collect_children(dir: &Path, walk: &mut WalkCtx, apply_name_filter: bool) -> Vec<FilterNode> {
+/// Phase-1: Kinder-Struktur (kein Render-Cap). Namensfilter gilt immer
+/// (kein apply_name_filter=false-Pfad mehr — Spec A2 Revision 2026-07-20).
+fn collect_children(dir: &Path, walk: &mut WalkCtx) -> Vec<FilterNode> {
     let mut out = Vec::new();
     let entries = list_dir_sorted(dir);
     let matcher = crate::git_ignore::matcher_for(dir);
@@ -293,7 +295,7 @@ fn collect_children(dir: &Path, walk: &mut WalkCtx, apply_name_filter: bool) -> 
 
         if info.is_directory {
             let name = entry_name(&path);
-            let name_match = !apply_name_filter || name_matches(&name, &walk.query_lower);
+            let name_match = name_matches(&name, &walk.query_lower);
 
             if info.is_link {
                 // Ordner-Links: Blatt-Knoten (Spec A3 / FX5).
@@ -314,11 +316,11 @@ fn collect_children(dir: &Path, walk: &mut WalkCtx, apply_name_filter: bool) -> 
                 continue;
             }
 
+            let children = collect_children(&path, walk);
             if name_match {
                 if walk.markdown_only && !walk.contains_md(&path) {
                     continue;
                 }
-                let children = collect_children(&path, walk, false);
                 out.push(FilterNode::Dir {
                     path,
                     info,
@@ -327,11 +329,7 @@ fn collect_children(dir: &Path, walk: &mut WalkCtx, apply_name_filter: bool) -> 
                     force_open: true,
                     with_branch: false,
                 });
-            } else {
-                let children = collect_children(&path, walk, true);
-                if children.is_empty() {
-                    continue;
-                }
+            } else if !children.is_empty() {
                 out.push(FilterNode::Dir {
                     path,
                     info,
@@ -343,7 +341,7 @@ fn collect_children(dir: &Path, walk: &mut WalkCtx, apply_name_filter: bool) -> 
             }
         } else {
             let name = entry_name(&path);
-            if apply_name_filter && !name_matches(&name, &walk.query_lower) {
+            if !name_matches(&name, &walk.query_lower) {
                 continue;
             }
             if walk.markdown_only && classify(&path.to_string_lossy()) != FileKind::Markdown {
@@ -570,24 +568,28 @@ mod tests {
         );
     }
 
-    // --- 2: Ordner-Name-Match → kompletter Subtree; Typ-Filter greift --------
+    // --- 2: Ordner-Name-Match zeigt Knoten, zieht NICHT den Subtree ----------
 
     #[test]
-    fn folder_name_match_includes_full_subtree_type_filter_still_applies() {
+    fn folder_name_match_shows_node_without_subtree() {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path();
-        // Ordner "Notes" matcht die Query; darin MD + Nicht-MD.
+        // Ordner "Notes" matcht die Query; Kinder-Namen matchen "notes" nicht.
         write(root, "Notes/deep/file.md", "# f\n");
         write(root, "Notes/deep/skip.txt", "x\n");
         write(root, "Notes/other.md", "# o\n");
         write(root, "sibling.md", "# s\n");
+        // Zweiter matchender Ordner, ebenfalls ohne Namens-Treffer in Kindern.
+        write(root, "my-notes/readme.md", "# r\n");
 
         let notes = root.join("Notes");
+        let my_notes = root.join("my-notes");
         let pinned = vec![pin_dir(root)];
         let vault = Vault::new();
 
-        // Query matcht Ordnernamen "Notes" — Subtree komplett, aber
-        // markdown_only blendet skip.txt aus.
+        // Query matcht Ordnernamen "Notes"/"my-notes" — Kinder bleiben
+        // namensgefiltert (file.md/other.md/skip.txt matchen "notes" nicht).
+        // markdown_only: Typ-Filter gewinnt weiterhin (Ordner braucht MD).
         let result = run(&pinned, &vault, "notes", true);
 
         assert!(
@@ -595,28 +597,43 @@ mod tests {
             "Notes-Ordner muss drin sein"
         );
         assert!(
-            result
+            !result
                 .html
                 .contains(&data_path_attr(&notes.join("deep/file.md"))),
-            "Subtree-MD muss drin sein (Namensfilter greift im Subtree nicht)"
+            "deep/file.md matcht 'notes' nicht → nicht im Baum"
         );
         assert!(
-            result
+            !result
                 .html
                 .contains(&data_path_attr(&notes.join("other.md"))),
-            "anderes MD im gematchten Ordner muss drin sein"
+            "other.md matcht 'notes' nicht → nicht im Baum"
         );
         assert!(
             !result
                 .html
                 .contains(&data_path_attr(&notes.join("deep/skip.txt"))),
-            "Typ-Filter blendet Non-MD im Subtree aus"
+            "skip.txt weder Namensmatch noch MD"
+        );
+        assert!(
+            !result.html.contains(&data_path_attr(&notes.join("deep"))),
+            "deep-Ordner matcht nicht und hat keine matchenden Nachfahren"
         );
         assert!(
             !result
                 .html
                 .contains(&data_path_attr(&root.join("sibling.md"))),
             "sibling.md matcht weder Ordner- noch Dateiname 'notes'"
+        );
+        // Matchender Ordner ohne matchende Nachfahren → leerer Knoten.
+        assert!(
+            result.html.contains(&data_path_attr(&my_notes)),
+            "my-notes matcht 'notes' und hat MD (Typ-Filter) → leerer Knoten"
+        );
+        assert!(
+            !result
+                .html
+                .contains(&data_path_attr(&my_notes.join("readme.md"))),
+            "readme.md matcht 'notes' nicht → nicht im leeren my-notes"
         );
         // Im Filtermodus sind Ordner aufgeklappt (caret open).
         assert!(
