@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installTauriMock, type TauriMockHandles } from '../helpers';
 import { seedDeCatalog } from '../helpers-i18n';
 
@@ -148,6 +148,16 @@ describe('ui/theme-editor', () => {
             }
             return Promise.resolve(undefined);
         });
+    });
+
+    afterEach(async () => {
+        // Editor regulär schließen: finishClose cleart den Preview-Debounce-
+        // Timer — sonst feuert runPreview nach dem jsdom-Teardown
+        // („window is not defined", unhandled rejection im Voll-Lauf).
+        const { guardedClose } = await import('../../app/ui/theme-editor');
+        const closing = guardedClose();
+        document.getElementById('unsaved-discard')?.click();
+        await closing;
     });
 
     it('loads parts, registers the virtual tab and renders a preview', async () => {
