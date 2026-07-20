@@ -71,8 +71,11 @@ Diese Ideen kamen von 2–4 Quellen unabhängig. Das ist der beste Startpunkt.
 - **Große-Dokumente-Strategie** — sehr große Dateien erkennen (>~100k Zeichen /
   langsame Renders) → „Live-Preview aus", reiner Text-/Read-Only-Fallback,
   progressives Rendern. Verhindert UI-Hänger. `[S–M]` (grok, agy)
-- **Vault-Tree-Filter** — Eingabefeld über dem Baum, clientseitiges Namensfilter,
-  auch bei collapsed Nodes. `[S]` (grok)
+- **Vault-Tree-Filter** — ✅ **umgesetzt (2026-07-20)**, siehe
+  [`spec-vault-filter.md`](spec-vault-filter.md): Namensfilter über dem Baum
+  (Backend-Walk statt clientseitig — greift damit auch in collapsed Nodes),
+  erweitert um „nur Markdown"-Toggle inkl. Ausblenden MD-loser Ordner.
+  *(ursprünglich `[S]`, durch die Erweiterung `[M]`; Quelle: grok)*
 - **Tastaturnavigation im Vault** — Pfeile navigieren, Enter öffnet, Space klappt
   auf/zu; Maus minimieren. `[S]` (agy)
 - **Tab-Kontextmenü-Ausbau** — „Alle anderen schließen", „Rechts schließen",
