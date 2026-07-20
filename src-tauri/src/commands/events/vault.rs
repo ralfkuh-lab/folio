@@ -21,11 +21,16 @@ pub(super) fn toggle_section(
 }
 
 pub(super) fn expand_dir(path: String, state: &AppState, handle: &AppHandle) -> Result<(), String> {
+    let markdown_only = state
+        .panel_state
+        .lock()
+        .map(|p| p.data().vault_filter_markdown_only)
+        .unwrap_or(false);
     let html = state
         .vault
         .lock()
         .map_err(|_| "vault lock poisoned".to_string())?
-        .on_expand(path.clone())
+        .on_expand_with(path.clone(), markdown_only)
         .map_err(|error| error.to_string())?;
     // FS-Watch fuer den frisch aufgeklappten Ordner registrieren — bei
     // disabled Watcher (Setting `vaultAutoRefresh`) ist das ein No-op.

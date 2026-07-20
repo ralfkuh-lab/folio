@@ -29,6 +29,7 @@ pub mod text_statistics;
 pub mod theme;
 pub mod toc;
 pub mod vault;
+pub mod vault_filter;
 pub mod vault_watcher;
 pub mod window_geometry;
 pub mod workspace;
@@ -550,6 +551,9 @@ pub fn builder(settings: crate::settings::SettingsService) -> tauri::Builder<tau
             commands::icon::file_icons_batch,
             commands::vault_cmd::vault_toggle_section,
             commands::vault_cmd::vault_build_tree,
+            commands::vault_cmd::vault_filter,
+            commands::vault_cmd::vault_filter_options_get,
+            commands::vault_cmd::vault_filter_options_set,
             commands::vault_cmd::rail_resize,
             commands::vault_cmd::context,
             commands::search_cmd::vault_search_start,

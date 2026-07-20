@@ -151,10 +151,17 @@ impl AppState {
     pub fn with_settings(settings: SettingsService) -> Self {
         let theme = ThemeService::load();
         let initial_theme = theme.mode().to_string();
+        let panel_state = PanelState::load();
+        // Lazy-Typ-Filter-Spiegel schon beim Boot aus dem Panel-State
+        // setzen — sonst rendern fruehe Refresh-Pfade (vault:refresh vor
+        // dem ersten vault_build_tree) ein persistiertes "nur Markdown"
+        // ungefiltert.
+        let mut vault = Vault::new();
+        vault.set_markdown_only(panel_state.data().vault_filter_markdown_only);
         Self {
             tabs: Mutex::new(TabManager::new()),
             workspace: Mutex::new(Workspace::load()),
-            panel_state: Mutex::new(PanelState::load()),
+            panel_state: Mutex::new(panel_state),
             theme: Mutex::new(theme),
             theme_write: Mutex::new(()),
             settings: Mutex::new(settings),
@@ -169,7 +176,7 @@ impl AppState {
             ai_review_dirty: AtomicBool::new(false),
             search_run_seq: AtomicU64::new(0),
             search_cancels: Mutex::new(HashMap::new()),
-            vault: Mutex::new(Vault::new()),
+            vault: Mutex::new(vault),
             vault_watcher: Mutex::new(VaultWatcher::new()),
             git_head_watcher: Mutex::new(GitHeadWatcher::new()),
             link_interceptor: LinkInterceptor::new(),

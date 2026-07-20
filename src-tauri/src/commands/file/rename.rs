@@ -193,12 +193,9 @@ fn finish_rename(
             .workspace
             .lock()
             .map_err(|_| "workspace lock poisoned".to_string())?;
-        let vault = state
-            .vault
-            .lock()
-            .map_err(|_| "vault lock poisoned".to_string())?;
+        let delta = crate::commands::vault_cmd::compute_refresh_delta_synced(state, &workspace)?;
         handle
-            .emit("vault:refresh", vault.compute_refresh_delta(&workspace))
+            .emit("vault:refresh", delta)
             .map_err(|error| error.to_string())?;
     }
     AppState::emit_tabs_changed(handle)?;

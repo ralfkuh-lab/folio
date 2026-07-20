@@ -125,9 +125,30 @@ def reset_canonical_state(api: AutomationApi, settings_snapshot: dict[str, Any])
     # 8) Recent-Liste leeren (sonst waechst die Rail-Sektion "Zuletzt
     #    geoeffnet" ueber den Lauf in spaetere Baselines hinein).
     _expect_acked("workspace_clear_recents", api.workspace_clear_recents())
-    # 9) Reflow settlen lassen, bevor das Szenario startet.
+    # 9) Vault-Tree-Filter auf Defaults (Query leer, Zeile zu, md-only aus).
+    #    Hook leert Input, verlässt Filter-Render, persistiert Options.
+    api.eval(
+        "typeof window.__folioVaultFilterReset==='function'"
+        "&&window.__folioVaultFilterReset()"
+    )
+    deadline = time.monotonic() + 2.0
+    while True:
+        ev = api.eval(
+            "({h:!!document.getElementById('vault-filter')?.hidden,"
+            "f:!!document.getElementById('vault-tree')"
+            "?.classList.contains('filtering')})"
+        ).get("value") or {}
+        if bool(ev.get("h")) and not bool(ev.get("f")):
+            break
+        if time.monotonic() > deadline:
+            raise RuntimeError(
+                "Reset: Vault-Filter nicht geräumt "
+                f"(filterHidden={ev.get('h')!r}, filtering={ev.get('f')!r})"
+            )
+        time.sleep(0.05)
+    # 10) Reflow settlen lassen, bevor das Szenario startet.
     _expect_acked("sync_render", api.sync_render())
-    # 9b) Recents-Verifikation: ein in-flight workspace_add_recent des
+    # 10b) Recents-Verifikation: ein in-flight workspace_add_recent des
     #    Vorszenarios (Frontend feuert es asynchron nach
     #    document:loaded) kann NACH dem Leeren einschlagen — einmal
     #    erneut leeren + Re-Check mit kurzer Deadline, dann harter

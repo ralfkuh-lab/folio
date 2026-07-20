@@ -65,6 +65,13 @@ pub struct PanelStateData {
     pub search_show_paths: bool,
     #[serde(default = "default_search_sort")]
     pub search_sort: String,
+    // Vault-Tree-Filter (Spec vault-filter A6): „nur Markdown"-Toggle und
+    // Sichtbarkeit der Filterzeile. Beide Default aus; Namensfilter-Text
+    // ist flüchtig und liegt nicht hier.
+    #[serde(default)]
+    pub vault_filter_markdown_only: bool,
+    #[serde(default)]
+    pub vault_filter_bar_visible: bool,
 }
 
 fn default_split_mid_percent() -> f64 {
@@ -105,6 +112,8 @@ impl Default for PanelStateData {
             search_include_hidden: false,
             search_show_paths: false,
             search_sort: default_search_sort(),
+            vault_filter_markdown_only: false,
+            vault_filter_bar_visible: false,
         }
     }
 }
@@ -202,6 +211,16 @@ impl PanelState {
             "recent" => self.data.recent_expanded = expanded,
             _ => {}
         }
+        self.save()
+    }
+
+    pub fn set_vault_filter_options(
+        &mut self,
+        markdown_only: bool,
+        bar_visible: bool,
+    ) -> io::Result<()> {
+        self.data.vault_filter_markdown_only = markdown_only;
+        self.data.vault_filter_bar_visible = bar_visible;
         self.save()
     }
 

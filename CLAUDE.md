@@ -247,6 +247,31 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   `search_include_hidden` default aus); Scope + Query flüchtig.
   Automation: `POST /search` (synchron, additive Felder `regex`/`fileFilter`/
   `customExtensions`/`openTabs`/`includeHidden`; alle Client-Fehler → 400).
+- **Vault-Tree-Filter** (`vault_filter.rs` + Frontend `vault/filter.ts`,
+  Funnel-Button im `vault-header` + Filterzeile `#vault-filter`; Spec
+  [`docs/spec-vault-filter.md`](docs/spec-vault-filter.md)): Namensfilter
+  (case-insensitive Substring auf Datei-/Ordnernamen, KEIN Unicode-Case-
+  Folding) + „nur Markdown"-Toggle. Zwei Modi: md-only ohne Query bleibt
+  im **Lazy-Tree** (`build_dir_children_html` filtert pro Expand;
+  `dir_contains_markdown`-Probe mit Early-Exit, 2k-Visit-Cap fail-open,
+  kein Abstieg in Link-Dirs), auch Pin-Wurzeln werden gefiltert;
+  nichtleere Query schaltet in den **Filter-Render-Modus**
+  (`vault_filter`-Command → gestutzter, voll aufgeklappter Pin-Baum,
+  zweiphasig: Walk-Deckel 50k Einträge, Render-Cap 2k Knoten →
+  `truncated`; `expanded_dirs` bleibt unberührt, Recent-Section per CSS
+  `filtering` ausgeblendet, Expand-Klicks + Pin-Drag inert,
+  `vault:refresh`/`dir_changed` werden gepuffert und beim Verlassen via
+  `refreshVault()` nachgezogen — der seinerseits Filter-Render-stale
+  Antworten verwirft). Der Lazy-Typ-Filter lebt als Spiegel-State
+  `Vault::markdown_only` (Quelle: `panel_state.vault_filter_markdown_only`);
+  JEDER `compute_refresh_delta`-Aufruf läuft über
+  `commands::vault_cmd::compute_refresh_delta_synced` (synct + rendert
+  unter einem Lock; Boot-Init in `state.rs`). Chip-Toggle ohne Query
+  wartet auf `vault_filter_options_set`, BEVOR `refreshVault()` läuft —
+  sonst liest `vault_build_tree` den alten Toggle (Race, E2E-Befund
+  2026-07-20). Persistenz: `vault_filter_markdown_only` +
+  `vault_filter_bar_visible` in `panel_state.rs`; Query flüchtig.
+  E2E-Reset räumt den Filter über den Hook `window.__folioVaultFilterReset()`.
 - **main-Badge-Farbe**: `git-branch--main` (und dark) jetzt `var(--rail-accent)` statt `--rail-fg-muted` (Detached bleibt rot, Feature-Branches bernstein) — Unterscheidbarkeit zum Dimming.
 - **Dateityp-Klassifizierung**: zentral in `file_kind.rs`
   (`FileKind::{Markdown, Text, Image, Binary}`, `classify(path)`).

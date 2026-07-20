@@ -202,11 +202,30 @@ pub struct VaultRefreshDelta {
 pub struct Vault {
     expanded_dirs: BTreeSet<String>,
     active_path: Option<String>,
+    /// Lazy-Tree Typ-Filter — **Spiegel** von
+    /// `panel_state.vault_filter_markdown_only`, keine eigene Source of Truth.
+    ///
+    /// Invariante: vor jedem Lazy-Render (`build_dir_children_html` /
+    /// `pinned_children_html` / Expand) muss der Wert dem Panel-State
+    /// entsprechen. Sync-Pfade: Boot (`state.rs`),
+    /// `vault_filter_options_set`, `vault_build_tree`,
+    /// `sync_vault_markdown_only` vor `compute_refresh_delta`, Expand
+    /// (`on_expand_with`).
+    markdown_only: bool,
 }
 
 impl Vault {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Sync des Lazy-Typ-Filters aus dem Panel-State (vor Tree-Build/Refresh).
+    pub fn set_markdown_only(&mut self, markdown_only: bool) {
+        self.markdown_only = markdown_only;
+    }
+
+    pub fn markdown_only(&self) -> bool {
+        self.markdown_only
     }
 
     pub fn build_initial_tree_html(&self, workspace: &Workspace) -> String {
@@ -237,7 +256,12 @@ impl Vault {
         html
     }
 
-    pub fn build_dir_children_html(&self, path: &str) -> io::Result<String> {
+    /// Kinder-HTML eines Ordners (Lazy-Tree).
+    ///
+    /// `markdown_only`: wenn true, werden Nicht-Markdown-Dateien und
+    /// Ordner ohne (rekursiv) Markdown ausgeblendet — siehe Spec
+    /// vault-filter A1.
+    pub fn build_dir_children_html(&self, path: &str, markdown_only: bool) -> io::Result<String> {
         let mut entries = fs::read_dir(path)?
             .filter_map(Result::ok)
             .map(|entry| {
@@ -254,11 +278,22 @@ impl Vault {
         let matcher = crate::git_ignore::matcher_for(Path::new(path));
         Ok(entries
             .iter()
+            .filter(|(p, info)| {
+                if !markdown_only {
+                    return true;
+                }
+                if info.is_directory {
+                    crate::vault_filter::dir_contains_markdown(p)
+                } else {
+                    crate::file_kind::classify(&p.to_string_lossy())
+                        == crate::file_kind::FileKind::Markdown
+                }
+            })
             .map(|(p, info)| {
                 let ignored = matcher
                     .as_ref()
                     .is_some_and(|m| m.is_ignored(p, info.is_directory));
-                self.item_html(&p.to_string_lossy(), info, None, ignored)
+                self.item_html(&p.to_string_lossy(), info, None, ignored, None)
             })
             .collect())
     }
@@ -271,9 +306,15 @@ impl Vault {
     }
 
     pub fn on_expand(&mut self, path: String) -> io::Result<String> {
+        self.on_expand_with(path, self.markdown_only)
+    }
+
+    /// Expand mit explizitem Typ-Filter (Quelle: Panel-State).
+    pub fn on_expand_with(&mut self, path: String, markdown_only: bool) -> io::Result<String> {
+        self.markdown_only = markdown_only;
         let path = path.replace('\\', "/");
         self.expanded_dirs.insert(path.clone());
-        self.build_dir_children_html(&path)
+        self.build_dir_children_html(&path, markdown_only)
     }
 
     /// Beim Zuklappen eines Ordners auch alle bisher aufgeklappten
@@ -304,12 +345,18 @@ impl Vault {
         self.expanded_dirs.iter().cloned().collect()
     }
 
-    fn item_html(
+    /// Rendert einen Vault-Knoten.
+    ///
+    /// `force_open_children`: wenn `Some(html)`, wird der Ordner unabhängig
+    /// von `expanded_dirs` mit `caret open` und diesen Kindern gerendert
+    /// (Filter-Render-Modus). `None` = Lazy-Verhalten über `expanded_dirs`.
+    pub(crate) fn item_html(
         &self,
         original_path: &str,
         info: &EntryInfo,
         branch: Option<&crate::git_branch::BranchInfo>,
         ignored: bool,
+        force_open_children: Option<&str>,
     ) -> String {
         // Bei .lnk-Shortcuts navigieren wir zum aufgelösten Ziel; die
         // Beschriftung verliert die `.lnk`-Endung (analog Explorer).
@@ -333,7 +380,11 @@ impl Vault {
         };
 
         let is_directory = info.is_directory;
-        let expanded = is_directory && self.is_expanded(&nav_path);
+        let expanded = if force_open_children.is_some() {
+            is_directory
+        } else {
+            is_directory && self.is_expanded(&nav_path)
+        };
         let active = self.active_path.as_deref() == Some(nav_path.as_str());
         let mut classes = String::from("node");
         if active {
@@ -377,8 +428,10 @@ impl Vault {
         } else {
             "children collapsed"
         };
-        let children = if expanded {
-            self.build_dir_children_html(&nav_path)
+        let children = if let Some(forced) = force_open_children {
+            forced.to_string()
+        } else if expanded {
+            self.build_dir_children_html(&nav_path, self.markdown_only)
                 .unwrap_or_else(|error| {
                     // Expandierter Ordner rendert leer (Verhalten bleibt),
                     // aber nicht mehr stumm.
@@ -461,6 +514,19 @@ impl Vault {
         let html = workspace
             .pinned()
             .iter()
+            .filter(|item| {
+                // FX1: Lazy-Typ-Filter gilt auch für Pin-Wurzeln (wie
+                // build_dir_children_html). Recent bleibt unberührt.
+                if !self.markdown_only {
+                    return true;
+                }
+                let path = Path::new(&item.path);
+                if item.is_directory {
+                    path.is_dir() && crate::vault_filter::dir_contains_markdown(path)
+                } else {
+                    crate::file_kind::classify(&item.path) == crate::file_kind::FileKind::Markdown
+                }
+            })
             .map(|item| {
                 let path = Path::new(&item.path);
                 // Re-klassifizieren: ein gepinntes .lnk soll als Link
@@ -485,7 +551,7 @@ impl Vault {
                 let ignored = matcher
                     .as_ref()
                     .is_some_and(|m| m.is_ignored(path, info.is_directory));
-                self.item_html(&item.path, &info, branch.as_ref(), ignored)
+                self.item_html(&item.path, &info, branch.as_ref(), ignored, None)
             })
             .collect::<String>();
         empty_placeholder(html)
@@ -502,7 +568,7 @@ impl Vault {
                 } else {
                     EntryInfo::plain(false)
                 };
-                self.item_html(&item.path, &info, None, false)
+                self.item_html(&item.path, &info, None, false, None)
             })
             .collect::<String>();
         empty_placeholder(html)
@@ -589,13 +655,14 @@ mod tests {
     fn active_item_gets_active_class() {
         let mut vault = Vault::new();
         vault.set_active(Some("/tmp/a.md".into()));
-        let html = vault.item_html("/tmp/a.md", &EntryInfo::plain(false), None, false);
+        let html = vault.item_html("/tmp/a.md", &EntryInfo::plain(false), None, false, None);
         assert!(html.contains("node active"));
     }
 
     #[test]
     fn ignored_true_adds_class_and_gitignored_to_title() {
-        let html = Vault::new().item_html("/tmp/ign.md", &EntryInfo::plain(false), None, true);
+        let html =
+            Vault::new().item_html("/tmp/ign.md", &EntryInfo::plain(false), None, true, None);
         assert!(html.contains("node ignored"));
         // \n stays literal in the attr (no html-escape for LF in escape_attr)
         assert!(html.contains("/tmp/ign.md\ngitignored"));
@@ -604,7 +671,8 @@ mod tests {
             label: "main".into(),
             detached: false,
         };
-        let html2 = Vault::new().item_html("/tmp/ign", &EntryInfo::plain(true), Some(&bi), true);
+        let html2 =
+            Vault::new().item_html("/tmp/ign", &EntryInfo::plain(true), Some(&bi), true, None);
         assert!(html2.contains("node ignored"));
         assert!(html2.contains("gitignored"));
         assert!(html2.contains("Branch: main"));
@@ -626,6 +694,7 @@ mod tests {
             &EntryInfo::plain(false),
             None,
             false,
+            None,
         );
         assert!(exec_html.contains(r#"data-exec="1""#));
 
@@ -635,6 +704,7 @@ mod tests {
             &EntryInfo::plain(false),
             None,
             false,
+            None,
         );
         assert!(!plain_html.contains("data-exec"));
     }
@@ -646,7 +716,7 @@ mod tests {
             is_link: true,
             target: None,
         };
-        let html = Vault::new().item_html("/tmp/junction", &info, None, false);
+        let html = Vault::new().item_html("/tmp/junction", &info, None, false, None);
         assert!(html.contains("class=\"node link\""));
         assert!(html.contains(r#"data-kind="dir""#));
     }
@@ -658,7 +728,7 @@ mod tests {
             is_link: true,
             target: Some(PathBuf::from("/real/target")),
         };
-        let html = Vault::new().item_html("/tmp/Shortcut.lnk", &info, None, false);
+        let html = Vault::new().item_html("/tmp/Shortcut.lnk", &info, None, false, None);
         assert!(html.contains(r#"data-path="/real/target""#));
         assert!(html.contains("<span class=\"label\">Shortcut</span>"));
         assert!(html.contains("class=\"node link\""));
@@ -671,7 +741,7 @@ mod tests {
             is_link: true,
             target: Some(PathBuf::from("/real/notes.md")),
         };
-        let html = Vault::new().item_html("/tmp/Notes.lnk", &info, None, false);
+        let html = Vault::new().item_html("/tmp/Notes.lnk", &info, None, false, None);
         assert!(html.contains(r#"data-ext="md""#));
     }
 
@@ -733,7 +803,7 @@ mod tests {
 
     #[test]
     fn directories_render_caret_and_child_container() {
-        let html = Vault::new().item_html("/tmp/dir", &EntryInfo::plain(true), None, false);
+        let html = Vault::new().item_html("/tmp/dir", &EntryInfo::plain(true), None, false, None);
         assert!(html.contains(r#"data-kind="dir""#));
         assert!(html.contains(r#"class="caret""#));
         assert!(html.contains(r#"class="children collapsed""#));
@@ -835,5 +905,93 @@ mod tests {
         // data-path is pure path, no \n
         assert!(html.contains(&format!(r#"data-path="{}""#, feat_path)));
         assert!(!html.contains(&format!(r#"data-path="{}"#, expected_title_part)));
+    }
+
+    /// FX1: Lazy-Typ-Filter gilt auch für Pin-Wurzeln.
+    #[test]
+    fn markdown_only_filters_pin_roots_not_recents() {
+        let _ = crate::i18n::set_process_translator(crate::i18n::Translator::new(
+            crate::i18n::load_embedded_registry(),
+            crate::i18n::ResolvedLanguage {
+                catalog_tag: "de".into(),
+                format_locale: "de-DE".into(),
+            },
+        ));
+        let temp = TempDir::new().unwrap();
+        let mut workspace = Workspace::load_from(temp.path().join("workspace.json"));
+
+        let md_file = temp.path().join("keep.md");
+        fs::write(&md_file, "# k\n").unwrap();
+        let txt_file = temp.path().join("drop.txt");
+        fs::write(&txt_file, "t\n").unwrap();
+        let mdless = temp.path().join("mdless");
+        fs::create_dir(&mdless).unwrap();
+        fs::write(mdless.join("only.txt"), "x\n").unwrap();
+        let with_md = temp.path().join("with_md");
+        fs::create_dir(&with_md).unwrap();
+        fs::write(with_md.join("nested.md"), "# n\n").unwrap();
+
+        workspace
+            .pin(md_file.to_string_lossy().into_owned(), false)
+            .unwrap();
+        workspace
+            .pin(txt_file.to_string_lossy().into_owned(), false)
+            .unwrap();
+        workspace
+            .pin(mdless.to_string_lossy().into_owned(), true)
+            .unwrap();
+        workspace
+            .pin(with_md.to_string_lossy().into_owned(), true)
+            .unwrap();
+        workspace
+            .add_recent(txt_file.to_string_lossy().into_owned())
+            .unwrap();
+
+        let mut vault = Vault::new();
+        vault.set_markdown_only(true);
+        let html = vault.build_initial_tree_html(&workspace);
+
+        let norm = |p: &std::path::Path| p.to_string_lossy().replace('\\', "/");
+        assert!(
+            html.contains(&format!(r#"data-path="{}""#, norm(&md_file))),
+            "MD-Datei-Pin muss bleiben"
+        );
+        assert!(
+            !html.contains(&format!(r#"data-path="{}""#, norm(&txt_file))) || {
+                // Recent darf die .txt noch zeigen — Pin nicht.
+                let pinned = html
+                    .split(r#"data-section="recent""#)
+                    .next()
+                    .unwrap_or(&html);
+                !pinned.contains(&format!(r#"data-path="{}""#, norm(&txt_file)))
+            },
+            "txt-Pin muss im Lazy-Modus weg; html={html}"
+        );
+        assert!(
+            {
+                let pinned = html
+                    .split(r#"data-section="recent""#)
+                    .next()
+                    .unwrap_or(&html);
+                !pinned.contains(&format!(r#"data-path="{}""#, norm(&mdless)))
+            },
+            "MD-loser Ordner-Pin muss weg"
+        );
+        assert!(
+            html.contains(&format!(r#"data-path="{}""#, norm(&with_md))),
+            "Ordner mit MD muss bleiben"
+        );
+        // Recent unberührt: txt erscheint in Recent-Section.
+        assert!(
+            html.contains(r#"data-section="recent""#)
+                && html.contains(&format!(r#"data-path="{}""#, norm(&txt_file))),
+            "Recent-Liste bleibt unberührt (txt sichtbar)"
+        );
+
+        // Ohne Toggle: alles sichtbar.
+        vault.set_markdown_only(false);
+        let all = vault.build_initial_tree_html(&workspace);
+        assert!(all.contains(&format!(r#"data-path="{}""#, norm(&txt_file))));
+        assert!(all.contains(&format!(r#"data-path="{}""#, norm(&mdless))));
     }
 }

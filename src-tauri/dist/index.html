@@ -85,6 +85,7 @@
     <span class="title" data-i18n="vault.header.title">Arbeitsbereich</span>
     <button class="vault-cmd ti-emoji" data-cmd="addFile" title="Datei öffnen…" data-i18n-title="vault.header.openFile.tooltip" aria-label="Datei öffnen" data-i18n-aria-label="vault.header.openFile.ariaLabel">&#x1F4C4;</button>
     <button class="vault-cmd ti-emoji" data-cmd="addFolder" title="Ordner hinzufügen…" data-i18n-title="vault.header.addFolder.tooltip" aria-label="Ordner hinzufügen" data-i18n-aria-label="vault.header.addFolder.ariaLabel">&#x1F4C1;</button>
+    <button type="button" class="vault-cmd ti-emoji" id="vault-filter-toggle" data-cmd="filter" title="Dateien filtern" data-i18n-title="vault.filter.toggle.tooltip" aria-label="Dateifilter" data-i18n-aria-label="vault.filter.toggle.ariaLabel" aria-pressed="false">&#x25BD;</button>
   </header>
   <div class="vault-search" id="vault-search">
     <div class="vault-search-bar">
@@ -97,6 +98,14 @@
     </div>
     <div class="vault-search-scope" id="vault-search-scope" hidden></div>
   </div>
+  <div class="vault-filter" id="vault-filter" hidden>
+    <div class="vault-filter-bar">
+      <input type="search" id="vault-filter-input" class="vault-filter-input" placeholder="Nach Name filtern…" data-i18n-placeholder="vault.filter.input.placeholder" autocomplete="off" spellcheck="false" />
+      <button type="button" id="vault-filter-md" class="vault-filter-md" aria-pressed="false" title="Nur Markdown" data-i18n-title="vault.filter.md.tooltip" aria-label="Nur Markdown-Dateien anzeigen" data-i18n-aria-label="vault.filter.md.ariaLabel">.md</button>
+      <button type="button" id="vault-filter-clear" class="vault-filter-clear" hidden title="Filter löschen" data-i18n-title="vault.filter.clear.tooltip" aria-label="Filter löschen" data-i18n-aria-label="vault.filter.clear.ariaLabel">&#x2715;</button>
+    </div>
+  </div>
+  <div class="vault-filter-truncated" id="vault-filter-truncated" hidden role="status" data-i18n="vault.filter.truncated">Zu viele Treffer — Filter verfeinern</div>
   <ul id="vault-tree" class="tree"></ul>
   <div class="vault-search-results" id="vault-search-results" hidden>
     <div class="vault-search-results-head" id="vault-search-results-head">

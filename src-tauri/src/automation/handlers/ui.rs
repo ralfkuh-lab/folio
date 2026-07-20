@@ -418,13 +418,8 @@ pub(in crate::automation) async fn post_workspace_pin(
         workspace
             .pin(payload.path.clone(), payload.is_directory)
             .map_err(|error| ApiError::internal(error.to_string()))?;
-        // Vault-Delta separat berechnen, damit das Frontend genauso
-        // refresht wie nach einem Tauri-Command-Pin.
-        let vault = state
-            .vault
-            .lock()
-            .map_err(|_| ApiError::internal("vault lock poisoned"))?;
-        vault.compute_refresh_delta(&workspace)
+        crate::commands::vault_cmd::compute_refresh_delta_synced(state.inner(), &workspace)
+            .map_err(ApiError::internal)?
     };
     // Sync GitHeadWatcher on pin (new git root may appear) — use shared helper
     crate::commands::workspace_cmd::sync_git_head_watcher(state.inner());
@@ -461,11 +456,8 @@ pub(in crate::automation) async fn post_workspace_unpin(
         workspace
             .unpin(&payload.path)
             .map_err(|error| ApiError::internal(error.to_string()))?;
-        let vault = state
-            .vault
-            .lock()
-            .map_err(|_| ApiError::internal("vault lock poisoned"))?;
-        vault.compute_refresh_delta(&workspace)
+        crate::commands::vault_cmd::compute_refresh_delta_synced(state.inner(), &workspace)
+            .map_err(ApiError::internal)?
     };
     // Sync GitHeadWatcher on unpin (git root may be removed) — use shared helper
     crate::commands::workspace_cmd::sync_git_head_watcher(state.inner());
@@ -497,13 +489,8 @@ pub(in crate::automation) async fn post_workspace_clear_recents(
         workspace
             .clear_recent()
             .map_err(|error| ApiError::internal(error.to_string()))?;
-        // Vault-Delta separat berechnen, damit das Frontend genauso
-        // refresht wie nach einem Tauri-Command-Unpin.
-        let vault = state
-            .vault
-            .lock()
-            .map_err(|_| ApiError::internal("vault lock poisoned"))?;
-        vault.compute_refresh_delta(&workspace)
+        crate::commands::vault_cmd::compute_refresh_delta_synced(state.inner(), &workspace)
+            .map_err(ApiError::internal)?
     };
     // Recents-Menue im nativen Menuebaum nachziehen (analog
     // workspace_remove_recent-Command). Kein GitHeadWatcher-Sync noetig:

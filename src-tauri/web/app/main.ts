@@ -30,6 +30,7 @@ import { attachPasteHandler } from './ui/paste-handler';
 import { applySplitMidFromBackend, initRails, setRailVisibility } from './ui/rails';
 import { initContextMenu } from './vault/context-menu';
 import { initVaultTree, insertVaultChildren, refreshVault } from './vault/tree';
+import { initVaultFilter } from './vault/filter';
 import { initVaultSearch, consumeNavRestoreSkip } from './vault/search';
 import {
     initMarkdownView,
@@ -106,6 +107,7 @@ function runModuleInits(): void {
     initFindBar({ ensureEditorMounted, focusEditor });
     initRails();
     initVaultTree({ openDocument });
+    initVaultFilter();
     initVaultSearch({ openDocument, showStatus, openLeftRail });
     initCheatsheet();
     initZoom();
