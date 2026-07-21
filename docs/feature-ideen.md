@@ -78,8 +78,11 @@ Diese Ideen kamen von 2–4 Quellen unabhängig. Das ist der beste Startpunkt.
   *(ursprünglich `[S]`, durch die Erweiterung `[M]`; Quelle: grok)*
 - **Tastaturnavigation im Vault** — Pfeile navigieren, Enter öffnet, Space klappt
   auf/zu; Maus minimieren. `[S]` (agy)
-- **Tab-Kontextmenü-Ausbau** — „Alle anderen schließen", „Rechts schließen",
-  „Zuletzt geschlossenen Tab wiederherstellen". `[S]` (grok, codex)
+- **Tab-Kontextmenü-Ausbau** — ✅ **umgesetzt (2026-07-22)**, siehe
+  [`spec-tab-context-menu.md`](spec-tab-context-menu.md): „Alle anderen
+  schließen", „Tabs rechts schließen", „Zuletzt geschlossenen Tab
+  wiederherstellen" (Session-Stack, Cap 10). *(Quelle: grok, codex;
+  zugleich A/B-Implementierungstest agy vs. grok)*
 - **Preview-/Pin-Tabs** — Einfachklick = ersetzbarer Preview-Tab, Doppelklick/Edit
   fixiert; angeheftete bleiben links (VS-Code-Muster). `[M]` (codex⭐)
 - **Tab-Overflow + Tab-Suche** — Dropdown aller offenen Tabs, filterbar. `[S–M]`
