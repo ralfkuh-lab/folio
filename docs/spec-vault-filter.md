@@ -49,24 +49,27 @@ Test-Runden). Ursprung: `docs/feature-ideen.md` → „Vault-Tree-Filter".
 Zwei Buttons in der `vault-header`-Zeile (neben dem Funnel,
 `.vault-cmd`-Stil):
 
-- **„Eine Ebene tiefer" (`#vault-expand-level`, ⊞)**: expandiert alle
-  aktuell **sichtbaren, zugeklappten** Ordner (Pin-Wurzeln + Kinder
-  bereits expandierter Ordner) um genau eine Ebene. Backend-Command
-  `vault_expand_level` → nutzt den bestehenden `on_expand`-Pfad
-  (Watcher-Registrierung inklusive), **Soft-Cap ~1 000 neu geöffnete
-  Ordner pro Klick** — danach bricht der Vorgang ab und die Antwort
-  trägt `capped: true`; das Frontend zeigt einen transienten Hinweis
-  (kein stilles Kappen). Antwort ist der neu gerenderte Baum (bzw.
-  Refresh-Delta) + Persistenz wie bei jedem Expand.
-- **„Alles einklappen" (`#vault-collapse-all`, ⊟)**: Backend-Command
-  `vault_collapse_all` → `on_collapse` für alle Pin-Wurzeln
-  (deregistriert Watches rekursiv, leert `expanded_dirs` bis auf
-  nichts), Baum-Rebuild.
+- **„Oberste Ebene aufklappen" (`#vault-expand-roots`, Chevron einfach
+  nach unten, SVG-Stil der `vs-head-btn`-Buttons)**: expandiert
+  ausschließlich die **zugeklappten Pin-Wurzel-Ordner** (erste Ebene) —
+  bewusst NICHT tiefer (*R3.1, User-Feedback 2026-07-21: mehrstufiges
+  „immer eine Ebene tiefer" macht große Bäume unübersichtlich*).
+  Backend-Command `vault_expand_roots` über den bestehenden
+  `on_expand`-Pfad (Watcher inklusive; bei aktivem md-only werden
+  MD-lose Wurzeln übersprungen — sie sind ohnehin unsichtbar). Kein
+  Cap nötig (Anzahl = Anzahl der Pins). **Disabled-Zustand**: sind alle
+  sichtbaren Pin-Wurzel-Ordner bereits aufgeklappt, ist der Button
+  `disabled`; das Frontend leitet den Zustand aus dem DOM ab
+  (Pin-Section-Wurzeln mit `caret open`) und synct ihn über denselben
+  MutationObserver, der auch den Filter re-appliziert.
+- **„Alles einklappen" (`#vault-collapse-all`, Chevron doppelt nach
+  oben — gleiche SVG wie `#vault-search-collapse-all`)**:
+  Backend-Command `vault_collapse_all` → `on_collapse` für alle
+  Pin-Wurzeln (deregistriert Watches rekursiv), Baum-Rebuild.
 
-Watcher-Risiko: `vault_expand_level` registriert Watches über den
-Normalpfad; der 1 000er-Cap pro Klick begrenzt das Wachstum. Sollte
-inotify-Erschöpfung praktisch auftreten, ist `watch_non_fatal`-Verhalten
-gefordert (Expand funktioniert, Watch fehlt, warn-Log) — kein Abbruch.
+Der frühere `vault_expand_level`-Mehrstufen-Expand samt 1 000er-Cap,
+`capped`-Flag und `#vault-tree-notice`-Hinweis ist **entfernt** (R3.1).
+Watcher-Fehler bleiben non-fatal (`watch_non_fatal`-Verhalten).
 
 ## UI (R3)
 

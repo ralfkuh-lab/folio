@@ -1,8 +1,8 @@
-"""E2E: Vault-Tree-Filter R3 — clientseitiger Namensfilter + Baum-Ops.
+"""E2E: Vault-Tree-Filter R3/R3.1 — clientseitiger Namensfilter + Baum-Ops.
 
 Fixture-Ordner mit MD/Nicht-MD/Unterordnern; Filterzeile per Klick öffnen,
 Query per /eval + input-Event. Asserts: Nicht-Treffer-Dateien weg (vf-hidden),
-Ordner da, vf-hit; Ebene-tiefer erweitert Suchraum; Alles-einklappen;
+Ordner da, vf-hit; expand-roots öffnet nur Pin-Wurzeln; Alles-einklappen;
 Zeilen-X räumt auf. Baselines erneuert der Orchestrator.
 """
 
@@ -37,10 +37,15 @@ def _poll(ctx, fn, timeout: float = 5.0, interval: float = 0.1):
 
 
 def _tree_html(ctx) -> str:
+    # Nur die Pinned-Section: die Recent-Liste enthaelt die im Setup
+    # geoeffnete Alpha.md dauerhaft — ungescopte Negativ-Asserts
+    # ("X not in tree") wuerden daran ewig scheitern (Lektion aus R1,
+    # von der R3-Neufassung kurz wieder eingerissen).
     return (
         _evalv(
             ctx,
-            "document.getElementById('vault-tree')?.innerHTML||''",
+            "document.querySelector('#vault-tree li.section"
+            "[data-section=\"pinned\"]')?.innerHTML||''",
         )
         or ""
     )
@@ -202,49 +207,74 @@ def run(ctx):
             ctx.api.sync_render()
             ctx.screenshot("49_filter_name_match")
 
-        with ctx.step("expand level reveals deeper match for filter"):
-            # Filter auf "file" — deep/file.md ist noch nicht im DOM.
-            _set_query(ctx, "file")
+        with ctx.step("expand roots opens only first level; button disables"):
+            # Pin ist aus vorherigem Step offen → erst collapse, dann expand-roots.
+            _click_id(ctx, "vault-collapse-all")
             ok = _poll(
                 ctx,
-                lambda: _file_hidden(ctx, "Alpha.md") and _dir_visible(ctx, "Notes"),
-                timeout=4.0,
-            )
-            ctx.expect(ok, "Filter 'file' vor Expand-Level")
-            # Notes noch zugeklappt → file.md nicht im DOM.
-            before = _file_visible(ctx, "file.md")
-            ctx.expect(not before, "file.md sollte vor expand-level unsichtbar/abwesend sein")
-
-            # Eine Ebene tiefer: Notes (und empty_branch) aufklappen.
-            _click_id(ctx, "vault-expand-level")
-            ok = _poll(
-                ctx,
-                lambda: "Notes" in _tree_html(ctx)
+                lambda: "Alpha.md" not in _tree_html(ctx)
                 and (
-                    "deep" in _tree_html(ctx)
-                    or _dir_visible(ctx, "deep")
-                    or "file.md" in _tree_html(ctx)
+                    root_norm in _tree_html(ctx)
+                    or os.path.basename(root) in _tree_html(ctx)
                 ),
                 timeout=4.0,
             )
-            ctx.expect(ok, f"Expand-level 1: Notes-Kinder fehlen: {_tree_html(ctx)[:500]}")
+            ctx.expect(ok, f"pre-expand collapse: {_tree_html(ctx)[:400]}")
+            enabled = _poll(
+                ctx,
+                lambda: _evalv(
+                    ctx,
+                    "!document.getElementById('vault-expand-roots')?.disabled",
+                )
+                is True,
+                timeout=2.0,
+            )
+            ctx.expect(enabled, "expand-roots sollte nach collapse enabled sein")
 
-            # Noch eine Ebene für deep/
-            _click_id(ctx, "vault-expand-level")
+            _click_id(ctx, "vault-expand-roots")
+            # Erste Ebene sichtbar (Alpha.md, Notes), verschachteltes deep bleibt zu.
             ok = _poll(
                 ctx,
-                lambda: _file_visible(ctx, "file.md") and _has_vf_hit(ctx),
+                lambda: "Alpha.md" in _tree_html(ctx)
+                and _dir_visible(ctx, "Notes")
+                and "file.md" not in _tree_html(ctx),
                 timeout=4.0,
             )
             ctx.expect(
                 ok,
-                f"Expand-level 2: file.md nicht sichtbar/gefiltert: "
+                f"expand-roots: erste Ebene fehlt oder deep schon offen: "
                 f"{_tree_html(ctx)[:500]}",
             )
+            # deep-Ordner darf nicht expandiert sein (kein caret open auf deep).
+            deep_open = _evalv(
+                ctx,
+                "(function(){"
+                "var n=document.querySelectorAll('#vault-tree li.node[data-kind=\"dir\"]');"
+                "for(var i=0;i<n.length;i++){"
+                "var lab=n[i].querySelector(':scope > .row > .label');"
+                "if(lab&&lab.textContent==='deep'){"
+                "var c=n[i].querySelector(':scope > .row > .caret');"
+                "return !!(c&&c.classList.contains('open'));"
+                "}}return false;})()",
+            )
+            ctx.expect(
+                deep_open is not True,
+                "verschachtelter Ordner deep darf nach expand-roots nicht offen sein",
+            )
+            disabled = _poll(
+                ctx,
+                lambda: _evalv(
+                    ctx,
+                    "!!document.getElementById('vault-expand-roots')?.disabled",
+                )
+                is True,
+                timeout=2.0,
+            )
+            ctx.expect(disabled, "expand-roots nach Expand muss disabled sein")
             ctx.api.sync_render()
             ctx.screenshot("49_filter_expand_level")
 
-        with ctx.step("collapse all folds tree"):
+        with ctx.step("collapse all folds tree and re-enables expand-roots"):
             _click_id(ctx, "vault-collapse-all")
             ok = _poll(
                 ctx,
@@ -266,6 +296,16 @@ def run(ctx):
                 timeout=2.0,
             )
             ctx.expect(pin_ok, f"Pin-Wurzel nach collapse fehlt: {_tree_html(ctx)[:300]}")
+            re_enabled = _poll(
+                ctx,
+                lambda: _evalv(
+                    ctx,
+                    "!document.getElementById('vault-expand-roots')?.disabled",
+                )
+                is True,
+                timeout=2.0,
+            )
+            ctx.expect(re_enabled, "expand-roots nach collapse_all muss enabled sein")
             ctx.api.sync_render()
             ctx.screenshot("49_filter_collapse_all")
 

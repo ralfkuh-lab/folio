@@ -1,4 +1,4 @@
-/* Vault-Tree-Filter (R3) — clientseitige Sicht über dem Lazy-Baum.
+/* Vault-Tree-Filter (R3/R3.1) — clientseitige Sicht über dem Lazy-Baum.
    Spec: docs/spec-vault-filter.md
 
    Namensfilter blendet Datei-Zeilen ohne Match aus (Ordner immer sichtbar),
@@ -8,14 +8,12 @@
    „Nur Markdown" bleibt Backend-Lazy (options_set + refreshVault).
    Schließen = Aufräumen (Query leeren). Badge nur bei markdownOnly.
 
-   Baum-Ops: #vault-expand-level / #vault-collapse-all. */
+   Baum-Ops: #vault-expand-roots / #vault-collapse-all. */
 
 import { folioLog } from '../util/log';
 import { refreshVault, reapplyVaultActive, renderVaultFromHtml } from './tree';
-import { t } from '../i18n/translate';
 
 const DEBOUNCE_MS = 150;
-const NOTICE_MS = 4000;
 
 let barEl: HTMLElement | null = null;
 let inputEl: HTMLInputElement | null = null;
@@ -23,9 +21,8 @@ let mdChip: HTMLElement | null = null;
 let clearBtn: HTMLElement | null = null;
 let closeBtn: HTMLElement | null = null;
 let toggleBtn: HTMLElement | null = null;
-let noticeEl: HTMLElement | null = null;
 let treeEl: HTMLElement | null = null;
-let expandLevelBtn: HTMLElement | null = null;
+let expandRootsBtn: HTMLButtonElement | null = null;
 let collapseAllBtn: HTMLElement | null = null;
 
 /** Persistierte Filterzeilen-Sichtbarkeit. */
@@ -36,7 +33,6 @@ let markdownOnly = false;
 let committedQuery = '';
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 /** Serialisierte Options-Schreibvorgänge. */
 let optionsWriteChain: Promise<void> = Promise.resolve();
 /** Reentranz-Guard: eigene DOM-Arbeit darf den Observer nicht retriggern. */
@@ -93,31 +89,32 @@ function syncFunnelBadge(): void {
     toggleBtn.classList.toggle('filter-active', isVaultFilterActive());
 }
 
-function showTreeNotice(message: string): void {
-    if (!noticeEl) return;
-    noticeEl.textContent = message;
-    noticeEl.hidden = false;
-    if (noticeTimer !== null) {
-        clearTimeout(noticeTimer);
-    }
-    noticeTimer = setTimeout(() => {
-        noticeTimer = null;
-        if (noticeEl) {
-            noticeEl.hidden = true;
-            noticeEl.textContent = '';
+/**
+ * true, wenn es mindestens einen sichtbaren, zugeklappten Pin-Wurzel-Ordner
+ * gibt (direkte li.node[data-kind=dir]-Kinder der Pinned-Section-ul;
+ * vf-hidden zählt nicht).
+ */
+function hasCollapsedVisiblePinRoot(): boolean {
+    if (!treeEl) return false;
+    const roots = treeEl.querySelectorAll(
+        'li.section[data-section="pinned"] > ul.children > li.node[data-kind="dir"]',
+    );
+    for (let i = 0; i < roots.length; i++) {
+        const root = roots[i] as HTMLElement;
+        if (root.classList.contains('vf-hidden')) continue;
+        const caret = root.querySelector(':scope > .row > .caret');
+        if (!caret) continue;
+        if (!caret.classList.contains('open')) {
+            return true;
         }
-    }, NOTICE_MS);
+    }
+    return false;
 }
 
-function hideTreeNotice(): void {
-    if (noticeTimer !== null) {
-        clearTimeout(noticeTimer);
-        noticeTimer = null;
-    }
-    if (noticeEl) {
-        noticeEl.hidden = true;
-        noticeEl.textContent = '';
-    }
+/** #vault-expand-roots: disabled, wenn keine zugeklappten Pin-Wurzeln. */
+function syncExpandRootsDisabled(): void {
+    if (!expandRootsBtn) return;
+    expandRootsBtn.disabled = !hasCollapsedVisiblePinRoot();
 }
 
 /**
@@ -304,32 +301,27 @@ function onEscapeInInput(e: KeyboardEvent): void {
     }
 }
 
-function onExpandLevel(): void {
-    invoke('vault_expand_level')
+function onExpandRoots(): void {
+    invoke('vault_expand_roots')
         .then((raw) => {
-            const result = (raw || {}) as { html?: string; capped?: boolean };
+            const result = (raw || {}) as { html?: string };
             if (typeof result.html === 'string') {
                 renderVaultFromHtml(result.html);
             } else {
-                return refreshVault().then(() => {
-                    if (result.capped) {
-                        showTreeNotice(t('vault.tree.expandLevel.capped'));
-                    }
-                });
-            }
-            if (result.capped) {
-                showTreeNotice(t('vault.tree.expandLevel.capped'));
+                return refreshVault();
             }
         })
+        .then(() => {
+            syncExpandRootsDisabled();
+        })
         .catch((err) => {
-            folioLog.warn('vault-filter', 'vault_expand_level failed', {
+            folioLog.warn('vault-filter', 'vault_expand_roots failed', {
                 error: String(err),
             });
         });
 }
 
 function onCollapseAll(): void {
-    hideTreeNotice();
     invoke('vault_collapse_all')
         .then((raw) => {
             const result = (raw || {}) as { html?: string };
@@ -338,6 +330,9 @@ function onCollapseAll(): void {
             } else {
                 return refreshVault();
             }
+        })
+        .then(() => {
+            syncExpandRootsDisabled();
         })
         .catch((err) => {
             folioLog.warn('vault-filter', 'vault_collapse_all failed', {
@@ -356,12 +351,12 @@ export function resetVaultFilterForAutomation(): void {
     committedQuery = '';
     markdownOnly = false;
     barVisible = false;
-    hideTreeNotice();
     syncClearVisibility();
     syncMdChip();
     syncBarVisibility();
     applyClientFilter();
     syncFunnelBadge();
+    syncExpandRootsDisabled();
     void persistOptions();
     void refreshVault();
 }
@@ -373,9 +368,10 @@ export function initVaultFilter(): () => void {
     clearBtn = document.getElementById('vault-filter-clear');
     closeBtn = document.getElementById('vault-filter-close');
     toggleBtn = document.getElementById('vault-filter-toggle');
-    noticeEl = document.getElementById('vault-tree-notice');
     treeEl = document.getElementById('vault-tree');
-    expandLevelBtn = document.getElementById('vault-expand-level');
+    expandRootsBtn = document.getElementById(
+        'vault-expand-roots',
+    ) as HTMLButtonElement | null;
     collapseAllBtn = document.getElementById('vault-collapse-all');
 
     if (!barEl || !inputEl || !toggleBtn) {
@@ -408,7 +404,7 @@ export function initVaultFilter(): () => void {
     const onExpandClick = (e: MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
-        onExpandLevel();
+        onExpandRoots();
     };
     const onCollapseClick = (e: MouseEvent) => {
         e.preventDefault();
@@ -422,7 +418,7 @@ export function initVaultFilter(): () => void {
     clearBtn?.addEventListener('click', onClearClick);
     closeBtn?.addEventListener('click', onCloseClick);
     mdChip?.addEventListener('click', onMdClick);
-    expandLevelBtn?.addEventListener('click', onExpandClick);
+    expandRootsBtn?.addEventListener('click', onExpandClick);
     collapseAllBtn?.addEventListener('click', onCollapseClick);
 
     if (treeEl && typeof MutationObserver !== 'undefined') {
@@ -431,6 +427,8 @@ export function initVaultFilter(): () => void {
             if (committedQuery.length > 0) {
                 applyClientFilter();
             }
+            // Expand-Roots-Disabled immer (nicht nur bei aktiver Query).
+            syncExpandRootsDisabled();
         });
         treeObserver.observe(treeEl, { childList: true, subtree: true });
     }
@@ -460,7 +458,9 @@ export function initVaultFilter(): () => void {
     syncClearVisibility();
     syncMdChip();
     syncFunnelBadge();
-    hideTreeNotice();
+    // Initial nach Boot-Tree (DOM kann schon befüllt sein; Observer greift
+    // für spätere Rebuilds).
+    syncExpandRootsDisabled();
 
     return () => {
         toggleBtn?.removeEventListener('click', onToggleClick);
@@ -469,7 +469,7 @@ export function initVaultFilter(): () => void {
         clearBtn?.removeEventListener('click', onClearClick);
         closeBtn?.removeEventListener('click', onCloseClick);
         mdChip?.removeEventListener('click', onMdClick);
-        expandLevelBtn?.removeEventListener('click', onExpandClick);
+        expandRootsBtn?.removeEventListener('click', onExpandClick);
         collapseAllBtn?.removeEventListener('click', onCollapseClick);
         treeObserver?.disconnect();
         treeObserver = null;
@@ -480,7 +480,6 @@ export function initVaultFilter(): () => void {
             clearTimeout(debounceTimer);
             debounceTimer = null;
         }
-        hideTreeNotice();
         committedQuery = '';
         markdownOnly = false;
         barVisible = false;

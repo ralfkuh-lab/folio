@@ -47,13 +47,12 @@ pub(crate) fn compute_refresh_delta_synced(
 // hatten nur noch einen toten Frontend-Aufrufer. Expand/Collapse laeuft
 // ausschliesslich ueber die shell-Events `expand-dir`/`collapse-dir`
 // (commands/events/vault.rs), die Vault-State und Watcher symmetrisch
-// halten. Bulk-Ops: `vault_expand_level` / `vault_collapse_all`.
+// halten. Bulk-Ops: `vault_expand_roots` / `vault_collapse_all`.
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct VaultExpandLevelResponse {
+pub struct VaultExpandRootsResponse {
     pub html: String,
-    pub capped: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -101,12 +100,11 @@ pub async fn vault_build_tree(state: State<'_, AppState>) -> Result<String, Stri
     )
 }
 
-/// Expandiert alle sichtbaren zugeklappten Ordner um eine Ebene.
-/// Soft-Cap 1000; `capped` signalisiert Abbruch. Watcher non-fatal.
+/// Expandiert zugeklappte Pin-Wurzel-Ordner (erste Ebene). Watcher non-fatal.
 #[tauri::command]
-pub async fn vault_expand_level(
+pub async fn vault_expand_roots(
     state: State<'_, AppState>,
-) -> Result<VaultExpandLevelResponse, String> {
+) -> Result<VaultExpandRootsResponse, String> {
     let pin_dirs: Vec<String> = state
         .workspace
         .lock()
@@ -122,7 +120,7 @@ pub async fn vault_expand_level(
         .map_err(|_| "panel state lock poisoned".to_string())?
         .data()
         .vault_filter_markdown_only;
-    let (result, html) = {
+    let (paths, html) = {
         let workspace = state
             .workspace
             .lock()
@@ -136,32 +134,29 @@ pub async fn vault_expand_level(
             .vault
             .lock()
             .map_err(|_| "vault lock poisoned".to_string())?;
-        let result = vault.expand_level(&pin_dirs, markdown_only);
+        let paths = vault.expand_roots(&pin_dirs, markdown_only);
         vault.set_markdown_only(markdown_only);
         let html = vault.build_initial_tree_html_with(
             &workspace,
             panel.pinned_expanded,
             panel.recent_expanded,
         );
-        (result, html)
+        (paths, html)
     };
     // Watcher non-fatal (wie expand-dir).
     if let Ok(mut watcher) = state.vault_watcher.lock() {
-        for path in &result.paths {
+        for path in &paths {
             if let Err(err) = watcher.watch(path) {
                 tracing::warn!(
                     target: "folio::vault",
                     path = %path,
                     error = %err,
-                    "vault_expand_level: vault_watcher.watch failed"
+                    "vault_expand_roots: vault_watcher.watch failed"
                 );
             }
         }
     }
-    Ok(VaultExpandLevelResponse {
-        html,
-        capped: result.capped,
-    })
+    Ok(VaultExpandRootsResponse { html })
 }
 
 /// Klappt alle Pin-Wurzeln zu, deregistriert Watches, rebuildet den Baum.

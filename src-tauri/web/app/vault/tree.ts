@@ -252,7 +252,7 @@ function renderVault(html: string): void {
     reapplyActiveMarker();
 }
 
-/** Ersetzt den gesamten Vault-Baum (z. B. nach expand_level/collapse_all). */
+/** Ersetzt den gesamten Vault-Baum (z. B. nach expand_roots/collapse_all). */
 export function renderVaultFromHtml(html: string): void {
     renderVault(html);
 }

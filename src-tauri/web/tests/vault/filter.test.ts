@@ -1,6 +1,6 @@
-// Tests für vault/filter.ts (R3). Spec: docs/spec-vault-filter.md
+// Tests für vault/filter.ts (R3/R3.1). Spec: docs/spec-vault-filter.md
 // Client-Filter, Highlight, Re-Apply, Observer-Reentranz, Escape/Close,
-// Badge nur bei md-only, eingebettetes Text-✕.
+// Badge nur bei md-only, expand-roots disabled-sync.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installTauriMock, type TauriMockHandles } from '../helpers';
@@ -15,12 +15,14 @@ vi.mock('../../app/vault/context-menu', () => ({
 let tauri: TauriMockHandles;
 let disposeFilter: () => void = () => {};
 
-function buildDom(): void {
+function buildDom(opts?: { pinRootOpen?: boolean }): void {
+    const pinOpen = opts?.pinRootOpen !== false;
+    const caretClass = pinOpen ? 'caret open' : 'caret';
     document.body.className = '';
     document.body.innerHTML = `
         <aside id="vault-region" class="vault-region">
             <header class="vault-header">
-                <button type="button" class="vault-cmd" id="vault-expand-level"></button>
+                <button type="button" class="vault-cmd" id="vault-expand-roots"></button>
                 <button type="button" class="vault-cmd" id="vault-collapse-all"></button>
                 <button type="button" class="vault-cmd" id="vault-filter-toggle"
                     aria-pressed="false"></button>
@@ -35,14 +37,13 @@ function buildDom(): void {
                     <button type="button" id="vault-filter-close"></button>
                 </div>
             </div>
-            <div class="vault-tree-notice" id="vault-tree-notice" hidden></div>
             <ul id="vault-tree" class="tree">
                 <li class="section" data-section="pinned">
                     <div class="row"><span class="label">Pinned</span></div>
                     <ul class="children">
                         <li class="node" data-kind="dir" data-path="/vault">
                             <div class="row">
-                                <span class="caret open"></span>
+                                <span class="${caretClass}"></span>
                                 <span class="label">vault</span>
                             </div>
                             <ul class="children">
@@ -86,6 +87,10 @@ function $(id: string): HTMLElement {
     return document.getElementById(id) as HTMLElement;
 }
 
+function expandBtn(): HTMLButtonElement {
+    return $('vault-expand-roots') as HTMLButtonElement;
+}
+
 function input(): HTMLInputElement {
     return $('vault-filter-input') as HTMLInputElement;
 }
@@ -125,8 +130,8 @@ function configureInvoke(opts?: {
         if (cmd === 'vault_build_tree') {
             return Promise.resolve($('vault-tree').innerHTML);
         }
-        if (cmd === 'vault_expand_level') {
-            return Promise.resolve({ html: $('vault-tree').innerHTML, capped: false });
+        if (cmd === 'vault_expand_roots') {
+            return Promise.resolve({ html: $('vault-tree').innerHTML });
         }
         if (cmd === 'vault_collapse_all') {
             return Promise.resolve({ html: $('vault-tree').innerHTML });
@@ -431,32 +436,33 @@ describe('vault/filter — Escape / Close / Badge / embedded clear', () => {
     });
 });
 
-describe('vault/filter — expand level / collapse all', () => {
-    it('expand level invokes vault_expand_level and renders html', async () => {
+describe('vault/filter — expand roots / collapse all / disabled', () => {
+    it('expand roots invokes vault_expand_roots and renders html', async () => {
+        buildDom({ pinRootOpen: false });
         configureInvoke();
         await initModules();
         const html =
             '<li class="section" data-section="pinned"><ul class="children">' +
-            '<li class="node" data-kind="dir" data-path="/vault"><div class="row"><span class="label">vault</span></div></li>' +
-            '</ul></li>';
+            '<li class="node" data-kind="dir" data-path="/vault">' +
+            '<div class="row"><span class="caret open"></span><span class="label">vault</span></div>' +
+            '</li></ul></li>';
         tauri.invoke.mockImplementation((cmd: string) => {
             if (cmd === 'vault_filter_options_get') {
                 return Promise.resolve({ markdownOnly: false, barVisible: false });
             }
-            if (cmd === 'vault_expand_level') {
-                return Promise.resolve({ html, capped: true });
+            if (cmd === 'vault_expand_roots') {
+                return Promise.resolve({ html });
             }
             return Promise.resolve(undefined);
         });
-        $('vault-expand-level').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        expandBtn().dispatchEvent(new MouseEvent('click', { bubbles: true }));
         await flushMicro();
         expect(
-            tauri.invoke.mock.calls.some((c) => c[0] === 'vault_expand_level'),
+            tauri.invoke.mock.calls.some((c) => c[0] === 'vault_expand_roots'),
         ).toBe(true);
         expect($('vault-tree').innerHTML).toContain('/vault');
-        // capped notice
-        expect($('vault-tree-notice').hidden).toBe(false);
-        expect($('vault-tree-notice').textContent).toBeTruthy();
+        // After expand with open caret → disabled
+        expect(expandBtn().disabled).toBe(true);
     });
 
     it('collapse all invokes vault_collapse_all', async () => {
@@ -467,6 +473,64 @@ describe('vault/filter — expand level / collapse all', () => {
         expect(
             tauri.invoke.mock.calls.some((c) => c[0] === 'vault_collapse_all'),
         ).toBe(true);
+    });
+
+    it('disabled when all pin roots open; enabled after collapse via observer', async () => {
+        // Default DOM: pin root has caret open → disabled
+        configureInvoke();
+        await initModules();
+        expect(expandBtn().disabled).toBe(true);
+
+        // Simulate collapse_all rebuild: root caret closed
+        const collapsedHtml =
+            '<li class="section" data-section="pinned">' +
+            '<div class="row"><span class="label">Pinned</span></div>' +
+            '<ul class="children">' +
+            '<li class="node" data-kind="dir" data-path="/vault">' +
+            '<div class="row"><span class="caret"></span><span class="label">vault</span></div>' +
+            '<ul class="children collapsed"></ul></li></ul></li>';
+        tauri.invoke.mockImplementation((cmd: string) => {
+            if (cmd === 'vault_filter_options_get') {
+                return Promise.resolve({ markdownOnly: false, barVisible: false });
+            }
+            if (cmd === 'vault_collapse_all') {
+                return Promise.resolve({ html: collapsedHtml });
+            }
+            return Promise.resolve(undefined);
+        });
+        $('vault-collapse-all').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+        expect(expandBtn().disabled).toBe(false);
+    });
+
+    it('observer-driven: closing pin caret enables button without query', async () => {
+        configureInvoke();
+        await initModules();
+        expect(expandBtn().disabled).toBe(true);
+
+        // Close pin root caret via DOM mutation (Observer, no query)
+        const caret = document.querySelector(
+            'li.section[data-section="pinned"] > ul.children > li.node[data-kind="dir"] > .row > .caret',
+        ) as HTMLElement;
+        expect(caret).not.toBeNull();
+        caret.classList.remove('open');
+        // class mutation alone may not fire childList observer — replace node
+        const root = document.querySelector(
+            'li.section[data-section="pinned"] > ul.children > li.node[data-kind="dir"]',
+        )!;
+        const parent = root.parentElement!;
+        const clone = root.cloneNode(true) as HTMLElement;
+        clone.querySelector('.caret')?.classList.remove('open');
+        parent.replaceChild(clone, root);
+        await flushMicro();
+        expect(expandBtn().disabled).toBe(false);
+    });
+
+    it('init with collapsed pin root enables expand-roots', async () => {
+        buildDom({ pinRootOpen: false });
+        configureInvoke();
+        await initModules();
+        expect(expandBtn().disabled).toBe(false);
     });
 });
 

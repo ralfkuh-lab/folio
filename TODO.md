@@ -2,6 +2,14 @@
 
 ## Mittlere Priorität
 
+- **E2E `42_mermaid` flaky — Beobachtung** (erstmals 2026-07-21 im
+  Voll-Lauf: „mermaid svg nicht gefunden", exists=false): im
+  Wiederholungs-Voll-Lauf und 3x Einzellauf direkt danach grün.
+  Mermaid rendert per Lazy-Bundle-Script-Injection beim ersten
+  Vorkommen — vermutlich Timing beim Bundle-Load unter Xvfb-Last.
+  Bei erneutem Auftreten: Warte-/Retry-Pfad im Szenario um
+  Bundle-Ready-Poll ergänzen statt fixem Timeout.
+
 - **E2E `30_tabs_ui` flaky — Fix 2026-07-09, Beobachtung offen**: dreimal
   im Voll-Lauf gefailt („Undo-Stack hat den Tab-Wechsel nicht ueberlebt",
   2026-07-06/08/09), nie im Einzellauf. Race-Analyse (codex+agy+Claude):

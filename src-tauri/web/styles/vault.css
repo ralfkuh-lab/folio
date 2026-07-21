@@ -41,8 +41,25 @@ body.vault-hidden .vault-region { display: none; }
   justify-content: center;
   line-height: 1;
 }
+.vault-header .vault-cmd-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.vault-header .vault-cmd-icon svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
 .vault-header .vault-cmd:hover {
   background: var(--rail-hover-bg);
+}
+.vault-header .vault-cmd:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.vault-header .vault-cmd:disabled:hover {
+  background: transparent;
 }
 /* Vault-Sektionen mit Pinned/Recent */
 .vault-region .vault-section { padding: 4px 0; }
@@ -805,20 +822,6 @@ html.theme-dark .vault-filter-md[aria-pressed="true"] {
 .vault-filter-close:hover {
   background: var(--rail-hover-bg);
   color: var(--rail-fg);
-}
-
-/* Transienter Hinweis (z. B. Expand-Level-Cap). */
-.vault-tree-notice {
-  box-sizing: border-box;
-  padding: 4px 10px;
-  border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--rail-accent) 10%, var(--rail-bg));
-  color: var(--rail-accent);
-  font-size: 11px;
-  line-height: 1.35;
-}
-html.theme-dark .vault-tree-notice {
-  background: color-mix(in srgb, var(--rail-accent) 16%, var(--rail-bg));
 }
 
 /* Client-Filter: ausgeblendete Datei-Zeilen. */

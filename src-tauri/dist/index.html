@@ -85,8 +85,8 @@
     <span class="title" data-i18n="vault.header.title">Arbeitsbereich</span>
     <button class="vault-cmd ti-emoji" data-cmd="addFile" title="Datei öffnen…" data-i18n-title="vault.header.openFile.tooltip" aria-label="Datei öffnen" data-i18n-aria-label="vault.header.openFile.ariaLabel">&#x1F4C4;</button>
     <button class="vault-cmd ti-emoji" data-cmd="addFolder" title="Ordner hinzufügen…" data-i18n-title="vault.header.addFolder.tooltip" aria-label="Ordner hinzufügen" data-i18n-aria-label="vault.header.addFolder.ariaLabel">&#x1F4C1;</button>
-    <button type="button" class="vault-cmd ti-emoji" id="vault-expand-level" data-cmd="expandLevel" title="Eine Ebene tiefer" data-i18n-title="vault.tree.expandLevel.tooltip" aria-label="Eine Ebene tiefer" data-i18n-aria-label="vault.tree.expandLevel.ariaLabel">&#x229E;</button>
-    <button type="button" class="vault-cmd ti-emoji" id="vault-collapse-all" data-cmd="collapseAll" title="Alles einklappen" data-i18n-title="vault.tree.collapseAll.tooltip" aria-label="Alles einklappen" data-i18n-aria-label="vault.tree.collapseAll.ariaLabel">&#x229F;</button>
+    <button type="button" class="vault-cmd" id="vault-expand-roots" data-cmd="expandRoots" title="Oberste Ebene aufklappen" data-i18n-title="vault.tree.expandRoots.tooltip" aria-label="Oberste Ebene aufklappen" data-i18n-aria-label="vault.tree.expandRoots.ariaLabel"><span class="vault-cmd-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></span></button>
+    <button type="button" class="vault-cmd" id="vault-collapse-all" data-cmd="collapseAll" title="Alles einklappen" data-i18n-title="vault.tree.collapseAll.tooltip" aria-label="Alles einklappen" data-i18n-aria-label="vault.tree.collapseAll.ariaLabel"><span class="vault-cmd-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7l4-4 4 4"/><path d="M4 12l4-4 4 4"/></svg></span></button>
     <button type="button" class="vault-cmd ti-emoji" id="vault-filter-toggle" data-cmd="filter" title="Dateien filtern" data-i18n-title="vault.filter.toggle.tooltip" aria-label="Dateifilter" data-i18n-aria-label="vault.filter.toggle.ariaLabel" aria-pressed="false">&#x25BD;</button>
   </header>
   <div class="vault-search" id="vault-search">
@@ -110,7 +110,6 @@
       <button type="button" id="vault-filter-close" class="vault-filter-close" title="Filterzeile schließen" data-i18n-title="vault.filter.close.tooltip" aria-label="Filterzeile schließen" data-i18n-aria-label="vault.filter.close.ariaLabel">&#x2715;</button>
     </div>
   </div>
-  <div class="vault-tree-notice" id="vault-tree-notice" hidden role="status"></div>
   <ul id="vault-tree" class="tree"></ul>
   <div class="vault-search-results" id="vault-search-results" hidden>
     <div class="vault-search-results-head" id="vault-search-results-head">
