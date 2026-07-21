@@ -360,6 +360,7 @@ impl AppState {
         Ok(TabsPayload {
             tabs: tabs.summaries(),
             active_index: tabs.active_index(),
+            recently_closed_count: tabs.recently_closed_count(),
             request_id: None,
         })
     }
@@ -381,6 +382,7 @@ impl AppState {
             let payload = TabsPayload {
                 tabs: tabs.summaries(),
                 active_index: tabs.active_index(),
+                recently_closed_count: tabs.recently_closed_count(),
                 request_id,
             };
             let (open_tabs, active_tab) = tabs.session_state();

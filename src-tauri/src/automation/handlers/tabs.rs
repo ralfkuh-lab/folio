@@ -119,6 +119,15 @@ pub(in crate::automation) async fn post_reorder(
     ))
 }
 
+pub(in crate::automation) async fn post_restore_last(
+    AxumState(context): AxumState<AutomationContext>,
+    ApiQuery(options): ApiQuery<AckOptions>,
+) -> ApiResult<Json<TabMutationResponse>> {
+    let state = context.app_handle.state::<AppState>();
+    let transition = tabs::restore_last(&state, &context.app_handle).map_err(api_error)?;
+    respond_after_frontend(context, transition, options).await
+}
+
 async fn respond_after_frontend(
     context: AutomationContext,
     transition: TabTransition,

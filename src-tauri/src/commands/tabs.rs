@@ -282,13 +282,17 @@ pub fn close(
     id: u64,
     policy: DirtyPolicy,
 ) -> Result<TabTransition, TabError> {
-    let (was_active, was_dirty) = {
+    let (was_active, was_dirty, closed_path) = {
         let tabs = state
             .tabs
             .lock()
             .map_err(|_| TabError::Internal("tabs lock poisoned".into()))?;
         let tab = tabs.tab(id).ok_or(TabError::UnknownId(id))?;
-        (tabs.is_active(id), tab.document_store.is_dirty)
+        (
+            tabs.is_active(id),
+            tab.document_store.is_dirty,
+            tab.document_path().map(str::to_string),
+        )
     };
     if was_dirty && policy == DirtyPolicy::Reject {
         return Err(TabError::DirtyRejected(id));
@@ -302,6 +306,11 @@ pub fn close(
         if !tabs.close(id) {
             return Err(TabError::UnknownId(id));
         }
+        // Closed-Stack nur bei User-Schließen (nicht close_all). Pfad
+        // war vor dem close bekannt (document_path oder pending_path).
+        if let Some(path) = closed_path {
+            tabs.push_recently_closed(path);
+        }
     }
 
     if was_active {
@@ -309,6 +318,45 @@ pub fn close(
     }
     AppState::emit_tabs_changed(handle).map_err(TabError::Internal)?;
     transition_for_active(state, was_active)
+}
+
+/// Poppt den Closed-Stack und öffnet den Pfad über `tab_open` (Dedup/
+/// Aktivierung). Tote Pfade werden übersprungen; leerer Stack → No-op.
+///
+/// Locking-Vertrag: der `tabs`-Guard fällt VOR jedem weiteren Aufruf,
+/// der den Mutex nimmt (`transition_for_active`, `open`,
+/// `emit_tabs_changed`) — Review-Befund codex 2026-07-21: der frühere
+/// `return transition_for_active(...)` im None-Arm lief noch unter
+/// gehaltenem Guard und deadlockte bei leerem Stack deterministisch.
+pub fn restore_last(state: &AppState, handle: &AppHandle) -> Result<TabTransition, TabError> {
+    let (path, dead) = {
+        let mut tabs = state
+            .tabs
+            .lock()
+            .map_err(|_| TabError::Internal("tabs lock poisoned".into()))?;
+        tabs.pop_next_live_recently_closed(|p| Path::new(p).is_file())
+    };
+    for path in &dead {
+        tracing::debug!(
+            target: "folio::tabs",
+            %path,
+            "skipping dead path from recently-closed stack"
+        );
+    }
+    match path {
+        // open() dedupliziert bereits offene Pfade (aktivieren statt neu)
+        // und emittiert tabs:changed — der neue Count läuft dort mit.
+        Some(path) => open(state, handle, path),
+        None => {
+            if !dead.is_empty() {
+                // Nur tote Pfade entfernt: Frontend-Snapshot syncen,
+                // sonst bleibt recentlyClosedCount > 0 und
+                // „Wiederherstellen" fälschlich aktiv (Review-Befund).
+                AppState::emit_tabs_changed(handle).map_err(TabError::Internal)?;
+            }
+            transition_for_active(state, false)
+        }
+    }
 }
 
 pub fn close_all(state: &AppState, handle: &AppHandle) -> Result<TabTransition, TabError> {
@@ -478,6 +526,16 @@ pub async fn tab_reorder(
     handle: AppHandle,
 ) -> Result<(), String> {
     reorder(&state, &handle, ids).map_err(String::from)
+}
+
+#[tauri::command]
+pub async fn tab_restore_last(
+    state: State<'_, AppState>,
+    handle: AppHandle,
+) -> Result<TabSummary, String> {
+    let transition = restore_last(&state, &handle).map_err(String::from)?;
+    emit_navigation_changed(&handle, &transition, None).map_err(String::from)?;
+    Ok(transition.tab)
 }
 
 #[cfg(test)]

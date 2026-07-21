@@ -122,6 +122,7 @@ fn needs_frontend_ready(method: &Method, path: &str) -> bool {
             | ("POST", "/tabs/activate")
             | ("POST", "/tabs/close_all")
             | ("POST", "/tabs/reorder")
+            | ("POST", "/tabs/restore_last")
             | ("POST", "/mode")
             | ("POST", "/theme")
             | ("POST", "/rail")

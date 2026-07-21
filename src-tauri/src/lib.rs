@@ -577,6 +577,7 @@ pub fn builder(settings: crate::settings::SettingsService) -> tauri::Builder<tau
             commands::tabs::tab_activate,
             commands::tabs::tabs_list,
             commands::tabs::tab_reorder,
+            commands::tabs::tab_restore_last,
             commands::events::shell_event,
             commands::events::editor_event,
             commands::workspace_cmd::workspace_pin,

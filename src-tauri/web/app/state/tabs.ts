@@ -21,11 +21,22 @@ export interface TabSummary {
 export interface TabsPayload {
     tabs: TabSummary[];
     activeIndex: number;
+    /** Session-only Closed-Stack-Länge (für Restore-Menü-Disabled). */
+    recentlyClosedCount: number;
     requestId?: number;
 }
 
-let current: TabsPayload = { tabs: [], activeIndex: 0 };
+let current: TabsPayload = { tabs: [], activeIndex: 0, recentlyClosedCount: 0 };
 let eventRevision = 0;
+
+/** Aktueller Leisten-Snapshot (einfrieren vor Serien-Close). */
+export function getTabsSnapshot(): TabsPayload {
+    return {
+        tabs: current.tabs.slice(),
+        activeIndex: current.activeIndex,
+        recentlyClosedCount: current.recentlyClosedCount,
+    };
+}
 
 export function getActiveTabId(): number | null {
     const active = current.tabs.find(function (tab) { return tab.active; })
@@ -167,7 +178,11 @@ function normalizePayload(payload: any): TabsPayload {
     const activeIndex = typeof (payload && payload.activeIndex) === 'number'
         ? payload.activeIndex
         : Math.max(0, tabs.findIndex(function (tab) { return tab.active; }));
-    return { tabs, activeIndex };
+    const recentlyClosedCount = typeof (payload && payload.recentlyClosedCount) === 'number'
+        && Number.isFinite(payload.recentlyClosedCount)
+        ? Math.max(0, Math.floor(payload.recentlyClosedCount))
+        : 0;
+    return { tabs, activeIndex, recentlyClosedCount };
 }
 
 export function renderTabs(payload: TabsPayload): void {

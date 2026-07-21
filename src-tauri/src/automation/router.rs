@@ -29,6 +29,7 @@ pub(super) fn build_router(context: AutomationContext) -> Router {
         .route("/tabs/activate", post(tabs::post_activate))
         .route("/tabs/close_all", post(tabs::post_close_all))
         .route("/tabs/reorder", post(tabs::post_reorder))
+        .route("/tabs/restore_last", post(tabs::post_restore_last))
         .route("/open-ui", post(document::post_open_ui))
         .route("/mode", post(ui::post_mode))
         .route("/theme", post(ui::post_theme))

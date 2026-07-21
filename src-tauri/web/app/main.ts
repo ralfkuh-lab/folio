@@ -29,6 +29,7 @@ import { initThemeAiDialog } from './ui/theme-ai-dialog';
 import { attachPasteHandler } from './ui/paste-handler';
 import { applySplitMidFromBackend, initRails, setRailVisibility } from './ui/rails';
 import { initContextMenu } from './vault/context-menu';
+import { initTabContextMenu } from './ui/tab-context-menu';
 import { initVaultTree, insertVaultChildren, refreshVault } from './vault/tree';
 import { initVaultFilter } from './vault/filter';
 import { initVaultSearch, consumeNavRestoreSkip } from './vault/search';
@@ -133,6 +134,7 @@ function runModuleInits(): void {
         });
     });
     initContextMenu({ openDocument, refreshVault, showStatus });
+    initTabContextMenu();
     initMenuRouter({ applyRailVisibility });
     initDragDrop();
     initAutomationEvents();
