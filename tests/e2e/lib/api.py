@@ -102,6 +102,11 @@ class AutomationApi:
     def tab_reorder(self, ids: list[int]) -> dict:
         return self._request("POST", "/tabs/reorder", {"ids": ids})
 
+    def tab_restore_last(self, ack_timeout_ms: int = 3000) -> dict:
+        return self._request(
+            "POST", f"/tabs/restore_last?ackTimeoutMs={ack_timeout_ms}", {}
+        )
+
     def settings_get(self) -> dict:
         return self._request("GET", "/settings")
 

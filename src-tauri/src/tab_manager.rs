@@ -67,15 +67,24 @@ pub struct TabSummary {
 pub struct TabsPayload {
     pub tabs: Vec<TabSummary>,
     pub active_index: usize,
+    /// Session-only-Stack-Länge für „Zuletzt geschlossenen Tab
+    /// wiederherstellen" (nicht persistiert).
+    pub recently_closed_count: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request_id: Option<u64>,
 }
+
+/// Cap für den Session-only Closed-Stack (kein Persistieren).
+const RECENTLY_CLOSED_CAP: usize = 10;
 
 pub struct TabManager {
     tabs: Vec<Tab>,
     active: usize,
     next_id: u64,
     document_event_factory: Option<DocumentEventFactory>,
+    /// Pfade zuletzt geschlossener Dokument-Tabs (jüngster am Ende).
+    /// Session-only, Cap 10, kein Persistieren. `close_all` pusht nicht.
+    recently_closed: Vec<String>,
 }
 
 impl Default for TabManager {
@@ -91,7 +100,32 @@ impl TabManager {
             active: 0,
             next_id: 2,
             document_event_factory: None,
+            recently_closed: Vec::new(),
         }
+    }
+
+    /// Push eines geschlossenen Dokument-Pfads. Duplikate werden vorher
+    /// entfernt (ein Eintrag pro Pfad, jüngster gewinnt). Cap 10.
+    pub fn push_recently_closed(&mut self, path: String) {
+        let path = path.replace('\\', "/");
+        if path.is_empty() {
+            return;
+        }
+        self.recently_closed.retain(|p| p != &path);
+        self.recently_closed.push(path);
+        if self.recently_closed.len() > RECENTLY_CLOSED_CAP {
+            let excess = self.recently_closed.len() - RECENTLY_CLOSED_CAP;
+            self.recently_closed.drain(0..excess);
+        }
+    }
+
+    /// Poppt den jüngsten Eintrag (oder None bei leerem Stack).
+    pub fn pop_recently_closed(&mut self) -> Option<String> {
+        self.recently_closed.pop()
+    }
+
+    pub fn recently_closed_count(&self) -> usize {
+        self.recently_closed.len()
     }
 
     pub fn active(&self) -> &Tab {
@@ -195,6 +229,8 @@ impl TabManager {
 
     /// E2E-Isolation: verwirft alle anderen Tabs und setzt den aktiven
     /// Tab einschließlich History und View-Mode auf Boot-Zustand zurück.
+    /// Pusht bewusst **nicht** auf den Closed-Stack (Test-Aufräumen,
+    /// kein User-Schließen).
     pub fn close_all(&mut self) {
         let mut tab = self.tabs.remove(self.active);
         tab.document_store.close();
@@ -633,5 +669,88 @@ mod tests {
         let (paths, act) = manager.session_state();
         assert_eq!(paths, vec!["/p3.md", "/p2.md", "/p1.md"]);
         assert_eq!(act, Some(1));
+    }
+
+    #[test]
+    fn recently_closed_push_dedups_and_caps_at_ten() {
+        let mut manager = TabManager::new();
+        assert_eq!(0, manager.recently_closed_count());
+
+        manager.push_recently_closed("/a.md".into());
+        manager.push_recently_closed(r"\b.md".into()); // normalisiert
+        manager.push_recently_closed("/a.md".into()); // Dedup → ans Ende
+        assert_eq!(2, manager.recently_closed_count());
+        assert_eq!(Some("/a.md".into()), manager.pop_recently_closed());
+        assert_eq!(Some("/b.md".into()), manager.pop_recently_closed());
+        assert_eq!(None, manager.pop_recently_closed());
+
+        for i in 0..12 {
+            manager.push_recently_closed(format!("/f{i}.md"));
+        }
+        assert_eq!(10, manager.recently_closed_count());
+        // Älteste (/f0, /f1) sind raus; jüngster ist /f11.
+        assert_eq!(Some("/f11.md".into()), manager.pop_recently_closed());
+        // /f2 ist der älteste verbleibende.
+        let mut oldest = None;
+        while let Some(p) = manager.pop_recently_closed() {
+            oldest = Some(p);
+        }
+        assert_eq!(Some("/f2.md".into()), oldest);
+    }
+
+    #[test]
+    fn recently_closed_restore_skips_dead_paths_via_pop() {
+        let mut manager = TabManager::new();
+        let temp = tempfile::TempDir::new().unwrap();
+        let live = temp.path().join("live.md");
+        std::fs::write(&live, "ok").unwrap();
+        let live_s = live.to_string_lossy().replace('\\', "/");
+        let dead = temp
+            .path()
+            .join("dead.md")
+            .to_string_lossy()
+            .replace('\\', "/");
+
+        manager.push_recently_closed(live_s.clone());
+        manager.push_recently_closed(dead.clone()); // jüngster = dead
+
+        // Aufrufer poppt und überspringt tote Pfade (wie restore_last).
+        let mut restored = None;
+        while let Some(path) = manager.pop_recently_closed() {
+            if Path::new(&path).is_file() {
+                restored = Some(path);
+                break;
+            }
+        }
+        assert_eq!(Some(live_s), restored);
+        assert_eq!(0, manager.recently_closed_count());
+    }
+
+    #[test]
+    fn close_all_does_not_push_recently_closed() {
+        let mut manager = TabManager::new();
+        manager.active_mut().document_store.path = Some("/a.md".into());
+        manager.add_tab();
+        manager.active_mut().document_store.path = Some("/b.md".into());
+        // Push manuell (simuliert vorherige User-Closes), dann close_all.
+        manager.push_recently_closed("/prior.md".into());
+        assert_eq!(1, manager.recently_closed_count());
+
+        manager.close_all();
+
+        // Stack unverändert — close_all pusht nicht und leert auch nicht.
+        assert_eq!(1, manager.recently_closed_count());
+        assert_eq!(Some("/prior.md".into()), manager.pop_recently_closed());
+    }
+
+    #[test]
+    fn recently_closed_count_is_exposed_on_payload_field() {
+        let mut manager = TabManager::new();
+        manager.push_recently_closed("/x.md".into());
+        manager.push_recently_closed("/y.md".into());
+        assert_eq!(2, manager.recently_closed_count());
+        // summaries selbst tragen den Count nicht; der landet im
+        // TabsPayload (siehe state::tabs_payload / emit_tabs_changed).
+        assert_eq!(1, manager.summaries().len());
     }
 }
