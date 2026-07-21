@@ -126,6 +126,8 @@ interface Window {
     FolioI18n?: FolioI18nSurface;
     __TAURI__?: TauriRuntime;
     __folioInvoke?: TauriCoreApi['invoke'];
+    /** Test/Automation-Hook: Command Palette öffnen (optionaler Prefill). */
+    __folioOpenPalette?: (prefill?: string) => void;
     openDocument?: (path: string) => Promise<boolean>;
     openThemeEditor?: (id: string) => Promise<boolean>;
     monaco?: any;
