@@ -17,6 +17,7 @@ pub mod link_interceptor;
 pub mod logging;
 pub mod menu;
 pub mod navigation;
+pub mod palette;
 pub mod panel_state;
 pub mod pdf_export;
 mod persist;
@@ -557,6 +558,7 @@ pub fn builder(settings: crate::settings::SettingsService) -> tauri::Builder<tau
             commands::vault_cmd::vault_filter_options_set,
             commands::vault_cmd::rail_resize,
             commands::vault_cmd::context,
+            commands::vault_cmd::palette_files,
             commands::search_cmd::vault_search_start,
             commands::search_cmd::vault_search_cancel,
             commands::search_cmd::vault_search_validate,
