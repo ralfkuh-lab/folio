@@ -124,6 +124,25 @@ impl TabManager {
         self.recently_closed.pop()
     }
 
+    /// Poppt bis zum ersten Pfad, den `is_live` bejaht. Rückgabe:
+    /// (lebender Pfad oder None, dabei übersprungene tote Pfade in
+    /// Pop-Reihenfolge). Pur und ohne Locks — der Command-Layer
+    /// entscheidet über Events/Logging (Review-Befund: die frühere
+    /// Loop im Command war nur über nachgebaute Kopien testbar).
+    pub fn pop_next_live_recently_closed<F: Fn(&str) -> bool>(
+        &mut self,
+        is_live: F,
+    ) -> (Option<String>, Vec<String>) {
+        let mut dead = Vec::new();
+        while let Some(path) = self.recently_closed.pop() {
+            if is_live(&path) {
+                return (Some(path), dead);
+            }
+            dead.push(path);
+        }
+        (None, dead)
+    }
+
     pub fn recently_closed_count(&self) -> usize {
         self.recently_closed.len()
     }
@@ -699,30 +718,44 @@ mod tests {
     }
 
     #[test]
-    fn recently_closed_restore_skips_dead_paths_via_pop() {
+    fn pop_next_live_skips_dead_paths_and_reports_them() {
+        // Testet die ECHTE Produktions-Methode (Review-Befund: die
+        // fruehere nachgebaute Schleife haette Command-Defekte nie
+        // gesehen — der Empty-Stack-Deadlock blieb genau so unentdeckt).
         let mut manager = TabManager::new();
         let temp = tempfile::TempDir::new().unwrap();
         let live = temp.path().join("live.md");
         std::fs::write(&live, "ok").unwrap();
         let live_s = live.to_string_lossy().replace('\\', "/");
-        let dead = temp
-            .path()
-            .join("dead.md")
-            .to_string_lossy()
-            .replace('\\', "/");
+        let dead1 = format!("{}/dead1.md", temp.path().to_string_lossy());
+        let dead2 = format!("{}/dead2.md", temp.path().to_string_lossy());
 
         manager.push_recently_closed(live_s.clone());
-        manager.push_recently_closed(dead.clone()); // jüngster = dead
+        manager.push_recently_closed(dead1.clone());
+        manager.push_recently_closed(dead2.clone()); // jüngster = dead2
 
-        // Aufrufer poppt und überspringt tote Pfade (wie restore_last).
-        let mut restored = None;
-        while let Some(path) = manager.pop_recently_closed() {
-            if Path::new(&path).is_file() {
-                restored = Some(path);
-                break;
-            }
-        }
+        let (restored, skipped) = manager.pop_next_live_recently_closed(|p| Path::new(p).is_file());
         assert_eq!(Some(live_s), restored);
+        assert_eq!(
+            vec![dead2.replace('\\', "/"), dead1.replace('\\', "/")],
+            skipped,
+            "tote Pfade in Pop-Reihenfolge gemeldet"
+        );
+        assert_eq!(0, manager.recently_closed_count());
+
+        // Leerer Stack: No-op-Vertrag der Methode — None, nichts uebersprungen.
+        let (none, skipped_empty) =
+            manager.pop_next_live_recently_closed(|p| Path::new(p).is_file());
+        assert_eq!(None, none);
+        assert!(skipped_empty.is_empty());
+
+        // Nur tote Pfade: None, aber Count faellt auf 0 und die Toten
+        // werden gemeldet (Command muss dann tabs:changed emittieren).
+        manager.push_recently_closed(dead1.clone());
+        let (none2, skipped_dead) =
+            manager.pop_next_live_recently_closed(|p| Path::new(p).is_file());
+        assert_eq!(None, none2);
+        assert_eq!(1, skipped_dead.len());
         assert_eq!(0, manager.recently_closed_count());
     }
 
@@ -745,12 +778,20 @@ mod tests {
 
     #[test]
     fn recently_closed_count_is_exposed_on_payload_field() {
+        // Review-Befund (Etikett vs. Inhalt): jetzt wird wirklich ein
+        // TabsPayload gebaut und das serialisierte camelCase-Feld geprueft.
         let mut manager = TabManager::new();
         manager.push_recently_closed("/x.md".into());
         manager.push_recently_closed("/y.md".into());
-        assert_eq!(2, manager.recently_closed_count());
-        // summaries selbst tragen den Count nicht; der landet im
-        // TabsPayload (siehe state::tabs_payload / emit_tabs_changed).
-        assert_eq!(1, manager.summaries().len());
+
+        let payload = TabsPayload {
+            tabs: manager.summaries(),
+            active_index: manager.active_index(),
+            recently_closed_count: manager.recently_closed_count(),
+            request_id: None,
+        };
+        let json = serde_json::to_value(&payload).unwrap();
+        assert_eq!(2, json["recentlyClosedCount"].as_u64().unwrap());
+        assert!(json.get("requestId").is_none(), "None wird uebersprungen");
     }
 }

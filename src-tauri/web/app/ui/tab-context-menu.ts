@@ -159,7 +159,12 @@ export function initTabContextMenu(): void {
     if (bar) {
         bar.addEventListener('contextmenu', function (e: MouseEvent) {
             const item = docTabFromEvent(e.target);
-            if (!item) return;
+            if (!item) {
+                // Virtuelle Tabs/Leerbereich: ein noch offenes Menü darf
+                // nicht am falschen Ziel haengen bleiben (Review-Befund).
+                closeTabContextMenu();
+                return;
+            }
             e.preventDefault();
             e.stopPropagation();
             const id = Number(item.dataset.tabId);

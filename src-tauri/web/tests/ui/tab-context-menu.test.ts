@@ -132,13 +132,31 @@ describe('tab context menu UI', () => {
     });
 
     it('abort during series stops remaining closes', async () => {
+        // Review-Befund (beide Reviewer): mit nur zwei Zielen war der
+        // Test wirkungslos — vier Tabs, Abbruch beim ZWEITEN von drei
+        // Zielen, das dritte darf nie drankommen.
         requestCloseTab
             .mockResolvedValueOnce(true)
             .mockResolvedValueOnce(false)
             .mockResolvedValue(true);
-        // close-others from tab 1 → ids [2, 3]
-        getTabsSnapshot.mockReturnValue(snapThree(0));
+        getTabsSnapshot.mockReturnValue({
+            activeIndex: 0,
+            recentlyClosedCount: 0,
+            tabs: [
+                { id: 1, path: '/a.md', dirty: false, active: true },
+                { id: 2, path: '/b.md', dirty: false, active: false },
+                { id: 3, path: '/c.md', dirty: true, active: false },
+                { id: 4, path: '/d.md', dirty: false, active: false },
+            ],
+        });
         await init();
+        const bar = document.getElementById('tab-bar')!;
+        const extra = document.createElement('div');
+        extra.className = 'tab-item';
+        extra.dataset.tabId = '4';
+        extra.innerHTML = '<span class="tab-title">d.md</span>';
+        bar.insertBefore(extra, bar.querySelector('.tab-settings'));
+
         document.querySelector('[data-tab-id="1"]')!.dispatchEvent(
             new MouseEvent('contextmenu', { bubbles: true, clientX: 0, clientY: 0, cancelable: true }),
         );
@@ -146,8 +164,24 @@ describe('tab context menu UI', () => {
         await vi.waitFor(() => {
             expect(requestCloseTab).toHaveBeenCalledTimes(2);
         });
+        // Serie: [2, 3, 4] — 3 liefert false, 4 darf nie aufgerufen werden.
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(requestCloseTab).toHaveBeenCalledTimes(2);
         expect(requestCloseTab.mock.calls.map((c) => c[0])).toEqual([2, 3]);
-        // second returned false — no third call (and only two others anyway)
+    });
+
+    it('right-click on virtual tab closes an open document menu', async () => {
+        await init();
+        document.querySelector('[data-tab-id="2"]')!.dispatchEvent(
+            new MouseEvent('contextmenu', { bubbles: true, clientX: 0, clientY: 0, cancelable: true }),
+        );
+        expect(document.getElementById('tab-ctx-menu')!.classList.contains('open')).toBe(true);
+
+        document.querySelector('[data-tab-id="settings"]')!.dispatchEvent(
+            new MouseEvent('contextmenu', { bubbles: true, clientX: 0, clientY: 0, cancelable: true }),
+        );
+        expect(document.getElementById('tab-ctx-menu')!.classList.contains('open')).toBe(false);
     });
 
     it('restore invokes tab_restore_last', async () => {

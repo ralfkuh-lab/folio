@@ -322,28 +322,40 @@ pub fn close(
 
 /// Poppt den Closed-Stack und öffnet den Pfad über `tab_open` (Dedup/
 /// Aktivierung). Tote Pfade werden übersprungen; leerer Stack → No-op.
+///
+/// Locking-Vertrag: der `tabs`-Guard fällt VOR jedem weiteren Aufruf,
+/// der den Mutex nimmt (`transition_for_active`, `open`,
+/// `emit_tabs_changed`) — Review-Befund codex 2026-07-21: der frühere
+/// `return transition_for_active(...)` im None-Arm lief noch unter
+/// gehaltenem Guard und deadlockte bei leerem Stack deterministisch.
 pub fn restore_last(state: &AppState, handle: &AppHandle) -> Result<TabTransition, TabError> {
-    loop {
-        let path = {
-            let mut tabs = state
-                .tabs
-                .lock()
-                .map_err(|_| TabError::Internal("tabs lock poisoned".into()))?;
-            match tabs.pop_recently_closed() {
-                Some(path) => path,
-                None => return transition_for_active(state, false),
+    let (path, dead) = {
+        let mut tabs = state
+            .tabs
+            .lock()
+            .map_err(|_| TabError::Internal("tabs lock poisoned".into()))?;
+        tabs.pop_next_live_recently_closed(|p| Path::new(p).is_file())
+    };
+    for path in &dead {
+        tracing::debug!(
+            target: "folio::tabs",
+            %path,
+            "skipping dead path from recently-closed stack"
+        );
+    }
+    match path {
+        // open() dedupliziert bereits offene Pfade (aktivieren statt neu)
+        // und emittiert tabs:changed — der neue Count läuft dort mit.
+        Some(path) => open(state, handle, path),
+        None => {
+            if !dead.is_empty() {
+                // Nur tote Pfade entfernt: Frontend-Snapshot syncen,
+                // sonst bleibt recentlyClosedCount > 0 und
+                // „Wiederherstellen" fälschlich aktiv (Review-Befund).
+                AppState::emit_tabs_changed(handle).map_err(TabError::Internal)?;
             }
-        };
-        if !Path::new(&path).is_file() {
-            tracing::debug!(
-                target: "folio::tabs",
-                %path,
-                "skipping dead path from recently-closed stack"
-            );
-            continue;
+            transition_for_active(state, false)
         }
-        // open() dedupliziert bereits offene Pfade (aktivieren statt neu).
-        return open(state, handle, path);
     }
 }
 
