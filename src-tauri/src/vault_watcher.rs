@@ -95,6 +95,16 @@ impl VaultWatcher {
         Ok(())
     }
 
+    /// Anzahl aktiver Watches (Tests / Diagnose).
+    pub fn watched_count(&self) -> usize {
+        self.watched.len()
+    }
+
+    /// Beendet alle Watches (z. B. nach `Vault::collapse_all`).
+    pub fn unwatch_all(&mut self) {
+        self.dispose_all();
+    }
+
     /// Beendet den Watch fuer `path` (und alle Unterpfade, falls der
     /// User einen Ordner zugeklappt hat, dessen Subdirs noch gewatcht
     /// sind). Symmetrisch zu `Vault::on_collapse`.
@@ -399,6 +409,18 @@ mod tests {
         fs::write(temp.path().join("a.md"), "x").unwrap();
         thread::sleep(Duration::from_millis(500));
         assert!(sink.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn unwatch_all_clears_watches() {
+        let mut w = VaultWatcher::new();
+        w.set_callback(Arc::new(|_| {}));
+        // watch may fail without real FS notify in some envs — still test clear.
+        let _ = w.watch("/tmp/folio-vw-a");
+        let _ = w.watch("/tmp/folio-vw-b");
+        // Even if watch failed (no path), unwatch_all must not panic.
+        w.unwatch_all();
+        assert_eq!(w.watched_count(), 0);
     }
 
     #[test]

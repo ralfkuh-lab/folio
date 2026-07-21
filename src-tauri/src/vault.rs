@@ -198,6 +198,15 @@ pub struct VaultRefreshDelta {
     pub recent: Option<String>,
 }
 
+/// Ergebnis von [`Vault::expand_level`] / [`Vault::expand_level_capped`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExpandLevelResult {
+    /// Neu expandierte Pfade (für Watcher-Registrierung).
+    pub paths: Vec<String>,
+    /// Soft-Cap erreicht — Frontend zeigt transienten Hinweis.
+    pub capped: bool,
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct Vault {
     expanded_dirs: BTreeSet<String>,
@@ -317,6 +326,94 @@ impl Vault {
         self.build_dir_children_html(&path, markdown_only)
     }
 
+    /// Soft-Cap für [`Self::expand_level`]: neu geöffnete Ordner pro Aufruf.
+    pub const EXPAND_LEVEL_CAP: usize = 1_000;
+
+    /// Expandiert alle sichtbar zugeklappten Ordner um genau eine Ebene
+    /// (Pin-Wurzeln + unmittelbare Kinder bereits expandierter Ordner).
+    /// Soft-Cap begrenzt das Wachstum; `capped` signalisiert Abbruch.
+    ///
+    /// `pin_dirs`: absolute Pfade der angepinnten Verzeichnisse.
+    /// Rückgabe: neu expandierte Pfade (für Watcher-Registrierung) + Flag.
+    pub fn expand_level(&mut self, pin_dirs: &[String], markdown_only: bool) -> ExpandLevelResult {
+        self.expand_level_capped(pin_dirs, markdown_only, Self::EXPAND_LEVEL_CAP)
+    }
+
+    /// Wie [`Self::expand_level`], mit testbarem Cap.
+    pub fn expand_level_capped(
+        &mut self,
+        pin_dirs: &[String],
+        markdown_only: bool,
+        cap: usize,
+    ) -> ExpandLevelResult {
+        self.markdown_only = markdown_only;
+
+        // Frontier aus Snapshot: nur vor dem Lauf sichtbare, zugeklappte
+        // Ordner — neu geöffnete Kinder greifen erst im nächsten Aufruf.
+        let mut frontier: Vec<String> = Vec::new();
+        let mut seen: BTreeSet<String> = BTreeSet::new();
+
+        for pin in pin_dirs {
+            let norm = pin.replace('\\', "/");
+            if !Path::new(&norm).is_dir() || self.is_expanded(&norm) {
+                continue;
+            }
+            if markdown_only && !crate::vault_filter::dir_contains_markdown(Path::new(&norm)) {
+                continue;
+            }
+            if seen.insert(norm.clone()) {
+                frontier.push(norm);
+            }
+        }
+
+        let already_expanded: Vec<String> = self.expanded_paths();
+        for exp in &already_expanded {
+            let Ok(rd) = fs::read_dir(exp) else {
+                continue;
+            };
+            for entry in rd.filter_map(Result::ok) {
+                let path = entry.path();
+                let info = classify_entry(&path);
+                if !info.is_directory {
+                    continue;
+                }
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if name == ".git" {
+                    continue;
+                }
+                if markdown_only && !crate::vault_filter::dir_contains_markdown(&path) {
+                    continue;
+                }
+                let norm = path.to_string_lossy().replace('\\', "/");
+                if !self.is_expanded(&norm) && seen.insert(norm.clone()) {
+                    frontier.push(norm);
+                }
+            }
+        }
+
+        let mut paths = Vec::new();
+        let mut capped = false;
+        for path in frontier {
+            if paths.len() >= cap {
+                capped = true;
+                break;
+            }
+            match self.on_expand_with(path.clone(), markdown_only) {
+                Ok(_) => paths.push(path),
+                Err(err) => {
+                    tracing::warn!(
+                        target: "folio::vault",
+                        %err,
+                        path = %path,
+                        "expand_level: on_expand failed; skipping"
+                    );
+                }
+            }
+        }
+
+        ExpandLevelResult { paths, capped }
+    }
+
     /// Beim Zuklappen eines Ordners auch alle bisher aufgeklappten
     /// Unterordner aus `expanded_dirs` werfen. Damit startet ein
     /// erneutes Aufklappen mit komplett kollabiertem Subtree —
@@ -327,6 +424,11 @@ impl Vault {
         let target = Path::new(&normalized);
         self.expanded_dirs
             .retain(|entry| !Path::new(entry).starts_with(target));
+    }
+
+    /// Alles einklappen: leert `expanded_dirs` (Watches deregistriert der Caller).
+    pub fn collapse_all(&mut self) {
+        self.expanded_dirs.clear();
     }
 
     pub fn set_active(&mut self, path: Option<String>) {
@@ -799,6 +901,118 @@ mod tests {
         assert!(!vault.is_expanded(outer.to_str().unwrap()));
         assert!(!vault.is_expanded(inner.to_str().unwrap()));
         assert!(vault.is_expanded(sibling.to_str().unwrap()));
+    }
+
+    fn write_vf(dir: &Path, rel: &str, content: &str) {
+        let p = dir.join(rel);
+        if let Some(parent) = p.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(p, content).unwrap();
+    }
+
+    fn norm_vf(p: &Path) -> String {
+        p.to_string_lossy().replace('\\', "/")
+    }
+
+    #[test]
+    fn expand_level_opens_one_layer_per_call() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        write_vf(root, "l1/l2/file.md", "# f\n");
+        let root_s = norm_vf(root);
+        let l1 = norm_vf(&root.join("l1"));
+        let l2 = norm_vf(&root.join("l1/l2"));
+        let pins = vec![root_s.clone()];
+
+        let mut vault = Vault::new();
+        let r1 = vault.expand_level(&pins, false);
+        assert!(!r1.capped);
+        assert!(
+            vault.is_expanded(&root_s),
+            "1. Aufruf expandiert Pin-Wurzel"
+        );
+        assert!(!vault.is_expanded(&l1), "l1 erst im 2. Aufruf");
+        assert!(!vault.is_expanded(&l2));
+
+        let r2 = vault.expand_level(&pins, false);
+        assert!(!r2.capped);
+        assert!(vault.is_expanded(&l1), "2. Aufruf expandiert l1");
+        assert!(!vault.is_expanded(&l2), "l2 erst im 3. Aufruf");
+
+        let r3 = vault.expand_level(&pins, false);
+        assert!(!r3.capped);
+        assert!(vault.is_expanded(&l2), "3. Aufruf expandiert l2");
+    }
+
+    #[test]
+    fn expand_level_respects_cap() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        for i in 0..5 {
+            write_vf(root, &format!("d{i}/x.md"), "#\n");
+        }
+        let root_s = norm_vf(root);
+        let pins = vec![root_s.clone()];
+
+        let mut vault = Vault::new();
+        // Erst Pin-Wurzel öffnen, dann Cap auf Kinder anwenden.
+        vault.expand_level(&pins, false);
+        let r = vault.expand_level_capped(&pins, false, 2);
+        assert!(r.capped, "Cap 2 bei 5 Kind-Ordnern muss greifen");
+        assert_eq!(r.paths.len(), 2);
+        let expanded_children = vault
+            .expanded_paths()
+            .into_iter()
+            .filter(|p| p != &root_s)
+            .count();
+        assert_eq!(expanded_children, 2);
+    }
+
+    #[test]
+    fn expand_level_respects_markdown_only() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        write_vf(root, "with_md/a.md", "# a\n");
+        write_vf(root, "only_txt/x.txt", "t\n");
+        let root_s = norm_vf(root);
+        let with_md = norm_vf(&root.join("with_md"));
+        let only_txt = norm_vf(&root.join("only_txt"));
+        let pins = vec![root_s.clone()];
+
+        let mut vault = Vault::new();
+        vault.expand_level(&pins, true);
+        let r = vault.expand_level(&pins, true);
+        assert!(vault.is_expanded(&with_md), "MD-Ordner wird expandiert");
+        assert!(
+            !vault.is_expanded(&only_txt),
+            "MD-loser Ordner bleibt zu; paths={:?}",
+            r.paths
+        );
+    }
+
+    #[test]
+    fn collapse_all_clears_expanded_dirs() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        write_vf(root, "a/b/c.md", "#\n");
+        let root_s = norm_vf(root);
+        let a = norm_vf(&root.join("a"));
+        let pins = vec![root_s.clone()];
+
+        let mut vault = Vault::new();
+        vault.expand_level(&pins, false);
+        vault.expand_level(&pins, false);
+        assert!(vault.is_expanded(&root_s));
+        assert!(vault.is_expanded(&a));
+
+        vault.collapse_all();
+        assert!(
+            vault.expanded_paths().is_empty(),
+            "collapse_all leert expanded_dirs"
+        );
+        assert!(!vault.is_expanded(&root_s));
+        assert!(!vault.is_expanded(&a));
     }
 
     #[test]

@@ -126,7 +126,7 @@ def reset_canonical_state(api: AutomationApi, settings_snapshot: dict[str, Any])
     #    geoeffnet" ueber den Lauf in spaetere Baselines hinein).
     _expect_acked("workspace_clear_recents", api.workspace_clear_recents())
     # 9) Vault-Tree-Filter auf Defaults (Query leer, Zeile zu, md-only aus).
-    #    Hook leert Input, verlässt Filter-Render, persistiert Options.
+    #    Hook leert Input, schließt Zeile, persistiert Options (R3).
     api.eval(
         "typeof window.__folioVaultFilterReset==='function'"
         "&&window.__folioVaultFilterReset()"
@@ -135,15 +135,14 @@ def reset_canonical_state(api: AutomationApi, settings_snapshot: dict[str, Any])
     while True:
         ev = api.eval(
             "({h:!!document.getElementById('vault-filter')?.hidden,"
-            "f:!!document.getElementById('vault-tree')"
-            "?.classList.contains('filtering')})"
+            "q:(document.getElementById('vault-filter-input')?.value||'')})"
         ).get("value") or {}
-        if bool(ev.get("h")) and not bool(ev.get("f")):
+        if bool(ev.get("h")) and ev.get("q") == "":
             break
         if time.monotonic() > deadline:
             raise RuntimeError(
                 "Reset: Vault-Filter nicht geräumt "
-                f"(filterHidden={ev.get('h')!r}, filtering={ev.get('f')!r})"
+                f"(filterHidden={ev.get('h')!r}, query={ev.get('q')!r})"
             )
         time.sleep(0.05)
     # 10) Reflow settlen lassen, bevor das Szenario startet.

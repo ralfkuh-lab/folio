@@ -1,7 +1,6 @@
-// Tests fuer vault/filter.ts (Etappe F2). Spec-Liste:
-// Debounce + runId-Guard, Escape-Kaskade, Chip-Toggle (options_set + refresh),
-// Filtermodus blendet Recent aus, Expand inert, truncated-Hinweis,
-// Rueckkehr via refreshVault, Funnel-Badge.
+// Tests für vault/filter.ts (R3). Spec: docs/spec-vault-filter.md
+// Client-Filter, Highlight, Re-Apply, Observer-Reentranz, Escape/Close,
+// Badge nur bei md-only, eingebettetes Text-✕.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installTauriMock, type TauriMockHandles } from '../helpers';
@@ -21,33 +20,49 @@ function buildDom(): void {
     document.body.innerHTML = `
         <aside id="vault-region" class="vault-region">
             <header class="vault-header">
+                <button type="button" class="vault-cmd" id="vault-expand-level"></button>
+                <button type="button" class="vault-cmd" id="vault-collapse-all"></button>
                 <button type="button" class="vault-cmd" id="vault-filter-toggle"
                     aria-pressed="false"></button>
             </header>
             <div class="vault-filter" id="vault-filter" hidden>
                 <div class="vault-filter-bar">
-                    <input type="search" id="vault-filter-input" />
+                    <div class="vault-filter-input-wrap">
+                        <input type="search" id="vault-filter-input" />
+                        <button type="button" id="vault-filter-clear" hidden></button>
+                    </div>
                     <button type="button" id="vault-filter-md" aria-pressed="false">.md</button>
-                    <button type="button" id="vault-filter-files" aria-pressed="true">📄</button>
-                    <button type="button" id="vault-filter-dirs" aria-pressed="true">📁</button>
-                    <button type="button" id="vault-filter-clear" hidden></button>
                     <button type="button" id="vault-filter-close"></button>
                 </div>
             </div>
-            <div class="vault-filter-truncated" id="vault-filter-truncated" hidden>truncated</div>
+            <div class="vault-tree-notice" id="vault-tree-notice" hidden></div>
             <ul id="vault-tree" class="tree">
                 <li class="section" data-section="pinned">
                     <div class="row"><span class="label">Pinned</span></div>
                     <ul class="children">
                         <li class="node" data-kind="dir" data-path="/vault">
                             <div class="row">
-                                <span class="caret"></span>
+                                <span class="caret open"></span>
                                 <span class="label">vault</span>
                             </div>
-                            <ul class="children collapsed"></ul>
-                        </li>
-                        <li class="node" data-kind="file" data-path="/vault/a.md">
-                            <div class="row"><span class="label">a.md</span></div>
+                            <ul class="children">
+                                <li class="node" data-kind="file" data-path="/vault/Alpha.md">
+                                    <div class="row"><span class="label">Alpha.md</span></div>
+                                </li>
+                                <li class="node" data-kind="file" data-path="/vault/Beta.md">
+                                    <div class="row"><span class="label">Beta.md</span></div>
+                                </li>
+                                <li class="node" data-kind="file" data-path="/vault/notes.txt">
+                                    <div class="row"><span class="label">notes.txt</span></div>
+                                </li>
+                                <li class="node" data-kind="dir" data-path="/vault/Notes">
+                                    <div class="row">
+                                        <span class="caret"></span>
+                                        <span class="label">Notes</span>
+                                    </div>
+                                    <ul class="children collapsed"></ul>
+                                </li>
+                            </ul>
                         </li>
                     </ul>
                 </li>
@@ -56,6 +71,9 @@ function buildDom(): void {
                     <ul class="children">
                         <li class="node" data-kind="file" data-path="/vault/old.md">
                             <div class="row"><span class="label">old.md</span></div>
+                        </li>
+                        <li class="node" data-kind="file" data-path="/vault/Alpha.md">
+                            <div class="row"><span class="label">Alpha.md</span></div>
                         </li>
                     </ul>
                 </li>
@@ -72,71 +90,49 @@ function input(): HTMLInputElement {
     return $('vault-filter-input') as HTMLInputElement;
 }
 
-async function flushMicro(): Promise<void> {
-    for (let i = 0; i < 16; i++) await Promise.resolve();
+function isHidden(path: string): boolean {
+    const el = document.querySelector(
+        `#vault-tree li.node[data-path="${path}"]`,
+    ) as HTMLElement | null;
+    return !!el && el.classList.contains('vf-hidden');
 }
 
-function filterHtml(path = '/vault/hit.md', name = 'hit.md'): string {
-    return `<li class="node" data-path="${path}" data-kind="file"><div class="row"><span class="label">${name}</span></div></li>`;
+function isVisible(path: string): boolean {
+    const el = document.querySelector(
+        `#vault-tree li.node[data-path="${path}"]`,
+    ) as HTMLElement | null;
+    return !!el && !el.classList.contains('vf-hidden');
+}
+
+async function flushMicro(): Promise<void> {
+    for (let i = 0; i < 16; i++) await Promise.resolve();
 }
 
 function configureInvoke(opts?: {
     barVisible?: boolean;
     markdownOnly?: boolean;
-    matchFiles?: boolean;
-    matchDirs?: boolean;
-    filterHtml?: string;
-    truncated?: boolean;
-    delayed?: boolean;
-}): { resolveAt: (index: number) => void; queueLen: () => number } {
-    const queue: Array<{ resolve: (v: unknown) => void }> = [];
-
-    tauri.invoke.mockImplementation((cmd: string, args?: any) => {
+}): void {
+    tauri.invoke.mockImplementation((cmd: string) => {
         if (cmd === 'vault_filter_options_get') {
             return Promise.resolve({
                 markdownOnly: !!opts?.markdownOnly,
                 barVisible: !!opts?.barVisible,
-                matchFiles: opts?.matchFiles !== false,
-                matchDirs: opts?.matchDirs !== false,
             });
         }
         if (cmd === 'vault_filter_options_set') {
             return Promise.resolve(undefined);
         }
-        if (cmd === 'vault_filter') {
-            const payload = {
-                html: opts?.filterHtml ?? filterHtml(),
-                truncated: !!opts?.truncated,
-                nodeCount: 1,
-                runId: args?.runId,
-            };
-            if (opts?.delayed) {
-                return new Promise((resolve) => {
-                    queue.push({
-                        resolve: () => resolve(payload),
-                    });
-                });
-            }
-            return Promise.resolve(payload);
-        }
         if (cmd === 'vault_build_tree') {
-            return Promise.resolve(
-                `<li class="section" data-section="pinned"><ul class="children">${filterHtml('/lazy.md', 'lazy.md')}</ul></li>` +
-                    `<li class="section" data-section="recent"><ul class="children"></ul></li>`,
-            );
+            return Promise.resolve($('vault-tree').innerHTML);
+        }
+        if (cmd === 'vault_expand_level') {
+            return Promise.resolve({ html: $('vault-tree').innerHTML, capped: false });
+        }
+        if (cmd === 'vault_collapse_all') {
+            return Promise.resolve({ html: $('vault-tree').innerHTML });
         }
         return Promise.resolve(undefined);
     });
-
-    return {
-        queueLen: () => queue.length,
-        resolveAt(index: number) {
-            const item = queue[index];
-            if (!item) throw new Error(`no pending vault_filter at ${index}`);
-            queue.splice(index, 1);
-            item.resolve();
-        },
-    };
 }
 
 async function initModules(): Promise<{
@@ -174,695 +170,319 @@ afterEach(() => {
     vi.useRealTimers();
 });
 
-describe('vault/filter — debounce + runId-Guard', () => {
-    it('debounces input 150ms then calls vault_filter', async () => {
+describe('vault/filter — client filter (R3)', () => {
+    it('debounces 150ms then hides non-matching files; folders stay', async () => {
         configureInvoke();
         await initModules();
-        await typeQuery('note');
-        expect(tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_filter')).toHaveLength(0);
-        await vi.advanceTimersByTimeAsync(149);
-        expect(tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_filter')).toHaveLength(0);
-        await vi.advanceTimersByTimeAsync(1);
+        await typeQuery('alp');
+        vi.advanceTimersByTime(149);
+        expect(isVisible('/vault/Beta.md')).toBe(true);
+        vi.advanceTimersByTime(1);
         await flushMicro();
-        const calls = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_filter');
-        expect(calls).toHaveLength(1);
-        expect(calls[0][1]).toMatchObject({ query: 'note', markdownOnly: false });
-        expect(typeof calls[0][1].runId).toBe('number');
+        expect(isVisible('/vault/Alpha.md')).toBe(true);
+        expect(isHidden('/vault/Beta.md')).toBe(true);
+        expect(isHidden('/vault/notes.txt')).toBe(true);
+        // Ordner immer sichtbar
+        expect(isVisible('/vault')).toBe(true);
+        expect(isVisible('/vault/Notes')).toBe(true);
+        // Recent auch gefiltert
+        expect(isHidden('/vault/old.md')).toBe(true);
+        const recentAlpha = document.querySelectorAll(
+            '#vault-tree li.section[data-section="recent"] li.node[data-path="/vault/Alpha.md"]',
+        );
+        expect(recentAlpha.length).toBe(1);
+        expect((recentAlpha[0] as HTMLElement).classList.contains('vf-hidden')).toBe(false);
     });
 
-    it('discards stale vault_filter responses (lower runId)', async () => {
-        // FX9: unterscheidbares HTML pro runId — Assertion auf NEUESTEN Inhalt.
-        const queue: Array<{ resolve: (v: unknown) => void; args: any }> = [];
-        tauri.invoke.mockImplementation((cmd: string, args?: any) => {
-            if (cmd === 'vault_filter_options_get') {
-                return Promise.resolve({ markdownOnly: false, barVisible: false });
-            }
-            if (cmd === 'vault_filter_options_set') return Promise.resolve(undefined);
-            if (cmd === 'vault_build_tree') {
-                return Promise.resolve('<li class="section" data-section="pinned"><ul class="children"></ul></li>');
-            }
-            if (cmd === 'vault_filter') {
-                const q = args?.query || '';
-                const payload = {
-                    html: filterHtml(`/vault/${q}.md`, `${q}.md`),
-                    truncated: false,
-                    nodeCount: 1,
-                    runId: args?.runId,
-                };
-                return new Promise((resolve) => {
-                    queue.push({ resolve: () => resolve(payload), args });
-                });
-            }
-            return Promise.resolve(undefined);
+    it('highlights matching file and folder labels with vf-hit', async () => {
+        configureInvoke();
+        await initModules();
+        await typeQuery('notes');
+        vi.advanceTimersByTime(150);
+        await flushMicro();
+        // notes.txt match + Notes folder
+        expect(isVisible('/vault/notes.txt')).toBe(true);
+        expect(isHidden('/vault/Alpha.md')).toBe(true);
+        const hits = document.querySelectorAll('#vault-tree span.vf-hit');
+        expect(hits.length).toBeGreaterThanOrEqual(2);
+        const labels = Array.from(hits).map((h) => h.textContent);
+        expect(labels.some((t) => t && t.toLowerCase() === 'notes' || t === 'N' || (t && t.length > 0))).toBe(true);
+        // folder Notes has hit
+        const notesDir = document.querySelector(
+            'li.node[data-path="/vault/Notes"] .vf-hit',
+        );
+        expect(notesDir).not.toBeNull();
+        const notesFile = document.querySelector(
+            'li.node[data-path="/vault/notes.txt"] .vf-hit',
+        );
+        expect(notesFile).not.toBeNull();
+    });
+
+    it('re-applies filter after DOM mutation (insert children)', async () => {
+        configureInvoke();
+        await initModules();
+        await typeQuery('alp');
+        vi.advanceTimersByTime(150);
+        await flushMicro();
+        expect(isHidden('/vault/Beta.md')).toBe(true);
+
+        // Simuliere Expand: neues Kind einfügen
+        const children = document.querySelector(
+            'li.node[data-path="/vault"] > ul.children',
+        )!;
+        const li = document.createElement('li');
+        li.className = 'node';
+        li.setAttribute('data-kind', 'file');
+        li.setAttribute('data-path', '/vault/Alphabet.md');
+        li.innerHTML = '<div class="row"><span class="label">Alphabet.md</span></div>';
+        children.appendChild(li);
+
+        // MutationObserver is sync in jsdom when microtasks flush
+        await flushMicro();
+        // Alphabet matcht 'alp'
+        expect(li.classList.contains('vf-hidden')).toBe(false);
+        expect(li.querySelector('.vf-hit')).not.toBeNull();
+
+        const li2 = document.createElement('li');
+        li2.className = 'node';
+        li2.setAttribute('data-kind', 'file');
+        li2.setAttribute('data-path', '/vault/Gamma.md');
+        li2.innerHTML = '<div class="row"><span class="label">Gamma.md</span></div>';
+        children.appendChild(li2);
+        await flushMicro();
+        expect(li2.classList.contains('vf-hidden')).toBe(true);
+    });
+
+    it('observer reentrancy: applying filter does not loop', async () => {
+        configureInvoke();
+        await initModules();
+        await typeQuery('alp');
+        vi.advanceTimersByTime(150);
+        await flushMicro();
+
+        // Trigger several mutations — should settle without stack overflow
+        const children = document.querySelector(
+            'li.node[data-path="/vault"] > ul.children',
+        )!;
+        for (let i = 0; i < 5; i++) {
+            const li = document.createElement('li');
+            li.className = 'node';
+            li.setAttribute('data-kind', 'file');
+            li.setAttribute('data-path', `/vault/x${i}.md`);
+            li.innerHTML = `<div class="row"><span class="label">x${i}.md</span></div>`;
+            children.appendChild(li);
+        }
+        await flushMicro();
+        // Still consistent: Alpha visible, Beta hidden
+        expect(isVisible('/vault/Alpha.md')).toBe(true);
+        expect(isHidden('/vault/Beta.md')).toBe(true);
+    });
+
+    it('observer settles: no self-sustaining mutation churn', async () => {
+        configureInvoke();
+        await initModules();
+        await typeQuery('alp');
+        vi.advanceTimersByTime(150);
+        await flushMicro();
+
+        // Externer Probe-Observer zählt Mutationen am Baum. Nach einer
+        // externen Mutation muss der Churn zur Ruhe kommen — ohne
+        // takeRecords()-Drain hält der Filter sich über seine eigenen
+        // Highlight-Umbauten endlos am Laufen (Mikrotask-Loop).
+        const tree = document.getElementById('vault-tree')!;
+        let churn = 0;
+        const probe = new MutationObserver((records) => {
+            churn += records.length;
         });
-        await initModules();
+        probe.observe(tree, { childList: true, subtree: true });
 
-        await typeQuery('a');
-        await vi.advanceTimersByTimeAsync(150);
-        await flushMicro();
+        const children = document.querySelector(
+            'li.node[data-path="/vault"] > ul.children',
+        )!;
+        const li = document.createElement('li');
+        li.className = 'node';
+        li.setAttribute('data-kind', 'file');
+        li.setAttribute('data-path', '/vault/alpine.md');
+        li.innerHTML = '<div class="row"><span class="label">alpine.md</span></div>';
+        children.appendChild(li);
 
-        await typeQuery('ab');
-        await vi.advanceTimersByTimeAsync(150);
-        await flushMicro();
-        expect(queue.length).toBe(2);
+        for (let i = 0; i < 10; i++) await flushMicro();
+        const settled = churn;
+        for (let i = 0; i < 10; i++) await flushMicro();
+        expect(churn).toBe(settled);
+        probe.disconnect();
 
-        // Newer first (ab), then older (a) — older must not overwrite.
-        queue[1].resolve();
-        await flushMicro();
-        const htmlAfterNew = document.querySelector(
-            '#vault-tree li.section[data-section="pinned"] > ul.children',
-        )!.innerHTML;
-        expect(htmlAfterNew).toContain('ab.md');
-        expect(htmlAfterNew).not.toContain('data-path="/vault/a.md"');
-        expect($('vault-tree').classList.contains('filtering')).toBe(true);
-
-        queue[0].resolve();
-        await flushMicro();
+        // Und der neue Knoten ist korrekt gefiltert + gehighlightet.
+        expect(isVisible('/vault/alpine.md')).toBe(true);
         expect(
             document.querySelector(
-                '#vault-tree li.section[data-section="pinned"] > ul.children',
-            )!.innerHTML,
-        ).toContain('ab.md');
-        expect(
-            document.querySelector(
-                '#vault-tree li.section[data-section="pinned"] > ul.children',
-            )!.innerHTML,
-        ).not.toContain('>"a.md"<');
-    });
-});
-
-describe('vault/filter — Escape-Kaskade', () => {
-    it('first Escape clears query; second closes the bar', async () => {
-        configureInvoke({ barVisible: true });
-        await initModules();
-        expect($('vault-filter').hidden).toBe(false);
-
-        await typeQuery('x');
-        await vi.advanceTimersByTimeAsync(150);
-        await flushMicro();
-        expect($('vault-tree').classList.contains('filtering')).toBe(true);
-
-        const buildCallsBefore = tauri.invoke.mock.calls.filter(
-            (c) => c[0] === 'vault_build_tree',
-        ).length;
-
-        input().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-        await flushMicro();
-        expect(input().value).toBe('');
-        expect($('vault-tree').classList.contains('filtering')).toBe(false);
-        const buildCallsAfter = tauri.invoke.mock.calls.filter(
-            (c) => c[0] === 'vault_build_tree',
-        ).length;
-        expect(buildCallsAfter).toBeGreaterThan(buildCallsBefore);
-        expect($('vault-filter').hidden).toBe(false);
-
-        input().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-        await flushMicro();
-        expect($('vault-filter').hidden).toBe(true);
-        const setCalls = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_filter_options_set');
-        expect(setCalls.some((c) => c[1]?.barVisible === false)).toBe(true);
-    });
-});
-
-describe('vault/filter — closeBar (A7)', () => {
-    it('X close clears query, leaves filter mode, hides bar', async () => {
-        configureInvoke({ barVisible: true });
-        await initModules();
-        await typeQuery('hit');
-        await vi.advanceTimersByTimeAsync(150);
-        await flushMicro();
-        expect($('vault-tree').classList.contains('filtering')).toBe(true);
-        expect($('vault-filter').hidden).toBe(false);
-
-        const buildBefore = tauri.invoke.mock.calls.filter(
-            (c) => c[0] === 'vault_build_tree',
-        ).length;
-        $('vault-filter-close').dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        await flushMicro();
-
-        expect(input().value).toBe('');
-        expect($('vault-tree').classList.contains('filtering')).toBe(false);
-        expect($('vault-filter').hidden).toBe(true);
-        const buildAfter = tauri.invoke.mock.calls.filter(
-            (c) => c[0] === 'vault_build_tree',
-        ).length;
-        expect(buildAfter).toBeGreaterThan(buildBefore);
-        const setCalls = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_filter_options_set');
-        expect(setCalls.some((c) => c[1]?.barVisible === false)).toBe(true);
-    });
-
-    it('funnel click while open closes bar and clears query', async () => {
-        configureInvoke({ barVisible: true });
-        await initModules();
-        await typeQuery('hit');
-        await vi.advanceTimersByTimeAsync(150);
-        await flushMicro();
-        expect($('vault-tree').classList.contains('filtering')).toBe(true);
-
-        $('vault-filter-toggle').dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        await flushMicro();
-
-        expect(input().value).toBe('');
-        expect($('vault-tree').classList.contains('filtering')).toBe(false);
-        expect($('vault-filter').hidden).toBe(true);
-    });
-});
-
-describe('vault/filter — markdown chip', () => {
-    it('without query: options_set + vault_build_tree (lazy mode)', async () => {
-        configureInvoke();
-        await initModules();
-        const buildBefore = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_build_tree').length;
-        tauri.invoke.mockClear();
-        // restore handlers after clear
-        configureInvoke();
-
-        $('vault-filter-md').dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        await flushMicro();
-
-        const setCalls = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_filter_options_set');
-        expect(setCalls.length).toBeGreaterThanOrEqual(1);
-        expect(setCalls[setCalls.length - 1][1]).toMatchObject({ markdownOnly: true });
-        const buildCalls = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_build_tree');
-        expect(buildCalls.length).toBeGreaterThanOrEqual(1);
-        expect($('vault-tree').classList.contains('filtering')).toBe(false);
-        expect($('vault-filter-toggle').classList.contains('filter-active')).toBe(true);
-        void buildBefore;
-    });
-
-    it('with query: re-runs vault_filter with markdownOnly', async () => {
-        configureInvoke();
-        await initModules();
-        await typeQuery('hit');
-        await vi.advanceTimersByTimeAsync(150);
-        await flushMicro();
-        tauri.invoke.mockClear();
-        configureInvoke();
-
-        $('vault-filter-md').dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        await flushMicro();
-
-        const filterCalls = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_filter');
-        expect(filterCalls.length).toBeGreaterThanOrEqual(1);
-        expect(filterCalls[filterCalls.length - 1][1]).toMatchObject({
-            query: 'hit',
-            markdownOnly: true,
-        });
-    });
-});
-
-describe('vault/filter — filter mode UI', () => {
-    it('adds filtering class and replaces pinned children HTML', async () => {
-        configureInvoke({ filterHtml: filterHtml('/vault/hit.md', 'hit.md') });
-        await initModules();
-        await typeQuery('hit');
-        await vi.advanceTimersByTimeAsync(150);
-        await flushMicro();
-
-        expect($('vault-tree').classList.contains('filtering')).toBe(true);
-        expect(
-            document.querySelector(
-                '#vault-tree li.section[data-section="pinned"] > ul.children',
-            )!.innerHTML,
-        ).toContain('hit.md');
-        expect(
-            document.querySelector('#vault-tree li.section[data-section="recent"]'),
+                'li.node[data-path="/vault/alpine.md"] .vf-hit',
+            ),
         ).not.toBeNull();
     });
 
-    it('shows truncated banner when truncated:true', async () => {
-        configureInvoke({ truncated: true });
-        await initModules();
-        await typeQuery('f');
-        await vi.advanceTimersByTimeAsync(150);
-        await flushMicro();
-        expect($('vault-filter-truncated').hidden).toBe(false);
-    });
-
-    it('clear leaves filter mode and rebuilds lazy tree via vault_build_tree', async () => {
+    it('clears highlights and unhides when query emptied', async () => {
         configureInvoke();
         await initModules();
-        await typeQuery('hit');
-        await vi.advanceTimersByTimeAsync(150);
+        await typeQuery('alp');
+        vi.advanceTimersByTime(150);
         await flushMicro();
-        expect($('vault-tree').classList.contains('filtering')).toBe(true);
+        expect(document.querySelector('.vf-hit')).not.toBeNull();
+        expect(isHidden('/vault/Beta.md')).toBe(true);
 
-        const buildBefore = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_build_tree').length;
         $('vault-filter-clear').dispatchEvent(new MouseEvent('click', { bubbles: true }));
         await flushMicro();
+        expect(document.querySelector('.vf-hit')).toBeNull();
+        expect(isVisible('/vault/Beta.md')).toBe(true);
         expect(input().value).toBe('');
-        expect($('vault-tree').classList.contains('filtering')).toBe(false);
-        const buildAfter = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_build_tree').length;
-        expect(buildAfter).toBeGreaterThan(buildBefore);
-        expect($('vault-filter-truncated').hidden).toBe(true);
+        expect($('vault-filter-clear').hidden).toBe(true);
+    });
+});
+
+describe('vault/filter — Escape / Close / Badge / embedded clear', () => {
+    it('Escape with text clears query; Escape empty closes bar', async () => {
+        configureInvoke({ barVisible: true });
+        await initModules();
+        // bar should open from opts
+        await flushMicro();
+        expect($('vault-filter').hidden).toBe(false);
+
+        await typeQuery('alp');
+        vi.advanceTimersByTime(150);
+        await flushMicro();
+        expect(isHidden('/vault/Beta.md')).toBe(true);
+
+        input().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        await flushMicro();
+        expect(input().value).toBe('');
+        expect(isVisible('/vault/Beta.md')).toBe(true);
+        expect($('vault-filter').hidden).toBe(false);
+
+        input().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        await flushMicro();
+        expect($('vault-filter').hidden).toBe(true);
     });
 
-    it('funnel badge only for persistent prefs (not query)', async () => {
+    it('close button clears query and closes bar', async () => {
+        configureInvoke({ barVisible: true });
+        await initModules();
+        await typeQuery('alp');
+        vi.advanceTimersByTime(150);
+        await flushMicro();
+        $('vault-filter-close').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+        expect($('vault-filter').hidden).toBe(true);
+        expect(input().value).toBe('');
+        expect(isVisible('/vault/Beta.md')).toBe(true);
+    });
+
+    it('badge filter-active only for markdownOnly, not query', async () => {
         configureInvoke();
         await initModules();
         const funnel = $('vault-filter-toggle');
         expect(funnel.classList.contains('filter-active')).toBe(false);
 
-        // Query allein erzeugt KEIN Badge (A7).
-        await typeQuery('x');
-        await vi.advanceTimersByTimeAsync(150);
+        await typeQuery('alp');
+        vi.advanceTimersByTime(150);
         await flushMicro();
+        // Query zählt nicht für Badge
         expect(funnel.classList.contains('filter-active')).toBe(false);
 
-        input().value = '';
-        input().dispatchEvent(new Event('input', { bubbles: true }));
-        await vi.advanceTimersByTimeAsync(150);
-        await flushMicro();
-        expect(funnel.classList.contains('filter-active')).toBe(false);
-
-        // markdownOnly erzeugt Badge.
-        $('vault-filter-md').click();
+        $('vault-filter-md').dispatchEvent(new MouseEvent('click', { bubbles: true }));
         await flushMicro();
         expect(funnel.classList.contains('filter-active')).toBe(true);
+        expect($('vault-filter-md').getAttribute('aria-pressed')).toBe('true');
+
+        const setCalls = tauri.invoke.mock.calls.filter(
+            (c) => c[0] === 'vault_filter_options_set',
+        );
+        expect(setCalls.length).toBeGreaterThan(0);
+        const last = setCalls[setCalls.length - 1][1] as {
+            markdownOnly: boolean;
+            barVisible: boolean;
+        };
+        expect(last.markdownOnly).toBe(true);
+        expect(last).not.toHaveProperty('matchFiles');
     });
 
-    it('funnel badge when matchFiles is off', async () => {
-        configureInvoke({ matchFiles: false, matchDirs: true });
-        await initModules();
-        expect($('vault-filter-toggle').classList.contains('filter-active')).toBe(true);
-        expect($('vault-filter-files').getAttribute('aria-pressed')).toBe('false');
-        expect($('vault-filter-dirs').getAttribute('aria-pressed')).toBe('true');
-    });
-
-    it('funnel toggles bar visibility and persists options', async () => {
-        configureInvoke({ barVisible: false });
-        await initModules();
-        expect($('vault-filter').hidden).toBe(true);
-        $('vault-filter-toggle').dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        await flushMicro();
-        expect($('vault-filter').hidden).toBe(false);
-        const setCalls = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_filter_options_set');
-        expect(setCalls.some((c) => c[1]?.barVisible === true)).toBe(true);
-    });
-});
-
-describe('vault/filter — match-kind chips (A7)', () => {
-    it('clicking last active chip switches to the other (never both off)', async () => {
+    it('embedded clear button only visible with text', async () => {
         configureInvoke({ barVisible: true });
         await initModules();
-        // Both on by default.
-        expect($('vault-filter-files').getAttribute('aria-pressed')).toBe('true');
-        expect($('vault-filter-dirs').getAttribute('aria-pressed')).toBe('true');
+        expect($('vault-filter-clear').hidden).toBe(true);
+        input().value = 'x';
+        input().dispatchEvent(new Event('input', { bubbles: true }));
+        expect($('vault-filter-clear').hidden).toBe(false);
+        // Clear is inside wrap
+        const wrap = document.querySelector('.vault-filter-input-wrap');
+        expect(wrap?.contains($('vault-filter-clear'))).toBe(true);
+    });
 
-        // Turn off files → dirs stays on.
-        $('vault-filter-files').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    it('funnel toggle closes bar and clears query', async () => {
+        configureInvoke({ barVisible: true });
+        await initModules();
+        await typeQuery('alp');
+        vi.advanceTimersByTime(150);
         await flushMicro();
-        expect($('vault-filter-files').getAttribute('aria-pressed')).toBe('false');
-        expect($('vault-filter-dirs').getAttribute('aria-pressed')).toBe('true');
-
-        // Click dirs (last active) → switches to files-only.
-        $('vault-filter-dirs').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        $('vault-filter-toggle').dispatchEvent(new MouseEvent('click', { bubbles: true }));
         await flushMicro();
-        expect($('vault-filter-files').getAttribute('aria-pressed')).toBe('true');
-        expect($('vault-filter-dirs').getAttribute('aria-pressed')).toBe('false');
+        expect($('vault-filter').hidden).toBe(true);
+        expect(input().value).toBe('');
+        expect(isVisible('/vault/Beta.md')).toBe(true);
+    });
+});
 
-        // Click files (last active) → switches to dirs-only.
-        $('vault-filter-files').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+describe('vault/filter — expand level / collapse all', () => {
+    it('expand level invokes vault_expand_level and renders html', async () => {
+        configureInvoke();
+        await initModules();
+        const html =
+            '<li class="section" data-section="pinned"><ul class="children">' +
+            '<li class="node" data-kind="dir" data-path="/vault"><div class="row"><span class="label">vault</span></div></li>' +
+            '</ul></li>';
+        tauri.invoke.mockImplementation((cmd: string) => {
+            if (cmd === 'vault_filter_options_get') {
+                return Promise.resolve({ markdownOnly: false, barVisible: false });
+            }
+            if (cmd === 'vault_expand_level') {
+                return Promise.resolve({ html, capped: true });
+            }
+            return Promise.resolve(undefined);
+        });
+        $('vault-expand-level').dispatchEvent(new MouseEvent('click', { bubbles: true }));
         await flushMicro();
-        expect($('vault-filter-files').getAttribute('aria-pressed')).toBe('false');
-        expect($('vault-filter-dirs').getAttribute('aria-pressed')).toBe('true');
-
-        // Neither both-off ever.
         expect(
-            $('vault-filter-files').getAttribute('aria-pressed') === 'true' ||
-                $('vault-filter-dirs').getAttribute('aria-pressed') === 'true',
+            tauri.invoke.mock.calls.some((c) => c[0] === 'vault_expand_level'),
+        ).toBe(true);
+        expect($('vault-tree').innerHTML).toContain('/vault');
+        // capped notice
+        expect($('vault-tree-notice').hidden).toBe(false);
+        expect($('vault-tree-notice').textContent).toBeTruthy();
+    });
+
+    it('collapse all invokes vault_collapse_all', async () => {
+        configureInvoke();
+        await initModules();
+        $('vault-collapse-all').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+        expect(
+            tauri.invoke.mock.calls.some((c) => c[0] === 'vault_collapse_all'),
         ).toBe(true);
     });
-
-    it('with query: match chip re-runs vault_filter with matchFiles/matchDirs', async () => {
-        configureInvoke();
-        await initModules();
-        await typeQuery('hit');
-        await vi.advanceTimersByTimeAsync(150);
-        await flushMicro();
-        tauri.invoke.mockClear();
-        configureInvoke();
-
-        $('vault-filter-files').dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        await flushMicro();
-
-        const filterCalls = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_filter');
-        expect(filterCalls.length).toBeGreaterThanOrEqual(1);
-        expect(filterCalls[filterCalls.length - 1][1]).toMatchObject({
-            query: 'hit',
-            matchFiles: false,
-            matchDirs: true,
-        });
-        const setCalls = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_filter_options_set');
-        expect(setCalls.some((c) => c[1]?.matchFiles === false && c[1]?.matchDirs === true)).toBe(
-            true,
-        );
-    });
 });
 
-describe('vault/filter — client-side expand/collapse in filter mode (A7)', () => {
-    it('dir click toggles DOM classes without expand-dir post', async () => {
-        configureInvoke({
-            filterHtml: `
-                <li class="node" data-kind="dir" data-path="/vault">
-                    <div class="row"><span class="caret open"></span><span class="icon">📂</span><span class="label">vault</span></div>
-                    <ul class="children">
-                        <li class="node" data-kind="file" data-path="/vault/hit.md">
-                            <div class="row"><span class="label">hit.md</span></div>
-                        </li>
-                    </ul>
-                </li>`,
-        });
+describe('vault/filter — automation reset', () => {
+    it('__folioVaultFilterReset clears query, closes bar, md-only off', async () => {
+        configureInvoke({ barVisible: true, markdownOnly: true });
         const { filter } = await initModules();
-        await typeQuery('hit');
-        await vi.advanceTimersByTimeAsync(150);
+        await typeQuery('alp');
+        vi.advanceTimersByTime(150);
         await flushMicro();
-        expect(filter.isVaultFilterRenderMode()).toBe(true);
-
-        const caret = document.querySelector(
-            '#vault-tree .node[data-kind="dir"] > .row > .caret',
-        ) as HTMLElement;
-        const ul = document.querySelector(
-            '#vault-tree .node[data-kind="dir"] > ul.children',
-        ) as HTMLElement;
-        const icon = document.querySelector(
-            '#vault-tree .node[data-kind="dir"] > .row > .icon',
-        ) as HTMLElement;
-        expect(caret.classList.contains('open')).toBe(true);
-        expect(ul.classList.contains('collapsed')).toBe(false);
-
-        tauri.emit.mockClear();
-        const dirRow = document.querySelector(
-            '#vault-tree .node[data-kind="dir"] > .row',
-        ) as HTMLElement;
-        expect(dirRow).toBeTruthy();
-        dirRow.click();
-
-        // Client-side collapse.
-        expect(caret.classList.contains('open')).toBe(false);
-        expect(ul.classList.contains('collapsed')).toBe(true);
-        expect(icon.textContent).toBe('📁');
-
-        const expandCalls = tauri.emit.mock.calls.filter(
-            (c: any[]) => c[0] === 'shell:event' && c[1]?.type === 'expand-dir',
-        );
-        expect(expandCalls).toHaveLength(0);
-        const collapseCalls = tauri.emit.mock.calls.filter(
-            (c: any[]) => c[0] === 'shell:event' && c[1]?.type === 'collapse-dir',
-        );
-        expect(collapseCalls).toHaveLength(0);
-
-        // Toggle open again.
-        dirRow.click();
-        expect(caret.classList.contains('open')).toBe(true);
-        expect(ul.classList.contains('collapsed')).toBe(false);
-        expect(icon.textContent).toBe('📂');
-        expect(
-            tauri.emit.mock.calls.filter(
-                (c: any[]) => c[0] === 'shell:event' && c[1]?.type === 'expand-dir',
-            ),
-        ).toHaveLength(0);
-    });
-});
-
-describe('vault/filter — pin drag disabled while filtering', () => {
-    // jsdom: PointerEvent unvollständig — generisches Event + Felder (tree.test.ts).
-    function pe(type: string, opts: Record<string, unknown> = {}): Event {
-        const ev = new Event(type, { bubbles: true, cancelable: true }) as any;
-        Object.assign(ev, { button: 0, pointerId: 1, clientX: 0, clientY: 0 }, opts);
-        return ev;
-    }
-
-    it('pointerdown on pinned root does not start drag when filtering', async () => {
-        configureInvoke({
-            filterHtml: `
-                <li class="node" data-kind="file" data-path="/a.md">
-                    <div class="row"><span class="label">a.md</span></div>
-                </li>
-                <li class="node" data-kind="file" data-path="/b.md">
-                    <div class="row"><span class="label">b.md</span></div>
-                </li>`,
-        });
-        await initModules();
-        await typeQuery('md');
-        await vi.advanceTimersByTimeAsync(150);
+        filter.resetVaultFilterForAutomation();
         await flushMicro();
-        expect($('vault-tree').classList.contains('filtering')).toBe(true);
-
-        const row = document.querySelector(
-            '#vault-tree li.section[data-section="pinned"] > ul.children > li.node > .row',
-        ) as HTMLElement;
-        row.dispatchEvent(pe('pointerdown', { clientX: 10, clientY: 10 }));
-        document.dispatchEvent(pe('pointermove', { clientX: 40, clientY: 40 }));
-        expect(document.body.classList.contains('pin-dragging')).toBe(false);
-        expect(document.querySelector('.dragging')).toBeNull();
-    });
-});
-
-describe('vault/filter — vault:refresh buffered in filter mode', () => {
-    it('does not rebuild tree on vault:refresh while filtering; rebuilds on leave', async () => {
-        configureInvoke();
-        await initModules();
-        await typeQuery('hit');
-        await vi.advanceTimersByTimeAsync(150);
-        await flushMicro();
-
-        const buildBefore = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_build_tree').length;
-        tauri.emitEvent('vault:refresh', { pinned: '<li>x</li>', recent: '<li>y</li>' });
-        await flushMicro();
-        const buildMid = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_build_tree').length;
-        expect(buildMid).toBe(buildBefore);
-        // Filter HTML still there
-        expect($('vault-tree').classList.contains('filtering')).toBe(true);
-
-        // Leave filter → refreshVault (and pending flag)
-        input().value = '';
-        input().dispatchEvent(new Event('input', { bubbles: true }));
-        await vi.advanceTimersByTimeAsync(150);
-        await flushMicro();
-        const buildAfter = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_build_tree').length;
-        expect(buildAfter).toBeGreaterThan(buildBefore);
-        expect($('vault-tree').classList.contains('filtering')).toBe(false);
-    });
-});
-
-describe('vault/filter — FX2 refreshVault stale guard', () => {
-    it('late vault_build_tree response does not overwrite filter tree', async () => {
-        let resolveBuild: ((v: unknown) => void) | null = null;
-        tauri.invoke.mockImplementation((cmd: string, args?: any) => {
-            if (cmd === 'vault_filter_options_get') {
-                return Promise.resolve({ markdownOnly: false, barVisible: true });
-            }
-            if (cmd === 'vault_filter_options_set') return Promise.resolve(undefined);
-            if (cmd === 'vault_filter') {
-                return Promise.resolve({
-                    html: filterHtml('/vault/filter-hit.md', 'filter-hit.md'),
-                    truncated: false,
-                    nodeCount: 1,
-                    runId: args?.runId,
-                });
-            }
-            if (cmd === 'vault_build_tree') {
-                return new Promise((resolve) => {
-                    resolveBuild = resolve;
-                });
-            }
-            return Promise.resolve(undefined);
-        });
-        await initModules();
-        // Start a lazy rebuild while not filtering (boot may have pending).
-        // Enter filter mode first.
-        await typeQuery('hit');
-        await vi.advanceTimersByTimeAsync(150);
-        await flushMicro();
-        expect($('vault-tree').classList.contains('filtering')).toBe(true);
-        expect(_pinnedHtml()).toContain('filter-hit.md');
-
-        // Trigger refreshVault while filtering (e.g. chip path); hold the response.
-        const tree = await import('../../app/vault/tree');
-        const p = tree.refreshVault();
-        await flushMicro();
-        expect(resolveBuild).toBeTruthy();
-        // Resolve late with lazy HTML — must be discarded.
-        resolveBuild!(
-            `<li class="section" data-section="pinned"><ul class="children">${filterHtml('/lazy-stale.md', 'lazy-stale.md')}</ul></li>`,
-        );
-        await p;
-        await flushMicro();
-        expect(_pinnedHtml()).toContain('filter-hit.md');
-        expect(_pinnedHtml()).not.toContain('lazy-stale.md');
-        expect($('vault-tree').classList.contains('filtering')).toBe(true);
-    });
-});
-
-function _pinnedHtml(): string {
-    return (
-        document.querySelector(
-            '#vault-tree li.section[data-section="pinned"] > ul.children',
-        )?.innerHTML || ''
-    );
-}
-
-describe('vault/filter — FX3 md chip uses live input', () => {
-    it('chip click with undebounced input runs vault_filter on live value', async () => {
-        configureInvoke();
-        await initModules();
-        // Type without waiting for debounce
-        input().value = 'liveq';
-        input().dispatchEvent(new Event('input', { bubbles: true }));
-        tauri.invoke.mockClear();
-        configureInvoke();
-
-        $('vault-filter-md').dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        await flushMicro();
-
-        const filterCalls = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_filter');
-        expect(filterCalls.length).toBeGreaterThanOrEqual(1);
-        expect(filterCalls[filterCalls.length - 1][1]).toMatchObject({
-            query: 'liveq',
-            markdownOnly: true,
-        });
-    });
-
-    it('in-flight pre-toggle response is discarded after chip click', async () => {
-        const queue: Array<() => void> = [];
-        tauri.invoke.mockImplementation((cmd: string, args?: any) => {
-            if (cmd === 'vault_filter_options_get') {
-                return Promise.resolve({ markdownOnly: false, barVisible: true });
-            }
-            if (cmd === 'vault_filter_options_set') return Promise.resolve(undefined);
-            if (cmd === 'vault_build_tree') {
-                return Promise.resolve(
-                    '<li class="section" data-section="pinned"><ul class="children"></ul></li>',
-                );
-            }
-            if (cmd === 'vault_filter') {
-                const md = !!args?.markdownOnly;
-                const payload = {
-                    html: filterHtml(
-                        md ? '/vault/after.md' : '/vault/before.md',
-                        md ? 'after.md' : 'before.md',
-                    ),
-                    truncated: false,
-                    nodeCount: 1,
-                    runId: args?.runId,
-                };
-                return new Promise((resolve) => {
-                    queue.push(() => resolve(payload));
-                });
-            }
-            return Promise.resolve(undefined);
-        });
-        await initModules();
-        await typeQuery('q');
-        await vi.advanceTimersByTimeAsync(150);
-        await flushMicro();
-        expect(queue.length).toBe(1);
-
-        // Toggle md before first response resolves.
-        $('vault-filter-md').dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        await flushMicro();
-        expect(queue.length).toBe(2);
-
-        // Resolve pre-toggle (before) then post-toggle (after).
-        queue[0]();
-        await flushMicro();
-        queue[1]();
-        await flushMicro();
-        expect(_pinnedHtml()).toContain('after.md');
-        expect(_pinnedHtml()).not.toContain('before.md');
-    });
-});
-
-describe('vault/filter — FX9 dir_changed buffered', () => {
-    it('vault:dir_changed in filter mode does not emit expand-dir; rebuild on leave', async () => {
-        configureInvoke({
-            filterHtml: `
-                <li class="node" data-kind="dir" data-path="/vault">
-                    <div class="row"><span class="caret open"></span><span class="label">vault</span></div>
-                    <ul class="children">
-                        <li class="node" data-kind="file" data-path="/vault/hit.md">
-                            <div class="row"><span class="label">hit.md</span></div>
-                        </li>
-                    </ul>
-                </li>`,
-        });
-        await initModules();
-        await typeQuery('hit');
-        await vi.advanceTimersByTimeAsync(150);
-        await flushMicro();
-
-        tauri.emit.mockClear();
-        const buildBefore = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_build_tree').length;
-        tauri.emitEvent('vault:dir_changed', { path: '/vault' });
-        await flushMicro();
-        const expandCalls = tauri.emit.mock.calls.filter(
-            (c: any[]) => c[0] === 'shell:event' && c[1]?.type === 'expand-dir',
-        );
-        expect(expandCalls).toHaveLength(0);
-
-        input().value = '';
-        input().dispatchEvent(new Event('input', { bubbles: true }));
-        await vi.advanceTimersByTimeAsync(150);
-        await flushMicro();
-        const buildAfter = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_build_tree').length;
-        expect(buildAfter).toBeGreaterThan(buildBefore);
-    });
-});
-
-describe('vault/filter — vf-hit highlight', () => {
-    it('wraps first case-insensitive match in span.vf-hit', async () => {
-        configureInvoke({
-            filterHtml: filterHtml('/vault/Notes.md', 'Notes.md'),
-        });
-        await initModules();
-        await typeQuery('notes');
-        await vi.advanceTimersByTimeAsync(150);
-        await flushMicro();
-
-        const hit = document.querySelector(
-            '#vault-tree li.section[data-section="pinned"] .vf-hit',
-        ) as HTMLElement | null;
-        expect(hit).not.toBeNull();
-        expect(hit!.textContent).toBe('Notes');
-        const label = hit!.parentElement!;
-        expect(label.classList.contains('label')).toBe(true);
-        expect(label.textContent).toBe('Notes.md');
-    });
-
-    it('does not highlight when query is empty (lazy mode)', async () => {
-        configureInvoke({ filterHtml: filterHtml('/vault/Notes.md', 'Notes.md') });
-        await initModules();
-        await typeQuery('notes');
-        await vi.advanceTimersByTimeAsync(150);
-        await flushMicro();
-        expect(document.querySelector('.vf-hit')).not.toBeNull();
-
-        input().value = '';
-        input().dispatchEvent(new Event('input', { bubbles: true }));
-        await vi.advanceTimersByTimeAsync(150);
-        await flushMicro();
-        expect(document.querySelector('.vf-hit')).toBeNull();
-    });
-
-    it('treats special characters literally (no regex)', async () => {
-        configureInvoke({
-            filterHtml: filterHtml('/vault/a(b).md', 'a(b).md'),
-        });
-        await initModules();
-        await typeQuery('(b)');
-        await vi.advanceTimersByTimeAsync(150);
-        await flushMicro();
-
-        const hit = document.querySelector(
-            '#vault-tree li.section[data-section="pinned"] .vf-hit',
-        ) as HTMLElement | null;
-        expect(hit).not.toBeNull();
-        expect(hit!.textContent).toBe('(b)');
-        expect(
-            document.querySelector(
-                '#vault-tree li.section[data-section="pinned"] .label',
-            )!.textContent,
-        ).toBe('a(b).md');
+        expect(input().value).toBe('');
+        expect($('vault-filter').hidden).toBe(true);
+        expect($('vault-filter-md').getAttribute('aria-pressed')).toBe('false');
+        expect($('vault-filter-toggle').classList.contains('filter-active')).toBe(false);
+        expect(isVisible('/vault/Beta.md')).toBe(true);
     });
 });

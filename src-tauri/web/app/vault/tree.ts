@@ -12,10 +12,6 @@
    pinned/recent zuerst (sync DOM-Patches), dann refreshVault async. */
 
 import { openContextMenu, closeContextMenu, runOrOpenFile } from './context-menu';
-import {
-    isVaultFilterRenderMode,
-    markVaultFilterRefreshPending,
-} from './filter';
 import { folioLog, safeInvoke } from '../util/log';
 import { t } from '../i18n/translate';
 
@@ -256,14 +252,13 @@ function renderVault(html: string): void {
     reapplyActiveMarker();
 }
 
+/** Ersetzt den gesamten Vault-Baum (z. B. nach expand_level/collapse_all). */
+export function renderVaultFromHtml(html: string): void {
+    renderVault(html);
+}
+
 export function refreshVault(): Promise<void> {
     return invoke('vault_build_tree').then(function (html) {
-        // FX2: späte Lazy-Antwort darf den Filter-Render-Baum nicht
-        // überschreiben — verwerfen und Refresh fürs Verlassen merken.
-        if (isVaultFilterRenderMode()) {
-            markVaultFilterRefreshPending();
-            return;
-        }
         renderVault(html);
     }).catch(function (err) {
         folioLog.warn('vault', 'vault_build_tree failed', { error: String(err) });
@@ -324,18 +319,6 @@ export function initVaultTree(d: Deps): void {
         if (node) {
             const kind = node.getAttribute('data-kind');
             if (kind === 'dir') {
-                // Filter-Render-Modus (A7): rein clientseitiges Toggling —
-                // kein expand-dir/collapse-dir-Post, expanded_dirs unberührt.
-                if (isVaultFilterRenderMode()) {
-                    const caret = node.querySelector(':scope > .row > .caret');
-                    const ul = node.querySelector(':scope > ul.children');
-                    const iconEl = node.querySelector(':scope > .row > .icon');
-                    const wasOpen = !!(caret && caret.classList.contains('open'));
-                    if (caret) caret.classList.toggle('open');
-                    if (ul) ul.classList.toggle('collapsed');
-                    if (iconEl) iconEl.textContent = wasOpen ? '📁' : '📂';
-                    return;
-                }
                 toggleDir(node);
                 return;
             }
@@ -510,8 +493,6 @@ export function initVaultTree(d: Deps): void {
     ROOT.addEventListener('pointerdown', function (e: PointerEvent) {
         if (e.button !== 0) return;
         suppressNextClick = false;
-        // Gefilterte Ansicht ist keine Reorder-Basis (Spec F2).
-        if (ROOT.classList.contains('filtering') || isVaultFilterRenderMode()) return;
         const item = getDirectPinnedItem(e.target as HTMLElement);
         if (!item || !item.getAttribute('data-path')) return;
         // Drag nur ueber die EIGENE Zeile des Root-Items starten — nicht aus
@@ -598,17 +579,6 @@ export function initVaultTree(d: Deps): void {
     // async vault_build_tree-Roundtrip), dann refreshVault async.
     window.__TAURI__.event.listen('vault:refresh', function (event) {
         const data = (event && event.payload) || {};
-        // Filter-Render-Modus: Filterbaum nicht überschreiben; Refresh
-        // beim Verlassen nachziehen (Spec F2). Automation-Ack trotzdem.
-        if (isVaultFilterRenderMode()) {
-            markVaultFilterRefreshPending();
-            if (typeof data.requestId === 'number') {
-                requestAnimationFrame(function () {
-                    invoke('automation_ack', { id: data.requestId }).catch(function () {});
-                });
-            }
-            return;
-        }
         if (data.pinned) setVaultPinned(data.pinned);
         if (data.recent) setVaultRecent(data.recent);
         refreshVault().then(function () {
@@ -628,11 +598,6 @@ export function initVaultTree(d: Deps): void {
     var ev = window.__TAURI__.event;
     if (ev && typeof ev.listen === 'function') {
         ev.listen('vault:dir_changed', function (event: any) {
-            // Filter-Render-Modus: Events puffern, kein expand-dir.
-            if (isVaultFilterRenderMode()) {
-                markVaultFilterRefreshPending();
-                return;
-            }
             var data = (event && event.payload) || {};
             var path = data.path;
             if (!path || typeof path !== 'string') return;

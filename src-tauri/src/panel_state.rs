@@ -72,12 +72,6 @@ pub struct PanelStateData {
     pub vault_filter_markdown_only: bool,
     #[serde(default)]
     pub vault_filter_bar_visible: bool,
-    // Match-Art (A7): dürfen Dateien/Ordner selbst matchen? Default true.
-    // Beide-aus behandelt das Backend fail-open wie beide true.
-    #[serde(default = "default_true")]
-    pub vault_filter_match_files: bool,
-    #[serde(default = "default_true")]
-    pub vault_filter_match_dirs: bool,
 }
 
 fn default_split_mid_percent() -> f64 {
@@ -90,10 +84,6 @@ fn default_search_file_filter() -> String {
 
 fn default_search_sort() -> String {
     "none".to_string()
-}
-
-fn default_true() -> bool {
-    true
 }
 
 impl Default for PanelStateData {
@@ -124,8 +114,6 @@ impl Default for PanelStateData {
             search_sort: default_search_sort(),
             vault_filter_markdown_only: false,
             vault_filter_bar_visible: false,
-            vault_filter_match_files: true,
-            vault_filter_match_dirs: true,
         }
     }
 }
@@ -230,13 +218,9 @@ impl PanelState {
         &mut self,
         markdown_only: bool,
         bar_visible: bool,
-        match_files: bool,
-        match_dirs: bool,
     ) -> io::Result<()> {
         self.data.vault_filter_markdown_only = markdown_only;
         self.data.vault_filter_bar_visible = bar_visible;
-        self.data.vault_filter_match_files = match_files;
-        self.data.vault_filter_match_dirs = match_dirs;
         self.save()
     }
 

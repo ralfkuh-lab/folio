@@ -1,5 +1,4 @@
 use crate::state::AppState;
-use crate::vault_filter::{run_vault_filter, VaultFilterOptions};
 use crate::workspace::Workspace;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
@@ -48,15 +47,19 @@ pub(crate) fn compute_refresh_delta_synced(
 // hatten nur noch einen toten Frontend-Aufrufer. Expand/Collapse laeuft
 // ausschliesslich ueber die shell-Events `expand-dir`/`collapse-dir`
 // (commands/events/vault.rs), die Vault-State und Watcher symmetrisch
-// halten.
+// halten. Bulk-Ops: `vault_expand_level` / `vault_collapse_all`.
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct VaultFilterResponse {
+pub struct VaultExpandLevelResponse {
     pub html: String,
-    pub truncated: bool,
-    pub node_count: usize,
-    pub run_id: u64,
+    pub capped: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultCollapseAllResponse {
+    pub html: String,
 }
 
 #[tauri::command]
@@ -98,40 +101,106 @@ pub async fn vault_build_tree(state: State<'_, AppState>) -> Result<String, Stri
     )
 }
 
-/// Filter-Render-Modus: gestutzter, voll aufgeklappter Pin-Baum.
-/// `runId` wird als Echo zurückgegeben (Frontend-Stale-Guard).
+/// Expandiert alle sichtbaren zugeklappten Ordner um eine Ebene.
+/// Soft-Cap 1000; `capped` signalisiert Abbruch. Watcher non-fatal.
 #[tauri::command]
-pub async fn vault_filter(
-    query: String,
-    markdown_only: bool,
-    match_files: bool,
-    match_dirs: bool,
-    run_id: u64,
+pub async fn vault_expand_level(
     state: State<'_, AppState>,
-) -> Result<VaultFilterResponse, String> {
-    let pinned = state
+) -> Result<VaultExpandLevelResponse, String> {
+    let pin_dirs: Vec<String> = state
         .workspace
         .lock()
         .map_err(|_| "workspace lock poisoned".to_string())?
         .pinned()
-        .to_vec();
-    let vault = state
-        .vault
+        .iter()
+        .filter(|p| p.is_directory)
+        .map(|p| p.path.replace('\\', "/"))
+        .collect();
+    let markdown_only = state
+        .panel_state
         .lock()
-        .map_err(|_| "vault lock poisoned".to_string())?;
-    let opts = VaultFilterOptions {
-        query,
-        markdown_only,
-        match_files,
-        match_dirs,
+        .map_err(|_| "panel state lock poisoned".to_string())?
+        .data()
+        .vault_filter_markdown_only;
+    let (result, html) = {
+        let workspace = state
+            .workspace
+            .lock()
+            .map_err(|_| "workspace lock poisoned".to_string())?;
+        let panel = state
+            .panel_state
+            .lock()
+            .map_err(|_| "panel state lock poisoned".to_string())?
+            .data();
+        let mut vault = state
+            .vault
+            .lock()
+            .map_err(|_| "vault lock poisoned".to_string())?;
+        let result = vault.expand_level(&pin_dirs, markdown_only);
+        vault.set_markdown_only(markdown_only);
+        let html = vault.build_initial_tree_html_with(
+            &workspace,
+            panel.pinned_expanded,
+            panel.recent_expanded,
+        );
+        (result, html)
     };
-    let result = run_vault_filter(&pinned, &vault, &opts);
-    Ok(VaultFilterResponse {
-        html: result.html,
-        truncated: result.truncated,
-        node_count: result.node_count,
-        run_id,
+    // Watcher non-fatal (wie expand-dir).
+    if let Ok(mut watcher) = state.vault_watcher.lock() {
+        for path in &result.paths {
+            if let Err(err) = watcher.watch(path) {
+                tracing::warn!(
+                    target: "folio::vault",
+                    path = %path,
+                    error = %err,
+                    "vault_expand_level: vault_watcher.watch failed"
+                );
+            }
+        }
+    }
+    Ok(VaultExpandLevelResponse {
+        html,
+        capped: result.capped,
     })
+}
+
+/// Klappt alle Pin-Wurzeln zu, deregistriert Watches, rebuildet den Baum.
+#[tauri::command]
+pub async fn vault_collapse_all(
+    state: State<'_, AppState>,
+) -> Result<VaultCollapseAllResponse, String> {
+    let html = {
+        let workspace = state
+            .workspace
+            .lock()
+            .map_err(|_| "workspace lock poisoned".to_string())?;
+        let panel = state
+            .panel_state
+            .lock()
+            .map_err(|_| "panel state lock poisoned".to_string())?
+            .data();
+        let mut vault = state
+            .vault
+            .lock()
+            .map_err(|_| "vault lock poisoned".to_string())?;
+        vault.set_markdown_only(panel.vault_filter_markdown_only);
+        // on_collapse pro Pin-Wurzel (pruned expanded under each pin) + full clear.
+        let pin_dirs: Vec<String> = workspace
+            .pinned()
+            .iter()
+            .filter(|p| p.is_directory)
+            .map(|p| p.path.replace('\\', "/"))
+            .collect();
+        for pin in &pin_dirs {
+            vault.on_collapse(pin);
+        }
+        vault.collapse_all();
+        vault.build_initial_tree_html_with(&workspace, panel.pinned_expanded, panel.recent_expanded)
+    };
+    if let Ok(mut watcher) = state.vault_watcher.lock() {
+        watcher.unwatch_all();
+    }
+    Ok(VaultCollapseAllResponse { html })
 }
 
 #[tauri::command]
@@ -146,8 +215,6 @@ pub async fn vault_filter_options_get(
     Ok(serde_json::json!({
         "markdownOnly": data.vault_filter_markdown_only,
         "barVisible": data.vault_filter_bar_visible,
-        "matchFiles": data.vault_filter_match_files,
-        "matchDirs": data.vault_filter_match_dirs,
     }))
 }
 
@@ -155,15 +222,13 @@ pub async fn vault_filter_options_get(
 pub async fn vault_filter_options_set(
     markdown_only: bool,
     bar_visible: bool,
-    match_files: bool,
-    match_dirs: bool,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     state
         .panel_state
         .lock()
         .map_err(|_| "panel state lock poisoned".to_string())?
-        .set_vault_filter_options(markdown_only, bar_visible, match_files, match_dirs)
+        .set_vault_filter_options(markdown_only, bar_visible)
         .map_err(|error| error.to_string())?;
     // Lazy-Tree-Spiegel: poisoned Vault-Lock ist Fehler (FX4), nicht still.
     state

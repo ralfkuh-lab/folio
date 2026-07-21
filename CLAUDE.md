@@ -247,34 +247,40 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   `search_include_hidden` default aus); Scope + Query flüchtig.
   Automation: `POST /search` (synchron, additive Felder `regex`/`fileFilter`/
   `customExtensions`/`openTabs`/`includeHidden`; alle Client-Fehler → 400).
-- **Vault-Tree-Filter** (`vault_filter.rs` + Frontend `vault/filter.ts`,
-  Funnel-Button im `vault-header` + Filterzeile `#vault-filter`; Spec
-  [`docs/spec-vault-filter.md`](docs/spec-vault-filter.md)): Namensfilter
-  (case-insensitive Substring auf Datei-/Ordnernamen, KEIN Unicode-Case-
-  Folding; Ordner-Match zieht NICHT den Subtree — Kinder bleiben
-  namensgefiltert; Treffer-Hervorhebung `span.vf-hit` clientseitig,
-  Text-Node-sicher) + „nur Markdown"-Toggle + Match-Art-Chips
-  Dateien/Ordner (steuern, was matchen darf; Ahnen von Treffern bleiben;
-  Umschalt-Geste statt beide-aus, Backend fail-open). **UX-Modell
-  (Spec A7): Schließen = Aufräumen** — Zeilen-X/Funnel/Escape leeren die
-  Query und stellen den Lazy-Baum wieder her; Funnel-Badge nur für
-  persistente Präferenzen (md-only, Match-Art). Zwei Modi: md-only ohne
-  Query bleibt im **Lazy-Tree** (`build_dir_children_html` filtert pro
-  Expand; `dir_contains_markdown`-Probe mit Early-Exit, 2k-Visit-Cap
-  fail-open, kein Abstieg in Link-Dirs), auch Pin-Wurzeln werden
-  gefiltert; nichtleere Query schaltet in den **Filter-Render-Modus**
-  (`vault_filter`-Command → gestutzter, voll aufgeklappter Pin-Baum,
-  zweiphasig: Walk-Deckel 50k Einträge, Render-Cap 2k Knoten →
-  `truncated`; `expanded_dirs` bleibt unberührt, Recent-Section per CSS
-  `filtering` ausgeblendet, Expand/Collapse rein clientseitig
-  (DOM-Klassen, kein expand-dir-Post), Pin-Drag inert,
-  `vault:refresh`/`dir_changed` werden gepuffert und beim Verlassen via
-  `refreshVault()` nachgezogen — der seinerseits Filter-Render-stale
-  Antworten verwirft). Der Lazy-Typ-Filter lebt als Spiegel-State
-  `Vault::markdown_only` (Quelle: `panel_state.vault_filter_markdown_only`);
-  JEDER `compute_refresh_delta`-Aufruf läuft über
+- **Vault-Tree-Filter (R3, Sicht-Filter)** (Frontend `vault/filter.ts`,
+  Funnel-Button + Filterzeile `#vault-filter`; Spec
+  [`docs/spec-vault-filter.md`](docs/spec-vault-filter.md) inkl.
+  Revisions-Historie R1→R3): Der Namensfilter ist eine **rein
+  clientseitige Sicht über dem echten Lazy-Baum** — kein Backend-Walk,
+  kein separater Render-Modus (R1/R2-Konzepte entfernt). Datei-Zeilen
+  ohne Match bekommen `vf-hidden`; **Ordner bleiben immer sichtbar**
+  (sie sind der aufklappbare Suchraum); Treffer-Highlight `span.vf-hit`
+  auf Datei- UND Ordner-Labels (Text-Node-sicher); wirkt auf Pinned und
+  Recent. Match: case-insensitive Substring via `toLowerCase`, KEIN
+  Unicode-Case-Folding. Re-Apply nach Baum-Änderungen per
+  MutationObserver auf `#vault-tree` — **`takeRecords()` im finally von
+  `applyClientFilter` ist PFLICHT**: die eigenen Highlight-Umbauten sind
+  childList-Mutationen, der Observer-Callback feuert erst als Microtask
+  nach dem Guard-Reset; ohne Drain entsteht ein Endlos-Loop (Befund
+  Orchestrator-Review 2026-07-21, Churn-Test in
+  `tests/vault/filter.test.ts`). „Schließen = Aufräumen": Zeilen-X
+  (`#vault-filter-close`, immer sichtbar) / Funnel / Escape leeren die
+  Query; Text-Lösch-✕ ist ins Input eingebettet; Funnel-Badge nur bei
+  md-only. **Baum-Operationen im `vault-header`** (filter-unabhängig):
+  `#vault-expand-level` (⊞, Command `vault_expand_level` — expandiert
+  alle sichtbaren zugeklappten Ordner eine Ebene über den
+  `on_expand`-Pfad inkl. Watcher, Soft-Cap 1 000 neue Ordner/Klick →
+  `capped` + transienter Hinweis `#vault-tree-notice`) und
+  `#vault-collapse-all` (⊟, Command `vault_collapse_all`).
+  **„Nur Markdown"-Toggle** bleibt Backend-Lazy:
+  `build_dir_children_html` filtert pro Expand (inkl. Pin-Wurzeln);
+  `dir_contains_markdown`-Probe (Early-Exit, 2k-Visit-Cap fail-open,
+  kein Abstieg in Link-Dirs, `.git`-Skip) in `vault_filter.rs`. Der
+  Lazy-Typ-Filter lebt als Spiegel-State `Vault::markdown_only`
+  (Quelle: `panel_state.vault_filter_markdown_only`); JEDER
+  `compute_refresh_delta`-Aufruf läuft über
   `commands::vault_cmd::compute_refresh_delta_synced` (synct + rendert
-  unter einem Lock; Boot-Init in `state.rs`). Chip-Toggle ohne Query
+  unter einem Lock; Boot-Init in `state.rs`). md-Toggle ohne Query
   wartet auf `vault_filter_options_set`, BEVOR `refreshVault()` läuft —
   sonst liest `vault_build_tree` den alten Toggle (Race, E2E-Befund
   2026-07-20). Persistenz: `vault_filter_markdown_only` +
