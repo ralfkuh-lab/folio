@@ -800,7 +800,11 @@ export function initCommandPalette(): void {
         }
     });
 
+    // Automation-/Test-Hooks (Muster __folioVaultFilterReset)
     (window as any).__folioOpenPalette = function (prefill?: string) {
         openPalette(prefill);
+    };
+    (window as any).__folioClosePalette = function () {
+        closePalette();
     };
 }

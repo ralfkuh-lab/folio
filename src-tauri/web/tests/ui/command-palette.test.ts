@@ -221,6 +221,15 @@ describe('command palette', () => {
         mod.openPalette();
         expect(input.value).toBe('');
     });
+
+    it('__folioClosePalette closes an open palette', async () => {
+        await init();
+        (window as any).__folioOpenPalette();
+        expect(document.getElementById('cmd-palette')!.hidden).toBe(false);
+        (window as any).__folioClosePalette();
+        expect(document.getElementById('cmd-palette')!.hidden).toBe(true);
+        expect(document.body.classList.contains('palette-open')).toBe(false);
+    });
 });
 
 describe('command palette P2 — files walk + headings', () => {

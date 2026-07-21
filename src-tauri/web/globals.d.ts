@@ -128,6 +128,8 @@ interface Window {
     __folioInvoke?: TauriCoreApi['invoke'];
     /** Test/Automation-Hook: Command Palette öffnen (optionaler Prefill). */
     __folioOpenPalette?: (prefill?: string) => void;
+    /** Test/Automation-Hook: Command Palette schließen (No-op wenn zu). */
+    __folioClosePalette?: () => void;
     openDocument?: (path: string) => Promise<boolean>;
     openThemeEditor?: (id: string) => Promise<boolean>;
     monaco?: any;
