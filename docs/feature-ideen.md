@@ -23,9 +23,10 @@ Diese Ideen kamen von 2–4 Quellen unabhängig. Das ist der beste Startpunkt.
 2. **⭐ Wikilinks `[[Name]]` + Backlinks-Panel** — klickbare Vault-interne Links
    (Vorschau + Export), „fehlt? → anlegen"-Dialog; dazu pro Dokument anzeigen, wer
    darauf verlinkt. `[M–L]` (Quelle: **alle 3**)
-3. **⭐ Command Palette (Strg/Cmd+P)** — fuzzy-suchbare Liste über Dateien, Tabs,
-   Überschriften, Commands, Themes, Settings. Mausloses Arbeiten. `[M]`
-   (Quelle: codex, grok)
+3. **⭐ Command Palette (Strg+P)** — ✅ **umgesetzt (2026-07-22, Overnight)**,
+   siehe [`spec-command-palette.md`](spec-command-palette.md): Fuzzy-Suche
+   über Dateien/Tabs/Recents, `>`-Befehle, `#`-Überschriften.
+   *(Quelle: codex, grok)*
 4. **Aufgaben-Dashboard** — alle `- [ ]`/`- [x]` vaultweit aggregieren, nach
    Datei/Tag/Alter filtern, direkt abhaken. `[M–L]` (Quelle: **alle 3**)
 5. **⭐ Zen-/Fokus-Modus + Typewriter-Scrolling** — Rails/Toolbar ausblenden,
