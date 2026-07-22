@@ -1,5 +1,5 @@
 //! Command-Palette Datei-Quelle: einmaliger rekursiver Walk über Pin-Wurzeln.
-//! Spec: `docs/spec-command-palette.md` (P2).
+//! Spec: `docs/spec-command-palette.md` (P2 + FXP4 truncated-Semantik).
 
 use std::collections::HashSet;
 use std::fs;
@@ -56,8 +56,9 @@ fn relative_to(root: &Path, file: &Path) -> String {
 ///   Link-Dirs nicht betreten.
 /// - Datei-Pins: direkt als Eintrag (`relative` = Dateiname), sofern nicht
 ///   schon über einen Walk-Root gesehen.
-/// - Deckel [`PALETTE_FILES_CAP`] → `truncated = true`, kein stilles Kappen
-///   ohne Flag.
+/// - Deckel [`PALETTE_FILES_CAP`]: `truncated` erst, wenn ein weiterer
+///   **emittierbarer, ungesehener File**-Treffer ansteht (nicht bei
+///   .git/Link/Duplikat/Verzeichnis).
 pub fn collect_palette_files(pinned: &[PinnedItem]) -> PaletteFilesResponse {
     collect_palette_files_capped(pinned, PALETTE_FILES_CAP)
 }
@@ -80,17 +81,19 @@ pub fn collect_palette_files_capped(pinned: &[PinnedItem], cap: usize) -> Palett
         if truncated {
             break;
         }
-        if files.len() >= cap {
-            truncated = true;
-            break;
-        }
         if !file.is_file() {
             continue;
         }
         let norm = normalize_path(file);
-        if !seen.insert(norm.clone()) {
+        if seen.contains(&norm) {
+            // bereits gesehen (Walk) — zählt nicht als Truncation
             continue;
         }
+        if files.len() >= cap {
+            truncated = true;
+            break;
+        }
+        seen.insert(norm.clone());
         let name = file_name_of(file);
         files.push(PaletteFileEntry {
             path: norm,
@@ -122,8 +125,7 @@ fn walk_dir(
     paths.sort();
 
     for path in paths {
-        if out.len() >= cap {
-            *truncated = true;
+        if *truncated {
             return;
         }
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -136,16 +138,19 @@ fn walk_dir(
                 continue;
             }
             walk_dir(root, &path, out, seen, truncated, cap);
-            if *truncated {
-                return;
-            }
             continue;
         }
         // Datei (inkl. Symlink-auf-Datei: is_directory=false)
         let norm = normalize_path(&path);
-        if !seen.insert(norm.clone()) {
+        if seen.contains(&norm) {
             continue;
         }
+        // Truncation erst bei einem wirklich emittierbaren Extra-File
+        if out.len() >= cap {
+            *truncated = true;
+            return;
+        }
+        seen.insert(norm.clone());
         out.push(PaletteFileEntry {
             path: norm,
             name: file_name_of(&path),
@@ -310,6 +315,53 @@ mod tests {
         let res = collect_palette_files_capped(&[pin_dir(root)], 3);
         assert!(!res.truncated);
         assert_eq!(res.files.len(), 3);
+    }
+
+    /// Cap exakt voll, danach nur .git — kein truncated (FXP4).
+    #[test]
+    fn exact_cap_plus_git_is_not_truncated() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        // Sortiert: .git vor f0/f1/f2 lexikographisch? ".git" < "f0" —
+        // also .git zuerst (skipped), dann 3 Dateien = exact cap.
+        write(root, ".git/hooks/x.md", "#\n");
+        for i in 0..3 {
+            write(root, &format!("f{i}.md"), "#\n");
+        }
+        let res = collect_palette_files_capped(&[pin_dir(root)], 3);
+        assert_eq!(res.files.len(), 3);
+        assert!(
+            !res.truncated,
+            "nach Cap nur .git/Skip darf truncated nicht setzen"
+        );
+    }
+
+    /// Cap voll + echte Extra-Datei → truncated (FXP4).
+    #[test]
+    fn cap_plus_extra_file_is_truncated() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        for i in 0..4 {
+            write(root, &format!("f{i}.md"), "#\n");
+        }
+        let res = collect_palette_files_capped(&[pin_dir(root)], 3);
+        assert!(res.truncated);
+        assert_eq!(res.files.len(), 3);
+    }
+
+    /// Bereits gesehener Datei-Pin zählt nicht als Truncation (FXP4).
+    #[test]
+    fn seen_file_pin_does_not_trigger_truncated() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        write(root, "a.md", "#\n");
+        write(root, "b.md", "#\n");
+        write(root, "c.md", "#\n");
+        let pin_a = pin_file(&root.join("a.md"));
+        // Cap 3: Walk liefert a,b,c — File-Pin a ist already-seen → kein truncated
+        let res = collect_palette_files_capped(&[pin_dir(root), pin_a], 3);
+        assert_eq!(res.files.len(), 3);
+        assert!(!res.truncated);
     }
 
     #[test]

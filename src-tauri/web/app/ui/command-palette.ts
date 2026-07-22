@@ -1,5 +1,5 @@
 /* Command Palette (Strg+P) — Overlay + Filter + Tabs/Recents/Walk/Commands/#.
-   Spec: docs/spec-command-palette.md (P1+P2). */
+   Spec: docs/spec-command-palette.md (P1–P3 + Review-Fixes FXP1–FXP7). */
 
 import { t } from '../i18n/translate';
 import { folioLog, safeInvoke } from '../util/log';
@@ -53,6 +53,14 @@ type PaletteRow =
 
 export type WalkFile = { path: string; name: string; relative: string };
 
+export type FileCandidate = {
+    path: string;
+    name: string;
+    relative: string;
+    source: FileSource;
+    tabId: number | null;
+};
+
 let rootEl: HTMLElement | null = null;
 let backdropEl: HTMLElement | null = null;
 let panelEl: HTMLElement | null = null;
@@ -66,9 +74,11 @@ let inited = false;
 
 /** Walk-Ergebnisse der aktuellen Öffnung (frisch pro open). */
 let walkFiles: WalkFile[] = [];
+/** Recents aus workspace_get (nicht DOM). */
+let recentFiles: WalkFile[] = [];
 let walkTruncated = false;
-let walkGen = 0;
-/** true, solange der Roundtrip läuft (für Tests/Debug). */
+/** Gemeinsamer Stale-Guard für Walk + Recents. */
+let sourcesGen = 0;
 let walkLoading = false;
 
 function fileName(path: string): string {
@@ -81,23 +91,47 @@ function normalizePath(path: string): string {
     return path.replace(/\\/g, '/');
 }
 
-/** Echte Modals (nicht Settings-Region) — Palette öffnet nicht darüber. */
-function isBlockingModalOpen(): boolean {
-    const ids = [
-        'unsaved-dialog',
-        'rename-dialog',
-        'confirm-dialog',
-        'run-confirm-dialog',
-        'vault-search-dialog',
-        'export-dialog',
-        'ai-translate-dialog',
-        'ai-actions-dialog',
-        'about-dialog',
-        'image-dialog',
-    ];
-    for (let i = 0; i < ids.length; i++) {
-        const el = document.getElementById(ids[i]);
-        if (el && !el.hidden) return true;
+/**
+ * Sichtbarkeit: eigenes `hidden`/display + verborgene Vorfahren.
+ * (Kein reines ID-Listen-Gate — FXP2.)
+ */
+export function isElementEffectivelyVisible(el: Element): boolean {
+    let cur: Element | null = el;
+    while (cur) {
+        if (cur instanceof HTMLElement) {
+            if (cur.hidden) return false;
+            // Attribut hidden auch ohne .hidden-Property (SVG etc.)
+            if (cur.hasAttribute('hidden')) return false;
+            const inline = cur.style;
+            if (inline && (inline.display === 'none' || inline.visibility === 'hidden')) {
+                return false;
+            }
+        }
+        if (typeof getComputedStyle === 'function') {
+            try {
+                const cs = getComputedStyle(cur);
+                if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+            } catch {
+                // jsdom/getComputedStyle edge
+            }
+        }
+        cur = cur.parentElement;
+    }
+    return true;
+}
+
+/**
+ * Blockiert, wenn ein sichtbares Modal offen ist.
+ * Selektor: `[role="dialog"][aria-modal="true"]`; `#cmd-palette` ausgenommen.
+ */
+export function isBlockingModalOpen(): boolean {
+    const dialogs = document.querySelectorAll(
+        '[role="dialog"][aria-modal="true"]',
+    );
+    for (let i = 0; i < dialogs.length; i++) {
+        const el = dialogs[i];
+        if (el.id === 'cmd-palette' || el.closest('#cmd-palette')) continue;
+        if (isElementEffectivelyVisible(el)) return true;
     }
     return false;
 }
@@ -115,31 +149,6 @@ export function parseQuery(raw: string): { mode: PaletteMode; query: string } {
         return { mode: 'headings', query: raw.slice(1).trimStart() };
     }
     return { mode: 'files', query: raw };
-}
-
-/**
- * Recents aus dem Vault-DOM (bereits gerendert, kein extra Backend-Call).
- * Nur Top-Level-Einträge der Recent-Section.
- */
-export function collectRecentFromDom(): WalkFile[] {
-    const section = document.querySelector(
-        '#vault-tree li.section[data-section="recent"]',
-    );
-    if (!section) return [];
-    const nodes = section.querySelectorAll(
-        ':scope > ul.children > li.node[data-path]',
-    );
-    const out: WalkFile[] = [];
-    for (let i = 0; i < nodes.length; i++) {
-        const node = nodes[i] as HTMLElement;
-        const path = node.getAttribute('data-path');
-        if (!path) continue;
-        // Nur Dateien (kein Ordner-Recent in der Praxis; data-kind=dir skip)
-        if (node.getAttribute('data-kind') === 'dir') continue;
-        const name = fileName(path);
-        out.push({ path: normalizePath(path), name, relative: name });
-    }
-    return out;
 }
 
 /**
@@ -173,17 +182,15 @@ const SOURCE_RANK: Record<FileSource, number> = {
 };
 
 /**
- * Dedup Tab > Recent > Walk. Reine Merge-Logik (testbar).
+ * Dedup Tab > Recent > Walk. Walk-relative **anreichern** auf bestehende
+ * Tab/Recent-Einträge (Quelle/Badge/tabId bleiben) — FXP1.
  */
 export function mergeFileCandidates(
     tabs: Array<{ path: string; tabId: number }>,
     recents: WalkFile[],
     walk: WalkFile[],
-): Array<{ path: string; name: string; relative: string; source: FileSource; tabId: number | null }> {
-    const map = new Map<
-        string,
-        { path: string; name: string; relative: string; source: FileSource; tabId: number | null }
-    >();
+): FileCandidate[] {
+    const map = new Map<string, FileCandidate>();
 
     for (let i = 0; i < tabs.length; i++) {
         const path = normalizePath(tabs[i].path);
@@ -191,6 +198,7 @@ export function mergeFileCandidates(
         map.set(path, {
             path,
             name,
+            // bis Walk-Enrichment: nur name; Match nutzt dann Vollpfad
             relative: name,
             source: 'tab',
             tabId: tabs[i].tabId,
@@ -199,21 +207,32 @@ export function mergeFileCandidates(
     for (let i = 0; i < recents.length; i++) {
         const path = normalizePath(recents[i].path);
         if (map.has(path)) continue;
+        const name = recents[i].name || fileName(path);
         map.set(path, {
             path,
-            name: recents[i].name || fileName(path),
-            relative: recents[i].relative || fileName(path),
+            name,
+            relative: recents[i].relative || name,
             source: 'recent',
             tabId: null,
         });
     }
     for (let i = 0; i < walk.length; i++) {
         const path = normalizePath(walk[i].path);
-        if (map.has(path)) continue;
+        const walkRel = walk[i].relative || walk[i].name || fileName(path);
+        const existing = map.get(path);
+        if (existing) {
+            // Anreichern: Walk-relative behalten, Quelle/Badge/tabId unangetastet
+            if (walkRel && walkRel !== existing.name) {
+                existing.relative = walkRel;
+            } else if (walkRel) {
+                existing.relative = walkRel;
+            }
+            continue;
+        }
         map.set(path, {
             path,
             name: walk[i].name || fileName(path),
-            relative: walk[i].relative || fileName(path),
+            relative: walkRel,
             source: 'file',
             tabId: null,
         });
@@ -221,19 +240,32 @@ export function mergeFileCandidates(
     return Array.from(map.values());
 }
 
+/**
+ * Path-Haystack für Fuzzy: Walk-relative wenn vorhanden (enthält `/`),
+ * sonst normalisierter Vollpfad (Tab/Recent vor Walk) — FXP1.
+ */
+export function pathHaystackForMatch(c: FileCandidate): string {
+    const rel = c.relative || '';
+    if (rel.indexOf('/') >= 0 || rel.indexOf('\\') >= 0) {
+        return normalizePath(rel);
+    }
+    // relative === name (noch kein Walk-Enrichment) → Vollpfad
+    return c.path;
+}
+
 function collectFileRows(query: string): PaletteRow[] {
     const snap = getTabsSnapshot();
     const tabs = snap.tabs
         .filter((tab: TabSummary) => !!tab.path)
         .map((tab) => ({ path: tab.path as string, tabId: tab.id }));
-    const recents = collectRecentFromDom();
-    const merged = mergeFileCandidates(tabs, recents, walkFiles);
+    const merged = mergeFileCandidates(tabs, recentFiles, walkFiles);
     const out: PaletteRow[] = [];
 
     for (let i = 0; i < merged.length; i++) {
         const m = merged[i];
         const name = m.name;
         const relative = m.relative;
+        const pathHay = pathHaystackForMatch(m);
         if (!query) {
             out.push({
                 kind: 'file',
@@ -241,7 +273,9 @@ function collectFileRows(query: string): PaletteRow[] {
                 id: 'file:' + m.path,
                 tabId: m.tabId,
                 label: name,
-                detail: relative !== name ? relative : (m.source === 'tab' ? m.path : relative),
+                detail: relative !== name
+                    ? relative
+                    : (m.source === 'tab' ? m.path : relative),
                 relative,
                 score: 0,
                 namePositions: null,
@@ -250,9 +284,12 @@ function collectFileRows(query: string): PaletteRow[] {
             });
             continue;
         }
-        const hit = fuzzyMatchFile(query, name, relative);
+        const hit = fuzzyMatchFile(query, name, pathHay);
         if (!hit) continue;
-        const detail = hit.pathPositions ? relative : (relative !== name ? relative : m.path);
+        // Detail: relative anzeigen wenn Walk-enriched, sonst path
+        const detail = hit.pathPositions
+            ? pathHay
+            : (relative !== name ? relative : m.path);
         out.push({
             kind: 'file',
             source: m.source,
@@ -263,6 +300,7 @@ function collectFileRows(query: string): PaletteRow[] {
             relative,
             score: hit.score,
             namePositions: hit.namePositions,
+            // Positions indizieren pathHay — Detail muss denselben String nutzen
             pathPositions: hit.pathPositions,
             path: m.path,
         });
@@ -362,7 +400,6 @@ function sortRows(list: PaletteRow[]): PaletteRow[] {
             if (ra !== rb) return ra - rb;
         }
         if (a.kind !== b.kind) {
-            // files before commands/headings shouldn't mix (separate modes)
             return a.kind.localeCompare(b.kind);
         }
         return a.label.localeCompare(b.label);
@@ -413,13 +450,14 @@ function renderList(extraHints: string[] = []): void {
     const visible = rows.slice(0, MAX_ROWS);
 
     if (visible.length === 0) {
+        // Immer „Keine Treffer"; zusätzliche Hinweise (truncated) darunter (FXP7)
         const empty = document.createElement('li');
         empty.className = 'cmd-palette-empty';
         empty.setAttribute('role', 'option');
         empty.setAttribute('aria-disabled', 'true');
-        empty.textContent = extraHints[0] || t('palette.noResults');
+        empty.textContent = t('palette.noResults');
         listEl.appendChild(empty);
-        for (let h = 1; h < extraHints.length; h++) {
+        for (let h = 0; h < extraHints.length; h++) {
             const hint = document.createElement('li');
             hint.className = 'cmd-palette-hint';
             hint.setAttribute('role', 'option');
@@ -572,6 +610,12 @@ async function runRow(row: PaletteRow, newTab: boolean): Promise<void> {
         return;
     }
     const cmd = row.cmd;
+    // Unmittelbar vor Dispatch erneut enabled prüfen (FXP5 save-dirty)
+    try {
+        if (!cmd.enabled()) return;
+    } catch {
+        return;
+    }
     if (cmd.menuAction) {
         safeInvoke(
             'menu_dispatch',
@@ -580,8 +624,8 @@ async function runRow(row: PaletteRow, newTab: boolean): Promise<void> {
         );
         return;
     }
-    if (cmd.specialInvoke) {
-        safeInvoke(cmd.specialInvoke, {}, cmd.specialInvoke, 'warn');
+    if (typeof cmd.run === 'function') {
+        cmd.run();
     }
 }
 
@@ -633,10 +677,39 @@ function onBackdropClick(e: MouseEvent): void {
     }
 }
 
-function startWalkLoad(): void {
-    walkGen += 1;
-    const gen = walkGen;
+function parseWalkResponse(res: any): { files: WalkFile[]; truncated: boolean } {
+    const files = Array.isArray(res && res.files) ? res.files : [];
+    return {
+        files: files.map(function (f: any): WalkFile {
+            return {
+                path: normalizePath(String(f.path || '')),
+                name: String(f.name || fileName(String(f.path || ''))),
+                relative: String(f.relative || f.name || ''),
+            };
+        }).filter(function (f: WalkFile) { return !!f.path; }),
+        truncated: !!(res && res.truncated),
+    };
+}
+
+function parseRecentFromWorkspace(ws: any): WalkFile[] {
+    const recent = Array.isArray(ws && ws.recent) ? ws.recent : [];
+    const out: WalkFile[] = [];
+    for (let i = 0; i < recent.length; i++) {
+        const path = recent[i] && recent[i].path;
+        if (typeof path !== 'string' || !path) continue;
+        const norm = normalizePath(path);
+        const name = fileName(norm);
+        out.push({ path: norm, name, relative: name });
+    }
+    return out;
+}
+
+/** Walk + Recents parallel, gemeinsamer Stale-Guard (FXP3). */
+function startSourcesLoad(): void {
+    sourcesGen += 1;
+    const gen = sourcesGen;
     walkFiles = [];
+    recentFiles = [];
     walkTruncated = false;
     walkLoading = true;
 
@@ -648,49 +721,57 @@ function startWalkLoad(): void {
         return;
     }
 
-    invoke('palette_files')
-        .then(function (res: any) {
-            if (gen !== walkGen || !open) return;
-            walkLoading = false;
-            const files = Array.isArray(res && res.files) ? res.files : [];
-            walkFiles = files.map(function (f: any): WalkFile {
-                return {
-                    path: normalizePath(String(f.path || '')),
-                    name: String(f.name || fileName(String(f.path || ''))),
-                    relative: String(f.relative || f.name || ''),
-                };
-            }).filter(function (f: WalkFile) { return !!f.path; });
-            walkTruncated = !!(res && res.truncated);
-            // Nachmischen: Auswahl per Pfad behalten
-            rebuildFromInput(true);
-        })
-        .catch(function (err: unknown) {
-            if (gen !== walkGen) return;
-            walkLoading = false;
+    Promise.all([
+        invoke('palette_files').catch(function (err: unknown) {
             folioLog.warn('palette', 'palette_files failed', { error: String(err) });
-        });
+            return { files: [], truncated: false };
+        }),
+        invoke('workspace_get').catch(function (err: unknown) {
+            folioLog.warn('palette', 'workspace_get failed', { error: String(err) });
+            return { recent: [] };
+        }),
+    ]).then(function (pair) {
+        if (gen !== sourcesGen || !open) return;
+        walkLoading = false;
+        const walk = parseWalkResponse(pair[0]);
+        walkFiles = walk.files;
+        walkTruncated = walk.truncated;
+        recentFiles = parseRecentFromWorkspace(pair[1]);
+        // Nachmischen: Query + Auswahl behalten
+        rebuildFromInput(true);
+    });
 }
 
 export function isPaletteOpen(): boolean {
     return open;
 }
 
-/** Test-Hook: Walk-State lesen. */
+/** Test-Hook: Walk/Recents-State lesen. */
 export function getWalkStateForTests(): {
     files: WalkFile[];
+    recents: WalkFile[];
     truncated: boolean;
     loading: boolean;
+    sourcesGen: number;
 } {
-    return { files: walkFiles.slice(), truncated: walkTruncated, loading: walkLoading };
+    return {
+        files: walkFiles.slice(),
+        recents: recentFiles.slice(),
+        truncated: walkTruncated,
+        loading: walkLoading,
+        sourcesGen,
+    };
 }
 
 /** Test-Hook: Walk-Ergebnisse injizieren und neu mischen. */
 export function applyWalkResultForTests(
     files: WalkFile[],
     truncated: boolean,
+    recents?: WalkFile[],
 ): void {
     walkFiles = files.slice();
     walkTruncated = truncated;
+    if (recents) recentFiles = recents.slice();
     walkLoading = false;
     if (open) rebuildFromInput(true);
 }
@@ -703,9 +784,10 @@ export function closePalette(): void {
     rows = [];
     activeIdx = -1;
     walkFiles = [];
+    recentFiles = [];
     walkTruncated = false;
     walkLoading = false;
-    walkGen += 1; // invalidiert pending Roundtrips
+    sourcesGen += 1; // invalidiert pending Roundtrips
     if (listEl) listEl.replaceChildren();
 
     const restore = prevFocus;
@@ -736,9 +818,10 @@ export function openPalette(prefill?: string): void {
     setOpenClass(true);
     inputEl.value = typeof prefill === 'string' ? prefill : '';
     walkFiles = [];
+    recentFiles = [];
     walkTruncated = false;
     rebuildFromInput(false);
-    startWalkLoad();
+    startSourcesLoad();
     requestAnimationFrame(function () {
         if (inputEl && open) {
             inputEl.focus();
@@ -787,7 +870,6 @@ export function initCommandPalette(): void {
         backdropEl.addEventListener('click', onBackdropClick);
     }
     if (panelEl) {
-        // Panel-Klicks schließen nicht (nur Backdrop)
         panelEl.addEventListener('mousedown', function () { /* no-op */ });
     }
 
@@ -800,7 +882,6 @@ export function initCommandPalette(): void {
         }
     });
 
-    // Automation-/Test-Hooks (Muster __folioVaultFilterReset)
     (window as any).__folioOpenPalette = function (prefill?: string) {
         openPalette(prefill);
     };

@@ -246,7 +246,19 @@ def run(ctx):
             ctx.api.sync_render()
             ctx.screenshot("51_palette_file_hits")
 
-        with ctx.step("Enter öffnet beta im aktiven Tab"):
+        with ctx.step("Enter öffnet beta im aktiven Tab (ersetzt, count stabil)"):
+            # FXP6: vor Enter aktive Tab-ID + Dokument-Tab-Anzahl
+            tabs_before = _doc_tabs(ctx)
+            count_before = len(tabs_before)
+            active_before = next(
+                (t for t in tabs_before if t.get("active")),
+                tabs_before[0] if tabs_before else {},
+            )
+            active_id = active_before.get("id")
+            ctx.expect(
+                active_id is not None,
+                f"kein aktiver Tab vor Enter: {tabs_before!r}",
+            )
             _press_enter(ctx, ctrl=False)
             ok = _poll(
                 ctx,
@@ -258,15 +270,26 @@ def run(ctx):
                 f"Enter öffnete beta nicht: open={_palette_open(ctx)} "
                 f"file={_state_file(ctx)!r}",
             )
-            # Ein Dokument-Tab (replace) — oder alpha+beta je nach Tab-Logik
-            tabs = _doc_tabs(ctx)
-            paths = [_norm(t.get("path") or "") for t in tabs]
+            tabs_after = _doc_tabs(ctx)
+            count_after = len(tabs_after)
             ctx.expect(
-                beta_n in paths,
-                f"beta nicht in Tabs: {paths!r}",
+                count_after == count_before,
+                f"Enter darf Tab-Anzahl nicht erhöhen: "
+                f"before={count_before} after={count_after} paths="
+                f"{[_norm(t.get('path') or '') for t in tabs_after]!r}",
+            )
+            replaced = next(
+                (t for t in tabs_after if t.get("id") == active_id),
+                None,
+            )
+            ctx.expect(
+                replaced is not None
+                and _norm(replaced.get("path") or "") == beta_n,
+                f"derselbe Tab-ID sollte beta tragen: id={active_id} "
+                f"tabs={tabs_after!r}",
             )
 
-        with ctx.step("Strg+Enter öffnet deep in neuem Tab"):
+        with ctx.step("Strg+Enter öffnet deep in neuem Tab (+1)"):
             before_count = len(_doc_tabs(ctx))
             _open_palette(ctx)
             _set_query(ctx, "deep-unique")
@@ -276,7 +299,6 @@ def run(ctx):
                 timeout=5.0,
             )
             ctx.expect(ok, f"deep-unique nicht in Liste: {_item_labels(ctx)!r}")
-            # Aktiven Treffer absichern
             path_attr = _active_path_attr(ctx)
             ctx.expect(
                 path_attr and "deep-unique" in path_attr,
@@ -286,7 +308,7 @@ def run(ctx):
             ok = _poll(
                 ctx,
                 lambda: (not _palette_open(ctx))
-                and len(_doc_tabs(ctx)) >= before_count + 1
+                and len(_doc_tabs(ctx)) == before_count + 1
                 and any(
                     _norm(t.get("path") or "") == deep_n for t in _doc_tabs(ctx)
                 ),
@@ -297,7 +319,7 @@ def run(ctx):
             ctx.expect(
                 ok,
                 f"Strg+Enter tab_open fehlgeschlagen: before={before_count} "
-                f"paths={paths!r}",
+                f"after={len(tabs)} paths={paths!r}",
             )
 
         with ctx.step(">-Modus: Edit-Mode ausführen"):

@@ -1,24 +1,24 @@
 /* Kuratierte Befehls-Registry für die Command Palette (`>`-Modus).
-   Ausführung ausschließlich über `menu_dispatch` (gleicher Pfad wie Menü/
-   Automation). Ausnahme: Tab-Wiederherstellen hat kein Menü-Item und läuft
-   über `tab_restore_last`. Disabled-Einträge werden ausgeblendet.
+   Ausführung über `menu_dispatch` (gleicher Pfad wie Menü/Automation)
+   bzw. `run()` für Frontend-Aktionen ohne Menü-ID (Restore).
+   Disabled-Einträge werden ausgeblendet.
 
    Labels via label() mit t('…')-Literalen (i18n_reference_gate). */
 
 import { t } from '../i18n/translate';
-import { getTabsSnapshot } from '../state/tabs';
+import { getIsDirty } from '../state/document';
+import { getTabsSnapshot, restoreLastTab } from '../state/tabs';
 
 export type PaletteCommand = {
     id: string;
     /** Label zur Render-Zeit (t()-Literale, kein dynamischer Key). */
     label: () => string;
     /**
-     * Menü-ID für `menu_dispatch`. `null` = Spezial-Pfad (siehe
-     * `specialInvoke`).
+     * Menü-ID für `menu_dispatch`. `null` = Frontend-`run()`-Pfad.
      */
     menuAction: string | null;
-    /** Optionaler Tauri-Command, wenn `menuAction` null ist. */
-    specialInvoke?: string;
+    /** Frontend-Aktion ohne Menü-ID (z. B. Tab-Restore). */
+    run?: () => void;
     /** Anzeige-Shortcut rechts (optional). */
     shortcut?: string;
     enabled: () => boolean;
@@ -52,8 +52,8 @@ function hasRecentlyClosed(): boolean {
 }
 
 /**
- * Feste Startliste nach Spec. `enabled()` spiegelt die Body-Klassen-
- * Gates analog zu `applyDocKind` / Menü-Enable.
+ * Feste Startliste nach Spec. `enabled()` spiegelt Menü-/Body-Gates
+ * (Save nur dirty). Theme-System: V1 nur hell/dunkel (kein Backend-Support).
  */
 export const PALETTE_COMMANDS: readonly PaletteCommand[] = [
     {
@@ -68,7 +68,8 @@ export const PALETTE_COMMANDS: readonly PaletteCommand[] = [
         label: () => t('menu.file.save'),
         menuAction: 'file.save',
         shortcut: 'Ctrl+S',
-        enabled: () => hasDoc(),
+        // Kanonischer Menü-State: Save nur bei dirty (document.ts)
+        enabled: () => hasDoc() && getIsDirty(),
     },
     {
         id: 'file.save_as',
@@ -88,7 +89,7 @@ export const PALETTE_COMMANDS: readonly PaletteCommand[] = [
         id: 'tab.restore',
         label: () => t('tabs.contextMenu.restoreLast'),
         menuAction: null,
-        specialInvoke: 'tab_restore_last',
+        run: () => restoreLastTab(),
         enabled: () => hasRecentlyClosed(),
     },
     {

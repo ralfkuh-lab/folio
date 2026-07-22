@@ -85,10 +85,13 @@ Kuratierte Registry im Frontend (`ui/palette-commands.ts`): Einträge
 Automation). Startumfang: Datei öffnen/speichern/Speichern unter,
 Mode view/edit/split (nur wo erlaubt — enabled() prüft die bekannten
 Body-Klassen wie `kind-markdown`, analog CSS-Gating), Export HTML/PDF,
-Find öffnen, Einstellungen, Theme hell/dunkel/system, Tab schließen /
+Find öffnen, Einstellungen, Theme hell/dunkel, Tab schließen /
 zuletzt geschlossenen wiederherstellen, Vault-Suche öffnen. Disabled-
 Einträge werden ausgeblendet (nicht gegraut) — die Palette zeigt nur
 Ausführbares.
+
+> **Revision (Review-Fix FXP5):** Kein Theme-„System"-Eintrag in V1 —
+> das Backend (`theme_set`) kennt nur `light`/`dark`/`toggle`.
 
 ### Überschriften (`#`)
 

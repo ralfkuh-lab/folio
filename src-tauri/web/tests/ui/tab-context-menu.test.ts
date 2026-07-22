@@ -4,10 +4,12 @@ import { seedDeCatalog } from '../helpers-i18n';
 
 const requestCloseTab = vi.fn().mockResolvedValue(true);
 const getTabsSnapshot = vi.fn();
+const restoreLastTab = vi.fn();
 
 vi.mock('../../app/state/tabs', () => ({
     requestCloseTab,
     getTabsSnapshot,
+    restoreLastTab,
 }));
 
 let tauri: TauriMockHandles;
@@ -184,17 +186,12 @@ describe('tab context menu UI', () => {
         expect(document.getElementById('tab-ctx-menu')!.classList.contains('open')).toBe(false);
     });
 
-    it('restore invokes tab_restore_last', async () => {
+    it('restore calls restoreLastTab()', async () => {
         await init();
         document.querySelector('[data-tab-id="2"]')!.dispatchEvent(
             new MouseEvent('contextmenu', { bubbles: true, clientX: 0, clientY: 0, cancelable: true }),
         );
         (document.querySelector('#tab-ctx-menu [data-act="restore"]') as HTMLElement).click();
-        await vi.waitFor(() => {
-            expect(tauri.invoke).toHaveBeenCalledWith(
-                'tab_restore_last',
-                expect.anything(),
-            );
-        });
+        expect(restoreLastTab).toHaveBeenCalled();
     });
 });

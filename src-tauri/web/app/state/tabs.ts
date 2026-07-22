@@ -391,6 +391,11 @@ export function closeActiveTab(): Promise<boolean> {
     return active ? requestCloseTab(active.id) : Promise.resolve(false);
 }
 
+/** Zuletzt geschlossenen Tab wiederherstellen (Menü/Palette/Kontextmenü). */
+export function restoreLastTab(): void {
+    safeInvoke('tab_restore_last', {}, 'tab_restore_last', 'warn');
+}
+
 /** Quit-Gate: fragt fuer JEDEN dirty Tab einzeln Save/Discard/Cancel ab
     (Tab wird dafuer aktiviert, damit der User sieht, worum es geht).
     Liefert false, sobald der User einmal abbricht. */

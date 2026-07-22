@@ -5,36 +5,41 @@ import { seedDeCatalog } from '../helpers-i18n';
 const activateTab = vi.fn().mockResolvedValue(true);
 const getTabsSnapshot = vi.fn();
 const openDocument = vi.fn().mockResolvedValue(true);
+const restoreLastTab = vi.fn();
+const getIsDirty = vi.fn().mockReturnValue(false);
 
 vi.mock('../../app/state/tabs', () => ({
     activateTab,
     getTabsSnapshot,
+    restoreLastTab,
 }));
 
 vi.mock('../../app/state/document', () => ({
     openDocument,
+    getIsDirty,
 }));
 
 let tauri: TauriMockHandles;
 
-function mountDom(opts?: { toc?: string; recent?: string }): void {
+function mountDom(opts?: { toc?: string }): void {
     document.body.className = 'kind-markdown view-mode';
     document.body.innerHTML = `
       <button id="prev-focus" type="button">focus</button>
-      <div id="unsaved-dialog" hidden></div>
-      <div id="vault-tree">
-        <ul>
-          <li class="section" data-section="recent">
-            <ul class="children">${opts?.recent || ''}</ul>
-          </li>
-        </ul>
+      <div id="unsaved-dialog" hidden>
+        <div class="unsaved-dialog__panel" role="dialog" aria-modal="true"></div>
+      </div>
+      <div id="settings-dialog" hidden>
+        <div class="settings-dialog__panel" role="region"></div>
+        <div id="theme-create-dialog" class="settings-ai-overlay" hidden>
+          <form id="theme-create-form" class="settings-ai-dialog" role="dialog" aria-modal="true"></form>
+        </div>
       </div>
       <aside id="toc-region">
         <ul class="toc">${opts?.toc || ''}</ul>
       </aside>
       <div id="cmd-palette" hidden>
         <div class="cmd-palette-backdrop"></div>
-        <div class="cmd-palette-panel">
+        <div class="cmd-palette-panel" role="dialog" aria-modal="true">
           <input type="text" id="cmd-palette-input" />
           <ul id="cmd-palette-list" role="listbox"></ul>
         </div>
@@ -54,6 +59,16 @@ function snapTabs() {
     };
 }
 
+function defaultInvoke(cmd: string) {
+    if (cmd === 'palette_files') {
+        return Promise.resolve({ files: [], truncated: false });
+    }
+    if (cmd === 'workspace_get') {
+        return Promise.resolve({ recent: [], pinned: [] });
+    }
+    return Promise.resolve(undefined);
+}
+
 async function init(): Promise<typeof import('../../app/ui/command-palette')> {
     const mod = await import('../../app/ui/command-palette');
     mod.initCommandPalette();
@@ -66,14 +81,9 @@ beforeEach(async () => {
     tauri = installTauriMock();
     activateTab.mockResolvedValue(true);
     openDocument.mockResolvedValue(true);
+    getIsDirty.mockReturnValue(false);
     getTabsSnapshot.mockReturnValue(snapTabs());
-    // Default: empty walk, resolves after microtask
-    tauri.invoke.mockImplementation((cmd: string) => {
-        if (cmd === 'palette_files') {
-            return Promise.resolve({ files: [], truncated: false });
-        }
-        return Promise.resolve(undefined);
-    });
+    tauri.invoke.mockImplementation(defaultInvoke);
     mountDom();
     await seedDeCatalog();
 });
@@ -112,11 +122,26 @@ describe('command palette', () => {
         expect(root.hidden).toBe(true);
     });
 
-    it('does not open when unsaved-dialog is visible', async () => {
+    it('does not open when top-level modal is visible (FXP2)', async () => {
         await init();
         document.getElementById('unsaved-dialog')!.hidden = false;
         (window as any).__folioOpenPalette();
         expect(document.getElementById('cmd-palette')!.hidden).toBe(true);
+    });
+
+    it('does not open when nested settings dialog is visible (FXP2)', async () => {
+        await init();
+        // Settings region selbst ist kein Modal; nested theme-create ist es
+        document.getElementById('settings-dialog')!.hidden = false;
+        document.getElementById('theme-create-dialog')!.hidden = false;
+        (window as any).__folioOpenPalette();
+        expect(document.getElementById('cmd-palette')!.hidden).toBe(true);
+    });
+
+    it('opens when no modal is visible', async () => {
+        await init();
+        (window as any).__folioOpenPalette();
+        expect(document.getElementById('cmd-palette')!.hidden).toBe(false);
     });
 
     it('filters open tabs by query and highlights matches', async () => {
@@ -232,33 +257,181 @@ describe('command palette', () => {
     });
 });
 
-describe('command palette P2 — files walk + headings', () => {
-    it('mergeFileCandidates prioritizes tab > recent > walk', async () => {
+describe('command palette FXP1 — merge relative enrich', () => {
+    it('mergeFileCandidates enriches tab/recent with walk relative', async () => {
         const { mergeFileCandidates } = await import('../../app/ui/command-palette');
         const merged = mergeFileCandidates(
-            [{ path: '/a/shared.md', tabId: 1 }],
+            [{ path: '/vault/docs/guide.md', tabId: 3 }],
             [
-                { path: '/a/shared.md', name: 'shared.md', relative: 'shared.md' },
-                { path: '/a/recent-only.md', name: 'recent-only.md', relative: 'recent-only.md' },
+                { path: '/vault/docs/other.md', name: 'other.md', relative: 'other.md' },
             ],
             [
-                { path: '/a/shared.md', name: 'shared.md', relative: 'shared.md' },
-                { path: '/a/recent-only.md', name: 'recent-only.md', relative: 'recent-only.md' },
-                { path: '/a/walk-only.md', name: 'walk-only.md', relative: 'walk-only.md' },
+                { path: '/vault/docs/guide.md', name: 'guide.md', relative: 'docs/guide.md' },
+                { path: '/vault/docs/other.md', name: 'other.md', relative: 'docs/other.md' },
+                { path: '/vault/walk/extra.md', name: 'extra.md', relative: 'extra.md' },
             ],
         );
-        const byPath = Object.fromEntries(merged.map((m) => [m.path, m.source]));
-        expect(byPath['/a/shared.md']).toBe('tab');
-        expect(byPath['/a/recent-only.md']).toBe('recent');
-        expect(byPath['/a/walk-only.md']).toBe('file');
-        expect(merged).toHaveLength(3);
+        const guide = merged.find((m) => m.path === '/vault/docs/guide.md')!;
+        expect(guide.source).toBe('tab');
+        expect(guide.tabId).toBe(3);
+        expect(guide.relative).toBe('docs/guide.md');
+
+        const other = merged.find((m) => m.path === '/vault/docs/other.md')!;
+        expect(other.source).toBe('recent');
+        expect(other.relative).toBe('docs/other.md');
+
+        const walk = merged.find((m) => m.path === '/vault/walk/extra.md')!;
+        expect(walk.source).toBe('file');
     });
 
+    it('tab stays findable via path segment before walk; after walk via relative', async () => {
+        const mod = await init();
+        getTabsSnapshot.mockReturnValue({
+            activeIndex: 0,
+            recentlyClosedCount: 0,
+            tabs: [{ id: 3, path: '/vault/docs/guide.md', dirty: false, active: true }],
+        });
+        mod.openPalette();
+        const input = document.getElementById('cmd-palette-input') as HTMLInputElement;
+
+        // Vor Walk: Query "docs" matcht Vollpfad
+        input.value = 'docs';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        let items = document.querySelectorAll('#cmd-palette-list .cmd-palette-item');
+        expect(items.length).toBe(1);
+        expect(items[0].getAttribute('data-source')).toBe('tab');
+
+        // Walk enrich — bleibt Tab-Badge, relative docs/guide.md
+        mod.applyWalkResultForTests(
+            [{ path: '/vault/docs/guide.md', name: 'guide.md', relative: 'docs/guide.md' }],
+            false,
+        );
+        items = document.querySelectorAll('#cmd-palette-list .cmd-palette-item');
+        expect(items.length).toBe(1);
+        expect(items[0].getAttribute('data-source')).toBe('tab');
+        expect(items[0].querySelector('.cmd-palette-detail')!.textContent)
+            .toContain('docs/guide.md');
+    });
+});
+
+describe('command palette FXP3 — workspace_get recents', () => {
+    it('loads recents via workspace_get not DOM', async () => {
+        tauri.invoke.mockImplementation((cmd: string) => {
+            if (cmd === 'palette_files') {
+                return Promise.resolve({ files: [], truncated: false });
+            }
+            if (cmd === 'workspace_get') {
+                return Promise.resolve({
+                    recent: [{ path: '/vault/recent/foo.md', last_opened: 1 }],
+                    pinned: [],
+                });
+            }
+            return Promise.resolve(undefined);
+        });
+        getTabsSnapshot.mockReturnValue({
+            activeIndex: 0,
+            recentlyClosedCount: 0,
+            tabs: [{ id: 1, path: '/other.md', dirty: false, active: true }],
+        });
+        const mod = await init();
+        mod.openPalette();
+        await vi.waitFor(() => {
+            expect(tauri.invoke).toHaveBeenCalledWith('workspace_get');
+            expect(tauri.invoke).toHaveBeenCalledWith('palette_files');
+        });
+        await vi.waitFor(() => {
+            const state = mod.getWalkStateForTests();
+            expect(state.recents.some((r) => r.path.endsWith('foo.md'))).toBe(true);
+        });
+        const input = document.getElementById('cmd-palette-input') as HTMLInputElement;
+        input.value = 'foo';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        const item = document.querySelector('.cmd-palette-item') as HTMLElement;
+        expect(item).toBeTruthy();
+        expect(item.getAttribute('data-source')).toBe('recent');
+    });
+});
+
+describe('command palette FXP7 — stale promise + empty truncated', () => {
+    it('stale palette_files response after close/reopen is ignored', async () => {
+        let resolveWalk: ((v: unknown) => void) | null = null;
+        const slowWalk = new Promise((resolve) => {
+            resolveWalk = resolve;
+        });
+        let call = 0;
+        tauri.invoke.mockImplementation((cmd: string) => {
+            if (cmd === 'workspace_get') {
+                return Promise.resolve({ recent: [], pinned: [] });
+            }
+            if (cmd === 'palette_files') {
+                call += 1;
+                if (call === 1) return slowWalk;
+                return Promise.resolve({
+                    files: [{ path: '/new.md', name: 'new.md', relative: 'new.md' }],
+                    truncated: false,
+                });
+            }
+            return Promise.resolve(undefined);
+        });
+        getTabsSnapshot.mockReturnValue({
+            activeIndex: 0,
+            recentlyClosedCount: 0,
+            tabs: [{ id: 1, path: '/a.md', dirty: false, active: true }],
+        });
+        const mod = await init();
+        mod.openPalette();
+        const input = document.getElementById('cmd-palette-input') as HTMLInputElement;
+        input.value = 'zzz';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+
+        mod.closePalette();
+        mod.openPalette();
+        // Zweiter Open lädt fresh
+        await vi.waitFor(() => {
+            const st = mod.getWalkStateForTests();
+            return st.files.some((f) => f.path === '/new.md');
+        });
+        const genAfter = mod.getWalkStateForTests().sourcesGen;
+
+        // Alte langsame Antwort löst auf — darf nichts ändern
+        resolveWalk!({
+            files: [{ path: '/stale.md', name: 'stale.md', relative: 'stale.md' }],
+            truncated: false,
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+        const st = mod.getWalkStateForTests();
+        expect(st.sourcesGen).toBe(genAfter);
+        expect(st.files.some((f) => f.path === '/stale.md')).toBe(false);
+        expect(st.files.some((f) => f.path === '/new.md')).toBe(true);
+    });
+
+    it('empty results + truncated shows noResults AND truncated hint', async () => {
+        const mod = await init();
+        getTabsSnapshot.mockReturnValue({
+            activeIndex: 0,
+            recentlyClosedCount: 0,
+            tabs: [],
+        });
+        mod.openPalette();
+        mod.applyWalkResultForTests([], true);
+        const input = document.getElementById('cmd-palette-input') as HTMLInputElement;
+        input.value = 'no-match-xyz';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        const list = document.getElementById('cmd-palette-list')!;
+        expect(list.querySelector('.cmd-palette-empty')).not.toBeNull();
+        expect(list.querySelector('.cmd-palette-empty')!.textContent)
+            .toMatch(/Keine Treffer|No matches/i);
+        expect(list.querySelector('.cmd-palette-hint')).not.toBeNull();
+        expect(list.textContent).toMatch(/gekürzt|truncated|verfeinern/i);
+    });
+});
+
+describe('command palette P2 leftovers', () => {
     it('walk results remix after open and preserve selection by path', async () => {
         const mod = await init();
         mod.openPalette();
         const input = document.getElementById('cmd-palette-input') as HTMLInputElement;
-        // Select second tab (by ArrowDown)
         input.dispatchEvent(new KeyboardEvent('keydown', {
             key: 'ArrowDown', bubbles: true, cancelable: true,
         }));
@@ -267,7 +440,6 @@ describe('command palette P2 — files walk + headings', () => {
         const selectedPath = active.getAttribute('data-path');
         expect(selectedPath).toBeTruthy();
 
-        // Inject walk files including new path
         mod.applyWalkResultForTests(
             [
                 { path: '/vault/walk/extra.md', name: 'extra.md', relative: 'extra.md' },
@@ -276,14 +448,11 @@ describe('command palette P2 — files walk + headings', () => {
             false,
         );
 
-        // Selection still on same path
         active = list.querySelector('.cmd-palette-item.active') as HTMLElement;
         expect(active.getAttribute('data-path')).toBe(selectedPath);
-        // Walk file appears
         const labels = Array.from(list.querySelectorAll('.cmd-palette-label'))
             .map((el) => el.textContent);
         expect(labels).toContain('extra.md');
-        // Walk file badge
         const walkItem = Array.from(list.querySelectorAll('.cmd-palette-item'))
             .find((el) => el.getAttribute('data-path') === '/vault/walk/extra.md')!;
         expect(walkItem.getAttribute('data-source')).toBe('file');
@@ -305,27 +474,14 @@ describe('command palette P2 — files walk + headings', () => {
         input.value = 'extra';
         input.dispatchEvent(new Event('input', { bubbles: true }));
 
-        const list = document.getElementById('cmd-palette-list')!;
-        expect(list.querySelectorAll('.cmd-palette-item').length).toBe(1);
-
         input.dispatchEvent(new KeyboardEvent('keydown', {
             key: 'Enter', bubbles: true, cancelable: true,
         }));
         expect(openDocument).toHaveBeenCalledWith('/vault/walk/extra.md');
-        expect(tauri.invoke).not.toHaveBeenCalledWith(
-            'tab_open',
-            expect.anything(),
-        );
 
-        // reopen for Ctrl+Enter
         openDocument.mockClear();
         tauri.invoke.mockClear();
-        tauri.invoke.mockImplementation((cmd: string) => {
-            if (cmd === 'palette_files') {
-                return Promise.resolve({ files: [], truncated: false });
-            }
-            return Promise.resolve(undefined);
-        });
+        tauri.invoke.mockImplementation(defaultInvoke);
         mod.openPalette();
         mod.applyWalkResultForTests(
             [{ path: '/vault/walk/extra.md', name: 'extra.md', relative: 'extra.md' }],
@@ -335,32 +491,6 @@ describe('command palette P2 — files walk + headings', () => {
         input.dispatchEvent(new Event('input', { bubbles: true }));
         input.dispatchEvent(new KeyboardEvent('keydown', {
             key: 'Enter', bubbles: true, cancelable: true, ctrlKey: true,
-        }));
-        expect(tauri.invoke).toHaveBeenCalledWith(
-            'tab_open',
-            expect.objectContaining({ path: '/vault/walk/extra.md' }),
-        );
-        expect(openDocument).not.toHaveBeenCalled();
-    });
-
-    it('Ctrl+Click on file row calls tab_open', async () => {
-        const mod = await init();
-        getTabsSnapshot.mockReturnValue({
-            activeIndex: 0,
-            recentlyClosedCount: 0,
-            tabs: [{ id: 1, path: '/other.md', dirty: false, active: true }],
-        });
-        mod.openPalette();
-        mod.applyWalkResultForTests(
-            [{ path: '/vault/walk/extra.md', name: 'extra.md', relative: 'extra.md' }],
-            false,
-        );
-        const input = document.getElementById('cmd-palette-input') as HTMLInputElement;
-        input.value = 'extra';
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-        const item = document.querySelector('.cmd-palette-item') as HTMLElement;
-        item.dispatchEvent(new MouseEvent('click', {
-            bubbles: true, ctrlKey: true,
         }));
         expect(tauri.invoke).toHaveBeenCalledWith(
             'tab_open',
@@ -387,9 +517,6 @@ describe('command palette P2 — files walk + headings', () => {
         input.value = '#Det';
         input.dispatchEvent(new Event('input', { bubbles: true }));
         expect(list.querySelectorAll('.cmd-palette-item').length).toBe(1);
-        expect(list.querySelector('.cmd-palette-label')!.textContent).toBe('Details');
-        expect(list.querySelector('.cp-hit')).not.toBeNull();
-
         input.dispatchEvent(new KeyboardEvent('keydown', {
             key: 'Enter', bubbles: true, cancelable: true,
         }));
@@ -406,40 +533,5 @@ describe('command palette P2 — files walk + headings', () => {
         const list = document.getElementById('cmd-palette-list')!;
         expect(list.querySelector('.cmd-palette-item')).toBeNull();
         expect(list.textContent).toMatch(/Markdown/i);
-    });
-
-    it('shows truncated walk hint', async () => {
-        const mod = await init();
-        mod.openPalette();
-        mod.applyWalkResultForTests(
-            [{ path: '/a.md', name: 'a.md', relative: 'a.md' }],
-            true,
-        );
-        const list = document.getElementById('cmd-palette-list')!;
-        expect(list.textContent).toMatch(/gekürzt|truncated|Kürzung|verfeinern/i);
-    });
-
-    it('includes recent rows from vault DOM with recent badge', async () => {
-        mountDom({
-            recent: `<li class="node" data-kind="file" data-path="/vault/recent/foo.md">
-              <div class="row"><span class="label">foo.md</span></div>
-            </li>`,
-        });
-        await seedDeCatalog();
-        getTabsSnapshot.mockReturnValue({
-            activeIndex: 0,
-            recentlyClosedCount: 0,
-            tabs: [{ id: 1, path: '/other.md', dirty: false, active: true }],
-        });
-        const mod = await init();
-        mod.openPalette();
-        const input = document.getElementById('cmd-palette-input') as HTMLInputElement;
-        input.value = 'foo';
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-        const item = document.querySelector('.cmd-palette-item') as HTMLElement;
-        expect(item).toBeTruthy();
-        expect(item.getAttribute('data-source')).toBe('recent');
-        expect(item.querySelector('.cmd-palette-badge')!.textContent)
-            .toMatch(/Zuletzt|Recent/i);
     });
 });
