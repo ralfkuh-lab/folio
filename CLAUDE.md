@@ -286,6 +286,22 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   2026-07-20). Persistenz: `vault_filter_markdown_only` +
   `vault_filter_bar_visible` in `panel_state.rs`; Query flüchtig.
   E2E-Reset räumt den Filter über den Hook `window.__folioVaultFilterReset()`.
+- **Command Palette** (Strg+P; Spec
+  [`docs/spec-command-palette.md`](docs/spec-command-palette.md)):
+  Overlay `#cmd-palette` (`dist/index.html` + `styles/overlays.css`),
+  Module `ui/command-palette.ts` + `ui/palette-commands.ts` +
+  `util/fuzzy.ts`. Trigger im DOM-Capture-Block von
+  `toolbar-actions.ts` (Toggle; Esc/Backdrop/Fokus-Restore). Drei
+  Modi im selben Input: *(keins)* Dateien (offene Tabs >
+  Recents aus Vault-DOM > `palette_files`-Pin-Walk, Cap 20 000 +
+  `truncated`), `>` Befehle nur via `menu_dispatch` (disabled
+  ausgeblendet), `#` TOC-Überschriften (`toc_click`). Enter:
+  `openDocument`/`activateTab`; Strg+Enter/Strg+Klick: `tab_open`.
+  Max. 50 Zeilen + „weiter tippen…"; Match-Highlight `.cp-hit`.
+  Hooks `window.__folioOpenPalette(prefill?)` /
+  `__folioClosePalette()` (E2E/Reset; synthetisches Strg+P unter
+  Xvfb fragil). E2E `51_command_palette.py`; Reset schließt die
+  Palette über den Close-Hook.
 - **main-Badge-Farbe**: `git-branch--main` (und dark) jetzt `var(--rail-accent)` statt `--rail-fg-muted` (Detached bleibt rot, Feature-Branches bernstein) — Unterscheidbarkeit zum Dimming.
 - **Dateityp-Klassifizierung**: zentral in `file_kind.rs`
   (`FileKind::{Markdown, Text, Image, Binary}`, `classify(path)`).
@@ -766,7 +782,7 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
 
 ## E2E-Test-Suite
 
-Vollständige UI-Coverage in `tests/e2e/` (48 Szenarien, Python +
+Vollständige UI-Coverage in `tests/e2e/` (51 Szenarien, Python +
 Pillow): Boot, View-/Edit-/Split-Mode, Theme, Vault, Find (inkl.
 Code-View), Workspace, Save-Roundtrip durch alle BOM/EOL-Kombis,
 Undo/Redo, Toolbar-Commands (Bold/Italic/Heading), Menü-Coverage
@@ -774,9 +790,10 @@ Undo/Redo, Toolbar-Commands (Bold/Italic/Heading), Menü-Coverage
 History-Back/Forward, Rechtsklick-Kontextmenüs, echter TOC-DOM-Klick,
 HTML-View, Tabs (API/UI/Restore/Reorder), View-/Custom-Themes,
 Theme-CRUD/-Browser/-Import-Export, Export-Highlighting, Mermaid
-(View + Export), Link-in-neuem-Tab, Vault-Volltextsuche (API + UI)
-sowie KI-Settings, KI-Übersetzung, KI-Theme-Autor, Export-KI-Draft und
-KI-Aktionen (Mock-Provider). Der englische Boot ist über
+(View + Export), Link-in-neuem-Tab, Vault-Volltextsuche (API + UI),
+Vault-Filter, Tab-Kontextmenü, Command Palette sowie KI-Settings,
+KI-Übersetzung, KI-Theme-Autor, Export-KI-Draft und KI-Aktionen
+(Mock-Provider). Der englische Boot ist über
 `scripts/run-e2e.sh --lang-smoke` separat abgedeckt.
 
 Wrapper: `bash scripts/run-e2e.sh` (Linux+Xvfb). Visual-Baselines in

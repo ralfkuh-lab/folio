@@ -258,6 +258,23 @@ pub async fn context(path: String, x: f64, y: f64, handle: AppHandle) -> Result<
         .map_err(|error| error.to_string())
 }
 
+/// Datei-Quelle für die Command Palette: frischer Pin-Walk (kein Cache).
+/// Siehe `crate::palette::collect_palette_files`.
+#[tauri::command]
+pub async fn palette_files(
+    state: State<'_, AppState>,
+) -> Result<crate::palette::PaletteFilesResponse, String> {
+    let workspace = state
+        .workspace
+        .lock()
+        .map_err(|_| "workspace lock poisoned".to_string())?;
+    // Walk kann etwas dauern — Snapshot der Pins freigeben den Lock
+    // nicht während des Walks halten: Liste klonen, Lock droppen.
+    let pinned = workspace.pinned().to_vec();
+    drop(workspace);
+    Ok(crate::palette::collect_palette_files(&pinned))
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{vault::Vault, workspace::Workspace};

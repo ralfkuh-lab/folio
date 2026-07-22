@@ -527,6 +527,18 @@
 <div id="dnd-overlay" data-i18n="view.dropOverlay.message">Datei hier ablegen, um zu öffnen</div>
 <nav id="context-menu" role="menu"></nav>
 <nav id="tab-ctx-menu" role="menu"></nav>
+<div id="cmd-palette" hidden>
+  <div class="cmd-palette-backdrop"></div>
+  <div class="cmd-palette-panel" role="dialog" aria-modal="true" aria-labelledby="cmd-palette-input">
+    <input type="text" id="cmd-palette-input" class="cmd-palette-input"
+      placeholder="Datei suchen oder > für Befehle…"
+      data-i18n-placeholder="palette.input.placeholder"
+      aria-label="Command Palette"
+      data-i18n-aria-label="palette.input.ariaLabel"
+      autocomplete="off" spellcheck="false" />
+    <ul id="cmd-palette-list" class="cmd-palette-list" role="listbox"></ul>
+  </div>
+</div>
 <div id="rename-dialog" hidden>
   <div class="unsaved-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="rename-title">
     <div class="unsaved-dialog__title" id="rename-title" data-i18n="dialogs.rename.title">Umbenennen</div>

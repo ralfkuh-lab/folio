@@ -145,6 +145,24 @@ def reset_canonical_state(api: AutomationApi, settings_snapshot: dict[str, Any])
                 f"(filterHidden={ev.get('h')!r}, query={ev.get('q')!r})"
             )
         time.sleep(0.05)
+    # 9b) Command Palette schließen (falls offen) — Hook, Verifikations-Poll.
+    api.eval(
+        "typeof window.__folioClosePalette==='function'"
+        "&&window.__folioClosePalette()"
+    )
+    deadline = time.monotonic() + 2.0
+    while True:
+        open_flag = api.eval(
+            "!!(document.body.classList.contains('palette-open')"
+            "||!document.getElementById('cmd-palette')?.hidden)"
+        ).get("value")
+        if open_flag is not True:
+            break
+        if time.monotonic() > deadline:
+            raise RuntimeError(
+                f"Reset: Command Palette bleibt offen (open={open_flag!r})"
+            )
+        time.sleep(0.05)
     # 10) Reflow settlen lassen, bevor das Szenario startet.
     _expect_acked("sync_render", api.sync_render())
     # 10b) Recents-Verifikation: ein in-flight workspace_add_recent des

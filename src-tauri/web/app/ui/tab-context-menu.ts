@@ -2,11 +2,11 @@
    Markup #tab-ctx-menu, CSS-Klassen ctx-item/ctx-sep wie vault/context-menu.
    Serien-Close über den exportierten requestCloseTab-Pfad (Dirty-Dialog). */
 
-import { safeInvoke } from '../util/log';
 import { t } from '../i18n/translate';
 import {
     getTabsSnapshot,
     requestCloseTab,
+    restoreLastTab,
     type TabSummary,
 } from '../state/tabs';
 
@@ -184,7 +184,7 @@ export function initTabContextMenu(): void {
             return;
         }
         if (act === 'restore') {
-            safeInvoke('tab_restore_last', {}, 'tab_restore_last', 'warn');
+            restoreLastTab();
             return;
         }
 

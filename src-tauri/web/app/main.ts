@@ -30,6 +30,7 @@ import { attachPasteHandler } from './ui/paste-handler';
 import { applySplitMidFromBackend, initRails, setRailVisibility } from './ui/rails';
 import { initContextMenu } from './vault/context-menu';
 import { initTabContextMenu } from './ui/tab-context-menu';
+import { initCommandPalette } from './ui/command-palette';
 import { initVaultTree, insertVaultChildren, refreshVault } from './vault/tree';
 import { initVaultFilter } from './vault/filter';
 import { initVaultSearch, consumeNavRestoreSkip } from './vault/search';
@@ -135,6 +136,7 @@ function runModuleInits(): void {
     });
     initContextMenu({ openDocument, refreshVault, showStatus });
     initTabContextMenu();
+    initCommandPalette();
     initMenuRouter({ applyRailVisibility });
     initDragDrop();
     initAutomationEvents();

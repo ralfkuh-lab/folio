@@ -16,6 +16,7 @@ import { openImageDialog } from './image-dialog';
 import { openTranslateDialog } from './translate-dialog';
 import { showCheatSheet, hideCheatSheet, getCheatSheetRows } from './cheatsheet';
 import { folioLog, safeInvoke } from '../util/log';
+import { togglePalette } from './command-palette';
 
 export function initToolbarActions(): void {
     const core = window.__TAURI__ && window.__TAURI__.core;
@@ -212,6 +213,14 @@ export function initToolbarActions(): void {
         if (shift && k === 's') {
             e.preventDefault();
             safeInvoke('menu_dispatch', { id: 'file.save_as' }, 'menu_dispatch file.save_as');
+            return;
+        }
+        // Strg+P: Command Palette (Toggle). capture:true, damit Monaco
+        // den Chord nicht frisst — gleiches Muster wie Strg+S/W.
+        if (!shift && k === 'p') {
+            e.preventDefault();
+            e.stopPropagation();
+            togglePalette();
             return;
         }
         if (!shift && k === 'o') {
