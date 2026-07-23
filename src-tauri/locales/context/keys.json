@@ -368,7 +368,7 @@
   "palette.files.truncated": "Hint shown when the backend pin walk hit the 20000-file cap for the command palette.",
   "palette.headings.notMarkdown": "Empty-state message in # mode when the active document is not Markdown.",
   "palette.input.ariaLabel": "Accessible name for the command palette search input field.",
-  "palette.input.placeholder": "Placeholder text in the command palette input guiding file search and the > command mode.",
+  "palette.input.placeholder": "Placeholder text in the command palette input guiding file search, the > command mode, and the # heading mode.",
   "palette.noResults": "Empty-state message when the command palette filter yields no matching rows.",
   "palette.results.truncated": "Hint row shown below the first 50 palette results when more matches exist.",
   "search.dialog.caseSensitive.label": "Label for the 'match case' checkbox in the vault search dialog.",

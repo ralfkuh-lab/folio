@@ -526,6 +526,23 @@ describe('command palette P2 leftovers', () => {
         );
     });
 
+    it('# mode keeps document order instead of sorting alphabetically', async () => {
+        mountDom({
+            toc: `
+              <li class="entry h1" data-level="1" data-slug="zebra"><span class="text">Zebra</span></li>
+              <li class="entry h2" data-level="2" data-slug="mitte"><span class="text">Mitte</span></li>
+              <li class="entry h2" data-level="2" data-slug="anfang"><span class="text">Anfang</span></li>
+            `,
+        });
+        await seedDeCatalog();
+        const mod = await init();
+        mod.openPalette('#');
+        const list = document.getElementById('cmd-palette-list')!;
+        const labels = Array.from(list.querySelectorAll('.cmd-palette-label'))
+            .map((el) => el.textContent);
+        expect(labels).toEqual(['Zebra', 'Mitte', 'Anfang']);
+    });
+
     it('# mode shows not-markdown hint for non-md docs', async () => {
         document.body.className = 'kind-text view-mode';
         await init();

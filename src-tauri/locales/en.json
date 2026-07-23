@@ -380,7 +380,7 @@
   "palette.files.truncated": "File list truncated — refine your search…",
   "palette.headings.notMarkdown": "Headings are only available for Markdown documents",
   "palette.input.ariaLabel": "Command palette",
-  "palette.input.placeholder": "Search files or type > for commands…",
+  "palette.input.placeholder": "Search files, > for commands, # for headings…",
   "palette.noResults": "No matches",
   "palette.results.truncated": "Keep typing to narrow results…",
   "search.dialog.caseSensitive.label": "Match case",

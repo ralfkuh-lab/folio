@@ -384,7 +384,7 @@
   "palette.files.truncated": "Список файлов обрезан — уточните поиск…",
   "palette.headings.notMarkdown": "Заголовки доступны только для документов Markdown",
   "palette.input.ariaLabel": "Палитра команд",
-  "palette.input.placeholder": "Поиск файлов или > для команд…",
+  "palette.input.placeholder": "Поиск файлов, > для команд, # для заголовков…",
   "palette.noResults": "Нет совпадений",
   "palette.results.truncated": "Продолжайте ввод, чтобы сузить результаты…",
   "search.dialog.caseSensitive.label": "Учитывать регистр",

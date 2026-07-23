@@ -380,7 +380,7 @@
   "palette.files.truncated": "Dateiliste gekürzt — Suche verfeinern…",
   "palette.headings.notMarkdown": "Überschriften sind nur bei Markdown-Dokumenten verfügbar",
   "palette.input.ariaLabel": "Befehlspalette",
-  "palette.input.placeholder": "Datei suchen oder > für Befehle…",
+  "palette.input.placeholder": "Datei suchen, > für Befehle, # für Überschriften…",
   "palette.noResults": "Keine Treffer",
   "palette.results.truncated": "Weiter tippen, um die Treffer einzugrenzen…",
   "search.dialog.caseSensitive.label": "Groß-/Kleinschreibung beachten",

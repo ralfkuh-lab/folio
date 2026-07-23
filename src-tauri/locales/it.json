@@ -382,7 +382,7 @@
   "palette.files.truncated": "Elenco file troncato — affina la ricerca…",
   "palette.headings.notMarkdown": "Le intestazioni sono disponibili solo per documenti Markdown",
   "palette.input.ariaLabel": "Tavolozza comandi",
-  "palette.input.placeholder": "Cerca file o digita > per i comandi…",
+  "palette.input.placeholder": "Cerca file, > per i comandi, # per le intestazioni…",
   "palette.noResults": "Nessun risultato",
   "palette.results.truncated": "Continua a digitare per restringere i risultati…",
   "search.dialog.caseSensitive.label": "Maiuscole/minuscole",

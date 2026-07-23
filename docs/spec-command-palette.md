@@ -99,7 +99,10 @@ Quelle: der bereits gerenderte TOC des aktiven Dokuments (DOM
 `#toc-list` bzw. die Datenquelle dahinter — Implementierer nimmt den
 vorhandenen Weg mit dem wenigsten neuen Code). Enter springt über den
 bestehenden Anchor-Klick-Pfad. Nur bei `kind-markdown` verfügbar;
-sonst zeigt `#` eine Hinweiszeile.
+sonst zeigt `#` eine Hinweiszeile. Sortierung: **Dokumentreihenfolge**
+bei Score-Gleichstand (stabiler Sort ohne Label-Tiebreaker) — der
+alphabetische Tiebreaker der anderen Modi wäre für ein TOC falsch
+(Fix 2026-07-23, jsdom- + E2E-Assert).
 
 ## Verhalten / Kanten
 

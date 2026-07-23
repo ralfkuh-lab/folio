@@ -378,7 +378,7 @@
   "palette.files.truncated": "文件列表已截断 — 请细化搜索…",
   "palette.headings.notMarkdown": "标题仅适用于 Markdown 文档",
   "palette.input.ariaLabel": "命令面板",
-  "palette.input.placeholder": "搜索文件，或输入 > 执行命令…",
+  "palette.input.placeholder": "搜索文件，> 执行命令，# 跳转标题…",
   "palette.noResults": "无匹配结果",
   "palette.results.truncated": "继续输入以缩小结果…",
   "search.dialog.caseSensitive.label": "区分大小写",

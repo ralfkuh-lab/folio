@@ -402,6 +402,9 @@ function sortRows(list: PaletteRow[]): PaletteRow[] {
         if (a.kind !== b.kind) {
             return a.kind.localeCompare(b.kind);
         }
+        // Headings behalten bei Score-Gleichstand die Dokumentreihenfolge
+        // (sort ist stabil) — alphabetisch waere fuer ein TOC falsch.
+        if (a.kind === 'heading') return 0;
         return a.label.localeCompare(b.label);
     });
 }

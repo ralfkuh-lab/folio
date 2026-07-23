@@ -364,6 +364,21 @@ def run(ctx):
             )
             target_slug = next(s for s in slugs if s and "abschnitt" in s)
             _open_palette(ctx, "#")
+            toc_texts = [
+                (e.get("text") or "").strip()
+                for e in (ctx.api.state().get("toc") or [])
+            ][:50]
+            ok = _poll(
+                ctx,
+                lambda: len(_item_labels(ctx)) >= len(toc_texts),
+                timeout=3.0,
+            )
+            ctx.expect(ok, f"#-Modus (leer) unvollständig: {_item_labels(ctx)!r}")
+            labels = [(lab or "").strip() for lab in _item_labels(ctx)][:len(toc_texts)]
+            ctx.expect(
+                labels == toc_texts,
+                f"Headings nicht in Dokumentreihenfolge: {labels!r} != {toc_texts!r}",
+            )
             _set_query(ctx, "#Abschnitt")
             ok = _poll(
                 ctx,

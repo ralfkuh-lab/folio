@@ -382,7 +382,7 @@
   "palette.files.truncated": "Liste de fichiers tronquée — affinez la recherche…",
   "palette.headings.notMarkdown": "Les titres ne sont disponibles que pour les documents Markdown",
   "palette.input.ariaLabel": "Palette de commandes",
-  "palette.input.placeholder": "Rechercher des fichiers ou tapez > pour les commandes…",
+  "palette.input.placeholder": "Rechercher des fichiers, > pour les commandes, # pour les titres…",
   "palette.noResults": "Aucun résultat",
   "palette.results.truncated": "Continuez à taper pour affiner les résultats…",
   "search.dialog.caseSensitive.label": "Respecter la casse",

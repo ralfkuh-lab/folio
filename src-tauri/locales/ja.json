@@ -378,7 +378,7 @@
   "palette.files.truncated": "ファイル一覧が切り詰められました — 検索を絞り込んでください…",
   "palette.headings.notMarkdown": "見出しは Markdown ドキュメントでのみ利用できます",
   "palette.input.ariaLabel": "コマンドパレット",
-  "palette.input.placeholder": "ファイルを検索、または > でコマンド…",
+  "palette.input.placeholder": "ファイルを検索、> でコマンド、# で見出し…",
   "palette.noResults": "一致なし",
   "palette.results.truncated": "入力を続けて結果を絞り込んでください…",
   "search.dialog.caseSensitive.label": "大文字と小文字を区別",
