@@ -29,6 +29,7 @@ umbenannt werden:
 
 - Backend zu Frontend: `document:loaded`, `document:dirty_changed`,
   `document:closed`, `document:saved`, `document:external_changed`,
+  `document:encoding_changed`, `document:save_error`,
   `tabs:changed`,
   `app:set_mode`, `app:set_theme`, `vault:refresh`,
   `vault:dir_changed`, `navigation:changed`, `navigation:toc_click`,
@@ -41,6 +42,25 @@ umbenannt werden:
   `automation:open_document`, `automation:sync_render`, `cli:open`,
   `menu:*`.
 - Frontend zu Backend: `shell:event` und `editor:event`.
+
+Die `document:loaded`-Payload (und der `read_file`-Command) tragen neben
+`path`/`text`/`kind`/`language` additiv ein `encoding`-Feld mit einem
+technischen Label: `utf8` | `utf8-bom` | `utf16le` | `utf16be` |
+`windows1252`. Das Feld ist rein informativ (Statusleiste) und ändert
+keinen bestehenden Vertrag.
+
+`document:encoding_changed { tabId, encoding }` ist ein leichtgewichtiges
+Event für den Fall, dass ein externer Reload NUR die Metadaten (BOM/
+Encoding) bei identischem Text ändert — es gibt dann kein `document:loaded`.
+Das Frontend validiert `tabId` (wie `saved`/`dirty_changed`) und aktualisiert
+nur die Encoding-Statuszelle.
+
+`document:save_error { message }` macht einen Fehler aus dem fire-and-forget
+Monaco-Strg+S-Pfad (`editorSaveRequested`, kein invoke-Rückkanal) mit
+bereits lokalisierter Meldung im Frontend sichtbar (z. B. unmappbare Zeichen
+beim Windows-1252-Save). Der reguläre Command-Save (`editor_save_requested`
+via `saveCurrent`) liefert dieselbe Meldung direkt als invoke-Rejection; der
+Automation-`POST /save` bleibt bei HTTP 500 + Fehlertext.
 
 Ack-fähige Automation-Pfade bestätigen über den Tauri-Command
 `automation_ack({ id })`, nachdem der Frontend-Handler seine DOM-Mutation

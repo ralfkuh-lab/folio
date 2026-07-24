@@ -60,10 +60,36 @@ pub async fn editor_save_requested(state: State<'_, AppState>) -> Result<bool, S
         .active_mut()
         .document_store
         .save()
-        .map_err(|error| {
-            let detail = error.to_string();
-            i18n::t_args("errors.editor.saveFailed", &[("detail", &detail)])
-        })
+        .map_err(localize_save_error)
+}
+
+/// Uebersetzt einen `SaveError` fuer die Editor-Save-Pfade (Command +
+/// Monaco-`editorSaveRequested`): unmappbare Zeichen (Windows-1252) → eigener
+/// Key mit Zeichenliste als `{detail}`, IO-Fehler → `errors.editor.saveFailed`.
+/// Save-As nutzt bewusst einen eigenen Match mit `errors.file.saveFailed`.
+/// Die Katalog-Keys stehen als String-Literale im Match (Referenz-Gate).
+pub(crate) fn localize_save_error(error: crate::document_store::SaveError) -> String {
+    match error {
+        crate::document_store::SaveError::Unmappable(chars) => i18n::t_args(
+            "errors.file.encodingUnmappable",
+            &[("detail", &unmappable_detail(&chars))],
+        ),
+        crate::document_store::SaveError::Io(error) => i18n::t_args(
+            "errors.editor.saveFailed",
+            &[("detail", &error.to_string())],
+        ),
+    }
+}
+
+/// Kommagetrennte Liste der nicht kodierbaren Zeichen fuer die
+/// `{detail}`-Platzhalter der `errors.file.encodingUnmappable`-Meldung.
+/// Gemeinsam genutzt von Save (hier) und Save-As.
+pub(crate) fn unmappable_detail(chars: &[char]) -> String {
+    chars
+        .iter()
+        .map(|c| c.to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 #[tauri::command]

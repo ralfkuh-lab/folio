@@ -285,7 +285,13 @@ impl AppState {
             loaded: Some(Arc::new({
                 let app = app.clone();
                 move |payload| {
-                    let _ = Self::emit_document_loaded(&app, tab_id, &payload.path, &payload.text);
+                    let _ = Self::emit_document_loaded(
+                        &app,
+                        tab_id,
+                        &payload.path,
+                        &payload.text,
+                        &payload.encoding,
+                    );
                     Self::schedule_tabs_changed(app.clone());
                     // Wartende `POST /wait { event: "document.loaded" }` aufwecken.
                     crate::automation::wait::signal_document_loaded(
@@ -334,19 +340,31 @@ impl AppState {
                 }
             })),
             text_changed: None,
-            external_changed: Some(Arc::new(move |path| {
-                let is_active = app
-                    .state::<AppState>()
-                    .tabs
-                    .lock()
-                    .map(|tabs| tabs.is_active(tab_id))
-                    .unwrap_or(false);
-                if !is_active {
-                    return;
+            external_changed: Some(Arc::new({
+                let app = app.clone();
+                move |path| {
+                    let is_active = app
+                        .state::<AppState>()
+                        .tabs
+                        .lock()
+                        .map(|tabs| tabs.is_active(tab_id))
+                        .unwrap_or(false);
+                    if !is_active {
+                        return;
+                    }
+                    let _ = app.emit(
+                        "document:external_changed",
+                        serde_json::json!({ "path": path, "tabId": tab_id }),
+                    );
                 }
+            })),
+            // Metadaten-only-Reload (BOM/Encoding geaendert, Text gleich):
+            // leichtgewichtiges Event nur fuer die Statusleisten-Zelle.
+            // tabId-Validierung passiert im Frontend (wie saved/dirty_changed).
+            encoding_changed: Some(Arc::new(move |encoding| {
                 let _ = app.emit(
-                    "document:external_changed",
-                    serde_json::json!({ "path": path, "tabId": tab_id }),
+                    "document:encoding_changed",
+                    serde_json::json!({ "encoding": encoding, "tabId": tab_id }),
                 );
             })),
         }
@@ -414,6 +432,7 @@ impl AppState {
         tab_id: u64,
         path: &str,
         text: &str,
+        encoding: &str,
     ) -> Result<(), String> {
         let seq = next_doc_seq();
         let toc_entries = toc::extract(text);
@@ -423,6 +442,7 @@ impl AppState {
                 "path": path,
                 "kind": crate::file_kind::classify(path),
                 "language": crate::file_kind::editor_language(path),
+                "encoding": encoding,
                 "text": text,
                 "content": renderer::render_body(text),
                 "tocHtml": toc::render_html(&toc_entries),

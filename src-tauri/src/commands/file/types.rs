@@ -7,6 +7,9 @@ pub struct FileData {
     pub content: String,
     pub kind: FileKind,
     pub language: String,
+    /// Encoding-Label (`utf8` | `utf8-bom` | `utf16le` | `utf16be` |
+    /// `windows1252`), additiv fuer die Statusleiste.
+    pub encoding: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -27,6 +30,7 @@ mod tests {
             content: "b".into(),
             kind: FileKind::Markdown,
             language: "markdown".into(),
+            encoding: "utf8".into(),
         };
         assert_eq!("a", data.path);
         assert_eq!("b", data.content);

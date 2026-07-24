@@ -90,9 +90,17 @@ pub fn run_save_as(
     tabs.active_mut()
         .document_store
         .save_as(&target_path)
-        .map_err(|error| {
-            let detail = error.to_string();
-            i18n::t_args("errors.file.saveFailed", &[("detail", &detail)])
+        .map_err(|error| match error {
+            crate::document_store::SaveError::Unmappable(chars) => i18n::t_args(
+                "errors.file.encodingUnmappable",
+                &[(
+                    "detail",
+                    &crate::commands::editor::unmappable_detail(&chars),
+                )],
+            ),
+            crate::document_store::SaveError::Io(error) => {
+                i18n::t_args("errors.file.saveFailed", &[("detail", &error.to_string())])
+            }
         })?;
     drop(tabs);
 

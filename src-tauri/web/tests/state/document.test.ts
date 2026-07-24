@@ -61,6 +61,7 @@ function buildDom(): void {
     document.body.innerHTML = `
         <div id="status-path"></div>
         <span id="status-wordcount"></span>
+        <span id="status-encoding" hidden></span>
         <button id="tb-save"></button>
         <button id="tb-mode-view"></button>
         <button id="tb-mode-edit"></button>
@@ -126,6 +127,49 @@ describe('state/document — synchronous setters', () => {
         updateWordCount(sample);
         expect(el.hidden).toBe(false);
         expect(el.textContent).toBe('95 Wörter · 611 Zeichen · 35 Zeilen');
+    });
+
+    it('updateEncoding shows technical label only for non-UTF-8 text docs', async () => {
+        const { updateEncoding } = await import('../../app/state/document');
+        const el = document.getElementById('status-encoding') as HTMLElement;
+
+        // Reines UTF-8 (Normalfall) -> versteckt.
+        updateEncoding('utf8', 'markdown');
+        expect(el.hidden).toBe(true);
+        expect(el.textContent).toBe('');
+
+        // Windows-1252 auf Text-Dokument -> sichtbar, technisches Label.
+        updateEncoding('windows1252', 'text');
+        expect(el.hidden).toBe(false);
+        expect(el.textContent).toBe('Windows-1252');
+
+        // UTF-8 BOM / UTF-16 -> eigene Labels.
+        updateEncoding('utf8-bom', 'markdown');
+        expect(el.textContent).toBe('UTF-8 BOM');
+        updateEncoding('utf16le', 'text');
+        expect(el.textContent).toBe('UTF-16 LE');
+        updateEncoding('utf16be', 'markdown');
+        expect(el.textContent).toBe('UTF-16 BE');
+
+        // Nicht-Text-Kind (Bild) -> immer versteckt, selbst bei non-UTF-8.
+        updateEncoding('windows1252', 'image');
+        expect(el.hidden).toBe(true);
+
+        // Fehlendes/leeres Encoding -> versteckt.
+        updateEncoding(undefined, 'markdown');
+        expect(el.hidden).toBe(true);
+    });
+
+    it('saveCurrent surfaces a rejected save as a visible status message', async () => {
+        const docMod = await import('../../app/state/document');
+        const msg = 'Datei enthält Zeichen, die sich nicht in Windows-1252 speichern lassen: 😀';
+        tauri.invoke.mockImplementation((cmd: string) => {
+            if (cmd === 'editor_save_requested') return Promise.reject(msg);
+            return Promise.resolve(undefined);
+        });
+        const ok = await docMod.saveCurrent();
+        expect(ok).toBe(false);
+        expect(document.getElementById('status-path')!.textContent).toBe(msg);
     });
 
     it('setStatusPath falls back to "Bereit" for empty input', async () => {
@@ -343,6 +387,37 @@ describe('state/document — document:loaded listener', () => {
         );
         expect(codeView.mount).not.toHaveBeenCalled();
         expect(codeView.dispose).toHaveBeenCalled();
+    });
+
+    it('document:encoding_changed updates the cell via the body kind, validating tabId', async () => {
+        const docMod = await import('../../app/state/document');
+        const tabsMod = await import('../../app/state/tabs');
+        vi.mocked(tabsMod.getActiveTabId).mockReturnValue(1);
+        docMod.initDocumentState({ setActiveMode: vi.fn() });
+        const el = document.getElementById('status-encoding') as HTMLElement;
+
+        // Markdown-Dokument (utf8, kein encoding-Feld) laden -> Zelle versteckt.
+        tauri.emitEvent('document:loaded', {
+            path: '/tmp/a.md', kind: 'markdown', text: 'x', content: '', tocHtml: '', tabId: 1,
+        });
+        expect(el.hidden).toBe(true);
+
+        // Metadaten-only-Reload zu UTF-8-BOM -> Zelle sichtbar, kind aus body.
+        tauri.emitEvent('document:encoding_changed', { encoding: 'utf8-bom', tabId: 1 });
+        expect(el.hidden).toBe(false);
+        expect(el.textContent).toBe('UTF-8 BOM');
+
+        // Fremde tabId -> verworfen, Zelle unveraendert.
+        tauri.emitEvent('document:encoding_changed', { encoding: 'windows1252', tabId: 99 });
+        expect(el.textContent).toBe('UTF-8 BOM');
+    });
+
+    it('document:save_error surfaces the localized message in the status bar', async () => {
+        const docMod = await import('../../app/state/document');
+        docMod.initDocumentState({ setActiveMode: vi.fn() });
+        const msg = 'Datei enthält Zeichen, die sich nicht in Windows-1252 speichern lassen: 😀';
+        tauri.emitEvent('document:save_error', { message: msg });
+        expect(document.getElementById('status-path')!.textContent).toBe(msg);
     });
 });
 

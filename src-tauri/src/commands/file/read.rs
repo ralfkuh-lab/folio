@@ -30,13 +30,17 @@ pub async fn read_file(
         .map_err(String::from)?
         .is_some()
     {
-        let (path, content) = {
+        let (path, content, encoding) = {
             let tabs = state
                 .tabs
                 .lock()
                 .map_err(|_| "tabs lock poisoned".to_string())?;
             let store = &tabs.active().document_store;
-            (store.path.clone().unwrap_or_default(), store.text.clone())
+            (
+                store.path.clone().unwrap_or_default(),
+                store.text.clone(),
+                store.encoding_label().to_string(),
+            )
         };
         let language = editor_language(&path).to_string();
         return Ok(FileData {
@@ -44,6 +48,7 @@ pub async fn read_file(
             content,
             kind,
             language,
+            encoding,
         });
     }
     let outcome = document_service::open(
@@ -72,6 +77,7 @@ pub async fn read_file(
         content: loaded.text,
         kind,
         language,
+        encoding: loaded.encoding,
     })
 }
 

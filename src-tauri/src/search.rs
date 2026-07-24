@@ -684,6 +684,11 @@ enum ContentGate {
 /// Reine Byte-Klassifikation ohne Statistik: Größen-Cap ([`MAX_FILE_SIZE`]) +
 /// NUL-Sniff (erste [`NUL_SNIFF_BYTES`]). Einzige Zerlegungsstelle für
 /// [`inspect_content`] (sequenziell) und [`worker_read_disk`] (parallel).
+///
+/// Hinweis: UTF-16-Dateien (die im `document_store` per BOM erkannt und
+/// geöffnet werden können) enthalten für ASCII-Text reichlich NUL-Bytes und
+/// fallen deshalb hier als „binär" heraus — die Volltextsuche überspringt
+/// sie bewusst (kein Bug; der Suchkern arbeitet auf UTF-8-lossy-Bytes).
 fn gate_bytes(bytes: &[u8]) -> ContentGate {
     if bytes.len() as u64 > MAX_FILE_SIZE {
         return ContentGate::TooLarge;

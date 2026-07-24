@@ -95,8 +95,22 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
 
 - **Slugifier**: eigener in `heading_anchor.rs` (kein comrak-Default).
 - **AST-Postprocess** in `renderer.rs` ergänzt fehlendes `GenericAttributes`-Feature.
-- **CRLF/LF/BOM**: Roundtrip ist getestet (`document_store.rs`). Beim Schreiben
-  Original-Encoding/Line-Endings beibehalten.
+- **CRLF/LF/BOM + Encoding**: Roundtrip ist getestet (`document_store.rs`).
+  Beim Schreiben Original-Encoding/Line-Endings beibehalten. `read_and_decode`
+  erkennt in dieser Reihenfolge: BOM (`EF BB BF` → UTF-8-BOM, `FF FE` →
+  UTF-16 LE, `FE FF` → UTF-16 BE) → striktes UTF-8 → **Windows-1252-Fallback**
+  (deterministisch, kann nie fehlschlagen; keine Rate-Heuristik). BOM-loses
+  UTF-16 wird bewusst NICHT erkannt und landet im 1252-Fallback. Das Encoding
+  wird als `TextEncoding`-Enum im `DocumentStore` gehalten (`encoding_rs` für
+  1252 + UTF-16-Decode; UTF-16-**Encode** über std `str::encode_utf16`, weil
+  encoding_rs keinen UTF-16-Encoder hat) und beim Save zurückkodiert. Bei
+  Windows-1252 nicht darstellbare Zeichen (z. B. Emoji) sind ein **Fehler**
+  (`SaveError::Unmappable`, i18n-Key `errors.file.encodingUnmappable`) — die
+  Datei wird NICHT geschrieben, statt Zeichen still durch HTML-Entities zu
+  ersetzen. `document:loaded`/`read_file` liefern additiv ein `encoding`-Label
+  (`utf8`|`utf8-bom`|`utf16le`|`utf16be`|`windows1252`); die Statusleiste
+  (`#status-encoding`) zeigt es nur, wenn es NICHT reines UTF-8 ohne BOM ist
+  (sonst würden alle E2E-Baselines wandern).
 - **IPC-Payloads**: gerendertes HTML geht über Tauri-Events, nicht über Command-Returns.
   *Bewusste Ausnahme*: `render_markdown_preview` (Live-Preview im
   View-/Split-Mode) liefert HTML+TOC als Command-Return. Frontend

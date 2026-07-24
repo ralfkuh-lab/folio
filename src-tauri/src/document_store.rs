@@ -14,10 +14,83 @@ pub enum LineEnding {
     Crlf,
 }
 
+/// Erkanntes Text-Encoding einer geladenen Datei. Wird zusammen mit
+/// `had_bom` gehalten und beim Speichern exakt wiederhergestellt (analog
+/// zur bestehenden BOM/CRLF-Philosophie). Bei `Utf16Le`/`Utf16Be` ist
+/// `had_bom` durch die Erkennung immer `true`, bei `Windows1252` immer
+/// `false`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TextEncoding {
+    #[default]
+    Utf8,
+    Utf16Le,
+    Utf16Be,
+    Windows1252,
+}
+
+impl TextEncoding {
+    /// Frontend-/Payload-Label. Kombiniert mit `had_bom`, weil UTF-8 mit
+    /// und ohne BOM dasselbe Enum teilt.
+    pub fn label(self, had_bom: bool) -> &'static str {
+        match self {
+            TextEncoding::Utf8 => {
+                if had_bom {
+                    "utf8-bom"
+                } else {
+                    "utf8"
+                }
+            }
+            TextEncoding::Utf16Le => "utf16le",
+            TextEncoding::Utf16Be => "utf16be",
+            TextEncoding::Windows1252 => "windows1252",
+        }
+    }
+}
+
+/// Fehler beim Speichern. Trennt gewoehnliche IO-Fehler von dem Fall, dass
+/// der Text Zeichen enthaelt, die sich nicht ins Original-Encoding
+/// (Windows-1252) kodieren lassen — die Datei wird dann NICHT geschrieben,
+/// statt Zeichen still durch HTML-Entities zu ersetzen (was encoding_rs
+/// sonst tun wuerde).
+#[derive(Debug)]
+pub enum SaveError {
+    Io(io::Error),
+    /// Zeichen, die sich nicht in Windows-1252 darstellen lassen
+    /// (dedupliziert, in Reihenfolge des ersten Auftretens).
+    Unmappable(Vec<char>),
+}
+
+impl From<io::Error> for SaveError {
+    fn from(error: io::Error) -> Self {
+        SaveError::Io(error)
+    }
+}
+
+impl std::fmt::Display for SaveError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SaveError::Io(error) => write!(f, "{error}"),
+            SaveError::Unmappable(chars) => {
+                let list = chars
+                    .iter()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "characters not representable in windows-1252: {list}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for SaveError {}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct LoadedDocument {
     pub path: String,
     pub text: String,
+    /// Encoding-Label (`utf8` | `utf8-bom` | `utf16le` | `utf16be` |
+    /// `windows1252`), additiv fuer die Statusleiste.
+    pub encoding: String,
 }
 
 #[derive(Clone, Default)]
@@ -27,6 +100,11 @@ pub struct DocumentEvents {
     pub saved: Option<Arc<dyn Fn(String, String) + Send + Sync>>,
     pub text_changed: Option<Arc<dyn Fn(String) + Send + Sync>>,
     pub external_changed: Option<Arc<dyn Fn(String) + Send + Sync>>,
+    /// Feuert, wenn ein Reload NUR Metadaten (BOM/Encoding) aendert, der
+    /// Text aber identisch bleibt — traegt das neue Encoding-Label. Kein
+    /// voller `loaded`-Pfad (der waere fuer Metadaten-only zu schwer), nur
+    /// die Statusleisten-Zelle wird aktualisiert.
+    pub encoding_changed: Option<Arc<dyn Fn(String) + Send + Sync>>,
 }
 
 pub struct DocumentStore {
@@ -40,6 +118,7 @@ pub struct DocumentStore {
     pub is_dirty: bool,
     pub line_ending: LineEnding,
     pub had_bom: bool,
+    pub encoding: TextEncoding,
     watcher: Option<RecommendedWatcher>,
     watcher_tx: Option<mpsc::Sender<PathBuf>>,
     events: DocumentEvents,
@@ -54,6 +133,7 @@ impl Default for DocumentStore {
             is_dirty: false,
             line_ending: LineEnding::Lf,
             had_bom: false,
+            encoding: TextEncoding::Utf8,
             watcher: None,
             watcher_tx: None,
             events: DocumentEvents::default(),
@@ -70,6 +150,12 @@ impl DocumentStore {
         self.events = events;
     }
 
+    /// Encoding-Label fuer die Frontend-Payload (Statusleiste). Kombiniert
+    /// `encoding` und `had_bom`.
+    pub fn encoding_label(&self) -> &'static str {
+        self.encoding.label(self.had_bom)
+    }
+
     pub fn load(&mut self, path: &str) -> io::Result<LoadedDocument> {
         self.load_inner(path, true)
     }
@@ -80,7 +166,7 @@ impl DocumentStore {
     }
 
     fn load_inner(&mut self, path: &str, emit_loaded: bool) -> io::Result<LoadedDocument> {
-        let (text, line_ending, had_bom) = read_and_decode(path)?;
+        let (text, line_ending, had_bom, encoding) = read_and_decode(path)?;
 
         self.path = Some(path.to_string());
         self.text = text.clone();
@@ -88,11 +174,13 @@ impl DocumentStore {
         self.is_dirty = false;
         self.line_ending = line_ending;
         self.had_bom = had_bom;
+        self.encoding = encoding;
         self.watch_non_fatal(path);
 
         let loaded = LoadedDocument {
             path: path.to_string(),
             text,
+            encoding: self.encoding_label().to_string(),
         };
         if emit_loaded {
             if let Some(callback) = &self.events.loaded {
@@ -118,11 +206,13 @@ impl DocumentStore {
         self.text = String::new();
         self.clean_text = String::new();
         self.is_dirty = false;
-        // line_ending/had_bom unveraendert — sie betreffen nur Text-Saves.
+        // line_ending/had_bom/encoding unveraendert — sie betreffen nur
+        // Text-Saves; das Frontend zeigt fuer Bilder keine Encoding-Zelle.
         self.watch_non_fatal(path);
         let loaded = LoadedDocument {
             path: path.to_string(),
             text: String::new(),
+            encoding: self.encoding_label().to_string(),
         };
         if let Some(callback) = &self.events.loaded {
             callback(loaded.clone());
@@ -143,15 +233,24 @@ impl DocumentStore {
         let Some(path) = self.path.clone() else {
             return Ok(false);
         };
-        let (text, line_ending, had_bom) = read_and_decode(&path)?;
+        let (text, line_ending, had_bom, encoding) = read_and_decode(&path)?;
         if text == self.text {
-            // Inhalt unveraendert. Falls extern ausschliesslich BOM oder
-            // Line-Ending umgestellt wurde, hier die Metadaten nachziehen —
-            // sonst wuerde der naechste Self-Save die externe Format-
-            // Entscheidung zurueckdrehen. Kein loaded-Callback noetig,
-            // die UI rendert nichts Format-Spezifisches.
+            // Inhalt unveraendert. Falls extern ausschliesslich BOM,
+            // Line-Ending oder Encoding umgestellt wurde, hier die Metadaten
+            // nachziehen — sonst wuerde der naechste Self-Save die externe
+            // Format-Entscheidung zurueckdrehen. Kein voller loaded-Pfad,
+            // aber bei einer Encoding-Label-Aenderung ein leichtgewichtiges
+            // `encoding_changed`, damit die Statusleisten-Zelle nachzieht.
+            let old_label = self.encoding_label();
             self.had_bom = had_bom;
             self.line_ending = line_ending;
+            self.encoding = encoding;
+            let new_label = self.encoding_label();
+            if new_label != old_label {
+                if let Some(callback) = &self.events.encoding_changed {
+                    callback(new_label.to_string());
+                }
+            }
             return Ok(false);
         }
         self.text = text.clone();
@@ -159,9 +258,11 @@ impl DocumentStore {
         self.is_dirty = false;
         self.line_ending = line_ending;
         self.had_bom = had_bom;
+        self.encoding = encoding;
         let loaded = LoadedDocument {
             path: path.clone(),
             text,
+            encoding: self.encoding_label().to_string(),
         };
         if let Some(callback) = &self.events.loaded {
             callback(loaded);
@@ -183,6 +284,7 @@ impl DocumentStore {
         self.is_dirty = false;
         self.line_ending = LineEnding::Lf;
         self.had_bom = false;
+        self.encoding = TextEncoding::Utf8;
         self.watcher = None;
         self.watcher_tx = None;
         if let Some(callback) = &self.events.dirty_changed {
@@ -205,19 +307,21 @@ impl DocumentStore {
         }
     }
 
-    pub fn save(&mut self) -> io::Result<bool> {
-        let Some(path) = self.path.clone() else {
-            return Ok(false);
-        };
+    /// Restauriert Line-Endings (LF→Original) und kodiert in das
+    /// Original-Encoding inkl. BOM. Gemeinsame Basis von `save`/`save_as`.
+    fn encode_for_disk(&self) -> Result<Vec<u8>, SaveError> {
         let disk_text = match self.line_ending {
             LineEnding::Lf => self.text.clone(),
             LineEnding::Crlf => self.text.replace('\n', "\r\n"),
         };
-        let mut bytes = Vec::with_capacity(disk_text.len() + 3);
-        if self.had_bom {
-            bytes.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
-        }
-        bytes.extend_from_slice(disk_text.as_bytes());
+        encode_disk_text(&disk_text, self.encoding, self.had_bom)
+    }
+
+    pub fn save(&mut self) -> Result<bool, SaveError> {
+        let Some(path) = self.path.clone() else {
+            return Ok(false);
+        };
+        let bytes = self.encode_for_disk()?;
         fs::write(&path, bytes)?;
         self.clean_text = self.text.clone();
         self.set_dirty(false);
@@ -232,16 +336,8 @@ impl DocumentStore {
     /// nur woanders/anders benannt"). Hängt den Watcher um, ruft den
     /// `loaded`-Callback (damit das Frontend mit neuem Pfad/Kind/
     /// Sprache re-rendert) und triggert `dirty_changed(false)`.
-    pub fn save_as(&mut self, new_path: &str) -> io::Result<LoadedDocument> {
-        let disk_text = match self.line_ending {
-            LineEnding::Lf => self.text.clone(),
-            LineEnding::Crlf => self.text.replace('\n', "\r\n"),
-        };
-        let mut bytes = Vec::with_capacity(disk_text.len() + 3);
-        if self.had_bom {
-            bytes.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
-        }
-        bytes.extend_from_slice(disk_text.as_bytes());
+    pub fn save_as(&mut self, new_path: &str) -> Result<LoadedDocument, SaveError> {
+        let bytes = self.encode_for_disk()?;
         fs::write(new_path, bytes)?;
 
         self.path = Some(new_path.to_string());
@@ -252,6 +348,7 @@ impl DocumentStore {
         let loaded = LoadedDocument {
             path: new_path.to_string(),
             text: self.text.clone(),
+            encoding: self.encoding_label().to_string(),
         };
         if let Some(callback) = &self.events.loaded {
             callback(loaded.clone());
@@ -283,6 +380,7 @@ impl DocumentStore {
         let loaded = LoadedDocument {
             path: new_path.to_string(),
             text: self.text.clone(),
+            encoding: self.encoding_label().to_string(),
         };
         if emit_loaded {
             if let Some(callback) = &self.events.loaded {
@@ -379,28 +477,166 @@ fn same_path(a: &Path, b: &Path) -> bool {
 }
 
 /// Liest `path` und liefert (LF-normalisierter Text, originales
-/// Line-Ending, BOM-Vorhandensein). Wird von `load` und
-/// `reload_if_changed` genutzt — beide brauchen exakt diese
-/// BOM-/CRLF-/UTF-8-Decode-Logik.
+/// Line-Ending, BOM-Vorhandensein, erkanntes Encoding). Wird von `load`
+/// und `reload_if_changed` genutzt.
+///
+/// Erkennungsreihenfolge:
+/// 1. BOM-Sniffing: `EF BB BF` → UTF-8 mit BOM; `FF FE` → UTF-16 LE;
+///    `FE FF` → UTF-16 BE.
+/// 2. Kein BOM: striktes UTF-8 (Fehlschlag ist InvalidData nur nicht mehr —
+///    siehe 3).
+/// 3. UTF-8-Fehlschlag: deterministischer Windows-1252-Fallback — jede
+///    Bytefolge ist gueltiges 1252, das kann nie fehlschlagen. Keine
+///    Rate-Heuristik (kein chardet).
+///
+/// **BOM-loses UTF-16 wird bewusst NICHT erkannt** (keine Heuristik) und
+/// landet daher im Windows-1252-Fallback — solche Dateien fallen zudem im
+/// Volltext-Such-NUL-Sniff (`search.rs`) als binaer heraus.
 ///
 /// Bewusste Vereinfachung bei gemischten Endings: enthaelt die Datei
 /// auch nur ein CRLF, gilt sie als CRLF — ein Save vereinheitlicht
 /// dann ALLE Zeilen auf CRLF (getestet in
 /// `mixed_line_endings_are_classified_crlf_and_unified_on_save`).
 /// Lone-`\r` (Alt-Mac) wird nicht normalisiert und bleibt im Text.
-fn read_and_decode(path: &str) -> io::Result<(String, LineEnding, bool)> {
+fn read_and_decode(path: &str) -> io::Result<(String, LineEnding, bool, TextEncoding)> {
     let bytes = fs::read(path)?;
-    let had_bom = bytes.starts_with(&[0xEF, 0xBB, 0xBF]);
-    let content = if had_bom { &bytes[3..] } else { &bytes };
-    let raw = String::from_utf8(content.to_vec())
-        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+
+    // 1. BOM-Sniffing.
+    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        // UTF-8 mit BOM: Rest weiterhin strikt (wie bisher) — ein defektes
+        // UTF-8-mit-BOM ist ein echter Fehler, kein 1252-Kandidat.
+        let raw = String::from_utf8(bytes[3..].to_vec())
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        let (text, line_ending) = normalize_line_endings(&raw);
+        return Ok((text, line_ending, true, TextEncoding::Utf8));
+    }
+    if bytes.starts_with(&[0xFF, 0xFE]) {
+        let raw = decode_utf16_checked(encoding_rs::UTF_16LE, &bytes[2..])?;
+        let (text, line_ending) = normalize_line_endings(&raw);
+        return Ok((text, line_ending, true, TextEncoding::Utf16Le));
+    }
+    if bytes.starts_with(&[0xFE, 0xFF]) {
+        let raw = decode_utf16_checked(encoding_rs::UTF_16BE, &bytes[2..])?;
+        let (text, line_ending) = normalize_line_endings(&raw);
+        return Ok((text, line_ending, true, TextEncoding::Utf16Be));
+    }
+
+    // 2. Kein BOM: striktes UTF-8.
+    match std::str::from_utf8(&bytes) {
+        Ok(raw) => {
+            let (text, line_ending) = normalize_line_endings(raw);
+            Ok((text, line_ending, false, TextEncoding::Utf8))
+        }
+        Err(_) => {
+            // 3. Windows-1252-Fallback (total, unmoeglich fehlzuschlagen).
+            let raw = encoding_rs::WINDOWS_1252
+                .decode_without_bom_handling(&bytes)
+                .0
+                .into_owned();
+            let (text, line_ending) = normalize_line_endings(&raw);
+            Ok((text, line_ending, false, TextEncoding::Windows1252))
+        }
+    }
+}
+
+/// Decodiert UTF-16 (LE/BE, ohne fuehrenden BOM) **strikt**: meldet
+/// `decode_without_bom_handling` einen Fehler (ungerade Nutzdatenlaenge,
+/// unpaarige Surrogate), bricht der Load mit `InvalidData` ab — encoding_rs
+/// wuerde die kaputten Einheiten sonst still durch `U+FFFD` ersetzen, und
+/// ein spaeterer Save schriebe die Ersatzzeichen auf Platte (Roundtrip-
+/// Bruch). Verhalten damit identisch zum defekten UTF-8-mit-BOM: Datei
+/// oeffnet nicht und bleibt unangetastet.
+fn decode_utf16_checked(
+    encoding: &'static encoding_rs::Encoding,
+    bytes: &[u8],
+) -> io::Result<String> {
+    let (decoded, had_errors) = encoding.decode_without_bom_handling(bytes);
+    if had_errors {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "malformed UTF-16 sequence",
+        ));
+    }
+    Ok(decoded.into_owned())
+}
+
+/// Erkennt das Line-Ending (ein einziges CRLF genuegt) und normalisiert
+/// auf LF.
+fn normalize_line_endings(raw: &str) -> (String, LineEnding) {
     let line_ending = if raw.contains("\r\n") {
         LineEnding::Crlf
     } else {
         LineEnding::Lf
     };
-    let text = raw.replace("\r\n", "\n");
-    Ok((text, line_ending, had_bom))
+    (raw.replace("\r\n", "\n"), line_ending)
+}
+
+/// Kodiert den bereits Line-Ending-restaurierten `disk_text` in Bytes des
+/// Ziel-Encodings inkl. BOM.
+///
+/// - **UTF-8**: Bytes direkt, optionaler BOM `EF BB BF`.
+/// - **UTF-16 LE/BE**: BOM + `str::encode_utf16` (std, weil encoding_rs
+///   keinen UTF-16-Encoder hat). Kann jede gueltige Rust-`String` kodieren.
+/// - **Windows-1252**: `encoding_rs`-Encode; unmappbare Zeichen (z. B.
+///   Emoji) setzen `had_errors` → Fehler statt HTML-Entity-Ersatz, damit
+///   nie zerstoerter Text auf Platte landet.
+fn encode_disk_text(
+    disk_text: &str,
+    encoding: TextEncoding,
+    had_bom: bool,
+) -> Result<Vec<u8>, SaveError> {
+    match encoding {
+        TextEncoding::Utf8 => {
+            let mut bytes = Vec::with_capacity(disk_text.len() + 3);
+            if had_bom {
+                bytes.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
+            }
+            bytes.extend_from_slice(disk_text.as_bytes());
+            Ok(bytes)
+        }
+        TextEncoding::Utf16Le => Ok(encode_utf16(disk_text, false)),
+        TextEncoding::Utf16Be => Ok(encode_utf16(disk_text, true)),
+        TextEncoding::Windows1252 => {
+            let (encoded, _, had_errors) = encoding_rs::WINDOWS_1252.encode(disk_text);
+            if had_errors {
+                return Err(SaveError::Unmappable(unmappable_windows1252(disk_text)));
+            }
+            Ok(encoded.into_owned())
+        }
+    }
+}
+
+fn encode_utf16(text: &str, big_endian: bool) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(text.len() * 2 + 2);
+    // BOM.
+    bytes.extend_from_slice(if big_endian {
+        &[0xFE, 0xFF]
+    } else {
+        &[0xFF, 0xFE]
+    });
+    for unit in text.encode_utf16() {
+        if big_endian {
+            bytes.extend_from_slice(&unit.to_be_bytes());
+        } else {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+    }
+    bytes
+}
+
+/// Sammelt die Zeichen, die sich nicht in Windows-1252 kodieren lassen
+/// (dedupliziert, Reihenfolge des ersten Auftretens) — nur im Fehlerpfad
+/// aufgerufen.
+fn unmappable_windows1252(text: &str) -> Vec<char> {
+    let mut seen = Vec::new();
+    let mut buf = [0u8; 4];
+    for ch in text.chars() {
+        let (_, _, had_errors) = encoding_rs::WINDOWS_1252.encode(ch.encode_utf8(&mut buf));
+        if had_errors && !seen.contains(&ch) {
+            seen.push(ch);
+        }
+    }
+    seen
 }
 
 #[cfg(test)]
@@ -418,6 +654,8 @@ mod tests {
         assert_eq!("one\ntwo\n", store.text);
         assert_eq!(LineEnding::Crlf, store.line_ending);
         assert!(store.had_bom);
+        assert_eq!(TextEncoding::Utf8, store.encoding);
+        assert_eq!("utf8-bom", store.encoding_label());
     }
 
     #[test]
@@ -590,5 +828,161 @@ mod tests {
         assert!(store.save().unwrap());
         assert_eq!(b"\xEF\xBB\xBFa\r\nb\r\n".to_vec(), fs::read(path).unwrap());
         assert!(!store.is_dirty);
+    }
+
+    #[test]
+    fn plain_utf8_reports_utf8_label_without_bom() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("doc.md");
+        fs::write(&path, b"hello\n").unwrap();
+        let mut store = DocumentStore::new();
+        store.load(path.to_str().unwrap()).unwrap();
+        assert_eq!(TextEncoding::Utf8, store.encoding);
+        assert!(!store.had_bom);
+        assert_eq!("utf8", store.encoding_label());
+    }
+
+    #[test]
+    fn windows1252_file_loads_and_saves_roundtrip() {
+        // Alt-SSMS-Skript-Szenario: ä/ö/ü als Windows-1252-Einzelbytes
+        // (kein gueltiges UTF-8) → Fallback greift, Save schreibt wieder 1252.
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("legacy.sql");
+        // "Käse" mit ä = 0xE4, CRLF.
+        fs::write(&path, b"K\xE4se\r\n").unwrap();
+        let mut store = DocumentStore::new();
+        store.load(path.to_str().unwrap()).unwrap();
+        assert_eq!(TextEncoding::Windows1252, store.encoding);
+        assert!(!store.had_bom);
+        assert_eq!(LineEnding::Crlf, store.line_ending);
+        assert_eq!("Käse\n", store.text);
+        assert_eq!("windows1252", store.encoding_label());
+
+        // Weiteres Umlaut einfuegen + speichern → Umlaute als 1252-Bytes.
+        store.update_text("Käse ö\n".into());
+        assert!(store.save().unwrap());
+        assert_eq!(b"K\xE4se \xF6\r\n".to_vec(), fs::read(&path).unwrap());
+    }
+
+    #[test]
+    fn utf16_le_and_be_roundtrip_byte_exact_and_reload() {
+        for big_endian in [false, true] {
+            let temp = TempDir::new().unwrap();
+            let path = temp.path().join("doc.txt");
+            // BOM + "Hi\r\nÄ" (enthaelt CRLF).
+            let mut input = Vec::new();
+            input.extend_from_slice(if big_endian {
+                &[0xFE, 0xFF]
+            } else {
+                &[0xFF, 0xFE]
+            });
+            for unit in "Hi\r\nÄ".encode_utf16() {
+                if big_endian {
+                    input.extend_from_slice(&unit.to_be_bytes());
+                } else {
+                    input.extend_from_slice(&unit.to_le_bytes());
+                }
+            }
+            fs::write(&path, &input).unwrap();
+
+            let mut store = DocumentStore::new();
+            store.load(path.to_str().unwrap()).unwrap();
+            let expected_enc = if big_endian {
+                TextEncoding::Utf16Be
+            } else {
+                TextEncoding::Utf16Le
+            };
+            assert_eq!(expected_enc, store.encoding);
+            assert!(store.had_bom);
+            assert_eq!(LineEnding::Crlf, store.line_ending);
+            assert_eq!("Hi\nÄ", store.text);
+
+            // Save ohne Aenderung → byte-exakter Roundtrip inkl. BOM.
+            assert!(store.save().unwrap());
+            assert_eq!(input, fs::read(&path).unwrap());
+
+            // Editieren + speichern + neu laden → Encoding/Text erhalten.
+            store.update_text("Hi\nÄ!".into());
+            assert!(store.save().unwrap());
+            let mut reloaded = DocumentStore::new();
+            reloaded.load(path.to_str().unwrap()).unwrap();
+            assert_eq!("Hi\nÄ!", reloaded.text);
+            assert_eq!(expected_enc, reloaded.encoding);
+            assert!(reloaded.had_bom);
+        }
+    }
+
+    #[test]
+    fn windows1252_save_rejects_unmappable_char_and_leaves_file() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("legacy.txt");
+        let original = b"K\xE4se\n".to_vec(); // "Käse" in 1252, LF
+        fs::write(&path, &original).unwrap();
+        let mut store = DocumentStore::new();
+        store.load(path.to_str().unwrap()).unwrap();
+        assert_eq!(TextEncoding::Windows1252, store.encoding);
+
+        // Emoji einfuegen → nicht in Windows-1252 darstellbar.
+        store.update_text("Käse 😀\n".into());
+        match store.save() {
+            Err(SaveError::Unmappable(chars)) => assert!(chars.contains(&'😀')),
+            other => panic!("expected Unmappable, got {other:?}"),
+        }
+        // Datei liegt unveraendert auf Platte (kein HTML-Entity-Ersatz).
+        assert_eq!(original, fs::read(&path).unwrap());
+        // clean_text/is_dirty duerfen NICHT auf gespeichert gewechselt sein.
+        assert!(store.is_dirty);
+    }
+
+    #[test]
+    fn utf16_malformed_load_fails_and_leaves_file_unchanged() {
+        // encoding_rs ersetzt kaputte UTF-16-Einheiten still durch U+FFFD und
+        // meldet had_errors — der Load muss VOR jeder Store-Mutation abbrechen,
+        // sonst schriebe ein spaeterer Save die Ersatzzeichen auf Platte.
+        for input in [
+            vec![0xFF, 0xFE, 0x41],       // ungerade Nutzdatenlaenge nach LE-BOM
+            vec![0xFF, 0xFE, 0x00, 0xD8], // lone high surrogate (D800) nach LE-BOM
+            vec![0xFE, 0xFF, 0xDC, 0x00], // lone low surrogate (DC00) nach BE-BOM
+        ] {
+            let temp = TempDir::new().unwrap();
+            let path = temp.path().join("bad.txt");
+            fs::write(&path, &input).unwrap();
+            let mut store = DocumentStore::new();
+            let err = store.load(path.to_str().unwrap()).unwrap_err();
+            assert_eq!(io::ErrorKind::InvalidData, err.kind());
+            // Store unberuehrt (kein Pfad gesetzt) + Datei byte-identisch.
+            assert!(store.path.is_none());
+            assert_eq!(input, fs::read(&path).unwrap(), "input={input:?}");
+        }
+    }
+
+    #[test]
+    fn reload_metadata_only_encoding_change_fires_callback() {
+        use std::sync::Mutex;
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("doc.md");
+        fs::write(&path, b"one\n").unwrap(); // UTF-8 ohne BOM
+        let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let seen_cb = seen.clone();
+        let mut store = DocumentStore::new();
+        store.set_events(DocumentEvents {
+            encoding_changed: Some(Arc::new(move |label| {
+                seen_cb.lock().unwrap().push(label);
+            })),
+            ..DocumentEvents::default()
+        });
+        store.load(path.to_str().unwrap()).unwrap();
+        assert_eq!("utf8", store.encoding_label());
+
+        // Extern NUR BOM ergaenzt (Text identisch) → reload gibt false zurueck
+        // (kein loaded), feuert aber encoding_changed mit dem neuen Label.
+        fs::write(&path, b"\xEF\xBB\xBFone\n").unwrap();
+        assert!(!store.reload_if_changed().unwrap());
+        assert_eq!("utf8-bom", store.encoding_label());
+        assert_eq!(vec!["utf8-bom".to_string()], *seen.lock().unwrap());
+
+        // Erneuter Reload ohne Aenderung → kein weiterer Callback.
+        assert!(!store.reload_if_changed().unwrap());
+        assert_eq!(1, seen.lock().unwrap().len());
     }
 }

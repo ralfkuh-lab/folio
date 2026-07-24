@@ -153,14 +153,28 @@ pub fn route_editor_event(
                 .map_err(|error| error.to_string())
         }
         "editorSaveRequested" => {
-            state
+            // Monaco-Strg+S ist fire-and-forget (kein invoke-Rueckkanal wie
+            // saveCurrent). Ein Save-Fehler — insbesondere unmappbare Zeichen
+            // in einer Windows-1252-Datei — muss der Nutzer trotzdem sehen:
+            // deshalb die LOKALISIERTE Meldung ueber `document:save_error`
+            // ans Frontend emittieren (statt sie nur in error.to_string() ins
+            // Log zu verlieren). Store/Dirty bleiben bei Fehler unveraendert.
+            let result = state
                 .tabs
                 .lock()
                 .map_err(|_| "tabs lock poisoned".to_string())?
                 .active_mut()
                 .document_store
-                .save()
-                .map_err(|error| error.to_string())?;
+                .save();
+            if let Err(error) = result {
+                let message = crate::commands::editor::localize_save_error(error);
+                handle
+                    .emit(
+                        "document:save_error",
+                        serde_json::json!({ "message": message }),
+                    )
+                    .map_err(|error| error.to_string())?;
+            }
             Ok(())
         }
         "editorFindState" => handle

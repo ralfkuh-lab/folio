@@ -149,6 +149,51 @@ export function updateWordCount(text: string): void {
     });
 }
 
+/** Technisches Label fuer ein Encoding-Payload-Feld. `null` = keine Zelle
+ *  (reines UTF-8 ohne BOM ist der Normalfall). Werte NICHT uebersetzen. */
+function encodingLabel(encoding: string | null | undefined): string | null {
+    switch (encoding) {
+        case 'utf8-bom': return 'UTF-8 BOM';
+        case 'utf16le': return 'UTF-16 LE';
+        case 'utf16be': return 'UTF-16 BE';
+        case 'windows1252': return 'Windows-1252';
+        default: return null; // 'utf8' / undefined -> versteckt
+    }
+}
+
+/** Leitet den aktuell geladenen Dokumenttyp aus der `body.kind-*`-Klasse
+ *  ab (Single Source of Truth, gesetzt von `applyDocKind`). Fuer den
+ *  `document:encoding_changed`-Pfad, der keinen kind im Payload traegt. */
+function currentDocKindFromBody(): string | null {
+    const cl = document.body.classList;
+    if (cl.contains('kind-markdown')) return 'markdown';
+    if (cl.contains('kind-text')) return 'text';
+    if (cl.contains('kind-image')) return 'image';
+    if (cl.contains('kind-binary')) return 'binary';
+    return null;
+}
+
+/** Encoding-Zelle in der Statusleiste. Bewusst NUR sichtbar, wenn das
+ *  Encoding NICHT reines UTF-8 ohne BOM ist UND ein Text-/Markdown-Dokument
+ *  geladen ist. Begruendung: UTF-8 ist der Normalfall — eine immer sichtbare
+ *  Zelle wuerde saemtliche E2E-Visual-Baselines verschieben. */
+export function updateEncoding(
+    encoding: string | null | undefined,
+    kind: string | null | undefined,
+): void {
+    const el = $('status-encoding');
+    if (!el) return;
+    const label = encodingLabel(encoding);
+    const isTextual = kind === 'markdown' || kind === 'text';
+    if (!label || !isTextual) {
+        el.hidden = true;
+        el.textContent = '';
+        return;
+    }
+    el.hidden = false;
+    el.textContent = label;
+}
+
 export function showStatus(msg: string): void {
     const el = $('status-path');
     if (el) el.textContent = msg;
@@ -206,6 +251,18 @@ export function syncEditorTextToStoreForTab(tabId: number, text: string): Promis
     return invoke('editor_text_changed', { text, tabId });
 }
 
+/** Macht eine Save-Fehlermeldung in der Statusleiste sichtbar. Die
+ *  Backend-Commands liefern bereits die lokalisierte Meldung als
+ *  Rejection-String (z. B. `errors.file.encodingUnmappable`, wenn eine
+ *  Windows-1252-Datei ein Emoji enthaelt); Nicht-String-Fehler bekommen den
+ *  generischen `saveFailed`-Rahmen. Ohne das blieb der handlungsrelevante
+ *  Fehler frueher nur im Log. */
+function showSaveError(err: unknown): void {
+    showStatus(typeof err === 'string'
+        ? err
+        : t('errors.file.saveFailed', { detail: String(err) }));
+}
+
 export function saveCurrent(): Promise<boolean> {
     return syncEditorTextToStore().then(function () {
         return invoke('editor_save_requested');
@@ -217,6 +274,7 @@ export function saveCurrent(): Promise<boolean> {
         return !!saved;
     }).catch(function (err) {
         folioLog.warn('document', 'saveCurrent failed', { error: String(err) });
+        showSaveError(err);
         return false;
     });
 }
@@ -244,6 +302,7 @@ export function requestSaveIfDirty(forceDirty = false): Promise<boolean> {
             return !!saved;
         }).catch(function (err) {
             folioLog.warn('document', 'editor_save_requested failed', { error: String(err) });
+            showSaveError(err);
             return false;
         });
     });
@@ -428,6 +487,7 @@ export function initDocumentState(d: Deps): void {
         setReloadButtonPending(false);
         setStatusPath(data.path || t('statusBar.ready'), false);
         updateWordCount(data.text || '');
+        updateEncoding(data.encoding, data.kind);
         applyDocKind(data.kind || 'unknown');
         safeInvoke('workspace_add_recent', { path: data.path }, 'workspace_add_recent', 'debug');
 
@@ -594,6 +654,7 @@ export function initDocumentState(d: Deps): void {
         applyDocKind('unknown');
         setStatusPath(t('statusBar.ready'), false);
         updateWordCount('');
+        updateEncoding(null, null);
         applyWindowTitle();
     });
 
@@ -626,6 +687,29 @@ export function initDocumentState(d: Deps): void {
         // Statusbar zuruecksetzen, falls vorher noch ein showStatus-Hinweis
         // (z. B. "Datei extern geaendert") im status-path-Element stand.
         setStatusPath(data.path || currentPath || t('statusBar.ready'), false);
+    });
+
+    // Metadaten-only-Reload (externes Tool aendert nur BOM/Encoding bei
+    // identischem Text): kein document:loaded, nur die Encoding-Zelle
+    // nachziehen. tabId-Validierung wie saved/dirty_changed; der kind
+    // stammt aus der body.kind-*-Klasse (Payload traegt keinen).
+    listen('document:encoding_changed', function (event: any) {
+        const data = (event && event.payload) || {};
+        if (typeof data.tabId === 'number') {
+            const expected = expectedLifecycleTabId();
+            if (expected !== null && data.tabId !== expected) return;
+        }
+        updateEncoding(data.encoding, currentDocKindFromBody());
+    });
+
+    // Fire-and-forget-Save-Fehler aus dem Monaco-Strg+S-Pfad
+    // (editorSaveRequested, kein invoke-Rueckkanal): lokalisierte Meldung
+    // sichtbar machen — z. B. Windows-1252-Datei mit unmappbarem Zeichen.
+    listen('document:save_error', function (event: any) {
+        const data = (event && event.payload) || {};
+        if (data && typeof data.message === 'string' && data.message) {
+            showStatus(data.message);
+        }
     });
 
     applyDocKind('unknown');

@@ -60,6 +60,11 @@ pathdiff = "0.2"
 # Wird in git_ignore.rs verwendet (ignore-Crate von ripgrep).
 ignore = "0.4"
 
+# Zeichenkodierung fuer Nicht-UTF-8-Dateien (Windows-1252-Fallback + UTF-16-
+# Decode) in document_store.rs. UTF-16-*Encode* laeuft bewusst ueber std
+# (str::encode_utf16), weil encoding_rs keinen UTF-16-Encoder hat.
+encoding_rs = "0.8"
+
 # Papierkorb-Löschen fürs Vault-Kontextmenü (wiederherstellbar statt hart).
 trash = "5"
 

@@ -1363,6 +1363,7 @@ dependencies = [
  "base64 0.22.1",
  "comrak",
  "dirs 6.0.0",
+ "encoding_rs",
  "freedesktop-icons",
  "futures-util",
  "ignore",
