@@ -123,7 +123,14 @@ export function createFindController(opts: FindControllerOptions): FindControlle
 
         const capped = rawMatches.length >= 5000;
 
-        const cursorPos = editor.getPosition && editor.getPosition();
+        // Aktiven Treffer aus dem Selektions-START ableiten (nicht aus
+        // getPosition): scrollMatchIntoView selektiert den Treffer, der
+        // Cursor steht danach am Treffer-ENDE. Mit getPosition wuerde beim
+        // Weitertippen des Suchbegriffs ("fo" -> "foo") der aktive Treffer
+        // pro Zeichen einen Treffer weiterspringen.
+        const sel = editor.getSelection && editor.getSelection();
+        const cursorPos = (sel && sel.getStartPosition && sel.getStartPosition())
+            || (editor.getPosition && editor.getPosition());
         const cursorOffset = cursorPos ? model.getOffsetAt(cursorPos) : 0;
         let active = matches.length > 0 ? 0 : -1;
         for (let i = 0; i < matches.length; i++) {
@@ -199,9 +206,23 @@ export function createFindController(opts: FindControllerOptions): FindControlle
         if (!editor) return;
         const model = editor.getModel();
         if (!model) return;
-        const pos = model.getPositionAt(m.from);
-        editor.setPosition(pos);
-        editor.revealPositionInCenterIfOutsideViewport(pos);
+        const start = model.getPositionAt(m.from);
+        const end = model.getPositionAt(m.to);
+        // Treffer als echte Selektion setzen, nicht nur den Cursor:
+        // Tippen/Einfuegen ueberschreibt damit den aktiven Treffer
+        // (Standard-Editor-Verhalten). Fokus wird nicht angefasst — wer
+        // in der Find-Bar tippt, tippt dort weiter.
+        if (typeof editor.setSelection === 'function') {
+            editor.setSelection({
+                startLineNumber: start.lineNumber,
+                startColumn: start.column,
+                endLineNumber: end.lineNumber,
+                endColumn: end.column,
+            });
+        } else if (typeof editor.setPosition === 'function') {
+            editor.setPosition(start);
+        }
+        editor.revealPositionInCenterIfOutsideViewport(start);
     }
 
     function publishFindState(): void {

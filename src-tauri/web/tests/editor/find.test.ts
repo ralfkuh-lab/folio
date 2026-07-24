@@ -80,6 +80,7 @@ function createHarness(initialText: string) {
             return decorations.map(() => 'd' + decorationSeq++);
         }),
         setPosition: vi.fn(),
+        setSelection: vi.fn(),
         revealPositionInCenterIfOutsideViewport: vi.fn(),
         focus: vi.fn(),
     };
@@ -142,7 +143,15 @@ describe('editor/find createFindController', () => {
 
         controller.findNext();
         expect(lastState()).toMatchObject({ total: 3, active: 1 });
-        expect(harness.editor.setPosition).toHaveBeenCalled();
+        // Treffer wird als Selektion gesetzt (Tippen ueberschreibt ihn),
+        // nicht nur als Cursor-Position: "Alpha" = Spalte 16..21.
+        expect(harness.editor.setSelection).toHaveBeenLastCalledWith({
+            startLineNumber: 1,
+            startColumn: 16,
+            endLineNumber: 1,
+            endColumn: 21,
+        });
+        expect(harness.editor.setPosition).not.toHaveBeenCalled();
 
         controller.setFindOptions({ caseSensitive: true });
         expect(lastState()).toMatchObject({ term: 'alpha', total: 2, active: 0 });
@@ -159,6 +168,7 @@ describe('editor/find createFindController', () => {
 
         controller.openFind('one');
         harness.editor.setPosition.mockClear();
+        harness.editor.setSelection.mockClear();
         harness.editor.revealPositionInCenterIfOutsideViewport.mockClear();
 
         controller.setSuppressActive(true);
@@ -168,6 +178,7 @@ describe('editor/find createFindController', () => {
         const decorations = harness.decorationCalls[harness.decorationCalls.length - 1].decorations;
         expect(decorations.every((d) => d.options.inlineClassName === 'folio-find-match')).toBe(true);
         expect(harness.editor.setPosition).not.toHaveBeenCalled();
+        expect(harness.editor.setSelection).not.toHaveBeenCalled();
         expect(harness.editor.revealPositionInCenterIfOutsideViewport).not.toHaveBeenCalled();
     });
 
@@ -209,6 +220,29 @@ describe('editor/find createFindController', () => {
         // open without initial (as keydown + bar does) → seeds
         controller.openFind('');
         expect(lastState()).toMatchObject({ source: 'editor', term: 'hello', total: 2, active: 0 });
+    });
+
+    it('keeps active match stable while term grows despite cursor at selection end', async () => {
+        const { createFindController } = await import('../../editor/find');
+        const harness = createHarness('foo foo foo');
+        // Zustand nach scrollMatchIntoView: erster Treffer "fo" selektiert,
+        // Cursor (getPosition) steht am Selektions-ENDE (Spalte 3). Wuerde
+        // recomputeMatches den aktiven Treffer aus getPosition ableiten,
+        // spraenge er beim Weitertippen ("fo" -> "foo") auf Treffer 1.
+        harness.editor.getPosition = vi.fn(() => ({ lineNumber: 1, column: 3 }));
+        harness.editor.getSelection = vi.fn(() => ({
+            isEmpty: () => false,
+            getStartPosition: () => ({ lineNumber: 1, column: 1 }),
+            getEndPosition: () => ({ lineNumber: 1, column: 3 }),
+        }));
+        const controller = createFindController({
+            getEditor: () => harness.editor,
+            getMonaco: () => harness.monaco,
+            source: 'editor',
+        });
+
+        controller.setFindTerm('foo');
+        expect(lastState()).toMatchObject({ total: 3, active: 0 });
     });
 
     it('findMatches equivalence for case/wholeWord against prior indexOf expectations', async () => {
