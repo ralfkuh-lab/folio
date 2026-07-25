@@ -229,6 +229,7 @@
   "errors.app.settingsUpdateFailed": "Impossibile aggiornare le impostazioni: {detail}",
   "errors.app.terminalFailed": "Impossibile aprire il terminale: {detail}",
   "errors.document.imageReadOnly": "Le immagini sono in sola lettura",
+  "errors.document.invalidLineEnding": "Terminatore di riga non valido: {detail}",
   "errors.document.noneLoaded": "Nessun documento caricato",
   "errors.document.noneOpen": "Nessun documento aperto.",
   "errors.editor.discardFailed": "Impossibile scartare le modifiche: {detail}",
@@ -588,7 +589,10 @@
   "settings.watch.sectionTitle": "Monitoraggio file",
   "settings.watch.vaultAutoRefresh.hint": "Le cartelle espanse sono monitorate; nuovi file, file eliminati o rinominati compaiono immediatamente nel workspace.",
   "settings.watch.vaultAutoRefresh.label": "Aggiorna l’albero del Vault in caso di modifiche esterne",
+  "statusBar.cursor.template": "Riga {line}, Col {column}",
+  "statusBar.cursor.tooltip": "Posizione del cursore",
   "statusBar.encoding.tooltip": "Codifica dei caratteri del file",
+  "statusBar.eol.tooltip": "Cambia terminatori di riga (LF ↔ CRLF)",
   "statusBar.exportMarkdownOnly": "Esportazione disponibile solo per Markdown",
   "statusBar.externalChangedClean": "File modificato all’esterno — usare Ricarica per applicare le modifiche",
   "statusBar.externalChangedDirty": "File modificato all’esterno (modifiche non salvate) — ricaricare tramite Salva o Abbandona",
@@ -607,6 +611,7 @@
     "many": "{count} righe",
     "other": "{count} righe"
   },
+  "statusBar.wordCount.selectionTemplate": "{wordsPart} · {charsPart} selezionati",
   "statusBar.wordCount.template": "{wordsPart} · {charsPart} · {linesPart}",
   "statusBar.wordCount.wordsPart": {
     "one": "{count} parola",

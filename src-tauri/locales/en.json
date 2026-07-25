@@ -228,6 +228,7 @@
   "errors.app.settingsUpdateFailed": "Could not update settings: {detail}",
   "errors.app.terminalFailed": "Could not open terminal: {detail}",
   "errors.document.imageReadOnly": "Images are read-only",
+  "errors.document.invalidLineEnding": "Invalid line ending: {detail}",
   "errors.document.noneLoaded": "No document loaded",
   "errors.document.noneOpen": "No document open.",
   "errors.editor.discardFailed": "Could not discard changes: {detail}",
@@ -583,7 +584,10 @@
   "settings.watch.sectionTitle": "File watching",
   "settings.watch.vaultAutoRefresh.hint": "Expanded folders are watched; new, deleted, or renamed files appear in the workspace immediately.",
   "settings.watch.vaultAutoRefresh.label": "Refresh vault tree on external changes",
+  "statusBar.cursor.template": "Ln {line}, Col {column}",
+  "statusBar.cursor.tooltip": "Cursor position",
   "statusBar.encoding.tooltip": "File character encoding",
+  "statusBar.eol.tooltip": "Toggle line endings (LF ↔ CRLF)",
   "statusBar.exportMarkdownOnly": "Export available for Markdown only",
   "statusBar.externalChangedClean": "File changed externally — use Reload button to apply",
   "statusBar.externalChangedDirty": "File changed externally (unsaved changes) — reload via Save or Discard",
@@ -600,6 +604,7 @@
     "one": "1 line",
     "other": "{count} lines"
   },
+  "statusBar.wordCount.selectionTemplate": "{wordsPart} · {charsPart} selected",
   "statusBar.wordCount.template": "{wordsPart} · {charsPart} · {linesPart}",
   "statusBar.wordCount.wordsPart": {
     "one": "1 word",

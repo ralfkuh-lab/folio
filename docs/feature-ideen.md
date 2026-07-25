@@ -42,9 +42,11 @@ Diese Ideen kamen von 2–4 Quellen unabhängig. Das ist der beste Startpunkt.
 8. **Lokale Snapshots / Crash-Recovery** — ungespeicherte Stände periodisch in ein
    lokales Journal, Restore nach Absturz; optional benannte Versionen pro Datei
    (`.folio/versions/`). `[M–L]` (Quelle: **alle 3**)
-9. **Statusleisten-Ausbau** — Cursor Ln/Col, Encoding, EOL (LF/CRLF per Klick
-   umschaltbar), Wort-/Zeichenzahl + Lesezeit, inkl. Selektions-Stats. `[S]`
-   (Quelle: agy, grok — zwei getrennte Ideen, hier gebündelt)
+9. **Statusleisten-Ausbau** — ✅ **umgesetzt (2026-07-25)**, siehe
+   [`spec-statusbar.md`](spec-statusbar.md): Cursor Ln/Sp, Selektions-Stats,
+   EOL-Anzeige mit LF↔CRLF-Klick-Toggle; Encoding-Anzeige kam bereits mit dem
+   Encoding-Feature (`db0d553`). *Lesezeit bewusst verworfen (User-Entscheid);
+   Encoding-Umschalter als möglicher Folgepunkt.* (Quelle: agy, grok)
 10. **Regex + „Ersetzen" in der Find-Bar** — Regex-Toggle überall (Editor/Code/MD/
     HTML) plus Ersetzen mit wählbarem Scope (Auswahl/Dokument/offene Tabs/Vault).
     `[M]` einfache Variante, `[L]` mit Vault-weitem Replace. (Quelle: **alle 3**)

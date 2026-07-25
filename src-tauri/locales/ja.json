@@ -227,6 +227,7 @@
   "errors.app.settingsUpdateFailed": "設定を更新できませんでした：{detail}",
   "errors.app.terminalFailed": "ターミナルを開けませんでした：{detail}",
   "errors.document.imageReadOnly": "画像は読み取り専用です",
+  "errors.document.invalidLineEnding": "無効な改行コード: {detail}",
   "errors.document.noneLoaded": "文書が読み込まれていません",
   "errors.document.noneOpen": "文書が開かれていません。",
   "errors.editor.discardFailed": "変更を破棄できませんでした：{detail}",
@@ -578,7 +579,10 @@
   "settings.watch.sectionTitle": "ファイル監視",
   "settings.watch.vaultAutoRefresh.hint": "展開したフォルダーが監視され、新規作成、削除、名前変更されたファイルがすぐにワークスペースに表示されます。",
   "settings.watch.vaultAutoRefresh.label": "外部変更時に Vault ツリーを更新",
+  "statusBar.cursor.template": "{line} 行, {column} 列",
+  "statusBar.cursor.tooltip": "カーソル位置",
   "statusBar.encoding.tooltip": "ファイルの文字エンコーディング",
+  "statusBar.eol.tooltip": "改行コードを切り替え (LF ↔ CRLF)",
   "statusBar.exportMarkdownOnly": "エクスポートは Markdown のみ利用できます",
   "statusBar.externalChangedClean": "ファイルが外部で変更されました。「再読み込み」ボタンで反映してください",
   "statusBar.externalChangedDirty": "ファイルが外部で変更されました（未保存の変更あり）。「保存」または「破棄」から再読み込みしてください",
@@ -593,6 +597,7 @@
   "statusBar.wordCount.linesPart": {
     "other": "{count} 行"
   },
+  "statusBar.wordCount.selectionTemplate": "{wordsPart} · {charsPart} 選択中",
   "statusBar.wordCount.template": "{wordsPart} · {charsPart} · {linesPart}",
   "statusBar.wordCount.wordsPart": {
     "other": "{count} 語"

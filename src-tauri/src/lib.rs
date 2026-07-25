@@ -521,6 +521,7 @@ pub fn builder(settings: crate::settings::SettingsService) -> tauri::Builder<tau
             commands::editor::editor_text_changed,
             commands::editor::editor_save_requested,
             commands::editor::discard_editor_changes,
+            commands::editor::set_line_ending,
             commands::editor::apply_editor_command,
             commands::editor::editor_ready,
             commands::editor::editor_selection,

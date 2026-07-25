@@ -134,19 +134,72 @@ export function setStatusPath(path: string, dirty: boolean): void {
     el.classList.toggle('dirty', !!dirty);
 }
 
+// Zuletzt gerenderte Dokument-Stats — bei Selektion werden Selektions-
+// Stats angezeigt; bei leerer Selektion (oder Doc-Wechsel) restauriert.
+let lastDocWordCountText = '';
+let lastDocWordCountHidden = true;
+// Aktuelles EOL-Label des geladenen Docs (`lf` | `crlf` | null).
+let currentEol: string | null = null;
+// Referenz-EOL von Load/Save (analog cleanText). Backend-EOL-Dirty
+// darf durch refreshDirtyFromEditor nicht still verworfen werden.
+let cleanEol: string | null = null;
+
 export function updateWordCount(text: string): void {
     const el = $('status-wordcount');
     if (!el) return;
-    if (!text) { el.hidden = true; el.textContent = ''; return; }
+    if (!text) {
+        el.hidden = true;
+        el.textContent = '';
+        lastDocWordCountText = '';
+        lastDocWordCountHidden = true;
+        return;
+    }
     const chars = text.length;
     const words = (text.match(/\S+/g) || []).length;
     const lines = text.split(/\r\n|\r|\n/).length;
-    el.hidden = false;
-    el.textContent = t('statusBar.wordCount.template', {
+    const rendered = t('statusBar.wordCount.template', {
         wordsPart: tPlural('statusBar.wordCount.wordsPart', words),
         charsPart: tPlural('statusBar.wordCount.charsPart', chars),
         linesPart: tPlural('statusBar.wordCount.linesPart', lines),
     });
+    lastDocWordCountText = rendered;
+    lastDocWordCountHidden = false;
+    el.hidden = false;
+    el.textContent = rendered;
+}
+
+/** Zeigt Selektions-Stats in `#status-wordcount` (selChars > 0). */
+export function updateSelectionWordCount(selChars: number, selWords: number): void {
+    const el = $('status-wordcount');
+    if (!el) return;
+    if (selChars <= 0) {
+        el.hidden = lastDocWordCountHidden;
+        el.textContent = lastDocWordCountText;
+        return;
+    }
+    el.hidden = false;
+    el.textContent = t('statusBar.wordCount.selectionTemplate', {
+        wordsPart: tPlural('statusBar.wordCount.wordsPart', selWords),
+        charsPart: tPlural('statusBar.wordCount.charsPart', selChars),
+    });
+}
+
+/** Cursor-Zelle (Ln/Sp). Hidden bis zum ersten Selection-Event nach Load. */
+export function updateCursorStatus(line: number, column: number): void {
+    const el = $('status-cursor');
+    if (!el) return;
+    el.hidden = false;
+    el.textContent = t('statusBar.cursor.template', {
+        line: String(line),
+        column: String(column),
+    });
+}
+
+export function hideCursorStatus(): void {
+    const el = $('status-cursor');
+    if (!el) return;
+    el.hidden = true;
+    el.textContent = '';
 }
 
 /** Technisches Label fuer ein Encoding-Payload-Feld. `null` = keine Zelle
@@ -194,6 +247,32 @@ export function updateEncoding(
     el.textContent = label;
 }
 
+/** EOL-Zelle (`LF`/`CRLF`, technische Labels). Sichtbar fuer markdown/text. */
+export function updateLineEnding(
+    eol: string | null | undefined,
+    kind: string | null | undefined,
+): void {
+    const el = $('status-eol') as HTMLButtonElement | null;
+    if (!el) return;
+    const isTextual = kind === 'markdown' || kind === 'text';
+    const display = eol === 'lf' ? 'LF' : eol === 'crlf' ? 'CRLF' : null;
+    if (!display || !isTextual) {
+        el.hidden = true;
+        el.textContent = '';
+        currentEol = null;
+        return;
+    }
+    el.hidden = false;
+    el.textContent = display;
+    currentEol = eol === 'lf' || eol === 'crlf' ? eol : null;
+}
+
+function toggleLineEnding(): void {
+    if (!currentEol) return;
+    const next = currentEol === 'lf' ? 'crlf' : 'lf';
+    safeInvoke('set_line_ending', { eol: next }, 'set_line_ending', 'warn');
+}
+
 export function showStatus(msg: string): void {
     const el = $('status-path');
     if (el) el.textContent = msg;
@@ -220,7 +299,11 @@ function editorText(): string {
 }
 
 function refreshDirtyFromEditor(): boolean {
-    const dirty = !!currentPath && editorText() !== cleanText;
+    // Text- ODER EOL-Abweichung — analog Backend is_content_dirty.
+    const dirty = !!currentPath && (
+        editorText() !== cleanText
+        || currentEol !== cleanEol
+    );
     markDirty(dirty);
     return dirty;
 }
@@ -465,6 +548,26 @@ export function initDocumentState(d: Deps): void {
 
     const listen = window.__TAURI__.event.listen;
 
+    // EOL-Toggle-Button (LF ↔ CRLF).
+    const eolBtn = $('status-eol');
+    if (eolBtn) {
+        eolBtn.addEventListener('click', function (e: Event) {
+            e.stopPropagation();
+            toggleLineEnding();
+        });
+    }
+
+    // Cursor/Selektion aus dem Editor-Bundle (RAF-debounced CustomEvent).
+    window.addEventListener('folio-editor-selection', function (event: Event) {
+        const detail = (event as CustomEvent).detail || {};
+        if (typeof detail.line === 'number' && typeof detail.column === 'number') {
+            updateCursorStatus(detail.line, detail.column);
+        }
+        if (typeof detail.selChars === 'number') {
+            updateSelectionWordCount(detail.selChars, detail.selWords || 0);
+        }
+    });
+
     // Reihenfolge: State zuerst, dann UI-Rendering.
     listen('document:loaded', function (event: any) {
         const data = (event && event.payload) || {};
@@ -488,6 +591,11 @@ export function initDocumentState(d: Deps): void {
         setStatusPath(data.path || t('statusBar.ready'), false);
         updateWordCount(data.text || '');
         updateEncoding(data.encoding, data.kind);
+        // lineEnding (camelCase aus Backend) — Alt-Payloads ohne Feld → hidden.
+        updateLineEnding(data.lineEnding || data.line_ending, data.kind);
+        // Referenz-EOL nach Load = aktuelle Anzeige (clean).
+        cleanEol = currentEol;
+        hideCursorStatus();
         applyDocKind(data.kind || 'unknown');
         safeInvoke('workspace_add_recent', { path: data.path }, 'workspace_add_recent', 'debug');
 
@@ -580,6 +688,11 @@ export function initDocumentState(d: Deps): void {
         commitLifecycleSeq(data);
         const dirty = data.is_dirty || data.isDirty;
         markDirty(!!dirty);
+        // Backend clean → EOL-Referenz = aktuelle Anzeige (Format-only-Reload
+        // feuert eol_changed VOR dirty_changed, currentEol ist bereits neu).
+        if (!dirty) {
+            cleanEol = currentEol;
+        }
     });
 
     // Externe Datei-Aenderung (notify-Watcher im DocumentStore).
@@ -628,6 +741,7 @@ export function initDocumentState(d: Deps): void {
         invalidateCodeLive();
         currentPath = null;
         cleanText = '';
+        cleanEol = null;
         lastLoadedTabId = null;
         markDirty(false);
         setReloadButtonPending(false);
@@ -655,6 +769,8 @@ export function initDocumentState(d: Deps): void {
         setStatusPath(t('statusBar.ready'), false);
         updateWordCount('');
         updateEncoding(null, null);
+        updateLineEnding(null, null);
+        hideCursorStatus();
         applyWindowTitle();
     });
 
@@ -680,6 +796,8 @@ export function initDocumentState(d: Deps): void {
         invalidateHtmlLive();
         invalidateCodeLive();
         cleanText = data.text || editorText();
+        // Save schreibt mit currentEol → Referenz = aktuelle Anzeige.
+        cleanEol = currentEol;
         markDirty(false);
         setReloadButtonPending(false);
         renderDocumentPayload(data);
@@ -700,6 +818,17 @@ export function initDocumentState(d: Deps): void {
             if (expected !== null && data.tabId !== expected) return;
         }
         updateEncoding(data.encoding, currentDocKindFromBody());
+    });
+
+    // EOL-Umschalter (set_line_ending): Zelle nachziehen. tabId-Guard
+    // wie saved/dirty_changed/encoding_changed.
+    listen('document:eol_changed', function (event: any) {
+        const data = (event && event.payload) || {};
+        if (typeof data.tabId === 'number') {
+            const expected = expectedLifecycleTabId();
+            if (expected !== null && data.tabId !== expected) return;
+        }
+        updateLineEnding(data.eol, currentDocKindFromBody());
     });
 
     // Fire-and-forget-Save-Fehler aus dem Monaco-Strg+S-Pfad

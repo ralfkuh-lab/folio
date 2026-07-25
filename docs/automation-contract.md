@@ -29,7 +29,7 @@ umbenannt werden:
 
 - Backend zu Frontend: `document:loaded`, `document:dirty_changed`,
   `document:closed`, `document:saved`, `document:external_changed`,
-  `document:encoding_changed`, `document:save_error`,
+  `document:encoding_changed`, `document:eol_changed`, `document:save_error`,
   `tabs:changed`,
   `app:set_mode`, `app:set_theme`, `vault:refresh`,
   `vault:dir_changed`, `navigation:changed`, `navigation:toc_click`,
@@ -46,14 +46,20 @@ umbenannt werden:
 Die `document:loaded`-Payload (und der `read_file`-Command) tragen neben
 `path`/`text`/`kind`/`language` additiv ein `encoding`-Feld mit einem
 technischen Label: `utf8` | `utf8-bom` | `utf16le` | `utf16be` |
-`windows1252`. Das Feld ist rein informativ (Statusleiste) und ändert
-keinen bestehenden Vertrag.
+`windows1252`, sowie `lineEnding` (`lf` | `crlf`). Beide Felder sind
+rein informativ (Statusleiste) und ändern keinen bestehenden Vertrag.
 
 `document:encoding_changed { tabId, encoding }` ist ein leichtgewichtiges
 Event für den Fall, dass ein externer Reload NUR die Metadaten (BOM/
 Encoding) bei identischem Text ändert — es gibt dann kein `document:loaded`.
 Das Frontend validiert `tabId` (wie `saved`/`dirty_changed`) und aktualisiert
 nur die Encoding-Statuszelle.
+
+`document:eol_changed { tabId, eol }` signalisiert einen EOL-Umschalter
+über den Tauri-Command `set_line_ending({ eol: "lf"|"crlf" })` (aktiver
+Tab). Dirty wird gesetzt, wenn `line_ending != clean_line_ending` (auch
+nach Text-Revert). Opaque-Docs (Image/Binary) lehnt der Command ab.
+`GET /state` liefert additiv `lineEnding` (`lf`|`crlf`|null ohne Doc).
 
 `document:save_error { message }` macht einen Fehler aus dem fire-and-forget
 Monaco-Strg+S-Pfad (`editorSaveRequested`, kein invoke-Rückkanal) mit

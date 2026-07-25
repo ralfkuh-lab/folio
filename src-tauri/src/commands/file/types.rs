@@ -10,6 +10,9 @@ pub struct FileData {
     /// Encoding-Label (`utf8` | `utf8-bom` | `utf16le` | `utf16be` |
     /// `windows1252`), additiv fuer die Statusleiste.
     pub encoding: String,
+    /// Zeilenenden-Label (`lf` | `crlf`), additiv fuer die Statusleiste.
+    #[serde(rename = "lineEnding")]
+    pub line_ending: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -31,6 +34,7 @@ mod tests {
             kind: FileKind::Markdown,
             language: "markdown".into(),
             encoding: "utf8".into(),
+            line_ending: "lf".into(),
         };
         assert_eq!("a", data.path);
         assert_eq!("b", data.content);

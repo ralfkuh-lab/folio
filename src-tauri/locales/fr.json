@@ -229,6 +229,7 @@
   "errors.app.settingsUpdateFailed": "Impossible de modifier les paramètres : {detail}",
   "errors.app.terminalFailed": "Impossible d’ouvrir le terminal : {detail}",
   "errors.document.imageReadOnly": "Les images sont en lecture seule",
+  "errors.document.invalidLineEnding": "Fin de ligne non valide : {detail}",
   "errors.document.noneLoaded": "Aucun document chargé",
   "errors.document.noneOpen": "Aucun document ouvert.",
   "errors.editor.discardFailed": "Impossible d’abandonner les modifications : {detail}",
@@ -588,7 +589,10 @@
   "settings.watch.sectionTitle": "Surveillance des fichiers",
   "settings.watch.vaultAutoRefresh.hint": "Les dossiers déployés sont surveillés ; les fichiers nouveaux, supprimés ou renommés apparaissent immédiatement.",
   "settings.watch.vaultAutoRefresh.label": "Actualiser l’arborescence du coffre lors de changements externes",
+  "statusBar.cursor.template": "Lig {line}, Col {column}",
+  "statusBar.cursor.tooltip": "Position du curseur",
   "statusBar.encoding.tooltip": "Encodage des caractères du fichier",
+  "statusBar.eol.tooltip": "Basculer les fins de ligne (LF ↔ CRLF)",
   "statusBar.exportMarkdownOnly": "Export réservé au Markdown",
   "statusBar.externalChangedClean": "Fichier modifié à l’extérieur — utiliser Recharger pour appliquer les modifications",
   "statusBar.externalChangedDirty": "Fichier modifié à l’extérieur (modifications non enregistrées) — recharger via Enregistrer ou Abandonner",
@@ -607,6 +611,7 @@
     "many": "{count} lignes",
     "other": "{count} lignes"
   },
+  "statusBar.wordCount.selectionTemplate": "{wordsPart} · {charsPart} sélectionnés",
   "statusBar.wordCount.template": "{wordsPart} · {charsPart} · {linesPart}",
   "statusBar.wordCount.wordsPart": {
     "one": "{count} mot",

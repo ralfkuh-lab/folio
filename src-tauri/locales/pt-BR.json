@@ -229,6 +229,7 @@
   "errors.app.settingsUpdateFailed": "Não foi possível atualizar as configurações: {detail}",
   "errors.app.terminalFailed": "Não foi possível abrir o terminal: {detail}",
   "errors.document.imageReadOnly": "Imagens são somente leitura",
+  "errors.document.invalidLineEnding": "Final de linha inválido: {detail}",
   "errors.document.noneLoaded": "Nenhum documento carregado",
   "errors.document.noneOpen": "Nenhum documento aberto.",
   "errors.editor.discardFailed": "Não foi possível descartar as alterações: {detail}",
@@ -588,7 +589,10 @@
   "settings.watch.sectionTitle": "Monitoramento de arquivos",
   "settings.watch.vaultAutoRefresh.hint": "Pastas expandidas são monitoradas; arquivos novos, excluídos ou renomeados aparecem no espaço de trabalho imediatamente.",
   "settings.watch.vaultAutoRefresh.label": "Atualizar árvore do Vault em alterações externas",
+  "statusBar.cursor.template": "Ln {line}, Col {column}",
+  "statusBar.cursor.tooltip": "Posição do cursor",
   "statusBar.encoding.tooltip": "Codificação de caracteres do arquivo",
+  "statusBar.eol.tooltip": "Alternar finais de linha (LF ↔ CRLF)",
   "statusBar.exportMarkdownOnly": "Exportação disponível apenas para Markdown",
   "statusBar.externalChangedClean": "Arquivo alterado externamente — use o botão Recarregar para aplicar",
   "statusBar.externalChangedDirty": "Arquivo alterado externamente (alterações não salvas) — recarregue usando Salvar ou Descartar",
@@ -607,6 +611,7 @@
     "many": "{count} linhas",
     "other": "{count} linhas"
   },
+  "statusBar.wordCount.selectionTemplate": "{wordsPart} · {charsPart} selecionados",
   "statusBar.wordCount.template": "{wordsPart} · {charsPart} · {linesPart}",
   "statusBar.wordCount.wordsPart": {
     "one": "{count} palavra",

@@ -21,7 +21,15 @@ pub(in crate::automation) async fn get_state(
         .and_then(|window| window.title().ok())
         .unwrap_or_else(|| "Folio".into());
     let state = context.app_handle.state::<AppState>();
-    let (document_path, document_text, document_dirty, view_mode, navigation_state, tabs_list) = {
+    let (
+        document_path,
+        document_text,
+        document_dirty,
+        document_line_ending,
+        view_mode,
+        navigation_state,
+        tabs_list,
+    ) = {
         let tabs = state
             .tabs
             .lock()
@@ -39,10 +47,17 @@ pub(in crate::automation) async fn get_state(
                 )
             })
             .unwrap_or((0.0, None, 0.0, 0));
+        // Opaque-Docs (Bilder) liefern kein lineEnding, auch mit gesetztem Pfad.
+        let line_ending = if tab.document_store.path.is_some() && !tab.document_store.is_opaque() {
+            Some(tab.document_store.line_ending_label().to_string())
+        } else {
+            None
+        };
         (
             tab.document_store.path.clone(),
             tab.document_store.text.clone(),
             tab.document_store.is_dirty,
+            line_ending,
             tab.view_mode.clone(),
             navigation_state,
             tabs.summaries(),
@@ -110,6 +125,7 @@ pub(in crate::automation) async fn get_state(
         title,
         file: document_path,
         dirty: document_dirty,
+        line_ending: document_line_ending,
         view_mode,
         theme: automation.theme,
         left_rail_visible: panel.left_rail_visible,
@@ -161,6 +177,7 @@ pub(in crate::automation) async fn mock_get_state(
         title: state.title.clone(),
         file: state.file.clone(),
         dirty: state.dirty,
+        line_ending: state.file.as_ref().map(|_| "lf".to_string()),
         view_mode: state.view_mode.clone(),
         theme: state.theme.clone(),
         left_rail_visible: true,

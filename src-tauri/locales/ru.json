@@ -230,6 +230,7 @@
   "errors.app.settingsUpdateFailed": "Не удалось обновить настройки: {detail}",
   "errors.app.terminalFailed": "Не удалось открыть терминал: {detail}",
   "errors.document.imageReadOnly": "Изображения доступны только для чтения",
+  "errors.document.invalidLineEnding": "Недопустимое окончание строк: {detail}",
   "errors.document.noneLoaded": "Документ не загружен",
   "errors.document.noneOpen": "Документ не открыт.",
   "errors.editor.discardFailed": "Не удалось отбросить изменения: {detail}",
@@ -593,7 +594,10 @@
   "settings.watch.sectionTitle": "Отслеживание изменений файлов",
   "settings.watch.vaultAutoRefresh.hint": "Раскрытые папки отслеживаются автоматически; новые, удаленные или переименованные файлы сразу появляются в рабочей области.",
   "settings.watch.vaultAutoRefresh.label": "Обновлять дерево Vault при внешних изменениях",
+  "statusBar.cursor.template": "Стр {line}, Стлб {column}",
+  "statusBar.cursor.tooltip": "Позиция курсора",
   "statusBar.encoding.tooltip": "Кодировка символов файла",
+  "statusBar.eol.tooltip": "Переключить окончания строк (LF ↔ CRLF)",
   "statusBar.exportMarkdownOnly": "Экспорт доступен только для Markdown",
   "statusBar.externalChangedClean": "Файл изменен извне — используйте кнопку перезагрузки",
   "statusBar.externalChangedDirty": "Файл изменен извне (несохраненные изменения) — перезагрузите после сохранения или сброса",
@@ -614,6 +618,7 @@
     "many": "{count} строк",
     "other": "{count} строки"
   },
+  "statusBar.wordCount.selectionTemplate": "{wordsPart} · {charsPart} выбрано",
   "statusBar.wordCount.template": "{wordsPart} · {charsPart} · {linesPart}",
   "statusBar.wordCount.wordsPart": {
     "one": "{count} слово",

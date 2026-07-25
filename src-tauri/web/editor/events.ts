@@ -45,9 +45,16 @@ export function attachEditorListeners(editor: any, monaco: any): void {
         if (hasActiveTerm()) recomputeMatches(false);
     });
 
+    // Selection → Backend (History/Automation) + in-window CustomEvent
+    // fuer Statusleiste (Cursor Ln/Sp + Selektions-Stats). Letzteres
+    // RAF-debounced analog zum Scroll-Listener.
+    let selectionRafQueued = false;
     editor.onDidChangeCursorSelection((e: any) => {
         const model = editor.getModel();
         if (!model) return;
+        // Model VOR dem RAF capturen: Doc-Wechsel im selben Frame darf
+        // keinen nachlaufenden RAF mit dem alten Modell abfeuern.
+        const m0 = model;
         const start = model.getOffsetAt(e.selection.getStartPosition());
         const end = model.getOffsetAt(e.selection.getEndPosition());
         post({
@@ -55,6 +62,40 @@ export function attachEditorListeners(editor: any, monaco: any): void {
             start,
             length: end - start,
             line: e.selection.getStartPosition().lineNumber,
+        });
+        if (selectionRafQueued) return;
+        selectionRafQueued = true;
+        requestAnimationFrame(() => {
+            selectionRafQueued = false;
+            if (editor.getModel() !== m0) return;
+            const pos = typeof editor.getPosition === 'function' ? editor.getPosition() : null;
+            if (!pos) return;
+            const sel = typeof editor.getSelection === 'function' ? editor.getSelection() : null;
+            if (!sel) return;
+            let selChars = 0;
+            let selWords = 0;
+            // Leere Selektion: getValueInRange nicht aufrufen (Spec).
+            const empty = typeof sel.isEmpty === 'function'
+                ? sel.isEmpty()
+                : (sel.startLineNumber === sel.endLineNumber
+                    && sel.startColumn === sel.endColumn);
+            if (!empty) {
+                const selected = m0.getValueInRange(sel) || '';
+                selChars = selected.length; // JS-String = UTF-16 Code Units
+                selWords = (selected.match(/\S+/g) || []).length;
+            }
+            try {
+                window.dispatchEvent(
+                    new CustomEvent('folio-editor-selection', {
+                        detail: {
+                            line: pos.lineNumber,
+                            column: pos.column,
+                            selChars,
+                            selWords,
+                        },
+                    }),
+                );
+            } catch { /* ignored */ }
         });
     });
 

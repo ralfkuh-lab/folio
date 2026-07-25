@@ -228,6 +228,7 @@
   "errors.app.settingsUpdateFailed": "Einstellungen konnten nicht geändert werden: {detail}",
   "errors.app.terminalFailed": "Terminal konnte nicht geöffnet werden: {detail}",
   "errors.document.imageReadOnly": "Bilder sind read-only",
+  "errors.document.invalidLineEnding": "Ungültiges Zeilenende: {detail}",
   "errors.document.noneLoaded": "Kein Dokument geladen",
   "errors.document.noneOpen": "Kein Dokument geöffnet.",
   "errors.editor.discardFailed": "Änderungen konnten nicht verworfen werden: {detail}",
@@ -583,7 +584,10 @@
   "settings.watch.sectionTitle": "Datei-Überwachung",
   "settings.watch.vaultAutoRefresh.hint": "Aufgeklappte Ordner werden überwacht; neue, gelöschte oder umbenannte Dateien tauchen direkt im Arbeitsbereich auf.",
   "settings.watch.vaultAutoRefresh.label": "Vault-Tree bei externen Änderungen aktualisieren",
+  "statusBar.cursor.template": "Zeile {line}, Spalte {column}",
+  "statusBar.cursor.tooltip": "Cursorposition",
   "statusBar.encoding.tooltip": "Zeichenkodierung der Datei",
+  "statusBar.eol.tooltip": "Zeilenenden umschalten (LF ↔ CRLF)",
   "statusBar.exportMarkdownOnly": "Export nur für Markdown verfügbar",
   "statusBar.externalChangedClean": "Datei extern geändert — Reload-Button zum Übernehmen",
   "statusBar.externalChangedDirty": "Datei extern geändert (ungespeicherte Änderungen) — Reload via Save oder Verwerfen",
@@ -600,6 +604,7 @@
     "one": "1 Zeile",
     "other": "{count} Zeilen"
   },
+  "statusBar.wordCount.selectionTemplate": "{wordsPart} · {charsPart} ausgewählt",
   "statusBar.wordCount.template": "{wordsPart} · {charsPart} · {linesPart}",
   "statusBar.wordCount.wordsPart": {
     "one": "1 Wort",

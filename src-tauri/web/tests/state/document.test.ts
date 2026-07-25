@@ -61,7 +61,9 @@ function buildDom(): void {
     document.body.innerHTML = `
         <div id="status-path"></div>
         <span id="status-wordcount"></span>
+        <span id="status-cursor" hidden></span>
         <span id="status-encoding" hidden></span>
+        <button id="status-eol" type="button" hidden></button>
         <button id="tb-save"></button>
         <button id="tb-mode-view"></button>
         <button id="tb-mode-edit"></button>
@@ -158,6 +160,59 @@ describe('state/document — synchronous setters', () => {
         // Fehlendes/leeres Encoding -> versteckt.
         updateEncoding(undefined, 'markdown');
         expect(el.hidden).toBe(true);
+    });
+
+    it('updateLineEnding shows LF/CRLF only for textual docs', async () => {
+        const { updateLineEnding } = await import('../../app/state/document');
+        const el = document.getElementById('status-eol') as HTMLButtonElement;
+
+        updateLineEnding('lf', 'markdown');
+        expect(el.hidden).toBe(false);
+        expect(el.textContent).toBe('LF');
+
+        updateLineEnding('crlf', 'text');
+        expect(el.hidden).toBe(false);
+        expect(el.textContent).toBe('CRLF');
+
+        updateLineEnding('lf', 'image');
+        expect(el.hidden).toBe(true);
+
+        updateLineEnding(undefined, 'markdown');
+        expect(el.hidden).toBe(true);
+        expect(el.textContent).toBe('');
+    });
+
+    it('updateSelectionWordCount swaps in selection stats and restores doc stats', async () => {
+        const { updateWordCount, updateSelectionWordCount } = await import('../../app/state/document');
+        const el = document.getElementById('status-wordcount') as HTMLElement;
+
+        updateWordCount('hello world');
+        expect(el.hidden).toBe(false);
+        const docText = el.textContent;
+        expect(docText).toContain('Wörter');
+        expect(docText).toMatch(/Zeile/);
+
+        updateSelectionWordCount(5, 1);
+        expect(el.hidden).toBe(false);
+        expect(el.textContent).toContain('ausgewählt');
+        expect(el.textContent).toContain('1 Wort');
+        expect(el.textContent).toContain('5 Zeichen');
+
+        updateSelectionWordCount(0, 0);
+        expect(el.textContent).toBe(docText);
+    });
+
+    it('updateCursorStatus shows template and hideCursorStatus clears', async () => {
+        const { updateCursorStatus, hideCursorStatus } = await import('../../app/state/document');
+        const el = document.getElementById('status-cursor') as HTMLElement;
+
+        updateCursorStatus(3, 12);
+        expect(el.hidden).toBe(false);
+        expect(el.textContent).toBe('Zeile 3, Spalte 12');
+
+        hideCursorStatus();
+        expect(el.hidden).toBe(true);
+        expect(el.textContent).toBe('');
     });
 
     it('saveCurrent surfaces a rejected save as a visible status message', async () => {
@@ -410,6 +465,99 @@ describe('state/document — document:loaded listener', () => {
         // Fremde tabId -> verworfen, Zelle unveraendert.
         tauri.emitEvent('document:encoding_changed', { encoding: 'windows1252', tabId: 99 });
         expect(el.textContent).toBe('UTF-8 BOM');
+    });
+
+    it('document:loaded sets EOL cell and hides cursor until selection event', async () => {
+        const docMod = await import('../../app/state/document');
+        docMod.initDocumentState({ setActiveMode: vi.fn() });
+        const eol = document.getElementById('status-eol') as HTMLButtonElement;
+        const cursor = document.getElementById('status-cursor') as HTMLElement;
+
+        tauri.emitEvent('document:loaded', {
+            path: '/tmp/a.md',
+            kind: 'markdown',
+            text: 'hello',
+            content: '',
+            tocHtml: '',
+            lineEnding: 'crlf',
+            tabId: 1,
+        });
+        expect(eol.hidden).toBe(false);
+        expect(eol.textContent).toBe('CRLF');
+        expect(cursor.hidden).toBe(true);
+
+        window.dispatchEvent(new CustomEvent('folio-editor-selection', {
+            detail: { line: 1, column: 3, selChars: 0, selWords: 0 },
+        }));
+        expect(cursor.hidden).toBe(false);
+        expect(cursor.textContent).toBe('Zeile 1, Spalte 3');
+    });
+
+    it('document:eol_changed updates the cell with tabId guard', async () => {
+        const docMod = await import('../../app/state/document');
+        const tabsMod = await import('../../app/state/tabs');
+        vi.mocked(tabsMod.getActiveTabId).mockReturnValue(1);
+        docMod.initDocumentState({ setActiveMode: vi.fn() });
+        const eol = document.getElementById('status-eol') as HTMLButtonElement;
+
+        tauri.emitEvent('document:loaded', {
+            path: '/tmp/a.md', kind: 'markdown', text: 'x', content: '', tocHtml: '',
+            lineEnding: 'lf', tabId: 1,
+        });
+        expect(eol.textContent).toBe('LF');
+
+        tauri.emitEvent('document:eol_changed', { eol: 'crlf', tabId: 1 });
+        expect(eol.textContent).toBe('CRLF');
+
+        tauri.emitEvent('document:eol_changed', { eol: 'lf', tabId: 99 });
+        expect(eol.textContent).toBe('CRLF');
+    });
+
+    it('EOL button click invokes set_line_ending with toggled value', async () => {
+        const docMod = await import('../../app/state/document');
+        docMod.initDocumentState({ setActiveMode: vi.fn() });
+        const eol = document.getElementById('status-eol') as HTMLButtonElement;
+
+        tauri.emitEvent('document:loaded', {
+            path: '/tmp/a.md', kind: 'markdown', text: 'x', content: '', tocHtml: '',
+            lineEnding: 'lf', tabId: 1,
+        });
+        tauri.invoke.mockClear();
+        eol.click();
+        expect(tauri.invoke).toHaveBeenCalledWith('set_line_ending', { eol: 'crlf' });
+    });
+
+    it('EOL toggle keeps dirty through refreshDirtyFromEditor / requestSaveIfDirty', async () => {
+        // FX1: refreshDirtyFromEditor darf Backend-EOL-Dirty nicht still loeschen.
+        const dialogs = await import('../../app/ui/dialogs');
+        vi.mocked(dialogs.showUnsavedDialog).mockResolvedValue('cancel');
+        const docMod = await import('../../app/state/document');
+        const tabsMod = await import('../../app/state/tabs');
+        vi.mocked(tabsMod.getActiveTabId).mockReturnValue(1);
+        docMod.initDocumentState({ setActiveMode: vi.fn() });
+
+        tauri.emitEvent('document:loaded', {
+            path: '/tmp/a.md',
+            kind: 'markdown',
+            text: 'hello',
+            content: '',
+            tocHtml: '',
+            lineEnding: 'lf',
+            tabId: 1,
+            seq: 1,
+        });
+        expect(docMod.getIsDirty()).toBe(false);
+
+        // Toggle via Backend-Event (currentEol aendert sich, cleanEol bleibt lf).
+        tauri.emitEvent('document:eol_changed', { eol: 'crlf', tabId: 1 });
+        tauri.emitEvent('document:dirty_changed', { is_dirty: true, tabId: 1, seq: 2 });
+        expect(docMod.getIsDirty()).toBe(true);
+
+        // requestSaveIfDirty ruft refreshDirtyFromEditor — muss dirty halten.
+        const ok = await docMod.requestSaveIfDirty();
+        expect(ok).toBe(false); // cancel
+        expect(docMod.getIsDirty()).toBe(true);
+        expect(dialogs.showUnsavedDialog).toHaveBeenCalled();
     });
 
     it('document:save_error surfaces the localized message in the status bar', async () => {

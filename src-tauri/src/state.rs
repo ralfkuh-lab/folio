@@ -291,6 +291,7 @@ impl AppState {
                         &payload.path,
                         &payload.text,
                         &payload.encoding,
+                        &payload.line_ending,
                     );
                     Self::schedule_tabs_changed(app.clone());
                     // Wartende `POST /wait { event: "document.loaded" }` aufwecken.
@@ -361,10 +362,21 @@ impl AppState {
             // Metadaten-only-Reload (BOM/Encoding geaendert, Text gleich):
             // leichtgewichtiges Event nur fuer die Statusleisten-Zelle.
             // tabId-Validierung passiert im Frontend (wie saved/dirty_changed).
-            encoding_changed: Some(Arc::new(move |encoding| {
+            encoding_changed: Some(Arc::new({
+                let app = app.clone();
+                move |encoding| {
+                    let _ = app.emit(
+                        "document:encoding_changed",
+                        serde_json::json!({ "encoding": encoding, "tabId": tab_id }),
+                    );
+                }
+            })),
+            // EOL-Toggle (set_line_ending) und Format-only-Reload.
+            // tabId-Validierung im Frontend (wie encoding_changed).
+            eol_changed: Some(Arc::new(move |eol| {
                 let _ = app.emit(
-                    "document:encoding_changed",
-                    serde_json::json!({ "encoding": encoding, "tabId": tab_id }),
+                    "document:eol_changed",
+                    serde_json::json!({ "eol": eol, "tabId": tab_id }),
                 );
             })),
         }
@@ -433,6 +445,7 @@ impl AppState {
         path: &str,
         text: &str,
         encoding: &str,
+        line_ending: &str,
     ) -> Result<(), String> {
         let seq = next_doc_seq();
         let toc_entries = toc::extract(text);
@@ -443,6 +456,7 @@ impl AppState {
                 "kind": crate::file_kind::classify(path),
                 "language": crate::file_kind::editor_language(path),
                 "encoding": encoding,
+                "lineEnding": line_ending,
                 "text": text,
                 "content": renderer::render_body(text),
                 "tocHtml": toc::render_html(&toc_entries),

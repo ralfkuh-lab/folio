@@ -237,7 +237,7 @@ pub fn activate(state: &AppState, handle: &AppHandle, id: u64) -> Result<TabTran
         }
     }
 
-    let (path, text, encoding, dirty, tab_id) = {
+    let (path, text, encoding, line_ending, dirty, tab_id) = {
         let tabs = state
             .tabs
             .lock()
@@ -247,6 +247,7 @@ pub fn activate(state: &AppState, handle: &AppHandle, id: u64) -> Result<TabTran
             tab.document_store.path.clone(),
             tab.document_store.text.clone(),
             tab.document_store.encoding_label(),
+            tab.document_store.line_ending_label(),
             tab.document_store.is_dirty,
             tab.id,
         )
@@ -260,7 +261,7 @@ pub fn activate(state: &AppState, handle: &AppHandle, id: u64) -> Result<TabTran
 
     if let Some(path) = path {
         if !lazy_loaded {
-            AppState::emit_document_loaded(handle, tab_id, &path, &text, encoding)
+            AppState::emit_document_loaded(handle, tab_id, &path, &text, encoding, line_ending)
                 .map_err(TabError::Internal)?;
             handle
                 .emit(
@@ -372,7 +373,7 @@ pub fn close_all(state: &AppState, handle: &AppHandle) -> Result<TabTransition, 
 }
 
 fn emit_active_document(state: &AppState, handle: &AppHandle) -> Result<(), TabError> {
-    let (id, path, text, encoding, dirty) = {
+    let (id, path, text, encoding, line_ending, dirty) = {
         let tabs = state
             .tabs
             .lock()
@@ -383,6 +384,7 @@ fn emit_active_document(state: &AppState, handle: &AppHandle) -> Result<(), TabE
             tab.document_store.path.clone(),
             tab.document_store.text.clone(),
             tab.document_store.encoding_label(),
+            tab.document_store.line_ending_label(),
             tab.document_store.is_dirty,
         )
     };
@@ -392,7 +394,7 @@ fn emit_active_document(state: &AppState, handle: &AppHandle) -> Result<(), TabE
         .map_err(|_| TabError::Internal("vault lock poisoned".into()))?
         .set_active(path.clone());
     if let Some(path) = path {
-        AppState::emit_document_loaded(handle, id, &path, &text, encoding)
+        AppState::emit_document_loaded(handle, id, &path, &text, encoding, line_ending)
             .map_err(TabError::Internal)?;
         handle
             .emit(

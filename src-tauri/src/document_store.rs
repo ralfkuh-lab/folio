@@ -14,6 +14,25 @@ pub enum LineEnding {
     Crlf,
 }
 
+impl LineEnding {
+    /// Frontend-/Payload-Label (`lf` | `crlf`).
+    pub fn label(self) -> &'static str {
+        match self {
+            LineEnding::Lf => "lf",
+            LineEnding::Crlf => "crlf",
+        }
+    }
+
+    /// Parse `lf` / `crlf` (case-insensitive). Andere Werte → `None`.
+    pub fn from_label(label: &str) -> Option<Self> {
+        match label.to_ascii_lowercase().as_str() {
+            "lf" => Some(LineEnding::Lf),
+            "crlf" => Some(LineEnding::Crlf),
+            _ => None,
+        }
+    }
+}
+
 /// Erkanntes Text-Encoding einer geladenen Datei. Wird zusammen mit
 /// `had_bom` gehalten und beim Speichern exakt wiederhergestellt (analog
 /// zur bestehenden BOM/CRLF-Philosophie). Bei `Utf16Le`/`Utf16Be` ist
@@ -91,6 +110,8 @@ pub struct LoadedDocument {
     /// Encoding-Label (`utf8` | `utf8-bom` | `utf16le` | `utf16be` |
     /// `windows1252`), additiv fuer die Statusleiste.
     pub encoding: String,
+    /// Zeilenenden-Label (`lf` | `crlf`), additiv fuer die Statusleiste.
+    pub line_ending: String,
 }
 
 #[derive(Clone, Default)]
@@ -105,6 +126,10 @@ pub struct DocumentEvents {
     /// voller `loaded`-Pfad (der waere fuer Metadaten-only zu schwer), nur
     /// die Statusleisten-Zelle wird aktualisiert.
     pub encoding_changed: Option<Arc<dyn Fn(String) + Send + Sync>>,
+    /// Feuert bei EOL-Aenderung (`lf` | `crlf`): Toggle via `set_line_ending`
+    /// und Format-only-Reload. Vor `dirty_changed`, damit das Frontend
+    /// `currentEol` aktualisieren kann, bevor clean-Sync laeuft.
+    pub eol_changed: Option<Arc<dyn Fn(String) + Send + Sync>>,
 }
 
 pub struct DocumentStore {
@@ -117,8 +142,15 @@ pub struct DocumentStore {
     clean_text: String,
     pub is_dirty: bool,
     pub line_ending: LineEnding,
+    /// Referenz-Zeilenende von Load/Save/Reload — Dirty beruecksichtigt
+    /// auch `line_ending != clean_line_ending` (EOL-Toggle ohne Textaenderung).
+    clean_line_ending: LineEnding,
     pub had_bom: bool,
     pub encoding: TextEncoding,
+    /// true nach `load_opaque` (Image/Binary-Pfad ohne Textinhalt).
+    /// Bleibt ueber Rename erhalten — verhindert EOL-Toggle auf umbenannten
+    /// Opaque-Docs (z. B. Bild → .txt).
+    opaque: bool,
     watcher: Option<RecommendedWatcher>,
     watcher_tx: Option<mpsc::Sender<PathBuf>>,
     events: DocumentEvents,
@@ -132,8 +164,10 @@ impl Default for DocumentStore {
             text: String::new(),
             is_dirty: false,
             line_ending: LineEnding::Lf,
+            clean_line_ending: LineEnding::Lf,
             had_bom: false,
             encoding: TextEncoding::Utf8,
+            opaque: false,
             watcher: None,
             watcher_tx: None,
             events: DocumentEvents::default(),
@@ -156,6 +190,21 @@ impl DocumentStore {
         self.encoding.label(self.had_bom)
     }
 
+    /// Zeilenenden-Label fuer die Frontend-Payload (`lf` | `crlf`).
+    pub fn line_ending_label(&self) -> &'static str {
+        self.line_ending.label()
+    }
+
+    /// true, wenn das Dokument per `load_opaque` geoeffnet wurde (kein Text).
+    pub fn is_opaque(&self) -> bool {
+        self.opaque
+    }
+
+    /// Dirty aus Text- und EOL-Referenzstand. Beide muessen matchen.
+    fn is_content_dirty(&self) -> bool {
+        self.text != self.clean_text || self.line_ending != self.clean_line_ending
+    }
+
     pub fn load(&mut self, path: &str) -> io::Result<LoadedDocument> {
         self.load_inner(path, true)
     }
@@ -173,14 +222,17 @@ impl DocumentStore {
         self.clean_text = text.clone();
         self.is_dirty = false;
         self.line_ending = line_ending;
+        self.clean_line_ending = line_ending;
         self.had_bom = had_bom;
         self.encoding = encoding;
+        self.opaque = false;
         self.watch_non_fatal(path);
 
         let loaded = LoadedDocument {
             path: path.to_string(),
             text,
             encoding: self.encoding_label().to_string(),
+            line_ending: self.line_ending_label().to_string(),
         };
         if emit_loaded {
             if let Some(callback) = &self.events.loaded {
@@ -207,12 +259,15 @@ impl DocumentStore {
         self.clean_text = String::new();
         self.is_dirty = false;
         // line_ending/had_bom/encoding unveraendert — sie betreffen nur
-        // Text-Saves; das Frontend zeigt fuer Bilder keine Encoding-Zelle.
+        // Text-Saves; das Frontend zeigt fuer Bilder keine Encoding-/EOL-Zelle.
+        self.clean_line_ending = self.line_ending;
+        self.opaque = true;
         self.watch_non_fatal(path);
         let loaded = LoadedDocument {
             path: path.to_string(),
             text: String::new(),
             encoding: self.encoding_label().to_string(),
+            line_ending: self.line_ending_label().to_string(),
         };
         if let Some(callback) = &self.events.loaded {
             callback(loaded.clone());
@@ -239,30 +294,49 @@ impl DocumentStore {
             // Line-Ending oder Encoding umgestellt wurde, hier die Metadaten
             // nachziehen — sonst wuerde der naechste Self-Save die externe
             // Format-Entscheidung zurueckdrehen. Kein voller loaded-Pfad,
-            // aber bei einer Encoding-Label-Aenderung ein leichtgewichtiges
-            // `encoding_changed`, damit die Statusleisten-Zelle nachzieht.
-            let old_label = self.encoding_label();
+            // aber bei Encoding-/EOL-Label-Aenderung leichtgewichtige Events,
+            // damit die Statusleisten-Zellen nachziehen.
+            //
+            // Bewusste Semantik (wie Encoding): externe Format-Aenderung
+            // gewinnt — ein vorheriger In-App-EOL-Toggle wird verworfen
+            // (`clean_line_ending` folgt Disk).
+            let old_encoding = self.encoding_label();
+            let old_eol = self.line_ending_label();
             self.had_bom = had_bom;
             self.line_ending = line_ending;
+            self.clean_line_ending = line_ending;
             self.encoding = encoding;
-            let new_label = self.encoding_label();
-            if new_label != old_label {
+            // Events VOR dirty_changed, damit Frontend currentEol/encoding
+            // aktualisiert, bevor cleanEol-Sync auf dirty_changed(false) laeuft.
+            let new_encoding = self.encoding_label();
+            if new_encoding != old_encoding {
                 if let Some(callback) = &self.events.encoding_changed {
-                    callback(new_label.to_string());
+                    callback(new_encoding.to_string());
                 }
             }
+            let new_eol = self.line_ending_label();
+            if new_eol != old_eol {
+                if let Some(callback) = &self.events.eol_changed {
+                    callback(new_eol.to_string());
+                }
+            }
+            // EOL-Dirty entfaellt, Text-Dirty bleibt.
+            self.set_dirty(self.text != self.clean_text);
             return Ok(false);
         }
         self.text = text.clone();
         self.clean_text = text.clone();
         self.is_dirty = false;
         self.line_ending = line_ending;
+        self.clean_line_ending = line_ending;
         self.had_bom = had_bom;
         self.encoding = encoding;
+        self.opaque = false;
         let loaded = LoadedDocument {
             path: path.clone(),
             text,
             encoding: self.encoding_label().to_string(),
+            line_ending: self.line_ending_label().to_string(),
         };
         if let Some(callback) = &self.events.loaded {
             callback(loaded);
@@ -283,8 +357,10 @@ impl DocumentStore {
         self.clean_text = String::new();
         self.is_dirty = false;
         self.line_ending = LineEnding::Lf;
+        self.clean_line_ending = LineEnding::Lf;
         self.had_bom = false;
         self.encoding = TextEncoding::Utf8;
+        self.opaque = false;
         self.watcher = None;
         self.watcher_tx = None;
         if let Some(callback) = &self.events.dirty_changed {
@@ -298,13 +374,34 @@ impl DocumentStore {
         }
         self.text = text.clone();
         if self.path.is_some() {
-            // Vergleich gegen den Referenzstand statt pauschal dirty:
-            // Undo zurueck zum Ausgangstext -> wieder clean.
-            self.set_dirty(text != self.clean_text);
+            // Vergleich gegen Text- UND EOL-Referenzstand: ein Tipp-Revert
+            // darf ein EOL-Dirty nicht fälschlich auf clean setzen.
+            self.set_dirty(self.is_content_dirty());
         }
         if let Some(callback) = &self.events.text_changed {
             callback(text);
         }
+    }
+
+    /// Setzt die Zeilenenden des aktiven Dokuments. No-op bei gleichem Wert
+    /// oder bei Opaque-Docs. Dirty wird analog zu `update_text` aus Text-
+    /// und EOL-Referenzstand abgeleitet. Feuert `eol_changed` vor
+    /// `dirty_changed`. Liefert `true`, wenn sich der Wert geaendert hat.
+    pub fn set_line_ending(&mut self, eol: LineEnding) -> bool {
+        if self.opaque {
+            return false;
+        }
+        if self.line_ending == eol {
+            return false;
+        }
+        self.line_ending = eol;
+        if let Some(callback) = &self.events.eol_changed {
+            callback(self.line_ending_label().to_string());
+        }
+        if self.path.is_some() {
+            self.set_dirty(self.is_content_dirty());
+        }
+        true
     }
 
     /// Restauriert Line-Endings (LF→Original) und kodiert in das
@@ -324,6 +421,7 @@ impl DocumentStore {
         let bytes = self.encode_for_disk()?;
         fs::write(&path, bytes)?;
         self.clean_text = self.text.clone();
+        self.clean_line_ending = self.line_ending;
         self.set_dirty(false);
         if let Some(callback) = &self.events.saved {
             callback(path, self.text.clone());
@@ -342,6 +440,9 @@ impl DocumentStore {
 
         self.path = Some(new_path.to_string());
         self.clean_text = self.text.clone();
+        self.clean_line_ending = self.line_ending;
+        // save_as schreibt Text → kein Opaque-Doc mehr.
+        self.opaque = false;
         self.set_dirty(false);
         self.watch_non_fatal(new_path);
 
@@ -349,6 +450,7 @@ impl DocumentStore {
             path: new_path.to_string(),
             text: self.text.clone(),
             encoding: self.encoding_label().to_string(),
+            line_ending: self.line_ending_label().to_string(),
         };
         if let Some(callback) = &self.events.loaded {
             callback(loaded.clone());
@@ -381,6 +483,7 @@ impl DocumentStore {
             path: new_path.to_string(),
             text: self.text.clone(),
             encoding: self.encoding_label().to_string(),
+            line_ending: self.line_ending_label().to_string(),
         };
         if emit_loaded {
             if let Some(callback) = &self.events.loaded {
@@ -980,6 +1083,126 @@ mod tests {
         assert!(!store.reload_if_changed().unwrap());
         assert_eq!("utf8-bom", store.encoding_label());
         assert_eq!(vec!["utf8-bom".to_string()], *seen.lock().unwrap());
+
+        // Erneuter Reload ohne Aenderung → kein weiterer Callback.
+        assert!(!store.reload_if_changed().unwrap());
+        assert_eq!(1, seen.lock().unwrap().len());
+    }
+
+    #[test]
+    fn set_line_ending_toggle_marks_dirty() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("doc.md");
+        fs::write(&path, b"hello\n").unwrap(); // LF
+        let mut store = DocumentStore::new();
+        store.load(path.to_str().unwrap()).unwrap();
+        assert_eq!(LineEnding::Lf, store.line_ending);
+        assert!(!store.is_dirty);
+
+        assert!(store.set_line_ending(LineEnding::Crlf));
+        assert_eq!(LineEnding::Crlf, store.line_ending);
+        assert!(store.is_dirty);
+
+        // Gleicher Wert → No-op, bleibt dirty.
+        assert!(!store.set_line_ending(LineEnding::Crlf));
+        assert!(store.is_dirty);
+    }
+
+    #[test]
+    fn set_line_ending_save_writes_new_eol_and_clears_dirty() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("doc.md");
+        fs::write(&path, b"a\r\nb\r\n").unwrap(); // CRLF
+        let mut store = DocumentStore::new();
+        store.load(path.to_str().unwrap()).unwrap();
+        assert_eq!(LineEnding::Crlf, store.line_ending);
+
+        assert!(store.set_line_ending(LineEnding::Lf));
+        assert!(store.is_dirty);
+        assert!(store.save().unwrap());
+        assert!(!store.is_dirty);
+        assert_eq!(LineEnding::Lf, store.line_ending);
+        // Datei enthaelt nur LF (kein CR).
+        assert_eq!(b"a\nb\n".to_vec(), fs::read(&path).unwrap());
+    }
+
+    #[test]
+    fn set_line_ending_plus_text_revert_stays_dirty() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("doc.md");
+        fs::write(&path, b"one\n").unwrap();
+        let mut store = DocumentStore::new();
+        store.load(path.to_str().unwrap()).unwrap();
+
+        // EOL umschalten → dirty.
+        assert!(store.set_line_ending(LineEnding::Crlf));
+        assert!(store.is_dirty);
+
+        // Text aendern und wieder zum clean_text reverten — EOL bleibt
+        // abweichend, also dirty (nicht fälschlich clean).
+        store.update_text("two\n".into());
+        assert!(store.is_dirty);
+        store.update_text("one\n".into());
+        assert!(store.is_dirty);
+        assert_eq!(LineEnding::Crlf, store.line_ending);
+    }
+
+    #[test]
+    fn set_line_ending_double_toggle_back_is_clean() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("doc.md");
+        fs::write(&path, b"hello\n").unwrap();
+        let mut store = DocumentStore::new();
+        store.load(path.to_str().unwrap()).unwrap();
+
+        assert!(store.set_line_ending(LineEnding::Crlf));
+        assert!(store.is_dirty);
+        assert!(store.set_line_ending(LineEnding::Lf));
+        assert!(!store.is_dirty);
+        assert_eq!(LineEnding::Lf, store.line_ending);
+    }
+
+    #[test]
+    fn set_line_ending_on_opaque_returns_false_and_stays_clean() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("photo.png");
+        fs::write(&path, b"\x89PNG").unwrap();
+        let mut store = DocumentStore::new();
+        store.load_opaque(path.to_str().unwrap()).unwrap();
+        assert!(store.is_opaque());
+        assert!(!store.is_dirty);
+        assert_eq!(LineEnding::Lf, store.line_ending);
+
+        assert!(!store.set_line_ending(LineEnding::Crlf));
+        assert!(!store.is_dirty);
+        assert_eq!(LineEnding::Lf, store.line_ending);
+        assert!(store.is_opaque());
+    }
+
+    #[test]
+    fn format_only_reload_eol_change_fires_eol_changed_callback() {
+        use std::sync::Mutex;
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("doc.md");
+        // Start: CRLF.
+        fs::write(&path, b"one\r\n").unwrap();
+        let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let seen_cb = seen.clone();
+        let mut store = DocumentStore::new();
+        store.set_events(DocumentEvents {
+            eol_changed: Some(Arc::new(move |label| {
+                seen_cb.lock().unwrap().push(label);
+            })),
+            ..DocumentEvents::default()
+        });
+        store.load(path.to_str().unwrap()).unwrap();
+        assert_eq!(LineEnding::Crlf, store.line_ending);
+
+        // Extern nur EOL auf LF (normalisierter Text identisch).
+        fs::write(&path, b"one\n").unwrap();
+        assert!(!store.reload_if_changed().unwrap());
+        assert_eq!(LineEnding::Lf, store.line_ending);
+        assert_eq!(vec!["lf".to_string()], *seen.lock().unwrap());
 
         // Erneuter Reload ohne Aenderung → kein weiterer Callback.
         assert!(!store.reload_if_changed().unwrap());

@@ -109,6 +109,37 @@ pub async fn discard_editor_changes(state: State<'_, AppState>) -> Result<bool, 
     Ok(true)
 }
 
+/// Setzt die Zeilenenden des aktiven Dokuments (`lf` | `crlf`).
+/// No-op bei gleichem Wert. Lehnt Opaque-Docs (Image/Binary + Store-Flag)
+/// und fehlende Dokumente ab. `document:eol_changed` / `dirty_changed`
+/// kommen ausschliesslich aus den Store-Callbacks (ein Pfad).
+#[tauri::command]
+pub async fn set_line_ending(eol: String, state: State<'_, AppState>) -> Result<(), String> {
+    use crate::document_store::LineEnding;
+    use crate::file_kind::{classify, FileKind};
+
+    let wanted = LineEnding::from_label(&eol)
+        .ok_or_else(|| i18n::t_args("errors.document.invalidLineEnding", &[("detail", &eol)]))?;
+
+    let mut tabs = state
+        .tabs
+        .lock()
+        .map_err(|_| "tabs lock poisoned".to_string())?;
+    let tab = tabs.active_mut();
+    let store = &mut tab.document_store;
+    let Some(path) = store.path.clone() else {
+        return Err(i18n::t("errors.document.noneLoaded"));
+    };
+    // Zweite Verteidigung neben store.opaque (Rename kann Endung aendern).
+    let kind = classify(&path);
+    if matches!(kind, FileKind::Image | FileKind::Binary) || store.is_opaque() {
+        return Err(i18n::t("errors.document.imageReadOnly"));
+    }
+    // Events laufen ueber DocumentEvents::eol_changed / dirty_changed.
+    let _ = store.set_line_ending(wanted);
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn apply_editor_command(
     command: String,

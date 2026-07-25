@@ -7,6 +7,8 @@ pub(super) struct AutomationState {
     pub(super) title: String,
     pub(super) file: Option<String>,
     pub(super) dirty: bool,
+    /// Zeilenenden des aktiven Dokuments (`lf` | `crlf`); `None` ohne Doc.
+    pub(super) line_ending: Option<String>,
     pub(super) view_mode: String,
     pub(super) theme: String,
     pub(super) left_rail_visible: bool,
@@ -424,6 +426,7 @@ mod phase0_request_tests {
             title: "Folio".into(),
             file: None,
             dirty: false,
+            line_ending: None,
             view_mode: "split".into(),
             theme: "light".into(),
             left_rail_visible: true,

@@ -31,6 +31,11 @@
   align-items: center;
 }
 .statusbar button:hover { background: var(--rail-hover-bg); }
+/* Author-display:inline-flex ueberschreibt sonst UA-[hidden] — Buttons
+   mit hidden-Attribut muessen explizit verschwinden (#status-eol, #status-language). */
+.statusbar button[hidden] { display: none; }
 /* Sprach-Cell nur bei aktivem Editor (Edit/Split) sichtbar — im View-Mode
    sieht man eh nur die rendered Preview, da hat die Editor-Sprache keinen Sinn. */
 body:not(.edit-mode):not(.split-mode) #status-language { display: none; }
+/* Cursor Ln/Sp nur im Edit-/Split-Mode (Konvention: keine Endungs-Heuristik). */
+body:not(.edit-mode):not(.split-mode) #status-cursor { display: none; }

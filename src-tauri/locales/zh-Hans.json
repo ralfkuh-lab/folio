@@ -227,6 +227,7 @@
   "errors.app.settingsUpdateFailed": "无法更新设置：{detail}",
   "errors.app.terminalFailed": "无法打开终端：{detail}",
   "errors.document.imageReadOnly": "图片为只读",
+  "errors.document.invalidLineEnding": "无效的行尾：{detail}",
   "errors.document.noneLoaded": "未加载任何文档",
   "errors.document.noneOpen": "未打开任何文档。",
   "errors.editor.discardFailed": "无法放弃更改：{detail}",
@@ -578,7 +579,10 @@
   "settings.watch.sectionTitle": "文件监控",
   "settings.watch.vaultAutoRefresh.hint": "系统会监控展开的文件夹；新建、删除或重命名文件后会立即呈现在工作区中。",
   "settings.watch.vaultAutoRefresh.label": "当外部有更改时自动更新 Vault 目录树",
+  "statusBar.cursor.template": "行 {line}，列 {column}",
+  "statusBar.cursor.tooltip": "光标位置",
   "statusBar.encoding.tooltip": "文件的字符编码",
+  "statusBar.eol.tooltip": "切换行尾 (LF ↔ CRLF)",
   "statusBar.exportMarkdownOnly": "导出仅适用于 Markdown 文档",
   "statusBar.externalChangedClean": "文件在外部已被更改——请使用重新加载按钮更新",
   "statusBar.externalChangedDirty": "文件已在外部更改（有未保存的本地更改）——请保存或放弃后重新加载",
@@ -593,6 +597,7 @@
   "statusBar.wordCount.linesPart": {
     "other": "{count} 行"
   },
+  "statusBar.wordCount.selectionTemplate": "已选 {wordsPart} · {charsPart}",
   "statusBar.wordCount.template": "{wordsPart} · {charsPart} · {linesPart}",
   "statusBar.wordCount.wordsPart": {
     "other": "{count} 个词"
