@@ -76,6 +76,18 @@
   outline-offset: -1px;
   border-color: var(--accent);
 }
+/* Fehlerzeile unter dem Rename-/Create-Input (Wikilink „Notiz anlegen?"). */
+.dialog-error {
+  color: #c0392b;
+  font-size: 12.5px;
+  line-height: 1.4;
+  margin: -8px 0 12px;
+  min-height: 1.2em;
+}
+.dialog-error[hidden] { display: none; }
+html.theme-dark .dialog-error {
+  color: #ff8a80;
+}
 /* Export-Dialog */
 #export-dialog[hidden] { display: none; }
 #export-dialog {

@@ -85,6 +85,19 @@ impl NavigationController {
         self.current()
     }
 
+    /// Setzt den Anker des AKTUELLEN Eintrags, ohne einen neuen zu pushen.
+    /// Fuer Opens, bei denen der Ziel-Tab die Datei bereits zeigt
+    /// (`tab_open` auf bestehenden Tab, `focus_existing_tab`): ein zweites
+    /// `navigate` wuerde sonst einen History-Eintrag ohne Anker
+    /// hinterlassen, der beim Zurueckgehen tot ist (Review codex #8).
+    pub fn set_current_anchor(&mut self, anchor: Option<String>) {
+        if let Some(index) = self.current_index {
+            if let Some(entry) = self.history.get_mut(index) {
+                entry.anchor = anchor;
+            }
+        }
+    }
+
     pub fn update_scroll_position(&mut self, scroll_y: f64) {
         if let Some(index) = self.current_index {
             if let Some(entry) = self.history.get_mut(index) {
@@ -256,5 +269,31 @@ mod tests {
             .iter()
             .map(|entry| entry.absolute_path.as_str())
             .collect()
+    }
+
+    #[test]
+    fn set_current_anchor_updates_in_place_without_new_entry() {
+        // focus_existing_tab-Pfad (Review codex #8): der Ziel-Tab zeigt die
+        // Datei bereits — der Anker gehoert auf den aktuellen Eintrag,
+        // nicht in einen zweiten.
+        let mut nav = NavigationController::new();
+        nav.navigate("/guide.md", None);
+
+        nav.set_current_anchor(Some("install".into()));
+
+        assert_eq!(1, nav.history().len());
+        assert!(!nav.can_go_back());
+        assert_eq!(Some("install"), nav.current().unwrap().anchor.as_deref());
+    }
+
+    #[test]
+    fn navigate_with_anchor_after_anchorless_entry_would_add_a_second_entry() {
+        // Gegenprobe zum Fix: genau dieses Verhalten erzeugte den toten
+        // Zurueck-Schritt.
+        let mut nav = NavigationController::new();
+        nav.navigate("/guide.md", None);
+        nav.navigate("/guide.md", Some("install".into()));
+
+        assert_eq!(2, nav.history().len());
     }
 }

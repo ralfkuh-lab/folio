@@ -584,6 +584,8 @@ export function initDocumentState(d: Deps): void {
 
         // 1. State-Setup
         currentPath = data.path || null;
+        // Editor-Bundle liest das für `[[#`-Heading-Complete (W4).
+        try { (window as any).__folioCurrentPath = currentPath; } catch { /* ignore */ }
         cleanText = data.text || '';
         lastLoadedTabId = typeof data.tabId === 'number' ? data.tabId : null;
         markDirty(false);
@@ -740,6 +742,7 @@ export function initDocumentState(d: Deps): void {
         invalidateHtmlLive();
         invalidateCodeLive();
         currentPath = null;
+        try { (window as any).__folioCurrentPath = null; } catch { /* ignore */ }
         cleanText = '';
         cleanEol = null;
         lastLoadedTabId = null;

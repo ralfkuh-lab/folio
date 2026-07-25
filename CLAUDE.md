@@ -407,6 +407,23 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   (None → Code-Block-Fallback). Index-Match, Light-only, Theme-Editor-Vorschau
   (ohne Dialog-Kontext) bleibt Code-Block. `renderMermaidBlocks` wird parallel
   zu `highlightCodeBlocks` an denselben Stellen gerufen.
+- **Wikilinks + Tags** (Spec [`docs/spec-wikilinks.md`](docs/spec-wikilinks.md),
+  W1–W6): Obsidian-kompatible `[[Name]]`/`[[Name|Alias]]`/`[[Name#H]]`/
+  `![[bild.png]]` in View/Split/Live-Preview/Export. Kern `wikilink.rs`
+  (Index über Vault-Pins wie Suche, TTL 30 s + Invalidierung bei Pin/
+  create/rename/delete/save_as/Watcher; `WikilinkContext` im Render).
+  Missing → `folio-new:`-Href + Klasse `wikilink-missing` (App: Anlegen-
+  Dialog W2); Export ersetzt das Schema durch `href="#"` (`sanitize_
+  export_missing_hrefs`, Styles in `layouts/base.css`). CSS-Klassen:
+  `a.wikilink` / `.wikilink-missing` / `.wikilink-embed` (content.css).
+  Backlinks: Command `backlinks_for` + `#backlinks-section` unter TOC
+  (debounced refresh). `[[`-Autocomplete im editor-Bundle
+  (`wikilink-complete.ts`, `wikilink_candidates` [Index-Scope,
+  backend-disambiguierter insert] + `wikilink_headings`;
+  Fence-/Inline-Code-Gate).
+  Tags: `tags.rs` / `vault_tags`, UI `#vault-tags-section` lazy on
+  expand (`panel_state.tags_expanded`), Search-Präfill `#tag`.
+  E2E: `53_wikilinks`, `54_tags`.
 - **View-Themes** (`view/theme.ts`, Backend-Commands `view_themes` /
   `view_theme_css`): Theme-CSS ist immer auf `.markdown-body` gescopt
   und wird ueber `#view-theme-style` als letztes Element in `head`

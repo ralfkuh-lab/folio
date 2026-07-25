@@ -1,9 +1,9 @@
 {
   "@meta": {
-    "tag": "de",
-    "name": "Deutsch",
+    "flag": "🇩🇪",
     "locale": "de-DE",
-    "flag": "🇩🇪"
+    "name": "Deutsch",
+    "tag": "de"
   },
   "ai.actions.customPrompt.description": "Freie Anweisung ohne Vorlage.",
   "ai.actions.customPrompt.name": "Eigener Prompt",
@@ -759,6 +759,15 @@
   "vault.section.empty": "Keine Einträge",
   "vault.section.pinned": "Angepinnt",
   "vault.section.recent": "Zuletzt geöffnet",
+  "vault.tags.empty": "Keine Tags",
+  "vault.tags.error": "Tags konnten nicht geladen werden",
+  "vault.tags.loading": "Tags werden geladen…",
+  "vault.tags.refresh.ariaLabel": "Tags aktualisieren",
+  "vault.tags.refresh.tooltip": "Tags aktualisieren",
+  "vault.tags.search.ariaLabel": "Nach diesem Tag suchen",
+  "vault.tags.search.tooltip": "In Dateien suchen…",
+  "vault.tags.section": "Tags",
+  "vault.tags.truncated": "Liste gekürzt",
   "vault.tree.collapseAll.ariaLabel": "Alle Ordner einklappen",
   "vault.tree.collapseAll.tooltip": "Alles einklappen",
   "vault.tree.empty": "Keine Einträge. Datei öffnen oder per Drag&Drop ablegen.",
@@ -769,5 +778,12 @@
   "view.codeCopy.failed": "Kopieren fehlgeschlagen",
   "view.codeCopy.tooltip": "Code kopieren",
   "view.dropOverlay.message": "Datei hier ablegen, um zu öffnen",
-  "view.toc.title": "Inhaltsverzeichnis"
+  "view.toc.title": "Inhaltsverzeichnis",
+  "wikilinks.backlinks.empty": "Keine Backlinks",
+  "wikilinks.backlinks.header": "Verlinkt von ({count})",
+  "wikilinks.backlinks.truncated": "Liste gekürzt",
+  "wikilinks.createDialog.noDocument": "Kein Dokument geöffnet — Notiz kann nicht angelegt werden.",
+  "wikilinks.createDialog.submit.action": "Anlegen",
+  "wikilinks.createDialog.subtitle": "Zielverzeichnis: {dir}",
+  "wikilinks.createDialog.title": "Notiz anlegen?"
 }

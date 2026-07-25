@@ -20,9 +20,11 @@ Diese Ideen kamen von 2–4 Quellen unabhängig. Das ist der beste Startpunkt.
    on-demand-Suche, Treffer-Snippets, Klick öffnet die Stelle, Ordner-Scope
    via Kontextmenü, Strg+Shift+F. *Höchster Produktivitätsgewinn für große
    Vaults.* `[M–L]` (Quelle: **alle 3** — codex/agy/grok, alle mit ⭐)
-2. **⭐ Wikilinks `[[Name]]` + Backlinks-Panel** — klickbare Vault-interne Links
-   (Vorschau + Export), „fehlt? → anlegen"-Dialog; dazu pro Dokument anzeigen, wer
-   darauf verlinkt. `[M–L]` (Quelle: **alle 3**)
+2. **⭐ Wikilinks `[[Name]]` + Backlinks-Panel** — ✅ **umgesetzt (W1–W6,
+   2026-07-25)**, siehe [`spec-wikilinks.md`](spec-wikilinks.md): Vault-
+   Index + Render, Anlegen-Dialog, Fragment-Nav, Backlinks-Rail,
+   `[[`-Autocomplete, Tag-Browser, Export-Sanitize, E2E 53/54.
+   `[M–L]` (Quelle: **alle 3**)
 3. **⭐ Command Palette (Strg+P)** — ✅ **umgesetzt (2026-07-22, Overnight)**,
    siehe [`spec-command-palette.md`](spec-command-palette.md): Fuzzy-Suche
    über Dateien/Tabs/Recents, `>`-Befehle, `#`-Überschriften.
@@ -179,15 +181,16 @@ Dinge, die in den drei Sets fehlten oder die ich für besonders wirkungsvoll hal
   Confluence) beim Einfügen automatisch zu sauberem MD konvertieren (turndown-artig,
   im Frontend). Spart massives Nachputzen. `[M]` (Gegenstück zu codex' „als Rich Text
   kopieren")
-- **Inline-Autovervollständigung für Links/Wikilinks** — beim Tippen von `[[` oder
-  `](` Vault-Dateien + Überschriften als Monaco-Completion vorschlagen. Perfekte
-  Ergänzung zu Wikilinks (#2) und macht sie erst richtig flüssig. `[M]`
+- **Inline-Autovervollständigung für Links/Wikilinks** — ✅ **teilweise umgesetzt
+  (W4, 2026-07-25)**: `[[`/`![[` + `[[Name#` Headings im Monaco-Provider;
+  `](`-Markdown-Links bleiben Folgepunkt. `[M]`
 - **Smart-List-Fortsetzung** — Enter in Listen setzt automatisch `- `/`1.`/`- [ ]`
   fort, leere Zeile bricht ab; Tab/Shift-Tab rückt ein/aus. Reine Editor-QoL. `[S–M]`
 - **Tabellen-Auto-Format** — Command/On-Save richtet MD-Tabellen sauber aus
   (Spalten-Padding). Kombiniert gut mit dem CSV-Konverter. `[S]`
-- **Tag-Browser** — `#tags` im Text sammeln, in einer Rail browsen/filtern; leichte
-  Alternative/Ergänzung zu Backlinks & Orphan-Finder für persönliche Wikis. `[M]`
+- **Tag-Browser** — ✅ **umgesetzt (W5, 2026-07-25)** in der linken Rail
+  (`#vault-tags-section`, lazy Scan, Search-Präfill); Spec
+  [`spec-wikilinks.md`](spec-wikilinks.md). Hierarchie-Baum bleibt Folgepunkt. `[M]`
 - **View-Theme folgt OS/Uhrzeit** — automatischer Hell/Dunkel-Wechsel nach
   `prefers-color-scheme` bzw. Tageszeit. `[S]`
 - **Emoji-/`:shortcode:`-Picker** im Editor. `[S]`

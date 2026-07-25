@@ -1,5 +1,9 @@
 # TODO
 
+## Hohe Priorität
+
+_(leer)_
+
 ## Mittlere Priorität
 
 - **E2E `42_mermaid` flaky — Fix 2026-07-25, Beobachtung**: erneut
@@ -90,6 +94,17 @@
   LRU erwägen).
 
 ## Niedrige Priorität
+
+- **Wikilinks — Folgepunkte** (W1–W6 2026-07-25, Spec
+  [`docs/spec-wikilinks.md`](docs/spec-wikilinks.md)): Notiz-Embeds mit
+  echtem Inhalt (Transclusion), Block-Referenzen `#^id`, Frontmatter-
+  `aliases`, Backlinks für normale relative MD-Links, Link-Refactoring
+  beim Umbenennen, Tag-Hierarchie-Baum, Unlinked Mentions, persistenter
+  Index (tantivy) bei sehr großen Vaults; `](`-Autocomplete für normale
+  Markdown-Links. Aus dem Kreuz-Review 2026-07-25 zurückgestellt:
+  Heading-Anker gegen echte TOC-Slugs (`{#custom-id}`/Kollisionen),
+  `[[#`-Autocomplete aus dem Editor-Puffer statt Disk,
+  HTML-Kommentar-Maskierung im Backlink-Scan.
 
 - **i18n — Folgepunkte** (V1 de/en abgeschlossen; Sprach-Batch 2
   es/fr/pt-BR/it/ru/zh-Hans/ja + Flaggen-Picker + Übersetzungs-

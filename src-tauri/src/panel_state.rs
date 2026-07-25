@@ -16,6 +16,9 @@ pub struct PanelStateData {
     pub right_rail_width: f64,
     pub pinned_expanded: bool,
     pub recent_expanded: bool,
+    /// Tags-Sektion in der linken Rail (W5). Default eingeklappt.
+    #[serde(default)]
+    pub tags_expanded: bool,
     pub window_x: Option<f64>,
     pub window_y: Option<f64>,
     pub window_width: Option<f64>,
@@ -95,6 +98,7 @@ impl Default for PanelStateData {
             right_rail_width: 280.0,
             pinned_expanded: true,
             recent_expanded: true,
+            tags_expanded: false,
             window_x: None,
             window_y: None,
             window_width: None,
@@ -209,6 +213,7 @@ impl PanelState {
         match section {
             "pinned" => self.data.pinned_expanded = expanded,
             "recent" => self.data.recent_expanded = expanded,
+            "tags" => self.data.tags_expanded = expanded,
             _ => {}
         }
         self.save()

@@ -26,12 +26,14 @@ pub mod search;
 pub mod settings;
 pub mod state;
 pub mod tab_manager;
+pub mod tags;
 pub mod text_statistics;
 pub mod theme;
 pub mod toc;
 pub mod vault;
 pub mod vault_filter;
 pub mod vault_watcher;
+pub mod wikilink;
 pub mod window_geometry;
 pub mod workspace;
 
@@ -246,6 +248,11 @@ pub fn builder(settings: crate::settings::SettingsService) -> tauri::Builder<tau
                 let handle = app.handle().clone();
                 let callback: crate::vault_watcher::ChangeCallback =
                     std::sync::Arc::new(move |path: String| {
+                        // Externe FS-Aenderung im Vault: Namens-Index verwerfen,
+                        // bevor das Frontend den Ordner neu zieht.
+                        if let Some(state) = handle.try_state::<AppState>() {
+                            state.invalidate_wikilink_index();
+                        }
                         let _ =
                             handle.emit("vault:dir_changed", serde_json::json!({ "path": path }));
                     });
@@ -557,12 +564,17 @@ pub fn builder(settings: crate::settings::SettingsService) -> tauri::Builder<tau
             commands::vault_cmd::vault_collapse_all,
             commands::vault_cmd::vault_filter_options_get,
             commands::vault_cmd::vault_filter_options_set,
+            commands::vault_cmd::vault_tags_section_get,
             commands::vault_cmd::rail_resize,
             commands::vault_cmd::context,
             commands::vault_cmd::palette_files,
             commands::search_cmd::vault_search_start,
             commands::search_cmd::vault_search_cancel,
             commands::search_cmd::vault_search_validate,
+            commands::wikilink_cmd::backlinks_for,
+            commands::wikilink_cmd::wikilink_headings,
+            commands::wikilink_cmd::wikilink_candidates,
+            commands::wikilink_cmd::vault_tags,
             commands::nav::navigate,
             commands::nav::go_back,
             commands::nav::go_forward,

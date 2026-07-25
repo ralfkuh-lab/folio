@@ -1,4 +1,5 @@
 use crate::i18n::ExportStrings;
+use crate::wikilink::WikilinkContext;
 use crate::{persist, renderer, theme};
 use regex::Regex;
 use std::{borrow::Cow, path::Path, sync::OnceLock};
@@ -34,7 +35,20 @@ pub fn render_document(
     markdown: &str,
     mermaid_svgs: Option<Vec<renderer::MermaidSvgEntry>>,
 ) -> Result<String, String> {
-    render_document_in(
+    render_document_with_wikilinks(layout_id, title, path, markdown, mermaid_svgs, None)
+}
+
+/// Wie [`render_document`], mit Wikilink-Kontext des Quelldokuments — die
+/// Links landen als relative Pfade im Export (Spec W6).
+pub fn render_document_with_wikilinks(
+    layout_id: &str,
+    title: &str,
+    path: Option<&str>,
+    markdown: &str,
+    mermaid_svgs: Option<Vec<renderer::MermaidSvgEntry>>,
+    wikilinks: Option<&WikilinkContext>,
+) -> Result<String, String> {
+    render_document_in_ctx(
         layout_id,
         title,
         path,
@@ -42,6 +56,7 @@ pub fn render_document(
         &persist::themes_dir(),
         mermaid_svgs,
         &export_strings_for_call(),
+        wikilinks,
     )
 }
 
@@ -63,8 +78,31 @@ pub fn render_export_pipeline_html(
     strings: &ExportStrings,
     themes_dir: &Path,
 ) -> Result<String, String> {
+    render_export_pipeline_html_with_wikilinks(
+        layout_id,
+        path,
+        markdown,
+        mermaid_svgs,
+        strings,
+        themes_dir,
+        None,
+    )
+}
+
+/// Wie [`render_export_pipeline_html`], mit Wikilink-Kontext des
+/// Quelldokuments (HTML-/PDF-Export aus dem Command-Layer).
+#[allow(clippy::too_many_arguments)]
+pub fn render_export_pipeline_html_with_wikilinks(
+    layout_id: &str,
+    path: Option<&str>,
+    markdown: &str,
+    mermaid_svgs: Option<Vec<renderer::MermaidSvgEntry>>,
+    strings: &ExportStrings,
+    themes_dir: &Path,
+    wikilinks: Option<&WikilinkContext>,
+) -> Result<String, String> {
     let title = derive_title_with(path, &strings.default_title);
-    render_document_in(
+    render_document_in_ctx(
         layout_id,
         &title,
         path,
@@ -72,6 +110,7 @@ pub fn render_export_pipeline_html(
         themes_dir,
         mermaid_svgs,
         strings,
+        wikilinks,
     )
 }
 
@@ -94,6 +133,8 @@ pub fn render_theme_preview(
         parts,
         dark,
         theme_id,
+        // Theme-Editor-Vorschau bewusst ohne Vault-Kontext (Spec):
+        // Wikilinks rendern dort in missing-Optik.
         &persist::themes_dir(),
         None,
     )
@@ -107,7 +148,30 @@ pub fn render_theme_draft(
     base_theme_id: Option<&str>,
     mermaid_svgs: Option<Vec<renderer::MermaidSvgEntry>>,
 ) -> String {
-    render_theme_draft_in(
+    render_theme_draft_with_wikilinks(
+        markdown,
+        title,
+        path,
+        parts,
+        base_theme_id,
+        mermaid_svgs,
+        None,
+    )
+}
+
+/// Wie [`render_theme_draft`], mit Wikilink-Kontext des Quelldokuments
+/// (Per-Export-KI-Draft im Export-Dialog).
+#[allow(clippy::too_many_arguments)]
+pub fn render_theme_draft_with_wikilinks(
+    markdown: &str,
+    title: &str,
+    path: Option<&str>,
+    parts: &theme::store::ThemeParts,
+    base_theme_id: Option<&str>,
+    mermaid_svgs: Option<Vec<renderer::MermaidSvgEntry>>,
+    wikilinks: Option<&WikilinkContext>,
+) -> String {
+    render_theme_draft_in_ctx(
         markdown,
         title,
         path,
@@ -115,9 +179,13 @@ pub fn render_theme_draft(
         base_theme_id,
         &persist::themes_dir(),
         mermaid_svgs,
+        wikilinks,
     )
 }
 
+/// Arity-stabiler Wrapper ohne Wikilink-Kontext: nur noch von den Tests
+/// dieses Moduls genutzt, der Produktivpfad geht ueber die `_ctx`-Variante.
+#[cfg(test)]
 fn render_theme_draft_in(
     markdown: &str,
     title: &str,
@@ -127,7 +195,30 @@ fn render_theme_draft_in(
     themes_dir: &Path,
     mermaid_svgs: Option<Vec<renderer::MermaidSvgEntry>>,
 ) -> String {
-    render_theme_parts_in(
+    render_theme_draft_in_ctx(
+        markdown,
+        title,
+        path,
+        parts,
+        base_theme_id,
+        themes_dir,
+        mermaid_svgs,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_theme_draft_in_ctx(
+    markdown: &str,
+    title: &str,
+    path: Option<&str>,
+    parts: &theme::store::ThemeParts,
+    base_theme_id: Option<&str>,
+    themes_dir: &Path,
+    mermaid_svgs: Option<Vec<renderer::MermaidSvgEntry>>,
+    wikilinks: Option<&WikilinkContext>,
+) -> String {
+    render_theme_parts_in_ctx(
         markdown,
         title,
         path,
@@ -136,6 +227,7 @@ fn render_theme_draft_in(
         base_theme_id,
         themes_dir,
         mermaid_svgs,
+        wikilinks,
     )
 }
 
@@ -149,6 +241,31 @@ fn render_theme_parts_in(
     theme_id: Option<&str>,
     themes_dir: &Path,
     mermaid_svgs: Option<Vec<renderer::MermaidSvgEntry>>,
+) -> String {
+    render_theme_parts_in_ctx(
+        markdown,
+        title,
+        path,
+        parts,
+        dark,
+        theme_id,
+        themes_dir,
+        mermaid_svgs,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_theme_parts_in_ctx(
+    markdown: &str,
+    title: &str,
+    path: Option<&str>,
+    parts: &theme::store::ThemeParts,
+    dark: bool,
+    theme_id: Option<&str>,
+    themes_dir: &Path,
+    mermaid_svgs: Option<Vec<renderer::MermaidSvgEntry>>,
+    wikilinks: Option<&WikilinkContext>,
 ) -> String {
     let content_css = match (dark, parts.dark_css.as_deref()) {
         (true, Some(dark_css)) => format!("{}\n{dark_css}", parts.content_css),
@@ -175,11 +292,14 @@ fn render_theme_parts_in(
     let page_css = theme::assets::rewrite_asset_urls(page_css, &asset_pairs);
     let css = format!("{page_css}\n{content_css}");
 
-    let body = strip_scroll_sync_attrs(&renderer::render_body_highlighted_in(
-        markdown,
-        dark,
-        parts.manifest.hide_inline_frontmatter,
-        mermaid_svgs,
+    let body = crate::wikilink::sanitize_export_missing_hrefs(&strip_scroll_sync_attrs(
+        &renderer::render_body_highlighted_in(
+            markdown,
+            dark,
+            parts.manifest.hide_inline_frontmatter,
+            mermaid_svgs,
+            wikilinks,
+        ),
     ));
 
     let logo_uri = load_preview_logo(
@@ -224,6 +344,9 @@ fn render_theme_parts_in(
     })
 }
 
+/// Arity-stabiler Wrapper ohne Wikilink-Kontext: nur noch von den Tests
+/// dieses Moduls genutzt, der Produktivpfad geht ueber die `_ctx`-Variante.
+#[cfg(test)]
 fn render_document_in(
     layout_id: &str,
     title: &str,
@@ -232,6 +355,29 @@ fn render_document_in(
     dir: &Path,
     mermaid_svgs: Option<Vec<renderer::MermaidSvgEntry>>,
     strings: &ExportStrings,
+) -> Result<String, String> {
+    render_document_in_ctx(
+        layout_id,
+        title,
+        path,
+        markdown,
+        dir,
+        mermaid_svgs,
+        strings,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_document_in_ctx(
+    layout_id: &str,
+    title: &str,
+    path: Option<&str>,
+    markdown: &str,
+    dir: &Path,
+    mermaid_svgs: Option<Vec<renderer::MermaidSvgEntry>>,
+    strings: &ExportStrings,
+    wikilinks: Option<&WikilinkContext>,
 ) -> Result<String, String> {
     let package = theme::package_in(layout_id, dir)
         .ok_or_else(|| format!("unknown layout: '{layout_id}'"))?;
@@ -259,11 +405,8 @@ fn render_document_in(
 
     let dark = theme::layout_code_dark_in(layout_id, dir);
     let hide_inline = package.manifest.hide_inline_frontmatter;
-    let body = strip_scroll_sync_attrs(&renderer::render_body_highlighted_in(
-        markdown,
-        dark,
-        hide_inline,
-        mermaid_svgs,
+    let body = crate::wikilink::sanitize_export_missing_hrefs(&strip_scroll_sync_attrs(
+        &renderer::render_body_highlighted_in(markdown, dark, hide_inline, mermaid_svgs, wikilinks),
     ));
 
     let logo_uri = package.dir.as_deref().and_then(|theme_dir| {
@@ -599,6 +742,36 @@ mod tests {
         assert!(html.contains("<style>"));
         assert!(html.contains("html, body"));
         assert!(html.contains(".markdown-body h1"));
+    }
+
+    #[test]
+    fn export_strips_folio_new_scheme_and_styles_missing_wikilinks() {
+        // Ohne Vault-Kontext rendern Wikilinks missing — Export darf das
+        // Schema nicht behalten (W6).
+        let html = render_document(
+            "clean",
+            "W",
+            None,
+            "Siehe [[FehltNoch]] und [[Beta]].\n",
+            None,
+        )
+        .unwrap();
+        assert!(
+            !html.contains("href=\"folio-new:") && !html.contains("href='folio-new:"),
+            "export must not contain folio-new href: {html}"
+        );
+        assert!(
+            html.contains("wikilink-missing"),
+            "missing class should remain: {html}"
+        );
+        assert!(
+            html.contains("a.wikilink-missing"),
+            "base.css should style missing wikilinks: {html}"
+        );
+        assert!(
+            html.contains("href=\"#\""),
+            "missing href should become #: {html}"
+        );
     }
 
     #[test]

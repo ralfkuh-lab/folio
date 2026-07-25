@@ -4,8 +4,14 @@
    muss zum Zeitpunkt des Aufrufs gemountet sein. */
 
 import { t } from '../i18n/translate';
+import { folioLog } from '../util/log';
 
 function $(id: string): HTMLElement | null { return document.getElementById(id); }
+
+function invokeCommand(): ((cmd: string, args?: any) => Promise<any>) | null {
+    const core = window.__TAURI__ && window.__TAURI__.core;
+    return core && typeof core.invoke === 'function' ? core.invoke : null;
+}
 
 // Rename-Modal: gibt einen neuen Dateinamen (ohne Pfad) zurück oder null
 // bei Abbruch. Wird heute nicht aufgerufen — Rename geht ueber Inline-
@@ -32,6 +38,11 @@ export function showRenameDialog(
         ok.textContent = options?.okLabel || 'Umbenennen';
         if (sub) sub.textContent = subtitle || 'Neuen Dateinamen eingeben:';
         input.value = initialName || '';
+        const errEl = $('rename-error');
+        if (errEl) {
+            errEl.textContent = '';
+            errEl.setAttribute('hidden', '');
+        }
         dialog.hidden = false;
         // Selektion: Stamm vor der Endung markieren, damit Tippen den Namen
         // ersetzt aber die Endung erhaelt. Bei "notes.md" wird "notes" selektiert.
@@ -52,6 +63,121 @@ export function showRenameDialog(
             done(v.length ? v : null);
         }
         function onCancel(): void { done(null); }
+        function onKey(e: KeyboardEvent): void {
+            if (e.key === 'Enter') { e.preventDefault(); onOk(); }
+        }
+        function onEsc(e: KeyboardEvent): void {
+            if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+        }
+        ok.addEventListener('click', onOk);
+        cancel.addEventListener('click', onCancel);
+        input.addEventListener('keydown', onKey);
+        document.addEventListener('keydown', onEsc);
+    });
+}
+
+/**
+ * „Notiz anlegen?"-Dialog fuer missing Wikilinks (`folio-new:`).
+ * Nutzt dasselbe DOM wie showRenameDialog (+ optionales #rename-error).
+ * OK → create_file; bei Fehler bleibt der Dialog offen und zeigt den
+ * Fehlertext. Resolve: erstellter Pfad oder null (Abbruch).
+ */
+export function showCreateNoteDialog(opts: {
+    initialName: string;
+    targetDir: string;
+}): Promise<string | null> {
+    return new Promise<string | null>(function (resolve) {
+        const dialog = $('rename-dialog');
+        const input = $('rename-input') as HTMLInputElement | null;
+        const ok = $('rename-ok');
+        const cancel = $('rename-cancel');
+        const sub = $('rename-subtitle');
+        const title = $('rename-title');
+        const errEl = $('rename-error');
+        if (!dialog || !input || !ok || !cancel) {
+            resolve(null);
+            return;
+        }
+
+        let busy = false;
+
+        function setError(msg: string): void {
+            if (!errEl) return;
+            errEl.textContent = msg || '';
+            if (msg) errEl.removeAttribute('hidden');
+            else errEl.setAttribute('hidden', '');
+        }
+
+        if (title) title.textContent = t('wikilinks.createDialog.title');
+        ok.textContent = t('wikilinks.createDialog.submit.action');
+        if (sub) {
+            sub.textContent = opts.targetDir
+                ? t('wikilinks.createDialog.subtitle', { dir: opts.targetDir })
+                : t('wikilinks.createDialog.noDocument');
+        }
+        input.value = opts.initialName || 'untitled.md';
+        setError('');
+        dialog.hidden = false;
+        const dot = input.value.lastIndexOf('.');
+        input.focus();
+        if (dot > 0) input.setSelectionRange(0, dot);
+        else input.select();
+
+        function done(result: string | null): void {
+            dialog.hidden = true;
+            setError('');
+            ok.removeEventListener('click', onOk);
+            cancel.removeEventListener('click', onCancel);
+            input.removeEventListener('keydown', onKey);
+            document.removeEventListener('keydown', onEsc);
+            resolve(result);
+        }
+
+        function onCancel(): void {
+            if (busy) return;
+            done(null);
+        }
+
+        function onOk(): void {
+            if (busy) return;
+            const name = (input.value || '').trim();
+            if (!name) {
+                setError(t('errors.file.invalidName'));
+                return;
+            }
+            if (/[\\/]/.test(name) || name === '.' || name === '..' || name.includes('..')) {
+                setError(t('errors.file.invalidName'));
+                return;
+            }
+            if (!opts.targetDir) {
+                setError(t('wikilinks.createDialog.noDocument'));
+                return;
+            }
+            const path = opts.targetDir.replace(/\/+$/, '') + '/' + name.replace(/^\/+/, '');
+            const invoke = invokeCommand();
+            if (!invoke) {
+                setError(t('errors.file.createFailed', { detail: 'no invoke' }));
+                return;
+            }
+            busy = true;
+            ok.setAttribute('disabled', '');
+            invoke('create_file', { path }).then(
+                function (created: string) {
+                    busy = false;
+                    ok.removeAttribute('disabled');
+                    done(typeof created === 'string' && created ? created : path);
+                },
+                function (err: unknown) {
+                    busy = false;
+                    ok.removeAttribute('disabled');
+                    const msg = typeof err === 'string' ? err : String(err || '');
+                    setError(msg || t('errors.file.createFailed', { detail: '' }));
+                    folioLog.warn('wikilink', 'create_file failed', { path, error: msg });
+                    input.focus();
+                },
+            );
+        }
+
         function onKey(e: KeyboardEvent): void {
             if (e.key === 'Enter') { e.preventDefault(); onOk(); }
         }

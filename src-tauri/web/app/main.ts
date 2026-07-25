@@ -34,6 +34,7 @@ import { initCommandPalette } from './ui/command-palette';
 import { initVaultTree, insertVaultChildren, refreshVault } from './vault/tree';
 import { initVaultFilter } from './vault/filter';
 import { initVaultSearch, consumeNavRestoreSkip } from './vault/search';
+import { initVaultTags } from './vault/tags';
 import {
     initMarkdownView,
     setTocActive,
@@ -48,6 +49,7 @@ import { initCodeCopy } from './view/code-copy';
 import { initMarkdownScrollSync, syncViewSlugToEditor, tocClickToEditor } from './view/scroll-sync';
 import { scrollHtmlViewToAnchor } from './view/html';
 import { initHtmlScrollSync } from './view/html-scroll-sync';
+import { initBacklinks } from './view/backlinks';
 import {
     initDocumentState,
     getCleanText,
@@ -105,12 +107,14 @@ function openLeftRail(): void {
 
 function runModuleInits(): void {
     initMarkdownView({ requestSaveIfDirty });
+    initBacklinks();
     initEditorShell({ getCleanText, requestSaveIfDirty });
     initFindBar({ ensureEditorMounted, focusEditor });
     initRails();
     initVaultTree({ openDocument });
     initVaultFilter();
     initVaultSearch({ openDocument, showStatus, openLeftRail });
+    initVaultTags();
     initCheatsheet();
     initZoom();
     initLanguagePicker();

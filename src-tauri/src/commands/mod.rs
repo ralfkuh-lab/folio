@@ -11,4 +11,5 @@ pub mod search_cmd;
 pub mod tabs;
 pub mod theme;
 pub mod vault_cmd;
+pub mod wikilink_cmd;
 pub mod workspace_cmd;

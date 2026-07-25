@@ -1,9 +1,9 @@
 {
   "@meta": {
-    "tag": "pt-BR",
-    "name": "Português (Brasil)",
+    "flag": "🇧🇷",
     "locale": "pt-BR",
-    "flag": "🇧🇷"
+    "name": "Português (Brasil)",
+    "tag": "pt-BR"
   },
   "ai.actions.customPrompt.description": "Instrução de formato livre sem modelo.",
   "ai.actions.customPrompt.name": "Prompt personalizado",
@@ -65,8 +65,8 @@
   "ai.model.label": "Modelo",
   "ai.prompt.label": "Prompt",
   "ai.status.charsPart": {
-    "one": "{formattedCount} caractere",
     "many": "{formattedCount} caracteres",
+    "one": "{formattedCount} caractere",
     "other": "{formattedCount} caracteres"
   },
   "ai.translate.dialog.title": "Traduzir com IA",
@@ -326,8 +326,8 @@
   "export.formats.html": "HTML",
   "export.formats.pdf": "PDF",
   "export.layouts.more": {
-    "one": "{count} layout a mais",
     "many": "{count} layouts a mais",
+    "one": "{count} layout a mais",
     "other": "{count} layouts a mais"
   },
   "export.preview.title": "Visualização do tema",
@@ -425,14 +425,14 @@
   "search.status.empty": "Nenhuma correspondência (busca em {filesPart})",
   "search.status.error": "Erro: {detail}",
   "search.status.filesPart": {
-    "one": "{count} arquivo",
     "many": "{count} arquivos",
+    "one": "{count} arquivo",
     "other": "{count} arquivos"
   },
   "search.status.hitStale": "Resultado desatualizado",
   "search.status.hitsPart": {
-    "one": "{count} resultado",
     "many": "{count} resultados",
+    "one": "{count} resultado",
     "other": "{count} resultados"
   },
   "search.status.noFiles": "Nenhum arquivo pesquisável no Vault — fixe uma pasta ou inicie a busca clicando com o botão direito em uma pasta",
@@ -440,8 +440,8 @@
   "search.status.running": "{hitsPart} em {filesPart} …",
   "search.status.runningSimple": "Buscando…",
   "search.status.skippedPart": {
-    "one": "{count} arquivo grande",
     "many": "{count} arquivos grandes",
+    "one": "{count} arquivo grande",
     "other": "{count} arquivos grandes"
   },
   "search.status.skippedSuffix": " — ignorados: {skippedPart}",
@@ -602,20 +602,20 @@
   "statusBar.modeView": "Visualização",
   "statusBar.ready": "Pronto",
   "statusBar.wordCount.charsPart": {
-    "one": "{count} caractere",
     "many": "{count} caracteres",
+    "one": "{count} caractere",
     "other": "{count} caracteres"
   },
   "statusBar.wordCount.linesPart": {
-    "one": "{count} linha",
     "many": "{count} linhas",
+    "one": "{count} linha",
     "other": "{count} linhas"
   },
   "statusBar.wordCount.selectionTemplate": "{wordsPart} · {charsPart} selecionados",
   "statusBar.wordCount.template": "{wordsPart} · {charsPart} · {linesPart}",
   "statusBar.wordCount.wordsPart": {
-    "one": "{count} palavra",
     "many": "{count} palavras",
+    "one": "{count} palavra",
     "other": "{count} palavras"
   },
   "tabs.bar.ariaLabel": "Documentos abertos",
@@ -767,6 +767,15 @@
   "vault.section.empty": "Nenhuma entrada",
   "vault.section.pinned": "Fixados",
   "vault.section.recent": "Abertos recentemente",
+  "vault.tags.empty": "Sem tags",
+  "vault.tags.error": "Falha ao carregar tags",
+  "vault.tags.loading": "Carregando tags…",
+  "vault.tags.refresh.ariaLabel": "Atualizar tags",
+  "vault.tags.refresh.tooltip": "Atualizar tags",
+  "vault.tags.search.ariaLabel": "Pesquisar esta tag",
+  "vault.tags.search.tooltip": "Pesquisar em arquivos…",
+  "vault.tags.section": "Tags",
+  "vault.tags.truncated": "Lista truncada",
   "vault.tree.collapseAll.ariaLabel": "Recolher todas as pastas",
   "vault.tree.collapseAll.tooltip": "Recolher tudo",
   "vault.tree.empty": "Nenhuma entrada. Abra um arquivo ou solte um aqui.",
@@ -777,5 +786,12 @@
   "view.codeCopy.failed": "Falha ao copiar",
   "view.codeCopy.tooltip": "Copiar código",
   "view.dropOverlay.message": "Solte o arquivo aqui para abrir",
-  "view.toc.title": "Sumário"
+  "view.toc.title": "Sumário",
+  "wikilinks.backlinks.empty": "Sem backlinks",
+  "wikilinks.backlinks.header": "Vinculado de ({count})",
+  "wikilinks.backlinks.truncated": "Lista truncada",
+  "wikilinks.createDialog.noDocument": "Nenhum documento aberto — não é possível criar a nota.",
+  "wikilinks.createDialog.submit.action": "Criar",
+  "wikilinks.createDialog.subtitle": "Pasta de destino: {dir}",
+  "wikilinks.createDialog.title": "Criar nota?"
 }

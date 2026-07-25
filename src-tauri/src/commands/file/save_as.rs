@@ -113,6 +113,8 @@ pub fn run_save_as(
         .map_err(|_| "workspace lock poisoned".to_string())?
         .add_recent(target_path.clone())
         .map_err(|error| error.to_string())?;
+    // Save-As legt eine neue Datei im Vault an.
+    state.invalidate_wikilink_index();
     crate::menu::refresh_recent_from_workspace(handle);
     state
         .vault

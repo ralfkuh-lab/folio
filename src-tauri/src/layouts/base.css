@@ -44,6 +44,23 @@
 }
 
 /*
+ * Wikilinks im Export (docs/spec-wikilinks.md W6).
+ * Missing-Ziele tragen weiterhin die Klasse; der Export-Postprocess setzt
+ * deren href auf "#". Dezente Missing-Optik fuer alle Layouts inkl.
+ * Custom-Themes.
+ */
+.markdown-body a.wikilink { color: #0969da; text-decoration: none; }
+.markdown-body a.wikilink-missing {
+  color: #6a737d;
+  text-decoration: underline dashed;
+  text-underline-offset: 2px;
+  cursor: default;
+}
+.markdown-body a.wikilink-embed {
+  border-bottom: 1px dotted currentColor;
+}
+
+/*
  * Corporate-Design Export-Hilfen (Deckblatt, Kopf-/Fußzeile).
  *
  * Die zugehoerigen DIVs werden von `wrap_html` nur eingefuegt, wenn das

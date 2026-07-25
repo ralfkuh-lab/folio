@@ -421,6 +421,8 @@ pub(in crate::automation) async fn post_workspace_pin(
         crate::commands::vault_cmd::compute_refresh_delta_synced(state.inner(), &workspace)
             .map_err(ApiError::internal)?
     };
+    // Pin-Aenderung verschiebt den Wikilink-Suchraum (wie workspace_cmd).
+    state.invalidate_wikilink_index();
     // Sync GitHeadWatcher on pin (new git root may appear) — use shared helper
     crate::commands::workspace_cmd::sync_git_head_watcher(state.inner());
     let (request_id, receiver) = ack::register(state.inner()).map_err(ApiError::internal)?;
@@ -459,6 +461,8 @@ pub(in crate::automation) async fn post_workspace_unpin(
         crate::commands::vault_cmd::compute_refresh_delta_synced(state.inner(), &workspace)
             .map_err(ApiError::internal)?
     };
+    // Pin-Aenderung verschiebt den Wikilink-Suchraum (wie workspace_cmd).
+    state.invalidate_wikilink_index();
     // Sync GitHeadWatcher on unpin (git root may be removed) — use shared helper
     crate::commands::workspace_cmd::sync_git_head_watcher(state.inner());
     let (request_id, receiver) = ack::register(state.inner()).map_err(ApiError::internal)?;

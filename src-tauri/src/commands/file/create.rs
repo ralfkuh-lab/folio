@@ -52,6 +52,8 @@ pub async fn create_file(
     handle: AppHandle,
 ) -> Result<String, String> {
     let path = create_file_at(&path, None)?;
+    // Neue Datei = neuer Wikilink-Kandidat.
+    state.invalidate_wikilink_index();
 
     // Vault-Sync wie in `finish_rename` (gleiche Lock-Reihenfolge).
     {

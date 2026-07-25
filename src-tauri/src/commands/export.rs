@@ -45,7 +45,15 @@ pub async fn export_render(
 ) -> Result<String, String> {
     let (path, text) = current_document(&state)?;
     let title = export::derive_title(path.as_deref());
-    export::render_document(&layout_id, &title, path.as_deref(), &text, mermaid_svgs)
+    let wikilinks = state.wikilink_context(path.as_deref());
+    export::render_document_with_wikilinks(
+        &layout_id,
+        &title,
+        path.as_deref(),
+        &text,
+        mermaid_svgs,
+        wikilinks.as_ref(),
+    )
 }
 
 #[tauri::command]
@@ -57,6 +65,7 @@ pub async fn export_render_draft(
 ) -> Result<String, String> {
     let (path, text) = current_document(&state)?;
     let title = export::derive_title(path.as_deref());
+    let wikilinks = state.wikilink_context(path.as_deref());
     Ok(render_draft_html(
         &text,
         &title,
@@ -64,6 +73,7 @@ pub async fn export_render_draft(
         parts,
         base_theme_id.as_deref(),
         mermaid_svgs,
+        wikilinks.as_ref(),
     ))
 }
 
@@ -76,13 +86,15 @@ pub async fn export_html(
 ) -> Result<(), String> {
     let (path, text) = current_document(&state)?;
     let strings = crate::i18n::ExportStrings::current();
-    let html = export::render_export_pipeline_html(
+    let wikilinks = state.wikilink_context(path.as_deref());
+    let html = export::render_export_pipeline_html_with_wikilinks(
         &layout_id,
         path.as_deref(),
         &text,
         mermaid_svgs,
         &strings,
         &crate::persist::themes_dir(),
+        wikilinks.as_ref(),
     )?;
     fs::write(&target_path, html).map_err(|error| {
         let detail = error.to_string();
@@ -100,6 +112,7 @@ pub async fn export_html_draft(
 ) -> Result<(), String> {
     let (path, text) = current_document(&state)?;
     let title = export::derive_title(path.as_deref());
+    let wikilinks = state.wikilink_context(path.as_deref());
     let html = render_draft_html(
         &text,
         &title,
@@ -107,6 +120,7 @@ pub async fn export_html_draft(
         parts,
         base_theme_id.as_deref(),
         mermaid_svgs,
+        wikilinks.as_ref(),
     );
     fs::write(&target_path, html).map_err(|error| {
         let detail = error.to_string();
@@ -123,13 +137,15 @@ pub async fn export_pdf(
 ) -> Result<(), String> {
     let (path, text) = current_document(&state)?;
     let strings = crate::i18n::ExportStrings::current();
-    let html = export::render_export_pipeline_html(
+    let wikilinks = state.wikilink_context(path.as_deref());
+    let html = export::render_export_pipeline_html_with_wikilinks(
         &layout_id,
         path.as_deref(),
         &text,
         mermaid_svgs,
         &strings,
         &crate::persist::themes_dir(),
+        wikilinks.as_ref(),
     )?;
     let source_dir = path
         .as_deref()
@@ -149,6 +165,7 @@ pub async fn export_pdf_draft(
 ) -> Result<(), String> {
     let (path, text) = current_document(&state)?;
     let title = export::derive_title(path.as_deref());
+    let wikilinks = state.wikilink_context(path.as_deref());
     let html = render_draft_html(
         &text,
         &title,
@@ -156,6 +173,7 @@ pub async fn export_pdf_draft(
         parts,
         base_theme_id.as_deref(),
         mermaid_svgs,
+        wikilinks.as_ref(),
     );
     let source_dir = path
         .as_deref()
@@ -249,6 +267,7 @@ fn current_document(state: &State<'_, AppState>) -> Result<(Option<String>, Stri
     Ok((store.path.clone(), store.text.clone()))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_draft_html(
     markdown: &str,
     title: &str,
@@ -256,14 +275,16 @@ fn render_draft_html(
     parts: ThemeWriteFiles,
     base_theme_id: Option<&str>,
     mermaid_svgs: Option<Vec<crate::renderer::MermaidSvgEntry>>,
+    wikilinks: Option<&crate::wikilink::WikilinkContext>,
 ) -> String {
-    export::render_theme_draft(
+    export::render_theme_draft_with_wikilinks(
         markdown,
         title,
         path,
         &ThemeParts::from(parts),
         base_theme_id,
         mermaid_svgs,
+        wikilinks,
     )
 }
 

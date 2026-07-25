@@ -1,12 +1,16 @@
-use crate::{frontmatter, heading_anchor};
+use crate::{
+    frontmatter, heading_anchor,
+    wikilink::{missing_href, parse_target, WikilinkContext, WikilinkResolution},
+};
 use comrak::{
     adapters::{HeadingAdapter, HeadingMeta, SyntaxHighlighterAdapter},
     format_html_with_plugins,
-    nodes::{AstNode, NodeValue, Sourcepos},
+    nodes::{Ast, AstNode, NodeLink, NodeValue, NodeWikiLink, Sourcepos},
     parse_document, Arena, Options, Plugins,
 };
 use regex::Regex;
 use std::{
+    cell::RefCell,
     collections::{HashMap, VecDeque},
     io::{self, Write},
     sync::{Mutex, OnceLock},
@@ -30,27 +34,39 @@ pub struct MermaidSvgEntry {
 }
 
 pub fn render_body(markdown: &str) -> String {
-    render_body_with_highlighter(markdown, None, false, None)
+    render_body_with_wikilinks(markdown, None)
+}
+
+/// Wie [`render_body`], zusaetzlich mit optionalem Wikilink-Kontext
+/// (Namensindex + Pfad des aktuellen Dokuments). Ohne Kontext werden
+/// `[[…]]`-Links bewusst als tote Links in missing-Optik gerendert
+/// (`folio-new:`-Schema, Klasse `wikilink-missing`) — so verhaelt sich
+/// z. B. die Theme-Editor-Vorschau ohne Vault.
+pub fn render_body_with_wikilinks(markdown: &str, wikilinks: Option<&WikilinkContext>) -> String {
+    render_body_with_highlighter(markdown, None, false, None, wikilinks)
 }
 
 pub fn render_body_highlighted(markdown: &str, dark: bool) -> String {
-    render_body_with_highlighter(markdown, Some(syntect_adapter(dark)), false, None)
+    render_body_with_highlighter(markdown, Some(syntect_adapter(dark)), false, None, None)
 }
 
 /// Wie [`render_body_highlighted`], unterstuetzt zusaetzlich das
 /// Unterdruecken des inline Frontmatter-`<aside>` (Corporate-Design:
-/// Metadaten erscheinen auf dem Deckblatt, nicht im Body).
+/// Metadaten erscheinen auf dem Deckblatt, nicht im Body) sowie den
+/// Wikilink-Kontext des Export-Dokuments.
 pub fn render_body_highlighted_in(
     markdown: &str,
     dark: bool,
     hide_inline_frontmatter: bool,
     mermaid_svgs: Option<Vec<MermaidSvgEntry>>,
+    wikilinks: Option<&WikilinkContext>,
 ) -> String {
     render_body_with_highlighter(
         markdown,
         Some(syntect_adapter(dark)),
         hide_inline_frontmatter,
         mermaid_svgs,
+        wikilinks,
     )
 }
 
@@ -59,6 +75,7 @@ fn render_body_with_highlighter(
     syntax_highlighter: Option<&dyn SyntaxHighlighterAdapter>,
     hide_inline_frontmatter: bool,
     mermaid_svgs: Option<Vec<MermaidSvgEntry>>,
+    wikilinks: Option<&WikilinkContext>,
 ) -> String {
     let frontmatter = frontmatter::extract(markdown);
     let preprocessed = heading_anchor::convert_inline_anchors_in_headings(&frontmatter.body);
@@ -67,6 +84,7 @@ fn render_body_with_highlighter(
     let options = markdown_options();
     let root = parse_document(&arena, &preprocessed, &options);
     let heading_ids = collect_and_apply_explicit_heading_ids(root);
+    let wikilink_classes = apply_wikilinks(&arena, root, wikilinks);
 
     // Beim eigenen Parse die Mermaid-Literale sammeln (gemeinsam mit
     // collect_mermaid_sources / find_mermaid_blocks). Wird fuer
@@ -97,6 +115,7 @@ fn render_body_with_highlighter(
 
     let body_html =
         normalize_tasklist_html(&String::from_utf8(body_html).expect("comrak emits UTF-8 HTML"));
+    let body_html = add_wikilink_classes(&body_html, &wikilink_classes);
     let body_html = add_data_line_attributes(&body_html, frontmatter.body_start_line);
 
     let body_html = if let Some(ref entries) = mermaid_svgs {
@@ -247,10 +266,208 @@ pub(crate) fn markdown_options() -> Options<'static> {
     options.extension.table = true;
     options.extension.strikethrough = true;
     options.extension.tasklist = true;
+    // Obsidian-Reihenfolge `[[url|title]]` (Spec docs/spec-wikilinks.md).
+    options.extension.wikilinks_title_after_pipe = true;
     options.render.sourcepos = true;
     options.render.unsafe_ = false;
     options.render.escape = true;
     options
+}
+
+/// AST-Postprocess fuer Wikilinks (analog zum GenericAttributes-/
+/// Heading-ID-Postprocess): loest jeden `NodeValue::WikiLink` gegen den
+/// Vault-Index auf, schreibt die `url` auf den Pfad **relativ zum aktuellen
+/// Dokument** um (bzw. auf `folio-new:` bei fehlendem Ziel) und wandelt
+/// Bild-Embeds `![[bild.png]]` in echte Image-Nodes.
+///
+/// Rueckgabe sind die CSS-Klassen der verbliebenen Wikilink-Anchors in
+/// Dokumentreihenfolge — comrak kennt keinen Slot fuer eigene Attribute,
+/// deshalb setzt [`add_wikilink_classes`] sie im HTML-String nach.
+fn apply_wikilinks<'a>(
+    arena: &'a Arena<AstNode<'a>>,
+    root: &'a AstNode<'a>,
+    context: Option<&WikilinkContext>,
+) -> Vec<&'static str> {
+    let embeds = expand_embeds(arena, root);
+    let nodes: Vec<&'a AstNode<'a>> = root
+        .descendants()
+        .filter(|node| matches!(node.data.borrow().value, NodeValue::WikiLink(_)))
+        .collect();
+
+    let mut classes = Vec::with_capacity(nodes.len());
+    for node in nodes {
+        let url = match &node.data.borrow().value {
+            NodeValue::WikiLink(link) => link.url.clone(),
+            _ => continue,
+        };
+
+        let resolution = match context {
+            Some(context) => context.resolve(&url),
+            // Ohne Vault-Kontext bleibt nur die missing-Optik (Spec).
+            None => WikilinkResolution::Missing {
+                href: missing_href(&parse_target(&url).name),
+            },
+        };
+
+        let embed = embeds.iter().any(|other| std::ptr::eq(*other, node));
+
+        if embed && resolution.is_image() {
+            // Bild-Embed: Image-Node mit relativem Pfad — laeuft im Frontend
+            // ueber das bestehende rewriteRelativeAssets/convertFileSrc.
+            let mut data = node.data.borrow_mut();
+            data.value = NodeValue::Image(NodeLink {
+                url: resolution.href().to_string(),
+                title: String::new(),
+            });
+            continue;
+        }
+
+        if let NodeValue::WikiLink(link) = &mut node.data.borrow_mut().value {
+            link.url = resolution.href().to_string();
+        }
+
+        classes.push(match (resolution.is_missing(), embed) {
+            (true, true) => "wikilink-missing wikilink-embed",
+            (true, false) => "wikilink-missing",
+            (false, true) => "wikilink wikilink-embed",
+            (false, false) => "wikilink",
+        });
+    }
+
+    classes
+}
+
+/// comrak 0.35 parst `![[Ziel]]` NICHT als Wikilink — das fuehrende `!`
+/// laesst seinen Inline-Parser die gesamte Sequenz als Text stehen (belegt
+/// in `renderer`-Tests). Dieser Pass zerlegt betroffene Text-Nodes selbst in
+/// `Text | WikiLink | Text` und liefert die erzeugten Embed-WikiLinks zurueck;
+/// der Aufrufer erkennt sie per Pointer-Identitaet.
+///
+/// Code-Fences und Inline-Code sind eigene Node-Typen und damit automatisch
+/// ausgenommen.
+fn expand_embeds<'a>(arena: &'a Arena<AstNode<'a>>, root: &'a AstNode<'a>) -> Vec<&'a AstNode<'a>> {
+    let candidates: Vec<&'a AstNode<'a>> = root
+        .descendants()
+        .filter(|node| {
+            matches!(&node.data.borrow().value, NodeValue::Text(text) if text.contains("![["))
+        })
+        .collect();
+
+    let mut embeds = Vec::new();
+    for node in candidates {
+        let (text, sourcepos) = {
+            let data = node.data.borrow();
+            match &data.value {
+                NodeValue::Text(text) => (text.clone(), data.sourcepos),
+                _ => continue,
+            }
+        };
+        let Some(segments) = split_embed_segments(&text) else {
+            continue;
+        };
+
+        for segment in segments {
+            let new_node = match segment {
+                EmbedSegment::Text(text) => {
+                    new_inline_node(arena, NodeValue::Text(text.to_string()), sourcepos)
+                }
+                EmbedSegment::Embed(raw) => {
+                    let target = parse_target(raw);
+                    // Label ohne `#Anker`-Teil (Obsidian-Verhalten,
+                    // Review kimi #8); ein Alias gewinnt weiterhin.
+                    let label = target.alias.clone().unwrap_or_else(|| target.name.clone());
+                    let url = raw.split_once('|').map_or(raw, |(url, _)| url).to_string();
+                    let link = new_inline_node(
+                        arena,
+                        NodeValue::WikiLink(NodeWikiLink { url }),
+                        sourcepos,
+                    );
+                    link.append(new_inline_node(arena, NodeValue::Text(label), sourcepos));
+                    embeds.push(link);
+                    link
+                }
+            };
+            node.insert_before(new_node);
+        }
+        node.detach();
+    }
+
+    embeds
+}
+
+enum EmbedSegment<'t> {
+    Text(&'t str),
+    Embed(&'t str),
+}
+
+/// Zerlegt einen Text in `![[…]]`-Embeds und die Zwischenstuecke. `None`,
+/// wenn kein vollstaendiger Embed enthalten ist (haeufigster Fall).
+fn split_embed_segments(text: &str) -> Option<Vec<EmbedSegment<'_>>> {
+    let mut segments: Vec<EmbedSegment<'_>> = Vec::new();
+    let mut last = 0usize;
+    let mut cursor = 0usize;
+
+    while let Some(offset) = text[cursor..].find("![[") {
+        let start = cursor + offset;
+        let inner_start = start + 3;
+        let Some(end_offset) = text[inner_start..].find("]]") else {
+            break;
+        };
+        let inner = &text[inner_start..inner_start + end_offset];
+        // Verschachtelte Klammern sind kein Embed — konservativ ueberspringen.
+        if inner.is_empty() || inner.contains('[') || inner.contains(']') {
+            cursor = inner_start;
+            continue;
+        }
+        if start > last {
+            segments.push(EmbedSegment::Text(&text[last..start]));
+        }
+        segments.push(EmbedSegment::Embed(inner));
+        last = inner_start + end_offset + 2;
+        cursor = last;
+    }
+
+    if segments.is_empty() {
+        return None;
+    }
+    if last < text.len() {
+        segments.push(EmbedSegment::Text(&text[last..]));
+    }
+    Some(segments)
+}
+
+fn new_inline_node<'a>(
+    arena: &'a Arena<AstNode<'a>>,
+    value: NodeValue,
+    sourcepos: Sourcepos,
+) -> &'a AstNode<'a> {
+    let mut ast = Ast::new(value, sourcepos.start);
+    ast.sourcepos = sourcepos;
+    arena.alloc(AstNode::new(RefCell::new(ast)))
+}
+
+/// Setzt die in [`apply_wikilinks`] gesammelten Klassen auf die
+/// `data-wikilink`-Anchors (Reihenfolge = Dokumentreihenfolge).
+fn add_wikilink_classes(html: &str, classes: &[&'static str]) -> String {
+    const MARKER: &str = r#"data-wikilink="true""#;
+    if classes.is_empty() {
+        return html.to_string();
+    }
+
+    let mut out = String::with_capacity(html.len() + classes.len() * 32);
+    let mut rest = html;
+    let mut index = 0;
+    while let Some(pos) = rest.find(MARKER) {
+        out.push_str(&rest[..pos]);
+        if let Some(class) = classes.get(index) {
+            out.push_str(&format!("class=\"{class}\" "));
+        }
+        out.push_str(MARKER);
+        rest = &rest[pos + MARKER.len()..];
+        index += 1;
+    }
+    out.push_str(rest);
+    out
 }
 
 fn collect_and_apply_explicit_heading_ids<'a>(root: &'a AstNode<'a>) -> VecDeque<Option<String>> {
@@ -919,6 +1136,32 @@ mod tests {
         assert!(html.contains(r#"<div class="mermaid-diagram"><svg id="meta"/></div>"#));
         // wrong-case block source appears (as code fallback), not replaced
         assert!(html.contains("bad"));
+    }
+
+    #[test]
+    fn markdown_options_enable_obsidian_wikilink_order() {
+        // `[[url|title]]` (Obsidian) — NICHT `[[title|url]]`.
+        let options = markdown_options();
+        assert!(options.extension.wikilinks_title_after_pipe);
+        assert!(!options.extension.wikilinks_title_before_pipe);
+    }
+
+    #[test]
+    fn render_body_without_vault_context_renders_missing_wikilink() {
+        // Aufrufer ohne Kontext (Theme-Editor-Vorschau): toter Link in
+        // missing-Optik statt Rohtext.
+        let html = render_body("Siehe [[Foo Bar]].");
+        assert!(html.contains(r#"data-wikilink="true""#), "{html}");
+        assert!(html.contains(r#"class="wikilink-missing""#), "{html}");
+        assert!(html.contains(r#"href="folio-new:Foo%20Bar""#), "{html}");
+        assert!(html.contains(">Foo Bar<"), "{html}");
+    }
+
+    #[test]
+    fn render_body_escapes_wikilink_label_and_keeps_code_literal() {
+        let html = render_body("`[[Foo]]`");
+        assert!(!html.contains("data-wikilink"), "{html}");
+        assert!(html.contains("[[Foo]]"), "{html}");
     }
 
     #[test]

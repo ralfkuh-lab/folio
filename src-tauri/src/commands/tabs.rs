@@ -77,6 +77,19 @@ pub fn reorder(state: &AppState, handle: &AppHandle, ids: Vec<u64>) -> Result<()
 }
 
 pub fn open(state: &AppState, handle: &AppHandle, path: String) -> Result<TabTransition, TabError> {
+    open_with_anchor(state, handle, path, None)
+}
+
+/// Wie [`open`], reicht zusaetzlich einen Sprung-Anker bis in
+/// [`OpenDocumentOptions`] durch — damit entsteht EIN History-Eintrag
+/// `(path, anchor)` statt eines Nachtrags per zweitem `navigate`
+/// (Review codex #8 / kimi #3).
+pub fn open_with_anchor(
+    state: &AppState,
+    handle: &AppHandle,
+    path: String,
+    anchor: Option<String>,
+) -> Result<TabTransition, TabError> {
     let path = normalized_file_path(path)?;
     let existing = state
         .tabs
@@ -84,7 +97,7 @@ pub fn open(state: &AppState, handle: &AppHandle, path: String) -> Result<TabTra
         .map_err(|_| TabError::Internal("tabs lock poisoned".into()))?
         .find_by_path(&path);
     if let Some(id) = existing {
-        return activate(state, handle, id);
+        return activate_with_anchor(state, handle, id, anchor);
     }
 
     // Einen leeren aktiven Tab (kein Dokument, kein pending Restore-
@@ -108,7 +121,7 @@ pub fn open(state: &AppState, handle: &AppHandle, path: String) -> Result<TabTra
         state,
         path,
         OpenDocumentOptions {
-            anchor: None,
+            anchor,
             reload: ReloadPolicy::Always,
             dirty: DirtyPolicy::Discard,
             apply_default_mode: true,
@@ -153,6 +166,17 @@ pub fn focus_existing_tab(
     handle: &AppHandle,
     path: &str,
 ) -> Result<Option<TabTransition>, TabError> {
+    focus_existing_tab_with_anchor(state, handle, path, None)
+}
+
+/// Wie [`focus_existing_tab`], mit Sprung-Anker auf dem aktuellen
+/// History-Eintrag des fokussierten Tabs (Review codex #8).
+pub fn focus_existing_tab_with_anchor(
+    state: &AppState,
+    handle: &AppHandle,
+    path: &str,
+    anchor: Option<String>,
+) -> Result<Option<TabTransition>, TabError> {
     let other = {
         let tabs = state
             .tabs
@@ -162,7 +186,7 @@ pub fn focus_existing_tab(
     };
     match other {
         Some(id) => {
-            let transition = activate(state, handle, id)?;
+            let transition = activate_with_anchor(state, handle, id, anchor)?;
             emit_navigation_changed(handle, &transition, None)?;
             Ok(Some(transition))
         }
@@ -180,6 +204,17 @@ fn tab_to_focus_for_path(tabs: &crate::tab_manager::TabManager, path: &str) -> O
 }
 
 pub fn activate(state: &AppState, handle: &AppHandle, id: u64) -> Result<TabTransition, TabError> {
+    activate_with_anchor(state, handle, id, None)
+}
+
+/// Wie [`activate`], setzt zusaetzlich den Anker auf dem AKTUELLEN
+/// History-Eintrag des Ziel-Tabs (kein zweiter Eintrag — Review codex #8).
+pub fn activate_with_anchor(
+    state: &AppState,
+    handle: &AppHandle,
+    id: u64,
+    anchor: Option<String>,
+) -> Result<TabTransition, TabError> {
     {
         let mut tabs = state
             .tabs
@@ -273,6 +308,15 @@ pub fn activate(state: &AppState, handle: &AppHandle, id: u64) -> Result<TabTran
         }
     } else {
         emit_document_closed(handle, tab_id)?;
+    }
+    if anchor.is_some() {
+        state
+            .tabs
+            .lock()
+            .map_err(|_| TabError::Internal("tabs lock poisoned".into()))?
+            .active_mut()
+            .navigation
+            .set_current_anchor(anchor);
     }
     AppState::emit_tabs_changed(handle).map_err(TabError::Internal)?;
     transition_for_active(state, true)

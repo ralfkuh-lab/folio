@@ -1,9 +1,9 @@
 {
   "@meta": {
-    "tag": "it",
-    "name": "Italiano",
+    "flag": "🇮🇹",
     "locale": "it-IT",
-    "flag": "🇮🇹"
+    "name": "Italiano",
+    "tag": "it"
   },
   "ai.actions.customPrompt.description": "Istruzione libera senza modello.",
   "ai.actions.customPrompt.name": "Prompt personalizzato",
@@ -65,8 +65,8 @@
   "ai.model.label": "Modello",
   "ai.prompt.label": "Prompt",
   "ai.status.charsPart": {
-    "one": "{formattedCount} carattere",
     "many": "{formattedCount} caratteri",
+    "one": "{formattedCount} carattere",
     "other": "{formattedCount} caratteri"
   },
   "ai.translate.dialog.title": "Traduci con l’IA",
@@ -326,8 +326,8 @@
   "export.formats.html": "Documento HTML (.html)",
   "export.formats.pdf": "Documento PDF (.pdf)",
   "export.layouts.more": {
-    "one": "{count} altro layout",
     "many": "{count} altri layout",
+    "one": "{count} altro layout",
     "other": "{count} altri layout"
   },
   "export.preview.title": "Anteprima del tema",
@@ -425,14 +425,14 @@
   "search.status.empty": "Nessun risultato (ricerca in {filesPart})",
   "search.status.error": "Errore: {detail}",
   "search.status.filesPart": {
-    "one": "{count} file",
     "many": "{count} file",
+    "one": "{count} file",
     "other": "{count} file"
   },
   "search.status.hitStale": "Risultato non più aggiornato",
   "search.status.hitsPart": {
-    "one": "{count} corrispondenza",
     "many": "{count} corrispondenze",
+    "one": "{count} corrispondenza",
     "other": "{count} corrispondenze"
   },
   "search.status.noFiles": "Nessun file in cui cercare nel Vault — fissare una cartella o avviare la ricerca con un clic destro su una cartella.",
@@ -440,8 +440,8 @@
   "search.status.running": "{hitsPart} in {filesPart} …",
   "search.status.runningSimple": "Ricerca in corso …",
   "search.status.skippedPart": {
-    "one": "{count} file di grandi dimensioni saltato",
     "many": "{count} file di grandi dimensioni saltati",
+    "one": "{count} file di grandi dimensioni saltato",
     "other": "{count} file di grandi dimensioni saltati"
   },
   "search.status.skippedSuffix": " — {skippedPart}",
@@ -602,20 +602,20 @@
   "statusBar.modeView": "Visualizzazione",
   "statusBar.ready": "Pronto",
   "statusBar.wordCount.charsPart": {
-    "one": "{count} carattere",
     "many": "{count} caratteri",
+    "one": "{count} carattere",
     "other": "{count} caratteri"
   },
   "statusBar.wordCount.linesPart": {
-    "one": "{count} riga",
     "many": "{count} righe",
+    "one": "{count} riga",
     "other": "{count} righe"
   },
   "statusBar.wordCount.selectionTemplate": "{wordsPart} · {charsPart} selezionati",
   "statusBar.wordCount.template": "{wordsPart} · {charsPart} · {linesPart}",
   "statusBar.wordCount.wordsPart": {
-    "one": "{count} parola",
     "many": "{count} parole",
+    "one": "{count} parola",
     "other": "{count} parole"
   },
   "tabs.bar.ariaLabel": "Documenti aperti",
@@ -767,6 +767,15 @@
   "vault.section.empty": "Nessun elemento",
   "vault.section.pinned": "Fissati",
   "vault.section.recent": "Aperti di recente",
+  "vault.tags.empty": "Nessun tag",
+  "vault.tags.error": "Impossibile caricare i tag",
+  "vault.tags.loading": "Caricamento tag…",
+  "vault.tags.refresh.ariaLabel": "Aggiorna tag",
+  "vault.tags.refresh.tooltip": "Aggiorna tag",
+  "vault.tags.search.ariaLabel": "Cerca questo tag",
+  "vault.tags.search.tooltip": "Cerca nei file…",
+  "vault.tags.section": "Tag",
+  "vault.tags.truncated": "Elenco troncato",
   "vault.tree.collapseAll.ariaLabel": "Comprimi tutte le cartelle",
   "vault.tree.collapseAll.tooltip": "Comprimi tutto",
   "vault.tree.empty": "Nessun elemento. Aprire un file o trascinarlo qui.",
@@ -777,5 +786,12 @@
   "view.codeCopy.failed": "Copia non riuscita",
   "view.codeCopy.tooltip": "Copia codice",
   "view.dropOverlay.message": "Rilascia il file qui per aprirlo",
-  "view.toc.title": "Indice"
+  "view.toc.title": "Indice",
+  "wikilinks.backlinks.empty": "Nessun backlink",
+  "wikilinks.backlinks.header": "Collegato da ({count})",
+  "wikilinks.backlinks.truncated": "Elenco troncato",
+  "wikilinks.createDialog.noDocument": "Nessun documento aperto — impossibile creare la nota.",
+  "wikilinks.createDialog.submit.action": "Crea",
+  "wikilinks.createDialog.subtitle": "Cartella di destinazione: {dir}",
+  "wikilinks.createDialog.title": "Creare la nota?"
 }

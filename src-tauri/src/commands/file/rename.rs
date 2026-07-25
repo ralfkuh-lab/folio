@@ -178,6 +178,8 @@ fn finish_rename(
         }
     }
     crate::menu::refresh_recent_from_workspace(handle);
+    // Rename aendert den indizierten Dateinamen.
+    state.invalidate_wikilink_index();
 
     if is_current {
         state

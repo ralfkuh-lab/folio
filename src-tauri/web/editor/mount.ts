@@ -14,6 +14,7 @@ import {
     setMonaco,
     withProgrammaticWrite,
 } from './state';
+import { registerWikilinkCompletion } from './wikilink-complete';
 
 let monacoReady: Promise<void> | null = null;
 // `mountReady` ist bis zum ERSTEN erfolgreichen mount() ein pending
@@ -60,6 +61,7 @@ function loadMonaco(): Promise<void> {
     monacoReady = new Promise<void>((resolve, reject) => {
         if (window.monaco?.editor) {
             setMonaco(window.monaco);
+            try { registerWikilinkCompletion(); } catch { /* ignore */ }
             resolve();
             return;
         }
@@ -102,6 +104,9 @@ function loadMonaco(): Promise<void> {
                     return;
                 }
                 setMonaco(window.monaco);
+                // [[-Autocomplete (W4) — einmal nach AMD-Init, shared mit
+                // Code-View über whenMonacoLoaded.
+                try { registerWikilinkCompletion(); } catch { /* ignore */ }
                 resolve();
             },
             (err: any) => {
@@ -115,7 +120,10 @@ function loadMonaco(): Promise<void> {
 
 // Monaco-Load wird zum Bundle-Init getriggert (verhalten wie früher in
 // `editor.ts`-Monolith: `const monacoPromise = loadMonaco()` am Modul-Top).
-const initialMonacoPromise = loadMonaco();
+const initialMonacoPromise = loadMonaco().then(function () {
+    // Pfad, wenn Monaco bereits global war (kein require-Callback):
+    try { registerWikilinkCompletion(); } catch { /* ignore */ }
+});
 
 /**
  * Resolved sobald der Monaco-AMD-Loader durch ist und `window.monaco.editor`

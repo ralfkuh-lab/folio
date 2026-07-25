@@ -5,6 +5,8 @@
    closeFind/setFindTerm/setFindOptions/findNext/findPrev), damit die
    gemeinsame Find-Bar in ui/find-bar.ts denselben Adapter nutzen kann. */
 
+import { handleFolioNewClick, isFolioNewHref } from './wikilink-create';
+
 let contentEl: HTMLElement = null;
 let tocEl: HTMLElement = null;
 let requestSaveIfDirtyDep: () => Promise<boolean> = null;
@@ -23,6 +25,15 @@ function linkFromEventTarget(target: EventTarget | null): HTMLAnchorElement | nu
 
 function postLinkClick(href: string, newTab: boolean): void {
     post({ type: 'linkClick', href, newTab });
+}
+
+/** Gemeinsamer Einstieg: folio-new: bleibt im Frontend, sonst Backend. */
+function routeLinkClick(href: string, newTab: boolean): void {
+    if (isFolioNewHref(href)) {
+        void handleFolioNewClick(href);
+        return;
+    }
+    postLinkClick(href, newTab);
 }
 
 // ----- TOC-API (vom document:loaded und navigation:changed gerufen) -----
@@ -521,7 +532,9 @@ export function initMarkdownView(deps?: { requestSaveIfDirty?: () => Promise<boo
     if (!contentEl || !tocEl) return;
     requestSaveIfDirtyDep = (deps && deps.requestSaveIfDirty) || null;
 
-    // Link-Klicks (im Content) — Tauri-Backend behandelt das Routing.
+    // Link-Klicks (im Content) — gemeinsamer Handler fuer View + Split +
+    // Live-Preview (alle schreiben in #view-content). folio-new: wird
+    // frontend-seitig abgefangen (Anlegen-Dialog); sonst Backend-Routing.
     // Dirty-Prompt vor dem Post: im Split/Edit-Mode mit ungespeicherten
     // Edits wuerde der Backend-Load-Pfad in events::navigation::link_click
     // sonst die offenen Aenderungen ueberschreiben (analog openDocument).
@@ -532,9 +545,14 @@ export function initMarkdownView(deps?: { requestSaveIfDirty?: () => Promise<boo
         if (href === null) return;
         e.preventDefault();
         const newTab = e.ctrlKey || e.metaKey;
-        const send = function () { postLinkClick(href, false); };
+        // Missing-Wikilinks: kein Dirty-Prompt, kein newTab — nur Dialog.
+        if (isFolioNewHref(href)) {
+            routeLinkClick(href, false);
+            return;
+        }
+        const send = function () { routeLinkClick(href, false); };
         if (newTab) {
-            postLinkClick(href, true);
+            routeLinkClick(href, true);
         } else if (requestSaveIfDirtyDep) {
             requestSaveIfDirtyDep().then(function (ok) { if (ok) send(); });
         } else {
@@ -549,7 +567,12 @@ export function initMarkdownView(deps?: { requestSaveIfDirty?: () => Promise<boo
         const href = el.getAttribute('href');
         if (href === null) return;
         e.preventDefault();
-        postLinkClick(href, true);
+        // folio-new: Mittelklick = Dialog (kein newTab); sonst newTab.
+        if (isFolioNewHref(href)) {
+            routeLinkClick(href, false);
+            return;
+        }
+        routeLinkClick(href, true);
     }, true);
 
     // TOC-Click → Backend-Event (navigation:toc_click → setTocActive).

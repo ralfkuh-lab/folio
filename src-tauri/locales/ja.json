@@ -1,9 +1,9 @@
 {
   "@meta": {
-    "tag": "ja",
-    "name": "日本語",
+    "flag": "🇯🇵",
     "locale": "ja-JP",
-    "flag": "🇯🇵"
+    "name": "日本語",
+    "tag": "ja"
   },
   "ai.actions.customPrompt.description": "テンプレートを使わない自由形式の指示です。",
   "ai.actions.customPrompt.name": "カスタムプロンプト",
@@ -751,6 +751,15 @@
   "vault.section.empty": "項目なし",
   "vault.section.pinned": "ピン留め",
   "vault.section.recent": "最近使用したファイル",
+  "vault.tags.empty": "タグなし",
+  "vault.tags.error": "タグを読み込めませんでした",
+  "vault.tags.loading": "タグを読み込み中…",
+  "vault.tags.refresh.ariaLabel": "タグを更新",
+  "vault.tags.refresh.tooltip": "タグを更新",
+  "vault.tags.search.ariaLabel": "このタグを検索",
+  "vault.tags.search.tooltip": "ファイル内を検索…",
+  "vault.tags.section": "タグ",
+  "vault.tags.truncated": "リストは切り詰められました",
   "vault.tree.collapseAll.ariaLabel": "すべてのフォルダーを折りたたむ",
   "vault.tree.collapseAll.tooltip": "すべて折りたたむ",
   "vault.tree.empty": "項目がありません。ファイルを開くか、ここにドロップしてください。",
@@ -761,5 +770,12 @@
   "view.codeCopy.failed": "コピーに失敗しました",
   "view.codeCopy.tooltip": "コードをコピー",
   "view.dropOverlay.message": "ファイルをここにドロップして開く",
-  "view.toc.title": "目次"
+  "view.toc.title": "目次",
+  "wikilinks.backlinks.empty": "バックリンクなし",
+  "wikilinks.backlinks.header": "リンク元 ({count})",
+  "wikilinks.backlinks.truncated": "リストは切り詰められました",
+  "wikilinks.createDialog.noDocument": "ドキュメントが開かれていないため、ノートを作成できません。",
+  "wikilinks.createDialog.submit.action": "作成",
+  "wikilinks.createDialog.subtitle": "保存先フォルダー: {dir}",
+  "wikilinks.createDialog.title": "ノートを作成しますか？"
 }

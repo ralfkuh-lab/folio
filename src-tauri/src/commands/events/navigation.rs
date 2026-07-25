@@ -35,16 +35,30 @@ pub(super) fn link_click(
         }
         LinkAction::Navigate { path, anchor } => {
             if new_tab {
+                // tab_open-Pfad. Der Anker geht direkt in
+                // `OpenDocumentOptions`, damit EIN History-Eintrag
+                // `(path, anchor)` entsteht — ein Nachtrag per zweitem
+                // `navigate` hinterliess sonst einen toten Zurueck-Schritt
+                // auf dieselbe Datei ohne Anker (Review codex #8/kimi #3).
                 let transition =
-                    crate::commands::tabs::open(state, handle, path).map_err(String::from)?;
+                    crate::commands::tabs::open_with_anchor(state, handle, path, anchor)
+                        .map_err(String::from)?;
                 return crate::commands::tabs::emit_navigation_changed(handle, &transition, None)
                     .map_err(String::from);
             }
 
-            if crate::commands::tabs::focus_existing_tab(state, handle, &path)
-                .map_err(String::from)?
-                .is_some()
+            if crate::commands::tabs::focus_existing_tab_with_anchor(
+                state,
+                handle,
+                &path,
+                anchor.clone(),
+            )
+            .map_err(String::from)?
+            .is_some()
             {
+                // Anderer Tab hatte die Datei schon offen: der Anker sitzt
+                // auf dessen aktuellem History-Eintrag, `focus_existing_tab`
+                // hat bereits genau ein navigation:changed emittiert.
                 return Ok(());
             }
 

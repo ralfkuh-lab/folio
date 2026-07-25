@@ -1,9 +1,9 @@
 {
   "@meta": {
-    "tag": "es",
-    "name": "Español",
+    "flag": "🇪🇸",
     "locale": "es-ES",
-    "flag": "🇪🇸"
+    "name": "Español",
+    "tag": "es"
   },
   "ai.actions.customPrompt.description": "Instrucción libre sin plantilla.",
   "ai.actions.customPrompt.name": "Prompt personalizado",
@@ -65,8 +65,8 @@
   "ai.model.label": "Modelo",
   "ai.prompt.label": "Prompt",
   "ai.status.charsPart": {
-    "one": "1 carácter",
     "many": "{formattedCount} caracteres",
+    "one": "1 carácter",
     "other": "{formattedCount} caracteres"
   },
   "ai.translate.dialog.title": "Traducir con IA",
@@ -326,8 +326,8 @@
   "export.formats.html": "HTML",
   "export.formats.pdf": "PDF",
   "export.layouts.more": {
-    "one": "1 diseño más",
     "many": "{count} diseños más",
+    "one": "1 diseño más",
     "other": "{count} diseños más"
   },
   "export.preview.title": "Vista previa del tema",
@@ -425,14 +425,14 @@
   "search.status.empty": "Sin coincidencias (buscado en {filesPart})",
   "search.status.error": "Error: {detail}",
   "search.status.filesPart": {
-    "one": "1 archivo",
     "many": "{count} archivos",
+    "one": "1 archivo",
     "other": "{count} archivos"
   },
   "search.status.hitStale": "El resultado ya no está actualizado",
   "search.status.hitsPart": {
-    "one": "1 coincidencia",
     "many": "{count} coincidencias",
+    "one": "1 coincidencia",
     "other": "{count} coincidencias"
   },
   "search.status.noFiles": "No hay archivos en los que buscar en el Vault; fijar una carpeta o iniciar la búsqueda con el botón derecho sobre una carpeta.",
@@ -440,8 +440,8 @@
   "search.status.running": "{hitsPart} en {filesPart} …",
   "search.status.runningSimple": "Buscando …",
   "search.status.skippedPart": {
-    "one": "1 archivo grande",
     "many": "{count} archivos grandes",
+    "one": "1 archivo grande",
     "other": "{count} archivos grandes"
   },
   "search.status.skippedSuffix": " — {skippedPart} sin procesar",
@@ -602,20 +602,20 @@
   "statusBar.modeView": "Lectura",
   "statusBar.ready": "Listo",
   "statusBar.wordCount.charsPart": {
-    "one": "1 carácter",
     "many": "{count} caracteres",
+    "one": "1 carácter",
     "other": "{count} caracteres"
   },
   "statusBar.wordCount.linesPart": {
-    "one": "1 línea",
     "many": "{count} líneas",
+    "one": "1 línea",
     "other": "{count} líneas"
   },
   "statusBar.wordCount.selectionTemplate": "{wordsPart} · {charsPart} seleccionados",
   "statusBar.wordCount.template": "{wordsPart} · {charsPart} · {linesPart}",
   "statusBar.wordCount.wordsPart": {
-    "one": "1 palabra",
     "many": "{count} palabras",
+    "one": "1 palabra",
     "other": "{count} palabras"
   },
   "tabs.bar.ariaLabel": "Documentos abiertos",
@@ -767,6 +767,15 @@
   "vault.section.empty": "Sin entradas",
   "vault.section.pinned": "Fijados",
   "vault.section.recent": "Abiertos recientemente",
+  "vault.tags.empty": "Sin etiquetas",
+  "vault.tags.error": "No se pudieron cargar las etiquetas",
+  "vault.tags.loading": "Cargando etiquetas…",
+  "vault.tags.refresh.ariaLabel": "Actualizar etiquetas",
+  "vault.tags.refresh.tooltip": "Actualizar etiquetas",
+  "vault.tags.search.ariaLabel": "Buscar esta etiqueta",
+  "vault.tags.search.tooltip": "Buscar en archivos…",
+  "vault.tags.section": "Etiquetas",
+  "vault.tags.truncated": "Lista truncada",
   "vault.tree.collapseAll.ariaLabel": "Contraer todas las carpetas",
   "vault.tree.collapseAll.tooltip": "Contraer todo",
   "vault.tree.empty": "Sin entradas. Abrir un archivo o arrastrarlo aquí.",
@@ -777,5 +786,12 @@
   "view.codeCopy.failed": "Fallo al copiar",
   "view.codeCopy.tooltip": "Copiar código",
   "view.dropOverlay.message": "Soltar el archivo aquí para abrirlo",
-  "view.toc.title": "Índice"
+  "view.toc.title": "Índice",
+  "wikilinks.backlinks.empty": "Sin backlinks",
+  "wikilinks.backlinks.header": "Enlazado desde ({count})",
+  "wikilinks.backlinks.truncated": "Lista truncada",
+  "wikilinks.createDialog.noDocument": "Ningún documento abierto: no se puede crear la nota.",
+  "wikilinks.createDialog.submit.action": "Crear",
+  "wikilinks.createDialog.subtitle": "Carpeta de destino: {dir}",
+  "wikilinks.createDialog.title": "¿Crear nota?"
 }

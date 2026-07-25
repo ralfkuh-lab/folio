@@ -66,3 +66,112 @@ li.entry[data-level="3"] { padding-left: 24px; }
 li.entry[data-level="4"] { padding-left: 38px; }
 li.entry[data-level="5"] { padding-left: 52px; }
 li.entry[data-level="6"] { padding-left: 66px; }
+
+/* ----- Backlinks (unter TOC, erbt .kind-markdown-Gating der Rail) ----- */
+.backlinks-section {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+.backlinks-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 6px;
+  background: var(--rail-header-bg);
+  border-bottom: 1px solid var(--border);
+  color: var(--rail-accent);
+  font-weight: 600;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.backlinks-header:hover { filter: brightness(1.05); }
+.backlinks-caret {
+  display: inline-block;
+  width: 1em;
+  text-align: center;
+  transition: transform 0.12s ease;
+  color: var(--rail-fg-muted);
+  font-size: 11px;
+}
+.backlinks-section.collapsed .backlinks-caret {
+  transform: rotate(-90deg);
+}
+.backlinks-section.collapsed .backlinks-body {
+  display: none;
+}
+.backlinks-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.backlinks-empty {
+  padding: 8px 10px 16px;
+  color: var(--rail-fg-muted);
+  font-size: 11px;
+}
+.backlinks-empty[hidden],
+.backlinks-list[hidden] {
+  display: none;
+}
+ul.backlinks-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0 16px 0;
+}
+li.backlinks-source {
+  margin: 2px 0;
+}
+.backlinks-source-row {
+  display: flex;
+  align-items: baseline;
+  margin: 1px 6px;
+  padding: 3px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--rail-fg);
+}
+.backlinks-source-row:hover {
+  background: var(--rail-hover-bg);
+}
+.backlinks-source-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.backlinks-source-count {
+  flex: 0 0 auto;
+  margin-left: 6px;
+  color: var(--rail-fg-muted);
+  font-weight: 500;
+  font-size: 11px;
+}
+ul.backlinks-hits {
+  list-style: none;
+  margin: 0 0 4px 0;
+  padding: 0 0 0 16px;
+}
+li.backlinks-hit {
+  margin: 1px 6px;
+  padding: 2px 10px 2px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--rail-fg-muted);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+li.backlinks-hit:hover {
+  background: var(--rail-hover-bg);
+  color: var(--rail-fg);
+}
+.backlinks-truncated {
+  padding: 4px 16px 8px;
+  color: var(--rail-fg-muted);
+  font-size: 10.5px;
+  font-style: italic;
+}

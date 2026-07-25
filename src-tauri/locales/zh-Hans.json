@@ -1,9 +1,9 @@
 {
   "@meta": {
-    "tag": "zh-Hans",
-    "name": "简体中文",
+    "flag": "🇨🇳",
     "locale": "zh-CN",
-    "flag": "🇨🇳"
+    "name": "简体中文",
+    "tag": "zh-Hans"
   },
   "ai.actions.customPrompt.description": "无模板的自由格式指令。",
   "ai.actions.customPrompt.name": "自定义提示词",
@@ -751,6 +751,15 @@
   "vault.section.empty": "无内容",
   "vault.section.pinned": "已固定",
   "vault.section.recent": "最近打开",
+  "vault.tags.empty": "无标签",
+  "vault.tags.error": "无法加载标签",
+  "vault.tags.loading": "正在加载标签…",
+  "vault.tags.refresh.ariaLabel": "刷新标签",
+  "vault.tags.refresh.tooltip": "刷新标签",
+  "vault.tags.search.ariaLabel": "搜索此标签",
+  "vault.tags.search.tooltip": "在文件中搜索…",
+  "vault.tags.section": "标签",
+  "vault.tags.truncated": "列表已截断",
   "vault.tree.collapseAll.ariaLabel": "折叠所有文件夹",
   "vault.tree.collapseAll.tooltip": "全部折叠",
   "vault.tree.empty": "无内容。打开文件或将文件拖放到此处。",
@@ -761,5 +770,12 @@
   "view.codeCopy.failed": "复制失败",
   "view.codeCopy.tooltip": "复制代码",
   "view.dropOverlay.message": "拖放到此处以打开文件",
-  "view.toc.title": "目录"
+  "view.toc.title": "目录",
+  "wikilinks.backlinks.empty": "无反向链接",
+  "wikilinks.backlinks.header": "反向链接 ({count})",
+  "wikilinks.backlinks.truncated": "列表已截断",
+  "wikilinks.createDialog.noDocument": "未打开文档，无法创建笔记。",
+  "wikilinks.createDialog.submit.action": "创建",
+  "wikilinks.createDialog.subtitle": "目标文件夹：{dir}",
+  "wikilinks.createDialog.title": "创建笔记？"
 }

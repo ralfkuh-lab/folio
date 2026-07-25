@@ -1,9 +1,9 @@
 {
   "@meta": {
-    "tag": "en",
-    "name": "English",
+    "flag": "🇺🇸",
     "locale": "en-US",
-    "flag": "🇺🇸"
+    "name": "English",
+    "tag": "en"
   },
   "ai.actions.customPrompt.description": "Free-form instruction without a template.",
   "ai.actions.customPrompt.name": "Custom prompt",
@@ -759,6 +759,15 @@
   "vault.section.empty": "No entries",
   "vault.section.pinned": "Pinned",
   "vault.section.recent": "Recently opened",
+  "vault.tags.empty": "No tags",
+  "vault.tags.error": "Failed to load tags",
+  "vault.tags.loading": "Loading tags…",
+  "vault.tags.refresh.ariaLabel": "Refresh tags",
+  "vault.tags.refresh.tooltip": "Refresh tags",
+  "vault.tags.search.ariaLabel": "Search for this tag",
+  "vault.tags.search.tooltip": "Search in files…",
+  "vault.tags.section": "Tags",
+  "vault.tags.truncated": "List truncated",
   "vault.tree.collapseAll.ariaLabel": "Collapse all folders",
   "vault.tree.collapseAll.tooltip": "Collapse all",
   "vault.tree.empty": "No entries. Open a file or drop one here.",
@@ -769,5 +778,12 @@
   "view.codeCopy.failed": "Copy failed",
   "view.codeCopy.tooltip": "Copy code",
   "view.dropOverlay.message": "Drop file here to open",
-  "view.toc.title": "Table of Contents"
+  "view.toc.title": "Table of Contents",
+  "wikilinks.backlinks.empty": "No backlinks",
+  "wikilinks.backlinks.header": "Linked from ({count})",
+  "wikilinks.backlinks.truncated": "List truncated",
+  "wikilinks.createDialog.noDocument": "No document open — cannot create the note.",
+  "wikilinks.createDialog.submit.action": "Create",
+  "wikilinks.createDialog.subtitle": "Target folder: {dir}",
+  "wikilinks.createDialog.title": "Create note?"
 }

@@ -198,6 +198,23 @@ h6 { font-size: .85em; color: var(--fg-muted); }
 p { margin: 0 0 16px; }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
+/* Wikilinks (docs/spec-wikilinks.md). Auf .markdown-body gescopt, damit
+   View-/Export-Themes sie gezielt ueberschreiben koennen; Light/Dark laufen
+   ueber die Farb-Tokens aus base.css. */
+.markdown-body a.wikilink { color: var(--accent); text-decoration: none; }
+.markdown-body a.wikilink:hover { text-decoration: underline; }
+/* Fehlendes Ziel: gedimmt + gestrichelt (Klick oeffnet in W2 den
+   "Notiz anlegen?"-Dialog ueber das folio-new:-Schema). */
+.markdown-body a.wikilink-missing {
+  color: var(--fg-muted);
+  text-decoration: underline dashed;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.markdown-body a.wikilink-missing:hover { color: var(--fg); }
+/* Nicht-Bild-Embed `![[Notiz]]`: bleibt V1 ein Link, ist aber als Embed
+   erkennbar (echte Transclusion ist Folgepunkt). */
+.markdown-body a.wikilink-embed { border-bottom: 1px dotted currentColor; }
 ul:not(.toc), ol { padding-left: 2em; margin: 0 0 16px; }
 li + li { margin-top: .25em; }
 blockquote {

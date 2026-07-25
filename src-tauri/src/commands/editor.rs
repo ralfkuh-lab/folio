@@ -201,10 +201,24 @@ pub struct HeadingMapEntry {
 }
 
 #[tauri::command]
-pub async fn render_markdown_preview(text: String) -> Result<RenderPreview, String> {
+pub async fn render_markdown_preview(
+    text: String,
+    state: State<'_, AppState>,
+) -> Result<RenderPreview, String> {
     let toc_entries = toc::extract(&text);
+    // Wikilinks brauchen den Pfad des gerade bearbeiteten Dokuments; ohne
+    // offenen Pfad rendert die Preview kontextfrei (missing-Optik).
+    let path = state
+        .tabs
+        .lock()
+        .map_err(|_| "tabs lock poisoned".to_string())?
+        .active()
+        .document_store
+        .path
+        .clone();
+    let wikilinks = state.wikilink_context(path.as_deref());
     Ok(RenderPreview {
-        content: renderer::render_body(&text),
+        content: renderer::render_body_with_wikilinks(&text, wikilinks.as_ref()),
         toc_html: toc::render_html(&toc_entries),
         heading_map: heading_map(&toc_entries),
     })

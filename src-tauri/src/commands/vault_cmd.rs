@@ -213,6 +213,19 @@ pub async fn vault_filter_options_get(
     }))
 }
 
+/// Collapse-State der Tags-Sektion (W5). Default: eingeklappt.
+#[tauri::command]
+pub async fn vault_tags_section_get(
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let data = state
+        .panel_state
+        .lock()
+        .map_err(|_| "panel state lock poisoned".to_string())?
+        .data();
+    Ok(serde_json::json!({ "expanded": data.tags_expanded }))
+}
+
 #[tauri::command]
 pub async fn vault_filter_options_set(
     markdown_only: bool,

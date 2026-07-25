@@ -14,6 +14,8 @@ pub async fn workspace_pin(
         .map_err(|_| "workspace lock poisoned".to_string())?
         .pin(path, is_directory)
         .map_err(|error| error.to_string())?;
+    // Pin-Aenderung verschiebt den Wikilink-Suchraum.
+    state.invalidate_wikilink_index();
     sync_git_head_watcher(state.inner());
     emit_vault_refresh(state.inner(), &handle)
 }
@@ -30,6 +32,8 @@ pub async fn workspace_unpin(
         .map_err(|_| "workspace lock poisoned".to_string())?
         .unpin(&path)
         .map_err(|error| error.to_string())?;
+    // Pin-Aenderung verschiebt den Wikilink-Suchraum.
+    state.invalidate_wikilink_index();
     sync_git_head_watcher(state.inner());
     emit_vault_refresh(state.inner(), &handle)
 }
@@ -46,6 +50,8 @@ pub async fn workspace_reorder_pinned(
         .map_err(|_| "workspace lock poisoned".to_string())?
         .reorder_pinned(paths)
         .map_err(|error| error.to_string())?;
+    // Pin-Aenderung verschiebt den Wikilink-Suchraum.
+    state.invalidate_wikilink_index();
     emit_vault_refresh(state.inner(), &handle)
 }
 

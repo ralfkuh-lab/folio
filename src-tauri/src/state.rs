@@ -10,6 +10,7 @@ use crate::{
     toc,
     vault::Vault,
     vault_watcher::{GitHeadWatcher, VaultWatcher},
+    wikilink::{WikilinkContext, WikilinkIndexCache},
     workspace::Workspace,
 };
 use std::collections::{HashMap, VecDeque};
@@ -99,6 +100,10 @@ pub struct AppState {
     /// setzt das Flag.
     pub search_cancels: Mutex<HashMap<u64, Arc<AtomicBool>>>,
     pub vault: Mutex<Vault>,
+    /// Namens-Index fuer Wikilinks (`docs/spec-wikilinks.md`). Haelt sein
+    /// eigenes Lock, deshalb kein zusaetzliches `Mutex` hier. Invalidierung
+    /// ueber [`AppState::invalidate_wikilink_index`], TTL-Fallback 30 s.
+    pub wikilink_index: WikilinkIndexCache,
     pub vault_watcher: Mutex<VaultWatcher>,
     pub git_head_watcher: Mutex<GitHeadWatcher>,
     pub link_interceptor: LinkInterceptor,
@@ -177,6 +182,7 @@ impl AppState {
             search_run_seq: AtomicU64::new(0),
             search_cancels: Mutex::new(HashMap::new()),
             vault: Mutex::new(vault),
+            wikilink_index: WikilinkIndexCache::new(),
             vault_watcher: Mutex::new(VaultWatcher::new()),
             git_head_watcher: Mutex::new(GitHeadWatcher::new()),
             link_interceptor: LinkInterceptor::new(),
@@ -194,6 +200,36 @@ impl AppState {
             console_errors: Mutex::new(VecDeque::with_capacity(CONSOLE_ERROR_BUFFER_MAX)),
             recent_events: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Render-Kontext fuer Wikilinks. `None` ohne Dokumentpfad (unbenannter
+    /// Puffer, virtuelle Tabs, Theme-Vorschau) — der Renderer faellt dann
+    /// bewusst auf missing-Optik zurueck.
+    pub fn wikilink_context(&self, path: Option<&str>) -> Option<WikilinkContext> {
+        let path = path?;
+        let pinned = match self.workspace.lock() {
+            Ok(workspace) => workspace.pinned().to_vec(),
+            Err(_) => {
+                tracing::warn!(
+                    target: "folio::wikilink",
+                    "workspace lock poisoned; rendering wikilinks without vault context"
+                );
+                return None;
+            }
+        };
+        Some(WikilinkContext::new(self.wikilink_index.get(&pinned), path))
+    }
+
+    /// Wikilink-Index verwerfen (Pin-Aenderung, Datei-CRUD, Watcher-Event).
+    pub fn invalidate_wikilink_index(&self) {
+        self.wikilink_index.invalidate();
+    }
+
+    /// Wie [`Self::wikilink_context`], aber ueber ein `AppHandle` — fuer
+    /// Emit-Pfade, die keinen `AppState` durchgereicht bekommen.
+    fn wikilink_context_for(app: &AppHandle, path: Option<&str>) -> Option<WikilinkContext> {
+        app.try_state::<AppState>()
+            .and_then(|state| state.wikilink_context(path))
     }
 
     pub fn install_document_events(&self, app: AppHandle) -> Result<(), String> {
@@ -319,6 +355,7 @@ impl AppState {
                 let app = app.clone();
                 move |path, text| {
                     let toc_entries = toc::extract(&text);
+                    let wikilinks = Self::wikilink_context_for(&app, Some(&path));
                     // kind/language wie bei document:loaded mitgeben —
                     // das Frontend braucht sie im saved-Pfad fuer den
                     // Code-View-Refresh (sonst Endungs-Heuristik/plaintext).
@@ -329,7 +366,7 @@ impl AppState {
                             "kind": crate::file_kind::classify(&path),
                             "language": crate::file_kind::editor_language(&path),
                             "text": text,
-                            "content": renderer::render_body(&text),
+                            "content": renderer::render_body_with_wikilinks(&text, wikilinks.as_ref()),
                             "tocHtml": toc::render_html(&toc_entries),
                             "headingMap": crate::commands::editor::heading_map(&toc_entries),
                             "tabId": tab_id,
@@ -449,6 +486,7 @@ impl AppState {
     ) -> Result<(), String> {
         let seq = next_doc_seq();
         let toc_entries = toc::extract(text);
+        let wikilinks = Self::wikilink_context_for(app, Some(path));
         app.emit(
             "document:loaded",
             serde_json::json!({
@@ -458,7 +496,7 @@ impl AppState {
                 "encoding": encoding,
                 "lineEnding": line_ending,
                 "text": text,
-                "content": renderer::render_body(text),
+                "content": renderer::render_body_with_wikilinks(text, wikilinks.as_ref()),
                 "tocHtml": toc::render_html(&toc_entries),
                 "headingMap": crate::commands::editor::heading_map(&toc_entries),
                 "tabId": tab_id,

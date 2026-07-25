@@ -1,9 +1,9 @@
 {
   "@meta": {
-    "tag": "fr",
-    "name": "Français",
+    "flag": "🇫🇷",
     "locale": "fr-FR",
-    "flag": "🇫🇷"
+    "name": "Français",
+    "tag": "fr"
   },
   "ai.actions.customPrompt.description": "Instruction libre sans modèle.",
   "ai.actions.customPrompt.name": "Invite personnalisée",
@@ -65,8 +65,8 @@
   "ai.model.label": "Modèle",
   "ai.prompt.label": "Invite",
   "ai.status.charsPart": {
-    "one": "{formattedCount} caractère",
     "many": "{formattedCount} caractères",
+    "one": "{formattedCount} caractère",
     "other": "{formattedCount} caractères"
   },
   "ai.translate.dialog.title": "Traduire avec l’IA",
@@ -326,8 +326,8 @@
   "export.formats.html": "HTML",
   "export.formats.pdf": "PDF",
   "export.layouts.more": {
-    "one": "{count} autre mise en page",
     "many": "{count} autres mises en page",
+    "one": "{count} autre mise en page",
     "other": "{count} autres mises en page"
   },
   "export.preview.title": "Aperçu du thème",
@@ -425,14 +425,14 @@
   "search.status.empty": "Aucun résultat (recherche dans {filesPart})",
   "search.status.error": "Erreur : {detail}",
   "search.status.filesPart": {
-    "one": "{count} fichier",
     "many": "{count} fichiers",
+    "one": "{count} fichier",
     "other": "{count} fichiers"
   },
   "search.status.hitStale": "Résultat plus à jour",
   "search.status.hitsPart": {
-    "one": "{count} résultat",
     "many": "{count} résultats",
+    "one": "{count} résultat",
     "other": "{count} résultats"
   },
   "search.status.noFiles": "Aucun fichier dans lequel rechercher dans le coffre — épinglez un dossier ou lancez la recherche par un clic droit sur un dossier.",
@@ -440,8 +440,8 @@
   "search.status.running": "{hitsPart} dans {filesPart} …",
   "search.status.runningSimple": "Recherche en cours …",
   "search.status.skippedPart": {
-    "one": "{count} gros fichier ignoré",
     "many": "{count} gros fichiers ignorés",
+    "one": "{count} gros fichier ignoré",
     "other": "{count} gros fichiers ignorés"
   },
   "search.status.skippedSuffix": " — {skippedPart}",
@@ -602,20 +602,20 @@
   "statusBar.modeView": "Lecture",
   "statusBar.ready": "Prêt",
   "statusBar.wordCount.charsPart": {
-    "one": "{count} caractère",
     "many": "{count} caractères",
+    "one": "{count} caractère",
     "other": "{count} caractères"
   },
   "statusBar.wordCount.linesPart": {
-    "one": "{count} ligne",
     "many": "{count} lignes",
+    "one": "{count} ligne",
     "other": "{count} lignes"
   },
   "statusBar.wordCount.selectionTemplate": "{wordsPart} · {charsPart} sélectionnés",
   "statusBar.wordCount.template": "{wordsPart} · {charsPart} · {linesPart}",
   "statusBar.wordCount.wordsPart": {
-    "one": "{count} mot",
     "many": "{count} mots",
+    "one": "{count} mot",
     "other": "{count} mots"
   },
   "tabs.bar.ariaLabel": "Documents ouverts",
@@ -767,6 +767,15 @@
   "vault.section.empty": "Aucune entrée",
   "vault.section.pinned": "Épinglés",
   "vault.section.recent": "Ouverts récemment",
+  "vault.tags.empty": "Aucun tag",
+  "vault.tags.error": "Échec du chargement des tags",
+  "vault.tags.loading": "Chargement des tags…",
+  "vault.tags.refresh.ariaLabel": "Actualiser les tags",
+  "vault.tags.refresh.tooltip": "Actualiser les tags",
+  "vault.tags.search.ariaLabel": "Rechercher ce tag",
+  "vault.tags.search.tooltip": "Rechercher dans les fichiers…",
+  "vault.tags.section": "Tags",
+  "vault.tags.truncated": "Liste tronquée",
   "vault.tree.collapseAll.ariaLabel": "Replier tous les dossiers",
   "vault.tree.collapseAll.tooltip": "Tout replier",
   "vault.tree.empty": "Aucune entrée. Ouvrez un fichier ou déposez-en un ici.",
@@ -777,5 +786,12 @@
   "view.codeCopy.failed": "Échec de la copie",
   "view.codeCopy.tooltip": "Copier le code",
   "view.dropOverlay.message": "Déposez un fichier ici pour l’ouvrir",
-  "view.toc.title": "Table des matières"
+  "view.toc.title": "Table des matières",
+  "wikilinks.backlinks.empty": "Aucun backlink",
+  "wikilinks.backlinks.header": "Lié depuis ({count})",
+  "wikilinks.backlinks.truncated": "Liste tronquée",
+  "wikilinks.createDialog.noDocument": "Aucun document ouvert — impossible de créer la note.",
+  "wikilinks.createDialog.submit.action": "Créer",
+  "wikilinks.createDialog.subtitle": "Dossier cible : {dir}",
+  "wikilinks.createDialog.title": "Créer la note ?"
 }

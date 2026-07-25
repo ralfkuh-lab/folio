@@ -1,9 +1,9 @@
 {
   "@meta": {
-    "tag": "ru",
-    "name": "Русский",
+    "flag": "🇷🇺",
     "locale": "ru-RU",
-    "flag": "🇷🇺"
+    "name": "Русский",
+    "tag": "ru"
   },
   "ai.actions.customPrompt.description": "Произвольная инструкция без шаблона.",
   "ai.actions.customPrompt.name": "Собственный запрос",
@@ -65,9 +65,9 @@
   "ai.model.label": "Модель",
   "ai.prompt.label": "Запрос",
   "ai.status.charsPart": {
-    "one": "{formattedCount} символ",
     "few": "{formattedCount} символа",
     "many": "{formattedCount} символов",
+    "one": "{formattedCount} символ",
     "other": "{formattedCount} символа"
   },
   "ai.translate.dialog.title": "Перевод с помощью ИИ",
@@ -327,9 +327,9 @@
   "export.formats.html": "HTML",
   "export.formats.pdf": "PDF",
   "export.layouts.more": {
-    "one": "{count} дополнительный макет",
     "few": "{count} дополнительных макета",
     "many": "{count} дополнительных макетов",
+    "one": "{count} дополнительный макет",
     "other": "{count} дополнительных макета"
   },
   "export.preview.title": "Предпросмотр темы",
@@ -427,16 +427,16 @@
   "search.status.empty": "Нет совпадений (проверено {filesPart})",
   "search.status.error": "Ошибка: {detail}",
   "search.status.filesPart": {
-    "one": "{count} файл",
     "few": "{count} файла",
     "many": "{count} файлов",
+    "one": "{count} файл",
     "other": "{count} файла"
   },
   "search.status.hitStale": "Результат устарел",
   "search.status.hitsPart": {
-    "one": "{count} совпадение",
     "few": "{count} совпадения",
     "many": "{count} совпадений",
+    "one": "{count} совпадение",
     "other": "{count} совпадения"
   },
   "search.status.noFiles": "В Vault нет доступных для поиска файлов — добавьте папку или запустите поиск из контекстного меню папки",
@@ -444,9 +444,9 @@
   "search.status.running": "{hitsPart} в {filesPart} …",
   "search.status.runningSimple": "Поиск…",
   "search.status.skippedPart": {
-    "one": "{count} большой файл",
     "few": "{count} больших файла",
     "many": "{count} больших файлов",
+    "one": "{count} большой файл",
     "other": "{count} больших файла"
   },
   "search.status.skippedSuffix": " — пропущено {skippedPart}",
@@ -607,23 +607,23 @@
   "statusBar.modeView": "Просмотр",
   "statusBar.ready": "Готово",
   "statusBar.wordCount.charsPart": {
-    "one": "{count} символ",
     "few": "{count} символа",
     "many": "{count} символов",
+    "one": "{count} символ",
     "other": "{count} символа"
   },
   "statusBar.wordCount.linesPart": {
-    "one": "{count} строка",
     "few": "{count} строки",
     "many": "{count} строк",
+    "one": "{count} строка",
     "other": "{count} строки"
   },
   "statusBar.wordCount.selectionTemplate": "{wordsPart} · {charsPart} выбрано",
   "statusBar.wordCount.template": "{wordsPart} · {charsPart} · {linesPart}",
   "statusBar.wordCount.wordsPart": {
-    "one": "{count} слово",
     "few": "{count} слова",
     "many": "{count} слов",
+    "one": "{count} слово",
     "other": "{count} слова"
   },
   "tabs.bar.ariaLabel": "Открытые документы",
@@ -775,6 +775,15 @@
   "vault.section.empty": "Нет элементов",
   "vault.section.pinned": "Закрепленные",
   "vault.section.recent": "Недавние",
+  "vault.tags.empty": "Нет тегов",
+  "vault.tags.error": "Не удалось загрузить теги",
+  "vault.tags.loading": "Загрузка тегов…",
+  "vault.tags.refresh.ariaLabel": "Обновить теги",
+  "vault.tags.refresh.tooltip": "Обновить теги",
+  "vault.tags.search.ariaLabel": "Искать этот тег",
+  "vault.tags.search.tooltip": "Искать в файлах…",
+  "vault.tags.section": "Теги",
+  "vault.tags.truncated": "Список усечён",
   "vault.tree.collapseAll.ariaLabel": "Свернуть все папки",
   "vault.tree.collapseAll.tooltip": "Свернуть всё",
   "vault.tree.empty": "Нет записей. Откройте файл или перетащите его сюда.",
@@ -785,5 +794,12 @@
   "view.codeCopy.failed": "Не удалось скопировать",
   "view.codeCopy.tooltip": "Копировать код",
   "view.dropOverlay.message": "Перетащите файл сюда, чтобы открыть",
-  "view.toc.title": "Оглавление"
+  "view.toc.title": "Оглавление",
+  "wikilinks.backlinks.empty": "Нет обратных ссылок",
+  "wikilinks.backlinks.header": "Ссылки на это ({count})",
+  "wikilinks.backlinks.truncated": "Список усечён",
+  "wikilinks.createDialog.noDocument": "Документ не открыт — нельзя создать заметку.",
+  "wikilinks.createDialog.submit.action": "Создать",
+  "wikilinks.createDialog.subtitle": "Целевая папка: {dir}",
+  "wikilinks.createDialog.title": "Создать заметку?"
 }

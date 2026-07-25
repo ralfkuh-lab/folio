@@ -407,6 +407,39 @@ mod tests {
     }
 
     #[test]
+    fn open_with_anchor_creates_exactly_one_history_entry() {
+        // Review codex #8 / kimi #3: der new-tab-Pfad
+        // (`tabs::open_with_anchor`) reicht den Anker direkt in die
+        // Options durch. Frueher entstand erst `(path, None)` und danach
+        // per zweitem `navigate` `(path, Some(anchor))` — ein toter
+        // Zurueck-Schritt auf dieselbe Datei.
+        let temp = TempDir::new().unwrap();
+        let path = write_doc(&temp, "guide.md", "# Install\n");
+        let (tabs, vault) = make_components();
+
+        let outcome = open_inner(
+            &tabs,
+            &vault,
+            None,
+            path.clone(),
+            OpenDocumentOptions {
+                anchor: Some("install".into()),
+                reload: ReloadPolicy::Always,
+                dirty: DirtyPolicy::Discard,
+                apply_default_mode: true,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(Some("install"), outcome.nav_entry.anchor.as_deref());
+        let tabs = tabs.lock().unwrap();
+        let nav = &tabs.active().navigation;
+        assert_eq!(1, nav.history().len(), "{:?}", nav.history());
+        assert!(!nav.can_go_back(), "kein Phantom-Eintrag davor");
+        assert_eq!(Some("install"), nav.current().unwrap().anchor.as_deref());
+    }
+
+    #[test]
     fn open_skips_load_on_same_path_with_if_path_changed() {
         let temp = TempDir::new().unwrap();
         let path = write_doc(&temp, "a.md", "hello");

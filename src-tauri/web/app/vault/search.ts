@@ -1501,8 +1501,14 @@ function wireDialog(): void {
 
 /** Öffnet den Such-Dialog (Strg+Shift+F, Menü, Summary-Klick, Kontextmenü).
  *  Idempotent: erneutes Öffnen re-populiert nur die Felder und fokussiert das
- *  Query-Feld — kein doppeltes Wiring, laufender Lauf bleibt. */
-export function openVaultSearchDialog(opts?: { folder?: string }): void {
+ *  Query-Feld — kein doppeltes Wiring, laufender Lauf bleibt.
+ *
+ *  `prefillQuery`: setzt nur den Draft-Query (kein Auto-Submit) — z. B.
+ *  Tag-Browser „In Dateien suchen" mit `#tag`. */
+export function openVaultSearchDialog(opts?: {
+    folder?: string;
+    prefillQuery?: string;
+}): void {
     const dlg = $('vault-search-dialog');
     if (!dlg) return;
     let preselect: ScopeMode | undefined;
@@ -1514,6 +1520,9 @@ export function openVaultSearchDialog(opts?: { folder?: string }): void {
     }
     if (dialogOpen) {
         populateDialog(preselect);
+        if (opts && typeof opts.prefillQuery === 'string') {
+            applyPrefillQuery(opts.prefillQuery);
+        }
         clearDialogError();
         focusDialogQuery();
         return;
@@ -1521,10 +1530,18 @@ export function openVaultSearchDialog(opts?: { folder?: string }): void {
     dialogOpen = true;
     dialogPrevFocus = document.activeElement as HTMLElement | null;
     populateDialog(preselect);
+    if (opts && typeof opts.prefillQuery === 'string') {
+        applyPrefillQuery(opts.prefillQuery);
+    }
     clearDialogError();
     dlg.hidden = false;
     wireDialog();
     focusDialogQuery();
+}
+
+function applyPrefillQuery(query: string): void {
+    const input = $('vsd-query') as HTMLInputElement | null;
+    if (input) input.value = query;
 }
 
 /** Kontextmenü „In diesem Ordner suchen": Folder-Draft setzen und den Dialog

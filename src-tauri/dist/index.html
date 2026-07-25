@@ -111,6 +111,18 @@
     </div>
   </div>
   <ul id="vault-tree" class="tree"></ul>
+  <section class="vault-tags-section collapsed" id="vault-tags-section" data-section="tags">
+    <header class="vault-tags-header" id="vault-tags-header" role="button" tabindex="0" aria-expanded="false">
+      <span class="vault-tags-caret" id="vault-tags-caret" aria-hidden="true">▾</span>
+      <span class="vault-tags-title" id="vault-tags-title" data-i18n="vault.tags.section">Tags</span>
+      <button type="button" class="vault-tags-refresh" id="vault-tags-refresh" title="Tags aktualisieren" data-i18n-title="vault.tags.refresh.tooltip" aria-label="Tags aktualisieren" data-i18n-aria-label="vault.tags.refresh.ariaLabel">&#x21BB;</button>
+    </header>
+    <div class="vault-tags-body" id="vault-tags-body">
+      <div class="vault-tags-empty" id="vault-tags-empty" data-i18n="vault.tags.empty">Keine Tags</div>
+      <ul class="vault-tags-list" id="vault-tags-list" hidden></ul>
+      <div class="vault-tags-truncated" id="vault-tags-truncated" hidden data-i18n="vault.tags.truncated">Liste gekürzt</div>
+    </div>
+  </section>
   <div class="vault-search-results" id="vault-search-results" hidden>
     <div class="vault-search-results-head" id="vault-search-results-head">
       <button type="button" id="vault-search-sort" class="vs-head-btn vs-sort-btn"><span class="vs-head-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h9M3 8h6M3 12h3"/></svg></span><span class="vs-sort-label" id="vault-search-sort-label" aria-hidden="true"></span></button>
@@ -514,6 +526,16 @@
 <aside class="toc-region" id="toc-region">
 <header class="toc-header" data-i18n="view.toc.title">Inhaltsverzeichnis</header>
 <ul class="toc"></ul>
+<section class="backlinks-section" id="backlinks-section">
+  <header class="backlinks-header" id="backlinks-header" role="button" tabindex="0" aria-expanded="true">
+    <span class="backlinks-caret" id="backlinks-caret" aria-hidden="true">▾</span>
+    <span class="backlinks-title" id="backlinks-title">Verlinkt von (0)</span>
+  </header>
+  <div class="backlinks-body" id="backlinks-body">
+    <div class="backlinks-empty" id="backlinks-empty" data-i18n="wikilinks.backlinks.empty">Keine Backlinks</div>
+    <ul class="backlinks-list" id="backlinks-list" hidden></ul>
+  </div>
+</section>
 </aside>
 <footer class="statusbar" id="statusbar">
   <span class="status-path" id="status-path" data-i18n="statusBar.ready">Bereit</span>
@@ -547,6 +569,7 @@
     <div class="unsaved-dialog__title" id="rename-title" data-i18n="dialogs.rename.title">Umbenennen</div>
     <div class="unsaved-dialog__text" id="rename-subtitle" data-i18n="dialogs.rename.prompt">Neuen Dateinamen eingeben:</div>
     <input type="text" id="rename-input" class="rename-input" autocomplete="off" spellcheck="false" />
+    <div class="dialog-error" id="rename-error" hidden></div>
     <div class="unsaved-dialog__actions">
       <button type="button" id="rename-cancel" data-i18n="dialogs.common.cancel">Abbrechen</button>
       <button type="button" id="rename-ok" class="primary" data-i18n="dialogs.rename.submit.action">Umbenennen</button>

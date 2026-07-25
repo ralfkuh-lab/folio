@@ -1,11 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { installTauriMock } from '../helpers';
+
+const { handleFolioNewClick } = vi.hoisted(() => ({
+    handleFolioNewClick: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../../app/view/wikilink-create', async () => {
+    const actual = await vi.importActual<typeof import('../../app/view/wikilink-create')>(
+        '../../app/view/wikilink-create',
+    );
+    return {
+        ...actual,
+        handleFolioNewClick: (...args: unknown[]) => handleFolioNewClick(...args),
+    };
+});
+
 import { initMarkdownView } from '../../app/view/markdown';
 
-function renderMarkdownShell(): HTMLAnchorElement {
+function renderMarkdownShell(href = 'target.md'): HTMLAnchorElement {
     document.body.innerHTML = `
         <main id="view-content">
-            <p><a href="target.md">Target</a></p>
+            <p><a href="${href}">Target</a></p>
             <button id="outside">Outside</button>
         </main>
         <aside id="toc-region"><ul class="toc"></ul></aside>
@@ -20,7 +35,8 @@ async function flushPromises(): Promise<void> {
 
 describe('view/markdown links', () => {
     beforeEach(() => {
-        vi.restoreAllMocks();
+        vi.clearAllMocks();
+        handleFolioNewClick.mockResolvedValue(undefined);
         installTauriMock();
     });
 
@@ -103,5 +119,44 @@ describe('view/markdown links', () => {
         );
 
         expect(window.__TAURI__!.event.emit).not.toHaveBeenCalled();
+    });
+
+    it('intercepts folio-new: clicks in the frontend (no shell:event)', async () => {
+        const link = renderMarkdownShell('folio-new:Missing%20Note');
+        const requestSaveIfDirty = vi.fn().mockResolvedValue(true);
+        initMarkdownView({ requestSaveIfDirty });
+
+        link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        await flushPromises();
+
+        expect(handleFolioNewClick).toHaveBeenCalledWith('folio-new:Missing%20Note');
+        expect(requestSaveIfDirty).not.toHaveBeenCalled();
+        expect(window.__TAURI__!.event.emit).not.toHaveBeenCalled();
+    });
+
+    it('intercepts folio-new: middle-clicks without newTab backend path', () => {
+        const link = renderMarkdownShell('folio-new:X');
+        initMarkdownView({ requestSaveIfDirty: vi.fn().mockResolvedValue(true) });
+
+        link.dispatchEvent(
+            new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 }),
+        );
+
+        expect(handleFolioNewClick).toHaveBeenCalledWith('folio-new:X');
+        expect(window.__TAURI__!.event.emit).not.toHaveBeenCalled();
+    });
+
+    it('does not treat resolved relative links as folio-new', async () => {
+        const link = renderMarkdownShell('other.md#heading');
+        initMarkdownView({ requestSaveIfDirty: vi.fn().mockResolvedValue(true) });
+        link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        await flushPromises();
+
+        expect(handleFolioNewClick).not.toHaveBeenCalled();
+        expect(window.__TAURI__!.event.emit).toHaveBeenCalledWith('shell:event', {
+            type: 'linkClick',
+            href: 'other.md#heading',
+            newTab: false,
+        });
     });
 });
