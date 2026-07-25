@@ -320,7 +320,7 @@ async function provideFiles(
     _model: any,
     position: { lineNumber: number; column: number },
     ctx: Extract<WikilinkPrefix, { mode: 'file' }>,
-): Promise<{ suggestions: any[] }> {
+): Promise<{ suggestions: any[]; incomplete?: boolean }> {
     let files: WikilinkCandidate[] = [];
     try {
         files = await loadCandidates();
@@ -328,6 +328,11 @@ async function provideFiles(
         return { suggestions: [] };
     }
     const filtered = filterPaletteFiles(files, ctx.query, ctx.embed);
+    // Cap erreicht → Liste ist unvollständig. Ohne `incomplete: true`
+    // filtert Monaco beim Weitertippen nur clientseitig in dieser
+    // Teilmenge und ruft den Provider nie erneut auf — Treffer außerhalb
+    // der ersten 50 (z. B. eine weitere README.md) blieben unsichtbar.
+    const incomplete = filtered.length >= SUGGESTION_CAP;
     const range = {
         startLineNumber: position.lineNumber,
         // Monaco columns are 1-based; rangeStart is 0-based index in line.
@@ -342,15 +347,19 @@ async function provideFiles(
         const insertText = (f as WikilinkCandidate).insert
             || chooseInsertText(f, files.filter((x) => x.kind === 'markdown' || isMarkdownFileName(x.name)));
         return {
-            label: f.name,
+            // Pfad als `description` → sichtbar in JEDER Listenzeile
+            // (Monaco-`detail` erscheint nur beim markierten Eintrag).
+            label: { label: f.name, description: f.relative || '' },
             kind: FileKind,
-            detail: f.relative || f.path,
+            detail: f.path,
+            // Pfad + insert mit matchen lassen, damit `[[docs/re` trifft.
+            filterText: f.name + ' ' + (f.relative || '') + ' ' + insertText,
             insertText,
             range,
             sortText: String(i).padStart(5, '0'),
         };
     });
-    return { suggestions };
+    return { suggestions, incomplete };
 }
 
 async function provideHeadings(
