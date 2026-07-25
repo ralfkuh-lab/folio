@@ -136,7 +136,14 @@ geantwortet hat. Es gibt nicht für jeden Pfad einen passenden
 
 **Workaround in Tests:** Kurzes Polling auf den erwarteten Zustand
 (`/state`, `/dom`, `/editor/text`) mit ~2 s Timeout und 50–100 ms
-Intervall. Helper-Funktion `_poll_state` / `_poll_text` etc. sind in
+Intervall.
+
+**Achtung `/dom`-`timeoutMs`:** Der Parameter begrenzt nur das Warten
+auf die Snapshot-Antwort des Frontends (Event-Roundtrip), er wartet
+NICHT auf das Erscheinen des Selektors — ein nicht existentes Element
+kommt sofort als `exists: false` zurück. Wer auf ein verzögert
+gerendertes Element wartet (z. B. Mermaid-Lazy-Bundle), braucht einen
+eigenen Retry-Poll im Szenario (Befund `42_mermaid`-Flake 2026-07-25). Helper-Funktion `_poll_state` / `_poll_text` etc. sind in
 mehreren Phase-1+-Szenarien dupliziert; eine zentrale Helper-Lib wäre
 für eine spätere Refactoring-Pass sinnvoll.
 

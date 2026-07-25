@@ -22,10 +22,21 @@ def run(ctx):
         bodyCls = ((ctx.api.dom("body").get("attributes") or {}).get("class") or "")
         ctx.expect("kind-markdown" in bodyCls, f"body.class={bodyCls!r}")
 
-    with ctx.step("mermaid-diagram svg vorhanden (via /dom)"):
-        # Erster Lazy-Load des 3.3MB-Bundles kann unter Xvfb >1s dauern.
-        d = ctx.api.dom(".markdown-body .mermaid-diagram svg", timeout_ms=5000)
-        ctx.expect(d.get("exists") is True, f"mermaid svg nicht gefunden: {d}")
+    with ctx.step("mermaid-diagram svg vorhanden (via /dom, Bundle-Ready-Poll)"):
+        # Erster Lazy-Load des 3.3MB-Bundles kann unter Xvfb-Last mehrere
+        # Sekunden dauern. ACHTUNG: /dom-timeoutMs wartet nur auf die
+        # Snapshot-Antwort des Frontends, NICHT auf das Erscheinen des
+        # Selektors — deshalb hier ein echter Retry-Poll (TODO-Eintrag
+        # "42_mermaid flaky", ausgeloest 2026-07-25).
+        import time
+        deadline = time.monotonic() + 15.0
+        d = {}
+        while time.monotonic() < deadline:
+            d = ctx.api.dom(".markdown-body .mermaid-diagram svg")
+            if d.get("exists") is True:
+                break
+            time.sleep(0.5)
+        ctx.expect(d.get("exists") is True, f"mermaid svg nicht gefunden (15s-Poll): {d}")
 
     with ctx.step("Rust-Fence bleibt pre code.language-rust (kein Mermaid)"):
         r = ctx.api.dom(".markdown-body pre code.language-rust")
@@ -36,8 +47,17 @@ def run(ctx):
         # bewusst als pre stehen und traegt einen .mermaid-error-Hinweis.
         mpre = ctx.api.dom(".markdown-body pre code.language-mermaid")
         ctx.expect(mpre.get("exists") is True, "kaputter mermaid-Block sollte als pre bleiben")
-        merr = ctx.api.dom(".markdown-body .mermaid-error", timeout_ms=3000)
-        ctx.expect(merr.get("exists") is True, f"mermaid-error-Hinweis fehlt: {merr}")
+        # Gleicher Poll wie beim svg — der Error-Hinweis entsteht im selben
+        # Render-Durchlauf, kann aber einen Tick spaeter im DOM sein.
+        import time
+        deadline = time.monotonic() + 5.0
+        merr = {}
+        while time.monotonic() < deadline:
+            merr = ctx.api.dom(".markdown-body .mermaid-error")
+            if merr.get("exists") is True:
+                break
+            time.sleep(0.5)
+        ctx.expect(merr.get("exists") is True, f"mermaid-error-Hinweis fehlt (5s-Poll): {merr}")
 
     with ctx.step("console.errors leer"):
         errs = ctx.api.console_errors(clear=False)

@@ -2,13 +2,15 @@
 
 ## Mittlere Priorität
 
-- **E2E `42_mermaid` flaky — Beobachtung** (erstmals 2026-07-21 im
-  Voll-Lauf: „mermaid svg nicht gefunden", exists=false): im
-  Wiederholungs-Voll-Lauf und 3x Einzellauf direkt danach grün.
-  Mermaid rendert per Lazy-Bundle-Script-Injection beim ersten
-  Vorkommen — vermutlich Timing beim Bundle-Load unter Xvfb-Last.
-  Bei erneutem Auftreten: Warte-/Retry-Pfad im Szenario um
-  Bundle-Ready-Poll ergänzen statt fixem Timeout.
+- **E2E `42_mermaid` flaky — Fix 2026-07-25, Beobachtung**: erneut
+  aufgetreten (2026-07-21 + 2026-07-25, „mermaid svg nicht gefunden").
+  Ursache verstanden: `/dom`-`timeoutMs` wartet nur auf die
+  Snapshot-Antwort des Frontends, NICHT auf das Erscheinen des
+  Selektors — das vermeintliche 5-s-Fenster war wirkungslos, der
+  Lazy-Bundle-Load (3,3 MB) unter Xvfb-Last verlor das Rennen. Fix:
+  echter Retry-Poll (15 s svg / 5 s error-Hinweis) im Szenario;
+  Voll-Lauf danach 2x grün. Bei erneutem Auftreten trotz Poll →
+  Bundle-Load selbst untersuchen (Script-Injection-Fehlerpfad).
 
 - **E2E `30_tabs_ui` flaky — Fix 2026-07-09, Beobachtung offen**: dreimal
   im Voll-Lauf gefailt („Undo-Stack hat den Tab-Wechsel nicht ueberlebt",
