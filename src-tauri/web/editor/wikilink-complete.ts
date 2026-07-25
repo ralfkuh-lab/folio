@@ -118,14 +118,45 @@ export function chooseInsertText(entry: PaletteFile, mdFiles: PaletteFile[]): st
     return stripMdExtension(entry.relative.replace(/\\/g, '/'));
 }
 
-/** Filtert Kandidaten für den aktuellen Prefix (md; Bilder nur bei embed). */
+/** Verzeichnis eines absoluten Pfads (POSIX-normalisiert), '' ohne '/'. */
+function dirOf(path: string): string {
+    const norm = (path || '').replace(/\\/g, '/');
+    const i = norm.lastIndexOf('/');
+    return i < 0 ? '' : norm.slice(0, i);
+}
+
+/**
+ * Proximity-Rang eines Kandidaten relativ zum aktuellen Dokument:
+ * `[hoch, runter]` = Komponenten, die man vom Dokument-Verzeichnis
+ * aufwärts bzw. danach abwärts gehen muss. Gleiche Ablage = [0,0],
+ * Unterordner = [0,n], Elternordner schlägt Geschwisterordner.
+ * Exportiert für Tests.
+ */
+export function proximityRank(candidatePath: string, currentDocPath: string): [number, number] {
+    const docDir = dirOf(currentDocPath);
+    const candDir = dirOf(candidatePath);
+    if (!docDir) return [0, 0];
+    const a = docDir.toLowerCase().split('/');
+    const b = candDir.toLowerCase().split('/');
+    let common = 0;
+    while (common < a.length && common < b.length && a[common] === b[common]) common += 1;
+    return [a.length - common, b.length - common];
+}
+
+/**
+ * Filtert Kandidaten für den aktuellen Prefix (md; Bilder nur bei embed)
+ * und sortiert sie VOR dem 50er-Cap nach Nähe zum aktuellen Dokument
+ * (gleiches Verzeichnis > darunter > nächstgelegene Nachbarn), Tiebreak
+ * alphabetisch nach relative — sonst schnitte der Cap nahe Treffer ab.
+ */
 export function filterPaletteFiles(
     files: Array<PaletteFile | WikilinkCandidate>,
     query: string,
     embed: boolean,
+    currentDocPath?: string | null,
 ): Array<PaletteFile | WikilinkCandidate> {
     const q = (query || '').toLowerCase();
-    const out: Array<PaletteFile | WikilinkCandidate> = [];
+    const matches: Array<PaletteFile | WikilinkCandidate> = [];
     for (const f of files) {
         const kind = (f as WikilinkCandidate).kind;
         const isMd = kind === 'markdown' || (!kind && isMarkdownFileName(f.name));
@@ -150,10 +181,20 @@ export function filterPaletteFiles(
                 continue;
             }
         }
-        out.push(f);
-        if (out.length >= SUGGESTION_CAP) break;
+        matches.push(f);
     }
-    return out;
+    if (currentDocPath) {
+        const ranks = new Map<PaletteFile | WikilinkCandidate, [number, number]>();
+        for (const f of matches) ranks.set(f, proximityRank(f.path, currentDocPath));
+        matches.sort((x, y) => {
+            const rx = ranks.get(x)!;
+            const ry = ranks.get(y)!;
+            if (rx[0] !== ry[0]) return rx[0] - ry[0];
+            if (rx[1] !== ry[1]) return rx[1] - ry[1];
+            return (x.relative || '').toLowerCase().localeCompare((y.relative || '').toLowerCase());
+        });
+    }
+    return matches.slice(0, SUGGESTION_CAP);
 }
 
 export function filterHeadings(
@@ -327,7 +368,7 @@ async function provideFiles(
     } catch {
         return { suggestions: [] };
     }
-    const filtered = filterPaletteFiles(files, ctx.query, ctx.embed);
+    const filtered = filterPaletteFiles(files, ctx.query, ctx.embed, currentDocumentPath());
     // Cap erreicht → Liste ist unvollständig. Ohne `incomplete: true`
     // filtert Monaco beim Weitertippen nur clientseitig in dieser
     // Teilmenge und ruft den Provider nie erneut auf — Treffer außerhalb

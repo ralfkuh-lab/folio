@@ -9,6 +9,7 @@ import {
     isInUnclosedInlineCode,
     isMarkdownFileName,
     parseWikilinkPrefix,
+    proximityRank,
     shouldSuppressWikilinkComplete,
     stripMdExtension,
     type PaletteFile,
@@ -142,6 +143,39 @@ describe('filterPaletteFiles', () => {
         const emb = filterPaletteFiles(candidates, '', true);
         expect(emb.some((f) => (f as WikilinkCandidate).kind === 'image')).toBe(true);
         expect(emb.some((f) => (f as WikilinkCandidate).kind === 'text')).toBe(false);
+    });
+
+    it('ranks candidates by proximity to the current document', () => {
+        const mk = (path: string, relative: string): PaletteFile => ({
+            path,
+            name: path.slice(path.lastIndexOf('/') + 1),
+            relative,
+        });
+        const set = [
+            mk('/v/other/README.md', 'other/README.md'),
+            mk('/v/docs/sub/README.md', 'docs/sub/README.md'),
+            mk('/v/README.md', 'README.md'),
+            mk('/v/docs/README.md', 'docs/README.md'),
+        ];
+        const r = filterPaletteFiles(set, 'readme', false, '/v/docs/CLAUDE.md');
+        expect(r.map((f) => f.relative)).toEqual([
+            'docs/README.md',      // gleiches Verzeichnis
+            'docs/sub/README.md',  // darunter
+            'README.md',           // Elternordner
+            'other/README.md',     // Geschwisterzweig
+        ]);
+    });
+
+    it('proximityRank orders parent before sibling directory', () => {
+        expect(proximityRank('/v/docs/A.md', '/v/docs/B.md')).toEqual([0, 0]);
+        expect(proximityRank('/v/docs/sub/A.md', '/v/docs/B.md')).toEqual([0, 1]);
+        expect(proximityRank('/v/A.md', '/v/docs/B.md')).toEqual([1, 0]);
+        expect(proximityRank('/v/other/A.md', '/v/docs/B.md')).toEqual([1, 1]);
+    });
+
+    it('keeps alphabetical order without a current document', () => {
+        const r = filterPaletteFiles(files, '', false);
+        expect(r.map((f) => f.name)).toEqual(files.filter((f) => isMarkdownFileName(f.name)).map((f) => f.name));
     });
 });
 
