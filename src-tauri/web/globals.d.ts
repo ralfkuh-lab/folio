@@ -29,6 +29,8 @@ interface FolioEditorSurface {
     layout(): void;
     focus(): void;
     applyReplace(args: { fullText: string; selectionStart: number; selectionLength: number }): void;
+    /** Opens Monaco suggest (used after inserting empty `[[]]` for wikilink autocomplete). */
+    triggerSuggest(): void;
     openFind(initialTerm?: string): void;
     closeFind(): void;
     setFindOptions(opts: Record<string, unknown>): void;

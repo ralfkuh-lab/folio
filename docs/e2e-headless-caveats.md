@@ -158,6 +158,25 @@ auf Y-Channel) und einen `threshold_ratio` (Default 1 % der Pixel
 dürfen abweichen). Beides ist pro Aufruf von `ctx.screenshot(…)`
 übersteuerbar.
 
+**Größenordnungen** (gemessen 2026-07-26, 1280×800): das reine
+Xvfb-Rauschen liegt bei **0,05–0,18 %** — ein View-Mode-Screenshot ohne
+jede Änderung erreicht schon 0,18 %. Die 1 %-Schwelle ist damit
+großzügig: ein **zusätzlicher Toolbar-Button** (`tb-wikilink` zwischen
+🔗 und 🖼, verschiebt alle Buttons rechts davon) hob den Wert nur von
+0,18 % auf **0,30 %** und lief in allen Szenarien grün durch.
+
+**Konsequenz — grün heißt nicht „Baseline aktuell":** gewollte
+Layout-Änderungen in Toolbar/Rails müssen trotzdem per
+`--update-baselines` nachgezogen werden, auch wenn nichts failt. Sonst
+zeigen die Baselines dauerhaft einen veralteten Stand und der
+Toleranzpuffer wird schleichend verbraucht, bis eine echte Regression im
+selben Bereich nicht mehr auffällt. Wer wissen will, welche Baselines
+eine UI-Änderung wirklich enthalten, vergleicht gezielt den betroffenen
+Streifen (z. B. Toolbar y=36..72) statt des Gesamtbildes — dort schlägt
+ein neuer Button mit 2,7–3,4 % durch und ist klar von Rauschen (0,0 %)
+unterscheidbar. Bei dunklerem Hintergrund fällt der Wert höher aus
+(mehr Kontrast über `diff_threshold`), das ist kein zweiter Effekt.
+
 ## 11. Erster Lauf: Auto-Baseline-Erstellung
 
 Wenn eine Baseline-PNG für ein Szenario noch nicht existiert,

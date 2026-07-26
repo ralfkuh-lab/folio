@@ -287,3 +287,14 @@ export function redo(): void {
     editor.focus();
     editor.trigger('menu', 'redo', null);
 }
+
+/** Opens Monaco's suggest widget on the main editor (e.g. after inserting `[[`). */
+export function triggerSuggest(): void {
+    const editor = getEditor();
+    if (!editor) {
+        deferUntilMounted(() => triggerSuggest());
+        return;
+    }
+    editor.focus();
+    editor.trigger('folio', 'editor.action.triggerSuggest', null);
+}

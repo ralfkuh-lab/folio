@@ -19,6 +19,8 @@ export function getCheatSheetRows(): Array<[string, string]> {
         [t('cheatsheet.inlineCode.label'),    '`code`'],
         [t('cheatsheet.codeBlock.label'),     '```codeblock```'],
         [t('cheatsheet.link.label'),          '[Text](https://…)'],
+        [t('cheatsheet.wikilink.label'),      '[[Notiz]]   [[Notiz|Text]]   ![[bild.png]]'],
+        [t('cheatsheet.tag.label'),           '#projekt/idee'],
         [t('cheatsheet.image.label'),         '![alt](pfad.png)'],
         [t('cheatsheet.bulletList.label'),    '- Item   * Item'],
         [t('cheatsheet.orderedList.label'),   '1. Item'],

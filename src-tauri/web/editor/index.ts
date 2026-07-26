@@ -10,7 +10,7 @@
 //   Inbound (window.FolioEditor.*):
 //     mount, setText, getText, getSelection, setSelection, getScroll,
 //     setScroll, getCursorLine, revealLineNearTop, revealLineFractionNearTop,
-//     applyReplace, focus, layout, setTheme,
+//     applyReplace, focus, layout, setTheme, triggerSuggest,
 //     undo, redo, getLanguage, setLanguage, listLanguages,
 //     openFind, closeFind, setFindOptions, setFindTerm, findNext, findPrev
 //
@@ -54,6 +54,7 @@ import {
     setLanguage,
     setScroll,
     setSelection,
+    triggerSuggest,
     undo,
 } from './text';
 import * as codeView from './view-code';
@@ -79,6 +80,7 @@ import * as diffView from './diff-view';
     applyReplace,
     focus,
     insertText,
+    triggerSuggest,
     undo,
     redo,
     setTheme,

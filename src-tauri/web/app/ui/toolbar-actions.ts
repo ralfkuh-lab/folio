@@ -16,6 +16,7 @@ import { openImageDialog } from './image-dialog';
 import { openTranslateDialog } from './translate-dialog';
 import { showCheatSheet, hideCheatSheet, getCheatSheetRows } from './cheatsheet';
 import { folioLog, safeInvoke } from '../util/log';
+import { computeWikilinkEdit } from '../util/wikilink-edit';
 import { togglePalette } from './command-palette';
 
 export function initToolbarActions(): void {
@@ -109,12 +110,32 @@ export function initToolbarActions(): void {
             folioLog.warn('editor', 'apply_editor_command failed', { command: name, error: String(err) });
         });
     }
+
+    /** Insert empty `[[]]` (cursor inside + suggest) or wrap selection as `[[sel]]`. */
+    function insertWikilink(): void {
+        if (!window.FolioEditor || typeof window.FolioEditor.getText !== 'function') return;
+        var sel = window.FolioEditor.getSelection() || { start: 0, length: 0 };
+        var edit = computeWikilinkEdit(window.FolioEditor.getText(), sel.start || 0, sel.length || 0);
+        window.FolioEditor.applyReplace({
+            fullText: edit.fullText,
+            selectionStart: edit.selectionStart,
+            selectionLength: edit.selectionLength,
+        });
+        if (edit.suggest && typeof window.FolioEditor.triggerSuggest === 'function') {
+            window.FolioEditor.triggerSuggest();
+        }
+    }
     bind('tb-bold',      function () { applyCmd('bold'); });
     bind('tb-italic',    function () { applyCmd('italic'); });
     bind('tb-heading',   function () { applyCmd('heading'); });
     bind('tb-bullet',    function () { applyCmd('bullet'); });
     bind('tb-numbered',  function () { applyCmd('numbered'); });
     bind('tb-link',      function () { applyCmd('link'); });
+    // tb-wikilink: reiner Frontend-Pfad. insert `[[]]` + triggerSuggest
+    // (bzw. Wrap der Selektion) braucht Monaco-Commands; ein Backend-
+    // Roundtrip ueber apply_editor_command waere umstaendlich und koennte
+    // den Suggest-Trigger nicht mitliefern.
+    bind('tb-wikilink',  function () { insertWikilink(); });
     // tb-image faehrt einen eigenen Pfad: Dialog mit Clipboard-/Datei-
     // Auswahl, dann Schreiben + relativer Tag-Insert. Anders als die
     // anderen Inline-Commands laeuft das nicht ueber apply_editor_command.
@@ -315,7 +336,7 @@ export function initToolbarActions(): void {
     const CURSOR_CMD_IDS = [
         'tb-bold', 'tb-italic', 'tb-strike',
         'tb-heading', 'tb-bullet', 'tb-numbered',
-        'tb-link', 'tb-image', 'tb-table', 'tb-code', 'tb-codeblock',
+        'tb-link', 'tb-wikilink', 'tb-image', 'tb-table', 'tb-code', 'tb-codeblock',
     ];
     function updateEditorFocusClass(): void {
         const mount = document.getElementById('editor-mount');

@@ -1164,6 +1164,31 @@ mod tests {
         assert!(html.contains("[[Foo]]"), "{html}");
     }
 
+    /// GFM-Tabelle mit Alias-Wikilink und escaped Pipe in der Zelle.
+    /// comrak mit `wikilinks_title_after_pipe`: Ziel `Notiz`, Linktext `Text`.
+    /// (Charakterisierender Regressionsschutz — kein Renderer-Workaround.)
+    #[test]
+    fn render_body_table_cell_wikilink_with_escaped_pipe_alias() {
+        let md = "| Spalte |\n|---|\n| [[Notiz\\|Text]] |\n";
+        let html = render_body(md);
+        assert!(
+            html.contains(r#"data-wikilink="true""#),
+            "expected wikilink markup, got: {html}"
+        );
+        assert!(
+            html.contains(r#"class="wikilink-missing""#),
+            "expected missing class, got: {html}"
+        );
+        assert!(
+            html.contains(r#"href="folio-new:Notiz""#),
+            "expected target Notiz, got: {html}"
+        );
+        assert!(
+            html.contains(">Text<"),
+            "expected link text Text, got: {html}"
+        );
+    }
+
     #[test]
     fn collect_mermaid_sources_strips_frontmatter() {
         let md = "---\ntitle: X\n---\n\n```mermaid\ngraph\n```\n";
