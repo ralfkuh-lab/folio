@@ -95,6 +95,32 @@ _(leer)_
 
 ## Niedrige Priorität
 
+- **Wikilink-Index: Invalidierung statt kurzem TTL** (Diskussion
+  2026-07-26, noch nicht entschieden): Der Index-Cache hat einen
+  TTL-Fallback von 30 s. Explizit invalidiert wird ohnehin bei Pin-
+  Änderung, `create_file`, Rename, Delete, Save-neuer-Datei und
+  `vault:dir_changed`; der TTL fängt nur, was der Watcher strukturell
+  nicht sieht — er beobachtet ausschließlich **aufgeklappte** Ordner
+  (NonRecursive pro expanded dir). Unsichtbar bleiben also `git pull`,
+  externe Editoren und zugeklappte Zweige.
+  **Warum 30 s trotzdem stören können**: ein Wikilink auf eine extern
+  angelegte Datei rendert bis zum Rebuild als `wikilink-missing`, und
+  ein Klick bietet den „Notiz anlegen?"-Dialog für eine bereits
+  existierende Datei an — das ist der unangenehme Fall, nicht die
+  fehlende Verlinkung.
+  **Warum 30 s billig sind**: der Rebuild ist ein reiner Verzeichnis-
+  Walk über die Pins (gitignore-gefiltert, liest KEINE Dateiinhalte)
+  und läuft seit dem Kreuz-Review 2026-07-25 stale-while-revalidate,
+  blockiert also den Render-Hot-Path nicht.
+  **Vorschlag**: erst die reale Rebuild-Dauer messen — der Index-Build
+  loggt sie bereits per `tracing::debug!` (`target: folio::wikilink`).
+  Liegt sie im einstelligen Millisekundenbereich, alles lassen. Sonst
+  TTL auf ~5 min hoch **plus** Invalidierung bei Fenster-Fokus (der
+  Moment, in dem externe Änderungen typischerweise passiert sind).
+  **Nicht** rekursive Watcher auf die Pin-Wurzeln: läuft auf Linux bei
+  mehreren Projektverzeichnissen gegen `fs.inotify.max_user_watches`
+  und scheitert dann still.
+
 - **Frontmatter-`aliases`** (Obsidian-Feature, Design 2026-07-26
   durchdacht — Umsetzung bewusst zurückgestellt): `aliases: [Zweitname]`
   in der YAML-Frontmatter macht eine Notiz unter weiteren Namen
