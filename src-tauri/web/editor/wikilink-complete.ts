@@ -269,7 +269,7 @@ export function shouldSuppressWikilinkComplete(
 // ----- Provider / Cache (Monaco) ------------------------------------------
 
 let registered = false;
-let candidateCache: { at: number; files: WikilinkCandidate[] } | null = null;
+let candidateCache: { at: number; path: string | null; files: WikilinkCandidate[] } | null = null;
 
 function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
     const core = window.__TAURI__ && window.__TAURI__.core;
@@ -281,12 +281,19 @@ function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T>
 
 async function loadCandidates(): Promise<WikilinkCandidate[]> {
     const now = Date.now();
-    if (candidateCache && now - candidateCache.at < PALETTE_CACHE_MS) {
+    const currentPath = currentDocumentPath();
+    if (
+        candidateCache
+        && now - candidateCache.at < PALETTE_CACHE_MS
+        && candidateCache.path === currentPath
+    ) {
         return candidateCache.files;
     }
-    const res = await tauriInvoke<WikilinkCandidate[]>('wikilink_candidates');
+    // W7: currentPath steuert lokalitätsbewusste Insert-Verkürzung.
+    const args = currentPath ? { currentPath } : {};
+    const res = await tauriInvoke<WikilinkCandidate[]>('wikilink_candidates', args);
     const files = Array.isArray(res) ? res : [];
-    candidateCache = { at: now, files };
+    candidateCache = { at: now, path: currentPath, files };
     return files;
 }
 

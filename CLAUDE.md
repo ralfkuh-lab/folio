@@ -408,10 +408,14 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   (ohne Dialog-Kontext) bleibt Code-Block. `renderMermaidBlocks` wird parallel
   zu `highlightCodeBlocks` an denselben Stellen gerufen.
 - **Wikilinks + Tags** (Spec [`docs/spec-wikilinks.md`](docs/spec-wikilinks.md),
-  W1–W6): Obsidian-kompatible `[[Name]]`/`[[Name|Alias]]`/`[[Name#H]]`/
+  W1–W7): Obsidian-kompatible `[[Name]]`/`[[Name|Alias]]`/`[[Name#H]]`/
   `![[bild.png]]` in View/Split/Live-Preview/Export. Kern `wikilink.rs`
   (Index über Vault-Pins wie Suche, TTL 30 s + Invalidierung bei Pin/
   create/rename/delete/save_as/Watcher; `WikilinkContext` im Render).
+  **Auflösung (W7)**: `resolve_name_from(name, context)` mit Lokalitäts-
+  Rangfolge gleiches Verzeichnis → gleicher Pin-Root (längster Root) →
+  Rest; `resolve_name` bleibt kontextfrei. Render nutzt `current_doc`,
+  Backlink-Scan die **Quelldatei**, Heading-Complete `current_path`.
   Missing → `folio-new:`-Href + Klasse `wikilink-missing` (App: Anlegen-
   Dialog W2); Export ersetzt das Schema durch `href="#"` (`sanitize_
   export_missing_hrefs`, Styles in `layouts/base.css`). CSS-Klassen:
@@ -419,8 +423,8 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   Backlinks: Command `backlinks_for` + `#backlinks-section` unter TOC
   (debounced refresh). `[[`-Autocomplete im editor-Bundle
   (`wikilink-complete.ts`, `wikilink_candidates` [Index-Scope,
-  backend-disambiguierter insert] + `wikilink_headings`;
-  Fence-/Inline-Code-Gate).
+  optional `currentPath`, lokalitätsbewusst verkürzter insert] +
+  `wikilink_headings`; Fence-/Inline-Code-Gate).
   Tags: `tags.rs` / `vault_tags`, UI `#vault-tags-section` lazy on
   expand (`panel_state.tags_expanded`), Search-Präfill `#tag`.
   E2E: `53_wikilinks`, `54_tags`.

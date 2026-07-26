@@ -173,6 +173,76 @@ fn ends_with_components(path: &str, needle_lowercase: &str) -> bool {
     path == needle_lowercase || path.ends_with(&format!("/{needle_lowercase}"))
 }
 
+/// Gleichheit zweier normalisierter Pfade (FS-Semantik wie [`paths_equal`]).
+fn path_strings_equal(a: &str, b: &str) -> bool {
+    paths_equal(a, b)
+}
+
+/// `path` liegt unter `root` (inkl. Gleichheit), komponentengrenzen-sicher.
+fn path_under_root(path: &str, root: &str) -> bool {
+    if path_strings_equal(path, root) {
+        return true;
+    }
+    #[cfg(any(windows, target_os = "macos"))]
+    {
+        let p = path.to_lowercase();
+        let r = root.to_lowercase();
+        p.starts_with(&format!("{r}/"))
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        path.starts_with(&format!("{root}/"))
+    }
+}
+
+/// Existierende Ordner-Pins als normalisierte Root-Strings (vor Collapse).
+fn directory_pin_roots(pinned: &[PinnedItem]) -> Vec<String> {
+    let mut roots: Vec<String> = Vec::new();
+    for item in pinned {
+        if !item.is_directory {
+            continue;
+        }
+        let pb = PathBuf::from(item.path.replace('\\', "/"));
+        if pb.is_dir() {
+            let n = normalize_path(&pb);
+            if !roots.iter().any(|r| path_strings_equal(r, &n)) {
+                roots.push(n);
+            }
+        }
+    }
+    roots.sort();
+    roots
+}
+
+/// Längster Pin-Root, unter dem `normalized_path` liegt.
+fn longest_matching_root(roots: &[String], normalized_path: &str) -> Option<String> {
+    roots
+        .iter()
+        .filter(|root| path_under_root(normalized_path, root))
+        .max_by_key(|root| root.len())
+        .cloned()
+}
+
+/// Elternverzeichnis eines bereits Forward-Slash-normalisierten Pfads
+/// (ohne `Path`/`normalize_path`-Allokation pro Kandidat).
+fn parent_dir_normalized(path: &str) -> String {
+    match path.rfind('/') {
+        Some(0) => "/".to_string(),
+        Some(i) => path[..i].to_string(),
+        None => String::new(),
+    }
+}
+
+/// `entry_path` (normalisiert) hat Elternverzeichnis `ctx_dir`.
+fn entry_parent_equals(entry_path: &str, ctx_dir: &str) -> bool {
+    let parent = match entry_path.rfind('/') {
+        Some(0) => "/",
+        Some(i) => &entry_path[..i],
+        None => "",
+    };
+    path_strings_equal(parent, ctx_dir)
+}
+
 // ---------------------------------------------------------------------------
 // Index
 // ---------------------------------------------------------------------------
@@ -182,9 +252,16 @@ fn ends_with_components(path: &str, needle_lowercase: &str) -> bool {
 pub struct IndexEntry {
     /// Absoluter Pfad, Forward-Slash-normalisiert (folio-Konvention).
     pub path: String,
-    /// Pfad relativ zur Pin-Wurzel (POSIX-Slashes). Grundlage der
-    /// Mehrdeutigkeits-Rangfolge („kürzester Vault-relativer Pfad").
+    /// Pfad relativ zur **kollabierten Walk-Wurzel** aus `resolve_scope`
+    /// (POSIX-Slashes) — nicht zum Lokalitäts-`root`. Grundlage der globalen
+    /// Mehrdeutigkeits-Rangfolge in [`WikilinkIndex::sort_candidates`].
+    /// Bei reinen Datei-Pins (kein Ordner-Walk) = Basename.
     pub relative: String,
+    /// Absoluter Pin-Root für W7-Lokalität (Forward-Slashes): längster
+    /// passender Ordner-Pin; nur wenn keiner greift (Datei-Pin außerhalb
+    /// aller Ordner-Pins) das Elternverzeichnis. Unabhängig vom Einfügepfad
+    /// (Walk vs. Datei-Pin / gitignore). Beeinflusst `relative` **nicht**.
+    pub root: String,
 }
 
 /// In-Memory-Index `Name(lowercase) → Kandidaten`.
@@ -199,6 +276,9 @@ pub struct IndexEntry {
 pub struct WikilinkIndex {
     entries: HashMap<String, Vec<IndexEntry>>,
     files: usize,
+    /// Alle Pin-Roots der Index-Erzeugung (Ordner-Pins + Eltern von Datei-Pins),
+    /// sortiert — für deterministische Lokalitäts-Heimat des Kontextdokuments.
+    roots: Vec<String>,
 }
 
 impl WikilinkIndex {
@@ -207,11 +287,15 @@ impl WikilinkIndex {
     /// Explizit gepinnte Einzeldateien umgehen die Filter (wie in der Suche).
     pub fn build(pinned: &[PinnedItem]) -> Self {
         let started = Instant::now();
-        let roots = resolve_scope(pinned, &SearchScope::Vault);
+        let walk_roots = resolve_scope(pinned, &SearchScope::Vault);
+        // Alle existierenden Ordner-Pins (vor Overlap-Collapse) — für
+        // längsten passenden Root pro Datei (W7 verschachtelte Pins).
+        let pin_dir_roots = directory_pin_roots(pinned);
         let mut index = WikilinkIndex::default();
         let mut seen: HashSet<String> = HashSet::new();
+        let mut roots_set: HashSet<String> = HashSet::new();
 
-        for dir in &roots.dirs {
+        for dir in &walk_roots.dirs {
             // Crate-Default-Filter (hidden + gitignore) an; `.git` ist als
             // Hidden-Verzeichnis damit bereits draußen.
             let walker = WalkBuilder::new(dir)
@@ -226,14 +310,20 @@ impl WikilinkIndex {
                 if !seen.insert(normalized.clone()) {
                     continue;
                 }
+                // root = Lokalität (längster Ordner-Pin); relative = Walk-Wurzel.
+                let root = longest_matching_root(&pin_dir_roots, &normalized)
+                    .unwrap_or_else(|| normalize_path(dir));
+                roots_set.insert(root.clone());
                 let relative = relative_to(dir, entry.path());
-                index.insert(normalized, relative);
+                index.insert(normalized, relative, root);
             }
         }
 
         // Explizit gepinnte Einzeldateien: umgehen hidden/gitignore bewusst
-        // (dokumentierter Pin-Bypass der Suche).
-        for file in &roots.files {
+        // (dokumentierter Pin-Bypass der Suche). Root: dieselbe Regel wie im
+        // Walk (längster Ordner-Pin), sonst Elternverzeichnis — nicht
+        // walk-Reihenfolge-/gitignore-abhängig (W7 F3).
+        for file in &walk_roots.files {
             if !file.is_file() {
                 continue;
             }
@@ -241,9 +331,17 @@ impl WikilinkIndex {
             if !seen.insert(normalized.clone()) {
                 continue;
             }
+            let root = longest_matching_root(&pin_dir_roots, &normalized)
+                .or_else(|| file.parent().map(normalize_path))
+                .unwrap_or_else(|| normalized.clone());
+            roots_set.insert(root.clone());
             let relative = file_name_of(file);
-            index.insert(normalized, relative);
+            index.insert(normalized, relative, root);
         }
+
+        let mut roots: Vec<String> = roots_set.into_iter().collect();
+        roots.sort();
+        index.roots = roots;
 
         index.sort_candidates();
         tracing::debug!(
@@ -281,37 +379,111 @@ impl WikilinkIndex {
         self.entries.get(&key).map_or(&[][..], Vec::as_slice)
     }
 
-    /// Auflösung eines (ggf. pfad-qualifizierten) Namens auf genau einen
-    /// Kandidaten. `Name`, `Name.md`, `Ordner/Name` und `bild.png` laufen
-    /// hier durch; Groß-/Kleinschreibung ist irrelevant.
+    /// Auflösung ohne Kontextdokument: globale Rangfolge
+    /// (kürzester vault-relativer Pfad, Tiebreak lexikografisch).
     pub fn resolve_name(&self, name: &str) -> Option<&IndexEntry> {
+        self.pick_resolved(name, None)
+    }
+
+    /// Auflösung mit Lokalitäts-Priorität (W7) relativ zum Kontextdokument:
+    /// 1. gleiches Verzeichnis, 2. gleicher Pin-Root, 3. Rest (global).
+    ///
+    /// Pfad-qualifizierte Links filtern zuerst per Suffix-Match; die
+    /// Lokalität entscheidet erst unter den Suffix-Treffern.
+    pub fn resolve_name_from(&self, name: &str, context: &Path) -> Option<&IndexEntry> {
+        self.pick_resolved(name, Some(context))
+    }
+
+    fn pick_resolved(&self, name: &str, context: Option<&Path>) -> Option<&IndexEntry> {
         let query = normalized_query(name);
         if query.is_empty() {
             return None;
         }
         let candidates = self.candidates(&query);
-        if !query.contains('/') {
-            return candidates.first();
+        if candidates.is_empty() {
+            return None;
         }
 
         // Pfad-qualifiziert: Suffix-Match auf Komponentengrenze, wahlweise
         // gegen den vollen Pfad oder (bei Markdown) gegen den Pfad ohne
         // Extension — `[[a/b/Name]]` und `[[a/b/Name.md]]` sind identisch.
-        let needle = query.to_lowercase();
-        candidates.iter().find(|entry| {
-            ends_with_components(&entry.path, &needle)
-                || markdown_stem_path(&entry.path)
-                    .is_some_and(|stem| ends_with_components(&stem, &needle))
-        })
+        // Unqualifiziert und qualifiziert: kein temporärer Vec — drei
+        // Iterator-Pässe über den sortierten Slice (W7 F4).
+        if query.contains('/') {
+            let needle = query.to_lowercase();
+            let suffix_ok = |entry: &IndexEntry| {
+                ends_with_components(&entry.path, &needle)
+                    || markdown_stem_path(&entry.path)
+                        .is_some_and(|stem| ends_with_components(&stem, &needle))
+            };
+            let Some(ctx) = context else {
+                return candidates.iter().find(|e| suffix_ok(e));
+            };
+            return self.pick_by_locality_filtered(candidates, ctx, suffix_ok);
+        }
+
+        let Some(ctx) = context else {
+            return candidates.first();
+        };
+        self.pick_by_locality_filtered(candidates, ctx, |_| true)
     }
 
-    fn insert(&mut self, path: String, relative: String) {
+    /// W7-Lokalität in drei Pässen über den (gefilterten) sortierten Slice.
+    /// Reihenfolge innerhalb jeder Stufe = globale `sort_candidates`-Ordnung.
+    fn pick_by_locality_filtered<'a, F>(
+        &self,
+        candidates: &'a [IndexEntry],
+        context: &Path,
+        mut pred: F,
+    ) -> Option<&'a IndexEntry>
+    where
+        F: FnMut(&IndexEntry) -> bool,
+    {
+        let ctx_path = normalize_path(context);
+        let ctx_dir = parent_dir_normalized(&ctx_path);
+
+        // Stufe 1: gleiches Verzeichnis (ctx_dir einmal berechnet).
+        if let Some(entry) = candidates
+            .iter()
+            .find(|entry| pred(entry) && entry_parent_equals(&entry.path, &ctx_dir))
+        {
+            return Some(entry);
+        }
+
+        // Stufe 2: gleicher Pin-Root (Heimat = längster passender Root).
+        if let Some(ctx_root) = self.home_root_for(&ctx_path) {
+            if let Some(entry) = candidates
+                .iter()
+                .find(|entry| pred(entry) && path_strings_equal(&entry.root, ctx_root))
+            {
+                return Some(entry);
+            }
+        }
+
+        // Stufe 3: global erste verbleibende (gefiltert).
+        candidates.iter().find(|entry| pred(entry))
+    }
+
+    /// Längster Pin-Root, unter dem `path` liegt; `None` außerhalb aller Pins.
+    fn home_root_for(&self, path: &str) -> Option<&str> {
+        self.roots
+            .iter()
+            .filter(|root| path_under_root(path, root))
+            .max_by_key(|root| root.len())
+            .map(String::as_str)
+    }
+
+    fn insert(&mut self, path: String, relative: String, root: String) {
         let name = file_name_of(Path::new(&path));
         if name.is_empty() {
             return;
         }
         self.files += 1;
-        let entry = IndexEntry { path, relative };
+        let entry = IndexEntry {
+            path,
+            relative,
+            root,
+        };
 
         // Markdown zusätzlich unter dem Stem — `[[Name]]` ohne Extension.
         if classify(&entry.path) == FileKind::Markdown {
@@ -734,7 +906,10 @@ impl WikilinkContext {
             };
         }
 
-        match self.index.resolve_name(&target.name) {
+        match self
+            .index
+            .resolve_name_from(&target.name, &self.current_doc)
+        {
             Some(entry) => {
                 let from_dir = self.current_doc.parent().unwrap_or_else(|| Path::new(""));
                 let relative = make_relative(from_dir, Path::new(&entry.path));
@@ -839,7 +1014,7 @@ pub fn find_backlinks(
         let Some(content) = read_md_for_backlinks(&path) else {
             return;
         };
-        let (hits, capped) = scan_file_for_backlinks(&content, &target, index);
+        let (hits, capped) = scan_file_for_backlinks(&content, &target, index, &normalized);
         if capped {
             any_file_capped = true;
         }
@@ -907,14 +1082,20 @@ fn read_md_for_backlinks(path: &Path) -> Option<String> {
 }
 
 /// Scannt eine Datei; liefert Hits (max. Cap) und ob abgeschnitten wurde.
+///
+/// Auflösung nutzt `source_path` als Kontextdokument (W7) — nicht das
+/// Backlink-Ziel. So zählt `[[README]]` in Projekt A nur als Backlink auf
+/// `A/README.md`, nicht auf ein fremdes `B/README.md`.
 fn scan_file_for_backlinks(
     content: &str,
     target_path: &str,
     index: &WikilinkIndex,
+    source_path: &str,
 ) -> (Vec<BacklinkHit>, bool) {
     let mut hits: Vec<BacklinkHit> = Vec::new();
     let mut capped = false;
     let mut in_fence = false;
+    let source = Path::new(source_path);
 
     for (line_idx, line) in content.lines().enumerate() {
         let line_no = (line_idx + 1) as u32;
@@ -932,7 +1113,7 @@ fn scan_file_for_backlinks(
             if parsed.name.is_empty() {
                 continue;
             }
-            let Some(entry) = index.resolve_name(&parsed.name) else {
+            let Some(entry) = index.resolve_name_from(&parsed.name, source) else {
                 continue;
             };
             if !paths_equal(&entry.path, target_path) {
@@ -1052,7 +1233,7 @@ pub struct WikilinkHeading {
 /// Löst den Zieldateipfad für Heading-Autocomplete auf.
 ///
 /// - leerer `name` → `current_path` (aktuelles Dokument, `[[#…]]`)
-/// - sonst Index-Lookup wie beim Renderer
+/// - sonst Index-Lookup wie beim Renderer; mit `current_path` lokalitätsbewusst (W7)
 pub fn resolve_heading_source(
     index: &WikilinkIndex,
     name: &str,
@@ -1064,7 +1245,12 @@ pub fn resolve_heading_source(
             .map(|p| p.replace('\\', "/"))
             .filter(|p| !p.is_empty());
     }
-    index.resolve_name(name).map(|e| e.path.clone())
+    match current_path {
+        Some(ctx) if !ctx.is_empty() => index
+            .resolve_name_from(name, Path::new(&ctx.replace('\\', "/")))
+            .map(|e| e.path.clone()),
+        _ => index.resolve_name(name).map(|e| e.path.clone()),
+    }
 }
 
 /// Liest `path` und extrahiert Überschriften über [`crate::toc::extract`]
@@ -1120,12 +1306,14 @@ pub struct WikilinkCandidate {
 
 /// Alle eindeutigen Dateien aus dem Index als Autocomplete-Kandidaten.
 ///
-/// `insert` (Markdown): Basename ohne `.md`, wenn über **alle** Kandidaten
-/// (alle Wurzeln inkl. Datei-Pins) eindeutig; sonst kürzester
-/// komponentengrenzen-sicherer eindeutiger Suffix des relativen Pfads
-/// (ohne `.md`). Bei noch immer kollidierenden Relatives greift der
-/// absolute Pfad-Stem. Bilder: immer voller Dateiname.
-pub fn collect_wikilink_candidates(index: &WikilinkIndex) -> Vec<WikilinkCandidate> {
+/// `insert` (Markdown): mit Kontextdokument der **kürzeste** Insert, der aus
+/// diesem Kontext heraus wieder genau diese Datei auflöst (W7). Ohne Kontext
+/// wie bisher: Basename-Stem wenn global eindeutig, sonst relativer/absoluter
+/// Suffix. Bilder: immer voller Dateiname.
+pub fn collect_wikilink_candidates(
+    index: &WikilinkIndex,
+    context: Option<&Path>,
+) -> Vec<WikilinkCandidate> {
     let entries = unique_index_entries(index);
     // Basename-Stem-Häufigkeit über ALLE Einträge (auch Nicht-MD) — so
     // zählt ein Datei-Pin `Alpha.md` gegen einen Ordner-`Alpha.md`.
@@ -1145,7 +1333,7 @@ pub fn collect_wikilink_candidates(index: &WikilinkIndex) -> Vec<WikilinkCandida
         .collect();
 
     let mut out: Vec<WikilinkCandidate> = Vec::with_capacity(entries.len());
-    for (i, e) in entries.iter().enumerate() {
+    for e in &entries {
         let name = file_name_of(Path::new(&e.path));
         let kind = classify(&e.path);
         let kind_str = match kind {
@@ -1155,7 +1343,10 @@ pub fn collect_wikilink_candidates(index: &WikilinkIndex) -> Vec<WikilinkCandida
             FileKind::Binary => "binary",
         }
         .to_string();
-        let insert = compute_insert_text(e, kind, &stem_counts, &rel_stems, &abs_stems, i);
+        let insert = match context {
+            Some(ctx) => compute_insert_text_from_context(e, kind, ctx, index),
+            None => compute_insert_text_global(e, kind, &stem_counts, &rel_stems, &abs_stems),
+        };
         out.push(WikilinkCandidate {
             name,
             relative: e.relative.clone(),
@@ -1222,13 +1413,13 @@ fn candidate_abs_stem(e: &IndexEntry) -> String {
     }
 }
 
-fn compute_insert_text(
+/// Kontextfreie Insert-Disambiguierung (global eindeutiger Stem/Suffix).
+fn compute_insert_text_global(
     e: &IndexEntry,
     kind: FileKind,
     stem_counts: &HashMap<String, usize>,
     rel_stems: &[String],
     abs_stems: &[String],
-    index: usize,
 ) -> String {
     let name = file_name_of(Path::new(&e.path));
     if kind == FileKind::Image {
@@ -1276,8 +1467,68 @@ fn compute_insert_text(
     }
 
     // Fallback: voller absoluter Stem (garantiert path-eindeutig).
-    let _ = index;
     abs
+}
+
+/// Kürzester Insert-String, der aus `context` heraus genau `e.path` auflöst.
+/// Gilt für Markdown **und** Bilder/Nicht-MD (Basename nur wenn verifiziert).
+fn compute_insert_text_from_context(
+    e: &IndexEntry,
+    kind: FileKind,
+    context: &Path,
+    index: &WikilinkIndex,
+) -> String {
+    let name = file_name_of(Path::new(&e.path));
+
+    // Markdown: Stem ohne .md; sonst voller Dateiname (mit Extension).
+    let bare = if kind == FileKind::Markdown {
+        strip_md_extension(&name)
+    } else {
+        name.clone()
+    };
+    if insert_resolves_to(index, &bare, context, &e.path) {
+        return bare;
+    }
+
+    // Relative Suffixe (MD ohne .md, sonst mit Extension) — kürzester zuerst.
+    let rel = if kind == FileKind::Markdown {
+        candidate_rel_stem(e)
+    } else {
+        e.relative.replace('\\', "/")
+    };
+    let components: Vec<&str> = rel.split('/').filter(|c| !c.is_empty()).collect();
+    for n in 1..=components.len() {
+        let suffix = components[components.len() - n..].join("/");
+        if insert_resolves_to(index, &suffix, context, &e.path) {
+            return suffix;
+        }
+    }
+
+    let abs = if kind == FileKind::Markdown {
+        candidate_abs_stem(e)
+    } else {
+        e.path.replace('\\', "/")
+    };
+    let abs_components: Vec<&str> = abs.split('/').filter(|c| !c.is_empty()).collect();
+    for n in 1..=abs_components.len() {
+        let suffix = abs_components[abs_components.len() - n..].join("/");
+        if insert_resolves_to(index, &suffix, context, &e.path) {
+            return suffix;
+        }
+    }
+
+    abs
+}
+
+fn insert_resolves_to(
+    index: &WikilinkIndex,
+    insert: &str,
+    context: &Path,
+    expected_path: &str,
+) -> bool {
+    index
+        .resolve_name_from(insert, context)
+        .is_some_and(|hit| paths_equal(&hit.path, expected_path))
 }
 
 fn make_snippet(line: &str, match_start: usize, match_end: usize) -> String {
@@ -2227,7 +2478,7 @@ mod tests {
     fn candidates_unique_basename_inserts_stem() {
         let temp = vault();
         let index = WikilinkIndex::build(&[pin_dir(temp.path())]);
-        let cands = collect_wikilink_candidates(&index);
+        let cands = collect_wikilink_candidates(&index, None);
         let beta = cands
             .iter()
             .find(|c| c.name.eq_ignore_ascii_case("Beta.md"))
@@ -2246,7 +2497,7 @@ mod tests {
     fn candidates_ambiguous_basename_uses_relative_suffix() {
         let temp = vault();
         let index = WikilinkIndex::build(&[pin_dir(temp.path())]);
-        let cands = collect_wikilink_candidates(&index);
+        let cands = collect_wikilink_candidates(&index, None);
         let alphas: Vec<_> = cands
             .iter()
             .filter(|c| c.name.eq_ignore_ascii_case("Alpha.md"))
@@ -2283,7 +2534,7 @@ mod tests {
         write(a.path(), "notes/Alpha.md", "# A\n");
         write(b.path(), "notes/Alpha.md", "# B\n");
         let index = WikilinkIndex::build(&[pin_dir(a.path()), pin_dir(b.path())]);
-        let cands = collect_wikilink_candidates(&index);
+        let cands = collect_wikilink_candidates(&index, None);
         let alphas: Vec<_> = cands
             .iter()
             .filter(|c| c.name.eq_ignore_ascii_case("Alpha.md"))
@@ -2301,6 +2552,7 @@ mod tests {
                         &candidate_abs_stem(&IndexEntry {
                             path: c.path.clone(),
                             relative: c.relative.clone(),
+                            root: String::new(),
                         }),
                         &c.insert.to_lowercase()
                     ),
@@ -2322,7 +2574,7 @@ mod tests {
         let fa = a.path().join("Alpha.md");
         let fb = b.path().join("Alpha.md");
         let index = WikilinkIndex::build(&[pin_file(&fa), pin_file(&fb)]);
-        let cands = collect_wikilink_candidates(&index);
+        let cands = collect_wikilink_candidates(&index, None);
         let alphas: Vec<_> = cands
             .iter()
             .filter(|c| c.name.eq_ignore_ascii_case("Alpha.md"))
@@ -2332,6 +2584,338 @@ mod tests {
         assert!(
             alphas.iter().all(|c| c.insert != "Alpha"),
             "basename alone must not be used when ambiguous: {alphas:?}"
+        );
+    }
+
+    // --- W7: Lokalitäts-Priorität ------------------------------------------
+
+    /// Zwei Projekt-Pins mit gleichem Basename-Layout.
+    fn dual_project_vault() -> (TempDir, TempDir) {
+        let a = TempDir::new().unwrap();
+        let b = TempDir::new().unwrap();
+        write(a.path(), "README.md", "# A root\n");
+        write(a.path(), "docs/README.md", "# A docs\n");
+        write(a.path(), "TODO.md", "# A todo\n");
+        write(a.path(), "notes/x.md", "from A\n");
+        write(b.path(), "README.md", "# B root\n");
+        write(b.path(), "docs/README.md", "# B docs\n");
+        write(b.path(), "TODO.md", "# B todo\n");
+        write(b.path(), "notes/y.md", "from B\n");
+        (a, b)
+    }
+
+    #[test]
+    fn w7_same_directory_wins() {
+        let (a, b) = dual_project_vault();
+        let index = WikilinkIndex::build(&[pin_dir(a.path()), pin_dir(b.path())]);
+        let ctx = a.path().join("docs/note.md");
+        write(a.path(), "docs/note.md", "ctx\n");
+        let hit = index
+            .resolve_name_from("README", &ctx)
+            .expect("README from docs/");
+        assert!(
+            hit.path.ends_with("/docs/README.md") && hit.path.contains(a.path().to_str().unwrap()),
+            "same-dir docs/README must win, got {}",
+            hit.path
+        );
+    }
+
+    #[test]
+    fn w7_same_pin_root_wins_over_foreign() {
+        let (a, b) = dual_project_vault();
+        let index = WikilinkIndex::build(&[pin_dir(a.path()), pin_dir(b.path())]);
+        // notes/x.md is not next to README.md, but same pin root A.
+        let ctx = a.path().join("notes/x.md");
+        let hit = index
+            .resolve_name_from("README", &ctx)
+            .expect("README from A/notes");
+        assert!(
+            hit.path.ends_with("/README.md")
+                && !hit.path.contains("/docs/")
+                && hit.path.contains(a.path().to_str().unwrap()),
+            "A/README.md (same root) must beat B and docs/, got {}",
+            hit.path
+        );
+    }
+
+    #[test]
+    fn w7_cross_root_fallback_when_local_missing() {
+        let a = TempDir::new().unwrap();
+        let b = TempDir::new().unwrap();
+        write(a.path(), "notes/x.md", "only in A\n");
+        write(b.path(), "Unique.md", "# only in B\n");
+        let index = WikilinkIndex::build(&[pin_dir(a.path()), pin_dir(b.path())]);
+        let ctx = a.path().join("notes/x.md");
+        let hit = index
+            .resolve_name_from("Unique", &ctx)
+            .expect("cross-root Unique");
+        assert!(
+            hit.path.contains(b.path().to_str().unwrap()),
+            "no local Unique → fall back to B, got {}",
+            hit.path
+        );
+    }
+
+    #[test]
+    fn w7_nested_pins_longest_root_is_home() {
+        let root = TempDir::new().unwrap();
+        write(root.path(), "README.md", "# outer\n");
+        write(root.path(), "sub/README.md", "# nested\n");
+        write(root.path(), "sub/note.md", "ctx\n");
+        write(root.path(), "other.md", "ctx outer\n");
+        let sub = root.path().join("sub");
+        let index = WikilinkIndex::build(&[pin_dir(root.path()), pin_dir(&sub)]);
+        // From nested pin: home root = sub → sub/README.
+        let hit_nested = index
+            .resolve_name_from("README", &root.path().join("sub/note.md"))
+            .expect("nested");
+        assert!(
+            hit_nested.path.ends_with("/sub/README.md"),
+            "longest root sub wins, got {}",
+            hit_nested.path
+        );
+        // From outer only: outer README (same root outer; sub is deeper root for sub files only).
+        let hit_outer = index
+            .resolve_name_from("README", &root.path().join("other.md"))
+            .expect("outer");
+        assert!(
+            hit_outer.path.ends_with("/README.md") && !hit_outer.path.contains("/sub/"),
+            "outer home → root README, got {}",
+            hit_outer.path
+        );
+    }
+
+    #[test]
+    fn w7_path_qualified_then_locality() {
+        let (a, b) = dual_project_vault();
+        let index = WikilinkIndex::build(&[pin_dir(a.path()), pin_dir(b.path())]);
+        let ctx = a.path().join("notes/x.md");
+        // Both have docs/README.md — suffix filter then locality picks A's.
+        let hit = index
+            .resolve_name_from("docs/README", &ctx)
+            .expect("docs/README");
+        assert!(
+            hit.path.contains(a.path().to_str().unwrap()) && hit.path.ends_with("/docs/README.md"),
+            "path-qualified + locality → A/docs/README, got {}",
+            hit.path
+        );
+    }
+
+    #[test]
+    fn w7_context_outside_all_pins_uses_global_rank() {
+        let (a, b) = dual_project_vault();
+        let index = WikilinkIndex::build(&[pin_dir(a.path()), pin_dir(b.path())]);
+        // Outside pins: no same-dir / same-root → global first (shortest relative + path tiebreak).
+        let outside = TempDir::new().unwrap();
+        write(outside.path(), "orphan.md", "x\n");
+        let global = index.resolve_name("README").expect("global");
+        let from_outside = index
+            .resolve_name_from("README", &outside.path().join("orphan.md"))
+            .expect("from outside");
+        assert_eq!(
+            global.path, from_outside.path,
+            "outside pins must match context-free resolve_name"
+        );
+    }
+
+    #[test]
+    fn w7_backlink_uses_source_file_not_target() {
+        // [[README]] in A/notes/x.md points to A/README — must NOT appear as
+        // backlink on B/README.
+        let (a, b) = dual_project_vault();
+        write(a.path(), "notes/x.md", "see [[README]]\n");
+        let pins = [pin_dir(a.path()), pin_dir(b.path())];
+        let index = WikilinkIndex::build(&pins);
+        let a_readme = normalize_path(&a.path().join("README.md"));
+        let b_readme = normalize_path(&b.path().join("README.md"));
+
+        let on_a = find_backlinks(&pins, &a_readme, &index);
+        assert!(
+            on_a.sources.iter().any(|s| s.path.ends_with("/notes/x.md")),
+            "A/notes/x → A/README should count: {on_a:?}"
+        );
+
+        let on_b = find_backlinks(&pins, &b_readme, &index);
+        assert!(
+            !on_b.sources.iter().any(|s| s.path.ends_with("/notes/x.md")),
+            "[[README]] in A must not backlink B/README: {on_b:?}"
+        );
+    }
+
+    #[test]
+    fn w7_insert_roundtrip_invariant() {
+        // Property: ALLE Kandidaten (inkl. Bilder/Nicht-MD), nicht nur Markdown.
+        let (a, b) = dual_project_vault();
+        write(a.path(), "images/logo.png", "a-logo");
+        write(b.path(), "images/logo.png", "b-logo");
+        write(a.path(), "notes/data.json", "{}\n");
+        write(b.path(), "notes/data.json", "{}\n");
+        let index = WikilinkIndex::build(&[pin_dir(a.path()), pin_dir(b.path())]);
+        let ctx = a.path().join("notes/x.md");
+        let cands = collect_wikilink_candidates(&index, Some(&ctx));
+        assert!(!cands.is_empty());
+        for c in &cands {
+            let resolved = index.resolve_name_from(&c.insert, &ctx).unwrap_or_else(|| {
+                panic!("insert {:?} did not resolve (kind={})", c.insert, c.kind)
+            });
+            assert!(
+                paths_equal(&resolved.path, &c.path),
+                "invariant: resolve_name_from({:?}, ctx) = {} but candidate.path = {} (kind={})",
+                c.insert,
+                resolved.path,
+                c.path,
+                c.kind
+            );
+        }
+        // Local README from A/notes may be bare "README".
+        let a_readme = cands
+            .iter()
+            .find(|c| {
+                c.path.ends_with("/README.md")
+                    && c.path.contains(a.path().to_str().unwrap())
+                    && !c.path.contains("/docs/")
+            })
+            .expect("A/README");
+        assert_eq!(
+            "README", a_readme.insert,
+            "context in A should allow bare README insert for A/README"
+        );
+        // B's logo must not insert bare "logo.png" (would resolve to A's).
+        let b_logo = cands
+            .iter()
+            .find(|c| {
+                c.path.ends_with("/images/logo.png") && c.path.contains(b.path().to_str().unwrap())
+            })
+            .expect("B/logo");
+        assert_ne!(
+            "logo.png", b_logo.insert,
+            "ambiguous image insert must be path-qualified: {b_logo:?}"
+        );
+        assert!(
+            b_logo.insert.contains("logo.png"),
+            "insert still names the file: {b_logo:?}"
+        );
+    }
+
+    #[test]
+    fn w7_heading_source_uses_current_path_locality() {
+        let (a, b) = dual_project_vault();
+        let index = WikilinkIndex::build(&[pin_dir(a.path()), pin_dir(b.path())]);
+        let ctx = normalize_path(&a.path().join("notes/x.md"));
+        let path = resolve_heading_source(&index, "README", Some(&ctx)).expect("README");
+        assert!(
+            path.contains(a.path().to_str().unwrap())
+                && path.ends_with("/README.md")
+                && !path.contains("/docs/"),
+            "headings resolve with locality: {path}"
+        );
+    }
+
+    #[test]
+    fn w7_context_free_resolve_name_unchanged_for_single_root() {
+        // bestehende globale Rangfolge im Ein-Root-Vault bleibt.
+        let temp = vault();
+        let index = WikilinkIndex::build(&[pin_dir(temp.path())]);
+        assert_eq!(
+            "Alpha.md",
+            index.resolve_name("Alpha").expect("resolved").relative
+        );
+    }
+
+    /// F1: `relative` gegen Walk-Wurzel — kontextfreies resolve_name behält
+    /// Vor-W7-Rangfolge bei verschachtelten Pins.
+    #[test]
+    fn w7_f1_nested_pins_context_free_keeps_walk_relative_rank() {
+        let v = TempDir::new().unwrap();
+        write(v.path(), "x/note.md", "# outer-ish\n");
+        write(v.path(), "a/b/note.md", "# nested-ish\n");
+        let nested = v.path().join("a");
+        let index = WikilinkIndex::build(&[pin_dir(v.path()), pin_dir(&nested)]);
+        let hit = index.resolve_name("note").expect("note");
+        let expected = normalize_path(&v.path().join("x/note.md"));
+        assert!(
+            paths_equal(&hit.path, &expected),
+            "pre-W7 global rank: walk-relative x/note.md (depth 2) beats a/b/note.md (depth 3); got {} want {}",
+            hit.path,
+            expected
+        );
+        assert_eq!("x/note.md", hit.relative);
+        // Lokalitäts-root der nested-Datei ist /v/a, relative bleibt walk-basiert.
+        let nested_note = index
+            .candidates("note")
+            .iter()
+            .find(|e| e.path.ends_with("/a/b/note.md"))
+            .expect("nested note");
+        assert_eq!("a/b/note.md", nested_note.relative);
+        assert!(
+            nested_note.root.ends_with("/a")
+                || paths_equal(&nested_note.root, &normalize_path(&nested)),
+            "root is longest pin, not walk root: {}",
+            nested_note.root
+        );
+    }
+
+    /// F3: Datei-Pin unter Ordner-Pin → root = Ordner-Pin (Walk und gitignore-Bypass).
+    #[test]
+    fn w7_f3_file_pin_under_folder_gets_folder_root() {
+        let v = TempDir::new().unwrap();
+        init_git(v.path());
+        write(v.path(), "keep.md", "# keep\n");
+        write(v.path(), "tracked.md", "# tracked + file pin\n");
+        write(v.path(), "secret.md", "# gitignored + file pin\n");
+        fs::write(v.path().join(".gitignore"), "secret.md\n").unwrap();
+
+        let tracked = v.path().join("tracked.md");
+        let secret = v.path().join("secret.md");
+        let folder_root = normalize_path(v.path());
+
+        // tracked: Walk sieht sie, Datei-Pin wird von seen übersprungen.
+        let index =
+            WikilinkIndex::build(&[pin_dir(v.path()), pin_file(&tracked), pin_file(&secret)]);
+        let t = index
+            .candidates("tracked")
+            .iter()
+            .find(|e| e.path.ends_with("/tracked.md"))
+            .expect("tracked");
+        assert!(
+            paths_equal(&t.root, &folder_root),
+            "walk path: root = folder pin, got {}",
+            t.root
+        );
+
+        // secret: nur via Datei-Pin (gitignore), aber unter Ordner-Pin → gleicher Root.
+        let s = index
+            .candidates("secret")
+            .iter()
+            .find(|e| e.path.ends_with("/secret.md"))
+            .expect("secret via file pin");
+        assert!(
+            paths_equal(&s.root, &folder_root),
+            "file-pin bypass under folder: root must be folder pin, got {}",
+            s.root
+        );
+    }
+
+    /// F3: Datei-Pin außerhalb aller Ordner-Pins → root = Elternverzeichnis.
+    #[test]
+    fn w7_f3_orphan_file_pin_root_is_parent() {
+        let outside = TempDir::new().unwrap();
+        let project = TempDir::new().unwrap();
+        write(project.path(), "in.md", "# in project\n");
+        write(outside.path(), "orphan.md", "# orphan\n");
+        let orphan = outside.path().join("orphan.md");
+        let index = WikilinkIndex::build(&[pin_dir(project.path()), pin_file(&orphan)]);
+        let e = index
+            .candidates("orphan")
+            .iter()
+            .find(|c| c.path.ends_with("/orphan.md"))
+            .expect("orphan");
+        let parent = normalize_path(outside.path());
+        assert!(
+            paths_equal(&e.root, &parent),
+            "orphan file pin root = parent dir, got {} want {}",
+            e.root,
+            parent
         );
     }
 }

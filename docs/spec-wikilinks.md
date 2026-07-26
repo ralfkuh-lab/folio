@@ -221,6 +221,115 @@ Single-Flight + Save-Heuristik, `wikilink_candidates` aus dem Index mit
 backend-disambiguiertem insert, Dialog-Reentranz-Guard + flaches Anlegen,
 Tag-Fehlerzustand mit Retry, Autocomplete-Fence-/Inline-Code-Gate).
 
+## W7: Lokalitäts-Priorität bei der Auflösung (2026-07-26)
+
+### Problem (belegt)
+
+`WikilinkIndex::sort_candidates` (wikilink.rs) ordnet die Kandidaten eines
+Namens **global** nach `Pfadtiefe → relative → absoluter Pfad`, und
+`resolve_name` nimmt `candidates.first()`. Das Kontextdokument spielt keine
+Rolle. Folge im realen Nutzungsmodell (mehrere **Projektverzeichnisse**
+gepinnt, jedes mit `README.md`, `TODO.md`, `CLAUDE.md`, `docs/…`): `[[README]]`
+löst — egal in welchem Projekt der Link steht — immer auf dasselbe README auf,
+nämlich das mit dem alphabetisch ersten absoluten Pfad. Deterministisch, aber
+praktisch immer die falsche Datei.
+
+Das widerspricht auch Obsidian, das bei gleichnamigen Dateien die im selben
+Ordner bevorzugt, und es widerspricht dem eigenen Autocomplete, das seit
+`ccb26e1` schon nach Nähe rankt — die Auflösung hinkt dem Ranking hinterher.
+
+### Regel
+
+Neue Rangfolge auf der Kandidatenliste eines Namens, bezogen auf ein
+**Kontextdokument**:
+
+1. Datei im **selben Verzeichnis** wie das Kontextdokument.
+2. Datei unter demselben **Pin-Root** wie das Kontextdokument; darin die
+   bisherige Rangfolge. Bei verschachtelten Pins gilt der **längste** passende
+   Root als Heimat des Kontextdokuments.
+3. Alle übrigen Kandidaten in der bisherigen Rangfolge.
+
+Innerhalb jeder Stufe bleibt die bestehende Sortierung — der Determinismus
+(inkl. Tiebreak) ist unverändert. **Kein Setting, kein Schalter.**
+Cross-Projekt-Verweise bleiben vollständig erhalten: Stufe 3 greift, sobald im
+eigenen Projekt kein Kandidat existiert.
+
+Bei **pfad-qualifizierten** Links (`[[a/b/Name]]`) bleibt der Suffix-Match das
+erste Filter; die Lokalitätsrangfolge entscheidet erst **unter** den
+Suffix-Treffern.
+
+### Kontextdokument je Aufrufstelle (verbindlich)
+
+Alle drei heutigen `resolve_name`-Aufrufer müssen die Regel konsistent nutzen,
+sonst driften die Sichten auseinander:
+
+| Aufrufer | Kontextdokument |
+|---|---|
+| `WikilinkContext::resolve` (Render/Export) | `current_doc` |
+| Backlink-Scan (`find_backlinks`) | **die Quelldatei, in der der Link steht** — NICHT das Zieldokument |
+| `wikilink_headings`-Helfer (`current_path: Option<&str>`) | das übergebene `current_path` |
+| ohne Kontext (Theme-Editor-Vorschau u. ä.) | Verhalten unverändert = heutige globale Rangfolge |
+
+Der Backlinks-Fall ist der subtile: nimmt der Scan das Zieldokument (oder
+keinen Kontext), zeigt das Panel Quellen an, deren Link real woanders
+hinzeigt, und übersieht echte Backlinks aus dem eigenen Projekt.
+
+### API
+
+- `IndexEntry` erhält den Pin-Root (`root: String`), gesetzt beim `insert`:
+  der **längste passende Ordner-Pin**, unter dem die Datei liegt; nur wenn es
+  keinen gibt (reiner Datei-Pin außerhalb aller Ordner-Pins), das
+  **Elternverzeichnis** der Datei. Diese Regel gilt **unabhängig davon**, ob
+  die Datei über den Ordner-Walk oder über den Datei-Pin in den Index kam —
+  eine Datei, die zugleich gepinnt und Teil eines gepinnten Projekts ist, hat
+  dieses Projekt als Heimat. Sonst hinge das Ergebnis an der Walk-Reihenfolge
+  bzw. am gitignore-Status derselben Datei (Review-Befund 2026-07-26).
+- `relative` bleibt gegen die **kollabierte Walk-Wurzel** aus `resolve_scope`
+  berechnet — unverändert zu vor W7. `root` ist ein **separates** Feld und
+  darf `relative` nicht beeinflussen, sonst kippt bei verschachtelten Pins die
+  globale Rangfolge (`sort_candidates` zählt Pfadkomponenten von `relative`)
+  und die Zusage „ohne Kontext = altes Verhalten" ist gebrochen.
+- `resolve_name` bleibt als kontextfreie Variante bestehen (Aufrufer ohne
+  Kontext); neu `resolve_name_from(&self, name, context: &Path)`.
+
+### Insert-Verkürzung (zweiter Schritt, gleiche Etappe)
+
+Weil die Auflösung lokal wird, darf der Autocomplete-Insert kürzer werden:
+`[[README]]` genügt, wenn es **aus dem Kontextdokument heraus** eindeutig ist,
+auch wenn der Name global mehrdeutig ist. Das ist genau Obsidians
+„shortest path when possible" und erhöht die Portabilität.
+
+- `collect_wikilink_candidates` bekommt das Kontextdokument optional durch;
+  `compute_insert_text` wählt den **kürzesten** Insert-String, der aus diesem
+  Kontext heraus wieder **genau diese Datei** auflöst.
+- Command `wikilink_candidates` nimmt optional `currentPath`;
+  `editor/wikilink-complete.ts` übergibt den aktiven Dokumentpfad.
+- **Invariante als Property-Test:** für jeden Kandidaten muss
+  `resolve_name_from(candidate.insert, ctx) == candidate.path` gelten. Diese
+  Invariante ist das eigentliche Sicherheitsnetz der Etappe — ohne sie kann ein
+  verkürzter Insert auf eine andere Datei zeigen als die ausgewählte.
+  **Sie gilt für ALLE auflösbaren Kandidaten, auch Bilder/Nicht-Markdown**
+  (`![[logo.png]]`): auch dort wird der kürzeste verifizierte Suffix gesucht,
+  statt den Basename ungeprüft einzusetzen. Ein Property-Test, der Nicht-MD
+  überspringt, verdeckt genau den Fall gleichnamiger Bilder in zwei Pins
+  (Review-Befund 2026-07-26).
+- Der absolute-Pfad-Fallback in `compute_insert_text` bleibt als letzte Stufe
+  erhalten (in folio auflösbar, weil `resolve_name` Suffixe gegen den
+  absoluten Pfad matcht), wird durch die Lokalität aber noch seltener.
+
+### Tests
+
+Unit-Tests in `wikilink.rs`: gleiches Verzeichnis gewinnt; gleicher Pin-Root
+gewinnt vor fremdem Root; Cross-Root-Fallback greift, wenn lokal kein
+Kandidat; verschachtelte Pins (längster Root); pfad-qualifiziert + Lokalität;
+Kontextdokument außerhalb aller Pins; Backlink-Konsistenz (`[[README]]` in
+Projekt A erzeugt keinen Backlink auf `B/README.md`); Insert-Roundtrip-Invariante.
+
+### Nicht in W7
+
+Frontmatter-`aliases` (eigene Etappe), Unlinked Mentions, Link-Refactoring
+beim Umbenennen.
+
 ## Folgepunkte (bewusst nicht V1)
 
 - Notiz-Embeds mit echtem Inhalt (Transclusion), Block-Referenzen `#^id`,

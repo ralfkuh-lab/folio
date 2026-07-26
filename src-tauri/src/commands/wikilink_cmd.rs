@@ -82,9 +82,11 @@ pub async fn vault_tags(state: State<'_, AppState>) -> Result<VaultTagsResult, S
 }
 
 /// Autocomplete-Kandidaten aus dem Wikilink-Index (gitignore/hidden wie
-/// der Resolver). `insert` ist backend-seitig disambiguiert (F7).
+/// der Resolver). `insert` ist backend-seitig disambiguiert (F7); mit
+/// `currentPath` lokalitätsbewusst verkürzt (W7).
 #[tauri::command]
 pub async fn wikilink_candidates(
+    current_path: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<Vec<WikilinkCandidate>, String> {
     let pinned = {
@@ -95,9 +97,13 @@ pub async fn wikilink_candidates(
         workspace.pinned().to_vec()
     };
     let cache = state.wikilink_index.clone();
+    let context = current_path
+        .map(|p| p.replace('\\', "/"))
+        .filter(|p| !p.is_empty());
     tauri::async_runtime::spawn_blocking(move || {
         let index = cache.get(&pinned);
-        wikilink::collect_wikilink_candidates(&index)
+        let ctx = context.as_deref().map(std::path::Path::new);
+        wikilink::collect_wikilink_candidates(&index, ctx)
     })
     .await
     .map_err(|error| error.to_string())
