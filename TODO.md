@@ -95,10 +95,32 @@ _(leer)_
 
 ## Niedrige Priorität
 
-- **Wikilinks — Folgepunkte** (W1–W6 2026-07-25, Spec
+- **Frontmatter-`aliases`** (Obsidian-Feature, Design 2026-07-26
+  durchdacht — Umsetzung bewusst zurückgestellt): `aliases: [Zweitname]`
+  in der YAML-Frontmatter macht eine Notiz unter weiteren Namen
+  auflösbar. Nutzen im Multi-Projekt-Setup: Repo-Dateien mit generischen
+  Namen unter sprechendem Namen erreichbar machen, ohne sie umzubenennen
+  (`~/dev/folio/TODO.md` → `[[folio-roadmap]]`); Umbenennen ohne
+  Linkbruch (alter Name als Alias); Abkürzungen/Sprachvarianten.
+  **Kostenpunkt**: der Wikilink-Index baut sich heute rein aus
+  Dateinamen auf, ohne eine Datei zu öffnen — Aliases erzwingen einen
+  Inhalts-Scan aller MD-Dateien bei jedem Rebuild (TTL 30 s). Nötig
+  wären Kopf-only-Lesen (Frontmatter steht oben, wenige KB) plus
+  mtime-Cache; `frontmatter::extract` existiert bereits (Tags), der
+  Tag-Scan liest ohnehin schon Inhalte. **Vorab zu entscheiden**:
+  (a) echter Dateiname gewinnt gegen Alias bei Kollision
+  (Obsidian-Verhalten); (b) Verhältnis zur W7-Lokalität — Vorschlag:
+  erst Dateinamen nach Lokalität, dann Aliases nach Lokalität, damit
+  ein lokaler Alias keinen fremden echten Namen schlägt;
+  (c) mehrdeutige Aliases folgen derselben deterministischen Rangfolge
+  wie Dateinamen, kein Dialog. **Erst nach Praxiserfahrung bewerten**:
+  ggf. reichen sprechende Dateinamen im Notiz-Vault plus gelegentliches
+  `[[projekt/TODO]]`.
+
+- **Wikilinks — weitere Folgepunkte** (W1–W7 abgeschlossen, Spec
   [`docs/spec-wikilinks.md`](docs/spec-wikilinks.md)): Notiz-Embeds mit
-  echtem Inhalt (Transclusion), Block-Referenzen `#^id`, Frontmatter-
-  `aliases`, Backlinks für normale relative MD-Links, Link-Refactoring
+  echtem Inhalt (Transclusion), Block-Referenzen `#^id`,
+  Backlinks für normale relative MD-Links, Link-Refactoring
   beim Umbenennen, Tag-Hierarchie-Baum, Unlinked Mentions, persistenter
   Index (tantivy) bei sehr großen Vaults; `](`-Autocomplete für normale
   Markdown-Links. Aus dem Kreuz-Review 2026-07-25 zurückgestellt:
