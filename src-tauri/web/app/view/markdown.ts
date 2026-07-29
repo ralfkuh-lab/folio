@@ -207,7 +207,6 @@ function computeMarkerPositionsSync(): void {
     }
     const contentTop = content.getBoundingClientRect().top;
     const scrollTop = content.scrollTop;
-    const laneH = Math.max(1, lane.clientHeight);
     for (let i = 0; i < rangesArr.length; i++) {
         const rect = rangesArr[i].getBoundingClientRect();
         const pos = scrollTop + (rect.top - contentTop);
@@ -234,7 +233,6 @@ function computeMarkerPositionsAsync(onDone?: () => void): void {
     }
     const contentTop = content.getBoundingClientRect().top;
     const scrollTop = content.scrollTop;
-    const laneHAtTime = Math.max(1, lane.clientHeight); // only for bucketing during build
     const BATCH = 500;
     let i = 0;
     const myTokenAtStart = searchToken;

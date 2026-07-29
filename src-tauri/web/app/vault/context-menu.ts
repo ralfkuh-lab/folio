@@ -10,6 +10,7 @@ type Deps = {
     showStatus: (msg: string) => void;
 };
 
+import { isInvalidFileName, joinDirFile } from '../util/filename';
 import { safeInvoke } from '../util/log';
 import { confirmRunFile, showConfirmDialog, showRenameDialog } from '../ui/dialogs';
 import { searchInFolder } from './search';
@@ -282,11 +283,11 @@ export function initContextMenu(d: Deps): void {
             showRenameDialog('untitled.md', t('vault.contextMenu.newFile.prompt'), { title: t('vault.contextMenu.newFile.title'), okLabel: t('vault.contextMenu.newFile.action') }).then(function (name) {
                 const trimmed = (name || '').trim();
                 if (!trimmed) return; // leer/whitespace → abbrechen
-                if (/[\\/]/.test(trimmed) || trimmed === '.' || trimmed === '..' || trimmed.includes('..')) {
+                if (isInvalidFileName(trimmed)) {
                     deps.showStatus(t('errors.file.invalidName'));
                     return;
                 }
-                const newPath = dir.replace(/\/$/, '') + '/' + trimmed;
+                const newPath = joinDirFile(dir, trimmed);
                 invoke('create_file', { path: newPath }).then(function (p) {
                     safeInvoke('tab_open', { path: p }, 'tab_open', 'warn');
                 }).catch(function (err) {

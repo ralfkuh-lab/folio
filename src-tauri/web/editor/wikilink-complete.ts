@@ -306,14 +306,6 @@ function currentDocumentPath(): string | null {
     return null;
 }
 
-/**
- * Optional: Shell kann den aktuellen Pfad setzen, damit `[[#` die
- * Überschriften des aktiven Dokuments liefern kann.
- */
-export function setWikilinkCompleteCurrentPath(path: string | null): void {
-    (window as any).__folioCurrentPath = path || null;
-}
-
 async function resolveCurrentPath(): Promise<string | null> {
     const cached = currentDocumentPath();
     if (cached) return cached;
@@ -444,10 +436,4 @@ async function provideHeadings(
         sortText: String(i).padStart(5, '0'),
     }));
     return { suggestions };
-}
-
-/** Test-Hook: Cache leeren. */
-export function __resetWikilinkCompleteCacheForTests(): void {
-    candidateCache = null;
-    registered = false;
 }

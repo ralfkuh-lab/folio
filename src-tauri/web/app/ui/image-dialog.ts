@@ -45,7 +45,6 @@ let clipboardImage: ClipboardImage | null = null;
 let fileImage: FileImageState | null = null;
 let linkedFilename = false;
 let ctx: InsertContext | null = null;
-let lastWarning: string | null = null;
 let keydownHandler: ((e: KeyboardEvent) => void) | null = null;
 
 function $(id: string): HTMLElement | null { return document.getElementById(id); }
@@ -255,7 +254,6 @@ function showWarning(text: string | null): void {
         el.textContent = '';
         el.hidden = true;
     }
-    lastWarning = text;
 }
 
 function bindOnce(): void {

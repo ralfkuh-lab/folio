@@ -142,10 +142,6 @@ export function cheatsheetSyncMode(isEdit: boolean): void {
     }
 }
 
-export function cheatsheetWantsVisible(): boolean {
-    return wantsVisible;
-}
-
 // Tauri-Menue-Items, die nur im Edit-Mode bei Markdown-Dokumenten Sinn
 // ergeben (help.cheatsheet, view.minimap), enable/disable in einem Rutsch.
 // Name historisch — beide Items teilen sich die Aktivierungs-Bedingung,

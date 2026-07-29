@@ -6,10 +6,9 @@ import {
     ensureMdExtension,
     initialNameFromWikilink,
     isFolioNewHref,
-    isInvalidFileName,
-    joinDirFile,
     parseFolioNewName,
 } from '../../app/view/wikilink-create';
+import { isInvalidFileName, joinDirFile } from '../../app/util/filename';
 
 describe('wikilink-create helpers', () => {
     it('detects folio-new: scheme', () => {

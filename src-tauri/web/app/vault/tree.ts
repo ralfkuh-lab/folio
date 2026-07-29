@@ -11,7 +11,7 @@
    aus Event-Payload) und IIFE #2 (Tree-Rebuild via invoke). Reihenfolge:
    pinned/recent zuerst (sync DOM-Patches), dann refreshVault async. */
 
-import { openContextMenu, closeContextMenu, runOrOpenFile } from './context-menu';
+import { openContextMenu, runOrOpenFile } from './context-menu';
 import { folioLog, safeInvoke } from '../util/log';
 import { t } from '../i18n/translate';
 
@@ -35,15 +35,6 @@ function post(msg: any): void {
 
 function invoke(cmd: string, args?: any): Promise<any> {
     return window.__TAURI__.core.invoke(cmd, args);
-}
-
-function findNodeByPath(path: string): HTMLElement | null {
-    if (!path) return null;
-    const nodes = ROOT.querySelectorAll('.node');
-    for (let i = 0; i < nodes.length; i++) {
-        if ((nodes[i] as HTMLElement).getAttribute('data-path') === path) return nodes[i] as HTMLElement;
-    }
-    return null;
 }
 
 function findAllNodesByPath(path: string): HTMLElement[] {
@@ -150,24 +141,6 @@ function toggleDir(node: HTMLElement): void {
         // Aufklappen mit komplett kollabiertem Subtree.
         post({ type: 'expand-dir', path });
     }
-}
-
-function resolveFileIcon(ext: string): Promise<string> {
-    if (fileIconCache[ext] !== undefined) {
-        return Promise.resolve(fileIconCache[ext]);
-    }
-    if (fileIconPending[ext]) return fileIconPending[ext];
-    const p = invoke('file_icon_data_uri', { ext }).then(function (uri) {
-        fileIconCache[ext] = uri || '';
-        delete fileIconPending[ext];
-        return fileIconCache[ext];
-    }).catch(function () {
-        fileIconCache[ext] = '';
-        delete fileIconPending[ext];
-        return '';
-    });
-    fileIconPending[ext] = p;
-    return p;
 }
 
 function applyIconsToNode(rootNode: Element): void {

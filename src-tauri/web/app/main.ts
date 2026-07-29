@@ -63,7 +63,6 @@ import { initTabs } from './state/tabs';
 import {
     initEditorShell,
     ensureEditorMounted,
-    setActiveMode,
     focusEditor,
     setEditorTheme,
 } from './editor/shell';
@@ -145,7 +144,7 @@ function runModuleInits(): void {
     initDragDrop();
     initAutomationEvents();
     initTabs();
-    initDocumentState({ setActiveMode });
+    initDocumentState();
     initPreview({ getCurrentPath });
     initHtmlLiveUpdate();
     initCodeLiveUpdate({ getCurrentPath });

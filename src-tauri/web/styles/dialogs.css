@@ -554,27 +554,11 @@ html.theme-dark .dialog-error {
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 12px;
 }
-.about-dialog__meta dd.about-dialog__license {
-  font-family: inherit;
-  font-size: 12.5px;
-}
 .about-dialog__meta dd a {
   color: var(--accent);
   text-decoration: none;
 }
 .about-dialog__meta dd a:hover { text-decoration: underline; }
-.about-dialog__blurb {
-  font-size: 12.5px;
-  color: var(--fg);
-  line-height: 1.5;
-  margin: 0;
-}
-.about-dialog__blurb a {
-  color: var(--accent);
-  text-decoration: none;
-}
-.about-dialog__blurb a:hover { text-decoration: underline; }
-
 /* Eigenstaendige GitHub-Link-Zeile mit Octicon-Glyph. */
 .about-dialog__github-link {
   display: inline-flex;

@@ -63,14 +63,8 @@ pub struct TemplateContext {
 impl TemplateContext {
     /// Kontext aus Markdown-Frontmatter + Dateipfad bauen. `logo` ist die
     /// bereits fertige data:-URI (None = kein Logo-Asset, `{{logo}}`
-    /// expandiert zum leeren String). Nutzt die aktive Export-i18n.
-    pub fn from_markdown(markdown: &str, path: Option<&str>, logo: Option<String>) -> Self {
-        // Production path after boot; export pipeline passes strings explicitly.
-        let strings = ExportStrings::current();
-        Self::from_markdown_with(markdown, path, logo, &strings)
-    }
-
-    /// Production-like path with injectable [`ExportStrings`] (en-export tests).
+    /// expandiert zum leeren String). Die Export-Pipeline reicht die
+    /// [`ExportStrings`] explizit durch.
     pub fn from_markdown_with(
         markdown: &str,
         path: Option<&str>,

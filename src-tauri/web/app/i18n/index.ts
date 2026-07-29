@@ -17,7 +17,6 @@ export {
     installPreAdapters,
     awaitPendingListens,
     drainUntilDryAndGoLive,
-    drainQueueToRealHandlers,
     getBootstrapPhase,
     setBootstrapPhase,
     getQueueSnapshot,

@@ -261,13 +261,6 @@ impl PanelState {
         true
     }
 
-    pub fn set_window_size(&mut self, width: f64, height: f64) -> io::Result<()> {
-        if !self.set_window_size_in_memory(width, height) {
-            return Ok(());
-        }
-        self.save()
-    }
-
     /// Siehe [`Self::set_window_position_in_memory`]. Liefert `false`
     /// bei verworfenen (nicht-positiven) Dimensionen.
     pub fn set_window_size_in_memory(&mut self, width: f64, height: f64) -> bool {

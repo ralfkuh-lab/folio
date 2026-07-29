@@ -4,7 +4,6 @@
    Default, Verzeichnis aus getCurrentPath). Der Dialog bleibt bei
    create_file-Fehlern offen und zeigt den Fehlertext. */
 
-import { t } from '../i18n/translate';
 import { getCurrentPath, openDocument } from '../state/document';
 import { showCreateNoteDialog } from '../ui/dialogs';
 import { folioLog } from '../util/log';
@@ -45,10 +44,6 @@ export function documentDirectory(docPath: string | null | undefined): string | 
     const i = norm.lastIndexOf('/');
     if (i < 0) return null;
     return norm.slice(0, i);
-}
-
-export function joinDirFile(dir: string, fileName: string): string {
-    return dir.replace(/\/+$/, '') + '/' + fileName.replace(/^\/+/, '');
 }
 
 /**
@@ -97,24 +92,4 @@ export async function handleFolioNewClick(href: string): Promise<void> {
     } finally {
         createDialogOpen = false;
     }
-}
-
-/** Test-Hook: Reentranz-Flag zurücksetzen. */
-export function __resetWikilinkCreateForTests(): void {
-    createDialogOpen = false;
-}
-
-/** Client-seitige Namens-Validierung (analog Vault-Kontextmenü). */
-export function isInvalidFileName(name: string): boolean {
-    const trimmed = (name || '').trim();
-    if (!trimmed) return true;
-    if (/[\\/]/.test(trimmed) || trimmed === '.' || trimmed === '..' || trimmed.includes('..')) {
-        return true;
-    }
-    return false;
-}
-
-// Re-export t-key helper for tests that want the no-document message.
-export function noDocumentMessage(): string {
-    return t('wikilinks.createDialog.noDocument');
 }

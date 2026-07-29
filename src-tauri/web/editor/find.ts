@@ -38,16 +38,6 @@ export interface FindController {
     clearFindDecorations(): void;
 }
 
-function isWordChar(ch: string): boolean {
-    return /[\p{L}\p{N}_]/u.test(ch);
-}
-
-function isWholeWordHit(text: string, from: number, to: number): boolean {
-    if (from > 0 && isWordChar(text.charAt(from - 1))) return false;
-    if (to < text.length && isWordChar(text.charAt(to))) return false;
-    return true;
-}
-
 export function createFindController(opts: FindControllerOptions): FindController {
     let findState: FindStateSnapshot = { term: '', total: 0, active: -1, matches: [] };
     const findOptions: { caseSensitive: boolean; wholeWord: boolean } = {

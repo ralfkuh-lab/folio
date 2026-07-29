@@ -13,7 +13,9 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "useDefineForClassFields": false
+    "useDefineForClassFields": false,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
   },
   "include": ["app/**/*.ts", "editor/**/*.ts", "globals.d.ts"]
 }

@@ -264,7 +264,7 @@ describe('state/document — synchronous setters', () => {
 describe('state/document — document:loaded listener', () => {
     it('updates currentPath/cleanText/body-kind on payload', async () => {
         const docMod = await import('../../app/state/document');
-        docMod.initDocumentState({ setActiveMode: vi.fn() });
+        docMod.initDocumentState();
 
         tauri.emitEvent('document:loaded', {
             path: '/tmp/example.md',
@@ -287,7 +287,7 @@ describe('state/document — document:loaded listener', () => {
         const shellMod = await import('../../app/editor/shell');
         const loadEditorTextMock = vi.mocked(shellMod.loadEditorText);
         loadEditorTextMock.mockClear();
-        docMod.initDocumentState({ setActiveMode: vi.fn() });
+        docMod.initDocumentState();
 
         tauri.emitEvent('document:loaded', {
             path: '/tmp/neu.md',
@@ -351,7 +351,7 @@ describe('state/document — document:loaded listener', () => {
 
     it('document:closed clears state + body-class falls back to kind-unknown', async () => {
         const docMod = await import('../../app/state/document');
-        docMod.initDocumentState({ setActiveMode: vi.fn() });
+        docMod.initDocumentState();
 
         tauri.emitEvent('document:loaded', {
             path: '/tmp/a.md',
@@ -371,7 +371,7 @@ describe('state/document — document:loaded listener', () => {
 
     it('document:dirty_changed forwards is_dirty into markDirty', async () => {
         const docMod = await import('../../app/state/document');
-        docMod.initDocumentState({ setActiveMode: vi.fn() });
+        docMod.initDocumentState();
 
         tauri.emitEvent('document:dirty_changed', { is_dirty: true });
         expect(docMod.getIsDirty()).toBe(true);
@@ -382,7 +382,7 @@ describe('state/document — document:loaded listener', () => {
 
     it('document:external_changed reloads when not dirty, warns when dirty', async () => {
         const docMod = await import('../../app/state/document');
-        docMod.initDocumentState({ setActiveMode: vi.fn() });
+        docMod.initDocumentState();
 
         tauri.emitEvent('document:loaded', {
             path: '/tmp/a.md',
@@ -421,7 +421,7 @@ describe('state/document — document:loaded listener', () => {
             isMounted: vi.fn(),
         };
         (window as any).FolioCodeView = codeView;
-        docMod.initDocumentState({ setActiveMode: vi.fn() });
+        docMod.initDocumentState();
 
         tauri.emitEvent('document:loaded', {
             path: '/tmp/page.html',
@@ -448,7 +448,7 @@ describe('state/document — document:loaded listener', () => {
         const docMod = await import('../../app/state/document');
         const tabsMod = await import('../../app/state/tabs');
         vi.mocked(tabsMod.getActiveTabId).mockReturnValue(1);
-        docMod.initDocumentState({ setActiveMode: vi.fn() });
+        docMod.initDocumentState();
         const el = document.getElementById('status-encoding') as HTMLElement;
 
         // Markdown-Dokument (utf8, kein encoding-Feld) laden -> Zelle versteckt.
@@ -469,7 +469,7 @@ describe('state/document — document:loaded listener', () => {
 
     it('document:loaded sets EOL cell and hides cursor until selection event', async () => {
         const docMod = await import('../../app/state/document');
-        docMod.initDocumentState({ setActiveMode: vi.fn() });
+        docMod.initDocumentState();
         const eol = document.getElementById('status-eol') as HTMLButtonElement;
         const cursor = document.getElementById('status-cursor') as HTMLElement;
 
@@ -497,7 +497,7 @@ describe('state/document — document:loaded listener', () => {
         const docMod = await import('../../app/state/document');
         const tabsMod = await import('../../app/state/tabs');
         vi.mocked(tabsMod.getActiveTabId).mockReturnValue(1);
-        docMod.initDocumentState({ setActiveMode: vi.fn() });
+        docMod.initDocumentState();
         const eol = document.getElementById('status-eol') as HTMLButtonElement;
 
         tauri.emitEvent('document:loaded', {
@@ -515,7 +515,7 @@ describe('state/document — document:loaded listener', () => {
 
     it('EOL button click invokes set_line_ending with toggled value', async () => {
         const docMod = await import('../../app/state/document');
-        docMod.initDocumentState({ setActiveMode: vi.fn() });
+        docMod.initDocumentState();
         const eol = document.getElementById('status-eol') as HTMLButtonElement;
 
         tauri.emitEvent('document:loaded', {
@@ -534,7 +534,7 @@ describe('state/document — document:loaded listener', () => {
         const docMod = await import('../../app/state/document');
         const tabsMod = await import('../../app/state/tabs');
         vi.mocked(tabsMod.getActiveTabId).mockReturnValue(1);
-        docMod.initDocumentState({ setActiveMode: vi.fn() });
+        docMod.initDocumentState();
 
         tauri.emitEvent('document:loaded', {
             path: '/tmp/a.md',
@@ -562,7 +562,7 @@ describe('state/document — document:loaded listener', () => {
 
     it('document:save_error surfaces the localized message in the status bar', async () => {
         const docMod = await import('../../app/state/document');
-        docMod.initDocumentState({ setActiveMode: vi.fn() });
+        docMod.initDocumentState();
         const msg = 'Datei enthält Zeichen, die sich nicht in Windows-1252 speichern lassen: 😀';
         tauri.emitEvent('document:save_error', { message: msg });
         expect(document.getElementById('status-path')!.textContent).toBe(msg);
@@ -574,7 +574,7 @@ describe('state/document — lifecycle seq guards (spec)', () => {
         const docMod = await import('../../app/state/document');
         const tabsMod = await import('../../app/state/tabs');
         vi.mocked(tabsMod.getActiveTabId).mockReturnValue(1);
-        docMod.initDocumentState({ setActiveMode: vi.fn() });
+        docMod.initDocumentState();
         tauri.emitEvent('document:loaded', {
             path,
             kind: 'markdown',
@@ -693,7 +693,7 @@ describe('state/document — lifecycle seq guards (spec)', () => {
 
     it('bestehende Events ohne seq bleiben kompatibel (Alt-Pfad)', async () => {
         const docMod = await import('../../app/state/document');
-        docMod.initDocumentState({ setActiveMode: vi.fn() });
+        docMod.initDocumentState();
         tauri.emitEvent('document:loaded', { path: '/tmp/no-seq.md', kind: 'text', text: 'no-seq', content: '', tocHtml: '' });
         expect(docMod.getCurrentPath()).toBe('/tmp/no-seq.md');
         tauri.emitEvent('document:dirty_changed', { is_dirty: true });
@@ -708,7 +708,7 @@ describe('state/document — lifecycle seq guards (spec)', () => {
         const docMod = await import('../../app/state/document');
         const tabsMod = await import('../../app/state/tabs');
         vi.mocked(tabsMod.getActiveTabId).mockReturnValue(1);
-        docMod.initDocumentState({ setActiveMode: vi.fn() });
+        docMod.initDocumentState();
 
         tauri.emitEvent('document:loaded', { path: '/p.md', text: 'v5', seq: 5, tabId: 1 });
         expect(docMod.getCleanText()).toBe('v5');

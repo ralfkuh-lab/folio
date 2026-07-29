@@ -28,7 +28,6 @@ type AiConfig = {
 
 const PRESET_LANGUAGES = ['en', 'de', 'fr', 'es', 'it', 'pt', 'nl', 'pl', 'ja', 'zh'];
 let configCache: AiConfig | null = null;
-let catalogCache: CatalogResult | null = null;
 let documentIsMarkdown = document.body.classList.contains('kind-markdown');
 let busy = false;
 let refreshScheduled = false;
@@ -218,7 +217,6 @@ export async function openTranslateDialog(): Promise<void> {
             invoke<CatalogResult>('ai_catalog_get'),
         ]);
         configCache = config;
-        catalogCache = catalog;
         syncMenuEnabled();
         renderModels(config, catalog);
         applyRecentLanguages(config);

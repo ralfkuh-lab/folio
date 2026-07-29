@@ -40,12 +40,6 @@
    Browser-Default `[hidden] { display: none }`. */
 .toolbar button[hidden] { display: none; }
 .toolbar button svg { display: block; }
-/* Segoe-Fluent-Icons-Glyphen (monochrom, Win11). */
-.toolbar button.ti-fluent {
-  font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets", sans-serif;
-  font-size: 15px;
-  line-height: 1;
-}
 /* Color-Emoji-Glyphen — Unicode-Standard-Codepoints, gerendert über
    systemeigene Color-Emoji-Fonts (Segoe UI Emoji / Apple / Noto). */
 .toolbar button.ti-emoji,

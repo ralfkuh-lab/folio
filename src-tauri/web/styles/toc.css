@@ -19,11 +19,6 @@ body.toc-hidden .toc-region { display: none; }
   font-weight: 600;
   font-size: 12px;
 }
-.toc-empty {
-  padding: 8px 10px;
-  color: var(--rail-fg-muted);
-  font-size: 11px;
-}
 ul.toc {
   list-style: none;
   margin: 0;

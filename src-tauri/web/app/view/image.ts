@@ -395,8 +395,3 @@ export function clearImageView(): void {
 export function getImageViewState(): { path: string; lastError: string | null } {
     return { path: currentPath, lastError };
 }
-
-/** Nur fuer Tests/Diagnose: aktueller Zoom/Pan-Stand. */
-export function getImageTransformForTest(): Transform {
-    return { scale: transform.scale, tx: transform.tx, ty: transform.ty };
-}

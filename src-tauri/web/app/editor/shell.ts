@@ -118,11 +118,6 @@ export function setEditorTheme(mode: string): void {
     if (window.FolioDiffView) window.FolioDiffView.setTheme(normalized);
 }
 
-export function requestEditorSelection(): { start: number; length: number } | null {
-    if (!window.FolioEditor) return null;
-    return window.FolioEditor.getSelection();
-}
-
 export function applyEditorReplace(fullText: string, selectionStart: number, selectionLength: number): void {
     if (!window.FolioEditor) return;
     window.FolioEditor.applyReplace({
@@ -133,11 +128,6 @@ export function applyEditorReplace(fullText: string, selectionStart: number, sel
 }
 
 // ----- Mode-Verwaltung -----
-
-export function setEditMode(on: boolean): void {
-    document.body.classList.toggle('edit-mode', !!on);
-    if (on) layoutEditor();
-}
 
 // Spiegelt den View/Edit/Split-State in die Toolbar + Menue-Haekchen.
 export function setActiveMode(mode: string): void {

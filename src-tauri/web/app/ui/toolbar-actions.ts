@@ -3,12 +3,10 @@
    pragmatisch teil, weil er semantisch zum Toolbar-Set gehoert. */
 
 import {
-    getCleanText,
     getIsDirty,
     openDocument,
     requestSaveIfDirty,
     saveCurrent,
-    showStatus,
 } from '../state/document';
 import { activateRelativeTab } from '../state/tabs';
 import { setMode } from '../editor/shell';

@@ -4,6 +4,7 @@
    muss zum Zeitpunkt des Aufrufs gemountet sein. */
 
 import { t } from '../i18n/translate';
+import { isInvalidFileName, joinDirFile } from '../util/filename';
 import { folioLog } from '../util/log';
 
 function $(id: string): HTMLElement | null { return document.getElementById(id); }
@@ -141,11 +142,7 @@ export function showCreateNoteDialog(opts: {
         function onOk(): void {
             if (busy) return;
             const name = (input.value || '').trim();
-            if (!name) {
-                setError(t('errors.file.invalidName'));
-                return;
-            }
-            if (/[\\/]/.test(name) || name === '.' || name === '..' || name.includes('..')) {
+            if (isInvalidFileName(name)) {
                 setError(t('errors.file.invalidName'));
                 return;
             }
@@ -153,7 +150,7 @@ export function showCreateNoteDialog(opts: {
                 setError(t('wikilinks.createDialog.noDocument'));
                 return;
             }
-            const path = opts.targetDir.replace(/\/+$/, '') + '/' + name.replace(/^\/+/, '');
+            const path = joinDirFile(opts.targetDir, name);
             const invoke = invokeCommand();
             if (!invoke) {
                 setError(t('errors.file.createFailed', { detail: 'no invoke' }));

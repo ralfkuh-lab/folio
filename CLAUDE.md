@@ -55,6 +55,13 @@ bereits gebautes `target/release/folio` die Änderung NICHT; erst
 `cargo build --release` (bzw. der run-e2e.sh-Wrapper, der das immer tut)
 liefert den neuen Frontend-Stand aus.
 
+Die `tsconfig.json` hat `noUnusedLocals`/`noUnusedParameters` an (Gate im
+Build, weil `npm run build` mit `tsc --noEmit` startet): ungenutzte
+Variablen, modul-private Funktionen und Importe sind **Fehler**, keine
+Warnungen. Das hält toten Frontend-Code draußen, den ein export-basierter
+Scan nicht sieht — beim Auskommentieren von Code also mit-aufräumen statt
+den Rest stehen zu lassen. Test-Dateien sind vom `include` ausgenommen.
+
 Im HTML werden die Bundles in dieser Reihenfolge geladen
 (`monaco/loader.js` → `editor.bundle.js` → `app.bundle.js`), ohne
 `defer` und am Body-Ende — Top-Level-`getElementById`-Aufrufe greifen

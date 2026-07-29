@@ -14,7 +14,7 @@ import { setTocList, rewriteRelativeAssets } from '../view/markdown';
 import { highlightCodeBlocks } from '../view/code-highlight';
 import { addCodeCopyButtons } from '../view/code-copy';
 import { renderMermaidBlocks } from '../view/mermaid';
-import { clearHtmlView, HtmlFinder, invalidateHtmlLive, isHtmlDocument, mountHtmlView } from '../view/html';
+import { clearHtmlView, invalidateHtmlLive, isHtmlDocument, mountHtmlView } from '../view/html';
 import { clearImageView, isImageDocument, mountImageView, reloadImageView } from '../view/image';
 import { invalidateCodeLive } from '../view/code-live';
 import { invalidatePreview } from '../view/preview';
@@ -35,11 +35,6 @@ import { getActiveTabId } from './tabs';
 // (document_service::open). Frontend-Resolver entfernt — sonst doppelter
 // set_view_mode-Aufruf neben dem backendseitigen app:set_mode-Emit.
 
-type Deps = {
-    setActiveMode: (mode: string) => void;
-};
-
-let deps: Deps = null;
 let currentPath: string | null = null;
 let cleanText = '';
 let isDirty = false;
@@ -543,9 +538,7 @@ function renderDocumentPayload(data: any): void {
     }
 }
 
-export function initDocumentState(d: Deps): void {
-    deps = d;
-
+export function initDocumentState(): void {
     const listen = window.__TAURI__.event.listen;
 
     // EOL-Toggle-Button (LF ↔ CRLF).

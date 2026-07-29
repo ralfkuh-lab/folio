@@ -315,11 +315,6 @@ export function __backlinksFetchGenForTests(): number {
     return fetchGen;
 }
 
-/** Test-Hook: inFlight-Flag. */
-export function __backlinksInFlightForTests(): boolean {
-    return inFlight;
-}
-
 /** Test-Hook: lastBacklinksPath. */
 export function __lastBacklinksPathForTests(): string | null {
     return lastBacklinksPath;

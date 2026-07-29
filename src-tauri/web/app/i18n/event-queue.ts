@@ -293,16 +293,6 @@ export async function drainUntilDryAndGoLive(): Promise<void> {
     }
 }
 
-/** @deprecated prefer drainUntilDryAndGoLive */
-export async function drainQueueToRealHandlers(): Promise<void> {
-    return drainUntilDryAndGoLive();
-}
-
-/** @deprecated use drainUntilDryAndGoLive */
-export async function drainQueue(): Promise<void> {
-    return drainUntilDryAndGoLive();
-}
-
 /** Test helpers */
 export function __resetEventQueueForTests(): void {
     phase = 'booting';

@@ -20,7 +20,6 @@
   gap: 8px;
 }
 
-.settings-ai-heading,
 .settings-ai-toolbar,
 .settings-ai-card__header,
 .settings-ai-model-group__header {
@@ -28,10 +27,6 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-}
-
-.settings-ai-heading .settings-section__title {
-  flex: 1 1 auto;
 }
 
 .settings-ai-toolbar .settings-input {
@@ -406,10 +401,6 @@
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-
-.settings-ai-chat__message--user p {
-  color: var(--fg);
 }
 
 .settings-ai-chat__message--assistant p {

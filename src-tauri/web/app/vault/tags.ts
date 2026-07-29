@@ -36,10 +36,6 @@ function invokeCommand(): ((cmd: string, args?: any) => Promise<any>) | null {
     return core && typeof core.invoke === 'function' ? core.invoke : null;
 }
 
-export function isTagsSectionExpanded(): boolean {
-    return expanded;
-}
-
 /** Rendert die Tag-Liste aus einem vault_tags-Response. Export für Tests. */
 export function renderVaultTags(result: VaultTagsResult | null | undefined): void {
     lastResult = result || { tags: [], truncated: false };
