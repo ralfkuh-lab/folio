@@ -5,6 +5,7 @@ pub mod editor;
 pub mod events;
 pub mod export;
 pub mod file;
+pub mod git_cmd;
 pub mod icon;
 pub mod nav;
 pub mod search_cmd;

@@ -18,6 +18,7 @@ import { setMode } from '../editor/shell';
 import { showConfirmDialog } from './dialogs';
 import { folioLog, safeInvoke } from '../util/log';
 import { t } from '../i18n/translate';
+import { closeGitDiff } from './git-diff';
 
 export type AiReviewContext = {
     runId: number;
@@ -116,6 +117,9 @@ export async function openAiDiffReview(context: AiReviewContext): Promise<void> 
         folioLog.warn('ai-review', 'Diff-Review-Surface nicht verfügbar');
         return;
     }
+    // Dieselbe Surface: einen offenen Git-Diff (read-only) raeumen,
+    // bevor die Review den Inhalt uebernimmt. Kein Datenverlust.
+    closeGitDiff();
     review = { ...context, edited: false };
     const generation = ++reviewGeneration;
     region.hidden = false;

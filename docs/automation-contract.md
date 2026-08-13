@@ -33,6 +33,7 @@ umbenannt werden:
   `tabs:changed`,
   `app:set_mode`, `app:set_theme`, `vault:refresh`,
   `vault:dir_changed`, `vault:git_status` (`repoRoot`, `entries`, `generation`, optional `activeRoots`),
+  Command `git_show_head` (HEAD-Text + Disk-Text + language für den read-only Git-Diff),
   `navigation:changed`, `navigation:toc_click`,
   `editor:load_text`, `editor:apply_replace`, `editor:open_find`,
   `editor:set_find_term`, `shell:command`, `panel:rail_changed`,

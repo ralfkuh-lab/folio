@@ -23,6 +23,7 @@ import { initAboutDialog } from './ui/about-dialog';
 import { initTranslateDialog } from './ui/translate-dialog';
 import { initAiActionsDialog } from './ui/ai-actions-dialog';
 import { initAiDiffReview } from './ui/ai-diff-review';
+import { initGitDiff } from './ui/git-diff';
 import { initSettingsDialog } from './ui/settings-dialog';
 import { initThemeEditor, openThemeEditor } from './ui/theme-editor';
 import { initThemeAiDialog } from './ui/theme-ai-dialog';
@@ -130,6 +131,7 @@ function runModuleInits(): void {
     initTranslateDialog();
     initAiActionsDialog();
     initAiDiffReview();
+    initGitDiff();
     initViewTheme();
     initThemeEditor();
     initThemeAiDialog();

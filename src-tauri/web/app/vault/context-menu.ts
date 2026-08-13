@@ -15,6 +15,7 @@ import { safeInvoke } from '../util/log';
 import { confirmRunFile, showConfirmDialog, showRenameDialog } from '../ui/dialogs';
 import { searchInFolder } from './search';
 import { t } from '../i18n/translate';
+import { openGitDiff } from '../ui/git-diff';
 
 // Monochrome 16x16-Feather-Icons je data-act. Kein width/height im SVG
 // (CSS steuert die Groesse), stroke=currentColor faerbt mit Hover/Theme mit.
@@ -33,6 +34,7 @@ const ICONS: Record<string, string> = {
     copy: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1"/><path d="M3.5 10.5H3a.5.5 0 0 1-.5-.5V3a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 .5.5v.5"/></svg>',
     delete: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5h10M6.5 4.5V3a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1.5M5 4.5l.5 8a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1l.5-8"/></svg>',
     'search-folder': '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>',
+    'show-changes': '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3.5h4.5M3 8h3M3 12.5h4.5"/><path d="M10 3.5h3v9h-3z"/></svg>',
 };
 
 // Baut ein Kontextmenue-Item mit Icon + Label als DOM-Nodes.
@@ -86,6 +88,11 @@ function invoke(cmd: string, args?: any): Promise<any> {
     return window.__TAURI__.core.invoke(cmd, args);
 }
 
+export type ContextMenuOptions = {
+    gitModified?: boolean;
+    isText?: boolean;
+};
+
 export function openContextMenu(
     x: number,
     y: number,
@@ -94,6 +101,7 @@ export function openContextMenu(
     inPinned: boolean,
     inRecent: boolean,
     isExec: boolean,
+    options?: ContextMenuOptions,
 ): void {
     if (!ctxMenu) return;
     ctxTarget = { path, isDirectory: isDir };
@@ -112,6 +120,9 @@ export function openContextMenu(
     if (isDir) mid.push(['new-file', t('vault.contextMenu.newFile')]);
     if (isDir) mid.push(['search-folder', t('vault.contextMenu.searchInFolder')]);
     if (!isDir) mid.push(['rename', t('vault.contextMenu.rename')]);
+    if (!isDir && options?.gitModified && options?.isText) {
+        mid.push(['show-changes', t('vault.contextMenu.showChanges')]);
+    }
     if (!isDir) mid.push(['new-file', t('vault.contextMenu.newFile')]);
     if (!inPinned) mid.push(['pin', t('vault.contextMenu.pin')]);
     if (inPinned) mid.push(['unpin', t('vault.contextMenu.unpin')]);
@@ -270,6 +281,8 @@ export function initContextMenu(d: Deps): void {
             safeInvoke('workspace_remove_recent', { path }, 'workspace_remove_recent');
         } else if (act === 'search-folder' && isDir) {
             searchInFolder(path);
+        } else if (act === 'show-changes' && !isDir) {
+            void openGitDiff(path, deps.showStatus);
         } else if (act === 'rename') {
             startInlineRename(path);
         } else if (act === 'show') {

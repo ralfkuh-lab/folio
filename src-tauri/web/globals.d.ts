@@ -14,6 +14,7 @@ interface FolioEditorSurface {
     syncTabModels(openDocumentTabIds: number[]): void;
     closeDocument(tabId: number): void;
     getText(): string;
+    getTextForTab(tabId: number): string | null;
     getVersionId(): number | null;
     setSelection(start: number, length: number): void;
     getSelection(): { start: number; length: number };
@@ -87,7 +88,7 @@ type FolioThemeParts = Partial<Record<FolioThemePart, string>>;
 
 interface FolioDiffViewSurface {
     mount(elementId: string): Promise<void>;
-    setContents(original: string, modified: string, language: string): void;
+    setContents(original: string, modified: string, language: string, options?: { readOnly?: boolean }): void;
     onModifiedChange(callback: (() => void) | null): void;
     getModified(): string;
     setTheme(mode: 'light' | 'dark'): void;

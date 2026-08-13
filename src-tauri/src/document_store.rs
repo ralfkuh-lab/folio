@@ -642,6 +642,42 @@ fn read_and_decode(path: &str) -> io::Result<(String, LineEnding, bool, TextEnco
     }
 }
 
+/// Dekodiert Bytes wie [`read_and_decode`], aber fail-open fuer die
+/// reine Anzeige (Git-HEAD-Diff). Ungueltiges UTF-8-mit-BOM und kaputtes
+/// UTF-16 werden lossy ersetzt statt den Diff zu verweigern. Niemals
+/// zurueckschreiben — der Roundtrip-Vertrag von `read_and_decode` gilt hier
+/// nicht.
+pub fn decode_bytes_for_display(bytes: &[u8]) -> String {
+    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        let raw = String::from_utf8_lossy(&bytes[3..]).into_owned();
+        return normalize_line_endings(&raw).0;
+    }
+    if bytes.starts_with(&[0xFF, 0xFE]) {
+        let raw = encoding_rs::UTF_16LE
+            .decode_without_bom_handling(&bytes[2..])
+            .0
+            .into_owned();
+        return normalize_line_endings(&raw).0;
+    }
+    if bytes.starts_with(&[0xFE, 0xFF]) {
+        let raw = encoding_rs::UTF_16BE
+            .decode_without_bom_handling(&bytes[2..])
+            .0
+            .into_owned();
+        return normalize_line_endings(&raw).0;
+    }
+    match std::str::from_utf8(bytes) {
+        Ok(raw) => normalize_line_endings(raw).0,
+        Err(_) => {
+            let raw = encoding_rs::WINDOWS_1252
+                .decode_without_bom_handling(bytes)
+                .0
+                .into_owned();
+            normalize_line_endings(&raw).0
+        }
+    }
+}
+
 /// Decodiert UTF-16 (LE/BE, ohne fuehrenden BOM) **strikt**: meldet
 /// `decode_without_bom_handling` einen Fehler (ungerade Nutzdatenlaenge,
 /// unpaarige Surrogate), bricht der Load mit `InvalidData` ab — encoding_rs

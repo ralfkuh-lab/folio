@@ -107,7 +107,18 @@ export function mount(elementId: string): Promise<void> {
     });
 }
 
-export function setContents(original: string, modified: string, language: string): void {
+export type SetContentsOptions = {
+    /** Modified-Seite sperren. Default (undefined/false) bleibt editierbar
+     *  — die KI-Review braucht das. */
+    readOnly?: boolean;
+};
+
+export function setContents(
+    original: string,
+    modified: string,
+    language: string,
+    options?: SetContentsOptions,
+): void {
     const monaco = getMonaco();
     if (!editor || !monaco) return;
     // Erst das Model vom Widget loesen, dann disposen — sonst wirft Monaco
@@ -117,6 +128,11 @@ export function setContents(original: string, modified: string, language: string
     originalModel = monaco.editor.createModel(original || '', language || 'markdown');
     modifiedModel = monaco.editor.createModel(modified || '', language || 'markdown');
     editor.setModel({ original: originalModel, modified: modifiedModel });
+    const readOnly = !!(options && options.readOnly);
+    editor.updateOptions({ readOnly });
+    if (typeof editor.getModifiedEditor === 'function') {
+        editor.getModifiedEditor().updateOptions({ readOnly });
+    }
     if (changeCallback) {
         modifiedListener = modifiedModel.onDidChangeContent(() => {
             if (changeCallback) changeCallback();

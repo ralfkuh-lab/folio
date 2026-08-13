@@ -364,7 +364,12 @@ export function initVaultTree(d: Deps): void {
         const inPinned = isDirectChildOfSection(item, 'pinned');
         const inRecent = isDirectChildOfSection(item, 'recent');
         const isExec = item.getAttribute('data-exec') === '1';
-        openContextMenu(e.clientX, e.clientY, path, isDir, inPinned, inRecent, isExec);
+        const gitModified = item.classList.contains('git-modified');
+        const isText = item.getAttribute('data-text') === '1';
+        openContextMenu(e.clientX, e.clientY, path, isDir, inPinned, inRecent, isExec, {
+            gitModified,
+            isText,
+        });
     });
 
     // Doppelklick auf eine Datei loest die externe Aktion aus (ausfuehren /

@@ -75,6 +75,7 @@ function syncVirtualRegionClasses(): void {
     document.body.classList.toggle('settings-open', activeVirtualSlug === 'settings');
     document.body.classList.toggle('theme-editor-open', activeVirtualSlug === 'theme-editor');
     document.body.classList.toggle('ai-diff-open', activeVirtualSlug === 'ai-diff');
+    document.body.classList.toggle('git-diff-open', activeVirtualSlug === 'git-diff');
 }
 
 export function registerVirtualTab(tab: VirtualTab, activate = true): void {

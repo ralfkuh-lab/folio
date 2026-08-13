@@ -381,6 +381,21 @@ function doSetDocument(
     if (hasActiveTerm()) recomputeMatches();
 }
 
+/** Editor-Puffer eines Tabs (auch inaktiv). null ohne Model. */
+export function getTextForTab(tabId: number): string | null {
+    if (!Number.isFinite(tabId)) return null;
+    const editor = getEditor();
+    if (activeTabId === tabId && editor) {
+        return editor.getValue();
+    }
+    const entry = tabModels.get(tabId);
+    if (!entry) return null;
+    if (typeof entry.model.isDisposed === 'function' && entry.model.isDisposed()) {
+        return null;
+    }
+    return typeof entry.model.getValue === 'function' ? entry.model.getValue() : null;
+}
+
 /** Entfernt Models geschlossener bzw. leer gewordener Tabs. */
 export function syncTabModels(openDocumentTabIds: number[]): void {
     const keep = new Set(openDocumentTabIds);

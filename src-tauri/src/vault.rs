@@ -489,6 +489,16 @@ impl Vault {
         } else {
             ""
         };
+        let text_attr = if !is_directory {
+            match crate::file_kind::classify(&nav_path) {
+                crate::file_kind::FileKind::Markdown | crate::file_kind::FileKind::Text => {
+                    r#" data-text="1""#
+                }
+                _ => "",
+            }
+        } else {
+            ""
+        };
         let branch_html = if let Some(bi) = branch {
             if bi.label.is_empty() {
                 String::new()
@@ -519,7 +529,7 @@ impl Vault {
             title.push_str("\ngitignored");
         }
         format!(
-            r#"<li class="{classes}" data-kind="{kind}"{exec_attr} data-path="{datapath}" title="{title}"><div class="row"><span class="{caret_class}">▾</span>{icon_html}<span class="label">{name}</span>{branch_html}</div><ul class="{children_class}">{children}</ul></li>"#,
+            r#"<li class="{classes}" data-kind="{kind}"{exec_attr}{text_attr} data-path="{datapath}" title="{title}"><div class="row"><span class="{caret_class}">▾</span>{icon_html}<span class="label">{name}</span>{branch_html}</div><ul class="{children_class}">{children}</ul></li>"#,
             datapath = escape_attr(&nav_path),
             title = escape_attr(&title),
             name = escape_html(&label_name),

@@ -215,11 +215,22 @@
   color: var(--fg);
 }
 
-body.ai-diff-open #ai-diff-region:not([hidden]) {
+body.ai-diff-open #ai-diff-region:not([hidden]),
+body.git-diff-open #ai-diff-region:not([hidden]) {
   display: flex;
 }
 
-body.ai-diff-open .content-panes {
+body.ai-diff-open .content-panes,
+body.git-diff-open .content-panes {
+  display: none;
+}
+
+body.git-diff-open #ai-diff-apply,
+body.git-diff-open #ai-diff-discard {
+  display: none;
+}
+
+body.git-diff-open #ai-diff-region .monaco-diff-editor .gutter .gutterItem {
   display: none;
 }
 

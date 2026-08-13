@@ -16,6 +16,10 @@ vi.mock('../../app/state/document', () => ({
 vi.mock('../../app/editor/shell', () => ({
     setMode: vi.fn(() => Promise.resolve(true)),
 }));
+vi.mock('../../app/ui/git-diff', () => ({
+    closeGitDiff: vi.fn(),
+    isGitDiffOpen: vi.fn(() => false),
+}));
 
 import {
     confirmAiReviewForQuit,

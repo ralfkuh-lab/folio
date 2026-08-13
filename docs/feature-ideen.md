@@ -126,8 +126,11 @@ Diese Ideen kamen von 2–4 Quellen unabhängig. Das ist der beste Startpunkt.
   Toolbar. `[S]` (agy)
 - **Orphan-Files-Finder** — MD-Dateien auflisten, auf die niemand verlinkt (Ordnung
   im persönlichen Wiki). `[S]` (agy)
-- **Beliebige Dateien vergleichen** — zwei Tabs / Datei-vs-Disk / zwei Vault-Dateien
-  im Diff-View (bestehende `FolioDiffView` wiederverwendbar). `[M]` (codex, grok)
+- **Beliebige Dateien vergleichen** — Teil-Umsetzung ✅ **2026-08-14**:
+  „Änderungen anzeigen" im Vault-Kontextmenü zeigt HEAD gegen den
+  aktuellen Stand (read-only, `FolioDiffView` mitbenutzt, offene
+  KI-Review hat Vorrang). **Offen bleiben**: zwei beliebige Tabs, zwei
+  Vault-Dateien, Datei-vs-Disk als eigener Modus. `[M]` (codex, grok)
 - **Workspace-Profile** — getrennte Profile für Pins/Recents/Tabs/Presets/Layout
   („Arbeit", „Doku", „Privat"). `[M]` (codex)
 - **Untitled Buffers** — sofort unbenannten MD-Tab öffnen, Pfad erst beim Speichern;

@@ -26,6 +26,7 @@ import {
 } from './find';
 import {
     closeDocument,
+    getTextForTab,
     layout,
     mount,
     setDocument,
@@ -70,6 +71,7 @@ import * as diffView from './diff-view';
     syncTabModels,
     closeDocument,
     getText,
+    getTextForTab,
     getVersionId,
     getSelection,
     setSelection,

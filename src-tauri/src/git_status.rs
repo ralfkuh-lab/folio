@@ -9,10 +9,11 @@
 //! schlaegt der Aufruf fehl, haengt er (Deadline) oder ist der Pfad kein
 //! Repo, gibt es keine Dots und hoechstens ein `debug!`.
 
+use crate::search::MAX_FILE_SIZE;
 use crate::workspace::Workspace;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::Read;
+use std::io::{self, Read};
 use std::path::Path;
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::{Arc, Mutex};
@@ -514,28 +515,24 @@ fn collect_status_timed(repo_root: &Path, timeout: Duration) -> Option<GitRepoSt
         }
     };
     match wait_child_with_timeout(&mut child, timeout) {
-        Ok(Some(status)) if status.success() => {
-            let mut stdout = Vec::new();
-            if let Some(mut pipe) = child.stdout.take() {
-                let _ = pipe.read_to_end(&mut stdout);
-            }
-            let raw = parse_porcelain_z(&stdout);
+        Ok(wait) if wait.success() => {
+            let raw = parse_porcelain_z(&wait.stdout);
             let resolved = resolve_entries(repo_root, &raw);
             let root = normalize_abs(&path_to_string(repo_root));
             Some(GitRepoStatus {
                 entries: aggregate_dirs(&root, &resolved),
             })
         }
-        Ok(Some(status)) => {
+        Ok(wait) if wait.status.is_some() => {
             tracing::debug!(
                 target: "folio::git_status",
                 repo = %repo_root.display(),
-                code = ?status.code(),
+                code = ?wait.status.and_then(|s| s.code()),
                 "git status failed; omitting dots"
             );
             None
         }
-        Ok(None) => {
+        Ok(_) => {
             tracing::debug!(
                 target: "folio::git_status",
                 repo = %repo_root.display(),
@@ -556,26 +553,50 @@ fn collect_status_timed(repo_root: &Path, timeout: Duration) -> Option<GitRepoSt
     }
 }
 
-/// Wartet auf `child` bis `timeout`. Bei Ablauf: `kill()` und `wait()`
-/// (reap). `Ok(None)` = Timeout (fail-open).
-fn wait_child_with_timeout(
-    child: &mut Child,
-    timeout: Duration,
-) -> std::io::Result<Option<ExitStatus>> {
+#[derive(Debug)]
+struct ChildWait {
+    status: Option<ExitStatus>,
+    stdout: Vec<u8>,
+}
+
+impl ChildWait {
+    fn success(&self) -> bool {
+        self.status.is_some_and(|s| s.success())
+    }
+}
+
+/// Wartet auf `child` bis `timeout`. Stdout wird in einem Reader-Thread
+/// geleert, damit ein voller Pipe-Puffer git nicht im write() blockiert.
+/// Bei Ablauf: `kill()` und `wait()` (reap). `status == None` = Timeout.
+fn wait_child_with_timeout(child: &mut Child, timeout: Duration) -> io::Result<ChildWait> {
+    let reader = child.stdout.take().map(|mut pipe| {
+        std::thread::Builder::new()
+            .name("folio-git-stdout".to_string())
+            .spawn(move || {
+                let mut buf = Vec::new();
+                let _ = pipe.read_to_end(&mut buf);
+                buf
+            })
+    });
     let deadline = Instant::now() + timeout;
-    loop {
+    let status = loop {
         match child.try_wait()? {
-            Some(status) => return Ok(Some(status)),
+            Some(status) => break Some(status),
             None => {
                 if Instant::now() >= deadline {
                     let _ = child.kill();
                     let _ = child.wait();
-                    return Ok(None);
+                    break None;
                 }
                 std::thread::sleep(WAIT_POLL);
             }
         }
-    }
+    };
+    let stdout = match reader {
+        Some(Ok(handle)) => handle.join().unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    Ok(ChildWait { status, stdout })
 }
 
 /// Parst `git status --porcelain=v1 -z`. Eintraege sind NUL-getrennt;
@@ -739,6 +760,148 @@ fn join_repo_path(repo_root: &str, rel: &str) -> String {
 
 fn path_to_string(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
+}
+
+/// Ergebnis von [`show_head`]: fail-open, kein Dialog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShowHeadError {
+    NoRepo,
+    NoHead,
+    NotInHead,
+    TooLarge,
+    Failed,
+}
+
+/// Liest die HEAD-Fassung von `path` (`git show HEAD:<rel>`).
+/// Prozess-Infrastruktur wie [`collect_status`]: Deadline, kill+reap,
+/// fail-open.
+pub fn show_head(path: &Path) -> Result<String, ShowHeadError> {
+    let repo = crate::git_branch::repo_root(path).ok_or(ShowHeadError::NoRepo)?;
+    if !repo.is_dir() {
+        return Err(ShowHeadError::NoRepo);
+    }
+    let rel = repo_relative(&repo, path).ok_or(ShowHeadError::Failed)?;
+    if !git_head_exists(&repo) {
+        return Err(ShowHeadError::NoHead);
+    }
+    match git_show_head_bytes(&repo, &rel) {
+        Ok(bytes) => {
+            if bytes.len() as u64 > MAX_FILE_SIZE {
+                return Err(ShowHeadError::TooLarge);
+            }
+            Ok(crate::document_store::decode_bytes_for_display(&bytes))
+        }
+        Err(err) => Err(map_show_capture(err)),
+    }
+}
+
+/// Arbeitsbaum-Stand fuer die rechte Diff-Seite. Gelöschte Datei → leer;
+/// Datei über [`MAX_FILE_SIZE`] → [`ShowHeadError::TooLarge`].
+pub fn read_working_tree_for_diff(path: &Path) -> Result<String, ShowHeadError> {
+    match std::fs::read(path) {
+        Ok(bytes) => {
+            if bytes.len() as u64 > MAX_FILE_SIZE {
+                return Err(ShowHeadError::TooLarge);
+            }
+            Ok(crate::document_store::decode_bytes_for_display(&bytes))
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(String::new()),
+        Err(_) => Err(ShowHeadError::Failed),
+    }
+}
+
+fn repo_relative(repo: &Path, file: &Path) -> Option<String> {
+    let repo_n = normalize_abs(&path_to_string(repo));
+    let file_n = normalize_abs(&path_to_string(file));
+    if file_n == repo_n {
+        return None;
+    }
+    file_n
+        .strip_prefix(&(repo_n + "/"))
+        .map(std::string::ToString::to_string)
+}
+
+fn git_head_exists(repo: &Path) -> bool {
+    run_git_capture(repo, &["rev-parse", "--verify", "HEAD"]).is_ok()
+}
+
+fn git_show_head_bytes(repo: &Path, rel: &str) -> Result<Vec<u8>, GitCaptureError> {
+    let spec = format!("HEAD:{rel}");
+    run_git_capture(repo, &["show", &spec])
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GitCaptureError {
+    Spawn,
+    Timeout,
+    Wait,
+    NonZero,
+}
+
+fn map_show_capture(err: GitCaptureError) -> ShowHeadError {
+    match err {
+        GitCaptureError::NonZero => ShowHeadError::NotInHead,
+        GitCaptureError::Spawn | GitCaptureError::Timeout | GitCaptureError::Wait => {
+            ShowHeadError::Failed
+        }
+    }
+}
+
+fn run_git_capture(repo: &Path, args: &[&str]) -> Result<Vec<u8>, GitCaptureError> {
+    let mut child = match Command::new("git")
+        .args(args)
+        .current_dir(repo)
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(error) => {
+            tracing::debug!(
+                target: "folio::git_status",
+                repo = %repo.display(),
+                %error,
+                "git not available; omitting HEAD text"
+            );
+            return Err(GitCaptureError::Spawn);
+        }
+    };
+    match wait_child_with_timeout(&mut child, COLLECT_TIMEOUT) {
+        Ok(wait) if wait.success() => Ok(wait.stdout),
+        Ok(wait) if wait.status.is_some() => {
+            tracing::debug!(
+                target: "folio::git_status",
+                repo = %repo.display(),
+                code = ?wait.status.and_then(|s| s.code()),
+                args = ?args,
+                "git command failed"
+            );
+            Err(GitCaptureError::NonZero)
+        }
+        Ok(_) => {
+            tracing::debug!(
+                target: "folio::git_status",
+                repo = %repo.display(),
+                args = ?args,
+                "git command timed out"
+            );
+            Err(GitCaptureError::Timeout)
+        }
+        Err(error) => {
+            tracing::debug!(
+                target: "folio::git_status",
+                repo = %repo.display(),
+                %error,
+                "git wait failed"
+            );
+            Err(GitCaptureError::Wait)
+        }
+    }
 }
 
 fn normalize_abs(path: &str) -> String {
@@ -1120,7 +1283,7 @@ mod tests {
             .expect("spawn sleep");
         let started = Instant::now();
         let result = wait_child_with_timeout(&mut child, Duration::from_millis(200)).expect("wait");
-        assert!(result.is_none(), "timeout must return Ok(None)");
+        assert!(result.status.is_none(), "timeout must return status=None");
         assert!(started.elapsed() < Duration::from_secs(2));
         // Reaped: ein zweites wait darf nicht mehr erfolgreich blocken.
         // try_wait nach reap liefert typischerweise Ok(None) oder Err.
@@ -1140,6 +1303,241 @@ mod tests {
         ];
         let roots = repo_roots_from_paths(&paths);
         assert_eq!(roots.len(), 1, "{roots:?}");
+    }
+
+    fn git_identity_env(cmd: &mut Command) -> &mut Command {
+        cmd.env("GIT_AUTHOR_NAME", "folio-test")
+            .env("GIT_AUTHOR_EMAIL", "folio-test@example.com")
+            .env("GIT_COMMITTER_NAME", "folio-test")
+            .env("GIT_COMMITTER_EMAIL", "folio-test@example.com")
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+    }
+
+    fn git_init_real(root: &Path) -> bool {
+        if !git_available() {
+            return false;
+        }
+        git_identity_env(
+            Command::new("git")
+                .args(["init", "--quiet"])
+                .current_dir(root),
+        )
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+    }
+
+    fn git_commit_file(root: &Path, rel: &str, content: &str) -> bool {
+        let path = root.join(rel);
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if fs::write(&path, content).is_err() {
+            return false;
+        }
+        if !git_identity_env(
+            Command::new("git")
+                .args(["add", "--", rel])
+                .current_dir(root),
+        )
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+        {
+            return false;
+        }
+        git_identity_env(
+            Command::new("git")
+                .args([
+                    "-c",
+                    "commit.gpgsign=false",
+                    "-c",
+                    "user.name=folio-test",
+                    "-c",
+                    "user.email=folio-test@example.com",
+                    "commit",
+                    "--quiet",
+                    "-m",
+                    "test",
+                ])
+                .current_dir(root),
+        )
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+    }
+
+    #[test]
+    fn show_head_reads_committed_file() {
+        let tmp = TempDir::new().unwrap();
+        if !git_init_real(tmp.path()) {
+            return;
+        }
+        if !git_commit_file(tmp.path(), "notes.md", "# Head\n") {
+            return;
+        }
+        fs::write(tmp.path().join("notes.md"), "# Dirty\n").unwrap();
+        let text = show_head(&tmp.path().join("notes.md")).expect("HEAD text");
+        assert_eq!(text, "# Head\n");
+    }
+
+    #[test]
+    fn show_head_file_not_in_head() {
+        let tmp = TempDir::new().unwrap();
+        if !git_init_real(tmp.path()) {
+            return;
+        }
+        if !git_commit_file(tmp.path(), "kept.md", "x\n") {
+            return;
+        }
+        fs::write(tmp.path().join("neu.md"), "y\n").unwrap();
+        assert_eq!(
+            show_head(&tmp.path().join("neu.md")),
+            Err(ShowHeadError::NotInHead)
+        );
+    }
+
+    #[test]
+    fn show_head_repo_without_commits() {
+        let tmp = TempDir::new().unwrap();
+        if !git_init_real(tmp.path()) {
+            return;
+        }
+        fs::write(tmp.path().join("a.md"), "x\n").unwrap();
+        assert_eq!(
+            show_head(&tmp.path().join("a.md")),
+            Err(ShowHeadError::NoHead)
+        );
+    }
+
+    #[test]
+    fn show_head_path_with_space_and_umlaut() {
+        let tmp = TempDir::new().unwrap();
+        if !git_init_real(tmp.path()) {
+            return;
+        }
+        if !git_commit_file(tmp.path(), "mein file ä.md", "umlaut\n") {
+            return;
+        }
+        let text = show_head(&tmp.path().join("mein file ä.md")).expect("HEAD");
+        assert_eq!(text, "umlaut\n");
+    }
+
+    #[test]
+    fn show_head_no_repo_is_fail_open() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("a.md"), "x\n").unwrap();
+        assert_eq!(
+            show_head(&tmp.path().join("a.md")),
+            Err(ShowHeadError::NoRepo)
+        );
+    }
+
+    #[test]
+    fn show_head_fake_git_dir_is_fail_open() {
+        let tmp = TempDir::new().unwrap();
+        init_git(tmp.path());
+        fs::write(tmp.path().join("a.md"), "x\n").unwrap();
+        let err = show_head(&tmp.path().join("a.md")).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                ShowHeadError::NoHead | ShowHeadError::NotInHead | ShowHeadError::Failed
+            ),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn map_show_capture_timeout_and_spawn_are_failed() {
+        assert_eq!(
+            map_show_capture(GitCaptureError::Timeout),
+            ShowHeadError::Failed
+        );
+        assert_eq!(
+            map_show_capture(GitCaptureError::Spawn),
+            ShowHeadError::Failed
+        );
+        assert_eq!(
+            map_show_capture(GitCaptureError::Wait),
+            ShowHeadError::Failed
+        );
+        assert_eq!(
+            map_show_capture(GitCaptureError::NonZero),
+            ShowHeadError::NotInHead
+        );
+    }
+
+    #[test]
+    fn collect_status_large_untracked_does_not_deadlock() {
+        if !git_available() {
+            return;
+        }
+        let tmp = TempDir::new().unwrap();
+        if !git_init_real(tmp.path()) {
+            return;
+        }
+        // Porcelain-Ausgabe deutlich über 64 KiB Pipe-Puffer.
+        let pad = "x".repeat(80);
+        for i in 0..900 {
+            let name = format!("untracked_{i:04}_{pad}.md");
+            fs::write(tmp.path().join(name), "x\n").unwrap();
+        }
+        let started = Instant::now();
+        let status = collect_status(tmp.path()).expect("git status large");
+        assert!(started.elapsed() < Duration::from_secs(8), "pipe deadlock?");
+        assert!(status.entries.len() > 100, "{}", status.entries.len());
+    }
+
+    #[test]
+    fn show_head_large_file_does_not_deadlock() {
+        let tmp = TempDir::new().unwrap();
+        if !git_init_real(tmp.path()) {
+            return;
+        }
+        let body = "a".repeat(128 * 1024);
+        if !git_commit_file(tmp.path(), "big.md", &body) {
+            return;
+        }
+        let started = Instant::now();
+        let text = show_head(&tmp.path().join("big.md")).expect("HEAD large");
+        assert!(started.elapsed() < Duration::from_secs(8), "pipe deadlock?");
+        assert_eq!(text.len(), body.len());
+    }
+
+    #[test]
+    fn show_head_over_limit_is_too_large() {
+        let tmp = TempDir::new().unwrap();
+        if !git_init_real(tmp.path()) {
+            return;
+        }
+        let body = "b".repeat(MAX_FILE_SIZE as usize + 8);
+        if !git_commit_file(tmp.path(), "huge.md", &body) {
+            return;
+        }
+        assert_eq!(
+            show_head(&tmp.path().join("huge.md")),
+            Err(ShowHeadError::TooLarge)
+        );
+    }
+
+    #[test]
+    fn working_tree_missing_file_is_empty() {
+        let tmp = TempDir::new().unwrap();
+        let missing = tmp.path().join("gone.md");
+        assert_eq!(read_working_tree_for_diff(&missing).unwrap(), "");
+    }
+
+    #[test]
+    fn working_tree_over_limit_is_too_large() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("huge.md");
+        fs::write(&path, "c".repeat(MAX_FILE_SIZE as usize + 8)).unwrap();
+        assert_eq!(
+            read_working_tree_for_diff(&path),
+            Err(ShowHeadError::TooLarge)
+        );
     }
 
     #[test]

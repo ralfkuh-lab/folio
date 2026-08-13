@@ -536,6 +536,7 @@ pub fn builder(settings: crate::settings::SettingsService) -> tauri::Builder<tau
             commands::file::rename::rename_file,
             commands::file::delete::trash_file,
             commands::file::create::create_file,
+            commands::git_cmd::git_show_head,
             commands::file::image::save_clipboard_image,
             commands::file::image::save_file_image,
             commands::file::image::pick_image_file,
