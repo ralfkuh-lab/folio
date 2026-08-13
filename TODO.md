@@ -95,31 +95,30 @@ _(leer)_
 
 ## Niedrige Priorität
 
-- **Wikilink-Index: Invalidierung statt kurzem TTL** (Diskussion
-  2026-07-26, noch nicht entschieden): Der Index-Cache hat einen
-  TTL-Fallback von 30 s. Explizit invalidiert wird ohnehin bei Pin-
-  Änderung, `create_file`, Rename, Delete, Save-neuer-Datei und
-  `vault:dir_changed`; der TTL fängt nur, was der Watcher strukturell
-  nicht sieht — er beobachtet ausschließlich **aufgeklappte** Ordner
-  (NonRecursive pro expanded dir). Unsichtbar bleiben also `git pull`,
-  externe Editoren und zugeklappte Zweige.
-  **Warum 30 s trotzdem stören können**: ein Wikilink auf eine extern
-  angelegte Datei rendert bis zum Rebuild als `wikilink-missing`, und
-  ein Klick bietet den „Notiz anlegen?"-Dialog für eine bereits
-  existierende Datei an — das ist der unangenehme Fall, nicht die
-  fehlende Verlinkung.
-  **Warum 30 s billig sind**: der Rebuild ist ein reiner Verzeichnis-
-  Walk über die Pins (gitignore-gefiltert, liest KEINE Dateiinhalte)
-  und läuft seit dem Kreuz-Review 2026-07-25 stale-while-revalidate,
-  blockiert also den Render-Hot-Path nicht.
-  **Vorschlag**: erst die reale Rebuild-Dauer messen — der Index-Build
-  loggt sie bereits per `tracing::debug!` (`target: folio::wikilink`).
-  Liegt sie im einstelligen Millisekundenbereich, alles lassen. Sonst
-  TTL auf ~5 min hoch **plus** Invalidierung bei Fenster-Fokus (der
-  Moment, in dem externe Änderungen typischerweise passiert sind).
-  **Nicht** rekursive Watcher auf die Pin-Wurzeln: läuft auf Linux bei
-  mehreren Projektverzeichnissen gegen `fs.inotify.max_user_watches`
-  und scheitert dann still.
+- **Wikilink-Index-TTL: gemessen und ENTSCHIEDEN 2026-08-13 — bleibt bei
+  30 s.** Die offene Frage von 2026-07-26 (TTL hoch + Fokus-Invalidierung?)
+  ist damit erledigt und soll nicht neu aufgerollt werden.
+  **Messung** (`bench_real_workspace_index`, `#[ignore]`-Test in
+  `wikilink.rs` — liest die realen Pins aus `workspace.json`, daher
+  jederzeit wiederholbar): realer Workspace mit 17 Pins und ~8 200
+  Dateien, Median **328 ms** vor der Parallelisierung, **205 ms**
+  danach; Max von 739 auf 255 ms.
+  **Warum der TTL trotzdem bleibt**: der Cache ist rein pull-basiert
+  (`get_at`) — im Leerlauf läuft kein Timer, Kosten entstehen nur bei
+  aktiver Nutzung. Der Rebuild läuft stale-while-revalidate im
+  Hintergrund-Thread und blockiert den Render-Hot-Path nicht. Der
+  einzige synchrone Pfad (`CacheAction::BuildSync`) greift nur ohne
+  Cache-Eintrag oder bei Pin-Fingerprint-Wechsel — und genau der hat
+  von der Parallelisierung am meisten profitiert. Eine
+  Fokus-Invalidierung wäre zusätzliche Mechanik mit eigenen
+  Fehlerquellen ohne belegten Nutzen.
+  **Weiterhin gültig**: **keine** rekursiven Watcher auf die
+  Pin-Wurzeln — läuft auf Linux bei mehreren Projektverzeichnissen
+  gegen `fs.inotify.max_user_watches` und scheitert dann still.
+  **Falls das Thema doch wiederkommt** (spürbar veraltete Wikilinks
+  nach `git pull` o. ä.): der unangenehme Fall ist nicht der fehlende
+  Link, sondern dass ein Klick auf eine extern angelegte Datei den
+  „Notiz anlegen?"-Dialog zeigt. Dann zuerst den Bench erneut fahren.
 
 - **Frontmatter-`aliases`** (Obsidian-Feature, Design 2026-07-26
   durchdacht — Umsetzung bewusst zurückgestellt): `aliases: [Zweitname]`
