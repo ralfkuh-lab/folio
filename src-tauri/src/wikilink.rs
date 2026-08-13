@@ -11,14 +11,14 @@ use crate::file_resolver::make_relative;
 use crate::renderer::slugify_heading;
 use crate::search::{resolve_scope, SearchScope, MAX_FILE_SIZE};
 use crate::workspace::PinnedItem;
-use ignore::WalkBuilder;
+use ignore::{WalkBuilder, WalkState};
 use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// TTL-Fallback des Index-Caches. Der Vault-Watcher sieht nur aufgeklappte
@@ -295,28 +295,20 @@ impl WikilinkIndex {
         let mut seen: HashSet<String> = HashSet::new();
         let mut roots_set: HashSet<String> = HashSet::new();
 
-        for dir in &walk_roots.dirs {
-            // Crate-Default-Filter (hidden + gitignore) an; `.git` ist als
-            // Hidden-Verzeichnis damit bereits draußen.
-            let walker = WalkBuilder::new(dir)
-                .sort_by_file_name(|a, b| a.cmp(b))
-                .build();
-            for result in walker {
-                let Ok(entry) = result else { continue };
-                if !entry.file_type().is_some_and(|kind| kind.is_file()) {
-                    continue;
-                }
-                let normalized = normalize_path(entry.path());
-                if !seen.insert(normalized.clone()) {
-                    continue;
-                }
-                // root = Lokalität (längster Ordner-Pin); relative = Walk-Wurzel.
-                let root = longest_matching_root(&pin_dir_roots, &normalized)
-                    .unwrap_or_else(|| normalize_path(dir));
-                roots_set.insert(root.clone());
-                let relative = relative_to(dir, entry.path());
-                index.insert(normalized, relative, root);
+        // Paralleler Walk (Completion-Order) → sortieren → erst dann
+        // sequenziell einfügen. `seen`/`roots_set` bleiben thread-lokal.
+        let mut raw = collect_walk_files(&walk_roots.dirs);
+        raw.sort_by(|a, b| a.normalized.cmp(&b.normalized));
+        for hit in raw {
+            if !seen.insert(hit.normalized.clone()) {
+                continue;
             }
+            // root = Lokalität (längster Ordner-Pin); relative = Walk-Wurzel.
+            let root = longest_matching_root(&pin_dir_roots, &hit.normalized)
+                .unwrap_or_else(|| normalize_path(&hit.walk_root));
+            roots_set.insert(root.clone());
+            let relative = relative_to(&hit.walk_root, &hit.path);
+            index.insert(hit.normalized, relative, root);
         }
 
         // Explizit gepinnte Einzeldateien: umgehen hidden/gitignore bewusst
@@ -520,6 +512,55 @@ impl WikilinkIndex {
             });
         }
     }
+}
+
+/// Rohdaten eines parallelen Vault-Walks. Worker senden Pfad, Walk-Wurzel
+/// und den einmal berechneten normalisierten Pfad (Sortierschlüssel = Insert).
+struct RawWalkFile {
+    path: PathBuf,
+    walk_root: PathBuf,
+    normalized: String,
+}
+
+/// Paralleler Verzeichnis-Walk analog zur Suche (S6): Worker schicken nur
+/// Rohpfade über `mpsc`; der Aufrufer sortiert und fügt deterministisch ein.
+/// Filter wie bisher: Crate-Defaults (hidden + gitignore), `.git` bleibt draußen.
+fn collect_walk_files(dirs: &[PathBuf]) -> Vec<RawWalkFile> {
+    if dirs.is_empty() {
+        return Vec::new();
+    }
+
+    let (tx, rx) = mpsc::channel::<RawWalkFile>();
+
+    std::thread::scope(|scope| {
+        scope.spawn(move || {
+            for dir in dirs {
+                let dir_tx = tx.clone();
+                let walk_root = dir.clone();
+                WalkBuilder::new(dir).build_parallel().run(|| {
+                    let wtx = dir_tx.clone();
+                    let root = walk_root.clone();
+                    Box::new(move |result| {
+                        let Ok(entry) = result else {
+                            return WalkState::Continue;
+                        };
+                        if !entry.file_type().is_some_and(|kind| kind.is_file()) {
+                            return WalkState::Continue;
+                        }
+                        let path = entry.path().to_path_buf();
+                        let normalized = normalize_path(&path);
+                        let _ = wtx.send(RawWalkFile {
+                            path,
+                            walk_root: root.clone(),
+                            normalized,
+                        });
+                        WalkState::Continue
+                    })
+                });
+            }
+        });
+        rx.iter().collect()
+    })
 }
 
 /// Getrimmter, auf Forward-Slashes normalisierter Link-Name.
@@ -1842,6 +1883,128 @@ mod tests {
         assert!(index.resolve_name("Alpha").is_none());
     }
 
+    #[test]
+    fn index_build_is_bit_identical_across_repeated_parallel_walks() {
+        let (a, b) = dual_project_vault();
+        write(a.path(), "z/Note.md", "# za\n");
+        write(b.path(), "z/Note.md", "# zb\n");
+        write(a.path(), "images/bild.png", "a");
+        write(b.path(), "images/bild.png", "b");
+        let pins = [pin_dir(a.path()), pin_dir(b.path())];
+        let first = WikilinkIndex::build(&pins);
+        assert!(first.file_count() > 0);
+        for n in 2..=5 {
+            let again = WikilinkIndex::build(&pins);
+            assert_eq!(first, again, "build #{n} was not bit-identical");
+        }
+    }
+
+    /// Bewusste Duplikation des Walks in [`WikilinkIndex::build`] vor der
+    /// Parallelisierung. Äquivalenz-Orakel: sequenzieller
+    /// `WalkBuilder::sort_by_file_name` in DFS-Reihenfolge, danach dieselbe
+    /// Nachbereitung (Datei-Pins, `roots.sort`, `sort_candidates`).
+    fn build_index_sequential(pinned: &[PinnedItem]) -> WikilinkIndex {
+        let walk_roots = resolve_scope(pinned, &SearchScope::Vault);
+        let pin_dir_roots = directory_pin_roots(pinned);
+        let mut index = WikilinkIndex::default();
+        let mut seen: HashSet<String> = HashSet::new();
+        let mut roots_set: HashSet<String> = HashSet::new();
+
+        for dir in &walk_roots.dirs {
+            let walker = WalkBuilder::new(dir)
+                .sort_by_file_name(|a, b| a.cmp(b))
+                .build();
+            for result in walker {
+                let Ok(entry) = result else { continue };
+                if !entry.file_type().is_some_and(|kind| kind.is_file()) {
+                    continue;
+                }
+                let normalized = normalize_path(entry.path());
+                if !seen.insert(normalized.clone()) {
+                    continue;
+                }
+                let root = longest_matching_root(&pin_dir_roots, &normalized)
+                    .unwrap_or_else(|| normalize_path(dir));
+                roots_set.insert(root.clone());
+                let relative = relative_to(dir, entry.path());
+                index.insert(normalized, relative, root);
+            }
+        }
+
+        for file in &walk_roots.files {
+            if !file.is_file() {
+                continue;
+            }
+            let normalized = normalize_path(file);
+            if !seen.insert(normalized.clone()) {
+                continue;
+            }
+            let root = longest_matching_root(&pin_dir_roots, &normalized)
+                .or_else(|| file.parent().map(normalize_path))
+                .unwrap_or_else(|| normalized.clone());
+            roots_set.insert(root.clone());
+            let relative = file_name_of(file);
+            index.insert(normalized, relative, root);
+        }
+
+        let mut roots: Vec<String> = roots_set.into_iter().collect();
+        roots.sort();
+        index.roots = roots;
+        index.sort_candidates();
+        index
+    }
+
+    /// Fälle, in denen DFS-Walk-Reihenfolge und globale Pfad-Sortierung
+    /// nachweislich auseinanderlaufen — plus Pin-Bypass und letzter Tiebreak.
+    struct EquivalenceFixture {
+        _a: TempDir,
+        _b: TempDir,
+        pins: Vec<PinnedItem>,
+    }
+
+    fn equivalence_fixture() -> EquivalenceFixture {
+        let a = TempDir::new().unwrap();
+        let b = TempDir::new().unwrap();
+        init_git(a.path());
+        write(a.path(), ".gitignore", "secret.md\n");
+        // DFS besucht `dir/dir.md` vor `dir.md` (`dir` < `dir.md`);
+        // globale Sortierung umgekehrt: '.' (0x2E) vor '/' (0x2F).
+        write(a.path(), "dir.md", "# dir file\n");
+        write(a.path(), "dir/dir.md", "# nested dir\n");
+        // Gleiche Tiefe + gleicher case-folded `relative` über zwei Roots
+        // → letzter Tiebreak `path.cmp`.
+        write(a.path(), "same/Note.md", "# a note\n");
+        write(b.path(), "same/Note.md", "# b note\n");
+        write(a.path(), "Visible.md", "# vis\n");
+        write(a.path(), "secret.md", "# gitignored\n");
+        write(b.path(), "other.md", "# other\n");
+        let secret = a.path().join("secret.md");
+        let pins = vec![pin_dir(a.path()), pin_dir(b.path()), pin_file(&secret)];
+        EquivalenceFixture { _a: a, _b: b, pins }
+    }
+
+    #[test]
+    fn index_build_matches_sequential_reference() {
+        let fixture = equivalence_fixture();
+        let parallel = WikilinkIndex::build(&fixture.pins);
+        assert!(
+            parallel.resolve_name("secret").is_some(),
+            "Datei-Pin muss gitignorierte Datei indexieren"
+        );
+        assert_eq!(
+            2,
+            parallel.candidates("dir").len(),
+            "dir.md und dir/dir.md müssen beide im Index sein"
+        );
+        assert_eq!(
+            2,
+            parallel.candidates("note").len(),
+            "kollidierende same/Note.md über zwei Roots"
+        );
+        let sequential = build_index_sequential(&fixture.pins);
+        assert_eq!(parallel, sequential);
+    }
+
     // --- Cache --------------------------------------------------------------
 
     #[test]
@@ -2917,5 +3080,134 @@ mod tests {
             e.root,
             parent
         );
+    }
+
+    /// Benchmark-Test fuer reale Rebuild-Dauer von `WikilinkIndex::build`.
+    /// Liest reale Pins aus ~/.config/folio/workspace.json.
+    #[test]
+    #[ignore]
+    fn bench_real_workspace_index() {
+        let config_path = crate::persist::config_file("workspace.json");
+        if !config_path.exists() {
+            println!("SKIP: {config_path:?} does not exist");
+            return;
+        }
+
+        let content = match fs::read_to_string(&config_path) {
+            Ok(c) => c,
+            Err(e) => {
+                println!("SKIP: could not read {config_path:?}: {e}");
+                return;
+            }
+        };
+
+        let json: serde_json::Value = match serde_json::from_str(&content) {
+            Ok(j) => j,
+            Err(e) => {
+                println!("SKIP: could not parse {config_path:?}: {e}");
+                return;
+            }
+        };
+
+        let Some(pinned_array) = json.get("pinned").and_then(|p| p.as_array()) else {
+            println!("SKIP: no 'pinned' array in {config_path:?}");
+            return;
+        };
+
+        let pinned: Vec<PinnedItem> = pinned_array
+            .iter()
+            .filter_map(|item| {
+                let path = item.get("path")?.as_str()?.to_string();
+                let is_directory = item.get("is_directory")?.as_bool().unwrap_or(true);
+                Some(PinnedItem { path, is_directory })
+            })
+            .collect();
+
+        if pinned.is_empty() {
+            println!("SKIP: pinned list is empty in {config_path:?}");
+            return;
+        }
+
+        println!("============================================================");
+        println!(" WikilinkIndex::build() Benchmark (Real Workspace)");
+        println!(" Config: {:?}", config_path);
+        println!(" Pinned items count: {}", pinned.len());
+        for (i, pin) in pinned.iter().enumerate() {
+            println!(
+                "   [{:02}] {} ({})",
+                i + 1,
+                pin.path,
+                if pin.is_directory { "dir" } else { "file" }
+            );
+        }
+        println!("------------------------------------------------------------");
+
+        // Warm-up run
+        let warm_start = Instant::now();
+        let warm_index = WikilinkIndex::build(&pinned);
+        let warm_elapsed = warm_start.elapsed();
+        println!(
+            " Warm-up run:   {:8.3} ms  (files: {}, name keys: {})",
+            warm_elapsed.as_secs_f64() * 1000.0,
+            warm_index.file_count(),
+            warm_index.len()
+        );
+        println!("------------------------------------------------------------");
+
+        // Measurement runs
+        const RUNS: usize = 10;
+        let mut durations: Vec<Duration> = Vec::with_capacity(RUNS);
+        let mut last_file_count = 0;
+        let mut last_len = 0;
+
+        for i in 0..RUNS {
+            let start = Instant::now();
+            let index = WikilinkIndex::build(&pinned);
+            let elapsed = start.elapsed();
+            durations.push(elapsed);
+            last_file_count = index.file_count();
+            last_len = index.len();
+            println!(
+                " Run {:2}/{:2}:     {:8.3} ms  (files: {}, name keys: {})",
+                i + 1,
+                RUNS,
+                elapsed.as_secs_f64() * 1000.0,
+                last_file_count,
+                last_len
+            );
+        }
+
+        let mut sorted_durations = durations.clone();
+        sorted_durations.sort();
+
+        let min = sorted_durations.first().copied().unwrap();
+        let max = sorted_durations.last().copied().unwrap();
+        let median = if RUNS % 2 == 1 {
+            sorted_durations[RUNS / 2]
+        } else {
+            (sorted_durations[RUNS / 2 - 1] + sorted_durations[RUNS / 2]) / 2
+        };
+
+        println!("------------------------------------------------------------");
+        println!(" Summary (N = {}):", RUNS);
+        println!("   Indexed files:     {}", last_file_count);
+        println!("   Indexed name keys: {}", last_len);
+        println!(
+            "   Warm-up:           {:8.3} ms",
+            warm_elapsed.as_secs_f64() * 1000.0
+        );
+        println!(
+            "   Min:               {:8.3} ms",
+            min.as_secs_f64() * 1000.0
+        );
+        println!(
+            "   Median:            {:8.3} ms",
+            median.as_secs_f64() * 1000.0
+        );
+        println!(
+            "   Max:               {:8.3} ms",
+            max.as_secs_f64() * 1000.0
+        );
+        println!("============================================================");
     }
 }
