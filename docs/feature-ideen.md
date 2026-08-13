@@ -52,9 +52,13 @@ Diese Ideen kamen von 2–4 Quellen unabhängig. Das ist der beste Startpunkt.
 10. **Regex + „Ersetzen" in der Find-Bar** — Regex-Toggle überall (Editor/Code/MD/
     HTML) plus Ersetzen mit wählbarem Scope (Auswahl/Dokument/offene Tabs/Vault).
     `[M]` einfache Variante, `[L]` mit Vault-weitem Replace. (Quelle: **alle 3**)
-11. **Git-Status im Vault + einfaches Git-Panel** — farbige Dots für modified/
-    untracked auf Nodes (`git status --porcelain`); ausbaubar zu Stage/Commit-Panel
-    ohne Cloud. `[S]` Dots / `[L]` Panel (Quelle: agy, grok, codex)
+11. **Git-Status im Vault + einfaches Git-Panel** — Dots ✅ **umgesetzt
+    (2026-08-14)**: modified/untracked als Punkte auf Vault-Nodes über
+    `git status --porcelain=v1 -z`, asynchron mit Cache + Single-Flight,
+    Ordner-Aggregation, Invalidierung bei Fokus/Save/TTL (`git_status.rs`).
+    *(war als `[S]` geschätzt, real `[M]` — der synchrone Render-Pfad
+    verträgt keine Prozess-Spawns.)* Das **Stage/Commit-Panel** `[L]`
+    bleibt offen. (Quelle: agy, grok, codex)
 12. **Templates + Snippets** — wiederverwendbare MD-Blöcke/Vorlagen mit Platzhaltern
     (Datum, Dateiname, Auswahl), Zugriff über Palette/Toolbar; bewusst kleines,
     nicht-ausführbares Format. `[S–M]` (Quelle: **alle 3**)

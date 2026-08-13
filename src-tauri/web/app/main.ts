@@ -33,6 +33,7 @@ import { initTabContextMenu } from './ui/tab-context-menu';
 import { initCommandPalette } from './ui/command-palette';
 import { initVaultTree, insertVaultChildren, refreshVault } from './vault/tree';
 import { initVaultFilter } from './vault/filter';
+import { initVaultGitStatus } from './vault/git-status';
 import { initVaultSearch, consumeNavRestoreSkip } from './vault/search';
 import { initVaultTags } from './vault/tags';
 import {
@@ -112,6 +113,7 @@ function runModuleInits(): void {
     initRails();
     initVaultTree({ openDocument });
     initVaultFilter();
+    initVaultGitStatus();
     initVaultSearch({ openDocument, showStatus, openLeftRail });
     initVaultTags();
     initCheatsheet();

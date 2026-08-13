@@ -11,6 +11,7 @@ pub mod file_resolver;
 pub mod frontmatter;
 pub mod git_branch;
 pub mod git_ignore;
+pub mod git_status;
 pub mod heading_anchor;
 pub mod i18n;
 pub mod link_interceptor;
@@ -198,6 +199,25 @@ pub fn builder(settings: crate::settings::SettingsService) -> tauri::Builder<tau
                             }
                             schedule_panel_geometry_save(app);
                         }
+                    }
+                }
+                WindowEvent::Focused(true) => {
+                    // git commit fasst keine Arbeitsdatei an — der
+                    // VaultWatcher sieht nichts. Fokus ist der reale
+                    // Rueckkehr-Pfad nach einem Terminal-Commit.
+                    if let Some(state) = app.try_state::<AppState>() {
+                        state.git_status.invalidate_all();
+                        // Nur Pfade unter dem Lock; Root-Discovery
+                        // (stat-Kette auf .git) danach, damit ein
+                        // haengender Mount den Fenster-Eventpfad nicht
+                        // blockiert.
+                        let paths = state
+                            .workspace
+                            .lock()
+                            .ok()
+                            .map(|ws| crate::git_status::workspace_scan_paths(&ws))
+                            .unwrap_or_default();
+                        crate::git_status::schedule_for_paths(&state.git_status, &paths, app);
                     }
                 }
                 WindowEvent::CloseRequested { api, .. } => {

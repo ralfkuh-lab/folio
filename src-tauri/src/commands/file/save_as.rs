@@ -115,6 +115,7 @@ pub fn run_save_as(
         .map_err(|error| error.to_string())?;
     // Save-As legt eine neue Datei im Vault an.
     state.invalidate_wikilink_index();
+    crate::git_status::refresh_for_path(&state.git_status, &target_path, handle);
     crate::menu::refresh_recent_from_workspace(handle);
     state
         .vault

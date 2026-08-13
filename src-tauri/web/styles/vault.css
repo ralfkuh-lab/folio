@@ -217,6 +217,40 @@ body.pin-dragging * {
   opacity: 0.55;
 }
 
+/* Git-Status-Dots: modified (Bernstein) / untracked (Gruen).
+   Absolute Position in der linken Zeilen-Marge — kein Flex-Kind,
+   damit lange Namen nicht umbrechen und der Branch-Badge frei bleibt. */
+.vault-region {
+  --vault-git-modified: #d29922;
+  --vault-git-untracked: #1a7f37;
+}
+html.theme-dark .vault-region {
+  --vault-git-modified: #e3b341;
+  --vault-git-untracked: #3fb950;
+}
+.vault-region li.node.git-modified > .row,
+.vault-region li.node.git-untracked > .row {
+  position: relative;
+}
+.vault-region li.node.git-modified > .row::before,
+.vault-region li.node.git-untracked > .row::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.vault-region li.node.git-modified > .row::before {
+  background: var(--vault-git-modified);
+}
+.vault-region li.node.git-untracked > .row::before {
+  background: var(--vault-git-untracked);
+}
+
 /* Git-Branch-Badge nur hinter Top-Level-Pins (folgt Label-Flex, Ellipsis bei echtem Platzmangel). */
 .vault-region .git-branch {
   flex: 0 1 auto;

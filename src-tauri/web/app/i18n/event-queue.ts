@@ -33,6 +33,7 @@ export const BOOT_EVENT_NAMES: readonly string[] = [
     // Vault / search
     'vault:refresh',
     'vault:dir_changed',
+    'vault:git_status',
     'search:hits',
     'search:done',
     // Settings / themes

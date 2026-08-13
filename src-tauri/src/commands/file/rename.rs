@@ -180,6 +180,7 @@ fn finish_rename(
     crate::menu::refresh_recent_from_workspace(handle);
     // Rename aendert den indizierten Dateinamen.
     state.invalidate_wikilink_index();
+    crate::git_status::refresh_for_paths(&state.git_status, [old_path, new_path], handle);
 
     if is_current {
         state

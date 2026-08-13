@@ -68,6 +68,7 @@ pub async fn trash_file(
     crate::menu::refresh_recent_from_workspace(&handle);
     // Geloeschte Datei aus dem Wikilink-Index werfen.
     state.invalidate_wikilink_index();
+    crate::git_status::refresh_for_path(&state.git_status, &path, &handle);
 
     // Vault-Sync mit aktualisiertem Pinned/Recent-Delta (gleiche
     // Lock-Reihenfolge wie `finish_rename`).

@@ -54,6 +54,7 @@ pub async fn create_file(
     let path = create_file_at(&path, None)?;
     // Neue Datei = neuer Wikilink-Kandidat.
     state.invalidate_wikilink_index();
+    crate::git_status::refresh_for_path(&state.git_status, &path, &handle);
 
     // Vault-Sync wie in `finish_rename` (gleiche Lock-Reihenfolge).
     {

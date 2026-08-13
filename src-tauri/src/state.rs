@@ -1,6 +1,7 @@
 use crate::{
     ai::{auth::AuthStore, config::AiConfigService},
     document_store::DocumentEvents,
+    git_status::GitStatusCache,
     link_interceptor::LinkInterceptor,
     panel_state::PanelState,
     renderer,
@@ -104,6 +105,9 @@ pub struct AppState {
     /// eigenes Lock, deshalb kein zusaetzliches `Mutex` hier. Invalidierung
     /// ueber [`AppState::invalidate_wikilink_index`], TTL-Fallback 30 s.
     pub wikilink_index: WikilinkIndexCache,
+    /// Git-Status-Dots (modified/untracked) pro Repo-Root. Eigenes Lock,
+    /// TTL 15 s, Single-Flight, Fokus-Invalidierung.
+    pub git_status: GitStatusCache,
     pub vault_watcher: Mutex<VaultWatcher>,
     pub git_head_watcher: Mutex<GitHeadWatcher>,
     pub link_interceptor: LinkInterceptor,
@@ -183,6 +187,7 @@ impl AppState {
             search_cancels: Mutex::new(HashMap::new()),
             vault: Mutex::new(vault),
             wikilink_index: WikilinkIndexCache::new(),
+            git_status: GitStatusCache::new(),
             vault_watcher: Mutex::new(VaultWatcher::new()),
             git_head_watcher: Mutex::new(GitHeadWatcher::new()),
             link_interceptor: LinkInterceptor::new(),
@@ -375,6 +380,10 @@ impl AppState {
                     );
                     Self::schedule_tabs_changed(app.clone());
                     crate::automation::wait::signal_document_saved(app.state::<AppState>().inner());
+                    // Save aendert den Git-Status, fasst aber nicht immer
+                    // einen vom VaultWatcher beobachteten Ordner an.
+                    let state = app.state::<AppState>();
+                    crate::git_status::refresh_for_path(&state.git_status, &path, &app);
                 }
             })),
             text_changed: None,

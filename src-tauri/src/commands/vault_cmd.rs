@@ -76,28 +76,36 @@ pub async fn vault_toggle_section(
 }
 
 #[tauri::command]
-pub async fn vault_build_tree(state: State<'_, AppState>) -> Result<String, String> {
-    let workspace = state
-        .workspace
-        .lock()
-        .map_err(|_| "workspace lock poisoned".to_string())?;
-    let panel = state
-        .panel_state
-        .lock()
-        .map_err(|_| "panel state lock poisoned".to_string())?
-        .data();
-    let mut vault = state
-        .vault
-        .lock()
-        .map_err(|_| "vault lock poisoned".to_string())?;
-    vault.set_markdown_only(panel.vault_filter_markdown_only);
-    Ok(
-        vault.build_initial_tree_html_with(
+pub async fn vault_build_tree(
+    state: State<'_, AppState>,
+    handle: AppHandle,
+) -> Result<String, String> {
+    let (html, paths) = {
+        let workspace = state
+            .workspace
+            .lock()
+            .map_err(|_| "workspace lock poisoned".to_string())?;
+        let panel = state
+            .panel_state
+            .lock()
+            .map_err(|_| "panel state lock poisoned".to_string())?
+            .data();
+        let mut vault = state
+            .vault
+            .lock()
+            .map_err(|_| "vault lock poisoned".to_string())?;
+        vault.set_markdown_only(panel.vault_filter_markdown_only);
+        let html = vault.build_initial_tree_html_with(
             &workspace,
             panel.pinned_expanded,
             panel.recent_expanded,
-        ),
-    )
+        );
+        let paths = crate::git_status::workspace_scan_paths(&workspace);
+        (html, paths)
+    };
+    // Render bleibt frei von git status: Jobs starten erst nach dem HTML.
+    crate::git_status::schedule_for_paths(&state.git_status, &paths, &handle);
+    Ok(html)
 }
 
 /// Expandiert zugeklappte Pin-Wurzel-Ordner (erste Ebene). Watcher non-fatal.
