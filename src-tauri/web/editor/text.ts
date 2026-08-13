@@ -27,6 +27,13 @@ export function getText(): string {
     return editor ? editor.getValue() : '';
 }
 
+export function getVersionId(): number | null {
+    const editor = getEditor();
+    if (!editor) return null;
+    const model = editor.getModel();
+    return model ? model.getVersionId() : null;
+}
+
 export function getLanguage(): string {
     const editor = getEditor();
     if (!editor) return '';
@@ -198,6 +205,7 @@ export function applyReplace(args: {
     fullText: string;
     selectionStart: number;
     selectionLength: number;
+    noReveal?: boolean;
 }): void {
     const editor = getEditor();
     if (!editor) {
@@ -243,7 +251,9 @@ export function applyReplace(args: {
                 endPos.column,
             ),
         );
-        editor.revealPositionInCenterIfOutsideViewport(startPos);
+        if (!args.noReveal) {
+            editor.revealPositionInCenterIfOutsideViewport(startPos);
+        }
     });
     post({ type: 'editorTextChanged', text: editor.getValue() });
     // Nach apply_editor_command (Bold-Wrap etc.) Decorations refreshen,

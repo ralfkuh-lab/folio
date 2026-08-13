@@ -173,10 +173,14 @@ Diese Ideen kamen von 2–4 Quellen unabhängig. Das ist der beste Startpunkt.
 
 Dinge, die in den drei Sets fehlten oder die ich für besonders wirkungsvoll halte:
 
-- **⭐ Klickbare Checkboxen in der gerenderten View** — `- [ ]` in der Markdown-View
-  direkt anklickbar machen → toggelt die Quelle im Editor (Source-Range → Byte-Edit).
-  Enorme QoL für Task-Listen, kleiner als das volle Task-Dashboard und ein guter
-  erster Schritt dorthin. `[S–M]`
+- **⭐ Klickbare Checkboxen in der gerenderten View** — ✅ **umgesetzt
+  (2026-08-13)**: Klick auf die Box in View/Split/Live-Preview toggelt die
+  Quelle über `applyReplace` (Undo-fähig, dirty wie ein Tastatur-Edit).
+  Stale-Guard über Monacos `versionId`, `disabled` wird nur clientseitig
+  entfernt (Export bleibt read-only), geordnete + Blockquote-Tasks
+  unterstützt, `aria-label` gesetzt. E2E 55. *(ursprünglich `[S–M]`; die
+  Toggle-Logik war klein, die Folgefragen — Export-Vertrag, stale DOM,
+  GFM-Varianten, A11y — machten den Großteil der Arbeit aus.)*
 - **⭐ „Als sauberes Markdown einfügen"** — HTML aus der Zwischenablage (Browser/Word/
   Confluence) beim Einfügen automatisch zu sauberem MD konvertieren (turndown-artig,
   im Frontend). Spart massives Nachputzen. `[M]` (Gegenstück zu codex' „als Rich Text

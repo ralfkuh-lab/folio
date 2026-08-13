@@ -6,6 +6,7 @@
    gemeinsame Find-Bar in ui/find-bar.ts denselben Adapter nutzen kann. */
 
 import { handleFolioNewClick, isFolioNewHref } from './wikilink-create';
+import { toggleTaskInDocument } from './task-toggle';
 
 let contentEl: HTMLElement = null;
 let tocEl: HTMLElement = null;
@@ -523,6 +524,157 @@ function initVisibleHeadingTracker(): void {
     window.addEventListener('load', update);
 }
 
+/**
+ * Ermittelt den reinen Textinhalt eines Task-List-Items fuer ein zugaengliches
+ * `aria-label`, ohne verschachtelte Unterlisten (`<ul>`/`<ol>`) oder das Input-Element selbst.
+ */
+export function getTaskItemLabel(li: HTMLElement): string {
+    let text = '';
+    for (let i = 0; i < li.childNodes.length; i++) {
+        const node = li.childNodes[i];
+        if (node.nodeType === Node.TEXT_NODE) {
+            text += node.textContent || '';
+        } else if (node.nodeType === Node.ELEMENT_NODE) {
+            const el = node as HTMLElement;
+            if (el.tagName !== 'UL' && el.tagName !== 'OL' && el.tagName !== 'INPUT') {
+                text += el.textContent || '';
+            }
+        }
+    }
+    return text.trim();
+}
+
+/**
+ * Bereitet die gerenderte Markdown-View nach dem Einsetzen in das DOM vor:
+ * 1. Speichert Monacos aktuelle VersionId am Content-Container fuer den Stale-Guard (Fix 1).
+ * 2. Aktiviert Tasklist-Checkboxen (entfernt backendseitiges `disabled="disabled"` und
+ *    setzt `aria-label` fuer Screenreader) (Fix 2 & Fix 5b).
+ */
+export function prepareMarkdownView(container: HTMLElement): void {
+    if (!container) return;
+
+    // 1. VersionId am Content-Container ablegen (betrifft document:loaded und live-preview)
+    const content = (document.getElementById('view-content')
+        || document.getElementById('view-region')
+        || container) as HTMLElement | null;
+    const versionId = window.FolioEditor && typeof window.FolioEditor.getVersionId === 'function'
+        ? window.FolioEditor.getVersionId()
+        : null;
+    if (content) {
+        if (typeof versionId === 'number') {
+            content.setAttribute('data-render-version', String(versionId));
+        } else {
+            content.removeAttribute('data-render-version');
+        }
+    }
+
+    // 2. Tasklist-Checkboxen aktivieren: disabled entfernen + aria-label setzen
+    const items = container.querySelectorAll<HTMLLIElement>('li.task-list-item');
+    for (let i = 0; i < items.length; i++) {
+        const li = items[i];
+        const input = li.querySelector<HTMLInputElement>(':scope > input[type="checkbox"]')
+            || li.querySelector<HTMLInputElement>('input[type="checkbox"]');
+        if (input) {
+            input.removeAttribute('disabled');
+            const label = getTaskItemLabel(li);
+            if (label) {
+                input.setAttribute('aria-label', label);
+            }
+        }
+    }
+}
+
+/**
+ * Behandelt Klicks auf Tasklist-Checkboxen in der gerenderten Markdown-View
+ * (View-Mode und Split-Mode/Live-Preview).
+ *
+ * Vorgaben & Fixes:
+ * 1. Der Toggle laeuft IMMER ueber das Monaco-Model via `applyReplace`
+ * 2. Nur die Checkbox ist Klickziel, nicht die ganze Zeile
+ * 3. Fix 2: Backend rendert `disabled="disabled"`, App-View aktiviert clientseitig
+ * 4. Fix 1: Stale-Guard Stufe 1 verifiziert Monaco `versionId` gegen `data-render-version`
+ * 5. Fix 4: `closest` auf `li.task-list-item[data-line]` eingeengt
+ * 6. Fix 5a: Zentraler Revert fuer alle Abbruchpfade
+ * 7. Fix 6: `noReveal: true` verhindert Spruenge im Split-Editor
+ */
+function handleCheckboxClick(e: MouseEvent): boolean {
+    const target = e.target as HTMLElement | null;
+    if (!target || target.tagName !== 'INPUT' || (target as HTMLInputElement).type !== 'checkbox') {
+        return false;
+    }
+
+    const input = target as HTMLInputElement;
+    // Bei nativem Click-Event hat die Checkbox ihren Zustand bereits optimistisch
+    // getogglet (input.checked ist der NEUE Zustand). Der erwartete Vor-Klick-Zustand war !input.checked.
+    const expectedChecked = !input.checked;
+
+    // Fix 5a: Zentraler Revert fuer jeden Abbruchpfad
+    const revert = (): boolean => {
+        input.checked = expectedChecked;
+        return true;
+    };
+
+    // Vorgabe 5: Nur fuer Markdown-Dokumente aktiv
+    if (!document.body.classList.contains('kind-markdown')) {
+        return revert();
+    }
+
+    // Fix 4: data-line strikt an `li.task-list-item[data-line]` ermitteln (nicht an ul/Parents aufsteigen)
+    const lineEl = input.closest('li.task-list-item[data-line]');
+    if (!lineEl) {
+        return revert();
+    }
+    const lineAttr = lineEl.getAttribute('data-line');
+    const lineNumber = lineAttr ? parseInt(lineAttr, 10) : NaN;
+    if (!lineNumber || isNaN(lineNumber) || lineNumber < 1) {
+        return revert();
+    }
+
+    // Editor-Bridge pruefen
+    if (!window.FolioEditor
+        || typeof window.FolioEditor.getText !== 'function'
+        || typeof window.FolioEditor.applyReplace !== 'function'
+        || typeof window.FolioEditor.getVersionId !== 'function') {
+        return revert();
+    }
+
+    // Fix 1 (Stale-Guard Stufe 1): Monaco versionId gegen Render-Stand validieren.
+    // Weicht die aktuelle VersionId von der beim Render gespeicherten ab (oder ist keine
+    // VersionId vorhanden), ist das DOM stale.
+    const content = (document.getElementById('view-content')
+        || document.getElementById('view-region')) as HTMLElement | null;
+    const renderVersionAttr = content ? content.getAttribute('data-render-version') : null;
+    const renderVersion = renderVersionAttr !== null ? parseInt(renderVersionAttr, 10) : NaN;
+    const currentVersion = window.FolioEditor.getVersionId();
+
+    if (typeof currentVersion !== 'number' || isNaN(renderVersion) || currentVersion !== renderVersion) {
+        return revert();
+    }
+
+    const fullText = window.FolioEditor.getText();
+    if (typeof fullText !== 'string') {
+        return revert();
+    }
+
+    // Stale-Guard Stufe 2: Zeileninhalt an lineNumber gegen erwarteten Zustand pruefen
+    const result = toggleTaskInDocument(fullText, lineNumber, expectedChecked);
+    if (!result) {
+        return revert();
+    }
+
+    // Vorgabe 1 & Fix 6: Immer ueber applyReplace auf dem Monaco-Model schreiben.
+    // Cursor/Selektion beibehalten und automatisches Scroll-Reveal im Editor unterdruecken.
+    const sel = (typeof window.FolioEditor.getSelection === 'function' ? window.FolioEditor.getSelection() : null) || { start: 0, length: 0 };
+    window.FolioEditor.applyReplace({
+        fullText: result.fullText,
+        selectionStart: sel.start || 0,
+        selectionLength: sel.length || 0,
+        noReveal: true,
+    });
+
+    return true;
+}
+
 export function initMarkdownView(deps?: { requestSaveIfDirty?: () => Promise<boolean> }): void {
     contentEl = (document.getElementById('view-content')
         || document.getElementById('view-region')) as HTMLElement | null;
@@ -530,13 +682,14 @@ export function initMarkdownView(deps?: { requestSaveIfDirty?: () => Promise<boo
     if (!contentEl || !tocEl) return;
     requestSaveIfDirtyDep = (deps && deps.requestSaveIfDirty) || null;
 
-    // Link-Klicks (im Content) — gemeinsamer Handler fuer View + Split +
-    // Live-Preview (alle schreiben in #view-content). folio-new: wird
-    // frontend-seitig abgefangen (Anlegen-Dialog); sonst Backend-Routing.
-    // Dirty-Prompt vor dem Post: im Split/Edit-Mode mit ungespeicherten
-    // Edits wuerde der Backend-Load-Pfad in events::navigation::link_click
-    // sonst die offenen Aenderungen ueberschreiben (analog openDocument).
+    // Klicks (im Content) — gemeinsamer Handler fuer View + Split + Live-Preview:
+    // 1. Tasklist-Checkbox-Toggles (auf input[type="checkbox"])
+    // 2. Link-Klicks (auf a[href]) — folio-new: wird frontend-seitig abgefangen; sonst Backend-Routing.
     contentEl.addEventListener('click', function (e: MouseEvent) {
+        if (handleCheckboxClick(e)) {
+            return;
+        }
+
         const el = linkFromEventTarget(e.target);
         if (!el) return;
         const href = el.getAttribute('href');

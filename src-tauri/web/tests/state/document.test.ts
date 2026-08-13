@@ -17,6 +17,7 @@ import { seedDeCatalog } from '../helpers-i18n';
 vi.mock('../../app/view/markdown', () => ({
     setTocList: vi.fn(),
     rewriteRelativeAssets: vi.fn(),
+    prepareMarkdownView: vi.fn(),
     ViewFinder: { setFindTerm: vi.fn() },
 }));
 vi.mock('../../app/view/html', () => ({

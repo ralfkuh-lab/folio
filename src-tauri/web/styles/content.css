@@ -350,7 +350,7 @@ kbd {
   background: var(--code-bg);
 }
 /* Task lists */
-input[type="checkbox"] { margin-right: .5em; }
+input[type="checkbox"] { margin-right: .5em; cursor: pointer; }
 /* Frontmatter-Box */
 aside.frontmatter {
   margin: 0 0 24px;

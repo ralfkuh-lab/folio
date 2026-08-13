@@ -10,7 +10,7 @@
    document:loaded setzt zuerst den State und rendert danach die passende
    View: Markdown-HTML, HTML-iframe oder read-only Code-View. */
 
-import { setTocList, rewriteRelativeAssets } from '../view/markdown';
+import { setTocList, rewriteRelativeAssets, prepareMarkdownView } from '../view/markdown';
 import { highlightCodeBlocks } from '../view/code-highlight';
 import { addCodeCopyButtons } from '../view/code-copy';
 import { renderMermaidBlocks } from '../view/mermaid';
@@ -512,6 +512,7 @@ function renderDocumentPayload(data: any): void {
             highlightCodeBlocks(body as HTMLElement);
             addCodeCopyButtons(body as HTMLElement);
             renderMermaidBlocks(body as HTMLElement);
+            prepareMarkdownView(body as HTMLElement);
         }
     }
     document.body.classList.toggle('html-preview-mode', isHtml);
@@ -620,6 +621,7 @@ export function initDocumentState(): void {
                 highlightCodeBlocks(body as HTMLElement);
                 addCodeCopyButtons(body as HTMLElement);
                 renderMermaidBlocks(body as HTMLElement);
+                prepareMarkdownView(body as HTMLElement);
             }
         }
         if (isHtml) {

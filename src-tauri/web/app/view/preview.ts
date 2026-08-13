@@ -24,7 +24,7 @@
    kanonischen Backend-Render aus `document:loaded`/`saved` bzw.
    den eigenen Live-Pfaden (html.ts, code-live.ts). */
 
-import { setTocList, rewriteRelativeAssets, ViewFinder } from './markdown';
+import { setTocList, rewriteRelativeAssets, ViewFinder, prepareMarkdownView } from './markdown';
 import { highlightCodeBlocks } from './code-highlight';
 import { addCodeCopyButtons } from './code-copy';
 import { renderMermaidBlocks } from './mermaid';
@@ -188,6 +188,7 @@ function applyToDom(
     highlightCodeBlocks(body);
     addCodeCopyButtons(body);
     renderMermaidBlocks(body);
+    prepareMarkdownView(body);
     setTocList(result.tocHtml);
     setMarkdownHeadingMap(result.headingMap || []);
 

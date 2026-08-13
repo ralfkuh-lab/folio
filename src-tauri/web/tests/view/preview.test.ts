@@ -15,6 +15,7 @@ import { installTauriMock, TauriMockHandles } from '../helpers';
 vi.mock('../../app/view/markdown', () => ({
     setTocList: vi.fn(),
     rewriteRelativeAssets: vi.fn(),
+    prepareMarkdownView: vi.fn(),
     ViewFinder: { setFindTerm: vi.fn() },
 }));
 vi.mock('../../app/view/code-highlight', () => ({

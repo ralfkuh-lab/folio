@@ -435,6 +435,33 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   Tags: `tags.rs` / `vault_tags`, UI `#vault-tags-section` lazy on
   expand (`panel_state.tags_expanded`), Search-Präfill `#tag`.
   E2E: `53_wikilinks`, `54_tags`.
+- **Klickbare Task-Checkboxen** (`view/task-toggle.ts` + `prepareMarkdownView`
+  in `view/markdown.ts`): Ein Klick auf `- [ ]`/`- [x]` in View, Split und
+  Live-Preview toggelt die **Quelle** über `FolioEditor.applyReplace` — kein
+  eigener Backend-Schreibpfad, damit Undo/Redo, Dirty-State und Save-Pfad
+  gratis erben. Das Dokument wird dadurch dirty wie bei einer
+  Tastatureingabe (gewollt). Drei bewusste Entscheidungen:
+  1. **`disabled` bleibt im Backend-HTML** (`normalize_tasklist_html`) und
+     wird NUR clientseitig in `prepareMarkdownView` entfernt. Grund: der
+     Renderer bedient auch HTML-/PDF-Export, Export-Vorschau und
+     Theme-Editor — dort gibt es keinen Handler, aktive Checkboxen würden
+     dem Leser Interaktivität vortäuschen. Interaktivität ist Eigenschaft
+     der App, nicht des Dokuments.
+  2. **Stale-Guard über Monacos `versionId`**, nicht über Textvergleich:
+     `prepareMarkdownView` stempelt bei JEDEM HTML-Setzen (Live-Preview
+     UND `document:loaded`) `data-render-version` auf den Content-Container;
+     weicht sie beim Klick ab, ist das DOM veraltet → Abbruch. Nötig, weil
+     Zeilennummer + Zustand keine Identität sind: Wird oberhalb eine Zeile
+     eingefügt, während die debouncte Preview hinterherhinkt, träfe ein
+     Klick sonst einen gleichzuständigen Nachbar-Task (Review-Befund
+     2026-08-13). Fehlt die Version, gilt das DOM als stale.
+  3. **Klickziel nur `li.task-list-item[data-line]`** — ein weiterer
+     `closest`-Selektor würde bei fehlendem `data-line` auf die `ul`
+     steigen und die Listen-Startzeile toggeln.
+  Der Regex deckt `-`/`*`/`+`, geordnete (`1.`/`1)`) und Blockquote-Tasks
+  ab (comrak rendert alle als Checkbox). Tastaturzugang bleibt bewusst
+  erhalten (kein `tabindex="-1"`), dafür setzt die View ein `aria-label`
+  aus dem Item-Text. E2E `55_task_checkboxes`.
 - **View-Themes** (`view/theme.ts`, Backend-Commands `view_themes` /
   `view_theme_css`): Theme-CSS ist immer auf `.markdown-body` gescopt
   und wird ueber `#view-theme-style` als letztes Element in `head`

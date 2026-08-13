@@ -731,6 +731,10 @@ fn normalize_tasklist_html(html: &str) -> String {
                 ""
             };
 
+            // Fix 2: Checkboxen im Backend-HTML weiterhin mit `disabled="disabled"`
+            // rendern, damit HTML-/PDF-Exporte, Export-Vorschauen und Standalone-Renders
+            // standardkonform und read-only bleiben. Die interaktive App-View entfernt
+            // das `disabled`-Attribut clientseitig beim Post-Processing des DOMs.
             format!(
                 r#"<li{}><input disabled="disabled" type="checkbox"{checked} />"#,
                 add_class_to_attrs(li_attrs, "task-list-item")
@@ -1090,6 +1094,21 @@ mod tests {
             "<ul><li>Outer<ol><li><input type=\"checkbox\" disabled=\"\" /> Task</li></ol></li></ul>",
         );
         assert!(!html.contains("contains-task-list"));
+    }
+
+    #[test]
+    fn test_render_body_tasklist_with_sourcepos_and_data_line() {
+        let md = "- [ ] Unchecked item\n- [x] Checked item\n  - [ ] Nested item";
+        let html = render_body(md);
+        assert!(
+            html.contains(
+                r#"<ul class="contains-task-list" data-sourcepos="1:1-3:19" data-line="1">"#
+            ),
+            "{html}"
+        );
+        assert!(html.contains(r#"<li class="task-list-item" data-sourcepos="1:1-1:20" data-line="1"><input disabled="disabled" type="checkbox" /> Unchecked item</li>"#), "{html}");
+        assert!(html.contains(r#"<li class="task-list-item" data-sourcepos="2:1-3:19" data-line="2"><input disabled="disabled" type="checkbox" checked="checked" /> Checked item"#), "{html}");
+        assert!(html.contains(r#"<li class="task-list-item" data-sourcepos="3:3-3:19" data-line="3"><input disabled="disabled" type="checkbox" /> Nested item</li>"#), "{html}");
     }
 
     #[test]

@@ -14,6 +14,7 @@ interface FolioEditorSurface {
     syncTabModels(openDocumentTabIds: number[]): void;
     closeDocument(tabId: number): void;
     getText(): string;
+    getVersionId(): number | null;
     setSelection(start: number, length: number): void;
     getSelection(): { start: number; length: number };
     setScroll(y: number): void;
@@ -28,7 +29,7 @@ interface FolioEditorSurface {
     setMinimap(enabled: boolean): void;
     layout(): void;
     focus(): void;
-    applyReplace(args: { fullText: string; selectionStart: number; selectionLength: number }): void;
+    applyReplace(args: { fullText: string; selectionStart: number; selectionLength: number; noReveal?: boolean }): void;
     /** Opens Monaco suggest (used after inserting empty `[[]]` for wikilink autocomplete). */
     triggerSuggest(): void;
     openFind(initialTerm?: string): void;
