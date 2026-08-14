@@ -6,7 +6,11 @@
 Vault-Navigation, Workspace-Pins, HTTP-Automation-API für E2E-Tests.
 
 Offene Aufgaben werden in [`TODO.md`](TODO.md) gepflegt (priorisiert: hoch /
-mittel / niedrig). Vor Vorschlägen, was als nächstes ansteht, dort nachsehen.
+mittel / niedrig). Vor Vorschlägen, was als nächstes ansteht, dort nachsehen —
+**und gleich mit in [`docs/feature-ideen.md`](docs/feature-ideen.md)**: Dort
+liegt die Ideensammlung (vier Quellen, Aufwandsschätzung, Vermerk zu bereits
+Umgesetztem). `TODO.md` = Verpflichtungen, `feature-ideen.md` = Optionen; die
+Frage „was steht an?" meint in der Regel beides.
 
 Abgeschlossene Refactoring-Pläne sind aus der laufenden Doku entfernt.
 Historie steckt im Git-Log; aktuelle Architektur- und Arbeitsregeln stehen
