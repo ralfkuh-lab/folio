@@ -167,6 +167,71 @@ pub async fn vault_expand_roots(
     Ok(VaultExpandRootsResponse { html })
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultExpandPathsResponse {
+    pub html: String,
+    pub capped: bool,
+    pub expanded: usize,
+}
+
+/// Expandiert eine explizite Verzeichnisliste ueber den bestehenden
+/// `on_expand`-Pfad (Watcher inklusive). Soft-Cap 1000 wie das entfernte
+/// `vault_expand_level` (R3.1).
+#[tauri::command]
+pub async fn vault_expand_paths(
+    paths: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<VaultExpandPathsResponse, String> {
+    let markdown_only = state
+        .panel_state
+        .lock()
+        .map_err(|_| "panel state lock poisoned".to_string())?
+        .data()
+        .vault_filter_markdown_only;
+    let (expanded, capped, html) = {
+        let workspace = state
+            .workspace
+            .lock()
+            .map_err(|_| "workspace lock poisoned".to_string())?;
+        let panel = state
+            .panel_state
+            .lock()
+            .map_err(|_| "panel state lock poisoned".to_string())?
+            .data();
+        let mut vault = state
+            .vault
+            .lock()
+            .map_err(|_| "vault lock poisoned".to_string())?;
+        let result =
+            vault.expand_paths(&paths, markdown_only, crate::vault::Vault::EXPAND_PATHS_CAP);
+        vault.set_markdown_only(markdown_only);
+        let html = vault.build_initial_tree_html_with(
+            &workspace,
+            panel.pinned_expanded,
+            panel.recent_expanded,
+        );
+        (result.paths, result.capped, html)
+    };
+    if let Ok(mut watcher) = state.vault_watcher.lock() {
+        for path in &expanded {
+            if let Err(err) = watcher.watch(path) {
+                tracing::warn!(
+                    target: "folio::vault",
+                    path = %path,
+                    error = %err,
+                    "vault_expand_paths: vault_watcher.watch failed"
+                );
+            }
+        }
+    }
+    Ok(VaultExpandPathsResponse {
+        html,
+        capped,
+        expanded: expanded.len(),
+    })
+}
+
 /// Klappt alle Pin-Wurzeln zu, deregistriert Watches, rebuildet den Baum.
 #[tauri::command]
 pub async fn vault_collapse_all(
@@ -218,6 +283,7 @@ pub async fn vault_filter_options_get(
     Ok(serde_json::json!({
         "markdownOnly": data.vault_filter_markdown_only,
         "barVisible": data.vault_filter_bar_visible,
+        "gitChangedOnly": data.vault_filter_git_changed_only,
     }))
 }
 
@@ -238,13 +304,14 @@ pub async fn vault_tags_section_get(
 pub async fn vault_filter_options_set(
     markdown_only: bool,
     bar_visible: bool,
+    git_changed_only: bool,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     state
         .panel_state
         .lock()
         .map_err(|_| "panel state lock poisoned".to_string())?
-        .set_vault_filter_options(markdown_only, bar_visible)
+        .set_vault_filter_options(markdown_only, bar_visible, git_changed_only)
         .map_err(|error| error.to_string())?;
     // Lazy-Tree-Spiegel: poisoned Vault-Lock ist Fehler (FX4), nicht still.
     state

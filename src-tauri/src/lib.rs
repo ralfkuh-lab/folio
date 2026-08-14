@@ -581,6 +581,7 @@ pub fn builder(settings: crate::settings::SettingsService) -> tauri::Builder<tau
             commands::vault_cmd::vault_toggle_section,
             commands::vault_cmd::vault_build_tree,
             commands::vault_cmd::vault_expand_roots,
+            commands::vault_cmd::vault_expand_paths,
             commands::vault_cmd::vault_collapse_all,
             commands::vault_cmd::vault_filter_options_get,
             commands::vault_cmd::vault_filter_options_set,

@@ -29,6 +29,7 @@
     <button id="tb-mode-view" class="active ti-emoji" title="View (Ctrl+1)" data-i18n-title="toolbar.modeView.tooltip" aria-label="Anzeigen" data-i18n-aria-label="toolbar.modeView.ariaLabel">&#x1F441;&#xFE0F;</button>
     <button id="tb-mode-edit" class="ti-emoji" title="Edit (Ctrl+2)" data-i18n-title="toolbar.modeEdit.tooltip" aria-label="Bearbeiten" data-i18n-aria-label="toolbar.modeEdit.ariaLabel">&#x270F;&#xFE0F;</button>
     <button id="tb-mode-split" title="Split (Ctrl+3)" data-i18n-title="toolbar.modeSplit.tooltip" aria-label="Geteilte Ansicht" data-i18n-aria-label="toolbar.modeSplit.ariaLabel"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="12" height="10" rx="1"/><line x1="8" y1="3" x2="8" y2="13"/><rect x="8" y="3" width="6" height="10" fill="currentColor" opacity="0.22"/></svg></button>
+    <button id="tb-git-diff" title="Änderungen anzeigen" data-i18n-title="toolbar.gitDiff.tooltip" aria-label="Änderungen anzeigen" data-i18n-aria-label="toolbar.gitDiff.ariaLabel" disabled><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M4 2v12"/><path d="M12 2v12"/><path d="M2 8h4"/><path d="M10 5h4"/><path d="M10 11h4"/></svg></button>
   </div>
   <div class="sep edit-only"></div>
   <div class="group edit-only">
@@ -108,9 +109,11 @@
         <button type="button" id="vault-filter-clear" class="vault-filter-clear" hidden title="Filter löschen" data-i18n-title="vault.filter.clear.tooltip" aria-label="Filter löschen" data-i18n-aria-label="vault.filter.clear.ariaLabel">&#x2715;</button>
       </div>
       <button type="button" id="vault-filter-md" class="vault-filter-chip vault-filter-md" aria-pressed="false" title="Nur Markdown" data-i18n-title="vault.filter.md.tooltip" aria-label="Nur Markdown-Dateien anzeigen" data-i18n-aria-label="vault.filter.md.ariaLabel">.md</button>
+      <button type="button" id="vault-filter-git" class="vault-filter-chip vault-filter-git" aria-pressed="false" title="Nur geänderte Dateien" data-i18n-title="vault.filter.git.tooltip" aria-label="Nur geänderte Dateien anzeigen" data-i18n-aria-label="vault.filter.git.ariaLabel">git</button>
       <button type="button" id="vault-filter-close" class="vault-filter-close" title="Filterzeile schließen" data-i18n-title="vault.filter.close.tooltip" aria-label="Filterzeile schließen" data-i18n-aria-label="vault.filter.close.ariaLabel">&#x2715;</button>
     </div>
   </div>
+  <div id="vault-tree-notice" class="vault-tree-notice" hidden></div>
   <ul id="vault-tree" class="tree"></ul>
   <section class="vault-tags-section collapsed" id="vault-tags-section" data-section="tags">
     <header class="vault-tags-header" id="vault-tags-header" role="button" tabindex="0" aria-expanded="false">

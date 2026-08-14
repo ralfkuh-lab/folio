@@ -45,6 +45,54 @@ describe('state/tabs', () => {
         expect(items[1].getAttribute('aria-selected')).toBe('true');
     });
 
+    it('shows a git mark for modified tabs and click opens the diff without switching', async () => {
+        const git = await import('../../app/vault/git-status');
+        git.__setGitStatusSnapshotForTests([
+            { path: '/notes/alpha.md', status: 'modified' },
+            { path: '/notes/beta.md', status: 'untracked' },
+        ]);
+        const { renderTabs } = await import('../../app/state/tabs');
+        renderTabs({
+            activeIndex: 1,
+            tabs: [
+                { id: 1, path: '/notes/alpha.md', dirty: true, active: false },
+                { id: 2, path: '/notes/beta.md', dirty: false, active: true },
+            ],
+        });
+
+        const items = document.querySelectorAll('#tab-bar .tab-item');
+        const gitMark = items[0].querySelector('.tab-git') as HTMLButtonElement;
+        expect(gitMark).not.toBeNull();
+        expect(items[0].classList.contains('tab-git-modified')).toBe(true);
+        expect(items[0].querySelector('.tab-dirty')).not.toBeNull();
+        // untracked: kein Diff-Merkmal
+        expect(items[1].querySelector('.tab-git')).toBeNull();
+
+        const opened: string[] = [];
+        window.addEventListener('folio-open-git-diff', (event) => {
+            opened.push((event as CustomEvent<{ path: string }>).detail.path);
+        });
+        gitMark.click();
+        expect(opened).toEqual(['/notes/alpha.md']);
+        expect(gitMark.tabIndex).toBe(-1);
+        expect(tauri.invoke).not.toHaveBeenCalledWith('tab_activate', expect.anything());
+        expect(tauri.invoke).not.toHaveBeenCalledWith('tab_close', expect.anything());
+
+        gitMark.dispatchEvent(new MouseEvent('auxclick', { button: 1, bubbles: true }));
+        expect(tauri.invoke).not.toHaveBeenCalledWith('tab_close', expect.anything());
+        expect(opened).toEqual(['/notes/alpha.md']);
+
+        git.__setGitStatusSnapshotForTests([]);
+        renderTabs({
+            activeIndex: 1,
+            tabs: [
+                { id: 1, path: '/notes/alpha.md', dirty: true, active: false },
+                { id: 2, path: '/notes/beta.md', dirty: false, active: true },
+            ],
+        });
+        expect(document.querySelector('.tab-git')).toBeNull();
+    });
+
     it('hides the bar for the single empty backend tab', async () => {
         const { renderTabs } = await import('../../app/state/tabs');
 

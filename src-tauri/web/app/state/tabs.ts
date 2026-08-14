@@ -10,6 +10,10 @@ import {
 import { ackHandler } from '../automation/events';
 import { folioLog, safeInvoke } from '../util/log';
 import { t } from '../i18n/translate';
+import {
+    GIT_STATUS_CHANGED_EVENT,
+    isPathGitModified,
+} from '../vault/git-status';
 
 export interface TabSummary {
     id: number;
@@ -223,6 +227,36 @@ export function renderTabs(payload: TabsPayload): void {
             dirty.textContent = '•';
             dirty.setAttribute('aria-label', t('tabs.dirty.ariaLabel'));
             item.appendChild(dirty);
+        }
+
+        // Git-Merkmal ist bewusst KEIN zweiter Punkt: dirty bleibt der
+        // Kugel-Indikator (ungespeichert). Git-modified ist ein schmaler
+        // linker Amber-Balken — dieselbe Farbe wie die Vault-Dots — und
+        // bleibt sichtbar, wenn der Tab sauber gespeichert ist. Klick
+        // oeffnet den Diff, ohne den Tab zu wechseln oder zu schliessen.
+        if (tab.path && isPathGitModified(tab.path)) {
+            item.classList.add('tab-git-modified');
+            const gitMark = document.createElement('button');
+            gitMark.className = 'tab-git';
+            gitMark.type = 'button';
+            gitMark.tabIndex = -1;
+            gitMark.setAttribute('aria-label', t('tabs.git.ariaLabel'));
+            gitMark.title = t('tabs.git.ariaLabel');
+            gitMark.addEventListener('click', function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+                window.dispatchEvent(new CustomEvent('folio-open-git-diff', {
+                    detail: { path: tab.path },
+                }));
+            });
+            // Mittelklick auf den Marker waere sonst Tab-Schliessen
+            // (auxclick auf .tab-item). Absichtlich No-op: die Aktion sitzt
+            // auf Linksklick; schliessen waere der schlechtere Fehlgriff.
+            gitMark.addEventListener('auxclick', function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            });
+            item.insertBefore(gitMark, item.firstChild);
         }
 
         const close = document.createElement('button');
@@ -502,7 +536,8 @@ function setupTabDragListeners(): void {
         const item = getDocTabItem(e.target as HTMLElement);
         if (!item) return;
         // do not arm drag if pointerdown started on the close button
-        const close = (e.target as HTMLElement).closest('.tab-close');
+        // or the git-diff marker (those have their own click action).
+        const close = (e.target as HTMLElement).closest('.tab-close, .tab-git');
         if (close) return;
         tabDrag = {
             item: item,
@@ -609,4 +644,8 @@ export function initTabs(): void {
 
     // Drag listeners are pure DOM (work in tests too); attach always if bar exists.
     setupTabDragListeners();
+
+    window.addEventListener(GIT_STATUS_CHANGED_EVENT, function () {
+        renderTabs(current);
+    });
 }

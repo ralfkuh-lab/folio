@@ -138,6 +138,11 @@ pub fn build(handle: &AppHandle) -> tauri::Result<Menu<Wry>> {
             .accelerator("CmdOrCtrl+3")
             .checked(false)
             .build(handle)?;
+    // Aktion, kein Mode: oeffnet den Git-Diff des aktiven Dokuments.
+    // Enabled-Sync liegt im Frontend (git-modified Cache), analog Save.
+    let item_git_diff = MenuItemBuilder::with_id(ids::VIEW_GIT_DIFF, l.view_git_diff.as_str())
+        .enabled(false)
+        .build(handle)?;
     // Theme-Submenü: Hell/Dunkel als CheckMenuItems mit Häkchen am
     // aktiven. Initialer Zustand wird vom Frontend beim Boot über
     // `app:set_theme` synchronisiert.
@@ -170,6 +175,7 @@ pub fn build(handle: &AppHandle) -> tauri::Result<Menu<Wry>> {
         .item(&item_mode_view)
         .item(&item_mode_edit)
         .item(&item_mode_split)
+        .item(&item_git_diff)
         .item(&PredefinedMenuItem::separator(handle)?)
         .item(&theme_submenu)
         .item(&PredefinedMenuItem::separator(handle)?)

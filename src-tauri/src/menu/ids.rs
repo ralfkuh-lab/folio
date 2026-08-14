@@ -23,6 +23,7 @@ pub(super) const EDIT_SETTINGS: &str = "edit.settings";
 pub(super) const VIEW_MODE_VIEW: &str = "view.mode.view";
 pub(super) const VIEW_MODE_EDIT: &str = "view.mode.edit";
 pub(super) const VIEW_MODE_SPLIT: &str = "view.mode.split";
+pub(super) const VIEW_GIT_DIFF: &str = "view.git_diff";
 pub(super) const VIEW_THEME_LIGHT: &str = "view.theme.light";
 pub(super) const VIEW_THEME_DARK: &str = "view.theme.dark";
 pub(super) const VIEW_RAIL_LEFT: &str = "view.rail_left";

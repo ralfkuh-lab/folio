@@ -21,8 +21,16 @@ vi.mock('../../app/ui/ai-diff-review', () => ({
     isAiReviewOpen: () => isAiReviewOpen(),
 }));
 
+const getCurrentPath = vi.fn((): string | null => '/repo/a.md');
+const importedShowStatus = vi.fn();
+vi.mock('../../app/state/document', () => ({
+    getCurrentPath: () => getCurrentPath(),
+    showStatus: (...args: unknown[]) => importedShowStatus(...args),
+}));
+
 function buildDom(): void {
     document.body.innerHTML = `
+        <button id="tb-git-diff" disabled></button>
         <div id="ai-diff-region" hidden>
             <span id="ai-diff-title"></span>
             <span id="ai-diff-hint"></span>
@@ -59,6 +67,8 @@ describe('git-diff', () => {
         findTabIdByPath.mockReturnValue(null);
         getActiveTabId.mockReturnValue(1);
         isAiReviewOpen.mockReturnValue(false);
+        getCurrentPath.mockReturnValue('/repo/a.md');
+        importedShowStatus.mockReset();
         registerVirtualTab.mockReset();
         unregisterVirtualTab.mockReset();
         tauri = installTauriMock();
@@ -103,6 +113,18 @@ describe('git-diff', () => {
         (window as any).FolioEditor.getTextForTab = vi.fn(() => null);
         (window as any).FolioEditor.getText = vi.fn(() => 'foreign active tab');
         expect(resolveGitDiffModified('/repo/b.md', 'disk text')).toBe('disk text');
+    });
+
+    it('externally changed, not-yet-loaded document uses disk (no special case)', async () => {
+        // Tab existiert, Model fehlt (pending / nicht neu geladen) → Disk.
+        // Kein eigener external_changed-Zweig: getTextForTab === null.
+        const { resolveGitDiffModified } = await import('../../app/ui/git-diff');
+        findTabIdByPath.mockReturnValue(9);
+        getActiveTabId.mockReturnValue(1);
+        (window as any).FolioEditor.getTextForTab = vi.fn(() => null);
+        expect(resolveGitDiffModified('/repo/ext.md', 'disk after agent')).toBe(
+            'disk after agent',
+        );
     });
 
     it('uses getText only when the found tab is active', async () => {
@@ -164,5 +186,39 @@ describe('git-diff', () => {
             { readOnly: true },
         );
         expect(showStatus).not.toHaveBeenCalled();
+    });
+
+    it('enables the toolbar/menu action only when the active path is git-modified', async () => {
+        const git = await import('../../app/vault/git-status');
+        const { initGitDiff, syncGitDiffActionEnabled } = await import(
+            '../../app/ui/git-diff'
+        );
+        initGitDiff();
+        const btn = document.getElementById('tb-git-diff') as HTMLButtonElement;
+        expect(btn.disabled).toBe(true);
+
+        git.__setGitStatusSnapshotForTests([
+            { path: '/repo/a.md', status: 'modified' },
+        ]);
+        expect(btn.disabled).toBe(false);
+        await vi.waitFor(() => {
+            expect(tauri.invoke).toHaveBeenCalledWith('menu_set_enabled', {
+                id: 'view.git_diff',
+                enabled: true,
+            });
+        });
+
+        getCurrentPath.mockReturnValue('/repo/other.md');
+        window.dispatchEvent(new CustomEvent('folio-doc-kind-changed', {
+            detail: { kind: 'markdown' },
+        }));
+        expect(btn.disabled).toBe(true);
+
+        getCurrentPath.mockReturnValue('/repo/a.md');
+        git.__setGitStatusSnapshotForTests([
+            { path: '/repo/a.md', status: 'untracked' },
+        ]);
+        syncGitDiffActionEnabled();
+        expect(btn.disabled).toBe(true);
     });
 });

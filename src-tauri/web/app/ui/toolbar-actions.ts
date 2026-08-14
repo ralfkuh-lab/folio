@@ -35,6 +35,10 @@ export function initToolbarActions(): void {
     bind('tb-mode-view', function () { setMode('view'); });
     bind('tb-mode-edit', function () { setMode('edit'); });
     bind('tb-mode-split', function () { setMode('split'); });
+    // Aktion, kein Mode: gleicher Pfad wie Menue/Automation.
+    bind('tb-git-diff', function () {
+        safeInvoke('menu_dispatch', { id: 'view.git_diff' }, 'menu_dispatch view.git_diff');
+    });
     bind('tb-save', function () { if (getIsDirty()) saveCurrent(); });
 
     /* Export-Dialog wird in main.ts initialisiert (initExportDialog) —

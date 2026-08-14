@@ -75,6 +75,9 @@ pub struct PanelStateData {
     pub vault_filter_markdown_only: bool,
     #[serde(default)]
     pub vault_filter_bar_visible: bool,
+    // Nur Git-geaenderte Dateien (modified/untracked). Default aus.
+    #[serde(default)]
+    pub vault_filter_git_changed_only: bool,
 }
 
 fn default_split_mid_percent() -> f64 {
@@ -118,6 +121,7 @@ impl Default for PanelStateData {
             search_sort: default_search_sort(),
             vault_filter_markdown_only: false,
             vault_filter_bar_visible: false,
+            vault_filter_git_changed_only: false,
         }
     }
 }
@@ -223,9 +227,11 @@ impl PanelState {
         &mut self,
         markdown_only: bool,
         bar_visible: bool,
+        git_changed_only: bool,
     ) -> io::Result<()> {
         self.data.vault_filter_markdown_only = markdown_only;
         self.data.vault_filter_bar_visible = bar_visible;
+        self.data.vault_filter_git_changed_only = git_changed_only;
         self.save()
     }
 
@@ -452,6 +458,20 @@ mod tests {
         state.set_section_expanded("recent", false).unwrap();
         assert!(!state.data().recent_expanded);
         assert!(state.data().pinned_expanded);
+    }
+
+    #[test]
+    fn vault_filter_git_changed_only_defaults_off_and_persists() {
+        let default = PanelStateData::default();
+        assert!(!default.vault_filter_git_changed_only);
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("panel.json");
+        let mut state = PanelState::load_from(path.clone());
+        state.set_vault_filter_options(false, true, true).unwrap();
+        let reloaded = PanelState::load_from(path).data();
+        assert!(reloaded.vault_filter_git_changed_only);
+        assert!(reloaded.vault_filter_bar_visible);
+        assert!(!reloaded.vault_filter_markdown_only);
     }
 
     #[test]

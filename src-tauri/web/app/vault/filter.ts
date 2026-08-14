@@ -11,6 +11,13 @@
    Baum-Ops: #vault-expand-roots / #vault-collapse-all. */
 
 import { folioLog } from '../util/log';
+import { t } from '../i18n/translate';
+import {
+    collectGitChangedDirPaths,
+    GIT_STATUS_CHANGED_EVENT,
+    isPathGitChanged,
+    pathIsUnder,
+} from './git-status';
 import { refreshVault, reapplyVaultActive, renderVaultFromHtml } from './tree';
 
 const DEBOUNCE_MS = 150;
@@ -18,19 +25,30 @@ const DEBOUNCE_MS = 150;
 let barEl: HTMLElement | null = null;
 let inputEl: HTMLInputElement | null = null;
 let mdChip: HTMLElement | null = null;
+let gitChip: HTMLElement | null = null;
 let clearBtn: HTMLElement | null = null;
 let closeBtn: HTMLElement | null = null;
 let toggleBtn: HTMLElement | null = null;
 let treeEl: HTMLElement | null = null;
 let expandRootsBtn: HTMLButtonElement | null = null;
 let collapseAllBtn: HTMLElement | null = null;
+let noticeEl: HTMLElement | null = null;
+let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** Persistierte Filterzeilen-Sichtbarkeit. */
 let barVisible = false;
 /** Persistierter Typ-Filter. */
 let markdownOnly = false;
+/** Persistierter Git-Sichtfilter (nur geaenderte Dateien). */
+let gitChangedOnly = false;
 /** Committed Namensfilter (nach Debounce angewandt). */
 let committedQuery = '';
+/** Verhindert parallele Expand-Laeufe beim Git-Filter. */
+let expandGitInFlight = false;
+/** Snapshot/Mutation waehrend eines Laufs → einen Durchlauf nachholen. */
+let expandGitPending = false;
+/** Kind-Inserts (manuelles Aufklappen) waehrend des IPC — HTML nicht clobbern. */
+let treeMutatedDuringExpand = false;
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 /** Serialisierte Options-Schreibvorgänge. */
@@ -43,19 +61,21 @@ function invoke(cmd: string, args?: Record<string, unknown>): Promise<unknown> {
     return window.__TAURI__.core.invoke(cmd, args);
 }
 
-/** Funnel-Badge: nur persistente Präferenz markdownOnly (R3). */
+/** Funnel-Badge: persistente Praeferenzen (md-only und/oder git-only). */
 export function isVaultFilterActive(): boolean {
-    return markdownOnly;
+    return markdownOnly || gitChangedOnly;
 }
 
 function persistOptions(): Promise<void> {
     const md = markdownOnly;
     const bar = barVisible;
+    const git = gitChangedOnly;
     optionsWriteChain = optionsWriteChain
         .then(() =>
             invoke('vault_filter_options_set', {
                 markdownOnly: md,
                 barVisible: bar,
+                gitChangedOnly: git,
             }).then(() => undefined),
         )
         .catch((err) => {
@@ -82,6 +102,101 @@ function syncMdChip(): void {
     if (!mdChip) return;
     mdChip.setAttribute('aria-pressed', markdownOnly ? 'true' : 'false');
     mdChip.classList.toggle('active', markdownOnly);
+}
+
+function syncGitChip(): void {
+    if (!gitChip) return;
+    gitChip.setAttribute('aria-pressed', gitChangedOnly ? 'true' : 'false');
+    gitChip.classList.toggle('active', gitChangedOnly);
+}
+
+function showExpandCappedNotice(count: number): void {
+    if (!noticeEl) return;
+    noticeEl.textContent = t('vault.tree.expandCapped', { count: String(count) });
+    noticeEl.hidden = false;
+    if (noticeTimer !== null) {
+        clearTimeout(noticeTimer);
+    }
+    noticeTimer = setTimeout(() => {
+        noticeTimer = null;
+        if (noticeEl) noticeEl.hidden = true;
+    }, 4000);
+}
+
+/**
+ * Pin-Wurzeln aus dem DOM. Expand bleibt frontendseitig auf diese
+ * beschraenkt: `git status` liefert das ganze Repo, sichtbar ist nur der
+ * Vault. Soft-Cap laeuft damit ueber die relevante Menge, nicht ueber
+ * repo-weite Treffer; Watcher entstehen nicht fuer unsichtbare Zweige.
+ */
+function collectVisiblePinRootPaths(): string[] {
+    if (!treeEl) return [];
+    const roots = treeEl.querySelectorAll(
+        'li.section[data-section="pinned"] > ul.children > li.node[data-path]',
+    );
+    const out: string[] = [];
+    for (let i = 0; i < roots.length; i++) {
+        const path = (roots[i] as HTMLElement).getAttribute('data-path') || '';
+        if (path) out.push(path.replace(/\\/g, '/'));
+    }
+    return out;
+}
+
+function collectPinScopedGitDirs(): string[] {
+    const pins = collectVisiblePinRootPaths();
+    if (pins.length === 0) return [];
+    return collectGitChangedDirPaths().filter((path) => {
+        for (let i = 0; i < pins.length; i++) {
+            if (pathIsUnder(path, pins[i])) return true;
+        }
+        return false;
+    });
+}
+
+function expandGitChangedDirs(): Promise<void> {
+    if (!gitChangedOnly) return Promise.resolve();
+    if (expandGitInFlight) {
+        expandGitPending = true;
+        return Promise.resolve();
+    }
+    const dirs = collectPinScopedGitDirs();
+    if (dirs.length === 0) return Promise.resolve();
+    expandGitInFlight = true;
+    treeMutatedDuringExpand = false;
+    return invoke('vault_expand_paths', { paths: dirs })
+        .then((raw) => {
+            const result = (raw || {}) as {
+                html?: string;
+                capped?: boolean;
+                expanded?: number;
+            };
+            // Waehrend des IPC aufgeklappte Ordner stehen im Backend bereits
+            // in expanded_dirs. Stales Voll-HTML wuerde sie wieder zu machen
+            // — deshalb nicht anwenden, sondern einen frischen Lauf nachholen.
+            if (treeMutatedDuringExpand) {
+                expandGitPending = true;
+            } else if (typeof result.html === 'string') {
+                renderVaultFromHtml(result.html);
+            }
+            if (result.capped) {
+                const n = typeof result.expanded === 'number'
+                    ? result.expanded
+                    : 1000;
+                showExpandCappedNotice(n);
+            }
+        })
+        .catch((err) => {
+            folioLog.warn('vault-filter', 'vault_expand_paths failed', {
+                error: String(err),
+            });
+        })
+        .then(() => {
+            expandGitInFlight = false;
+            if (expandGitPending) {
+                expandGitPending = false;
+                if (gitChangedOnly) return expandGitChangedDirs();
+            }
+        });
 }
 
 function syncFunnelBadge(): void {
@@ -181,21 +296,34 @@ function applyClientFilter(): void {
         }
 
         const q = committedQuery;
-        if (!q) {
-            reapplyVaultActive();
-            return;
-        }
         const qLower = q.toLowerCase();
         const files = treeEl.querySelectorAll('li.node[data-kind="file"]');
         for (let i = 0; i < files.length; i++) {
             const file = files[i] as HTMLElement;
-            const label = file.querySelector(':scope > .row > .label');
-            const text = label?.textContent ?? '';
-            if (!text.toLowerCase().includes(qLower)) {
+            const path = file.getAttribute('data-path') || '';
+            if (gitChangedOnly && !isPathGitChanged(path)) {
                 file.classList.add('vf-hidden');
+                continue;
+            }
+            if (q) {
+                const label = file.querySelector(':scope > .row > .label');
+                const text = label?.textContent ?? '';
+                if (!text.toLowerCase().includes(qLower)) {
+                    file.classList.add('vf-hidden');
+                }
             }
         }
-        highlightQueryInLabels(treeEl, q);
+        if (gitChangedOnly) {
+            const dirs = treeEl.querySelectorAll('li.node[data-kind="dir"]');
+            for (let i = 0; i < dirs.length; i++) {
+                const dir = dirs[i] as HTMLElement;
+                const path = dir.getAttribute('data-path') || '';
+                if (!isPathGitChanged(path)) {
+                    dir.classList.add('vf-hidden');
+                }
+            }
+        }
+        if (q) highlightQueryInLabels(treeEl, q);
         reapplyVaultActive();
     } finally {
         // Eigene childList-Mutationen (Highlight-Umbau) SYNCHRON aus der
@@ -287,6 +415,18 @@ function onMdToggle(): void {
     void persistOptions().then(() => refreshVault());
 }
 
+function onGitToggle(): void {
+    gitChangedOnly = !gitChangedOnly;
+    syncGitChip();
+    syncFunnelBadge();
+    applyClientFilter();
+    void persistOptions();
+    if (gitChangedOnly) {
+        // Aufklappen nur beim Aktivieren. Deaktivieren laesst den Baum.
+        void expandGitChangedDirs();
+    }
+}
+
 function onEscapeInInput(e: KeyboardEvent): void {
     if (e.key !== 'Escape') return;
     e.preventDefault();
@@ -350,9 +490,11 @@ export function resetVaultFilterForAutomation(): void {
     if (inputEl) inputEl.value = '';
     committedQuery = '';
     markdownOnly = false;
+    gitChangedOnly = false;
     barVisible = false;
     syncClearVisibility();
     syncMdChip();
+    syncGitChip();
     syncBarVisibility();
     applyClientFilter();
     syncFunnelBadge();
@@ -365,6 +507,7 @@ export function initVaultFilter(): () => void {
     barEl = document.getElementById('vault-filter');
     inputEl = document.getElementById('vault-filter-input') as HTMLInputElement | null;
     mdChip = document.getElementById('vault-filter-md');
+    gitChip = document.getElementById('vault-filter-git');
     clearBtn = document.getElementById('vault-filter-clear');
     closeBtn = document.getElementById('vault-filter-close');
     toggleBtn = document.getElementById('vault-filter-toggle');
@@ -373,6 +516,7 @@ export function initVaultFilter(): () => void {
         'vault-expand-roots',
     ) as HTMLButtonElement | null;
     collapseAllBtn = document.getElementById('vault-collapse-all');
+    noticeEl = document.getElementById('vault-tree-notice');
 
     if (!barEl || !inputEl || !toggleBtn) {
         return () => {};
@@ -400,6 +544,16 @@ export function initVaultFilter(): () => void {
         e.preventDefault();
         onMdToggle();
     };
+    const onGitClick = (e: MouseEvent) => {
+        e.preventDefault();
+        onGitToggle();
+    };
+    const onGitStatus = () => {
+        if (gitChangedOnly) {
+            applyClientFilter();
+            void expandGitChangedDirs();
+        }
+    };
     const onKeydown = (e: KeyboardEvent) => onEscapeInInput(e);
     const onExpandClick = (e: MouseEvent) => {
         e.preventDefault();
@@ -418,13 +572,16 @@ export function initVaultFilter(): () => void {
     clearBtn?.addEventListener('click', onClearClick);
     closeBtn?.addEventListener('click', onCloseClick);
     mdChip?.addEventListener('click', onMdClick);
+    gitChip?.addEventListener('click', onGitClick);
+    window.addEventListener(GIT_STATUS_CHANGED_EVENT, onGitStatus);
     expandRootsBtn?.addEventListener('click', onExpandClick);
     collapseAllBtn?.addEventListener('click', onCollapseClick);
 
     if (treeEl && typeof MutationObserver !== 'undefined') {
         treeObserver = new MutationObserver(() => {
+            if (expandGitInFlight) treeMutatedDuringExpand = true;
             if (applyingFilter) return;
-            if (committedQuery.length > 0) {
+            if (committedQuery.length > 0 || gitChangedOnly) {
                 applyClientFilter();
             }
             // Expand-Roots-Disabled immer (nicht nur bei aktiver Query).
@@ -441,12 +598,19 @@ export function initVaultFilter(): () => void {
             const opts = (raw || {}) as {
                 markdownOnly?: boolean;
                 barVisible?: boolean;
+                gitChangedOnly?: boolean;
             };
             markdownOnly = !!opts.markdownOnly;
             barVisible = !!opts.barVisible;
+            gitChangedOnly = !!opts.gitChangedOnly;
             syncMdChip();
+            syncGitChip();
             syncBarVisibility();
             syncFunnelBadge();
+            if (gitChangedOnly) {
+                applyClientFilter();
+                void expandGitChangedDirs();
+            }
         })
         .catch((err) => {
             folioLog.warn('vault-filter', 'vault_filter_options_get failed', {
@@ -457,6 +621,7 @@ export function initVaultFilter(): () => void {
     syncBarVisibility();
     syncClearVisibility();
     syncMdChip();
+    syncGitChip();
     syncFunnelBadge();
     // Initial nach Boot-Tree (DOM kann schon befüllt sein; Observer greift
     // für spätere Rebuilds).
@@ -469,6 +634,8 @@ export function initVaultFilter(): () => void {
         clearBtn?.removeEventListener('click', onClearClick);
         closeBtn?.removeEventListener('click', onCloseClick);
         mdChip?.removeEventListener('click', onMdClick);
+        gitChip?.removeEventListener('click', onGitClick);
+        window.removeEventListener(GIT_STATUS_CHANGED_EVENT, onGitStatus);
         expandRootsBtn?.removeEventListener('click', onExpandClick);
         collapseAllBtn?.removeEventListener('click', onCollapseClick);
         treeObserver?.disconnect();
@@ -480,9 +647,17 @@ export function initVaultFilter(): () => void {
             clearTimeout(debounceTimer);
             debounceTimer = null;
         }
+        if (noticeTimer !== null) {
+            clearTimeout(noticeTimer);
+            noticeTimer = null;
+        }
         committedQuery = '';
         markdownOnly = false;
+        gitChangedOnly = false;
         barVisible = false;
+        expandGitInFlight = false;
+        expandGitPending = false;
+        treeMutatedDuringExpand = false;
         optionsWriteChain = Promise.resolve();
     };
 }

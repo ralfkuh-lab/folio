@@ -6,8 +6,9 @@
    Labels via label() mit t('…')-Literalen (i18n_reference_gate). */
 
 import { t } from '../i18n/translate';
-import { getIsDirty } from '../state/document';
+import { getCurrentPath, getIsDirty } from '../state/document';
 import { getTabsSnapshot, restoreLastTab } from '../state/tabs';
+import { isPathGitModified } from '../vault/git-status';
 
 export type PaletteCommand = {
     id: string;
@@ -118,6 +119,15 @@ export const PALETTE_COMMANDS: readonly PaletteCommand[] = [
         menuAction: 'view.mode.split',
         shortcut: 'Ctrl+3',
         enabled: () => canEdit(),
+    },
+    {
+        id: 'view.git_diff',
+        label: () => t('menu.view.gitDiff'),
+        menuAction: 'view.git_diff',
+        enabled: () => {
+            const path = getCurrentPath();
+            return !!path && isPathGitModified(path);
+        },
     },
     {
         id: 'edit.find',

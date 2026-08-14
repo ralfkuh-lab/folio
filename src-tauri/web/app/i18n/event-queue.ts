@@ -65,6 +65,7 @@ export const BOOT_EVENT_NAMES: readonly string[] = [
     'menu:view_mode_view',
     'menu:view_mode_edit',
     'menu:view_mode_split',
+    'menu:view_git_diff',
     'menu:view_theme_light',
     'menu:view_theme_dark',
     'menu:view_rail_left',

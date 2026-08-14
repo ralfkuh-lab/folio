@@ -87,6 +87,7 @@ pub(super) fn expected_menu_keys() -> &'static [&'static str] {
         "menu.help.cheatsheet",
         "menu.help.setupMdIcon",
         "menu.view",
+        "menu.view.gitDiff",
         "menu.view.minimap",
         "menu.view.modeEdit",
         "menu.view.modeSplit",

@@ -773,6 +773,17 @@ html.theme-dark .vault-header .vault-cmd.filter-active {
   -webkit-appearance: none;
   display: none;
 }
+.vault-tree-notice {
+  box-sizing: border-box;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--rail-bg);
+  color: var(--rail-fg-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.vault-tree-notice[hidden] { display: none; }
+
 .vault-filter-chip,
 .vault-filter-md {
   flex: 0 0 auto;

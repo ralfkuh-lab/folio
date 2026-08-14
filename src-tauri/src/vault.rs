@@ -198,6 +198,12 @@ pub struct VaultRefreshDelta {
     pub recent: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExpandPathsResult {
+    pub paths: Vec<String>,
+    pub capped: bool,
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct Vault {
     expanded_dirs: BTreeSet<String>,
@@ -315,6 +321,64 @@ impl Vault {
         let path = path.replace('\\', "/");
         self.expanded_dirs.insert(path.clone());
         self.build_dir_children_html(&path, markdown_only)
+    }
+
+    /// Soft-Cap fuer gezielte Massen-Expands (Git-Filter). `vault_expand_level`
+    /// ist seit R3.1 entfernt; dasselbe 1000er-Cap gilt hier fuer den
+    /// bestehenden `on_expand`-Pfad.
+    pub const EXPAND_PATHS_CAP: usize = 1000;
+
+    /// Expandiert die gegebenen Verzeichnisse ueber `on_expand` (Watcher
+    /// registriert der Caller). Bereits offene Ordner zaehlen nicht.
+    /// Sortierung flach zuerst, damit verschachtelte Kinder beim
+    /// anschliessenden Tree-Rebuild sichtbar sind.
+    pub fn expand_paths(
+        &mut self,
+        dirs: &[String],
+        markdown_only: bool,
+        cap: usize,
+    ) -> ExpandPathsResult {
+        self.markdown_only = markdown_only;
+
+        let mut sorted: Vec<String> = dirs
+            .iter()
+            .map(|p| p.replace('\\', "/"))
+            .filter(|p| !p.is_empty())
+            .collect();
+        sorted.sort_by(|a, b| {
+            a.matches('/')
+                .count()
+                .cmp(&b.matches('/').count())
+                .then(a.cmp(b))
+        });
+        sorted.dedup();
+
+        let mut paths = Vec::new();
+        let mut capped = false;
+        for norm in sorted {
+            if !Path::new(&norm).is_dir() || self.is_expanded(&norm) {
+                continue;
+            }
+            if markdown_only && !crate::vault_filter::dir_contains_markdown(Path::new(&norm)) {
+                continue;
+            }
+            if paths.len() >= cap {
+                capped = true;
+                break;
+            }
+            match self.on_expand_with(norm.clone(), markdown_only) {
+                Ok(_) => paths.push(norm),
+                Err(err) => {
+                    tracing::warn!(
+                        target: "folio::vault",
+                        %err,
+                        path = %norm,
+                        "expand_paths: on_expand failed; skipping"
+                    );
+                }
+            }
+        }
+        ExpandPathsResult { paths, capped }
     }
 
     /// Expandiert ausschließlich zugeklappte Pin-Wurzel-Ordner (erste Ebene).
@@ -932,6 +996,50 @@ mod tests {
             r
         );
         assert_eq!(r, vec![with_md_s]);
+    }
+
+    #[test]
+    fn expand_paths_opens_nested_dirs_and_skips_already_open() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        write_vf(root, "a/b/c.md", "#\n");
+        write_vf(root, "plain.txt", "x\n");
+        let root_s = norm_vf(root);
+        let a = norm_vf(&root.join("a"));
+        let b = norm_vf(&root.join("a/b"));
+        let mut vault = Vault::new();
+        let first = vault.expand_paths(&[root_s.clone(), a.clone(), b.clone()], false, 1000);
+        assert!(!first.capped);
+        assert_eq!(first.paths, vec![root_s.clone(), a.clone(), b.clone()]);
+        assert!(vault.is_expanded(&root_s));
+        assert!(vault.is_expanded(&a));
+        assert!(vault.is_expanded(&b));
+
+        let again = vault.expand_paths(&[root_s.clone(), a.clone()], false, 1000);
+        assert!(again.paths.is_empty());
+        assert!(!again.capped);
+    }
+
+    #[test]
+    fn expand_paths_respects_soft_cap() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        write_vf(root, "a/x.md", "#\n");
+        write_vf(root, "b/x.md", "#\n");
+        write_vf(root, "c/x.md", "#\n");
+        let a = norm_vf(&root.join("a"));
+        let b = norm_vf(&root.join("b"));
+        let c = norm_vf(&root.join("c"));
+        let mut vault = Vault::new();
+        let result = vault.expand_paths(&[a.clone(), b.clone(), c.clone()], false, 2);
+        assert!(result.capped);
+        assert_eq!(result.paths.len(), 2);
+        let opened = result.paths.len();
+        let still_closed = [&a, &b, &c]
+            .iter()
+            .filter(|p| !vault.is_expanded(p))
+            .count();
+        assert_eq!(opened + still_closed, 3);
     }
 
     #[test]

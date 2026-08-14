@@ -34,9 +34,11 @@ function buildDom(opts?: { pinRootOpen?: boolean }): void {
                         <button type="button" id="vault-filter-clear" hidden></button>
                     </div>
                     <button type="button" id="vault-filter-md" aria-pressed="false">.md</button>
+                    <button type="button" id="vault-filter-git" aria-pressed="false">git</button>
                     <button type="button" id="vault-filter-close"></button>
                 </div>
             </div>
+            <div id="vault-tree-notice" hidden></div>
             <ul id="vault-tree" class="tree">
                 <li class="section" data-section="pinned">
                     <div class="row"><span class="label">Pinned</span></div>
@@ -116,12 +118,14 @@ async function flushMicro(): Promise<void> {
 function configureInvoke(opts?: {
     barVisible?: boolean;
     markdownOnly?: boolean;
+    gitChangedOnly?: boolean;
 }): void {
     tauri.invoke.mockImplementation((cmd: string) => {
         if (cmd === 'vault_filter_options_get') {
             return Promise.resolve({
                 markdownOnly: !!opts?.markdownOnly,
                 barVisible: !!opts?.barVisible,
+                gitChangedOnly: !!opts?.gitChangedOnly,
             });
         }
         if (cmd === 'vault_filter_options_set') {
@@ -132,6 +136,13 @@ function configureInvoke(opts?: {
         }
         if (cmd === 'vault_expand_roots') {
             return Promise.resolve({ html: $('vault-tree').innerHTML });
+        }
+        if (cmd === 'vault_expand_paths') {
+            return Promise.resolve({
+                html: $('vault-tree').innerHTML,
+                capped: false,
+                expanded: 0,
+            });
         }
         if (cmd === 'vault_collapse_all') {
             return Promise.resolve({ html: $('vault-tree').innerHTML });
@@ -405,8 +416,10 @@ describe('vault/filter — Escape / Close / Badge / embedded clear', () => {
         const last = setCalls[setCalls.length - 1][1] as {
             markdownOnly: boolean;
             barVisible: boolean;
+            gitChangedOnly: boolean;
         };
         expect(last.markdownOnly).toBe(true);
+        expect(last.gitChangedOnly).toBe(false);
         expect(last).not.toHaveProperty('matchFiles');
     });
 
@@ -534,6 +547,248 @@ describe('vault/filter — expand roots / collapse all / disabled', () => {
     });
 });
 
+describe('vault/filter — git changed only', () => {
+    async function seedGit(
+        entries: Array<{ path: string; status: 'modified' | 'untracked' }>,
+    ): Promise<void> {
+        const git = await import('../../app/vault/git-status');
+        git.__setGitStatusSnapshotForTests(entries);
+    }
+
+    it('hides unchanged files and dirs; expands dirs that contain changes', async () => {
+        configureInvoke();
+        await initModules();
+        await seedGit([
+            { path: '/vault', status: 'modified' },
+            { path: '/vault/Alpha.md', status: 'modified' },
+            { path: '/vault/Notes', status: 'untracked' },
+            { path: '/vault/Notes/deep.md', status: 'untracked' },
+        ]);
+
+        const expandedHtml =
+            $('vault-tree').innerHTML.replace(
+                'data-path="/vault/Notes"',
+                'data-path="/vault/Notes" data-opened="1"',
+            );
+        tauri.invoke.mockImplementation((cmd: string, args?: Record<string, unknown>) => {
+            if (cmd === 'vault_filter_options_get') {
+                return Promise.resolve({
+                    markdownOnly: false,
+                    barVisible: false,
+                    gitChangedOnly: false,
+                });
+            }
+            if (cmd === 'vault_filter_options_set') return Promise.resolve(undefined);
+            if (cmd === 'vault_expand_paths') {
+                expect(args && (args as { paths: string[] }).paths).toEqual(
+                    expect.arrayContaining(['/vault', '/vault/Notes']),
+                );
+                return Promise.resolve({
+                    html: expandedHtml,
+                    capped: false,
+                    expanded: 2,
+                });
+            }
+            return Promise.resolve(undefined);
+        });
+
+        $('vault-filter-git').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+
+        expect(isVisible('/vault/Alpha.md')).toBe(true);
+        expect(isHidden('/vault/Beta.md')).toBe(true);
+        expect(isHidden('/vault/notes.txt')).toBe(true);
+        expect(isVisible('/vault')).toBe(true);
+        expect(isVisible('/vault/Notes')).toBe(true);
+        expect($('vault-filter-toggle').classList.contains('filter-active')).toBe(true);
+        expect(
+            tauri.invoke.mock.calls.some((c) => c[0] === 'vault_expand_paths'),
+        ).toBe(true);
+        expect($('vault-tree').innerHTML).toContain('data-opened="1"');
+    });
+
+    it('combines with the name filter; markdown-only persist stays independent', async () => {
+        configureInvoke();
+        await initModules();
+        await seedGit([
+            { path: '/vault', status: 'modified' },
+            { path: '/vault/Alpha.md', status: 'modified' },
+            { path: '/vault/Beta.md', status: 'modified' },
+        ]);
+        $('vault-filter-git').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+        await typeQuery('alp');
+        vi.advanceTimersByTime(150);
+        await flushMicro();
+        expect(isVisible('/vault/Alpha.md')).toBe(true);
+        expect(isHidden('/vault/Beta.md')).toBe(true);
+        expect(isVisible('/vault')).toBe(true);
+
+        $('vault-filter-md').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+        const setCalls = tauri.invoke.mock.calls.filter(
+            (c) => c[0] === 'vault_filter_options_set',
+        );
+        const last = setCalls[setCalls.length - 1][1] as {
+            markdownOnly: boolean;
+            gitChangedOnly: boolean;
+        };
+        expect(last.markdownOnly).toBe(true);
+        expect(last.gitChangedOnly).toBe(true);
+    });
+
+    it('untracked dir snapshot keeps children visible; segment boundary holds', async () => {
+        configureInvoke();
+        await initModules();
+        const notes = document.querySelector(
+            'li.node[data-path="/vault/Notes"] > ul.children',
+        )!;
+        notes.classList.remove('collapsed');
+        notes.innerHTML = `
+            <li class="node" data-kind="file" data-path="/vault/Notes/deep.md">
+                <div class="row"><span class="label">deep.md</span></div>
+            </li>`;
+        const vaultChildren = document.querySelector(
+            'li.node[data-path="/vault"] > ul.children',
+        )!;
+        const neues = document.createElement('li');
+        neues.className = 'node';
+        neues.setAttribute('data-kind', 'file');
+        neues.setAttribute('data-path', '/vault/neues.md');
+        neues.innerHTML = '<div class="row"><span class="label">neues.md</span></div>';
+        vaultChildren.appendChild(neues);
+
+        // Realer porcelain-Fall: nur der Ordner, keine Kinddatei.
+        await seedGit([
+            { path: '/vault', status: 'untracked' },
+            { path: '/vault/Notes', status: 'untracked' },
+        ]);
+        $('vault-filter-git').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+        expect(isVisible('/vault/Notes')).toBe(true);
+        expect(isVisible('/vault/Notes/deep.md')).toBe(true);
+        expect(isHidden('/vault/Beta.md')).toBe(true);
+        expect(isHidden('/vault/neues.md')).toBe(true);
+    });
+
+    it('expands only dirs under visible pins (cap runs on that set)', async () => {
+        configureInvoke();
+        await initModules();
+        await seedGit([
+            { path: '/vault', status: 'modified' },
+            { path: '/vault/Alpha.md', status: 'modified' },
+            { path: '/other', status: 'modified' },
+            { path: '/other/x.md', status: 'modified' },
+            { path: '/other/a', status: 'modified' },
+            { path: '/other/b', status: 'modified' },
+        ]);
+        const sent: string[][] = [];
+        tauri.invoke.mockImplementation((cmd: string, args?: Record<string, unknown>) => {
+            if (cmd === 'vault_filter_options_get') {
+                return Promise.resolve({
+                    markdownOnly: false,
+                    barVisible: false,
+                    gitChangedOnly: false,
+                });
+            }
+            if (cmd === 'vault_filter_options_set') return Promise.resolve(undefined);
+            if (cmd === 'vault_expand_paths') {
+                sent.push(((args && args.paths) as string[]) || []);
+                return Promise.resolve({
+                    html: $('vault-tree').innerHTML,
+                    capped: false,
+                    expanded: 1,
+                });
+            }
+            return Promise.resolve(undefined);
+        });
+        $('vault-filter-git').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+        expect(sent.length).toBe(1);
+        expect(sent[0].every((p) => p === '/vault' || p.startsWith('/vault/'))).toBe(
+            true,
+        );
+        expect(sent[0].some((p) => p === '/other' || p.startsWith('/other/'))).toBe(
+            false,
+        );
+    });
+
+    it('retries expand when a snapshot arrives during an in-flight run', async () => {
+        configureInvoke();
+        await initModules();
+        await seedGit([
+            { path: '/vault', status: 'modified' },
+            { path: '/vault/Alpha.md', status: 'modified' },
+        ]);
+        const resolvers: Array<(value: unknown) => void> = [];
+        tauri.invoke.mockImplementation((cmd: string) => {
+            if (cmd === 'vault_filter_options_get') {
+                return Promise.resolve({
+                    markdownOnly: false,
+                    barVisible: false,
+                    gitChangedOnly: false,
+                });
+            }
+            if (cmd === 'vault_filter_options_set') return Promise.resolve(undefined);
+            if (cmd === 'vault_expand_paths') {
+                return new Promise((resolve) => {
+                    resolvers.push(resolve);
+                });
+            }
+            return Promise.resolve(undefined);
+        });
+        $('vault-filter-git').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+        expect(resolvers.length).toBe(1);
+
+        await seedGit([
+            { path: '/vault', status: 'modified' },
+            { path: '/vault/Alpha.md', status: 'modified' },
+            { path: '/vault/Notes', status: 'untracked' },
+        ]);
+        await flushMicro();
+        expect(resolvers.length).toBe(1);
+
+        resolvers[0]({
+            html: $('vault-tree').innerHTML,
+            capped: false,
+            expanded: 1,
+        });
+        await flushMicro();
+        expect(resolvers.length).toBe(2);
+        resolvers[1]({
+            html: $('vault-tree').innerHTML,
+            capped: false,
+            expanded: 1,
+        });
+        await flushMicro();
+    });
+
+    it('turning the git filter off does not collapse the tree', async () => {
+        configureInvoke();
+        await initModules();
+        await seedGit([
+            { path: '/vault', status: 'modified' },
+            { path: '/vault/Alpha.md', status: 'modified' },
+        ]);
+        $('vault-filter-git').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+        expect($('vault-filter-git').getAttribute('aria-pressed')).toBe('true');
+
+        $('vault-filter-git').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+        expect($('vault-filter-git').getAttribute('aria-pressed')).toBe('false');
+        expect(
+            tauri.invoke.mock.calls.some((c) => c[0] === 'vault_collapse_all'),
+        ).toBe(false);
+        const pinCaret = document.querySelector(
+            'li.section[data-section="pinned"] > ul.children > li.node[data-kind="dir"] > .row > .caret',
+        ) as HTMLElement;
+        expect(pinCaret.classList.contains('open')).toBe(true);
+        expect(isVisible('/vault/Beta.md')).toBe(true);
+    });
+});
+
 describe('vault/filter — automation reset', () => {
     it('__folioVaultFilterReset clears query, closes bar, md-only off', async () => {
         configureInvoke({ barVisible: true, markdownOnly: true });
@@ -546,6 +801,7 @@ describe('vault/filter — automation reset', () => {
         expect(input().value).toBe('');
         expect($('vault-filter').hidden).toBe(true);
         expect($('vault-filter-md').getAttribute('aria-pressed')).toBe('false');
+        expect($('vault-filter-git').getAttribute('aria-pressed')).toBe('false');
         expect($('vault-filter-toggle').classList.contains('filter-active')).toBe(false);
         expect(isVisible('/vault/Beta.md')).toBe(true);
     });

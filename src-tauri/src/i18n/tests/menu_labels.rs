@@ -43,6 +43,7 @@ fn menu_labels_de_matches_legacy_hardcodes() {
     assert_eq!(built.view_mode_view, legacy.view_mode_view);
     assert_eq!(built.view_mode_edit, legacy.view_mode_edit);
     assert_eq!(built.view_mode_split, legacy.view_mode_split);
+    assert_eq!(built.view_git_diff, legacy.view_git_diff);
     assert_eq!(built.view_theme, legacy.view_theme);
     assert_eq!(built.view_theme_light, legacy.view_theme_light);
     assert_eq!(built.view_theme_dark, legacy.view_theme_dark);
@@ -89,6 +90,7 @@ fn menu_labels_en_matches_legacy_hardcodes() {
     assert_eq!(built.view_mode_view, legacy.view_mode_view);
     assert_eq!(built.view_mode_edit, legacy.view_mode_edit);
     assert_eq!(built.view_mode_split, legacy.view_mode_split);
+    assert_eq!(built.view_git_diff, legacy.view_git_diff);
     assert_eq!(built.view_theme, legacy.view_theme);
     assert_eq!(built.view_theme_light, legacy.view_theme_light);
     assert_eq!(built.view_theme_dark, legacy.view_theme_dark);

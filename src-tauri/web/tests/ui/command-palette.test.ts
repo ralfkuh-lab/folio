@@ -17,6 +17,7 @@ vi.mock('../../app/state/tabs', () => ({
 vi.mock('../../app/state/document', () => ({
     openDocument,
     getIsDirty,
+    getCurrentPath: () => '/vault/notes/readme.md',
 }));
 
 let tauri: TauriMockHandles;

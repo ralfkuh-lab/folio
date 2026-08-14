@@ -4,6 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installTauriMock, type TauriMockHandles } from '../helpers';
+import { seedDeCatalog } from '../helpers-i18n';
 
 let tauri: TauriMockHandles;
 let dispose: () => void = () => {};
@@ -14,21 +15,21 @@ function buildDom(): void {
             <ul id="vault-tree" class="tree">
                 <li class="section" data-section="pinned">
                     <ul class="children">
-                        <li class="node" data-kind="dir" data-path="/repo">
+                        <li class="node" data-kind="dir" data-path="/repo" title="/repo">
                             <div class="row"><span class="label">repo</span></div>
                             <ul class="children">
-                                <li class="node" data-kind="file" data-path="/repo/a.md">
+                                <li class="node" data-kind="file" data-path="/repo/a.md" title="/repo/a.md">
                                     <div class="row"><span class="label">a.md</span></div>
                                 </li>
-                                <li class="node" data-kind="file" data-path="/repo/b.md">
+                                <li class="node" data-kind="file" data-path="/repo/b.md" title="/repo/b.md">
                                     <div class="row"><span class="label">b.md</span></div>
                                 </li>
                             </ul>
                         </li>
-                        <li class="node" data-kind="dir" data-path="/other">
+                        <li class="node" data-kind="dir" data-path="/other" title="/other">
                             <div class="row"><span class="label">other</span></div>
                             <ul class="children">
-                                <li class="node" data-kind="file" data-path="/other/x.md">
+                                <li class="node" data-kind="file" data-path="/other/x.md" title="/other/x.md">
                                     <div class="row"><span class="label">x.md</span></div>
                                 </li>
                             </ul>
@@ -76,6 +77,7 @@ beforeEach(async () => {
     tauri = installTauriMock();
     buildDom();
     vi.resetModules();
+    await seedDeCatalog();
     tauri = installTauriMock();
     buildDom();
 });
@@ -253,5 +255,57 @@ describe('vault/git-status', () => {
         expect(node('/repo/a.md').classList.contains('git-modified')).toBe(true);
         expect(node('/other/x.md').classList.contains('git-untracked')).toBe(false);
         expect(node('/other').classList.contains('git-modified')).toBe(false);
+    });
+
+    it('appends a translated git-status line to the title; second event is idempotent', async () => {
+        await initModule();
+        emitStatus('/repo', [{ path: '/repo/a.md', status: 'modified' }]);
+        expect(node('/repo/a.md').getAttribute('title')).toBe('/repo/a.md\ngeändert');
+        emitStatus('/repo', [{ path: '/repo/a.md', status: 'modified' }]);
+        expect(node('/repo/a.md').getAttribute('title')).toBe('/repo/a.md\ngeändert');
+        emitStatus('/repo', [{ path: '/repo/a.md', status: 'untracked' }], 2);
+        expect(node('/repo/a.md').getAttribute('title')).toBe('/repo/a.md\nunversioniert');
+        emitStatus('/repo', [], 3);
+        expect(node('/repo/a.md').getAttribute('title')).toBe('/repo/a.md');
+    });
+
+    it('treats files under an untracked dir as changed; segment boundary holds', async () => {
+        const children = document.querySelector(
+            'li.node[data-path="/repo"] > ul.children',
+        )!;
+        const neu = document.createElement('li');
+        neu.className = 'node';
+        neu.setAttribute('data-kind', 'dir');
+        neu.setAttribute('data-path', '/repo/neu');
+        neu.innerHTML = '<div class="row"><span class="label">neu</span></div>'
+            + '<ul class="children">'
+            + '<li class="node" data-kind="file" data-path="/repo/neu/a.md">'
+            + '<div class="row"><span class="label">a.md</span></div></li></ul>';
+        children.appendChild(neu);
+        const neues = document.createElement('li');
+        neues.className = 'node';
+        neues.setAttribute('data-kind', 'file');
+        neues.setAttribute('data-path', '/repo/neues.md');
+        neues.innerHTML = '<div class="row"><span class="label">neues.md</span></div>';
+        children.appendChild(neues);
+
+        const git = await initModule();
+        emitStatus('/repo', [{ path: '/repo/neu', status: 'untracked' }]);
+        expect(git.isPathGitChanged('/repo/neu')).toBe(true);
+        expect(git.isPathGitChanged('/repo/neu/a.md')).toBe(true);
+        expect(git.isPathGitChanged('/repo/neues.md')).toBe(false);
+        expect(git.pathIsUnder('/repo/neu/a.md', '/repo/neu')).toBe(true);
+        expect(git.pathIsUnder('/repo/neues.md', '/repo/neu')).toBe(false);
+    });
+
+    it('keeps backend extras such as gitignored and clears only the git line', async () => {
+        node('/repo/a.md').setAttribute('title', '/repo/a.md\ngitignored');
+        await initModule();
+        emitStatus('/repo', [{ path: '/repo/a.md', status: 'modified' }]);
+        expect(node('/repo/a.md').getAttribute('title')).toBe(
+            '/repo/a.md\ngitignored\ngeändert',
+        );
+        emitStatus('/repo', [], 2);
+        expect(node('/repo/a.md').getAttribute('title')).toBe('/repo/a.md\ngitignored');
     });
 });

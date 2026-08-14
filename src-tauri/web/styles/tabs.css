@@ -50,6 +50,30 @@
   font-size: 17px;
   line-height: 1;
 }
+/* Git-modified: linker Amber-Balken statt zweitem Punkt. Dirty-Kugel
+   bleibt ungespeichert; dieser Balken bedeutet "weicht von HEAD ab". */
+.tab-item.tab-git-modified {
+  position: relative;
+  padding-left: 12px;
+}
+.tab-git {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--vault-git-modified, #d29922);
+  cursor: pointer;
+}
+.tab-git:hover {
+  filter: brightness(1.12);
+}
+html.theme-dark .tab-git {
+  background: #e3b341;
+}
 .tab-close {
   flex: 0 0 auto;
   width: 21px;

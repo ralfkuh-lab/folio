@@ -8,8 +8,10 @@ import {
     registerVirtualTab,
     unregisterVirtualTab,
 } from '../state/tabs';
+import { getCurrentPath, showStatus } from '../state/document';
+import { GIT_STATUS_CHANGED_EVENT, isPathGitModified } from '../vault/git-status';
 import { isAiReviewOpen } from './ai-diff-review';
-import { folioLog } from '../util/log';
+import { folioLog, safeInvoke } from '../util/log';
 import { t } from '../i18n/translate';
 
 let gitDiffOpen = false;
@@ -139,6 +141,43 @@ export async function openGitDiff(
     diffView.focus();
 }
 
+/** Toolbar/Menue: enabled genau dann, wenn das aktive Dokument git-modified ist. */
+let gitDiffEnabledGen = 0;
+let gitDiffEnabledChain: Promise<void> = Promise.resolve();
+
+export function syncGitDiffActionEnabled(): void {
+    const path = getCurrentPath();
+    const enabled = !!path && isPathGitModified(path);
+    const btn = document.getElementById('tb-git-diff') as HTMLButtonElement | null;
+    if (btn) {
+        btn.disabled = !enabled;
+        // Kein .active — das ist eine Aktion, kein Mode-Toggle.
+        btn.classList.remove('active');
+    }
+    // Generation + Kette: bei Tab-Wechsel + Statusevent darf ein
+    // verspaetetes menu_set_enabled den juengeren Zustand nicht
+    // ueberschreiben.
+    const gen = ++gitDiffEnabledGen;
+    gitDiffEnabledChain = gitDiffEnabledChain
+        .then(() => {
+            if (gen !== gitDiffEnabledGen) return;
+            return safeInvoke(
+                'menu_set_enabled',
+                { id: 'view.git_diff', enabled },
+                'menu_set_enabled view.git_diff',
+                'debug',
+            ).then(() => undefined);
+        })
+        .catch(() => undefined);
+}
+
+/** Gemeinsamer Einstieg fuer Toolbar, Menue, Palette und Tab-Klick. */
+export function openGitDiffForActiveDoc(): void {
+    const path = getCurrentPath();
+    if (!path || !isPathGitModified(path)) return;
+    void openGitDiff(path, showStatus);
+}
+
 export function initGitDiff(): void {
     document.addEventListener('keydown', (event) => {
         if (event.key !== 'Escape' || !isVirtualTabActive('git-diff')) return;
@@ -147,4 +186,17 @@ export function initGitDiff(): void {
         event.preventDefault();
         closeGitDiff();
     });
+    window.addEventListener('folio-open-git-diff', (event: Event) => {
+        const detail = (event as CustomEvent<{ path?: string }>).detail;
+        const path = detail && typeof detail.path === 'string' ? detail.path : '';
+        if (!path) return;
+        void openGitDiff(path, showStatus);
+    });
+    window.addEventListener(GIT_STATUS_CHANGED_EVENT, () => {
+        syncGitDiffActionEnabled();
+    });
+    window.addEventListener('folio-doc-kind-changed', () => {
+        syncGitDiffActionEnabled();
+    });
+    syncGitDiffActionEnabled();
 }

@@ -16,6 +16,7 @@ import { setMode } from '../editor/shell';
 import { openEditorFind } from './find-bar';
 import { openVaultSearchDialog } from '../vault/search';
 import { folioLog, safeInvoke } from '../util/log';
+import { openGitDiffForActiveDoc } from './git-diff';
 
 type Deps = {
     applyRailVisibility: (side: 'left' | 'right', visible: boolean) => void;
@@ -86,6 +87,9 @@ export function initMenuRouter(deps: Deps): void {
     ev.listen('menu:view_mode_view', function () { setMode('view'); });
     ev.listen('menu:view_mode_edit', function () { setMode('edit'); });
     ev.listen('menu:view_mode_split', function () { setMode('split'); });
+    ev.listen('menu:view_git_diff', function () {
+        openGitDiffForActiveDoc();
+    });
     ev.listen('menu:view_theme_light', function () {
         safeInvoke('theme_set', { mode: 'light' }, 'theme_set light');
     });
