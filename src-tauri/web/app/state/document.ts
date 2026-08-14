@@ -406,7 +406,7 @@ function syncViewModeMenuChecks(): void {
     safeInvoke('menu_set_checked', { id: 'view.mode.split', checked: mode === 'split' }, 'menu_set_checked view.mode.split', 'debug');
 }
 
-export function applyDocKind(kind: string | null): void {
+export function applyDocKind(kind: string | null, path?: string | null): void {
     const resolved = kind || 'unknown';
     const body = document.body;
     DOC_KIND_CLASSES.forEach(function (c) { body.classList.remove(c); });
@@ -471,7 +471,12 @@ export function applyDocKind(kind: string | null): void {
     // Konsumenten (KI-Button-Gating etc.) brauchen einen deterministischen
     // Zeitpunkt NACH dem Klassen-Setzen; eigene document:loaded-Listener
     // wären eine Registrierungs-Reihenfolge-Race und hätten keinen seq-Stale-Guard.
-    window.dispatchEvent(new CustomEvent('folio-doc-kind-changed', { detail: { kind: resolved } }));
+    // path additiv: explizit (openDocument, bevor currentPath steht)
+    // oder der aktuelle Stand (document:loaded setzt den Pfad vorher).
+    const eventPath = path !== undefined ? path : getCurrentPath();
+    window.dispatchEvent(new CustomEvent('folio-doc-kind-changed', {
+        detail: { kind: resolved, path: eventPath },
+    }));
 }
 
 export function openDocument(path: string): Promise<boolean> {
@@ -479,7 +484,7 @@ export function openDocument(path: string): Promise<boolean> {
         if (!ok) return false;
         return invoke('read_file', { path }).then(function (data) {
             safeInvoke('workspace_add_recent', { path }, 'workspace_add_recent', 'debug');
-            applyDocKind(data && data.kind);
+            applyDocKind(data && data.kind, path);
             // Per-Typ-Default-Mode greift im Backend (document_service::open)
             // und emittiert dort `app:set_mode` — Frontend muss nichts tun.
             return true;

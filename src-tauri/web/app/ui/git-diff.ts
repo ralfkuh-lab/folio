@@ -7,6 +7,7 @@ import {
     isVirtualTabActive,
     registerVirtualTab,
     unregisterVirtualTab,
+    VIRTUAL_TAB_CHANGED_EVENT,
 } from '../state/tabs';
 import { getCurrentPath, showStatus } from '../state/document';
 import { GIT_STATUS_CHANGED_EVENT, isPathGitModified } from '../vault/git-status';
@@ -16,6 +17,8 @@ import { t } from '../i18n/translate';
 
 let gitDiffOpen = false;
 let gitDiffGeneration = 0;
+/** Pfad, den der letzte (auch noch laufende) Open anfordert. */
+let gitDiffPath: string | null = null;
 
 function $(id: string): HTMLElement | null {
     return document.getElementById(id);
@@ -55,8 +58,13 @@ export function isGitDiffOpen(): boolean {
 }
 
 export function closeGitDiff(): void {
-    if (!gitDiffOpen) return;
+    // Generation und Pfad immer invalidieren — auch wenn der Diff
+    // noch nicht offen ist. Sonst kehrt ein laufendes Erst-Öffnen
+    // nach einem virtuellen Tab-Wechsel zurück und legt sich über
+    // die inzwischen gewählte Ansicht.
     gitDiffGeneration += 1;
+    gitDiffPath = null;
+    if (!gitDiffOpen) return;
     gitDiffOpen = false;
     const diffView = window.FolioDiffView;
     if (diffView) {
@@ -68,6 +76,21 @@ export function closeGitDiff(): void {
         region.hidden = true;
     }
     unregisterVirtualTab('git-diff');
+}
+
+/** Titel/Hinweis auf den neuen Pfad, Models leer — kein sichtbarer
+ *  Alt-Inhalt, während git_show_head noch unterwegs ist. */
+function showPendingGitDiff(path: string): void {
+    const title = $('ai-diff-title');
+    if (title) title.textContent = t('git.diff.title', { name: fileName(path) });
+    const hint = $('ai-diff-hint');
+    if (hint) hint.textContent = path.replace(/\\/g, '/');
+    if (isAiReviewOpen()) return;
+    const diffView = window.FolioDiffView;
+    if (diffView) {
+        diffView.onModifiedChange(null);
+        diffView.clear();
+    }
 }
 
 export async function openGitDiff(
@@ -86,22 +109,30 @@ export async function openGitDiff(
         return;
     }
 
+    // Generation VOR dem Await: schnelles A→B→C darf nur C anzeigen.
+    const generation = ++gitDiffGeneration;
+    gitDiffPath = path.replace(/\\/g, '/');
+    showPendingGitDiff(path);
+
     let payload: { text: string; diskText: string; language: string };
     try {
         payload = await invoke('git_show_head', { path });
     } catch (err) {
+        if (generation !== gitDiffGeneration) return;
         const msg = typeof err === 'string' ? err : t('errors.git.showFailed');
         showStatus(msg);
+        gitDiffPath = null;
+        if (gitDiffOpen) closeGitDiff();
         return;
     }
 
+    if (generation !== gitDiffGeneration) return;
     if (isAiReviewOpen()) {
         showStatus(t('errors.ai.reviewOpen'));
         return;
     }
 
     const modified = resolveGitDiffModified(path, payload.diskText);
-    const generation = ++gitDiffGeneration;
     gitDiffOpen = true;
     region.hidden = false;
     const title = $('ai-diff-title');
@@ -127,9 +158,9 @@ export async function openGitDiff(
 
     await diffView.mount('ai-diff-mount');
     if (generation !== gitDiffGeneration || !gitDiffOpen) {
-        // Nicht clearen, wenn die KI-Review die Surface inzwischen
-        // übernommen hat — sonst leert ein verspäteter Mount die Review.
-        if (!isAiReviewOpen()) {
+        // Nicht clearen, wenn ein neuerer Open noch laeuft oder die
+        // KI-Review die Surface inzwischen uebernommen hat.
+        if (!gitDiffOpen && !isAiReviewOpen()) {
             diffView.clear();
         }
         return;
@@ -178,6 +209,54 @@ export function openGitDiffForActiveDoc(): void {
     void openGitDiff(path, showStatus);
 }
 
+function isTextDocKind(kind: string): boolean {
+    return kind === 'markdown' || kind === 'text';
+}
+
+function kindFromEventOrBody(event: Event): string {
+    const detail = (event as CustomEvent<{ kind?: string }>).detail;
+    if (detail && typeof detail.kind === 'string' && detail.kind) {
+        return detail.kind;
+    }
+    const cl = document.body.classList;
+    if (cl.contains('kind-markdown')) return 'markdown';
+    if (cl.contains('kind-text')) return 'text';
+    if (cl.contains('kind-image')) return 'image';
+    if (cl.contains('kind-binary')) return 'binary';
+    return 'unknown';
+}
+
+/** Nur wenn der Diff-Tab aktiv ist: neue geaenderte Textdatei nachziehen,
+ *  sonst schliessen. Im Zweifel schliessen — ein stehengebliebener Diff
+ *  der alten Datei ist der Fehler. */
+function followOrCloseGitDiff(event: Event): void {
+    if (!isVirtualTabActive('git-diff')) return;
+    const detail = (event as CustomEvent<{ kind?: string; path?: string | null }>).detail;
+    const current = getCurrentPath();
+    // Event-Pfad und aktueller Stand muessen zusammenpassen. openDocument
+    // feuert kind+Pfad der neuen Datei, bevor currentPath steht — ohne
+    // diesen Guard fiele das Kind von B auf den Pfad von C.
+    if (detail && Object.prototype.hasOwnProperty.call(detail, 'path')) {
+        const eventPath = typeof detail.path === 'string' ? detail.path.replace(/\\/g, '/') : '';
+        const currentNorm = current ? current.replace(/\\/g, '/') : '';
+        if (eventPath !== currentNorm) return;
+    }
+    const path = current;
+    const kind = kindFromEventOrBody(event);
+    if (!path || !isTextDocKind(kind) || !isPathGitModified(path)) {
+        closeGitDiff();
+        return;
+    }
+    if (gitDiffPath === path.replace(/\\/g, '/')) return;
+    void openGitDiff(path, showStatus);
+}
+
+function onVirtualTabChanged(event: Event): void {
+    const detail = (event as CustomEvent<{ slug?: string | null }>).detail;
+    const slug = detail && typeof detail.slug === 'string' ? detail.slug : '';
+    if (slug && slug !== 'git-diff') closeGitDiff();
+}
+
 export function initGitDiff(): void {
     document.addEventListener('keydown', (event) => {
         if (event.key !== 'Escape' || !isVirtualTabActive('git-diff')) return;
@@ -195,8 +274,10 @@ export function initGitDiff(): void {
     window.addEventListener(GIT_STATUS_CHANGED_EVENT, () => {
         syncGitDiffActionEnabled();
     });
-    window.addEventListener('folio-doc-kind-changed', () => {
+    window.addEventListener('folio-doc-kind-changed', (event: Event) => {
         syncGitDiffActionEnabled();
+        followOrCloseGitDiff(event);
     });
+    window.addEventListener(VIRTUAL_TAB_CHANGED_EVENT, onVirtualTabChanged);
     syncGitDiffActionEnabled();
 }

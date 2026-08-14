@@ -260,6 +260,16 @@ describe('state/document — synchronous setters', () => {
             enabled: false,
         });
     });
+
+    it('applyDocKind sendet kind und path additiv im CustomEvent', async () => {
+        const { applyDocKind } = await import('../../app/state/document');
+        const seen: Array<{ kind?: string; path?: string | null }> = [];
+        window.addEventListener('folio-doc-kind-changed', (event) => {
+            seen.push((event as CustomEvent<{ kind?: string; path?: string | null }>).detail);
+        });
+        applyDocKind('image', '/tmp/pic.png');
+        expect(seen[0]).toEqual({ kind: 'image', path: '/tmp/pic.png' });
+    });
 });
 
 describe('state/document — document:loaded listener', () => {
@@ -281,6 +291,24 @@ describe('state/document — document:loaded listener', () => {
         expect(docMod.getIsDirty()).toBe(false);
         expect(document.body.classList.contains('kind-markdown')).toBe(true);
         expect(document.getElementById('status-path')!.textContent).toBe('/tmp/example.md');
+    });
+
+    it('document:loaded liefert kind+path korreliert im folio-doc-kind-changed', async () => {
+        const docMod = await import('../../app/state/document');
+        docMod.initDocumentState();
+        const seen: Array<{ kind?: string; path?: string | null }> = [];
+        window.addEventListener('folio-doc-kind-changed', (event) => {
+            seen.push((event as CustomEvent<{ kind?: string; path?: string | null }>).detail);
+        });
+        tauri.emitEvent('document:loaded', {
+            path: '/tmp/example.md',
+            kind: 'markdown',
+            language: 'markdown',
+            text: 'Hello world',
+            content: '<p>Hello world</p>',
+            tocHtml: '',
+        });
+        expect(seen.some((d) => d.kind === 'markdown' && d.path === '/tmp/example.md')).toBe(true);
     });
 
     it('verwirft stale document:loaded mit aelterer seq (Undo-Stack-Schutz)', async () => {

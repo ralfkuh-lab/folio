@@ -202,6 +202,35 @@ describe('state/tabs', () => {
         expect(themeActivate).toHaveBeenCalled();
     });
 
+    it('emits VIRTUAL_TAB_CHANGED_EVENT when the active virtual slug changes', async () => {
+        const {
+            VIRTUAL_TAB_CHANGED_EVENT,
+            activateVirtualTab,
+            registerVirtualTab,
+            unregisterVirtualTab,
+        } = await import('../../app/state/tabs');
+        const slugs: Array<string | null> = [];
+        window.addEventListener(VIRTUAL_TAB_CHANGED_EVENT, (event) => {
+            slugs.push((event as CustomEvent<{ slug: string | null }>).detail.slug);
+        });
+        registerVirtualTab({
+            slug: 'settings',
+            label: () => '⚙ Einstellungen',
+            onActivate: vi.fn(),
+            onClose: vi.fn(),
+        });
+        registerVirtualTab({
+            slug: 'theme-editor',
+            label: () => '🎨 Firma',
+            onActivate: vi.fn(),
+            onClose: vi.fn(),
+        });
+        activateVirtualTab('settings');
+        activateVirtualTab('settings');
+        unregisterVirtualTab('settings');
+        expect(slugs).toEqual(['settings', 'theme-editor', 'settings', null]);
+    });
+
     it('guards document-tab activation through the active virtual close hook', async () => {
         const { registerVirtualTab, renderTabs } = await import('../../app/state/tabs');
         const onClose = vi.fn()

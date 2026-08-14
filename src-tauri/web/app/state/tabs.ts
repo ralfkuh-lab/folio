@@ -75,6 +75,10 @@ const virtualTabs = new Map<string, VirtualTab>();
 let activeVirtualSlug: string | null = null;
 let settingsTabHooks: { onActivate: () => void; onClose: () => void } | null = null;
 
+/** Aktiver virtueller Tab gewechselt (`slug` null = keiner). Git-Diff
+ *  schliesst sich, wenn ein anderer virtueller Tab aktiv wird. */
+export const VIRTUAL_TAB_CHANGED_EVENT = 'folio-virtual-tab-changed';
+
 function syncVirtualRegionClasses(): void {
     document.body.classList.toggle('settings-open', activeVirtualSlug === 'settings');
     document.body.classList.toggle('theme-editor-open', activeVirtualSlug === 'theme-editor');
@@ -82,9 +86,17 @@ function syncVirtualRegionClasses(): void {
     document.body.classList.toggle('git-diff-open', activeVirtualSlug === 'git-diff');
 }
 
+function setActiveVirtualSlug(slug: string | null): void {
+    if (activeVirtualSlug === slug) return;
+    activeVirtualSlug = slug;
+    window.dispatchEvent(new CustomEvent(VIRTUAL_TAB_CHANGED_EVENT, {
+        detail: { slug },
+    }));
+}
+
 export function registerVirtualTab(tab: VirtualTab, activate = true): void {
     virtualTabs.set(tab.slug, tab);
-    if (activate) activeVirtualSlug = tab.slug;
+    if (activate) setActiveVirtualSlug(tab.slug);
     syncVirtualRegionClasses();
     renderTabs(current);
     if (activate) tab.onActivate();
@@ -92,7 +104,7 @@ export function registerVirtualTab(tab: VirtualTab, activate = true): void {
 
 export function unregisterVirtualTab(slug: string): void {
     if (!virtualTabs.delete(slug)) return;
-    if (activeVirtualSlug === slug) activeVirtualSlug = null;
+    if (activeVirtualSlug === slug) setActiveVirtualSlug(null);
     syncVirtualRegionClasses();
     renderTabs(current);
 }
@@ -100,7 +112,7 @@ export function unregisterVirtualTab(slug: string): void {
 export function activateVirtualTab(slug: string): boolean {
     const tab = virtualTabs.get(slug);
     if (!tab) return false;
-    activeVirtualSlug = slug;
+    setActiveVirtualSlug(slug);
     syncVirtualRegionClasses();
     renderTabs(current);
     tab.onActivate();
@@ -283,7 +295,7 @@ export function renderTabs(payload: TabsPayload): void {
             }
             const activeVirtual = virtualTabs.get(activeVirtualSlug);
             if (activeVirtual?.keepOnDocTabClick) {
-                activeVirtualSlug = null;
+                setActiveVirtualSlug(null);
                 syncVirtualRegionClasses();
                 renderTabs(current);
                 activateTab(tab.id);
