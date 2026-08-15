@@ -5,9 +5,29 @@
 import { post } from './bridge';
 import { getEditor, getMonaco } from './state';
 
+/** Expand `$1`/`$2`/`$&`/`$0`/`$$` against Monaco capture groups (index 0 = full match). */
+export function expandFindReplacement(template: string, groups: string[]): string {
+    return template.replace(/\$(\$|&|0|[1-9][0-9]?)/g, function (_all, which: string) {
+        if (which === '$') return '$';
+        if (which === '&' || which === '0') return groups[0] ?? '';
+        const n = Number(which);
+        return groups[n] ?? '';
+    });
+}
+
 interface FindMatch {
     from: number;
     to: number;
+    groups?: string[] | null;
+}
+
+/** Decoration / counter cap. Replace-all uses REPLACE_ALL_CAP and refuses above it. */
+export const FIND_DISPLAY_CAP = 5000;
+/** Safety cap for replace-all. Hitting it rejects before any mutation. */
+export const REPLACE_ALL_CAP = 100000;
+
+export function findRegexFlags(caseSensitive: boolean): string {
+    return caseSensitive ? 'gu' : 'giu';
 }
 
 interface FindStateSnapshot {
@@ -16,6 +36,8 @@ interface FindStateSnapshot {
     active: number;
     matches: FindMatch[];
     capped?: boolean;
+    invalidRegex?: boolean;
+    replaceLimited?: boolean;
 }
 
 interface FindControllerOptions {
@@ -29,9 +51,11 @@ export interface FindController {
     openFind(initialTerm?: string): void;
     closeFind(): void;
     setFindTerm(term: string): void;
-    setFindOptions(opts: { caseSensitive?: boolean; wholeWord?: boolean }): void;
+    setFindOptions(opts: ResolvedFindOptions): void;
     findNext(): void;
     findPrev(): void;
+    replaceCurrent(replacement: string): boolean;
+    replaceAll(replacement: string, opts?: { inSelection?: boolean }): boolean;
     recomputeMatches(revealActive?: boolean): void;
     hasActiveTerm(): boolean;
     setSuppressActive(on: boolean): void;
@@ -40,9 +64,10 @@ export interface FindController {
 
 export function createFindController(opts: FindControllerOptions): FindController {
     let findState: FindStateSnapshot = { term: '', total: 0, active: -1, matches: [] };
-    const findOptions: { caseSensitive: boolean; wholeWord: boolean } = {
+    const findOptions: { caseSensitive: boolean; wholeWord: boolean; regex: boolean } = {
         caseSensitive: false,
         wholeWord: false,
+        regex: false,
     };
     let matchDecorations: string[] = [];
     let lastDecoratedModel: any = null;
@@ -72,31 +97,34 @@ export function createFindController(opts: FindControllerOptions): FindControlle
             return;
         }
 
+        if (findOptions.regex) {
+            try {
+                // Flags wie Monaco (`gu`/`giu`) — sonst weicht die
+                // Vorvalidierung von findMatches ab (Unicode-Escapes).
+                new RegExp(term, findRegexFlags(findOptions.caseSensitive));
+            } catch {
+                findState = { term, total: 0, active: -1, matches: [], capped: false, invalidRegex: true };
+                clearDecorations();
+                publishFindState();
+                return;
+            }
+        }
+
         // Use Monaco's optimized model.findMatches (Befund 4).
         // wholeWord: pass separators from options (or default) so that
         // Monaco applies word-boundary logic; behavior matched to prior
-        // custom impl via vitest equivalence.
-        let wordSeparators: string | null = null;
-        if (findOptions.wholeWord) {
-            try {
-                const edOpt = monaco.editor && monaco.editor.EditorOption;
-                if (edOpt && edOpt.wordSeparators && typeof editor.getOption === 'function') {
-                    wordSeparators = editor.getOption(edOpt.wordSeparators);
-                }
-            } catch (_) { /* fallthrough */ }
-            if (!wordSeparators) {
-                wordSeparators = '~!@#$%^&*()-=+[{]}\\|;:\'",.<>/?';
-            }
-        }
+        // custom impl via vitest equivalence. Regex + wholeWord is
+        // disabled in the find-bar (same restriction as vault search).
+        const wordSeparators = resolveWordSeparators(editor, monaco);
 
         const rawMatches: any[] = model.findMatches(
             term,
             false, // searchOnlyEditableRange
-            false, // isRegex
+            !!findOptions.regex,
             !!findOptions.caseSensitive,
             wordSeparators,
-            false, // captureMatches
-            5000,  // limitResultCount
+            !!findOptions.regex, // captureMatches — $1/$2 for replace
+            FIND_DISPLAY_CAP,
         ) || [];
 
         const matches: FindMatch[] = [];
@@ -108,10 +136,10 @@ export function createFindController(opts: FindControllerOptions): FindControlle
             const endPos = { lineNumber: r.endLineNumber, column: r.endColumn };
             const from = model.getOffsetAt(startPos);
             const to = model.getOffsetAt(endPos);
-            matches.push({ from, to });
+            matches.push({ from, to, groups: rm.matches || null });
         }
 
-        const capped = rawMatches.length >= 5000;
+        const capped = rawMatches.length >= FIND_DISPLAY_CAP;
 
         // Aktiven Treffer aus dem Selektions-START ableiten (nicht aus
         // getPosition): scrollMatchIntoView selektiert den Treffer, der
@@ -223,6 +251,8 @@ export function createFindController(opts: FindControllerOptions): FindControlle
             active: findState.active,
         };
         if (findState.capped) detail.capped = true;
+        if (findState.invalidRegex) detail.invalidRegex = true;
+        if (findState.replaceLimited) detail.replaceLimited = true;
         if (opts.postToBridge) post({ type: 'editorFindState', ...detail });
         try {
             window.dispatchEvent(new CustomEvent('folio-find-state', { detail }));
@@ -264,12 +294,119 @@ export function createFindController(opts: FindControllerOptions): FindControlle
         if (editor && opts.source === 'editor') editor.focus();
     }
 
-    function setFindOptions(newOpts: {
-        caseSensitive?: boolean;
-        wholeWord?: boolean;
-    }): void {
-        if (typeof newOpts.caseSensitive === 'boolean') findOptions.caseSensitive = newOpts.caseSensitive;
-        if (typeof newOpts.wholeWord === 'boolean') findOptions.wholeWord = newOpts.wholeWord;
+    function resolveWordSeparators(editor: any, monaco: any): string | null {
+        if (!findOptions.wholeWord || findOptions.regex) return null;
+        try {
+            const edOpt = monaco.editor && monaco.editor.EditorOption;
+            if (edOpt && edOpt.wordSeparators && typeof editor.getOption === 'function') {
+                const fromEditor = editor.getOption(edOpt.wordSeparators);
+                if (fromEditor) return fromEditor;
+            }
+        } catch (_) { /* fallthrough */ }
+        return '~!@#$%^&*()-=+[{]}\\|;:\'",.<>/?';
+    }
+
+    function replacementText(template: string, groups: string[] | null, matched: string): string {
+        if (!findOptions.regex) return template;
+        const captured = groups && groups.length > 0 ? groups : [matched];
+        return expandFindReplacement(template, captured);
+    }
+
+    function replaceCurrent(replacement: string): boolean {
+        if (opts.source !== 'editor') return false;
+        if (findState.invalidRegex) return false;
+        if (findState.matches.length === 0 || findState.active < 0) return false;
+        const editor = opts.getEditor();
+        const monaco = opts.getMonaco();
+        if (!editor || !monaco) return false;
+        const model = editor.getModel();
+        if (!model) return false;
+        const match = findState.matches[findState.active];
+        const start = model.getPositionAt(match.from);
+        const end = model.getPositionAt(match.to);
+        const range = new monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column);
+        const matched = findOptions.regex ? model.getValueInRange(range) : '';
+        const text = replacementText(replacement, match.groups || null, matched);
+        // Kein withProgrammaticWrite: executeEdits feuert onDidChangeModelContent
+        // wie eine Taste → dirty + folio-editor-text-updated + Match-Recompute.
+        editor.pushUndoStop();
+        editor.executeEdits('findReplace', [{ range, text }]);
+        editor.pushUndoStop();
+        // Recompute hat den Cursor hinter die Ersetzung gesetzt und damit
+        // bereits den nächsten Treffer aktiv — nur noch einblenden.
+        if (findState.matches.length > 0 && findState.active >= 0) {
+            scrollMatchIntoView(findState.matches[findState.active]);
+            applyDecorations();
+            publishFindState();
+        }
+        return true;
+    }
+
+    function replaceAll(replacement: string, replaceOpts?: { inSelection?: boolean }): boolean {
+        if (opts.source !== 'editor') return false;
+        if (findState.invalidRegex) return false;
+        const editor = opts.getEditor();
+        const monaco = opts.getMonaco();
+        if (!editor || !monaco) return false;
+        const model = editor.getModel();
+        if (!model) return false;
+        if (!findState.term) return false;
+
+        let searchScope: any = false;
+        if (replaceOpts && replaceOpts.inSelection) {
+            const rawSels = (typeof editor.getSelections === 'function' && editor.getSelections())
+                || (editor.getSelection ? [editor.getSelection()] : []);
+            const ranges: any[] = [];
+            for (let i = 0; i < rawSels.length; i++) {
+                const s = rawSels[i];
+                if (!s) continue;
+                const empty = typeof s.isEmpty === 'function' ? s.isEmpty() : false;
+                if (!empty) ranges.push(s);
+            }
+            if (ranges.length === 0) return false;
+            searchScope = ranges;
+        }
+
+        const rawMatches: any[] = model.findMatches(
+            findState.term,
+            searchScope,
+            !!findOptions.regex,
+            !!findOptions.caseSensitive,
+            resolveWordSeparators(editor, monaco),
+            !!findOptions.regex,
+            REPLACE_ALL_CAP + 1,
+        ) || [];
+        if (rawMatches.length > REPLACE_ALL_CAP) {
+            findState = { ...findState, replaceLimited: true };
+            publishFindState();
+            return false;
+        }
+        if (rawMatches.length === 0) return false;
+
+        const edits: any[] = [];
+        for (let i = 0; i < rawMatches.length; i++) {
+            const rm = rawMatches[i];
+            const r = rm && rm.range;
+            if (!r) continue;
+            const range = new monaco.Range(r.startLineNumber, r.startColumn, r.endLineNumber, r.endColumn);
+            const matched = findOptions.regex ? model.getValueInRange(range) : '';
+            edits.push({
+                range,
+                text: replacementText(replacement, rm.matches || null, matched),
+            });
+        }
+        if (edits.length === 0) return false;
+
+        editor.pushUndoStop();
+        editor.executeEdits('findReplaceAll', edits);
+        editor.pushUndoStop();
+        return true;
+    }
+
+    function setFindOptions(newOpts: ResolvedFindOptions): void {
+        findOptions.caseSensitive = newOpts.caseSensitive;
+        findOptions.wholeWord = newOpts.wholeWord;
+        findOptions.regex = newOpts.regex;
         if (opts.getEditor() && findState.term) recomputeMatches();
     }
 
@@ -331,6 +468,8 @@ export function createFindController(opts: FindControllerOptions): FindControlle
         setFindOptions,
         findNext,
         findPrev,
+        replaceCurrent,
+        replaceAll,
         recomputeMatches,
         hasActiveTerm: function (): boolean {
             return findState.term.length > 0;
@@ -353,6 +492,8 @@ export const setFindTerm = editorFindController.setFindTerm;
 export const setFindOptions = editorFindController.setFindOptions;
 export const findNext = editorFindController.findNext;
 export const findPrev = editorFindController.findPrev;
+export const replaceCurrent = editorFindController.replaceCurrent;
+export const replaceAll = editorFindController.replaceAll;
 export const recomputeMatches = editorFindController.recomputeMatches;
 export const hasActiveTerm = editorFindController.hasActiveTerm;
 export const setSuppressActive = editorFindController.setSuppressActive;

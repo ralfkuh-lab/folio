@@ -8,6 +8,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { installTauriMock } from '../helpers';
+import { seedDeCatalog } from '../helpers-i18n';
 
 // ViewFinder ist Modul-Import — wir mocken ihn, damit wir die Aufrufe spy-en koennen.
 const viewFinder = {
@@ -53,6 +54,9 @@ function installFolioEditorSpy() {
         setFindTerm: vi.fn(),
         findNext: vi.fn(),
         findPrev: vi.fn(),
+        replaceCurrent: vi.fn(),
+        replaceAll: vi.fn(),
+        getSelection: vi.fn(() => ({ start: 0, length: 0 })),
     };
     (window as any).FolioEditor = spy;
     return spy;
@@ -75,15 +79,23 @@ function installCodeViewSpy() {
 function buildDom(): void {
     document.body.innerHTML = `
         <div id="find-bar">
+            <button id="find-replace-toggle"></button>
             <input id="find-input" />
             <span id="find-counter"></span>
             <button id="find-prev"></button>
             <button id="find-next"></button>
             <button id="find-opts"></button>
             <button id="find-close"></button>
+            <div id="find-replace-row">
+                <input id="find-replace-input" />
+                <button id="find-replace-one"></button>
+                <button id="find-replace-all"></button>
+            </div>
             <div id="find-opts-panel">
                 <input id="find-case" type="checkbox" />
                 <input id="find-word" type="checkbox" />
+                <input id="find-regex" type="checkbox" />
+                <input id="find-in-selection" type="checkbox" />
             </div>
         </div>
     `;
@@ -463,8 +475,92 @@ describe('ui/find-bar — setEditorFindTerm with automation options (audit fix)'
 
         expect(caseEl.checked).toBe(true);
         expect(wordEl.checked).toBe(true);
-        expect(viewFinder.setFindOptions).toHaveBeenCalledWith({ caseSensitive: true, wholeWord: true });
+        expect(viewFinder.setFindOptions).toHaveBeenCalledWith({
+            caseSensitive: true,
+            wholeWord: true,
+            regex: false,
+        });
         expect(viewFinder.setFindTerm).toHaveBeenCalledWith('t2');
+    });
+
+    it('setEditorFindTerm regex disables whole-word for the finder but keeps checkbox state', async () => {
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: vi.fn().mockResolvedValue(true),
+            focusEditor: vi.fn(),
+        });
+        findBar.openEditorFind('t');
+        await Promise.resolve();
+        const wordEl = document.getElementById('find-word') as HTMLInputElement;
+        const regexEl = document.getElementById('find-regex') as HTMLInputElement;
+        wordEl.checked = true;
+        viewFinder.setFindOptions.mockClear();
+
+        findBar.setEditorFindTerm('t', { regex: true });
+
+        expect(regexEl.checked).toBe(true);
+        expect(wordEl.checked).toBe(true);
+        expect(wordEl.disabled).toBe(true);
+        expect(viewFinder.setFindOptions).toHaveBeenCalledWith({
+            caseSensitive: false,
+            wholeWord: false,
+            regex: true,
+        });
+    });
+
+    it('turning regex off re-enables whole-word with the remembered checkbox', async () => {
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: vi.fn().mockResolvedValue(true),
+            focusEditor: vi.fn(),
+        });
+        findBar.openEditorFind('t');
+        await Promise.resolve();
+        const wordEl = document.getElementById('find-word') as HTMLInputElement;
+        wordEl.checked = true;
+        findBar.setEditorFindTerm('t', { regex: true });
+        viewFinder.setFindOptions.mockClear();
+
+        findBar.setEditorFindTerm('t', { regex: false });
+
+        expect(wordEl.disabled).toBe(false);
+        expect(wordEl.checked).toBe(true);
+        expect(viewFinder.setFindOptions).toHaveBeenCalledWith({
+            caseSensitive: false,
+            wholeWord: true,
+            regex: false,
+        });
+    });
+
+    it('invalidRegex find-state marks the input and counter, then clears on a valid state', async () => {
+        await seedDeCatalog();
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: vi.fn().mockResolvedValue(true),
+            focusEditor: vi.fn(),
+        });
+        findBar.openEditorFind('(');
+        const inputEl = document.getElementById('find-input') as HTMLInputElement;
+        const counterEl = document.getElementById('find-counter')!;
+
+        window.dispatchEvent(new CustomEvent('folio-find-state', {
+            detail: { term: '(', total: 0, active: -1, invalidRegex: true },
+        }));
+
+        expect(inputEl.classList.contains('find-input--invalid')).toBe(true);
+        expect(inputEl.getAttribute('aria-invalid')).toBe('true');
+        expect(counterEl.classList.contains('find-counter--invalid')).toBe(true);
+        expect(counterEl.textContent).not.toBe('0/0');
+        expect(counterEl.textContent.length).toBeGreaterThan(0);
+
+        window.dispatchEvent(new CustomEvent('folio-find-state', {
+            detail: { term: 'foo', total: 0, active: -1 },
+        }));
+
+        expect(inputEl.classList.contains('find-input--invalid')).toBe(false);
+        expect(inputEl.hasAttribute('aria-invalid')).toBe(false);
+        expect(counterEl.classList.contains('find-counter--invalid')).toBe(false);
+        expect(counterEl.textContent).toBe('0/0');
     });
 
     it('setEditorFindTerm(term, {caseSensitive}) leaves other option untouched', async () => {
@@ -502,5 +598,140 @@ describe('ui/find-bar — selection seed mirrored to input (audit fix)', () => {
         window.dispatchEvent(new CustomEvent('folio-find-state', { detail: { term: 'selectedText', total: 2, active: 0 } }));
 
         expect(inputEl.value).toBe('selectedText');
+    });
+});
+
+describe('ui/find-bar — replace row', () => {
+    it('toggle opens the replace row and replace buttons call FolioEditor', async () => {
+        const folioSpy = installFolioEditorSpy();
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: vi.fn().mockResolvedValue(true),
+            focusEditor: vi.fn(),
+        });
+        document.body.classList.add('edit-mode');
+        findBar.openEditorFind('foo');
+        await Promise.resolve();
+        await Promise.resolve();
+
+        document.getElementById('find-replace-toggle')!.click();
+        expect(document.getElementById('find-bar')!.classList.contains('replace-open')).toBe(true);
+        expect(document.getElementById('find-replace-toggle')!.getAttribute('aria-expanded')).toBe('true');
+
+        (document.getElementById('find-replace-input') as HTMLInputElement).value = 'bar';
+        document.getElementById('find-replace-one')!.click();
+        expect(folioSpy.replaceCurrent).toHaveBeenCalledWith('bar');
+        document.getElementById('find-replace-all')!.click();
+        expect(folioSpy.replaceAll).toHaveBeenCalledWith('bar', { inSelection: false });
+    });
+
+    it('replace flushes a pending debounce term before mutating', async () => {
+        vi.useFakeTimers();
+        const folioSpy = installFolioEditorSpy();
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: vi.fn().mockResolvedValue(true),
+            focusEditor: vi.fn(),
+        });
+        document.body.classList.add('edit-mode');
+        findBar.openEditorFind('old');
+        await Promise.resolve();
+        await Promise.resolve();
+        folioSpy.setFindTerm.mockClear();
+        folioSpy.replaceCurrent.mockClear();
+        folioSpy.replaceAll.mockClear();
+
+        const inputEl = document.getElementById('find-input') as HTMLInputElement;
+        inputEl.value = 'new';
+        inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+
+        document.getElementById('find-replace-one')!.click();
+        expect(folioSpy.setFindTerm).toHaveBeenCalledWith('new');
+        expect(folioSpy.replaceCurrent).toHaveBeenCalled();
+        expect(folioSpy.setFindTerm.mock.invocationCallOrder[0])
+            .toBeLessThan(folioSpy.replaceCurrent.mock.invocationCallOrder[0]);
+
+        folioSpy.setFindTerm.mockClear();
+        folioSpy.replaceAll.mockClear();
+        inputEl.value = 'newer';
+        inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+        document.getElementById('find-replace-all')!.click();
+        expect(folioSpy.setFindTerm).toHaveBeenCalledWith('newer');
+        expect(folioSpy.replaceAll).toHaveBeenCalled();
+        expect(folioSpy.setFindTerm.mock.invocationCallOrder[0])
+            .toBeLessThan(folioSpy.replaceAll.mock.invocationCallOrder[0]);
+        vi.useRealTimers();
+    });
+
+    it('prev/next buttons flush a pending debounce term before navigating', async () => {
+        vi.useFakeTimers();
+        const folioSpy = installFolioEditorSpy();
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: vi.fn().mockResolvedValue(true),
+            focusEditor: vi.fn(),
+        });
+        document.body.classList.add('edit-mode');
+        findBar.openEditorFind('old');
+        await Promise.resolve();
+        await Promise.resolve();
+        folioSpy.setFindTerm.mockClear();
+        folioSpy.findNext.mockClear();
+        folioSpy.findPrev.mockClear();
+
+        const inputEl = document.getElementById('find-input') as HTMLInputElement;
+        inputEl.value = 'new';
+        inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+
+        // Klick im Debounce-Fenster: ohne Flush wuerde mit 'old' navigiert.
+        document.getElementById('find-next')!.click();
+        expect(folioSpy.setFindTerm).toHaveBeenCalledWith('new');
+        expect(folioSpy.setFindTerm.mock.invocationCallOrder[0])
+            .toBeLessThan(folioSpy.findNext.mock.invocationCallOrder[0]);
+
+        folioSpy.setFindTerm.mockClear();
+        inputEl.value = 'newer';
+        inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+        document.getElementById('find-prev')!.click();
+        expect(folioSpy.setFindTerm).toHaveBeenCalledWith('newer');
+        expect(folioSpy.setFindTerm.mock.invocationCallOrder[0])
+            .toBeLessThan(folioSpy.findPrev.mock.invocationCallOrder[0]);
+        vi.useRealTimers();
+    });
+
+    it('Ctrl+H opens the replace row in edit mode', async () => {
+        installFolioEditorSpy();
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: vi.fn().mockResolvedValue(true),
+            focusEditor: vi.fn(),
+        });
+        document.body.classList.add('edit-mode');
+        findBar.openEditorFind('foo');
+        await Promise.resolve();
+        await Promise.resolve();
+
+        const event = new KeyboardEvent('keydown', {
+            key: 'h',
+            ctrlKey: true,
+            bubbles: true,
+            cancelable: true,
+        });
+        document.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(true);
+        expect(document.getElementById('find-bar')!.classList.contains('replace-open')).toBe(true);
+    });
+
+    it('applyFindReplace is a no-op in view mode', async () => {
+        const folioSpy = installFolioEditorSpy();
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: vi.fn().mockResolvedValue(true),
+            focusEditor: vi.fn(),
+        });
+        findBar.openEditorFind('foo');
+        findBar.applyFindReplace('bar', true);
+        expect(folioSpy.replaceAll).not.toHaveBeenCalled();
+        expect(folioSpy.replaceCurrent).not.toHaveBeenCalled();
     });
 });

@@ -1128,6 +1128,7 @@ function performViewJump(jump: Jump): void {
             setEditorFindTerm(jump.term, {
                 caseSensitive: jump.caseSensitive,
                 wholeWord: jump.wholeWord,
+                regex: false,
             });
         } catch (err) {
             folioLog.warn('search', 'view-mode jump failed', { error: String(err) });
@@ -1165,6 +1166,7 @@ function performViewJump(jump: Jump): void {
         setEditorFindTerm(jump.term, {
             caseSensitive: jump.caseSensitive,
             wholeWord: jump.wholeWord,
+            regex: false,
         });
     } catch (err) {
         folioLog.warn('search', 'view-mode jump failed', { error: String(err) });

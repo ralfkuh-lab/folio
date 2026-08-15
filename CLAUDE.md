@@ -670,6 +670,32 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   in `find-bar.ts` entscheidet: `isEditMode()` → FolioEditor,
   `isSplitMode()` → SplitHtmlFinder/SplitCodeFinder/SplitFinder je nach
   Dokumenttyp, sonst → HtmlFinder/CodeViewFinder/ViewFinder.
+- **Find-Bar: Regex und Ersetzen**. Der Options-Beutel hat zwei Typen —
+  `FindOptions` (alle Felder optional) nur am **Eingang**
+  (`setEditorFindTerm`, Automation), `ResolvedFindOptions` mit
+  **Pflichtfeldern** an der `setFindOptions`-Grenze. Grund: ViewFinder/
+  HtmlFinder setzten fehlende Felder auf `false`, Monaco patchte nur —
+  zwei Semantiken hinter einem Aufruf. Mit Pflichtfeldern kompiliert ein
+  unvollständiger Beutel nicht mehr.
+  *Regex* gilt in allen Surfaces; die DOM-Finder kompilieren mit `gu`/`giu`
+  wie Monaco (sonst weichen gültige Muster auseinander) und überspringen
+  Zero-Width-Matches **codepoint-weise** (Surrogatpaar +2, nicht `++`) —
+  analog `search.rs`. Ungültige Regex ist sichtbar (`invalidRegex` →
+  Input-Klasse + Zähler), nie stilles „0 Treffer". *„Ganzes Wort" ist bei
+  Regex deaktiviert*, weil die Vault-Suche Whole-Word im Regex-Modus
+  prinzipbedingt nicht kann (Rust-`regex` ohne Lookarounds) — derselbe
+  Begriff soll nicht zwei Bedeutungen haben.
+  *Ersetzen* wirkt nur im Monaco-Puffer des aktiven Tabs; die Zeile ist
+  ausschließlich über `body.edit-mode`/`body.split-mode` gegated (im
+  View-Mode gibt es keinen Puffer). „Alle ersetzen" ist **ein** Undo-Schritt
+  (ein `executeEdits` zwischen zwei `pushUndoStop`, nie `setValue`) und
+  **lehnt oberhalb `REPLACE_ALL_CAP` sichtbar ab, statt still partiell zu
+  ersetzen**. Scope „In Auswahl" ist ein **explizites Toggle**, keine
+  Heuristik: Die Find-Bar selektiert den aktiven Treffer selbst, eine
+  Herkunftserkennung per Offset-Vergleich hielte eine Handauswahl für die
+  eigene. Alle Ersetzungs- **und** Navigationsaktionen rufen zuerst
+  `flushPendingInputTerm()` — der Input ist 150 ms debounced, sonst wird
+  mit dem vorherigen Term gearbeitet.
 - **MonacoEnvironment.getWorkerUrl**: in `editor/mount.ts::loadMonaco`
   wird vor `require.config(...)` ein Worker-Bootstrap via `data:`-URI
   registriert (`origin + /monaco/vs/base/worker/workerMain.js`). Ohne
@@ -887,7 +913,7 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
 
 ## E2E-Test-Suite
 
-Vollständige UI-Coverage in `tests/e2e/` (57 Szenarien, Python +
+Vollständige UI-Coverage in `tests/e2e/` (58 Szenarien, Python +
 Pillow): Boot, View-/Edit-/Split-Mode, Theme, Vault, Find (inkl.
 Code-View), Workspace, Save-Roundtrip durch alle BOM/EOL-Kombis,
 Undo/Redo, Toolbar-Commands (Bold/Italic/Heading), Menü-Coverage
@@ -898,7 +924,7 @@ Theme-CRUD/-Browser/-Import-Export, Export-Highlighting, Mermaid
 (View + Export), Link-in-neuem-Tab, Vault-Volltextsuche (API + UI),
 Vault-Filter, Tab-Kontextmenü, Command Palette, Statusleiste,
 Wikilinks/Tags, Task-Checkboxen, Git-Status/-Diff/-Filter,
-versteckte Vault-Einträge sowie
+versteckte Vault-Einträge, Find-Bar-Regex/-Ersetzen sowie
 KI-Settings, KI-Übersetzung, KI-Theme-Autor, Export-KI-Draft und
 KI-Aktionen (Mock-Provider). Der englische Boot ist über
 `scripts/run-e2e.sh --lang-smoke` separat abgedeckt.

@@ -199,6 +199,16 @@ pub(super) struct FindTextRequest {
     pub(super) case_sensitive: Option<bool>,
     #[serde(default)]
     pub(super) whole_word: Option<bool>,
+    #[serde(default)]
+    pub(super) regex: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct FindReplaceRequest {
+    pub(super) replacement: String,
+    #[serde(default)]
+    pub(super) all: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -389,12 +399,14 @@ mod phase0_request_tests {
 
     #[test]
     fn find_text_request_deserializes_term_and_camel_options() {
-        let req: FindTextRequest =
-            serde_json::from_str(r#"{"term":"foo","caseSensitive":true,"wholeWord":false}"#)
-                .unwrap();
+        let req: FindTextRequest = serde_json::from_str(
+            r#"{"term":"foo","caseSensitive":true,"wholeWord":false,"regex":true}"#,
+        )
+        .unwrap();
         assert_eq!("foo", req.term);
         assert_eq!(Some(true), req.case_sensitive);
         assert_eq!(Some(false), req.whole_word);
+        assert_eq!(Some(true), req.regex);
     }
 
     #[test]
@@ -403,6 +415,22 @@ mod phase0_request_tests {
         assert_eq!("bar", req.term);
         assert!(req.case_sensitive.is_none());
         assert!(req.whole_word.is_none());
+        assert!(req.regex.is_none());
+    }
+
+    #[test]
+    fn find_replace_request_deserializes_replacement_and_all() {
+        let req: FindReplaceRequest =
+            serde_json::from_str(r#"{"replacement":"bar","all":true}"#).unwrap();
+        assert_eq!("bar", req.replacement);
+        assert!(req.all);
+    }
+
+    #[test]
+    fn find_replace_request_all_defaults_false() {
+        let req: FindReplaceRequest = serde_json::from_str(r#"{"replacement":"x"}"#).unwrap();
+        assert_eq!("x", req.replacement);
+        assert!(!req.all);
     }
 
     #[test]

@@ -19,21 +19,69 @@ function createModel(value: string) {
     return {
         value,
         getValue: vi.fn(() => value),
+        getValueInRange: vi.fn((range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }) => {
+            const from = computeOffset({ lineNumber: range.startLineNumber, column: range.startColumn });
+            const to = computeOffset({ lineNumber: range.endLineNumber, column: range.endColumn });
+            return value.slice(from, to);
+        }),
         getPositionAt: vi.fn(computePos),
         getOffsetAt: vi.fn(computeOffset),
         findMatches: vi.fn((
             searchString: string,
             _searchOnlyEditable: boolean,
-            _isRegex: boolean,
+            isRegex: boolean,
             matchCase: boolean,
             wordSeparators: string | null,
             _captureMatches: boolean,
             limitResultCount = 5000,
         ): any[] => {
             if (!searchString) return [];
+            const res: any[] = [];
+            function pushRange(from: number, to: number, groups?: string[] | null): boolean {
+                const startP = computePos(from);
+                const endP = computePos(to);
+                const hit: any = {
+                    range: {
+                        startLineNumber: startP.lineNumber,
+                        startColumn: startP.column,
+                        endLineNumber: endP.lineNumber,
+                        endColumn: endP.column,
+                    },
+                };
+                if (groups) hit.matches = groups;
+                res.push(hit);
+                return res.length >= limitResultCount;
+            }
+            const scope = _searchOnlyEditable as boolean | { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number };
+            let scopeFrom = 0;
+            let scopeTo = value.length;
+            if (scope && typeof scope === 'object' && typeof scope.startLineNumber === 'number') {
+                scopeFrom = computeOffset({ lineNumber: scope.startLineNumber, column: scope.startColumn });
+                scopeTo = computeOffset({ lineNumber: scope.endLineNumber, column: scope.endColumn });
+            }
+            if (isRegex) {
+                let re: RegExp;
+                try {
+                    re = new RegExp(searchString, matchCase ? 'gu' : 'giu');
+                } catch {
+                    return [];
+                }
+                let m: RegExpExecArray | null;
+                while ((m = re.exec(value))) {
+                    if (m[0].length === 0) {
+                        re.lastIndex++;
+                        continue;
+                    }
+                    const from = m.index;
+                    const to = m.index + m[0].length;
+                    if (from < scopeFrom || to > scopeTo) continue;
+                    const groups = _captureMatches ? Array.from(m) : null;
+                    if (pushRange(from, to, groups)) break;
+                }
+                return res;
+            }
             const searchTerm = matchCase ? searchString : searchString.toLowerCase();
             const searchText = matchCase ? value : value.toLowerCase();
-            const res: any[] = [];
             let pos = 0;
             const useWhole = wordSeparators != null;
             function isWordChar(ch: string): boolean { return /[\p{L}\p{N}_]/u.test(ch); }
@@ -47,17 +95,7 @@ function createModel(value: string) {
                 if (idx === -1) break;
                 const end = idx + searchString.length;
                 if (!useWhole || isWholeWordHit(value, idx, end)) {
-                    const startP = computePos(idx);
-                    const endP = computePos(end);
-                    res.push({
-                        range: {
-                            startLineNumber: startP.lineNumber,
-                            startColumn: startP.column,
-                            endLineNumber: endP.lineNumber,
-                            endColumn: endP.column,
-                        },
-                    });
-                    if (res.length >= limitResultCount) break;
+                    if (pushRange(idx, end)) break;
                 }
                 pos = end;
             }
@@ -75,6 +113,26 @@ function createHarness(initialText: string) {
         setModel(next: any) { model = next; },
         getPosition: vi.fn(() => ({ lineNumber: 1, column: 1 })),
         getSelection: vi.fn(() => null),
+        getSelections: vi.fn(() => []),
+        pushUndoStop: vi.fn(),
+        executeEdits: vi.fn((_source: string, edits: any[]) => {
+            const items = edits.map((e) => ({
+                from: model.getOffsetAt({
+                    lineNumber: e.range.startLineNumber,
+                    column: e.range.startColumn,
+                }),
+                to: model.getOffsetAt({
+                    lineNumber: e.range.endLineNumber,
+                    column: e.range.endColumn,
+                }),
+                text: e.text as string,
+            })).sort((a, b) => b.from - a.from);
+            let text = model.getValue();
+            for (const it of items) {
+                text = text.slice(0, it.from) + it.text + text.slice(it.to);
+            }
+            model = createModel(text);
+        }),
         deltaDecorations: vi.fn((oldIds: string[], decorations: any[]) => {
             decorationCalls.push({ oldIds, decorations });
             return decorations.map(() => 'd' + decorationSeq++);
@@ -133,7 +191,7 @@ describe('editor/find createFindController', () => {
             source: 'code-view',
         });
 
-        controller.setFindOptions({ wholeWord: true, caseSensitive: false });
+        controller.setFindOptions({ wholeWord: true, caseSensitive: false, regex: false });
         controller.openFind('alpha');
 
         expect(lastState()).toMatchObject({ source: 'code-view', term: 'alpha', total: 3, active: 0 });
@@ -153,7 +211,7 @@ describe('editor/find createFindController', () => {
         });
         expect(harness.editor.setPosition).not.toHaveBeenCalled();
 
-        controller.setFindOptions({ caseSensitive: true });
+        controller.setFindOptions({ caseSensitive: true, wholeWord: true, regex: false });
         expect(lastState()).toMatchObject({ term: 'alpha', total: 2, active: 0 });
     });
 
@@ -254,15 +312,15 @@ describe('editor/find createFindController', () => {
             source: 'code-view',
         });
 
-        controller.setFindOptions({ wholeWord: true, caseSensitive: false });
+        controller.setFindOptions({ wholeWord: true, caseSensitive: false, regex: false });
         controller.openFind('alpha');
         expect(lastState()).toMatchObject({ total: 3, active: 0 });
 
-        controller.setFindOptions({ caseSensitive: true, wholeWord: true });
+        controller.setFindOptions({ caseSensitive: true, wholeWord: true, regex: false });
         controller.setFindTerm('alpha');
         expect(lastState()).toMatchObject({ total: 2, active: 0 });
 
-        controller.setFindOptions({ caseSensitive: false, wholeWord: false });
+        controller.setFindOptions({ caseSensitive: false, wholeWord: false, regex: false });
         controller.setFindTerm('alpha');
         expect(lastState()).toMatchObject({ total: 5, active: 0 });
         // NOTE: Monaco findMatches semantics are mocked here (via harness);
@@ -285,5 +343,142 @@ describe('editor/find createFindController', () => {
         const st = lastState();
         expect(st.total).toBe(5000);
         expect(st.capped).toBe(true);
+    });
+
+    it('passes isRegex to findMatches and reports invalid patterns', async () => {
+        const { createFindController } = await import('../../editor/find');
+        const harness = createHarness('cat dog bird');
+        const controller = createFindController({
+            getEditor: () => harness.editor,
+            getMonaco: () => harness.monaco,
+            source: 'editor',
+        });
+
+        controller.setFindOptions({ regex: true, caseSensitive: false, wholeWord: false });
+        controller.openFind('cat|bird');
+        expect(lastState()).toMatchObject({ term: 'cat|bird', total: 2, active: 0 });
+        expect(harness.model.findMatches).toHaveBeenCalledWith(
+            'cat|bird',
+            false,
+            true,
+            false,
+            null,
+            true,
+            5000,
+        );
+
+        controller.setFindTerm('(');
+        expect(lastState()).toMatchObject({
+            term: '(',
+            total: 0,
+            active: -1,
+            invalidRegex: true,
+        });
+        const afterInvalid = harness.decorationCalls[harness.decorationCalls.length - 1];
+        expect(afterInvalid.decorations).toHaveLength(0);
+
+        controller.setFindTerm('dog');
+        expect(lastState()).toMatchObject({ term: 'dog', total: 1, active: 0 });
+        expect(lastState().invalidRegex).toBeUndefined();
+    });
+
+    it('replaceCurrent writes one edit', async () => {
+        const { createFindController } = await import('../../editor/find');
+        const harness = createHarness('foo bar foo');
+        const controller = createFindController({
+            getEditor: () => harness.editor,
+            getMonaco: () => harness.monaco,
+            source: 'editor',
+        });
+        controller.setFindOptions({ caseSensitive: false, wholeWord: false, regex: false });
+        controller.openFind('foo');
+        expect(controller.replaceCurrent('qux')).toBe(true);
+        expect(harness.editor.pushUndoStop).toHaveBeenCalledTimes(2);
+        expect(harness.editor.executeEdits).toHaveBeenCalledTimes(1);
+        expect(harness.editor.executeEdits.mock.calls[0][1]).toHaveLength(1);
+        expect(harness.model.getValue()).toBe('qux bar foo');
+    });
+
+    it('replaceAll batches three matches in one executeEdits', async () => {
+        const { createFindController } = await import('../../editor/find');
+        const harness = createHarness('foo foo foo');
+        const controller = createFindController({
+            getEditor: () => harness.editor,
+            getMonaco: () => harness.monaco,
+            source: 'editor',
+        });
+        controller.setFindOptions({ caseSensitive: false, wholeWord: false, regex: false });
+        controller.openFind('foo');
+        expect(lastState()).toMatchObject({ total: 3 });
+        expect(controller.replaceAll('foofoo')).toBe(true);
+        expect(harness.editor.pushUndoStop).toHaveBeenCalledTimes(2);
+        expect(harness.editor.executeEdits).toHaveBeenCalledTimes(1);
+        expect(harness.editor.executeEdits.mock.calls[0][1]).toHaveLength(3);
+        expect(harness.model.getValue()).toBe('foofoo foofoo foofoo');
+    });
+
+    it('replaceAll with zero matches is a no-op', async () => {
+        const { createFindController } = await import('../../editor/find');
+        const harness = createHarness('nothing here');
+        const controller = createFindController({
+            getEditor: () => harness.editor,
+            getMonaco: () => harness.monaco,
+            source: 'editor',
+        });
+        controller.setFindOptions({ caseSensitive: false, wholeWord: false, regex: false });
+        controller.openFind('zzz');
+        expect(controller.replaceAll('nope')).toBe(false);
+        expect(harness.editor.executeEdits).not.toHaveBeenCalled();
+        expect(harness.model.getValue()).toBe('nothing here');
+    });
+
+    it('regex replace expands capture groups', async () => {
+        const { createFindController, expandFindReplacement } = await import('../../editor/find');
+        expect(expandFindReplacement('$2-$1', ['ab', 'a', 'b'])).toBe('b-a');
+        expect(expandFindReplacement('$$', ['x'])).toBe('$');
+
+        const harness = createHarness('cat-dog');
+        const controller = createFindController({
+            getEditor: () => harness.editor,
+            getMonaco: () => harness.monaco,
+            source: 'editor',
+        });
+        controller.setFindOptions({ caseSensitive: false, wholeWord: false, regex: true });
+        controller.openFind('(cat)-(dog)');
+        expect(controller.replaceCurrent('$2/$1')).toBe(true);
+        expect(harness.model.getValue()).toBe('dog/cat');
+    });
+
+    it('accepts Unicode-escape regex that Monaco compiles with the u-flag', async () => {
+        const { createFindController } = await import('../../editor/find');
+        const harness = createHarness('hello');
+        const controller = createFindController({
+            getEditor: () => harness.editor,
+            getMonaco: () => harness.monaco,
+            source: 'editor',
+        });
+        controller.setFindOptions({ regex: true, caseSensitive: false, wholeWord: false });
+        controller.openFind('[\\u{1F600}-\\u{1F64F}]');
+        expect(lastState().invalidRegex).toBeUndefined();
+    });
+
+    it('replaceAll refuses when the match snapshot exceeds the safety cap', async () => {
+        const { createFindController, REPLACE_ALL_CAP } = await import('../../editor/find');
+        const harness = createHarness('foo');
+        const controller = createFindController({
+            getEditor: () => harness.editor,
+            getMonaco: () => harness.monaco,
+            source: 'editor',
+        });
+        controller.setFindOptions({ caseSensitive: false, wholeWord: false, regex: false });
+        controller.openFind('foo');
+        harness.model.findMatches.mockReturnValueOnce(
+            Array.from({ length: REPLACE_ALL_CAP + 1 }, () => ({
+                range: { startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 4 },
+            })),
+        );
+        expect(controller.replaceAll('x')).toBe(false);
+        expect(harness.editor.executeEdits).not.toHaveBeenCalled();
+        expect(lastState().replaceLimited).toBe(true);
     });
 });

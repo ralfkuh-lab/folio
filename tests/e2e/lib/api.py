@@ -198,8 +198,27 @@ class AutomationApi:
         # `/find` nimmt keinen Payload — emittet `editor:open_find`.
         return self._request("POST", "/find", {})
 
-    def find_text(self, term: str) -> dict:
-        return self._request("POST", "/find/text", {"term": term})
+    def find_text(
+        self,
+        term: str,
+        *,
+        case_sensitive: Optional[bool] = None,
+        whole_word: Optional[bool] = None,
+        regex: Optional[bool] = None,
+    ) -> dict:
+        body: dict = {"term": term}
+        if case_sensitive is not None:
+            body["caseSensitive"] = case_sensitive
+        if whole_word is not None:
+            body["wholeWord"] = whole_word
+        if regex is not None:
+            body["regex"] = regex
+        return self._request("POST", "/find/text", body)
+
+    def find_replace(self, replacement: str, *, all: bool = False) -> dict:
+        return self._request(
+            "POST", "/find/replace", {"replacement": replacement, "all": all}
+        )
 
     def find_close(self) -> dict:
         # Es gibt keinen dedizierten Close-Endpunkt. NICHT Escape:

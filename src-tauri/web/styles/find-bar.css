@@ -21,6 +21,36 @@
   align-items: center;
   gap: 6px;
 }
+.find-bar__toggle-replace {
+  display: none;
+  width: 22px;
+  flex: 0 0 22px;
+  padding: 3px 0;
+  transition: transform 0.15s ease;
+}
+body.edit-mode .find-bar__toggle-replace,
+body.split-mode .find-bar__toggle-replace {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.find-bar.replace-open .find-bar__toggle-replace {
+  transform: rotate(90deg);
+}
+.find-bar__replace {
+  display: none;
+  margin-top: 4px;
+  align-items: center;
+  gap: 6px;
+}
+.find-bar__replace-spacer {
+  width: 22px;
+  flex: 0 0 22px;
+}
+body.edit-mode .find-bar.replace-open .find-bar__replace,
+body.split-mode .find-bar.replace-open .find-bar__replace {
+  display: flex;
+}
 .find-bar input.find-input {
   width: 220px;
   padding: 4px 6px;
@@ -30,11 +60,17 @@
   border-radius: 3px;
   font: inherit;
 }
+.find-bar input.find-input.find-input--invalid {
+  border-color: var(--danger-fg, #c0392b);
+}
 .find-bar .find-counter {
   min-width: 38px;
   text-align: center;
   color: var(--fg-muted);
   font-variant-numeric: tabular-nums;
+}
+.find-bar .find-counter.find-counter--invalid {
+  color: var(--danger-fg, #c0392b);
 }
 .find-bar button.find-btn {
   background: transparent;
@@ -50,6 +86,7 @@
 .find-bar__opts {
   margin-top: 4px;
   display: none;
+  flex-wrap: wrap;
   gap: 12px;
   font-size: 11.5px;
   color: var(--fg-muted);
@@ -60,4 +97,8 @@
   align-items: center;
   gap: 4px;
   cursor: pointer;
+}
+.find-bar__opts label:has(input:disabled) {
+  opacity: 0.55;
+  cursor: default;
 }

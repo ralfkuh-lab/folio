@@ -21,6 +21,8 @@ import {
     findNext,
     findPrev,
     openFind,
+    replaceAll,
+    replaceCurrent,
     setFindOptions,
     setFindTerm,
 } from './find';
@@ -63,7 +65,7 @@ import * as codeView from './view-code';
 import * as themeEditor from './theme-editor';
 import * as diffView from './diff-view';
 
-(window as any).FolioEditor = {
+window.FolioEditor = {
     mount,
     hasEditor,
     setText,
@@ -95,17 +97,19 @@ import * as diffView from './diff-view';
     setFindTerm,
     findNext,
     findPrev,
+    replaceCurrent,
+    replaceAll,
     layout,
     getLanguage,
     setLanguage,
     listLanguages,
     getScrollHeight,
     getVisibleHeight,
-};
+} satisfies FolioEditorSurface;
 
 // Zweiter Surface: Read-Only Code-View fuer den View-Mode von Non-Markdown-
 // Dateien. Sitzt auf derselben Monaco-AMD-Init wie FolioEditor.
-(window as any).FolioCodeView = {
+window.FolioCodeView = {
     mount: codeView.mount,
     setText: codeView.setText,
     getText: codeView.getText,
@@ -120,7 +124,7 @@ import * as diffView from './diff-view';
     findNext: codeView.findNext,
     findPrev: codeView.findPrev,
     setSuppressActive: codeView.setSuppressActive,
-};
+} satisfies FolioCodeViewSurface;
 
 // Vierte Surface: Monaco-DiffEditor fuer die KI-Aktions-Review (A3).
 (window as any).FolioDiffView = {

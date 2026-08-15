@@ -151,6 +151,7 @@
   </div>
   <div class="find-bar" id="find-bar" role="search">
     <div class="find-bar__row">
+      <button type="button" class="find-btn find-bar__toggle-replace" id="find-replace-toggle" title="Ersetzen" data-i18n-title="find.bar.replace.toggle.tooltip" aria-expanded="false" aria-controls="find-replace-row">&#x25B8;</button>
       <input type="text" id="find-input" class="find-input" placeholder="Suchen…" data-i18n-placeholder="find.bar.placeholder" autocomplete="off" spellcheck="false" />
       <span class="find-counter" id="find-counter"></span>
       <button type="button" class="find-btn" id="find-prev" title="Zurück (Shift+Enter)" data-i18n-title="find.bar.prev.tooltip">&#x25B2;</button>
@@ -158,9 +159,17 @@
       <button type="button" class="find-btn" id="find-opts" title="Optionen" data-i18n-title="find.bar.options.tooltip">&#x2699;</button>
       <button type="button" class="find-btn" id="find-close" title="Schließen (Esc)" data-i18n-title="find.bar.close.tooltip">&#x2715;</button>
     </div>
+    <div class="find-bar__replace" id="find-replace-row">
+      <span class="find-bar__replace-spacer" aria-hidden="true"></span>
+      <input type="text" id="find-replace-input" class="find-input" placeholder="Ersetzen…" data-i18n-placeholder="find.bar.replace.placeholder" autocomplete="off" spellcheck="false" />
+      <button type="button" class="find-btn" id="find-replace-one" title="Ersetzen" data-i18n="find.bar.replace.one.label" data-i18n-title="find.bar.replace.one.tooltip">Ersetzen</button>
+      <button type="button" class="find-btn" id="find-replace-all" title="Alle ersetzen" data-i18n="find.bar.replace.all.label" data-i18n-title="find.bar.replace.all.tooltip">Alle</button>
+    </div>
     <div class="find-bar__opts" id="find-opts-panel">
       <label><input type="checkbox" id="find-case" /> <span data-i18n="find.options.caseSensitive.label">Aa Groß-/Kleinschreibung</span></label>
       <label><input type="checkbox" id="find-word" /> <span data-i18n="find.options.wholeWord.label">Ganzes Wort</span></label>
+      <label><input type="checkbox" id="find-regex" /> <span data-i18n="find.options.regex.label">.* Regulärer Ausdruck</span></label>
+      <label><input type="checkbox" id="find-in-selection" /> <span data-i18n="find.options.inSelection.label">In Auswahl</span></label>
     </div>
   </div>
   <div class="content-panes" id="content-panes">

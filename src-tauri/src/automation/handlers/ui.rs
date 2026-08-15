@@ -7,10 +7,10 @@ use crate::automation::error::{json_payload, ok, ApiError, ApiResult};
 use crate::automation::extract::ApiQuery;
 use crate::automation::helpers::{emit, main_window};
 use crate::automation::types::{
-    AckOptions, AckedResponse, ClickRequest, EditorCommandRequest, FindTextRequest,
-    HistoryEntryResponse, HistoryMoveResponse, KeyRequest, MenuClickRequest, ModeRequest,
-    OkResponse, RailRequest, ResizeRequest, RightClickRequest, SplitRequest, SplitResponse,
-    ThemeRequest, TocActivateRequest, WorkspacePinRequest, WorkspaceUnpinRequest,
+    AckOptions, AckedResponse, ClickRequest, EditorCommandRequest, FindReplaceRequest,
+    FindTextRequest, HistoryEntryResponse, HistoryMoveResponse, KeyRequest, MenuClickRequest,
+    ModeRequest, OkResponse, RailRequest, ResizeRequest, RightClickRequest, SplitRequest,
+    SplitResponse, ThemeRequest, TocActivateRequest, WorkspacePinRequest, WorkspaceUnpinRequest,
 };
 use crate::menu;
 use crate::state::AppState;
@@ -348,6 +348,23 @@ pub(in crate::automation) async fn post_find_text(
             "term": payload.term,
             "caseSensitive": payload.case_sensitive,
             "wholeWord": payload.whole_word,
+            "regex": payload.regex,
+        }),
+    )?;
+    ok()
+}
+
+pub(in crate::automation) async fn post_find_replace(
+    AxumState(context): AxumState<AutomationContext>,
+    payload: Result<Json<FindReplaceRequest>, JsonRejection>,
+) -> ApiResult<Json<OkResponse>> {
+    let Json(payload) = json_payload(payload)?;
+    emit(
+        &context,
+        "editor:find_replace",
+        serde_json::json!({
+            "replacement": payload.replacement,
+            "all": payload.all,
         }),
     )?;
     ok()

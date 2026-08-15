@@ -36,7 +36,7 @@ umbenannt werden:
   Command `git_show_head` (HEAD-Text + Disk-Text + language für den read-only Git-Diff),
   `navigation:changed`, `navigation:toc_click`,
   `editor:load_text`, `editor:apply_replace`, `editor:open_find`,
-  `editor:set_find_term`, `shell:command`, `panel:rail_changed`,
+  `editor:set_find_term`, `editor:find_replace`, `shell:command`, `panel:rail_changed`,
   `panel:split_mid_changed`, `automation:click`, `automation:rightclick`,
   `automation:key`, `automation:dom_query`, `automation:editor_command`,
   `automation:eval`,
@@ -239,12 +239,20 @@ und ungültige oder nicht existente Dateipfade HTTP 400.
 ### Find
 
 - `POST /find` öffnet die Find-Bar (ohne Term/Optionen).
-- `POST /find/text { "term": "Suchbegriff", "caseSensitive": true, "wholeWord": false }`
-  öffnet die Find-Bar, setzt den Term und (optional) die Flags `caseSensitive`/`wholeWord`
+- `POST /find/text { "term": "Suchbegriff", "caseSensitive": true, "wholeWord": false, "regex": false }`
+  öffnet die Find-Bar, setzt den Term und (optional) die Flags `caseSensitive`/`wholeWord`/`regex`
   deterministisch. Fehlende optionale Felder ändern den UI-Checkbox-Zustand nicht
-  (Kompatibilität). Der Aufruf emittiert `editor:open_find` dann `editor:set_find_term`
-  mit dem vollen Payload; kein Ack (wie andere reine UI-Öffner). Die Find-Bar
-  ignoriert Aufrufe bei `kind-image`/`kind-binary`.
+  (Kompatibilität). Bei `regex: true` ist „Ganzes Wort" in der UI deaktiviert
+  (Checkbox bleibt gemerkt, Finder bekommen `wholeWord: false`). Der Aufruf
+  emittiert `editor:open_find` dann `editor:set_find_term` mit dem vollen
+  Payload; kein Ack (wie andere reine UI-Öffner). Die Find-Bar ignoriert
+  Aufrufe bei `kind-image`/`kind-binary`.
+- `POST /find/replace { "replacement": "neu", "all": false }` ersetzt im
+  Monaco-Puffer des aktiven Tabs. `all` default `false` = aktueller Treffer,
+  `true` = alle Treffer (ein Undo-Schritt). Nur Edit-/Split-Mode; in View/
+  Code-View/HTML-View ist das ein No-op. Capture-Gruppen (`$1`) greifen bei
+  aktivem Regex. Kein Ack. In Edit-/Split-Mode öffnet die Find-Bar die
+  Ersetzen-Zeile; im View-Mode kehrt das Frontend vor dem Öffnen zurück.
 
 ### Key
 

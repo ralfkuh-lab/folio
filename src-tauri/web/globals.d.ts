@@ -4,6 +4,31 @@
 // Tauri-Runtime und Monaco-AMD-Loader sind drittseitig. `__folioInvoke`
 // und `openDocument` sind defensive DevTools-Hooks aus Phase 4.6.
 
+/** Partial bag on the input side (setEditorFindTerm / Automation). */
+interface FindOptions {
+    caseSensitive?: boolean;
+    wholeWord?: boolean;
+    regex?: boolean;
+}
+
+/** Complete option bag at the setFindOptions boundary — partial objects do not compile. */
+interface ResolvedFindOptions {
+    caseSensitive: boolean;
+    wholeWord: boolean;
+    regex: boolean;
+}
+
+/** Duck-type surface used by the find-bar controller (`getFinder()`). */
+interface Finder {
+    openFind(seed?: string): void;
+    closeFind(): void;
+    setFindTerm(term: string): void;
+    setFindOptions(opts: ResolvedFindOptions): void;
+    findNext(): void;
+    findPrev(): void;
+    setSuppressActive?(on: boolean): void;
+}
+
 // Spiegelt die in `editor.ts::window.FolioEditor = {...}` exportierte
 // API. Index-Signature deckt selten genutzte Methoden ab; haeufige
 // werden konkret typisiert, damit Aufrufer ueberraschungsfrei sind.
@@ -35,10 +60,12 @@ interface FolioEditorSurface {
     triggerSuggest(): void;
     openFind(initialTerm?: string): void;
     closeFind(): void;
-    setFindOptions(opts: Record<string, unknown>): void;
+    setFindOptions(opts: ResolvedFindOptions): void;
     setFindTerm(term: string): void;
     findNext(): void;
     findPrev(): void;
+    replaceCurrent(replacement: string): boolean;
+    replaceAll(replacement: string, opts?: { inSelection?: boolean }): boolean;
     undo(): void;
     redo(): void;
     insertText(text: string): void;
@@ -76,7 +103,7 @@ interface FolioCodeViewSurface {
     isMounted(): boolean;
     openFind(initialTerm?: string): void;
     closeFind(): void;
-    setFindOptions(opts: Record<string, unknown>): void;
+    setFindOptions(opts: ResolvedFindOptions): void;
     setFindTerm(term: string): void;
     findNext(): void;
     findPrev(): void;

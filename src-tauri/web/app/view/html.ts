@@ -2,6 +2,8 @@
    Rendert in einem Sandbox-iframe, blockiert Scripts und rewritet lokale
    relative Ressourcen auf Tauri-Asset-URLs. */
 
+import { findRegexFlags, skipZeroWidthMatch } from './find-regex';
+
 let currentIframe: HTMLIFrameElement | null = null;
 let currentPath = '';
 let beforeLinkClick: (() => Promise<boolean>) | null = null;
@@ -16,7 +18,7 @@ let highlightWindow: any = null;
 let rangesArr: Range[] = [];
 let activeIdx = -1;
 let currentTerm = '';
-let findOpts = { caseSensitive: false, wholeWord: false };
+let findOpts = { caseSensitive: false, wholeWord: false, regex: false };
 let searchToken = 0;
 let suppressActive = false;
 
@@ -654,6 +656,16 @@ function dispatchState(): void {
     } catch (_) { /* ignore */ }
 }
 
+function dispatchInvalid(): void {
+    const detail = { source: 'view' as const, term: currentTerm, total: 0, active: -1, invalidRegex: true };
+    try {
+        window.dispatchEvent(new CustomEvent('folio-find-state', { detail }));
+    } catch (_) { /* ignore */ }
+    try {
+        post({ type: 'editorFindState', term: detail.term, total: 0, active: -1, invalidRegex: true });
+    } catch (_) { /* ignore */ }
+}
+
 function dispatchProgress(partialTotal: number): void {
     try {
         window.dispatchEvent(new CustomEvent('folio-find-state', {
@@ -664,12 +676,21 @@ function dispatchProgress(partialTotal: number): void {
 
 function escapeRegExp(s: string): string { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
-function buildRegex(term: string): RegExp | null {
+function buildRegex(term: string): { regex: RegExp } | { invalid: true } | null {
     if (!term) return null;
-    let pattern = escapeRegExp(term);
-    if (findOpts.wholeWord) pattern = '\\b' + pattern + '\\b';
-    const flags = findOpts.caseSensitive ? 'g' : 'gi';
-    try { return new RegExp(pattern, flags); } catch (_) { return null; }
+    let pattern: string;
+    if (findOpts.regex) {
+        pattern = term;
+    } else {
+        pattern = escapeRegExp(term);
+        if (findOpts.wholeWord) pattern = '\\b' + pattern + '\\b';
+    }
+    const flags = findRegexFlags(findOpts.caseSensitive);
+    try {
+        return { regex: new RegExp(pattern, flags) };
+    } catch (_) {
+        return { invalid: true };
+    }
 }
 
 function buildWalker(doc: Document, root: Element): TreeWalker {
@@ -702,7 +723,9 @@ function collectRangesAsync(doc: Document, root: Element, regex: RegExp, myToken
         regex.lastIndex = resumeNode === node ? resumeLastIndex : 0;
         let m: RegExpExecArray;
         while ((m = regex.exec(text))) {
-            if (m[0].length === 0) { regex.lastIndex++; continue; }
+            // Analog search.rs: Zero-Width (`a*`, `^`, `\b`) überspringen,
+            // sonst Endlosschleife durch lastIndex, das nicht vorrückt.
+            if (m[0].length === 0) { skipZeroWidthMatch(regex, text); continue; }
             const r = doc.createRange();
             r.setStart(node, m.index);
             r.setEnd(node, m.index + m[0].length);
@@ -773,10 +796,11 @@ function research(): void {
     const doc = iframeDoc();
     const root = doc && doc.body;
     if (!doc || !root) { dispatchState(); return; }
-    const regex = buildRegex(currentTerm);
-    if (!regex) { dispatchState(); return; }
+    const built = buildRegex(currentTerm);
+    if (!built) { dispatchState(); return; }
+    if ('invalid' in built) { dispatchInvalid(); return; }
     ensureHighlights(doc);
-    collectRangesAsync(doc, root, regex, myToken, function () {
+    collectRangesAsync(doc, root, built.regex, myToken, function () {
         if (myToken !== searchToken) return;
         if (rangesArr.length > 0) {
             if (rangesArr.length > 500) {
@@ -809,10 +833,10 @@ export const HtmlFinder = {
         dispatchState();
     },
     setFindTerm: function (term: string): void { currentTerm = term || ''; research(); },
-    setFindOptions: function (newOpts: { caseSensitive?: boolean; wholeWord?: boolean }): void {
-        newOpts = newOpts || {};
-        findOpts.caseSensitive = !!newOpts.caseSensitive;
-        findOpts.wholeWord = !!newOpts.wholeWord;
+    setFindOptions: function (newOpts: ResolvedFindOptions): void {
+        findOpts.caseSensitive = newOpts.caseSensitive;
+        findOpts.wholeWord = newOpts.wholeWord;
+        findOpts.regex = newOpts.regex;
         research();
     },
     findNext: function (): void { if (rangesArr.length > 0) setActive((activeIdx + 1) % rangesArr.length); },

@@ -679,6 +679,9 @@ describe('vault/search — Keyboard + Klick + Sprung', () => {
 
         expect(mocks.setEditorFindTerm).toHaveBeenCalled();
         expect(mocks.findNext).not.toHaveBeenCalled();
+        expect(mocks.setEditorFindTerm).toHaveBeenCalledWith('needle', expect.objectContaining({
+            regex: false,
+        }));
 
         window.dispatchEvent(new CustomEvent('folio-find-state', {
             detail: { source: 'view', term: 'needle', total: 2, active: 0 },
@@ -686,6 +689,35 @@ describe('vault/search — Keyboard + Klick + Sprung', () => {
         await vi.advanceTimersByTimeAsync(120); // Settle-Debounce
         await flushMicro();
         expect(mocks.findNext).toHaveBeenCalledTimes(1);
+    });
+
+    it('Regex-Sprung sucht den gematchten Text literal, auch wenn Regex in der Find-Bar an war', async () => {
+        const { deps } = await importAndInit({ openDocument: vi.fn() });
+        await runSearch('a\\+b', { regex: true });
+        const metaHit = fileFixture({
+            hits: [{
+                line: 1, colUtf16: 1, lenUtf16: 3,
+                snippet: 'see a+b here', snippetOffsetUtf16: 0, ranges: [[4, 3]],
+            }],
+        });
+        tauri.emitEvent('search:hits', { runId: 1, files: [metaHit] });
+        await flushMicro();
+
+        vi.useFakeTimers();
+        const hit = $('vault-search-list').querySelector('.vs-hit') as HTMLElement;
+        hit.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        expect(deps.openDocument).toHaveBeenCalledWith('/vault/note.md');
+
+        mocks.getCurrentPath.mockReturnValue('/vault/note.md');
+        window.dispatchEvent(new CustomEvent('folio-doc-kind-changed', { detail: { kind: 'markdown' } }));
+        await vi.advanceTimersByTimeAsync(20);
+        await flushMicro();
+
+        expect(mocks.setEditorFindTerm).toHaveBeenCalledWith('a+b', {
+            caseSensitive: false,
+            wholeWord: false,
+            regex: false,
+        });
     });
 });
 

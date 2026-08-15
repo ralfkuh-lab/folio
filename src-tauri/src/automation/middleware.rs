@@ -141,6 +141,7 @@ fn needs_frontend_ready(method: &Method, path: &str) -> bool {
             | ("POST", "/focus")
             | ("POST", "/find")
             | ("POST", "/find/text")
+            | ("POST", "/find/replace")
             | ("POST", "/eval")
             | ("POST", "/sync/render")
             | ("POST", "/editor/text")
@@ -214,6 +215,7 @@ mod ready_matrix_tests {
         assert!(needs_frontend_ready(&Method::POST, "/eval"));
         assert!(needs_frontend_ready(&Method::POST, "/find"));
         assert!(needs_frontend_ready(&Method::POST, "/find/text"));
+        assert!(needs_frontend_ready(&Method::POST, "/find/replace"));
         assert!(needs_frontend_ready(&Method::POST, "/sync/render"));
         assert!(needs_frontend_ready(&Method::POST, "/menu/click"));
         assert!(needs_frontend_ready(&Method::POST, "/settings"));

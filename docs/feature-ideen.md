@@ -49,9 +49,14 @@ Diese Ideen kamen von 2–4 Quellen unabhängig. Das ist der beste Startpunkt.
    EOL-Anzeige mit LF↔CRLF-Klick-Toggle; Encoding-Anzeige kam bereits mit dem
    Encoding-Feature (`db0d553`). *Lesezeit bewusst verworfen (User-Entscheid);
    Encoding-Umschalter als möglicher Folgepunkt.* (Quelle: agy, grok)
-10. **Regex + „Ersetzen" in der Find-Bar** — Regex-Toggle überall (Editor/Code/MD/
-    HTML) plus Ersetzen mit wählbarem Scope (Auswahl/Dokument/offene Tabs/Vault).
-    `[M]` einfache Variante, `[L]` mit Vault-weitem Replace. (Quelle: **alle 3**)
+10. **Regex + „Ersetzen" in der Find-Bar** — ✅ **umgesetzt (2026-08-15)**:
+    Regex-Toggle in allen Surfaces (Editor/Code/MD/HTML/Split), Ersetzen +
+    Alle-Ersetzen im Puffer des aktiven Tabs, Scope „In Auswahl" als
+    explizites Toggle, Capture-Gruppen, ein Undo-Schritt, Ctrl+H. E2E 58.
+    **Offen geblieben** (bewusst, siehe Scope-Entscheid): Ersetzen über
+    *offene Tabs* und *vault-weit auf Disk*. Letzteres bleibt `[L]` — es
+    braucht Preview vor dem Schreiben, Encoding-/EOL-Erhalt pro Datei und
+    hat kein Undo. (Quelle: **alle 3**)
 11. **Git-Status im Vault + einfaches Git-Panel** — Dots ✅ **umgesetzt
     (2026-08-14)**: modified/untracked als Punkte auf Vault-Nodes über
     `git status --porcelain=v1 -z`, asynchron mit Cache + Single-Flight,

@@ -46,6 +46,7 @@ export const BOOT_EVENT_NAMES: readonly string[] = [
     'editor:apply_replace',
     'editor:open_find',
     'editor:set_find_term',
+    'editor:find_replace',
     'editor:selection',
     // Menu
     'menu:file_open',

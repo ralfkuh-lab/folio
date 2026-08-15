@@ -11,7 +11,7 @@
 
 import { ackHandler } from '../automation/events';
 import { cheatsheetSyncMode, syncCheatsheetMenu } from '../ui/cheatsheet';
-import { afterModeSwitch as findBarAfterModeSwitch, openEditorFind, setEditorFindTerm } from '../ui/find-bar';
+import { afterModeSwitch as findBarAfterModeSwitch, applyFindReplace, openEditorFind, setEditorFindTerm } from '../ui/find-bar';
 import { highlightCodeBlocks } from '../view/code-highlight';
 import { renderMermaidBlocks } from '../view/mermaid';
 import { flushCodeViewOnModeSwitch } from '../view/code-live';
@@ -216,7 +216,12 @@ export function initEditorShell(d: Deps): void {
         setEditorFindTerm(data.term || '', {
             caseSensitive: typeof data.caseSensitive === 'boolean' ? data.caseSensitive : undefined,
             wholeWord: typeof data.wholeWord === 'boolean' ? data.wholeWord : undefined,
+            regex: typeof data.regex === 'boolean' ? data.regex : undefined,
         });
+    });
+    listen('editor:find_replace', function (event: any) {
+        const data = event && event.payload || {};
+        applyFindReplace(typeof data.replacement === 'string' ? data.replacement : '', !!data.all);
     });
 
     // ----- Listener-Fusion -----

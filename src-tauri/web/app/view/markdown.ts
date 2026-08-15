@@ -5,6 +5,7 @@
    closeFind/setFindTerm/setFindOptions/findNext/findPrev), damit die
    gemeinsame Find-Bar in ui/find-bar.ts denselben Adapter nutzen kann. */
 
+import { findRegexFlags, skipZeroWidthMatch } from './find-regex';
 import { handleFolioNewClick, isFolioNewHref } from './wikilink-create';
 import { toggleTaskInDocument } from './task-toggle';
 
@@ -112,7 +113,7 @@ let activeHL: any = null;
 let rangesArr: Range[] = [];
 let activeIdx = -1;
 let currentTerm = '';
-let findOpts = { caseSensitive: false, wholeWord: false };
+let findOpts = { caseSensitive: false, wholeWord: false, regex: false };
 // Bei jeder neuen research() inkrementiert. Async-Chunks brechen ab,
 // sobald myToken !== searchToken — die alte Suche wird so verworfen,
 // statt die neue zu blockieren.
@@ -303,12 +304,21 @@ function clearMarks(): void {
 
 function escapeRegExp(s: string): string { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
-function buildRegex(term: string): RegExp | null {
+function buildRegex(term: string): { regex: RegExp } | { invalid: true } | null {
     if (!term) return null;
-    let pattern = escapeRegExp(term);
-    if (findOpts.wholeWord) pattern = '\\b' + pattern + '\\b';
-    const flags = findOpts.caseSensitive ? 'g' : 'gi';
-    try { return new RegExp(pattern, flags); } catch (_) { return null; }
+    let pattern: string;
+    if (findOpts.regex) {
+        pattern = term;
+    } else {
+        pattern = escapeRegExp(term);
+        if (findOpts.wholeWord) pattern = '\\b' + pattern + '\\b';
+    }
+    const flags = findRegexFlags(findOpts.caseSensitive);
+    try {
+        return { regex: new RegExp(pattern, flags) };
+    } catch (_) {
+        return { invalid: true };
+    }
 }
 
 function buildWalker(root: Element): TreeWalker {
@@ -339,7 +349,9 @@ function collectRangesAsync(root: Element, regex: RegExp, myToken: number, done:
         regex.lastIndex = resumeNode === node ? resumeLastIndex : 0;
         let m: RegExpExecArray;
         while ((m = regex.exec(text))) {
-            if (m[0].length === 0) { regex.lastIndex++; continue; }
+            // Analog search.rs: Zero-Width (`a*`, `^`, `\b`) überspringen,
+            // sonst Endlosschleife durch lastIndex, das nicht vorrückt.
+            if (m[0].length === 0) { skipZeroWidthMatch(regex, text); continue; }
             const r = document.createRange();
             r.setStart(node, m.index);
             r.setEnd(node, m.index + m[0].length);
@@ -379,6 +391,16 @@ function dispatchState(): void {
     // Datei-Wechsel; analog zur Monaco-Pipeline in editor.ts.
     try {
         post({ type: 'editorFindState', term: detail.term, total: detail.total, active: detail.active });
+    } catch (_) { /* ignore */ }
+}
+
+function dispatchInvalid(): void {
+    const detail = { source: 'view' as const, term: currentTerm, total: 0, active: -1, invalidRegex: true };
+    try {
+        window.dispatchEvent(new CustomEvent('folio-find-state', { detail }));
+    } catch (_) { /* ignore */ }
+    try {
+        post({ type: 'editorFindState', term: detail.term, total: 0, active: -1, invalidRegex: true });
     } catch (_) { /* ignore */ }
 }
 
@@ -428,9 +450,11 @@ function research(): void {
     const myToken = ++searchToken;
     if (!currentTerm) { dispatchState(); return; }
     const root = getRoot(); if (!root) { dispatchState(); return; }
-    const regex = buildRegex(currentTerm); if (!regex) { dispatchState(); return; }
+    const built = buildRegex(currentTerm);
+    if (!built) { dispatchState(); return; }
+    if ('invalid' in built) { dispatchInvalid(); return; }
     ensureHighlights();
-    collectRangesAsync(root, regex, myToken, function () {
+    collectRangesAsync(root, built.regex, myToken, function () {
         if (myToken !== searchToken) return;
         if (rangesArr.length > 0) {
             if (rangesArr.length > 500) {
@@ -467,10 +491,10 @@ export const ViewFinder = {
         dispatchState();
     },
     setFindTerm: function (term: string): void { currentTerm = term || ''; research(); },
-    setFindOptions: function (newOpts: { caseSensitive?: boolean; wholeWord?: boolean }): void {
-        newOpts = newOpts || {};
-        findOpts.caseSensitive = !!newOpts.caseSensitive;
-        findOpts.wholeWord = !!newOpts.wholeWord;
+    setFindOptions: function (newOpts: ResolvedFindOptions): void {
+        findOpts.caseSensitive = newOpts.caseSensitive;
+        findOpts.wholeWord = newOpts.wholeWord;
+        findOpts.regex = newOpts.regex;
         research();
     },
     findNext: function (): void { if (rangesArr.length > 0) setActive((activeIdx + 1) % rangesArr.length); },
