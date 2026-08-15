@@ -598,6 +598,8 @@
   "settings.watch.sectionTitle": "Supervisión de archivos",
   "settings.watch.vaultAutoRefresh.hint": "Se supervisan las carpetas desplegadas; los archivos nuevos, eliminados o renombrados aparecen directamente en el área de trabajo.",
   "settings.watch.vaultAutoRefresh.label": "Actualizar el árbol del Vault al haber cambios externos",
+  "settings.watch.vaultShowHidden.hint": "Nombres que empiezan por punto (p. ej. .github). .git permanece oculto.",
+  "settings.watch.vaultShowHidden.label": "Mostrar entradas ocultas en el Vault",
   "statusBar.cursor.template": "Lín {line}, Col {column}",
   "statusBar.cursor.tooltip": "Posición del cursor",
   "statusBar.encoding.tooltip": "Codificación de caracteres del archivo",

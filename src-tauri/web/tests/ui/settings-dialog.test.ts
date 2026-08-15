@@ -18,6 +18,7 @@ const settings = {
     viewTheme: 'standard',
     themeFavorites: [],
     vaultAutoRefresh: true,
+    vaultShowHidden: true,
     documentAutoReload: true,
     exportDirMode: 'document',
     openFileTarget: 'newtab',
@@ -54,6 +55,7 @@ function buildDom(): void {
                     <option value="newtab">In neuem Tab öffnen</option>
                     <option value="replace">Aktuellen Tab ersetzen</option>
                 </select>
+                <input type="checkbox" id="settings-vault-show-hidden" />
             </div>
             <div role="tabpanel" data-settings-tab="diagnose" hidden>
                 <select id="settings-log-level">
@@ -252,6 +254,25 @@ describe('settings-dialog', () => {
             patch: { exportDirMode: 'last' },
         });
         expect(select.value).toBe('last');
+    });
+
+    it('laedt vaultShowHidden und persistiert den Checkbox-Change', async () => {
+        openSettingsDialog();
+        await flush();
+
+        const box = document.getElementById(
+            'settings-vault-show-hidden',
+        ) as HTMLInputElement;
+        expect(box.checked).toBe(true);
+
+        box.checked = false;
+        box.dispatchEvent(new Event('change', { bubbles: true }));
+        await flush();
+
+        expect(handles.invoke).toHaveBeenCalledWith('settings_update', {
+            patch: { vaultShowHidden: false },
+        });
+        expect(box.checked).toBe(false);
     });
 
     it('laedt und persistiert das Ziel fuer extern geoeffnete Dateien', async () => {

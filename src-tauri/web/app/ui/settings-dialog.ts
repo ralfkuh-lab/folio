@@ -40,6 +40,7 @@ export type SettingsData = {
     viewTheme: string;
     themeFavorites: string[];
     vaultAutoRefresh: boolean;
+    vaultShowHidden: boolean;
     documentAutoReload: boolean;
     exportDirMode: ExportDirMode;
     openFileTarget: OpenFileTarget;
@@ -130,6 +131,7 @@ function applySettingsToForm(data: SettingsData): void {
     var textSelect = $('settings-default-text') as HTMLSelectElement | null;
     var autoFormat = $('settings-view-auto-format') as HTMLInputElement | null;
     var vaultRefresh = $('settings-vault-auto-refresh') as HTMLInputElement | null;
+    var vaultShowHidden = $('settings-vault-show-hidden') as HTMLInputElement | null;
     var docReload = $('settings-document-auto-reload') as HTMLInputElement | null;
     var exportDirMode = $('settings-export-dir-mode') as HTMLSelectElement | null;
     var openFileTarget = $('settings-open-file-target') as HTMLSelectElement | null;
@@ -145,6 +147,7 @@ function applySettingsToForm(data: SettingsData): void {
     if (textSelect) textSelect.value = data.defaultModeText;
     if (autoFormat) autoFormat.checked = !!data.viewAutoFormat;
     if (vaultRefresh) vaultRefresh.checked = !!data.vaultAutoRefresh;
+    if (vaultShowHidden) vaultShowHidden.checked = data.vaultShowHidden !== false;
     if (docReload) docReload.checked = !!data.documentAutoReload;
     if (exportDirMode) exportDirMode.value = data.exportDirMode || 'document';
     if (openFileTarget) openFileTarget.value = data.openFileTarget || 'newtab';
@@ -356,6 +359,12 @@ function bindInputs(): void {
     if (vaultRefresh) {
         vaultRefresh.addEventListener('change', function () {
             patchSettings({ vaultAutoRefresh: vaultRefresh.checked });
+        });
+    }
+    var vaultShowHidden = $('settings-vault-show-hidden') as HTMLInputElement | null;
+    if (vaultShowHidden) {
+        vaultShowHidden.addEventListener('change', function () {
+            patchSettings({ vaultShowHidden: vaultShowHidden.checked });
         });
     }
     var docReload = $('settings-document-auto-reload') as HTMLInputElement | null;

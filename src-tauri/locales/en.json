@@ -593,6 +593,8 @@
   "settings.watch.sectionTitle": "File watching",
   "settings.watch.vaultAutoRefresh.hint": "Expanded folders are watched; new, deleted, or renamed files appear in the workspace immediately.",
   "settings.watch.vaultAutoRefresh.label": "Refresh vault tree on external changes",
+  "settings.watch.vaultShowHidden.hint": "Names that start with a dot (for example .github). .git stays hidden.",
+  "settings.watch.vaultShowHidden.label": "Show hidden items in the vault",
   "statusBar.cursor.template": "Ln {line}, Col {column}",
   "statusBar.cursor.tooltip": "Cursor position",
   "statusBar.encoding.tooltip": "File character encoding",

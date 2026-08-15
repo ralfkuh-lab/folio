@@ -204,7 +204,74 @@ pub struct ExpandPathsResult {
     pub capped: bool,
 }
 
-#[derive(Debug, Default, Clone)]
+/// Gemeinsame Filter fuer Lazy-Kinderlisten. Zwei bools in Folge an
+/// `on_expand_with` / `expand_paths` waeren leicht zu vertauschen;
+/// das Struct macht die Paarung explizit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VaultListOptions {
+    pub markdown_only: bool,
+    /// `true` = Dot-Namen sichtbar (Default, historisches Verhalten).
+    /// `.git` bleibt unabhaengig davon immer ausgeblendet.
+    pub show_hidden: bool,
+}
+
+impl Default for VaultListOptions {
+    fn default() -> Self {
+        Self {
+            markdown_only: false,
+            show_hidden: true,
+        }
+    }
+}
+
+impl VaultListOptions {
+    /// Nur den Typ-Filter setzen; Hidden bleibt sichtbar.
+    pub fn markdown_only(markdown_only: bool) -> Self {
+        Self {
+            markdown_only,
+            show_hidden: true,
+        }
+    }
+}
+
+/// Name-basiert und plattformneutral: ein Eintrag ist „versteckt",
+/// wenn der Dateiname mit `.` beginnt. Das Windows-Hidden-Attribut
+/// wird bewusst nicht ausgewertet (zweite, plattformabhaengige Wahrheit).
+pub fn is_vault_hidden_name(name: &str) -> bool {
+    name.starts_with('.')
+}
+
+/// Exakter Verzeichnisname `.git` (nicht Pfad-Substring), analog zur Suche.
+pub fn is_git_dir_name(name: &str) -> bool {
+    name == ".git"
+}
+
+fn child_is_filtered(name: &str, show_hidden: bool) -> bool {
+    is_git_dir_name(name) || (!show_hidden && is_vault_hidden_name(name))
+}
+
+fn is_under_pin(path: &str, pin: &str) -> bool {
+    path == pin || path.starts_with(&format!("{pin}/"))
+}
+
+/// `true`, wenn `path` im Baum nicht als Kind erscheinen wuerde.
+/// Pin-Wurzeln bleiben sichtbar — auch ein gepinntes `.git` oder `.hidden`.
+fn expanded_path_is_invisible(path: &str, show_hidden: bool, pins: &[String]) -> bool {
+    if pins.iter().any(|pin| pin == path) {
+        return false;
+    }
+    let rel = pins
+        .iter()
+        .filter(|pin| is_under_pin(path, pin))
+        .max_by_key(|pin| pin.len())
+        .map(|pin| &path[pin.len()..])
+        .unwrap_or(path);
+    rel.split('/')
+        .filter(|component| !component.is_empty())
+        .any(|component| child_is_filtered(component, show_hidden))
+}
+
+#[derive(Debug, Clone)]
 pub struct Vault {
     expanded_dirs: BTreeSet<String>,
     active_path: Option<String>,
@@ -215,9 +282,24 @@ pub struct Vault {
     /// `pinned_children_html` / Expand) muss der Wert dem Panel-State
     /// entsprechen. Sync-Pfade: Boot (`state.rs`),
     /// `vault_filter_options_set`, `vault_build_tree`,
-    /// `sync_vault_markdown_only` vor `compute_refresh_delta`, Expand
+    /// `sync_vault_list_options` vor `compute_refresh_delta`, Expand
     /// (`on_expand_with`).
     markdown_only: bool,
+    /// Spiegel von `settings.vault_show_hidden` (Default an).
+    /// Dieselbe Invariante wie `markdown_only`: vor jedem Lazy-Render
+    /// syncen. Quelle ist `settings.json`, nicht `panel_state`.
+    show_hidden: bool,
+}
+
+impl Default for Vault {
+    fn default() -> Self {
+        Self {
+            expanded_dirs: BTreeSet::new(),
+            active_path: None,
+            markdown_only: false,
+            show_hidden: true,
+        }
+    }
 }
 
 impl Vault {
@@ -232,6 +314,26 @@ impl Vault {
 
     pub fn markdown_only(&self) -> bool {
         self.markdown_only
+    }
+
+    pub fn set_show_hidden(&mut self, show_hidden: bool) {
+        self.show_hidden = show_hidden;
+    }
+
+    pub fn show_hidden(&self) -> bool {
+        self.show_hidden
+    }
+
+    pub fn set_list_options(&mut self, opts: VaultListOptions) {
+        self.markdown_only = opts.markdown_only;
+        self.show_hidden = opts.show_hidden;
+    }
+
+    pub fn list_options(&self) -> VaultListOptions {
+        VaultListOptions {
+            markdown_only: self.markdown_only,
+            show_hidden: self.show_hidden,
+        }
     }
 
     pub fn build_initial_tree_html(&self, workspace: &Workspace) -> String {
@@ -264,10 +366,18 @@ impl Vault {
 
     /// Kinder-HTML eines Ordners (Lazy-Tree).
     ///
-    /// `markdown_only`: wenn true, werden Nicht-Markdown-Dateien und
-    /// Ordner ohne (rekursiv) Markdown ausgeblendet — siehe Spec
-    /// vault-filter A1.
-    pub fn build_dir_children_html(&self, path: &str, markdown_only: bool) -> io::Result<String> {
+    /// Einziger Ort, an dem Kinderlisten gefiltert werden (Lazy-Expand
+    /// und Pin-Wurzel-Kinder). Pin-Wurzeln selbst laufen nicht hier durch.
+    ///
+    /// - `.git` ist immer weg (wie der Suchkern).
+    /// - andere Namen mit führendem `.` nur bei `show_hidden == false`.
+    /// - `markdown_only`: Nicht-Markdown und Ordner ohne (rekursiv)
+    ///   Markdown ausgeblendet — siehe Spec vault-filter A1.
+    pub fn build_dir_children_html(
+        &self,
+        path: &str,
+        opts: VaultListOptions,
+    ) -> io::Result<String> {
         let mut entries = fs::read_dir(path)?
             .filter_map(Result::ok)
             .map(|entry| {
@@ -285,7 +395,11 @@ impl Vault {
         Ok(entries
             .iter()
             .filter(|(p, info)| {
-                if !markdown_only {
+                let name = display_name(p);
+                if child_is_filtered(&name, opts.show_hidden) {
+                    return false;
+                }
+                if !opts.markdown_only {
                     return true;
                 }
                 if info.is_directory {
@@ -312,15 +426,15 @@ impl Vault {
     }
 
     pub fn on_expand(&mut self, path: String) -> io::Result<String> {
-        self.on_expand_with(path, self.markdown_only)
+        self.on_expand_with(path, self.list_options())
     }
 
-    /// Expand mit explizitem Typ-Filter (Quelle: Panel-State).
-    pub fn on_expand_with(&mut self, path: String, markdown_only: bool) -> io::Result<String> {
-        self.markdown_only = markdown_only;
+    /// Expand mit expliziten Listen-Optionen (Quellen: Panel-State + Settings).
+    pub fn on_expand_with(&mut self, path: String, opts: VaultListOptions) -> io::Result<String> {
+        self.set_list_options(opts);
         let path = path.replace('\\', "/");
         self.expanded_dirs.insert(path.clone());
-        self.build_dir_children_html(&path, markdown_only)
+        self.build_dir_children_html(&path, opts)
     }
 
     /// Soft-Cap fuer gezielte Massen-Expands (Git-Filter). `vault_expand_level`
@@ -335,10 +449,12 @@ impl Vault {
     pub fn expand_paths(
         &mut self,
         dirs: &[String],
-        markdown_only: bool,
+        opts: VaultListOptions,
         cap: usize,
+        pin_roots: &[String],
     ) -> ExpandPathsResult {
-        self.markdown_only = markdown_only;
+        self.set_list_options(opts);
+        let pins: Vec<String> = pin_roots.iter().map(|p| p.replace('\\', "/")).collect();
 
         let mut sorted: Vec<String> = dirs
             .iter()
@@ -359,14 +475,17 @@ impl Vault {
             if !Path::new(&norm).is_dir() || self.is_expanded(&norm) {
                 continue;
             }
-            if markdown_only && !crate::vault_filter::dir_contains_markdown(Path::new(&norm)) {
+            if expanded_path_is_invisible(&norm, opts.show_hidden, &pins) {
+                continue;
+            }
+            if opts.markdown_only && !crate::vault_filter::dir_contains_markdown(Path::new(&norm)) {
                 continue;
             }
             if paths.len() >= cap {
                 capped = true;
                 break;
             }
-            match self.on_expand_with(norm.clone(), markdown_only) {
+            match self.on_expand_with(norm.clone(), opts) {
                 Ok(_) => paths.push(norm),
                 Err(err) => {
                     tracing::warn!(
@@ -387,8 +506,8 @@ impl Vault {
     ///
     /// `pin_dirs`: absolute Pfade der angepinnten Verzeichnisse.
     /// Rückgabe: neu expandierte Pfade (für Watcher-Registrierung).
-    pub fn expand_roots(&mut self, pin_dirs: &[String], markdown_only: bool) -> Vec<String> {
-        self.markdown_only = markdown_only;
+    pub fn expand_roots(&mut self, pin_dirs: &[String], opts: VaultListOptions) -> Vec<String> {
+        self.set_list_options(opts);
 
         let mut paths = Vec::new();
         for pin in pin_dirs {
@@ -396,10 +515,10 @@ impl Vault {
             if !Path::new(&norm).is_dir() || self.is_expanded(&norm) {
                 continue;
             }
-            if markdown_only && !crate::vault_filter::dir_contains_markdown(Path::new(&norm)) {
+            if opts.markdown_only && !crate::vault_filter::dir_contains_markdown(Path::new(&norm)) {
                 continue;
             }
-            match self.on_expand_with(norm.clone(), markdown_only) {
+            match self.on_expand_with(norm.clone(), opts) {
                 Ok(_) => paths.push(norm),
                 Err(err) => {
                     tracing::warn!(
@@ -412,6 +531,26 @@ impl Vault {
             }
         }
         paths
+    }
+
+    /// Entfernt aufgeklappte Pfade, die der aktuelle Filter nicht mehr
+    /// zeigt (`.git` immer; andere Dot-Namen bei `!show_hidden`).
+    /// Pin-Wurzeln bleiben — ein direkt gepinntes `.git` waere abwegig
+    /// und kostet so keine Extra-Regel.
+    /// Rueckgabe: entfernte Pfade (Caller deregistriert die Watches).
+    pub fn prune_invisible_expanded(&mut self, pin_roots: &[String]) -> Vec<String> {
+        let pins: Vec<String> = pin_roots.iter().map(|p| p.replace('\\', "/")).collect();
+        let show_hidden = self.show_hidden;
+        let mut pruned = Vec::new();
+        self.expanded_dirs.retain(|path| {
+            if expanded_path_is_invisible(path, show_hidden, &pins) {
+                pruned.push(path.clone());
+                false
+            } else {
+                true
+            }
+        });
+        pruned
     }
 
     /// Beim Zuklappen eines Ordners auch alle bisher aufgeklappten
@@ -533,7 +672,7 @@ impl Vault {
         let children = if let Some(forced) = force_open_children {
             forced.to_string()
         } else if expanded {
-            self.build_dir_children_html(&nav_path, self.markdown_only)
+            self.build_dir_children_html(&nav_path, self.list_options())
                 .unwrap_or_else(|error| {
                     // Expandierter Ordner rendert leer (Verhalten bleibt),
                     // aber nicht mehr stumm.
@@ -936,7 +1075,7 @@ mod tests {
         let pins = vec![root_s.clone()];
 
         let mut vault = Vault::new();
-        let r1 = vault.expand_roots(&pins, false);
+        let r1 = vault.expand_roots(&pins, VaultListOptions::default());
         assert_eq!(r1, vec![root_s.clone()]);
         assert!(
             vault.is_expanded(&root_s),
@@ -958,12 +1097,12 @@ mod tests {
         let pins = vec![root_s.clone()];
 
         let mut vault = Vault::new();
-        let r1 = vault.expand_roots(&pins, false);
+        let r1 = vault.expand_roots(&pins, VaultListOptions::default());
         assert_eq!(r1.len(), 1);
         assert!(vault.is_expanded(&root_s));
 
         let before = vault.expanded_paths();
-        let r2 = vault.expand_roots(&pins, false);
+        let r2 = vault.expand_roots(&pins, VaultListOptions::default());
         assert!(
             r2.is_empty(),
             "zweiter Aufruf expandiert nichts neu; paths={:?}",
@@ -988,7 +1127,7 @@ mod tests {
         let pins = vec![with_md_s.clone(), only_txt_s.clone()];
 
         let mut vault = Vault::new();
-        let r = vault.expand_roots(&pins, true);
+        let r = vault.expand_roots(&pins, VaultListOptions::markdown_only(true));
         assert!(vault.is_expanded(&with_md_s), "MD-Wurzel wird expandiert");
         assert!(
             !vault.is_expanded(&only_txt_s),
@@ -1008,14 +1147,24 @@ mod tests {
         let a = norm_vf(&root.join("a"));
         let b = norm_vf(&root.join("a/b"));
         let mut vault = Vault::new();
-        let first = vault.expand_paths(&[root_s.clone(), a.clone(), b.clone()], false, 1000);
+        let first = vault.expand_paths(
+            &[root_s.clone(), a.clone(), b.clone()],
+            VaultListOptions::default(),
+            1000,
+            &[],
+        );
         assert!(!first.capped);
         assert_eq!(first.paths, vec![root_s.clone(), a.clone(), b.clone()]);
         assert!(vault.is_expanded(&root_s));
         assert!(vault.is_expanded(&a));
         assert!(vault.is_expanded(&b));
 
-        let again = vault.expand_paths(&[root_s.clone(), a.clone()], false, 1000);
+        let again = vault.expand_paths(
+            &[root_s.clone(), a.clone()],
+            VaultListOptions::default(),
+            1000,
+            &[],
+        );
         assert!(again.paths.is_empty());
         assert!(!again.capped);
     }
@@ -1031,7 +1180,12 @@ mod tests {
         let b = norm_vf(&root.join("b"));
         let c = norm_vf(&root.join("c"));
         let mut vault = Vault::new();
-        let result = vault.expand_paths(&[a.clone(), b.clone(), c.clone()], false, 2);
+        let result = vault.expand_paths(
+            &[a.clone(), b.clone(), c.clone()],
+            VaultListOptions::default(),
+            2,
+            &[],
+        );
         assert!(result.capped);
         assert_eq!(result.paths.len(), 2);
         let opened = result.paths.len();
@@ -1052,8 +1206,10 @@ mod tests {
         let pins = vec![root_s.clone()];
 
         let mut vault = Vault::new();
-        vault.expand_roots(&pins, false);
-        vault.on_expand_with(a.clone(), false).unwrap();
+        vault.expand_roots(&pins, VaultListOptions::default());
+        vault
+            .on_expand_with(a.clone(), VaultListOptions::default())
+            .unwrap();
         assert!(vault.is_expanded(&root_s));
         assert!(vault.is_expanded(&a));
 
@@ -1258,5 +1414,181 @@ mod tests {
         let all = vault.build_initial_tree_html(&workspace);
         assert!(all.contains(&format!(r#"data-path="{}""#, norm(&txt_file))));
         assert!(all.contains(&format!(r#"data-path="{}""#, norm(&mdless))));
+    }
+
+    fn data_path_attr(path: &Path) -> String {
+        format!(
+            r#"data-path="{}""#,
+            path.to_string_lossy().replace('\\', "/")
+        )
+    }
+
+    #[test]
+    fn hidden_children_visible_by_default_but_git_always_gone() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        fs::write(root.join("note.md"), "# n\n").unwrap();
+        fs::write(root.join(".versteckte-datei.md"), "# h\n").unwrap();
+        fs::create_dir(root.join(".versteckt")).unwrap();
+        fs::write(root.join(".versteckt").join("in.md"), "# i\n").unwrap();
+        fs::create_dir(root.join(".git")).unwrap();
+        fs::write(root.join(".git").join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        fs::create_dir(root.join("docs")).unwrap();
+
+        let vault = Vault::new();
+        assert!(vault.show_hidden());
+        let html = vault
+            .build_dir_children_html(&root.to_string_lossy(), VaultListOptions::default())
+            .unwrap();
+
+        assert!(html.contains(&data_path_attr(&root.join("note.md"))));
+        assert!(html.contains(&data_path_attr(&root.join("docs"))));
+        assert!(html.contains(&data_path_attr(&root.join(".versteckte-datei.md"))));
+        assert!(html.contains(&data_path_attr(&root.join(".versteckt"))));
+        assert!(
+            !html.contains(&data_path_attr(&root.join(".git"))),
+            ".git muss auch bei show_hidden=true weg sein; html={html}"
+        );
+    }
+
+    #[test]
+    fn hidden_children_filtered_when_show_hidden_false() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        fs::write(root.join("note.md"), "# n\n").unwrap();
+        fs::write(root.join(".versteckte-datei.md"), "# h\n").unwrap();
+        fs::create_dir(root.join(".versteckt")).unwrap();
+        fs::create_dir(root.join(".git")).unwrap();
+        fs::create_dir(root.join("docs")).unwrap();
+
+        let html = Vault::new()
+            .build_dir_children_html(
+                &root.to_string_lossy(),
+                VaultListOptions {
+                    markdown_only: false,
+                    show_hidden: false,
+                },
+            )
+            .unwrap();
+
+        assert!(html.contains(&data_path_attr(&root.join("note.md"))));
+        assert!(html.contains(&data_path_attr(&root.join("docs"))));
+        assert!(!html.contains(&data_path_attr(&root.join(".versteckte-datei.md"))));
+        assert!(!html.contains(&data_path_attr(&root.join(".versteckt"))));
+        assert!(!html.contains(&data_path_attr(&root.join(".git"))));
+    }
+
+    #[test]
+    fn hidden_and_markdown_only_filters_compose() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        fs::write(root.join("keep.md"), "# k\n").unwrap();
+        fs::write(root.join("drop.txt"), "t\n").unwrap();
+        fs::write(root.join(".hidden.md"), "# h\n").unwrap();
+        fs::write(root.join(".hidden.txt"), "x\n").unwrap();
+        fs::create_dir(root.join(".git")).unwrap();
+        fs::create_dir(root.join("mdless")).unwrap();
+        fs::write(root.join("mdless").join("only.txt"), "t\n").unwrap();
+        fs::create_dir(root.join(".hidden-dir")).unwrap();
+        fs::write(root.join(".hidden-dir").join("inside.md"), "# i\n").unwrap();
+
+        let both = Vault::new()
+            .build_dir_children_html(
+                &root.to_string_lossy(),
+                VaultListOptions {
+                    markdown_only: true,
+                    show_hidden: false,
+                },
+            )
+            .unwrap();
+        assert!(both.contains(&data_path_attr(&root.join("keep.md"))));
+        assert!(!both.contains(&data_path_attr(&root.join("drop.txt"))));
+        assert!(!both.contains(&data_path_attr(&root.join(".hidden.md"))));
+        assert!(!both.contains(&data_path_attr(&root.join(".hidden.txt"))));
+        assert!(!both.contains(&data_path_attr(&root.join(".git"))));
+        assert!(!both.contains(&data_path_attr(&root.join("mdless"))));
+        assert!(
+            !both.contains(&data_path_attr(&root.join(".hidden-dir"))),
+            "Hidden-Ordner mit MD muss bei show_hidden=false weg sein; html={both}"
+        );
+
+        let md_only_hidden_on = Vault::new()
+            .build_dir_children_html(
+                &root.to_string_lossy(),
+                VaultListOptions::markdown_only(true),
+            )
+            .unwrap();
+        assert!(md_only_hidden_on.contains(&data_path_attr(&root.join("keep.md"))));
+        assert!(md_only_hidden_on.contains(&data_path_attr(&root.join(".hidden.md"))));
+        assert!(
+            md_only_hidden_on.contains(&data_path_attr(&root.join(".hidden-dir"))),
+            "Hidden-Ordner mit MD muss bei show_hidden=true bleiben; html={md_only_hidden_on}"
+        );
+        assert!(!md_only_hidden_on.contains(&data_path_attr(&root.join("drop.txt"))));
+        assert!(!md_only_hidden_on.contains(&data_path_attr(&root.join(".hidden.txt"))));
+        assert!(!md_only_hidden_on.contains(&data_path_attr(&root.join(".git"))));
+    }
+
+    #[test]
+    fn pin_roots_stay_visible_when_hidden() {
+        let _ = crate::i18n::set_process_translator(crate::i18n::Translator::new(
+            crate::i18n::load_embedded_registry(),
+            crate::i18n::ResolvedLanguage {
+                catalog_tag: "de".into(),
+                format_locale: "de-DE".into(),
+            },
+        ));
+        let temp = TempDir::new().unwrap();
+        let mut workspace = Workspace::load_from(temp.path().join("workspace.json"));
+        let hidden_pin = temp.path().join(".notes");
+        fs::create_dir(&hidden_pin).unwrap();
+        fs::write(hidden_pin.join("a.md"), "# a\n").unwrap();
+        workspace
+            .pin(hidden_pin.to_string_lossy().into_owned(), true)
+            .unwrap();
+
+        let mut vault = Vault::new();
+        vault.set_show_hidden(false);
+        let html = vault.build_initial_tree_html(&workspace);
+        assert!(
+            html.contains(&data_path_attr(&hidden_pin)),
+            "expliziter Hidden-Pin bleibt sichtbar; html={html}"
+        );
+    }
+
+    #[test]
+    fn prune_invisible_expanded_drops_hidden_children_keeps_pins() {
+        let mut vault = Vault::new();
+        vault.set_show_hidden(false);
+        vault.expanded_dirs.insert("/tmp/.notes".into());
+        vault.expanded_dirs.insert("/tmp/.notes/child".into());
+        vault.expanded_dirs.insert("/tmp/.notes/.secret".into());
+        vault.expanded_dirs.insert("/tmp/.notes/.git".into());
+        vault.expanded_dirs.insert("/tmp/visible/.git".into());
+
+        let pruned = vault.prune_invisible_expanded(&["/tmp/.notes".into()]);
+        assert!(vault.is_expanded("/tmp/.notes"));
+        assert!(vault.is_expanded("/tmp/.notes/child"));
+        assert!(!vault.is_expanded("/tmp/.notes/.secret"));
+        assert!(!vault.is_expanded("/tmp/.notes/.git"));
+        assert!(!vault.is_expanded("/tmp/visible/.git"));
+        assert!(pruned.contains(&"/tmp/.notes/.secret".to_string()));
+        assert!(pruned.contains(&"/tmp/.notes/.git".to_string()));
+        assert!(pruned.contains(&"/tmp/visible/.git".to_string()));
+    }
+
+    #[test]
+    fn prune_always_drops_git_even_when_show_hidden() {
+        let mut vault = Vault::new();
+        assert!(vault.show_hidden());
+        vault.expanded_dirs.insert("/tmp/repo".into());
+        vault.expanded_dirs.insert("/tmp/repo/.git".into());
+        vault.expanded_dirs.insert("/tmp/repo/.github".into());
+
+        let pruned = vault.prune_invisible_expanded(&["/tmp/repo".into()]);
+        assert!(vault.is_expanded("/tmp/repo"));
+        assert!(vault.is_expanded("/tmp/repo/.github"));
+        assert!(!vault.is_expanded("/tmp/repo/.git"));
+        assert_eq!(pruned, vec!["/tmp/repo/.git".to_string()]);
     }
 }

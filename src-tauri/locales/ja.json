@@ -588,6 +588,8 @@
   "settings.watch.sectionTitle": "ファイル監視",
   "settings.watch.vaultAutoRefresh.hint": "展開したフォルダーが監視され、新規作成、削除、名前変更されたファイルがすぐにワークスペースに表示されます。",
   "settings.watch.vaultAutoRefresh.label": "外部変更時に Vault ツリーを更新",
+  "settings.watch.vaultShowHidden.hint": "先頭がピリオドの名前（例: .github）。.git は常に非表示です。",
+  "settings.watch.vaultShowHidden.label": "Vault で隠し項目を表示",
   "statusBar.cursor.template": "{line} 行, {column} 列",
   "statusBar.cursor.tooltip": "カーソル位置",
   "statusBar.encoding.tooltip": "ファイルの文字エンコーディング",

@@ -598,6 +598,8 @@
   "settings.watch.sectionTitle": "Surveillance des fichiers",
   "settings.watch.vaultAutoRefresh.hint": "Les dossiers déployés sont surveillés ; les fichiers nouveaux, supprimés ou renommés apparaissent immédiatement.",
   "settings.watch.vaultAutoRefresh.label": "Actualiser l’arborescence du coffre lors de changements externes",
+  "settings.watch.vaultShowHidden.hint": "Noms commençant par un point (p. ex. .github). .git reste masqué.",
+  "settings.watch.vaultShowHidden.label": "Afficher les éléments masqués dans le coffre",
   "statusBar.cursor.template": "Lig {line}, Col {column}",
   "statusBar.cursor.tooltip": "Position du curseur",
   "statusBar.encoding.tooltip": "Encodage des caractères du fichier",

@@ -70,6 +70,12 @@ pub(crate) fn update_settings(
         }
         crate::commands::workspace_cmd::sync_git_head_watcher(state);
     }
+    // Hidden-Toggle: Spiegel setzen, unsichtbare expanded_dirs + Watches
+    // raeumen, Baum neu rendern. Analog zum md-Toggle muss der Sync
+    // VOR dem Rebuild stehen (sonst liest der Rebuild den alten Wert).
+    if changed.contains(&"vaultShowHidden") {
+        apply_vault_show_hidden(state, handle)?;
+    }
     if changed.contains(&"logLevel") {
         crate::logging::set_level(data.log_level);
     }
@@ -82,6 +88,12 @@ pub(crate) fn update_settings(
             .map_err(|e| e.to_string())?;
     }
     Ok(data)
+}
+
+fn apply_vault_show_hidden(state: &AppState, handle: &AppHandle) -> Result<(), String> {
+    // Prune + Unwatch sitzen in compute_refresh_delta_synced, damit kein
+    // paralleler Refresh den Watch „wegprunen" kann ohne ihn abzumelden.
+    crate::commands::workspace_cmd::emit_vault_refresh(state, handle)
 }
 
 fn sync_vault_watcher(state: &AppState, enabled: bool) {

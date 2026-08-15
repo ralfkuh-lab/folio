@@ -166,7 +166,10 @@ impl AppState {
         // dem ersten vault_build_tree) ein persistiertes "nur Markdown"
         // ungefiltert.
         let mut vault = Vault::new();
-        vault.set_markdown_only(panel_state.data().vault_filter_markdown_only);
+        vault.set_list_options(crate::vault::VaultListOptions {
+            markdown_only: panel_state.data().vault_filter_markdown_only,
+            show_hidden: settings.data().vault_show_hidden,
+        });
         Self {
             tabs: Mutex::new(TabManager::new()),
             workspace: Mutex::new(Workspace::load()),

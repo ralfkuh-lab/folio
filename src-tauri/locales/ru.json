@@ -603,6 +603,8 @@
   "settings.watch.sectionTitle": "Отслеживание изменений файлов",
   "settings.watch.vaultAutoRefresh.hint": "Раскрытые папки отслеживаются автоматически; новые, удаленные или переименованные файлы сразу появляются в рабочей области.",
   "settings.watch.vaultAutoRefresh.label": "Обновлять дерево Vault при внешних изменениях",
+  "settings.watch.vaultShowHidden.hint": "Имена, начинающиеся с точки (напр. .github). .git всегда скрыт.",
+  "settings.watch.vaultShowHidden.label": "Показывать скрытые элементы в Vault",
   "statusBar.cursor.template": "Стр {line}, Стлб {column}",
   "statusBar.cursor.tooltip": "Позиция курсора",
   "statusBar.encoding.tooltip": "Кодировка символов файла",

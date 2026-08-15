@@ -21,17 +21,17 @@ pub(super) fn toggle_section(
 }
 
 pub(super) fn expand_dir(path: String, state: &AppState, handle: &AppHandle) -> Result<(), String> {
-    let markdown_only = state
-        .panel_state
-        .lock()
-        .map(|p| p.data().vault_filter_markdown_only)
-        .unwrap_or(false);
-    let html = state
-        .vault
-        .lock()
-        .map_err(|_| "vault lock poisoned".to_string())?
-        .on_expand_with(path.clone(), markdown_only)
-        .map_err(|error| error.to_string())?;
+    let html = {
+        // Optionen erst unmittelbar vor dem Vault-Lock lesen — ein früher
+        // Snapshot könnte ein abgeschlossenes Setting-Update überschreiben.
+        let opts = crate::commands::vault_cmd::read_vault_list_options(state).unwrap_or_default();
+        state
+            .vault
+            .lock()
+            .map_err(|_| "vault lock poisoned".to_string())?
+            .on_expand_with(path.clone(), opts)
+            .map_err(|error| error.to_string())?
+    };
     // FS-Watch fuer den frisch aufgeklappten Ordner registrieren — bei
     // disabled Watcher (Setting `vaultAutoRefresh`) ist das ein No-op.
     // Fehler beim watch sollen den Expand-Pfad nicht killen; sie

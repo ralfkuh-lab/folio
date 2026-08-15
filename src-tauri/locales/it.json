@@ -598,6 +598,8 @@
   "settings.watch.sectionTitle": "Monitoraggio file",
   "settings.watch.vaultAutoRefresh.hint": "Le cartelle espanse sono monitorate; nuovi file, file eliminati o rinominati compaiono immediatamente nel workspace.",
   "settings.watch.vaultAutoRefresh.label": "Aggiorna l’albero del Vault in caso di modifiche esterne",
+  "settings.watch.vaultShowHidden.hint": "Nomi che iniziano con un punto (es. .github). .git resta nascosto.",
+  "settings.watch.vaultShowHidden.label": "Mostra elementi nascosti nel Vault",
   "statusBar.cursor.template": "Riga {line}, Col {column}",
   "statusBar.cursor.tooltip": "Posizione del cursore",
   "statusBar.encoding.tooltip": "Codifica dei caratteri del file",

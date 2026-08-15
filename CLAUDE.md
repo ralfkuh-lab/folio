@@ -205,6 +205,16 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   (default an). Toggle live-aware: bei Re-Enable werden alle aktuell
   expanded_dirs erneut registriert (siehe `commands::app::settings::
   sync_vault_watcher`).
+- **Versteckte Vault-Einträge** (`settings.vaultShowHidden`, Default
+  `true`): folgt dem `includeHidden`-Modell der Suche. „Versteckt"
+  heißt name-basiert `Name beginnt mit .` (Dateien und Verzeichnisse;
+  das Windows-Hidden-Attribut wird bewusst nicht ausgewertet). `.git`
+  bleibt **immer** ausgeblendet, auch bei aktivem Schalter. Explizite
+  Pins bleiben sichtbar (Filter greift auf Kinder in
+  `Vault::build_dir_children_html`, nicht auf Pin-Wurzeln; ein direkt
+  gepinntes `.git` wäre abwegig und folgt derselben Pin-Regel).
+  Live-Toggle ohne Neustart; unsichtbar gewordene aufgeklappte Ordner
+  werden aus `expanded_dirs` und ihren NonRecursive-Watches entfernt.
 - **Pin-Reordering** (`vault/tree.ts`): das Umsortieren der angepinnten
   Top-Level-Einträge läuft **Pointer-basiert** (`pointerdown`/`move`/`up`,
   delegiert auf `#vault-tree`), **bewusst NICHT über HTML5-Drag&Drop**.
@@ -877,7 +887,7 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
 
 ## E2E-Test-Suite
 
-Vollständige UI-Coverage in `tests/e2e/` (56 Szenarien, Python +
+Vollständige UI-Coverage in `tests/e2e/` (57 Szenarien, Python +
 Pillow): Boot, View-/Edit-/Split-Mode, Theme, Vault, Find (inkl.
 Code-View), Workspace, Save-Roundtrip durch alle BOM/EOL-Kombis,
 Undo/Redo, Toolbar-Commands (Bold/Italic/Heading), Menü-Coverage
@@ -887,7 +897,8 @@ HTML-View, Tabs (API/UI/Restore/Reorder), View-/Custom-Themes,
 Theme-CRUD/-Browser/-Import-Export, Export-Highlighting, Mermaid
 (View + Export), Link-in-neuem-Tab, Vault-Volltextsuche (API + UI),
 Vault-Filter, Tab-Kontextmenü, Command Palette, Statusleiste,
-Wikilinks/Tags, Task-Checkboxen, Git-Status/-Diff/-Filter sowie
+Wikilinks/Tags, Task-Checkboxen, Git-Status/-Diff/-Filter,
+versteckte Vault-Einträge sowie
 KI-Settings, KI-Übersetzung, KI-Theme-Autor, Export-KI-Draft und
 KI-Aktionen (Mock-Provider). Der englische Boot ist über
 `scripts/run-e2e.sh --lang-smoke` separat abgedeckt.
@@ -903,6 +914,11 @@ Pin-Wurzeln öffnet. Git-Optionen, die das Ergebnis verfälschen könnten
 (`core.excludesFile`, `core.autocrlf`), werden **repo-lokal** gesetzt —
 Umgebungsvariablen der Test-Subprozesse greifen nicht für Folios eigene
 `git`-Aufrufe, die im bereits gestarteten App-Prozess laufen.
+
+**Szenarien mit fester Hidden-Fixture** (`57_vault_hidden.py`): Verzeichnis
+unter `/tmp/folio-e2e-hidden` — gleicher Grund wie bei 56, der Pfad steht
+im Vault und in der Baseline. Enthält eine normale `.md`, `.versteckt/`,
+`.versteckte-datei.md` und ein leeres `.git/`.
 
 Wrapper: `bash scripts/run-e2e.sh` (Linux+Xvfb). Visual-Baselines in
 `tests/e2e/baselines/`, Artefakte (gitignored) in

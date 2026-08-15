@@ -163,6 +163,14 @@ pub struct SettingsData {
     /// wenn der User viele Ordner pinnt und FS-Watch-Limits drueckt.
     #[serde(default = "default_true")]
     pub vault_auto_refresh: bool,
+    /// Steuert, ob der Vault-Baum Eintraege zeigt, deren Name mit `.`
+    /// beginnt (Dateien und Verzeichnisse, name-basiert; das
+    /// Windows-Hidden-Attribut wird bewusst nicht ausgewertet).
+    /// Default an — das ist der historische Zustand. `.git` bleibt
+    /// unabhaengig von diesem Schalter immer ausgeblendet (wie die
+    /// Volltextsuche). Explizite Pins bleiben sichtbar.
+    #[serde(default = "default_true")]
+    pub vault_show_hidden: bool,
     /// Steuert, ob extern geaenderte geoeffnete Dateien automatisch
     /// neugeladen werden (sofern nicht dirty). Default an; aus z.B.
     /// fuer Log-Dateien, wo staendige Reloads die Anzeige stoeren —
@@ -221,6 +229,7 @@ impl Default for SettingsData {
             ai_action_favorites: Vec::new(),
             ai_action_favorite_hashes: BTreeMap::new(),
             vault_auto_refresh: default_true(),
+            vault_show_hidden: default_true(),
             document_auto_reload: default_true(),
             export_dir_mode: ExportDirMode::default(),
             open_file_target: OpenFileTarget::default(),
@@ -247,6 +256,7 @@ pub struct SettingsPatch {
     #[serde(default)]
     pub ai_action_favorite_hashes: Option<BTreeMap<String, String>>,
     pub vault_auto_refresh: Option<bool>,
+    pub vault_show_hidden: Option<bool>,
     pub document_auto_reload: Option<bool>,
     pub export_dir_mode: Option<ExportDirMode>,
     pub open_file_target: Option<OpenFileTarget>,
@@ -265,6 +275,7 @@ impl SettingsPatch {
             && self.ai_action_favorites.is_none()
             && self.ai_action_favorite_hashes.is_none()
             && self.vault_auto_refresh.is_none()
+            && self.vault_show_hidden.is_none()
             && self.document_auto_reload.is_none()
             && self.export_dir_mode.is_none()
             && self.open_file_target.is_none()
@@ -427,6 +438,12 @@ impl SettingsService {
                 changed.push("vaultAutoRefresh");
             }
         }
+        if let Some(value) = patch.vault_show_hidden {
+            if self.data.vault_show_hidden != value {
+                self.data.vault_show_hidden = value;
+                changed.push("vaultShowHidden");
+            }
+        }
         if let Some(value) = patch.document_auto_reload {
             if self.data.document_auto_reload != value {
                 self.data.document_auto_reload = value;
@@ -479,6 +496,7 @@ mod tests {
         assert_eq!("standard", data.view_theme);
         assert!(data.theme_favorites.is_empty());
         assert!(data.vault_auto_refresh);
+        assert!(data.vault_show_hidden);
         assert!(data.document_auto_reload);
         assert_eq!(ExportDirMode::Document, data.export_dir_mode);
         assert_eq!(OpenFileTarget::Newtab, data.open_file_target);
@@ -929,6 +947,7 @@ mod tests {
                     "hash".to_string(),
                 )])),
                 vault_auto_refresh: Some(false),
+                vault_show_hidden: Some(false),
                 document_auto_reload: Some(false),
                 export_dir_mode: Some(ExportDirMode::Last),
                 open_file_target: Some(OpenFileTarget::Replace),
@@ -936,7 +955,7 @@ mod tests {
                 log_level: Some(LogLevel::Debug),
             })
             .unwrap();
-        assert_eq!(14, changed.len());
+        assert_eq!(15, changed.len());
 
         let reloaded = SettingsService::load_from(path).data();
         assert_eq!("en", reloaded.language);
@@ -948,6 +967,46 @@ mod tests {
         assert_eq!(ExportDirMode::Last, reloaded.export_dir_mode);
         assert_eq!(OpenFileTarget::Replace, reloaded.open_file_target);
         assert_eq!(SearchPathDisplay::Absolute, reloaded.search_path_display);
+        assert!(!reloaded.vault_auto_refresh);
+        assert!(!reloaded.vault_show_hidden);
+    }
+
+    #[test]
+    fn vault_show_hidden_patch_records_change() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("settings.json");
+        let mut svc = SettingsService::load_from(path.clone());
+        assert!(svc.data().vault_show_hidden);
+
+        let changed = svc
+            .apply_patch(SettingsPatch {
+                vault_show_hidden: Some(false),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(vec!["vaultShowHidden"], changed);
+        assert!(
+            !SettingsService::load_from(path.clone())
+                .data()
+                .vault_show_hidden
+        );
+
+        let same = svc
+            .apply_patch(SettingsPatch {
+                vault_show_hidden: Some(false),
+                ..Default::default()
+            })
+            .unwrap();
+        assert!(same.is_empty());
+
+        let back = svc
+            .apply_patch(SettingsPatch {
+                vault_show_hidden: Some(true),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(vec!["vaultShowHidden"], back);
+        assert!(SettingsService::load_from(path).data().vault_show_hidden);
     }
 
     #[test]

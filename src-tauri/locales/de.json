@@ -593,6 +593,8 @@
   "settings.watch.sectionTitle": "Datei-Überwachung",
   "settings.watch.vaultAutoRefresh.hint": "Aufgeklappte Ordner werden überwacht; neue, gelöschte oder umbenannte Dateien tauchen direkt im Arbeitsbereich auf.",
   "settings.watch.vaultAutoRefresh.label": "Vault-Tree bei externen Änderungen aktualisieren",
+  "settings.watch.vaultShowHidden.hint": "Namen, die mit einem Punkt beginnen (z. B. .github). .git bleibt immer ausgeblendet.",
+  "settings.watch.vaultShowHidden.label": "Versteckte Einträge im Vault anzeigen",
   "statusBar.cursor.template": "Zeile {line}, Spalte {column}",
   "statusBar.cursor.tooltip": "Cursorposition",
   "statusBar.encoding.tooltip": "Zeichenkodierung der Datei",

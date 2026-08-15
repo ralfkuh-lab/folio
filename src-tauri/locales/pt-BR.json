@@ -598,6 +598,8 @@
   "settings.watch.sectionTitle": "Monitoramento de arquivos",
   "settings.watch.vaultAutoRefresh.hint": "Pastas expandidas são monitoradas; arquivos novos, excluídos ou renomeados aparecem no espaço de trabalho imediatamente.",
   "settings.watch.vaultAutoRefresh.label": "Atualizar árvore do Vault em alterações externas",
+  "settings.watch.vaultShowHidden.hint": "Nomes que começam com ponto (ex.: .github). .git permanece oculto.",
+  "settings.watch.vaultShowHidden.label": "Mostrar itens ocultos no Vault",
   "statusBar.cursor.template": "Ln {line}, Col {column}",
   "statusBar.cursor.tooltip": "Posição do cursor",
   "statusBar.encoding.tooltip": "Codificação de caracteres do arquivo",

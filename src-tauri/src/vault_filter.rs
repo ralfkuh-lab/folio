@@ -136,7 +136,7 @@ mod tests {
         let vault = Vault::new();
         let path = norm(root);
         let html = vault
-            .build_dir_children_html(&path, true)
+            .build_dir_children_html(&path, crate::vault::VaultListOptions::markdown_only(true))
             .expect("read_dir ok");
 
         assert!(
@@ -157,7 +157,7 @@ mod tests {
             "Ordner mit MD muss sichtbar sein"
         );
         let all = vault
-            .build_dir_children_html(&path, false)
+            .build_dir_children_html(&path, crate::vault::VaultListOptions::default())
             .expect("read_dir ok");
         assert!(all.contains(&data_path_attr(&root.join("data.json"))));
         assert!(all.contains(&data_path_attr(&root.join("note.md"))));

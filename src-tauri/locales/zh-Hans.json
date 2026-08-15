@@ -588,6 +588,8 @@
   "settings.watch.sectionTitle": "文件监控",
   "settings.watch.vaultAutoRefresh.hint": "系统会监控展开的文件夹；新建、删除或重命名文件后会立即呈现在工作区中。",
   "settings.watch.vaultAutoRefresh.label": "当外部有更改时自动更新 Vault 目录树",
+  "settings.watch.vaultShowHidden.hint": "以点号开头的名称（例如 .github）。.git 始终隐藏。",
+  "settings.watch.vaultShowHidden.label": "在 Vault 中显示隐藏项",
   "statusBar.cursor.template": "行 {line}，列 {column}",
   "statusBar.cursor.tooltip": "光标位置",
   "statusBar.encoding.tooltip": "文件的字符编码",

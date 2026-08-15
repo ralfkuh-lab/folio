@@ -1,45 +1,87 @@
 use crate::state::AppState;
+use crate::vault::VaultListOptions;
 use crate::workspace::Workspace;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
-/// Liest `panel_state.vault_filter_markdown_only` und setzt den
-/// Vault-Spiegel. Lock-Reihenfolge: panel_state lesen und fallen lassen,
-/// DANN vault. Vor jedem `compute_refresh_delta` / Lazy-Render aufrufen.
-#[allow(dead_code)] // public API for call sites; may be used without delta
-pub(crate) fn sync_vault_markdown_only(state: &AppState) -> Result<(), String> {
+/// Liest Listen-Optionen aus Panel-State + Settings (ohne Vault-Lock).
+/// Lock-Reihenfolge: panel_state, dann settings.
+pub(crate) fn read_vault_list_options(state: &AppState) -> Result<VaultListOptions, String> {
     let markdown_only = state
         .panel_state
         .lock()
         .map_err(|_| "panel state lock poisoned".to_string())?
         .data()
         .vault_filter_markdown_only;
+    let show_hidden = state
+        .settings
+        .lock()
+        .map_err(|_| "settings lock poisoned".to_string())?
+        .data()
+        .vault_show_hidden;
+    Ok(VaultListOptions {
+        markdown_only,
+        show_hidden,
+    })
+}
+
+/// Liest `panel_state.vault_filter_markdown_only` und
+/// `settings.vault_show_hidden` und setzt beide Vault-Spiegel.
+/// Lock-Reihenfolge: panel_state, settings, DANN vault.
+/// Vor jedem `compute_refresh_delta` / Lazy-Render aufrufen.
+pub(crate) fn sync_vault_list_options(state: &AppState) -> Result<VaultListOptions, String> {
+    let opts = read_vault_list_options(state)?;
     let mut vault = state
         .vault
         .lock()
         .map_err(|_| "vault lock poisoned".to_string())?;
-    vault.set_markdown_only(markdown_only);
-    Ok(())
+    vault.set_list_options(opts);
+    Ok(opts)
 }
 
-/// Sync + `compute_refresh_delta` unter einem Vault-Lock (nach freiem
-/// Panel-Read). Workspace muss bereits gelockt/übergeben sein.
+/// Pin-Verzeichnispfade (normalisiert) fuer Expand/Prune.
+pub(crate) fn pin_directory_paths(workspace: &Workspace) -> Vec<String> {
+    workspace
+        .pinned()
+        .iter()
+        .filter(|item| item.is_directory)
+        .map(|item| item.path.replace('\\', "/"))
+        .collect()
+}
+
+/// Watcher-Abmeldung nach `prune_invisible_expanded`. Vault-Lock muss
+/// bereits frei sein — nicht beide Locks gleichzeitig halten.
+pub(crate) fn unwatch_pruned_paths(state: &AppState, paths: &[String]) {
+    if paths.is_empty() {
+        return;
+    }
+    if let Ok(mut watcher) = state.vault_watcher.lock() {
+        for path in paths {
+            watcher.unwatch(path);
+        }
+    }
+}
+
+/// Sync + Prune + Unwatch + `compute_refresh_delta`. Workspace muss
+/// bereits gelockt/übergeben sein. Unwatch erst nach Freigabe des
+/// Vault-Locks, damit kein Aufrufer die zweite Hälfte vergessen kann.
 pub(crate) fn compute_refresh_delta_synced(
     state: &AppState,
     workspace: &Workspace,
 ) -> Result<crate::vault::VaultRefreshDelta, String> {
-    let markdown_only = state
-        .panel_state
-        .lock()
-        .map_err(|_| "panel state lock poisoned".to_string())?
-        .data()
-        .vault_filter_markdown_only;
-    let mut vault = state
-        .vault
-        .lock()
-        .map_err(|_| "vault lock poisoned".to_string())?;
-    vault.set_markdown_only(markdown_only);
-    Ok(vault.compute_refresh_delta(workspace))
+    let pin_roots = pin_directory_paths(workspace);
+    let (delta, pruned) = {
+        let opts = read_vault_list_options(state)?;
+        let mut vault = state
+            .vault
+            .lock()
+            .map_err(|_| "vault lock poisoned".to_string())?;
+        vault.set_list_options(opts);
+        let pruned = vault.prune_invisible_expanded(&pin_roots);
+        (vault.compute_refresh_delta(workspace), pruned)
+    };
+    unwatch_pruned_paths(state, &pruned);
+    Ok(delta)
 }
 
 // Hinweis: vault_expand_dir/vault_collapse_dir als Tauri-Commands sind
@@ -80,7 +122,7 @@ pub async fn vault_build_tree(
     state: State<'_, AppState>,
     handle: AppHandle,
 ) -> Result<String, String> {
-    let (html, paths) = {
+    let (html, paths, pruned) = {
         let workspace = state
             .workspace
             .lock()
@@ -90,19 +132,23 @@ pub async fn vault_build_tree(
             .lock()
             .map_err(|_| "panel state lock poisoned".to_string())?
             .data();
+        let pin_roots = pin_directory_paths(&workspace);
+        let opts = read_vault_list_options(state.inner())?;
         let mut vault = state
             .vault
             .lock()
             .map_err(|_| "vault lock poisoned".to_string())?;
-        vault.set_markdown_only(panel.vault_filter_markdown_only);
+        vault.set_list_options(opts);
+        let pruned = vault.prune_invisible_expanded(&pin_roots);
         let html = vault.build_initial_tree_html_with(
             &workspace,
             panel.pinned_expanded,
             panel.recent_expanded,
         );
         let paths = crate::git_status::workspace_scan_paths(&workspace);
-        (html, paths)
+        (html, paths, pruned)
     };
+    unwatch_pruned_paths(state.inner(), &pruned);
     // Render bleibt frei von git status: Jobs starten erst nach dem HTML.
     crate::git_status::schedule_for_paths(&state.git_status, &paths, &handle);
     Ok(html)
@@ -122,12 +168,6 @@ pub async fn vault_expand_roots(
         .filter(|p| p.is_directory)
         .map(|p| p.path.replace('\\', "/"))
         .collect();
-    let markdown_only = state
-        .panel_state
-        .lock()
-        .map_err(|_| "panel state lock poisoned".to_string())?
-        .data()
-        .vault_filter_markdown_only;
     let (paths, html) = {
         let workspace = state
             .workspace
@@ -138,12 +178,13 @@ pub async fn vault_expand_roots(
             .lock()
             .map_err(|_| "panel state lock poisoned".to_string())?
             .data();
+        let opts = read_vault_list_options(state.inner())?;
         let mut vault = state
             .vault
             .lock()
             .map_err(|_| "vault lock poisoned".to_string())?;
-        let paths = vault.expand_roots(&pin_dirs, markdown_only);
-        vault.set_markdown_only(markdown_only);
+        let paths = vault.expand_roots(&pin_dirs, opts);
+        vault.set_list_options(opts);
         let html = vault.build_initial_tree_html_with(
             &workspace,
             panel.pinned_expanded,
@@ -183,12 +224,6 @@ pub async fn vault_expand_paths(
     paths: Vec<String>,
     state: State<'_, AppState>,
 ) -> Result<VaultExpandPathsResponse, String> {
-    let markdown_only = state
-        .panel_state
-        .lock()
-        .map_err(|_| "panel state lock poisoned".to_string())?
-        .data()
-        .vault_filter_markdown_only;
     let (expanded, capped, html) = {
         let workspace = state
             .workspace
@@ -199,13 +234,19 @@ pub async fn vault_expand_paths(
             .lock()
             .map_err(|_| "panel state lock poisoned".to_string())?
             .data();
+        let pin_roots = pin_directory_paths(&workspace);
+        let opts = read_vault_list_options(state.inner())?;
         let mut vault = state
             .vault
             .lock()
             .map_err(|_| "vault lock poisoned".to_string())?;
-        let result =
-            vault.expand_paths(&paths, markdown_only, crate::vault::Vault::EXPAND_PATHS_CAP);
-        vault.set_markdown_only(markdown_only);
+        let result = vault.expand_paths(
+            &paths,
+            opts,
+            crate::vault::Vault::EXPAND_PATHS_CAP,
+            &pin_roots,
+        );
+        vault.set_list_options(opts);
         let html = vault.build_initial_tree_html_with(
             &workspace,
             panel.pinned_expanded,
@@ -247,11 +288,12 @@ pub async fn vault_collapse_all(
             .lock()
             .map_err(|_| "panel state lock poisoned".to_string())?
             .data();
+        let opts = read_vault_list_options(state.inner())?;
         let mut vault = state
             .vault
             .lock()
             .map_err(|_| "vault lock poisoned".to_string())?;
-        vault.set_markdown_only(panel.vault_filter_markdown_only);
+        vault.set_list_options(opts);
         // on_collapse pro Pin-Wurzel (pruned expanded under each pin) + full clear.
         let pin_dirs: Vec<String> = workspace
             .pinned()
@@ -314,11 +356,10 @@ pub async fn vault_filter_options_set(
         .set_vault_filter_options(markdown_only, bar_visible, git_changed_only)
         .map_err(|error| error.to_string())?;
     // Lazy-Tree-Spiegel: poisoned Vault-Lock ist Fehler (FX4), nicht still.
-    state
-        .vault
-        .lock()
-        .map_err(|_| "vault lock poisoned".to_string())?
-        .set_markdown_only(markdown_only);
+    // Nach dem Panel-Write beide Spiegel aus den Quellen lesen — sonst
+    // bleibt show_hidden auf einem veralteten Vault-Wert, wenn jemand
+    // nur den md-Toggle setzt.
+    sync_vault_list_options(state.inner())?;
     Ok(())
 }
 
