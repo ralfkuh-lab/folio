@@ -12,25 +12,17 @@ _(leer)_
 
 ## Mittlere Priorität
 
-- **E2E-Szenario für Git-Status, Diff und Filter** (Lücke seit
-  2026-08-14): Dots, Tab-Marker, Diff-Button, „Änderungen anzeigen" und
-  der „nur geänderte"-Filter sind ausschließlich unit-getestet — als
-  einziges der neueren Features ohne Netz im echten WebView. Gerade
-  hier lohnt es: Die schwersten Befunde der vier Kreuz-Reviews lagen
-  nicht in den Einzelfeatures, sondern in ihren **Wechselwirkungen**
-  (Diff und KI-Review auf einer geteilten Surface, Filter über dem
-  Lazy-Tree, Status beim Tab-Wechsel) — genau das, was Unit-Tests
-  strukturell nicht sehen.
-  **Aufwand steckt in der Fixture**: Ein temporäres Git-Repo muss im
-  Szenario angelegt werden (init, Datei committen, ändern, eine zweite
-  untracked lassen) — die bestehenden Fixtures sind reine Dateien ohne
-  `.git`. Danach abdecken: Punkt erscheint, Tooltip nennt den Status,
-  Tab-Marker sichtbar, Klick öffnet den Diff, Diff folgt dem
-  Dateiwechsel, Filter blendet aus und klappt auf. `init_git` aus den
-  Rust-Tests ist die Vorlage, im Python-Szenario aber neu zu bauen.
-  Ebenfalls offen: der Pipe-Deadlock-Fix ist nur auf Linux verifiziert;
-  Windows hat 4 KiB Pipe-Puffer statt 64 KiB, das Problem träte dort
-  deutlich früher auf.
+- **Git-Features unter Windows verifizieren** (Rest aus der
+  E2E-Etappe): Das E2E-Szenario `56_git_status.py` ist seit 2026-08-15
+  da und deckt Dots, Tooltip, Tab-Marker, Diff (inkl. dirty Puffer und
+  Dokument-Follow), Kontextmenü-Gate und den „nur geänderte"-Filter
+  samt Auto-Expand ab — aber **nur auf Linux**. Offen bleibt: der
+  Pipe-Deadlock-Fix in `wait_child_with_timeout` ist ausschließlich
+  gegen Linux' 64-KiB-Pipe-Puffer verifiziert; Windows hat 4 KiB, das
+  Problem träte dort bei deutlich weniger geänderten Dateien auf. Die
+  E2E-Suite läuft auf Windows nicht (siehe eigener Eintrag unter
+  „Niedrige Priorität"), also braucht es einen manuellen Test mit einem
+  Repo mit vielen geänderten/untrackten Einträgen.
 
 - **E2E `42_mermaid` flaky — Fix 2026-07-25, Beobachtung**: erneut
   aufgetreten (2026-07-21 + 2026-07-25, „mermaid svg nicht gefunden").

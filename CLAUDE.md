@@ -877,7 +877,7 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
 
 ## E2E-Test-Suite
 
-Vollständige UI-Coverage in `tests/e2e/` (51 Szenarien, Python +
+Vollständige UI-Coverage in `tests/e2e/` (56 Szenarien, Python +
 Pillow): Boot, View-/Edit-/Split-Mode, Theme, Vault, Find (inkl.
 Code-View), Workspace, Save-Roundtrip durch alle BOM/EOL-Kombis,
 Undo/Redo, Toolbar-Commands (Bold/Italic/Heading), Menü-Coverage
@@ -886,10 +886,23 @@ History-Back/Forward, Rechtsklick-Kontextmenüs, echter TOC-DOM-Klick,
 HTML-View, Tabs (API/UI/Restore/Reorder), View-/Custom-Themes,
 Theme-CRUD/-Browser/-Import-Export, Export-Highlighting, Mermaid
 (View + Export), Link-in-neuem-Tab, Vault-Volltextsuche (API + UI),
-Vault-Filter, Tab-Kontextmenü, Command Palette sowie KI-Settings,
-KI-Übersetzung, KI-Theme-Autor, Export-KI-Draft und KI-Aktionen
-(Mock-Provider). Der englische Boot ist über
+Vault-Filter, Tab-Kontextmenü, Command Palette, Statusleiste,
+Wikilinks/Tags, Task-Checkboxen, Git-Status/-Diff/-Filter sowie
+KI-Settings, KI-Übersetzung, KI-Theme-Autor, Export-KI-Draft und
+KI-Aktionen (Mock-Provider). Der englische Boot ist über
 `scripts/run-e2e.sh --lang-smoke` separat abgedeckt.
+
+**Szenarien mit eigener Git-Fixture** (`56_git_status.py`): Das Repo
+wird im Szenario per `git init` an einem **festen** Temp-Pfad angelegt
+(`/tmp/folio-e2e-gitrepo`) — nicht per `mkdtemp`, weil der Pfad im
+Vault-Baum und in der Statusleiste sichtbar und damit Teil der
+Visual-Baseline ist. Gepinnt wird bewusst nur ein **Unterordner** des
+Repos, und ein geänderter Zweig liegt daneben außerhalb: nur so ist
+prüfbar, dass der Filter-Auto-Expand keine Pfade außerhalb sichtbarer
+Pin-Wurzeln öffnet. Git-Optionen, die das Ergebnis verfälschen könnten
+(`core.excludesFile`, `core.autocrlf`), werden **repo-lokal** gesetzt —
+Umgebungsvariablen der Test-Subprozesse greifen nicht für Folios eigene
+`git`-Aufrufe, die im bereits gestarteten App-Prozess laufen.
 
 Wrapper: `bash scripts/run-e2e.sh` (Linux+Xvfb). Visual-Baselines in
 `tests/e2e/baselines/`, Artefakte (gitignored) in
