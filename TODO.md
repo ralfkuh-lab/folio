@@ -12,17 +12,40 @@ _(leer)_
 
 ## Mittlere Priorität
 
-- **Git-Features unter Windows verifizieren** (Rest aus der
-  E2E-Etappe): Das E2E-Szenario `56_git_status.py` ist seit 2026-08-15
-  da und deckt Dots, Tooltip, Tab-Marker, Diff (inkl. dirty Puffer und
-  Dokument-Follow), Kontextmenü-Gate und den „nur geänderte"-Filter
-  samt Auto-Expand ab — aber **nur auf Linux**. Offen bleibt: der
-  Pipe-Deadlock-Fix in `wait_child_with_timeout` ist ausschließlich
-  gegen Linux' 64-KiB-Pipe-Puffer verifiziert; Windows hat 4 KiB, das
-  Problem träte dort bei deutlich weniger geänderten Dateien auf. Die
-  E2E-Suite läuft auf Windows nicht (siehe eigener Eintrag unter
-  „Niedrige Priorität"), also braucht es einen manuellen Test mit einem
-  Repo mit vielen geänderten/untrackten Einträgen.
+- **Windows-Verifikationsdurchgang** (gesammelt, alles manuell — die
+  E2E-Suite läuft auf Windows nicht, siehe eigener Eintrag unter
+  „Niedrige Priorität"). Sechs Punkte, die auf Linux prinzipbedingt
+  nicht auslösbar sind:
+
+  1. **Git-Pipe-Deadlock** (Rest aus der E2E-Etappe): `56_git_status.py`
+     deckt seit 2026-08-15 Dots, Tooltip, Tab-Marker, Diff, Kontextmenü-
+     Gate und den „nur geänderte"-Filter ab — aber nur auf Linux. Der
+     Deadlock-Fix in `wait_child_with_timeout` ist ausschließlich gegen
+     Linux' 64-KiB-Pipe-Puffer verifiziert; Windows hat 4 KiB, das
+     Problem träte dort bei deutlich weniger geänderten Dateien auf.
+     Test: Repo mit vielen geänderten/untrackten Einträgen öffnen.
+  2. **Verzeichnis-Symlinks und Junctions beim Kopieren/Verschieben**
+     (`fs_copy.rs`, aus dem Kreuz-Review 2026-08-17): Der Fix nutzt
+     `FileTypeExt::{is_symlink_dir, is_symlink_file}` und löscht solche
+     Links mit `remove_dir` statt `remove_file`. Dieser Code ist
+     **`cfg(windows)` und wurde nie ausgeführt** — nur kompiliert.
+  3. **Symlink-Anlegen ohne Developer Mode**: schlägt auf Windows
+     regelmäßig fehl und landet dann im `skipped_symlinks`-Pfad. Prüfen,
+     dass ein EXDEV-Move die Quelle in dem Fall wirklich **behält** und
+     der Fehler sichtbar wird (das war der Datenverlust-Befund).
+  4. **Case-only-Rename** (`Foo` → `foo`): auf case-insensitiven
+     Dateisystemen der einzige Ort, an dem `is_case_only_same_entry`
+     überhaupt greift.
+  5. **Case-insensitive Pfad-Migration**: bekannter offener Befund,
+     bewusst nicht gefixt — ein Tab kann als `C:/Vault/Dir/a.md` offen
+     sein, während der Tree-Knoten `c:/vault/dir` als Move-Quelle
+     liefert; die Halter mit abweichender Schreibweise bleiben dann auf
+     dem alten Pfad zurück. Details und Umbauhinweis in
+     [`docs/spec-vault-fileops.md`](docs/spec-vault-fileops.md).
+     **Hier geht es ums Nachstellen**, nicht ums Beheben.
+  6. **Ordner in den Papierkorb** (`trash_path`): das `trash`-Crate
+     braucht auf Windows native Backslash-Pfade. Für Einzeldateien ist
+     das erprobt, für Verzeichnisse seit 2026-08-17 nicht.
 
 - **E2E `42_mermaid` flaky — Fix 2026-07-25, Beobachtung**: erneut
   aufgetreten (2026-07-21 + 2026-07-25, „mermaid svg nicht gefunden").
