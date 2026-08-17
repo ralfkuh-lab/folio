@@ -29,6 +29,8 @@ pub(super) const VIEW_THEME_DARK: &str = "view.theme.dark";
 pub(super) const VIEW_RAIL_LEFT: &str = "view.rail_left";
 pub(super) const VIEW_RAIL_RIGHT: &str = "view.rail_right";
 pub(super) const VIEW_MINIMAP: &str = "view.minimap";
+pub(super) const VIEW_FULLSCREEN: &str = "view.fullscreen";
+pub(super) const VIEW_ZEN: &str = "view.zen";
 pub(super) const HELP_CHEATSHEET: &str = "help.cheatsheet";
 /// Linux-only: richtet das Folio-Icon im Datei-Manager fuer `.md` ein
 /// (fuehrt `install-folio-icons.sh` aus). Siehe docs/linux-md-icon.md.

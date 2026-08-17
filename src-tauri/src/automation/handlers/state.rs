@@ -120,6 +120,11 @@ pub(in crate::automation) async fn get_state(
     let lang = crate::i18n::process_translator()
         .map(|tr| tr.catalog_tag().to_string())
         .unwrap_or_else(|| "en".into());
+    let fullscreen = context
+        .app_handle
+        .get_webview_window("main")
+        .and_then(|window| window.is_fullscreen().ok())
+        .unwrap_or(false);
 
     Ok(Json(AutomationState {
         title,
@@ -131,6 +136,8 @@ pub(in crate::automation) async fn get_state(
         left_rail_visible: panel.left_rail_visible,
         right_rail_visible: panel.right_rail_visible,
         split_mid_percent: panel.split_mid_percent,
+        zen: automation.zen,
+        fullscreen,
         toc,
         editor: EditorAutomationState {
             ready: automation.editor_ready,
@@ -183,6 +190,8 @@ pub(in crate::automation) async fn mock_get_state(
         left_rail_visible: true,
         right_rail_visible: true,
         split_mid_percent: 50.0,
+        zen: false,
+        fullscreen: false,
         toc,
         editor: EditorAutomationState {
             ready: state.editor_ready,

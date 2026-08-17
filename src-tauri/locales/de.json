@@ -387,6 +387,7 @@
   "menu.help.cheatsheet": "Cheat-Sheet",
   "menu.help.setupMdIcon": "Markdown-Icon-Integration einrichten…",
   "menu.view": "Ansicht",
+  "menu.view.fullscreen": "Vollbild",
   "menu.view.gitDiff": "Änderungen anzeigen",
   "menu.view.minimap": "Minimap ein/aus",
   "menu.view.modeEdit": "Edit-Mode",
@@ -397,6 +398,7 @@
   "menu.view.theme": "Theme",
   "menu.view.themeDark": "Dunkel",
   "menu.view.themeLight": "Hell",
+  "menu.view.zen": "Zen-Modus",
   "palette.badge.command": "Befehl",
   "palette.badge.file": "Datei",
   "palette.badge.heading": "Überschrift",
@@ -609,6 +611,9 @@
   "settings.watch.vaultAutoRefresh.label": "Vault-Tree bei externen Änderungen aktualisieren",
   "settings.watch.vaultShowHidden.hint": "Namen, die mit einem Punkt beginnen (z. B. .github). .git bleibt immer ausgeblendet.",
   "settings.watch.vaultShowHidden.label": "Versteckte Einträge im Vault anzeigen",
+  "settings.zen.fullscreen.hint": "Wenn aktiv, wechselt der Zen-Modus zusätzlich in den Vollbildmodus. War das Fenster schon im Vollbild, bleibt es das beim Verlassen.",
+  "settings.zen.fullscreen.label": "Zen-Modus im Vollbild öffnen",
+  "settings.zen.sectionTitle": "Zen-Modus",
   "statusBar.cursor.template": "Zeile {line}, Spalte {column}",
   "statusBar.cursor.tooltip": "Cursorposition",
   "statusBar.encoding.tooltip": "Zeichenkodierung der Datei",
@@ -831,5 +836,6 @@
   "wikilinks.createDialog.noDocument": "Kein Dokument geöffnet — Notiz kann nicht angelegt werden.",
   "wikilinks.createDialog.submit.action": "Anlegen",
   "wikilinks.createDialog.subtitle": "Zielverzeichnis: {dir}",
-  "wikilinks.createDialog.title": "Notiz anlegen?"
+  "wikilinks.createDialog.title": "Notiz anlegen?",
+  "zen.hint.exit": "Shift+F11 oder Escape beendet den Zen-Modus"
 }

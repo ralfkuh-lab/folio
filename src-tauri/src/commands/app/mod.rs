@@ -311,6 +311,67 @@ pub async fn set_webview_zoom(zoom: f64, handle: AppHandle) -> Result<(), String
     window.set_zoom(zoom).map_err(|e| e.to_string())
 }
 
+fn main_window(handle: &AppHandle) -> Result<tauri::WebviewWindow, String> {
+    handle
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())
+}
+
+/// OS-Vollbild des Hauptfensters. Getrennt vom Zen-Layer: F11 allein
+/// laesst Rails und Toolbar stehen.
+#[tauri::command]
+pub async fn set_fullscreen(enabled: bool, handle: AppHandle) -> Result<bool, String> {
+    let window = main_window(&handle)?;
+    window.set_fullscreen(enabled).map_err(|e| e.to_string())?;
+    window.is_fullscreen().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn toggle_fullscreen(handle: AppHandle) -> Result<bool, String> {
+    let window = main_window(&handle)?;
+    let current = window.is_fullscreen().unwrap_or(false);
+    window.set_fullscreen(!current).map_err(|e| e.to_string())?;
+    window.is_fullscreen().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_fullscreen(handle: AppHandle) -> Result<bool, String> {
+    let window = main_window(&handle)?;
+    window.is_fullscreen().map_err(|e| e.to_string())
+}
+
+/// Transienter Frontend-Zen-State fuer `GET /state`. Keine Persistenz —
+/// wer im Zen beendet, startet normal.
+#[tauri::command]
+pub async fn set_zen_active(active: bool, state: State<'_, AppState>) -> Result<(), String> {
+    state
+        .automation
+        .lock()
+        .map_err(|_| "automation state lock poisoned".to_string())?
+        .zen = active;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn zen_hint_seen_get(state: State<'_, AppState>) -> Result<bool, String> {
+    Ok(state
+        .panel_state
+        .lock()
+        .map_err(|_| "panel state lock poisoned".to_string())?
+        .data()
+        .zen_hint_seen)
+}
+
+#[tauri::command]
+pub async fn set_zen_hint_seen(seen: bool, state: State<'_, AppState>) -> Result<(), String> {
+    state
+        .panel_state
+        .lock()
+        .map_err(|_| "panel state lock poisoned".to_string())?
+        .set_zen_hint_seen(seen)
+        .map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 pub async fn open_find(handle: AppHandle) -> Result<(), String> {
     handle

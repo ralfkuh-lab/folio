@@ -87,6 +87,7 @@ pub(super) fn expected_menu_keys() -> &'static [&'static str] {
         "menu.help.cheatsheet",
         "menu.help.setupMdIcon",
         "menu.view",
+        "menu.view.fullscreen",
         "menu.view.gitDiff",
         "menu.view.minimap",
         "menu.view.modeEdit",
@@ -97,5 +98,6 @@ pub(super) fn expected_menu_keys() -> &'static [&'static str] {
         "menu.view.theme",
         "menu.view.themeDark",
         "menu.view.themeLight",
+        "menu.view.zen",
     ]
 }

@@ -375,6 +375,7 @@
   "menu.help.cheatsheet": "Menu item in the 'Help' section of the main menu bar that triggers the 'Cheat Sheet' action.",
   "menu.help.setupMdIcon": "Menu item in the 'Help' section of the main menu bar that triggers the 'Set up Markdown icon integration' action.",
   "menu.view": "Menu entry label 'View' under the 'View' menu.",
+  "menu.view.fullscreen": "Menu item in the 'View' section of the main menu bar that toggles the application window between windowed and full screen.",
   "menu.view.gitDiff": "Menu item in the 'View' section of the main menu bar that opens a read-only Git diff of the active document against HEAD.",
   "menu.view.minimap": "Menu item in the 'View' section of the main menu bar that triggers the 'Toggle Minimap' action.",
   "menu.view.modeEdit": "Menu item in the 'View' section of the main menu bar that triggers the 'Edit Mode' action.",
@@ -385,6 +386,7 @@
   "menu.view.theme": "Menu item in the 'View' section of the main menu bar that triggers the 'Theme' action.",
   "menu.view.themeDark": "Menu item in the 'View' section of the main menu bar that triggers the 'Dark' action.",
   "menu.view.themeLight": "Menu item in the 'View' section of the main menu bar that triggers the 'Light' action.",
+  "menu.view.zen": "Menu item in the 'View' section of the main menu bar that toggles Zen mode, which hides chrome around the document.",
   "palette.badge.command": "Short badge label shown on command rows in the command palette list.",
   "palette.badge.file": "Short badge label for vault-walk file rows in the command palette.",
   "palette.badge.heading": "Short badge label for document heading rows in the command palette (# mode).",
@@ -588,6 +590,9 @@
   "settings.watch.vaultAutoRefresh.label": "Checkbox label under General settings for enabling automatic vault sidebar workspace folder tree reloading.",
   "settings.watch.vaultShowHidden.hint": "Explanation text under General settings describing that vault items whose names start with a dot can be shown or hidden, while .git stays hidden.",
   "settings.watch.vaultShowHidden.label": "Checkbox label under General settings for showing hidden vault sidebar items whose names start with a dot.",
+  "settings.zen.fullscreen.hint": "Explanation text under General settings describing that Zen mode can also enter full screen and restores the previous full-screen state when leaving.",
+  "settings.zen.fullscreen.label": "Checkbox label under General settings that makes Zen mode also enter full screen.",
+  "settings.zen.sectionTitle": "Section title header for the Zen mode configuration group under General settings.",
   "statusBar.cursor.template": "Status bar template for the cursor line and column position (where {line} is the 1-based line number and {column} is the 1-based column number).",
   "statusBar.cursor.tooltip": "Tooltip for the status bar cell showing the editor cursor line and column.",
   "statusBar.encoding.tooltip": "Tooltip for the status bar cell showing the file's character encoding (only shown when the encoding is not plain UTF-8 without BOM).",
@@ -801,5 +806,6 @@
   "wikilinks.createDialog.noDocument": "Error shown in the create-note dialog when no document is open (no target directory for the new file).",
   "wikilinks.createDialog.submit.action": "Primary button label on the create-note dialog for a missing wikilink (folio-new: click).",
   "wikilinks.createDialog.subtitle": "Subtitle under the create-note dialog title; {dir} is the directory of the current document.",
-  "wikilinks.createDialog.title": "Title of the dialog that asks whether to create a missing wikilink target note."
+  "wikilinks.createDialog.title": "Title of the dialog that asks whether to create a missing wikilink target note.",
+  "zen.hint.exit": "Transient on-screen hint shown the first time Zen mode is activated, telling the user how to exit."
 }

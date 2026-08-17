@@ -55,6 +55,45 @@ describe('view/html', () => {
         expect(scripts[0]!.getAttribute('data-folio-html-bridge')).toBe('');
         expect(scripts[0]!.textContent).toContain('folio');
         expect(scripts[0]!.textContent).toContain('linkClick');
+        expect(scripts[0]!.textContent).toContain('parentKey');
+        expect(scripts[0]!.textContent).toContain('F11');
+        expect(scripts[0]!.textContent).toContain('Escape');
+        const src = scripts[0]!.textContent || '';
+        const escapeIdx = src.search(/event\.key\s*===\s*['"]Escape['"]/);
+        expect(escapeIdx).toBeGreaterThan(-1);
+        const afterEscape = src.slice(escapeIdx, escapeIdx + 280);
+        expect(afterEscape).toContain('parentKey');
+        expect(afterEscape).not.toMatch(/Escape[\s\S]{0,200}preventDefault/);
+        expect(afterEscape).not.toMatch(/Escape[\s\S]{0,200}stopPropagation/);
+    });
+
+    it('forwards iframe parentKey events onto the parent document', async () => {
+        document.body.innerHTML = '<iframe id="html-view-frame"></iframe>';
+        const { mountHtmlView } = await import('../../app/view/html');
+        mountHtmlView('html-view-frame', '<body>html</body>', '/tmp/page.html');
+        const iframe = document.getElementById('html-view-frame') as HTMLIFrameElement;
+        const keys: Array<{ key: string; shift: boolean }> = [];
+        const onKey = (e: KeyboardEvent) => {
+            keys.push({ key: e.key, shift: e.shiftKey });
+        };
+        document.addEventListener('keydown', onKey);
+        try {
+            window.dispatchEvent(new MessageEvent('message', {
+                data: { folio: 'parentKey', key: 'F11', code: 'F11', shiftKey: true },
+                source: iframe.contentWindow,
+            }));
+            window.dispatchEvent(new MessageEvent('message', {
+                data: { folio: 'parentKey', key: 'Escape', code: 'Escape' },
+                source: iframe.contentWindow,
+            }));
+            expect(keys).toEqual([
+                { key: 'F11', shift: true },
+                { key: 'Escape', shift: false },
+            ]);
+        } finally {
+            document.removeEventListener('keydown', onKey);
+            document.body.innerHTML = '';
+        }
     });
 
     it('adds a light preview background before author styles', () => {

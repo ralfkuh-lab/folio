@@ -46,6 +46,7 @@ export type SettingsData = {
     openFileTarget: OpenFileTarget;
     searchPathDisplay: SearchPathDisplay;
     logLevel: LogLevel;
+    zenFullscreen: boolean;
 };
 
 function isViewMode(v: string): v is DefaultViewMode {
@@ -137,6 +138,7 @@ function applySettingsToForm(data: SettingsData): void {
     var openFileTarget = $('settings-open-file-target') as HTMLSelectElement | null;
     var searchPathDisplay = $('settings-search-path-display') as HTMLSelectElement | null;
     var logLevel = $('settings-log-level') as HTMLSelectElement | null;
+    var zenFullscreen = $('settings-zen-fullscreen') as HTMLInputElement | null;
     var langHint = $('settings-language-hint');
 
     if (langSelect) {
@@ -153,6 +155,7 @@ function applySettingsToForm(data: SettingsData): void {
     if (openFileTarget) openFileTarget.value = data.openFileTarget || 'newtab';
     if (searchPathDisplay) searchPathDisplay.value = data.searchPathDisplay || 'relative';
     if (logLevel) logLevel.value = data.logLevel || 'info';
+    if (zenFullscreen) zenFullscreen.checked = data.zenFullscreen !== false;
     syncSettingsThemeState(data);
 
     if (langHint) {
@@ -403,6 +406,12 @@ function bindInputs(): void {
             var v = logLevel.value;
             if (!isLogLevel(v)) return;
             patchSettings({ logLevel: v });
+        });
+    }
+    var zenFullscreen = $('settings-zen-fullscreen') as HTMLInputElement | null;
+    if (zenFullscreen) {
+        zenFullscreen.addEventListener('change', function () {
+            patchSettings({ zenFullscreen: zenFullscreen.checked });
         });
     }
 }

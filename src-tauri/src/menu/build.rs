@@ -171,6 +171,11 @@ pub fn build(handle: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let item_minimap = MenuItemBuilder::with_id(ids::VIEW_MINIMAP, l.view_minimap.as_str())
         .enabled(false)
         .build(handle)?;
+    // Vollbild und Zen bewusst ohne Accelerator: F11/Shift+F11 laufen
+    // ueber den DOM-Capture-Block (Tauri-Accelerators sind unzuverlaessig).
+    let item_fullscreen =
+        MenuItemBuilder::with_id(ids::VIEW_FULLSCREEN, l.view_fullscreen.as_str()).build(handle)?;
+    let item_zen = MenuItemBuilder::with_id(ids::VIEW_ZEN, l.view_zen.as_str()).build(handle)?;
     let view_menu = SubmenuBuilder::new(handle, l.view.as_str())
         .item(&item_mode_view)
         .item(&item_mode_edit)
@@ -182,6 +187,9 @@ pub fn build(handle: &AppHandle) -> tauri::Result<Menu<Wry>> {
         .item(&item_rail_left)
         .item(&item_minimap)
         .item(&item_rail_right)
+        .item(&PredefinedMenuItem::separator(handle)?)
+        .item(&item_fullscreen)
+        .item(&item_zen)
         .build()?;
 
     // Hilfe

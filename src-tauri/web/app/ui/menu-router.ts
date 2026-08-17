@@ -17,6 +17,7 @@ import { openEditorFind } from './find-bar';
 import { openVaultSearchDialog } from '../vault/search';
 import { folioLog, safeInvoke } from '../util/log';
 import { openGitDiffForActiveDoc } from './git-diff';
+import { toggleZenMode } from './zen-mode';
 
 type Deps = {
     applyRailVisibility: (side: 'left' | 'right', visible: boolean) => void;
@@ -105,6 +106,12 @@ export function initMenuRouter(deps: Deps): void {
         var visible = !document.body.classList.contains('toc-hidden');
         deps.applyRailVisibility('right', !visible);
         safeInvoke('set_rail_visible', { side: 'right', visible: !visible }, 'set_rail_visible right');
+    });
+    ev.listen('menu:view_fullscreen', function () {
+        safeInvoke('toggle_fullscreen', undefined, 'toggle_fullscreen');
+    });
+    ev.listen('menu:view_zen', function () {
+        void toggleZenMode();
     });
     // menu:about wird vom about-dialog-Modul direkt abonniert (eigener
     // Listener mit voller Payload-Anzeige). Kein Eintrag mehr hier, sonst

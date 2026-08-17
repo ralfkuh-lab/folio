@@ -57,6 +57,8 @@ pub struct AutomationUiState {
     pub editor_ready: bool,
     pub selection_start: usize,
     pub selection_length: usize,
+    /// Transienter Zen-Layer (Frontend-State, keine Persistenz).
+    pub zen: bool,
 }
 
 impl Default for AutomationUiState {
@@ -66,6 +68,7 @@ impl Default for AutomationUiState {
             editor_ready: false,
             selection_start: 0,
             selection_length: 0,
+            zen: false,
         }
     }
 }

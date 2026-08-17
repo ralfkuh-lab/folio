@@ -14,6 +14,10 @@ pub(super) struct AutomationState {
     pub(super) left_rail_visible: bool,
     pub(super) right_rail_visible: bool,
     pub(super) split_mid_percent: f64,
+    /// Zen-Layer aktiv (Frontend-State, keine Persistenz).
+    pub(super) zen: bool,
+    /// OS-Vollbild des Hauptfensters.
+    pub(super) fullscreen: bool,
     pub(super) toc: Vec<TocEntry>,
     pub(super) editor: EditorAutomationState,
     pub(super) view: ViewAutomationState,
@@ -460,6 +464,8 @@ mod phase0_request_tests {
             left_rail_visible: true,
             right_rail_visible: true,
             split_mid_percent: 65.0,
+            zen: false,
+            fullscreen: false,
             toc: Vec::new(),
             editor: EditorAutomationState {
                 ready: false,

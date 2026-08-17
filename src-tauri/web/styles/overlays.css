@@ -34,6 +34,27 @@ body.dnd-active #dnd-overlay { display: flex; }
   user-select: none;
 }
 #zoom-indicator.visible { opacity: 1; }
+/* Transienter Ausstiegs-Hinweis beim ersten Zen-Aktivieren.
+   Fest positioniert — die Vault-Notice läge unter dem ausgeblendeten Rail. */
+.zen-hint {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10030;
+  box-sizing: border-box;
+  max-width: min(480px, calc(100vw - 32px));
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--rail-header-bg);
+  color: var(--fg);
+  font-size: 13px;
+  line-height: 1.4;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+}
+.zen-hint[hidden] { display: none; }
 /* Kontextmenü (Vault + Tab-Leiste) */
 #context-menu,
 #tab-ctx-menu {

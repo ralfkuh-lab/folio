@@ -23,6 +23,7 @@ const settings = {
     exportDirMode: 'document',
     openFileTarget: 'newtab',
     logLevel: 'info',
+    zenFullscreen: true,
 };
 
 function buildDom(): void {

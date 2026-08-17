@@ -178,6 +178,16 @@ export function initToolbarActions(): void {
        Monaco z.B. Strg+K (eingebauter Chord-Prefix). */
     document.addEventListener('keydown', function (e) {
         var ctrl = e.ctrlKey || e.metaKey;
+        // F11 / Shift+F11: Vollbild bzw. Zen. Vor dem ctrl/alt-Gate,
+        // gleicher menu_dispatch-Pfad wie die übrigen Shortcuts.
+        if (!ctrl && !e.altKey && (e.key === 'F11' || e.code === 'F11')) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.repeat) return;
+            var zenOrFs = e.shiftKey ? 'view.zen' : 'view.fullscreen';
+            safeInvoke('menu_dispatch', { id: zenOrFs }, 'menu_dispatch ' + zenOrFs);
+            return;
+        }
         if (!ctrl && !e.altKey) return;
         var k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
         var shift = e.shiftKey;

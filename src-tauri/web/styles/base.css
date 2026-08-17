@@ -105,3 +105,18 @@ body.vault-hidden .splitter-left { display: none; }
 }
 .splitter-right:hover { background: rgba(128, 128, 128, 0.18); }
 body.toc-hidden .splitter-right { display: none; }
+/* Zen ist ein Layer, kein Zustandswechsel: Chrome wird nur überdeckt.
+   !important schlägt die spezifischeren :not(.kind-markdown)-Spalten. */
+body.zen-mode {
+  grid-template-columns: 0 0 1fr 0 0 !important;
+  grid-template-rows: 0 1fr 0;
+}
+body.zen-mode #toolbar,
+body.zen-mode #vault-region,
+body.zen-mode #toc-region,
+body.zen-mode .splitter-left,
+body.zen-mode .splitter-right,
+body.zen-mode #tab-bar,
+body.zen-mode #statusbar {
+  display: none;
+}

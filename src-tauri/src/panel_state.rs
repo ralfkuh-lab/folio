@@ -78,6 +78,11 @@ pub struct PanelStateData {
     // Nur Git-geaenderte Dateien (modified/untracked). Default aus.
     #[serde(default)]
     pub vault_filter_git_changed_only: bool,
+    // Zen-Modus: transienter Ausstiegs-Hinweis beim ersten Aktivieren
+    // wurde gesehen. UI-Historie, kein Verhalten — deshalb hier und
+    // nicht in settings.json. Default aus (Hinweis noch nicht gezeigt).
+    #[serde(default)]
+    pub zen_hint_seen: bool,
 }
 
 fn default_split_mid_percent() -> f64 {
@@ -122,6 +127,7 @@ impl Default for PanelStateData {
             vault_filter_markdown_only: false,
             vault_filter_bar_visible: false,
             vault_filter_git_changed_only: false,
+            zen_hint_seen: false,
         }
     }
 }
@@ -232,6 +238,11 @@ impl PanelState {
         self.data.vault_filter_markdown_only = markdown_only;
         self.data.vault_filter_bar_visible = bar_visible;
         self.data.vault_filter_git_changed_only = git_changed_only;
+        self.save()
+    }
+
+    pub fn set_zen_hint_seen(&mut self, seen: bool) -> io::Result<()> {
+        self.data.zen_hint_seen = seen;
         self.save()
     }
 
@@ -472,6 +483,38 @@ mod tests {
         assert!(reloaded.vault_filter_git_changed_only);
         assert!(reloaded.vault_filter_bar_visible);
         assert!(!reloaded.vault_filter_markdown_only);
+    }
+
+    #[test]
+    fn zen_hint_seen_defaults_off_and_persists() {
+        let default = PanelStateData::default();
+        assert!(!default.zen_hint_seen);
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("panel.json");
+        let mut state = PanelState::load_from(path.clone());
+        assert!(!state.data().zen_hint_seen);
+        state.set_zen_hint_seen(true).unwrap();
+        assert!(PanelState::load_from(path.clone()).data().zen_hint_seen);
+        // Alt-Stand ohne das Feld: serde-Default greift (false).
+        std::fs::write(
+            &path,
+            r#"{
+                "left_rail_visible": true,
+                "right_rail_visible": true,
+                "left_rail_width": 280.0,
+                "right_rail_width": 280.0,
+                "pinned_expanded": true,
+                "recent_expanded": true,
+                "window_x": null,
+                "window_y": null,
+                "window_width": null,
+                "window_height": null,
+                "cheat_sheet_offset_x": 0.0,
+                "cheat_sheet_offset_y": 0.0
+            }"#,
+        )
+        .unwrap();
+        assert!(!PanelState::load_from(path).data().zen_hint_seen);
     }
 
     #[test]

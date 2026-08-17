@@ -391,6 +391,7 @@
   "menu.help.cheatsheet": "Шпаргалка",
   "menu.help.setupMdIcon": "Настроить значок Markdown…",
   "menu.view": "Вид",
+  "menu.view.fullscreen": "Полноэкранный режим",
   "menu.view.gitDiff": "Показать изменения",
   "menu.view.minimap": "Переключить мини-карту",
   "menu.view.modeEdit": "Режим редактирования",
@@ -401,6 +402,7 @@
   "menu.view.theme": "Тема",
   "menu.view.themeDark": "Темная",
   "menu.view.themeLight": "Светлая",
+  "menu.view.zen": "Режим дзен",
   "palette.badge.command": "Команда",
   "palette.badge.file": "Файл",
   "palette.badge.heading": "Заголовок",
@@ -619,6 +621,9 @@
   "settings.watch.vaultAutoRefresh.label": "Обновлять дерево Vault при внешних изменениях",
   "settings.watch.vaultShowHidden.hint": "Имена, начинающиеся с точки (напр. .github). .git всегда скрыт.",
   "settings.watch.vaultShowHidden.label": "Показывать скрытые элементы в Vault",
+  "settings.zen.fullscreen.hint": "Если включено, режим дзен также переходит в полноэкранный режим. Если окно уже было таким, оно останется таким при выходе.",
+  "settings.zen.fullscreen.label": "Открывать режим дзен на весь экран",
+  "settings.zen.sectionTitle": "Режим дзен",
   "statusBar.cursor.template": "Стр {line}, Стлб {column}",
   "statusBar.cursor.tooltip": "Позиция курсора",
   "statusBar.encoding.tooltip": "Кодировка символов файла",
@@ -847,5 +852,6 @@
   "wikilinks.createDialog.noDocument": "Документ не открыт — нельзя создать заметку.",
   "wikilinks.createDialog.submit.action": "Создать",
   "wikilinks.createDialog.subtitle": "Целевая папка: {dir}",
-  "wikilinks.createDialog.title": "Создать заметку?"
+  "wikilinks.createDialog.title": "Создать заметку?",
+  "zen.hint.exit": "Shift+F11 или Escape выключает режим дзен"
 }

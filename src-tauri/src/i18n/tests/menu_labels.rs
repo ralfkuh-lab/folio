@@ -50,6 +50,8 @@ fn menu_labels_de_matches_legacy_hardcodes() {
     assert_eq!(built.view_rail_left, legacy.view_rail_left);
     assert_eq!(built.view_rail_right, legacy.view_rail_right);
     assert_eq!(built.view_minimap, legacy.view_minimap);
+    assert_eq!(built.view_fullscreen, legacy.view_fullscreen);
+    assert_eq!(built.view_zen, legacy.view_zen);
     assert_eq!(built.help, legacy.help);
     assert_eq!(built.help_cheatsheet, legacy.help_cheatsheet);
     #[cfg(target_os = "linux")]
@@ -97,6 +99,8 @@ fn menu_labels_en_matches_legacy_hardcodes() {
     assert_eq!(built.view_rail_left, legacy.view_rail_left);
     assert_eq!(built.view_rail_right, legacy.view_rail_right);
     assert_eq!(built.view_minimap, legacy.view_minimap);
+    assert_eq!(built.view_fullscreen, legacy.view_fullscreen);
+    assert_eq!(built.view_zen, legacy.view_zen);
     assert_eq!(built.help, legacy.help);
     assert_eq!(built.help_cheatsheet, legacy.help_cheatsheet);
     #[cfg(target_os = "linux")]

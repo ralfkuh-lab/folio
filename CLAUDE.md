@@ -237,6 +237,27 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
 - **Git-Status-Dots im Vault** (`git_status.rs` + Frontend `vault/git-status.ts`): modified/untracked als Klassen `git-modified`/`git-untracked` auf `li.node` (Punkt via `> .row::before`, kein Layout-Shift). Datenquelle `git status --porcelain=v1 -z --untracked-files=normal` (nicht libgit2, nicht `.git/index`); Fail-open ohne Dialog. Vault-Render bleibt frei davon — Hintergrund-Job pro Repo-Root, Single-Flight, Generation-Discard, Cache-TTL 15 s, Event `vault:git_status` (Payload trägt `generation`; Frontend verwirft ältere Snapshots wie den `document:*`-seq-Guard). `git status` hat eine 10-s-Deadline (`kill`+`wait`); `refreshing` wird per RAII-Guard freigegeben. **stdout MUSS in einem Reader-Thread geleert werden, WÄHREND auf den Prozess gewartet wird** (`wait_child_with_timeout`, gilt für beide git-Aufrufer): Wird die Pipe erst nach Prozessende gelesen, blockiert git bei Ausgaben über dem OS-Pipe-Puffer (Linux 64 KiB, Windows 4 KiB) im `write()` — und wir warten auf sein Ende. Deadlock bis zum Timeout, danach keine Dots (Befund Kreuz-Review 2026-08-14; trat ab ~1000 geänderten/untrackten Einträgen auf). Cache hält den vollen Snapshot und liefert ihn bei frischem Treffer erneut. Invalidierung bei Fenster-Fokus (Commit fasst keine Arbeitsdatei an; Root-Discovery nach Freigabe des Workspace-Locks), Save/create/rename/delete; **keine** Watcher auf `.git/index`. Ordner-Aggregation (Präfix) im Backend; Frontend wendet den letzten Snapshot nach Lazy-Expand erneut an (`MutationObserver` + `takeRecords()` im `finally`).
   **Zugänge zum Status** (Etappe 2026-08-14): Der `title` eines Knotens nennt den Status im Klartext (analog zum „gitignored"-Zusatz, idempotent gesetzt und rückstandsfrei entfernt). Der Tab trägt links einen 4-px-Balken (`.tab-git`, amber) — bewusst NICHT den dirty-Punkt eingefärbt, der rechts bleibt und Ungespeichertes meint; ein Marker mit zwei Bedeutungen wäre nicht unterscheidbar. Klick auf den Balken öffnet den Git-Diff (`preventDefault`+`stopPropagation`, aus dem Drag-Handler ausgenommen, Mittelklick abgefangen, `tabindex="-1"`). Toolbar-Button + Menüeintrag sind eine **Aktion mit Enabled-Zustand, kein vierter View-Mode** — Modes sind pro Tab, die DiffView-Surface ist ein Singleton, das passt strukturell nicht zusammen.
   **Git-Filter „nur geänderte"** (`vault/filter.ts`, kombinierbar mit Namensfilter und md-only): Zwei Fallen, beide aus dem Kreuz-Review 2026-08-14. (1) `--untracked-files=normal` meldet einen komplett neuen Ordner als EINEN Eintrag `?? neu/` — die Kinddateien stehen NICHT im Snapshot. Der Filter muss sie über Verzeichnis-Präfix (auf Segmentgrenze!) mitzählen, sonst bleibt ein aufgeklappter, scheinbar leerer Ordner zurück. (2) `git status` liefert das ganze Repo; der Auto-Expand darf nur Pfade unterhalb **sichtbarer Pin-Wurzeln** öffnen, sonst werden repo-fremde Ordner expandiert und gewatcht und der 1000er-Soft-Cap ist erschöpft, bevor der relevante Zweig drankommt.
+- **Zen-Modus + Vollbild** (Spec
+  [`docs/spec-zen-mode.md`](docs/spec-zen-mode.md), `ui/zen-mode.ts`):
+  Body-Klasse `zen-mode` blendet Toolbar, beide Rails, Tab- und
+  Statusleiste aus (`#zoom-indicator` bleibt). F11 = nur Vollbild,
+  Shift+F11 = Zen; Setting `zenFullscreen` (Default an) koppelt beides.
+  **Zen ist ein Layer, kein Zustandswechsel**: `panel_state.json` wird
+  NICHT angefasst — ein Zen, das die Rail-Toggles umlegt, nimmt dem Nutzer
+  seine offene Rail dauerhaft weg. Analog beim Vollbild: Zen merkt sich
+  über `enteredFullscreenByZen`, ob es das Fenster selbst umgeschaltet
+  hat, und gibt nur das zurück. Drei Fallen aus dem Kreuz-Review: (1) Die
+  Escape-Prioritätsliste (`hasPriorityEscapeTarget`) muss **echte
+  Sichtbarkeit** prüfen, nicht `hidden`-Attribute — im Zen ist z. B. die
+  Vault-Rail per CSS weg, `#vault-filter.hidden` bleibt aber `false` und
+  blockierte damit jeden Escape-Ausstieg. (2) Keyboard-Events aus dem
+  HTML-View-iframe bubbeln nicht ins Parent; ohne Weiterleitung von F11/
+  Shift+F11/Escape in `view/html.ts` gibt es im Zen dort **keinen
+  Ausweg**. (3) `toggleZenMode` serialisiert über eine Promise-Chain und
+  `setZenMode` über ein Generation-Token, der F11-Handler ignoriert
+  `e.repeat` — sonst hinterlassen überlappende Toggles ein Fenster im
+  Vollbild bei ausgeschaltetem Zen. E2E `60_zen_mode.py` (setzt
+  `zenFullscreen=false`: Xvfb liefert kein verlässliches Vollbild).
 - **Vault-Dateioperationen** (Spec
   [`docs/spec-vault-fileops.md`](docs/spec-vault-fileops.md), V1
   2026-08-17): Ordner anlegen (`commands/file/dir.rs::create_directory` —
@@ -958,7 +979,7 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
 
 ## E2E-Test-Suite
 
-Vollständige UI-Coverage in `tests/e2e/` (59 Szenarien, Python +
+Vollständige UI-Coverage in `tests/e2e/` (60 Szenarien, Python +
 Pillow): Boot, View-/Edit-/Split-Mode, Theme, Vault, Find (inkl.
 Code-View), Workspace, Save-Roundtrip durch alle BOM/EOL-Kombis,
 Undo/Redo, Toolbar-Commands (Bold/Italic/Heading), Menü-Coverage
@@ -970,7 +991,8 @@ Theme-CRUD/-Browser/-Import-Export, Export-Highlighting, Mermaid
 Vault-Filter, Tab-Kontextmenü, Command Palette, Statusleiste,
 Wikilinks/Tags, Task-Checkboxen, Git-Status/-Diff/-Filter,
 versteckte Vault-Einträge, Find-Bar-Regex/-Ersetzen,
-Vault-Dateioperationen (Ordner anlegen/umbenennen/löschen) sowie
+Vault-Dateioperationen (Ordner anlegen/umbenennen/löschen),
+Zen-Modus sowie
 KI-Settings, KI-Übersetzung, KI-Theme-Autor, Export-KI-Draft und
 KI-Aktionen (Mock-Provider). Der englische Boot ist über
 `scripts/run-e2e.sh --lang-smoke` separat abgedeckt.

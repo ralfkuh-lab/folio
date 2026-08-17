@@ -72,6 +72,7 @@ import {
 import { initMenuRouter } from './ui/menu-router';
 import { initDragDrop } from './ui/drag-drop';
 import { initToolbarActions } from './ui/toolbar-actions';
+import { initZenMode } from './ui/zen-mode';
 import { ackHandler, initAutomationEvents } from './automation/events';
 import { folioLog, safeInvoke } from './util/log';
 
@@ -123,6 +124,7 @@ function runModuleInits(): void {
     initZoom();
     initLanguagePicker();
     initToolbarActions();
+    initZenMode();
     initExportDialog({
         getCurrentPath,
         syncEditorTextToStore,

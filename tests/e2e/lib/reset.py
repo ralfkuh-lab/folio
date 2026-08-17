@@ -150,6 +150,11 @@ def reset_canonical_state(api: AutomationApi, settings_snapshot: dict[str, Any])
         "typeof window.__folioClosePalette==='function'"
         "&&window.__folioClosePalette()"
     )
+    # 9c) Zen-Layer verlassen (Frontend-State, nicht persistiert).
+    api.eval(
+        "typeof window.__folioZenReset==='function'"
+        "&&window.__folioZenReset()"
+    )
     deadline = time.monotonic() + 2.0
     while True:
         open_flag = api.eval(
@@ -162,6 +167,14 @@ def reset_canonical_state(api: AutomationApi, settings_snapshot: dict[str, Any])
             raise RuntimeError(
                 f"Reset: Command Palette bleibt offen (open={open_flag!r})"
             )
+        time.sleep(0.05)
+    deadline = time.monotonic() + 2.0
+    while True:
+        zen_on = api.eval("document.body.classList.contains('zen-mode')").get("value")
+        if zen_on is not True:
+            break
+        if time.monotonic() > deadline:
+            raise RuntimeError(f"Reset: Zen-Layer bleibt an (zen={zen_on!r})")
         time.sleep(0.05)
     # 10) Reflow settlen lassen, bevor das Szenario startet.
     _expect_acked("sync_render", api.sync_render())

@@ -385,6 +385,7 @@
   "menu.help.cheatsheet": "语法参考",
   "menu.help.setupMdIcon": "配置 Markdown 图标集成…",
   "menu.view": "视图",
+  "menu.view.fullscreen": "全屏",
   "menu.view.gitDiff": "显示更改",
   "menu.view.minimap": "切换小地图",
   "menu.view.modeEdit": "编辑模式",
@@ -395,6 +396,7 @@
   "menu.view.theme": "主题",
   "menu.view.themeDark": "深色",
   "menu.view.themeLight": "浅色",
+  "menu.view.zen": "禅模式",
   "palette.badge.command": "命令",
   "palette.badge.file": "文件",
   "palette.badge.heading": "标题",
@@ -604,6 +606,9 @@
   "settings.watch.vaultAutoRefresh.label": "当外部有更改时自动更新 Vault 目录树",
   "settings.watch.vaultShowHidden.hint": "以点号开头的名称（例如 .github）。.git 始终隐藏。",
   "settings.watch.vaultShowHidden.label": "在 Vault 中显示隐藏项",
+  "settings.zen.fullscreen.hint": "启用后，禅模式还会进入全屏。如果窗口已经是全屏，退出时保持全屏。",
+  "settings.zen.fullscreen.label": "以全屏打开禅模式",
+  "settings.zen.sectionTitle": "禅模式",
   "statusBar.cursor.template": "行 {line}，列 {column}",
   "statusBar.cursor.tooltip": "光标位置",
   "statusBar.encoding.tooltip": "文件的字符编码",
@@ -823,5 +828,6 @@
   "wikilinks.createDialog.noDocument": "未打开文档，无法创建笔记。",
   "wikilinks.createDialog.submit.action": "创建",
   "wikilinks.createDialog.subtitle": "目标文件夹：{dir}",
-  "wikilinks.createDialog.title": "创建笔记？"
+  "wikilinks.createDialog.title": "创建笔记？",
+  "zen.hint.exit": "Shift+F11 或 Escape 退出禅模式"
 }

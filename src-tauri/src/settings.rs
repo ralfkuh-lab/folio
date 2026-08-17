@@ -195,6 +195,12 @@ pub struct SettingsData {
     /// die Einstellung und loggen immer `debug`.
     #[serde(default)]
     pub log_level: LogLevel,
+    /// Zen-Modus schaltet zusaetzlich in den Vollbildmodus. Default an:
+    /// der Fensterrahmen ist genau die Ablenkung, die Zen wegnehmen
+    /// soll. Zen merkt sich den vorgefundenen Vollbildzustand und gibt
+    /// ihn beim Verlassen zurueck.
+    #[serde(default = "default_true")]
+    pub zen_fullscreen: bool,
 }
 
 fn default_language() -> String {
@@ -235,6 +241,7 @@ impl Default for SettingsData {
             open_file_target: OpenFileTarget::default(),
             search_path_display: SearchPathDisplay::default(),
             log_level: LogLevel::default(),
+            zen_fullscreen: default_true(),
         }
     }
 }
@@ -262,6 +269,7 @@ pub struct SettingsPatch {
     pub open_file_target: Option<OpenFileTarget>,
     pub search_path_display: Option<SearchPathDisplay>,
     pub log_level: Option<LogLevel>,
+    pub zen_fullscreen: Option<bool>,
 }
 
 impl SettingsPatch {
@@ -281,6 +289,7 @@ impl SettingsPatch {
             && self.open_file_target.is_none()
             && self.search_path_display.is_none()
             && self.log_level.is_none()
+            && self.zen_fullscreen.is_none()
     }
 }
 
@@ -474,6 +483,12 @@ impl SettingsService {
                 changed.push("logLevel");
             }
         }
+        if let Some(value) = patch.zen_fullscreen {
+            if self.data.zen_fullscreen != value {
+                self.data.zen_fullscreen = value;
+                changed.push("zenFullscreen");
+            }
+        }
         if !changed.is_empty() {
             persist::save_json_atomic(&self.path, &self.data)?;
         }
@@ -502,6 +517,30 @@ mod tests {
         assert_eq!(OpenFileTarget::Newtab, data.open_file_target);
         assert_eq!(SearchPathDisplay::Relative, data.search_path_display);
         assert_eq!(LogLevel::Info, data.log_level);
+        assert!(data.zen_fullscreen);
+    }
+
+    #[test]
+    fn zen_fullscreen_defaults_true_and_roundtrips() {
+        assert!(SettingsData::default().zen_fullscreen);
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("settings.json");
+        std::fs::write(&path, r#"{"language":"de"}"#).unwrap();
+        assert!(
+            SettingsService::load_from(path.clone())
+                .data()
+                .zen_fullscreen
+        );
+
+        let mut svc = SettingsService::load_from(path.clone());
+        let changed = svc
+            .apply_patch(SettingsPatch {
+                zen_fullscreen: Some(false),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(vec!["zenFullscreen"], changed);
+        assert!(!SettingsService::load_from(path).data().zen_fullscreen);
     }
 
     #[test]
@@ -953,9 +992,10 @@ mod tests {
                 open_file_target: Some(OpenFileTarget::Replace),
                 search_path_display: Some(SearchPathDisplay::Absolute),
                 log_level: Some(LogLevel::Debug),
+                zen_fullscreen: Some(false),
             })
             .unwrap();
-        assert_eq!(15, changed.len());
+        assert_eq!(16, changed.len());
 
         let reloaded = SettingsService::load_from(path).data();
         assert_eq!("en", reloaded.language);
@@ -969,6 +1009,7 @@ mod tests {
         assert_eq!(SearchPathDisplay::Absolute, reloaded.search_path_display);
         assert!(!reloaded.vault_auto_refresh);
         assert!(!reloaded.vault_show_hidden);
+        assert!(!reloaded.zen_fullscreen);
     }
 
     #[test]

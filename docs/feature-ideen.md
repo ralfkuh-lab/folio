@@ -31,8 +31,11 @@ Diese Ideen kamen von 2–4 Quellen unabhängig. Das ist der beste Startpunkt.
    *(Quelle: codex, grok)*
 4. **Aufgaben-Dashboard** — alle `- [ ]`/`- [x]` vaultweit aggregieren, nach
    Datei/Tag/Alter filtern, direkt abhaken. `[M–L]` (Quelle: **alle 3**)
-5. **⭐ Zen-/Fokus-Modus + Typewriter-Scrolling** — Rails/Toolbar ausblenden,
-   aktive Zeile vertikal zentrieren, Umfeld dimmen. `[S–M]` (Quelle: **alle 3**)
+5. **⭐ Zen-/Fokus-Modus + Typewriter-Scrolling** — ✅ **Chrome ausgeblendet
+   (2026-08-17)**: Body-Klasse `zen-mode` als Layer (kein `panel_state`-
+   Überschreiben), F11 Vollbild / Shift+F11 Zen, Setting `zenFullscreen`.
+   **Bewusst nicht**: Absatz-Fokus/Dimming, Typewriter-Scrolling, eigene
+   Zen-Typografie, Persistenz über den Neustart. `[S–M]` (Quelle: **alle 3**)
 6. **Präsentations-/Slide-Modus** — Dokument an `---`/H1 in Folien teilen,
    Vollbild-Navigation, optional HTML-Slides-Export. `[M–L]` (Quelle: **alle 3**)
 7. **~~Lokale KI via Ollama~~ — GEHT SCHON HEUTE.** agy/grok kannten das Setup nicht:

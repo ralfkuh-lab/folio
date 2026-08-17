@@ -161,6 +161,8 @@ interface Window {
     __folioOpenPalette?: (prefill?: string) => void;
     /** Test/Automation-Hook: Command Palette schließen (No-op wenn zu). */
     __folioClosePalette?: () => void;
+    /** Test/Automation-Hook: Zen-Layer verlassen (ohne Hinweis-Flag zurückzusetzen). */
+    __folioZenReset?: () => void | Promise<void>;
     openDocument?: (path: string) => Promise<boolean>;
     openThemeEditor?: (id: string) => Promise<boolean>;
     monaco?: any;

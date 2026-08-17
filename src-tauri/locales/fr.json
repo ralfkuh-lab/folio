@@ -389,6 +389,7 @@
   "menu.help.cheatsheet": "Aide-mémoire",
   "menu.help.setupMdIcon": "Configurer l’intégration d’icône Markdown…",
   "menu.view": "Affichage",
+  "menu.view.fullscreen": "Plein écran",
   "menu.view.gitDiff": "Afficher les modifications",
   "menu.view.minimap": "Afficher/masquer la minicarte",
   "menu.view.modeEdit": "Mode d’édition",
@@ -399,6 +400,7 @@
   "menu.view.theme": "Thème",
   "menu.view.themeDark": "Sombre",
   "menu.view.themeLight": "Clair",
+  "menu.view.zen": "Mode zen",
   "palette.badge.command": "Commande",
   "palette.badge.file": "Fichier",
   "palette.badge.heading": "Titre",
@@ -614,6 +616,9 @@
   "settings.watch.vaultAutoRefresh.label": "Actualiser l’arborescence du coffre lors de changements externes",
   "settings.watch.vaultShowHidden.hint": "Noms commençant par un point (p. ex. .github). .git reste masqué.",
   "settings.watch.vaultShowHidden.label": "Afficher les éléments masqués dans le coffre",
+  "settings.zen.fullscreen.hint": "Si activé, le mode zen passe aussi en plein écran. Si la fenêtre l’était déjà, elle le reste à la sortie.",
+  "settings.zen.fullscreen.label": "Ouvrir le mode zen en plein écran",
+  "settings.zen.sectionTitle": "Mode zen",
   "statusBar.cursor.template": "Lig {line}, Col {column}",
   "statusBar.cursor.tooltip": "Position du curseur",
   "statusBar.encoding.tooltip": "Encodage des caractères du fichier",
@@ -839,5 +844,6 @@
   "wikilinks.createDialog.noDocument": "Aucun document ouvert — impossible de créer la note.",
   "wikilinks.createDialog.submit.action": "Créer",
   "wikilinks.createDialog.subtitle": "Dossier cible : {dir}",
-  "wikilinks.createDialog.title": "Créer la note ?"
+  "wikilinks.createDialog.title": "Créer la note ?",
+  "zen.hint.exit": "Maj+F11 ou Échap quitte le mode zen"
 }

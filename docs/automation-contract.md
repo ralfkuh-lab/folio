@@ -63,6 +63,10 @@ Tab). Dirty wird gesetzt, wenn `line_ending != clean_line_ending` (auch
 nach Text-Revert). Opaque-Docs (Image/Binary) lehnt der Command ab.
 `GET /state` liefert additiv `lineEnding` (`lf`|`crlf`|null ohne Doc).
 
+`GET /state` liefert additiv `zen` (Frontend-Layer, nicht persistiert) und
+`fullscreen` (OS-Fenster). Zen ist kein vierter View-Mode und ändert
+`panel_state.json` nicht.
+
 `document:save_error { message }` macht einen Fehler aus dem fire-and-forget
 Monaco-Strg+S-Pfad (`editorSaveRequested`, kein invoke-Rückkanal) mit
 bereits lokalisierter Meldung im Frontend sichtbar (z. B. unmappbare Zeichen

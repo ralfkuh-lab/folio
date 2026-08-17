@@ -211,6 +211,12 @@ const BRIDGE_SOURCE = '(' + function () {
             event.preventDefault();
             event.stopPropagation();
             send({ folio: 'findShortcut', command: event.shiftKey ? 'prev' : 'next' });
+        } else if (event.key === 'F11' || event.code === 'F11') {
+            event.preventDefault();
+            event.stopPropagation();
+            send({ folio: 'parentKey', key: 'F11', code: 'F11', shiftKey: !!event.shiftKey });
+        } else if (event.key === 'Escape') {
+            send({ folio: 'parentKey', key: 'Escape', code: 'Escape', shiftKey: false });
         }
     }, true);
 } + ')();';
@@ -252,6 +258,18 @@ function handleBridgeMessage(event: MessageEvent): void {
         if (command !== 'open' && command !== 'next' && command !== 'prev') return;
         try {
             window.dispatchEvent(new CustomEvent('folio-find-shortcut', { detail: { command } }));
+        } catch (_) { /* ignore */ }
+    } else if (data.folio === 'parentKey') {
+        const key = data.key;
+        if (key !== 'F11' && key !== 'Escape') return;
+        try {
+            document.dispatchEvent(new KeyboardEvent('keydown', {
+                key,
+                code: typeof data.code === 'string' ? data.code : key,
+                shiftKey: !!data.shiftKey,
+                bubbles: true,
+                cancelable: true,
+            }));
         } catch (_) { /* ignore */ }
     }
 }

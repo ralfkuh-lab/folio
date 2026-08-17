@@ -385,6 +385,7 @@
   "menu.help.cheatsheet": "チートシート",
   "menu.help.setupMdIcon": "Markdown アイコン統合を設定…",
   "menu.view": "表示",
+  "menu.view.fullscreen": "全画面表示",
   "menu.view.gitDiff": "変更を表示",
   "menu.view.minimap": "ミニマップを切り替え",
   "menu.view.modeEdit": "編集モード",
@@ -395,6 +396,7 @@
   "menu.view.theme": "テーマ",
   "menu.view.themeDark": "ダーク",
   "menu.view.themeLight": "ライト",
+  "menu.view.zen": "Zenモード",
   "palette.badge.command": "コマンド",
   "palette.badge.file": "ファイル",
   "palette.badge.heading": "見出し",
@@ -604,6 +606,9 @@
   "settings.watch.vaultAutoRefresh.label": "外部変更時に Vault ツリーを更新",
   "settings.watch.vaultShowHidden.hint": "先頭がピリオドの名前（例: .github）。.git は常に非表示です。",
   "settings.watch.vaultShowHidden.label": "Vault で隠し項目を表示",
+  "settings.zen.fullscreen.hint": "有効にすると、Zenモードは全画面にも切り替わります。すでに全画面だった場合は、終了してもそのままです。",
+  "settings.zen.fullscreen.label": "Zenモードを全画面で開く",
+  "settings.zen.sectionTitle": "Zenモード",
   "statusBar.cursor.template": "{line} 行, {column} 列",
   "statusBar.cursor.tooltip": "カーソル位置",
   "statusBar.encoding.tooltip": "ファイルの文字エンコーディング",
@@ -823,5 +828,6 @@
   "wikilinks.createDialog.noDocument": "ドキュメントが開かれていないため、ノートを作成できません。",
   "wikilinks.createDialog.submit.action": "作成",
   "wikilinks.createDialog.subtitle": "保存先フォルダー: {dir}",
-  "wikilinks.createDialog.title": "ノートを作成しますか？"
+  "wikilinks.createDialog.title": "ノートを作成しますか？",
+  "zen.hint.exit": "Shift+F11 または Escape で Zenモードを終了"
 }

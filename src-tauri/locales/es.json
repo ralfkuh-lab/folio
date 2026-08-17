@@ -389,6 +389,7 @@
   "menu.help.cheatsheet": "Ficha de referencia",
   "menu.help.setupMdIcon": "Configurar integración de iconos de Markdown…",
   "menu.view": "Ver",
+  "menu.view.fullscreen": "Pantalla completa",
   "menu.view.gitDiff": "Mostrar cambios",
   "menu.view.minimap": "Alternar minimapa",
   "menu.view.modeEdit": "Modo de edición",
@@ -399,6 +400,7 @@
   "menu.view.theme": "Tema",
   "menu.view.themeDark": "Oscuro",
   "menu.view.themeLight": "Claro",
+  "menu.view.zen": "Modo zen",
   "palette.badge.command": "Comando",
   "palette.badge.file": "Archivo",
   "palette.badge.heading": "Título",
@@ -614,6 +616,9 @@
   "settings.watch.vaultAutoRefresh.label": "Actualizar el árbol del Vault al haber cambios externos",
   "settings.watch.vaultShowHidden.hint": "Nombres que empiezan por punto (p. ej. .github). .git permanece oculto.",
   "settings.watch.vaultShowHidden.label": "Mostrar entradas ocultas en el Vault",
+  "settings.zen.fullscreen.hint": "Si está activado, el modo zen también pasa a pantalla completa. Si la ventana ya estaba a pantalla completa, se mantiene al salir.",
+  "settings.zen.fullscreen.label": "Abrir el modo zen a pantalla completa",
+  "settings.zen.sectionTitle": "Modo zen",
   "statusBar.cursor.template": "Lín {line}, Col {column}",
   "statusBar.cursor.tooltip": "Posición del cursor",
   "statusBar.encoding.tooltip": "Codificación de caracteres del archivo",
@@ -839,5 +844,6 @@
   "wikilinks.createDialog.noDocument": "Ningún documento abierto: no se puede crear la nota.",
   "wikilinks.createDialog.submit.action": "Crear",
   "wikilinks.createDialog.subtitle": "Carpeta de destino: {dir}",
-  "wikilinks.createDialog.title": "¿Crear nota?"
+  "wikilinks.createDialog.title": "¿Crear nota?",
+  "zen.hint.exit": "Mayús+F11 o Escape sale del modo zen"
 }

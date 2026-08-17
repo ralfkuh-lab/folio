@@ -130,6 +130,20 @@ export const PALETTE_COMMANDS: readonly PaletteCommand[] = [
         },
     },
     {
+        id: 'view.fullscreen',
+        label: () => t('menu.view.fullscreen'),
+        menuAction: 'view.fullscreen',
+        shortcut: 'F11',
+        enabled: () => true,
+    },
+    {
+        id: 'view.zen',
+        label: () => t('menu.view.zen'),
+        menuAction: 'view.zen',
+        shortcut: 'Shift+F11',
+        enabled: () => true,
+    },
+    {
         id: 'edit.find',
         label: () => t('menu.edit.find'),
         menuAction: 'edit.find',

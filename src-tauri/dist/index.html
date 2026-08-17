@@ -248,6 +248,16 @@
           <p class="settings-hint" data-i18n="settings.viewAutoFormat.hint">Nutzt Monacos „Format Document" für alle Sprachen mit registriertem Formatter (JSON, XML, HTML, CSS, JS/TS, …). Ohne Häkchen wird der Rohinhalt angezeigt.</p>
         </section>
         <section class="settings-section">
+          <h3 class="settings-section__title" data-i18n="settings.zen.sectionTitle">Zen-Modus</h3>
+          <div class="settings-row settings-row--toggle">
+            <label for="settings-zen-fullscreen">
+              <input type="checkbox" id="settings-zen-fullscreen" />
+              <span data-i18n="settings.zen.fullscreen.label">Zen-Modus im Vollbild öffnen</span>
+            </label>
+          </div>
+          <p class="settings-hint" data-i18n="settings.zen.fullscreen.hint">Wenn aktiv, wechselt der Zen-Modus zusätzlich in den Vollbildmodus. War das Fenster schon im Vollbild, bleibt es das beim Verlassen.</p>
+        </section>
+        <section class="settings-section">
           <h3 class="settings-section__title" data-i18n="settings.export.sectionTitle">Export</h3>
           <div class="settings-row">
             <label for="settings-export-dir-mode" data-i18n="settings.export.dirMode.label">Export-Zielverzeichnis</label>
@@ -569,6 +579,7 @@
   <button class="status-cell" id="status-theme-toggle" title="Theme umschalten" data-i18n-title="toolbar.themeToggle.tooltip" aria-label="Theme" data-i18n-aria-label="toolbar.themeToggle.ariaLabel" style="display:inline-flex;align-items:center;justify-content:center;padding:2px 6px;"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><line x1="8" y1="1.5" x2="8" y2="3"/><line x1="8" y1="13" x2="8" y2="14.5"/><line x1="1.5" y1="8" x2="3" y2="8"/><line x1="13" y1="8" x2="14.5" y2="8"/><line x1="3.4" y1="3.4" x2="4.5" y2="4.5"/><line x1="11.5" y1="11.5" x2="12.6" y2="12.6"/><line x1="3.4" y1="12.6" x2="4.5" y2="11.5"/><line x1="11.5" y1="4.5" x2="12.6" y2="3.4"/></svg></button>
 </footer>
 <div id="zoom-indicator" hidden>100 %</div>
+<div id="zen-hint" class="zen-hint" hidden></div>
 <div id="dnd-overlay" data-i18n="view.dropOverlay.message">Datei hier ablegen, um zu öffnen</div>
 <nav id="context-menu" role="menu"></nav>
 <nav id="tab-ctx-menu" role="menu"></nav>
