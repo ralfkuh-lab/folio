@@ -30,6 +30,7 @@ import { initThemeAiDialog } from './ui/theme-ai-dialog';
 import { attachPasteHandler } from './ui/paste-handler';
 import { applySplitMidFromBackend, initRails, setRailVisibility } from './ui/rails';
 import { initContextMenu } from './vault/context-menu';
+import { initVaultClipboard } from './vault/clipboard';
 import { initTabContextMenu } from './ui/tab-context-menu';
 import { initCommandPalette } from './ui/command-palette';
 import { initVaultTree, insertVaultChildren, refreshVault } from './vault/tree';
@@ -113,6 +114,7 @@ function runModuleInits(): void {
     initFindBar({ ensureEditorMounted, focusEditor });
     initRails();
     initVaultTree({ openDocument });
+    initVaultClipboard();
     initVaultFilter();
     initVaultGitStatus();
     initVaultSearch({ openDocument, showStatus, openLeftRail });

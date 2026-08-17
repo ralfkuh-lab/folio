@@ -129,6 +129,57 @@ impl NavigationController {
             }
         }
     }
+
+    /// Schreibt History-Einträge unter `old_root` auf `new_root` um —
+    /// in-place, ohne neuen Eintrag und ohne den Index zu verschieben.
+    /// Für Ordner-Rename/Move, damit Zurück/Vor nicht auf tote Pfade zeigt.
+    pub fn rewrite_prefix(&mut self, old_root: &str, new_root: &str) {
+        for entry in &mut self.history {
+            if let Some(rewritten) =
+                crate::path_migration::remap(&entry.absolute_path, old_root, new_root)
+            {
+                entry.absolute_path = rewritten;
+            }
+        }
+    }
+
+    /// Entfernt History-Einträge unter `root`. Liegt der aktuelle Eintrag
+    /// darunter, rückt der nächstältere verbleibende nach (sonst der
+    /// nächstjüngere). Leere History → kein current.
+    pub fn remove_under(&mut self, root: &str) {
+        if self.history.is_empty() {
+            return;
+        }
+        let current = self.current_index;
+        let mut kept = Vec::with_capacity(self.history.len());
+        let mut old_to_new: Vec<Option<usize>> = Vec::with_capacity(self.history.len());
+        for entry in &self.history {
+            if crate::path_migration::is_under(&entry.absolute_path, root) {
+                old_to_new.push(None);
+            } else {
+                old_to_new.push(Some(kept.len()));
+                kept.push(entry.clone());
+            }
+        }
+        let new_index = current.and_then(|index| {
+            if let Some(mapped) = old_to_new.get(index).copied().flatten() {
+                return Some(mapped);
+            }
+            old_to_new[..index]
+                .iter()
+                .rev()
+                .copied()
+                .flatten()
+                .next()
+                .or_else(|| old_to_new[index + 1..].iter().copied().flatten().next())
+        });
+        self.history = kept;
+        self.current_index = if self.history.is_empty() {
+            None
+        } else {
+            new_index
+        };
+    }
 }
 
 #[cfg(test)]
@@ -295,5 +346,85 @@ mod tests {
         nav.navigate("/guide.md", Some("install".into()));
 
         assert_eq!(2, nav.history().len());
+    }
+
+    #[test]
+    fn rewrite_prefix_rewrites_matching_entries_in_place() {
+        let mut nav = NavigationController::new();
+        nav.navigate("/a/notizen/one.md", None);
+        nav.navigate("/a/other.md", None);
+        nav.navigate("/a/notizen/two.md", Some("h".into()));
+        nav.update_scroll_position(12.0);
+
+        nav.rewrite_prefix("/a/notizen", "/a/notes");
+
+        assert_eq!(3, nav.history().len());
+        assert_eq!("/a/notes/one.md", nav.history()[0].absolute_path);
+        assert_eq!("/a/other.md", nav.history()[1].absolute_path);
+        assert_eq!("/a/notes/two.md", nav.history()[2].absolute_path);
+        assert_eq!(Some("h"), nav.current().unwrap().anchor.as_deref());
+        assert_eq!(12.0, nav.current().unwrap().scroll_y);
+        assert_eq!(Some(2), nav.current_index());
+    }
+
+    #[test]
+    fn rewrite_prefix_respects_segment_boundary() {
+        let mut nav = NavigationController::new();
+        nav.navigate("/a/notizen-alt/x.md", None);
+        nav.rewrite_prefix("/a/notizen", "/a/notes");
+        assert_eq!("/a/notizen-alt/x.md", nav.current().unwrap().absolute_path);
+    }
+
+    #[test]
+    fn remove_under_drops_matching_entries_and_rewrites_index() {
+        let mut nav = NavigationController::new();
+        nav.navigate("/keep/a.md", None);
+        nav.navigate("/drop/b.md", None);
+        nav.navigate("/keep/c.md", None);
+        nav.navigate("/drop/d.md", None);
+        nav.navigate("/keep/e.md", None);
+
+        nav.remove_under("/drop");
+
+        assert_eq!(
+            vec!["/keep/a.md", "/keep/c.md", "/keep/e.md"],
+            paths(nav.history())
+        );
+        assert_eq!("/keep/e.md", nav.current().unwrap().absolute_path);
+        assert_eq!(Some(2), nav.current_index());
+        assert!(nav.can_go_back());
+        assert!(!nav.can_go_forward());
+    }
+
+    #[test]
+    fn remove_under_moves_current_to_older_survivor() {
+        let mut nav = NavigationController::new();
+        nav.navigate("/keep/a.md", None);
+        nav.navigate("/drop/b.md", None);
+        nav.navigate("/drop/c.md", None);
+
+        nav.remove_under("/drop");
+
+        assert_eq!(vec!["/keep/a.md"], paths(nav.history()));
+        assert_eq!("/keep/a.md", nav.current().unwrap().absolute_path);
+        assert!(!nav.can_go_back());
+    }
+
+    #[test]
+    fn remove_under_clears_history_when_everything_matches() {
+        let mut nav = NavigationController::new();
+        nav.navigate("/drop/a.md", None);
+        nav.navigate("/drop/b.md", None);
+        nav.remove_under("/drop");
+        assert!(nav.history().is_empty());
+        assert_eq!(None, nav.current());
+    }
+
+    #[test]
+    fn remove_under_respects_segment_boundary() {
+        let mut nav = NavigationController::new();
+        nav.navigate("/a/notizen-alt/x.md", None);
+        nav.remove_under("/a/notizen");
+        assert_eq!("/a/notizen-alt/x.md", nav.current().unwrap().absolute_path);
     }
 }

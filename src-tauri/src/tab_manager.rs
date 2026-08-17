@@ -188,6 +188,35 @@ impl TabManager {
             .map(|tab| tab.id)
     }
 
+    /// Alle Tabs, deren Dokument- oder Pending-Pfad unter `root` liegt
+    /// (Segmentgrenze, inklusive Gleichheit).
+    pub fn ids_under(&self, root: &str) -> Vec<u64> {
+        let root = root.replace('\\', "/");
+        self.tabs
+            .iter()
+            .filter_map(|tab| {
+                let path = tab.document_path()?;
+                crate::path_migration::is_under(path, &root).then_some(tab.id)
+            })
+            .collect()
+    }
+
+    /// Schreibt Einträge im Closed-Stack um, die unter `old_root` liegen.
+    pub fn remap_recently_closed(&mut self, old_root: &str, new_root: &str) {
+        for path in &mut self.recently_closed {
+            if let Some(rewritten) = crate::path_migration::remap(path, old_root, new_root) {
+                *path = rewritten;
+            }
+        }
+    }
+
+    /// Entfernt Closed-Stack-Einträge unter `root` (nach trash, nachdem
+    /// `close` die gerade geschlossenen Tabs frisch gepusht hat).
+    pub fn remove_recently_closed_under(&mut self, root: &str) {
+        self.recently_closed
+            .retain(|path| !crate::path_migration::is_under(path, root));
+    }
+
     pub fn summaries(&self) -> Vec<TabSummary> {
         let active_id = self.active().id;
         self.tabs
@@ -793,5 +822,57 @@ mod tests {
         let json = serde_json::to_value(&payload).unwrap();
         assert_eq!(2, json["recentlyClosedCount"].as_u64().unwrap());
         assert!(json.get("requestId").is_none(), "None wird uebersprungen");
+    }
+
+    #[test]
+    fn ids_under_includes_pending_and_respects_segment_boundary() {
+        let mut manager = TabManager::new();
+        manager.active_mut().document_store.path = Some("/a/notizen/x.md".into());
+        let other = manager.add_tab();
+        manager
+            .tab_mut(other)
+            .unwrap()
+            .set_pending_path("/a/notizen-alt/y.md".into());
+        let nested = manager.add_tab();
+        manager
+            .tab_mut(nested)
+            .unwrap()
+            .set_pending_path("/a/notizen/sub/z.md".into());
+
+        let mut ids = manager.ids_under("/a/notizen");
+        ids.sort_unstable();
+        assert_eq!(ids, vec![1, nested]);
+        assert!(!ids.contains(&other));
+    }
+
+    #[test]
+    fn remap_recently_closed_rewrites_matching_prefix() {
+        let mut manager = TabManager::new();
+        manager.push_recently_closed("/a/notizen/x.md".into());
+        manager.push_recently_closed("/a/other.md".into());
+        manager.push_recently_closed("/a/notizen-alt/y.md".into());
+        manager.remap_recently_closed("/a/notizen", "/a/notes");
+        assert_eq!(3, manager.recently_closed_count());
+        assert_eq!(
+            Some("/a/notizen-alt/y.md".into()),
+            manager.pop_recently_closed()
+        );
+        assert_eq!(Some("/a/other.md".into()), manager.pop_recently_closed());
+        assert_eq!(Some("/a/notes/x.md".into()), manager.pop_recently_closed());
+    }
+
+    #[test]
+    fn remove_recently_closed_under_drops_matching_paths() {
+        let mut manager = TabManager::new();
+        manager.push_recently_closed("/a/notizen/x.md".into());
+        manager.push_recently_closed("/a/other.md".into());
+        manager.push_recently_closed("/a/notizen-alt/y.md".into());
+        manager.remove_recently_closed_under("/a/notizen");
+        assert_eq!(2, manager.recently_closed_count());
+        assert_eq!(
+            Some("/a/notizen-alt/y.md".into()),
+            manager.pop_recently_closed()
+        );
+        assert_eq!(Some("/a/other.md".into()), manager.pop_recently_closed());
     }
 }

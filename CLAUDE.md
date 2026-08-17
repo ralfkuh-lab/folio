@@ -237,6 +237,51 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
 - **Git-Status-Dots im Vault** (`git_status.rs` + Frontend `vault/git-status.ts`): modified/untracked als Klassen `git-modified`/`git-untracked` auf `li.node` (Punkt via `> .row::before`, kein Layout-Shift). Datenquelle `git status --porcelain=v1 -z --untracked-files=normal` (nicht libgit2, nicht `.git/index`); Fail-open ohne Dialog. Vault-Render bleibt frei davon — Hintergrund-Job pro Repo-Root, Single-Flight, Generation-Discard, Cache-TTL 15 s, Event `vault:git_status` (Payload trägt `generation`; Frontend verwirft ältere Snapshots wie den `document:*`-seq-Guard). `git status` hat eine 10-s-Deadline (`kill`+`wait`); `refreshing` wird per RAII-Guard freigegeben. **stdout MUSS in einem Reader-Thread geleert werden, WÄHREND auf den Prozess gewartet wird** (`wait_child_with_timeout`, gilt für beide git-Aufrufer): Wird die Pipe erst nach Prozessende gelesen, blockiert git bei Ausgaben über dem OS-Pipe-Puffer (Linux 64 KiB, Windows 4 KiB) im `write()` — und wir warten auf sein Ende. Deadlock bis zum Timeout, danach keine Dots (Befund Kreuz-Review 2026-08-14; trat ab ~1000 geänderten/untrackten Einträgen auf). Cache hält den vollen Snapshot und liefert ihn bei frischem Treffer erneut. Invalidierung bei Fenster-Fokus (Commit fasst keine Arbeitsdatei an; Root-Discovery nach Freigabe des Workspace-Locks), Save/create/rename/delete; **keine** Watcher auf `.git/index`. Ordner-Aggregation (Präfix) im Backend; Frontend wendet den letzten Snapshot nach Lazy-Expand erneut an (`MutationObserver` + `takeRecords()` im `finally`).
   **Zugänge zum Status** (Etappe 2026-08-14): Der `title` eines Knotens nennt den Status im Klartext (analog zum „gitignored"-Zusatz, idempotent gesetzt und rückstandsfrei entfernt). Der Tab trägt links einen 4-px-Balken (`.tab-git`, amber) — bewusst NICHT den dirty-Punkt eingefärbt, der rechts bleibt und Ungespeichertes meint; ein Marker mit zwei Bedeutungen wäre nicht unterscheidbar. Klick auf den Balken öffnet den Git-Diff (`preventDefault`+`stopPropagation`, aus dem Drag-Handler ausgenommen, Mittelklick abgefangen, `tabindex="-1"`). Toolbar-Button + Menüeintrag sind eine **Aktion mit Enabled-Zustand, kein vierter View-Mode** — Modes sind pro Tab, die DiffView-Surface ist ein Singleton, das passt strukturell nicht zusammen.
   **Git-Filter „nur geänderte"** (`vault/filter.ts`, kombinierbar mit Namensfilter und md-only): Zwei Fallen, beide aus dem Kreuz-Review 2026-08-14. (1) `--untracked-files=normal` meldet einen komplett neuen Ordner als EINEN Eintrag `?? neu/` — die Kinddateien stehen NICHT im Snapshot. Der Filter muss sie über Verzeichnis-Präfix (auf Segmentgrenze!) mitzählen, sonst bleibt ein aufgeklappter, scheinbar leerer Ordner zurück. (2) `git status` liefert das ganze Repo; der Auto-Expand darf nur Pfade unterhalb **sichtbarer Pin-Wurzeln** öffnen, sonst werden repo-fremde Ordner expandiert und gewatcht und der 1000er-Soft-Cap ist erschöpft, bevor der relevante Zweig drankommt.
+- **Vault-Dateioperationen** (Spec
+  [`docs/spec-vault-fileops.md`](docs/spec-vault-fileops.md), V1
+  2026-08-17): Ordner anlegen (`commands/file/dir.rs::create_directory` —
+  bewusst `fs::create_dir`, **nicht** `create_dir_all`: ein Tippfehler im
+  Namen soll keine Zwischenordner anlegen), umbenennen und löschen.
+  Der Kern ist **nicht** die Datei-IO, sondern die präfixweise
+  Pfad-Migration: `path_migration.rs` (`remap`/`is_under`, Tauri-frei)
+  matcht **auf Segmentgrenze** — `/a/notizen` darf `/a/notizen-alt` nicht
+  mitziehen — und trimmt Trailing-Slashes, weil `"/a/notizen/"` sonst nach
+  `"/a/notizen//"` sucht und die Migration **lautlos komplett** ausfällt.
+  Halter sind Tabs (`path` **und** `pending_path`), NavigationController,
+  Workspace (pinned, recent, `image_dirs` Key **und** Value,
+  `last_export_dir`), Vault (`active_path`, `expanded_dirs` + Watches),
+  Wikilink-Index, Git-Status, `GitHeadWatcher` und `recently_closed`.
+  Zwei Reihenfolge-Pflichten: (1) **Workspace-Remap und
+  Wikilink-Invalidierung laufen VOR dem Tab-Remap** — `rename_to` des
+  aktiven Tabs emittiert `document:loaded` synchron, dessen HTML sonst mit
+  dem alten Index entsteht und nie neu gerendert wird; (2) ab dem Erfolg
+  von `fs::rename`/`trash::delete` läuft die gesamte Choreografie
+  **best-effort** (`apply_move_state`, warnen statt `?`) — sonst ist die
+  Platte umgezogen und der State halb migriert. Der EXDEV-Fallback kopiert
+  rekursiv ohne Symlinks zu folgen und nutzt `OpenOptions::create_new`
+  statt `fs::copy` (ein dangling Ziel-Symlink ließe `fs::copy` sonst
+  außerhalb des erwarteten Pfads schreiben); schlägt danach das Löschen der
+  Quelle teilweise fehl, wandert der State trotzdem ans vollständige Ziel.
+  **V2** ergänzt Duplizieren (`transfer.rs::duplicate_entry`, Namen
+  `a copy.md` → `a copy 2.md`, Endung bleibt hinten) sowie Verschieben und
+  Kopieren über ein Ausschneiden/Einfügen-Modell (`vault/clipboard.ts`,
+  Klasse `vault-cut`; **keine** Tastenkürzel, solange es keinen
+  modellierten Vault-Fokus gibt). `move_entry` **muss** sich
+  `perform_move` teilen — ein zweiter Migrationspfad wäre zwangsläufig
+  unvollständig. Drei Fallen aus dem Kreuz-Review: (1) `copy_recursively`
+  liefert einen `CopyReport`; ein nichtleeres `skipped_symlinks` ist eine
+  **unvollständige** Kopie, nach der die Quelle im EXDEV-Move NIEMALS
+  gelöscht werden darf (unter Windows scheitert das Anlegen von Symlinks
+  ohne Developer Mode regelmäßig). (2) Die Nachfahrenprüfung braucht
+  neben dem lexikalischen Segment-Check ein `is_physically_under`
+  (canonicalize) — zeigt der Zielordner über einen Symlink in die Quelle,
+  kopiert sich der Baum sonst rekursiv in sich selbst, bis der
+  Datenträger voll ist. (3) Kopien übertragen die Permissions der Quelle,
+  sonst verliert ein `0755`-Skript sein Execute-Bit und ein `0700`-Ordner
+  wird je nach umask öffentlich. Auf **Pin-Wurzeln** gibt es „Löschen"
+  nicht (destruktiver Fehlklick; „Aus Vault entfernen" ist gemeint),
+  „Ausschneiden" dagegen schon — `perform_move` migriert den Pin sauber
+  mit. E2E `59_vault_fileops.py`.
 - **Vault-Volltextsuche** (`search.rs` + `commands/search_cmd.rs` +
   `automation/handlers/search.rs`; Frontend `vault/search.ts` +
   `#vault-search`; Spec + Etappen in
@@ -913,7 +958,7 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
 
 ## E2E-Test-Suite
 
-Vollständige UI-Coverage in `tests/e2e/` (58 Szenarien, Python +
+Vollständige UI-Coverage in `tests/e2e/` (59 Szenarien, Python +
 Pillow): Boot, View-/Edit-/Split-Mode, Theme, Vault, Find (inkl.
 Code-View), Workspace, Save-Roundtrip durch alle BOM/EOL-Kombis,
 Undo/Redo, Toolbar-Commands (Bold/Italic/Heading), Menü-Coverage
@@ -924,7 +969,8 @@ Theme-CRUD/-Browser/-Import-Export, Export-Highlighting, Mermaid
 (View + Export), Link-in-neuem-Tab, Vault-Volltextsuche (API + UI),
 Vault-Filter, Tab-Kontextmenü, Command Palette, Statusleiste,
 Wikilinks/Tags, Task-Checkboxen, Git-Status/-Diff/-Filter,
-versteckte Vault-Einträge, Find-Bar-Regex/-Ersetzen sowie
+versteckte Vault-Einträge, Find-Bar-Regex/-Ersetzen,
+Vault-Dateioperationen (Ordner anlegen/umbenennen/löschen) sowie
 KI-Settings, KI-Übersetzung, KI-Theme-Autor, Export-KI-Draft und
 KI-Aktionen (Mock-Provider). Der englische Boot ist über
 `scripts/run-e2e.sh --lang-smoke` separat abgedeckt.
@@ -945,6 +991,13 @@ Umgebungsvariablen der Test-Subprozesse greifen nicht für Folios eigene
 unter `/tmp/folio-e2e-hidden` — gleicher Grund wie bei 56, der Pfad steht
 im Vault und in der Baseline. Enthält eine normale `.md`, `.versteckt/`,
 `.versteckte-datei.md` und ein leeres `.git/`.
+
+**Szenario mit fester Fileops-Fixture** (`59_vault_fileops.py`):
+`/tmp/folio-e2e-fileops` — gleicher Grund. Gepinnt wird `projekt/`, darin
+ein `unterordner/` mit `notiz.md`; das Szenario öffnet einen Tab auf die
+Notiz und prüft nach dem Ordner-Rename, dass der **Tab-Pfad präfixweise
+mitgewandert** ist (der eigentliche V1-Vertrag) und beim Löschen wieder
+verschwindet.
 
 Wrapper: `bash scripts/run-e2e.sh` (Linux+Xvfb). Visual-Baselines in
 `tests/e2e/baselines/`, Artefakte (gitignored) in

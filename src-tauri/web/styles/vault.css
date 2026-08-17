@@ -213,7 +213,10 @@ body.pin-dragging * {
    matched_path_or_any_parents), doppeltes Dimmen waere falsch. */
 .vault-region li.node.ignored > .row .label,
 .vault-region li.node.ignored > .row .icon,
-.vault-region li.node.ignored > .row .git-branch {
+.vault-region li.node.ignored > .row .git-branch,
+.vault-region li.node.vault-cut > .row .label,
+.vault-region li.node.vault-cut > .row .icon,
+.vault-region li.node.vault-cut > .row .git-branch {
   opacity: 0.55;
 }
 

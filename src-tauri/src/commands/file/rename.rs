@@ -1,17 +1,14 @@
 use crate::menu::strings as menu_strings;
 use crate::state::AppState;
 use crate::{i18n, i18n::t_args};
-use std::{fs, path::Path};
+use std::{fs, io, path::Path};
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_dialog::DialogExt;
 
 use super::util::file_path_to_string;
 
-/// Benennt eine Datei um. Wenn die Datei aktuell geöffnet ist, wandert
-/// der Pfad im DocumentStore mit (`rename_to`) und das Frontend bekommt
-/// per `document:loaded` den neuen `kind`/`language` für die ggf. neue
-/// Endung. Workspace.recent wird von `old_path` auf `new_path` umgehängt;
-/// der Vault wird per `vault:refresh` zum Reload getriggert.
+/// Benennt eine Datei oder ein Verzeichnis um. Offene Tabs, History,
+/// Workspace-Pfade und Vault-State wandern präfixweise mit.
 #[tauri::command]
 pub async fn rename_file(
     old_path: String,
@@ -19,16 +16,17 @@ pub async fn rename_file(
     state: State<'_, AppState>,
     handle: AppHandle,
 ) -> Result<String, String> {
+    let (old_path, new_path) = prepare_move_paths_msg(&old_path, &new_path)?;
     if old_path == new_path {
         return Ok(new_path);
     }
-    perform_rename(&old_path, &new_path, &state, &handle)?;
+    perform_move(&old_path, &new_path, &state, &handle)?;
     Ok(new_path)
 }
 
 /// Save-Dialog für „Datei → Umbenennen…" — Default-Filename ist der
 /// aktuelle Dateiname, Default-Verzeichnis das aktuelle Verzeichnis.
-/// Cancel → `Ok(None)`. Bei Pick wird `perform_rename` gerufen.
+/// Cancel → `Ok(None)`. Bei Pick wird `perform_move` gerufen.
 pub fn run_rename_dialog(
     state: &State<'_, AppState>,
     handle: &AppHandle,
@@ -63,40 +61,71 @@ pub fn run_rename_dialog(
     let Some(target) = builder.blocking_save_file() else {
         return Ok(None);
     };
-    let new_path = file_path_to_string(target);
-    if new_path.is_empty() {
+    let picked = file_path_to_string(target);
+    if picked.is_empty() {
         return Ok(None);
     }
-    if new_path == current_path {
+    let (old_path, new_path) = prepare_move_paths_msg(&current_path, &picked)?;
+    if old_path == new_path {
         return Ok(None);
     }
-    perform_rename(&current_path, &new_path, state, handle)?;
+    perform_move(&old_path, &new_path, state, handle)?;
     Ok(Some(new_path))
 }
 
-/// Validiert + verschiebt + synchronisiert State für eine Rename-Aktion.
-/// Wird sowohl vom Tauri-Command `rename_file` (Inline-Rename im Vault)
-/// als auch von `run_rename_dialog` (Datei-Menü, Save-As-artiger
-/// Verzeichniswechsel) gerufen — beide brauchen den gleichen
-/// State-Choreografie-Block (DocumentStore, Workspace.recent,
-/// Recent-Submenü, Vault.active, `vault:refresh`).
+#[derive(Debug, PartialEq, Eq)]
+enum MovePathError {
+    InvalidName,
+    MoveIntoSelf,
+}
+
+/// Normalisiert, lehnt `..` ab und prüft Selbst-Move. Gleichheit nach
+/// Normalisierung ist ein gültiger No-op (Caller entscheidet).
+fn prepare_move_paths(old_path: &str, new_path: &str) -> Result<(String, String), MovePathError> {
+    let old_path = crate::path_migration::normalize(old_path);
+    let new_path = crate::path_migration::normalize(new_path);
+    if old_path.split('/').any(|component| component == "..")
+        || new_path.split('/').any(|component| component == "..")
+    {
+        return Err(MovePathError::InvalidName);
+    }
+    if crate::path_migration::is_under(&new_path, &old_path) && new_path != old_path {
+        return Err(MovePathError::MoveIntoSelf);
+    }
+    if new_path != old_path {
+        if let Some(parent) = Path::new(&new_path).parent() {
+            if crate::fs_copy::is_physically_under(parent, Path::new(&old_path)) {
+                return Err(MovePathError::MoveIntoSelf);
+            }
+        }
+    }
+    Ok((old_path, new_path))
+}
+
+fn prepare_move_paths_msg(old_path: &str, new_path: &str) -> Result<(String, String), String> {
+    prepare_move_paths(old_path, new_path).map_err(|error| match error {
+        MovePathError::InvalidName => i18n::t("errors.file.invalidName"),
+        MovePathError::MoveIntoSelf => i18n::t("errors.file.cannotMoveIntoSelf"),
+    })
+}
+
+/// Validiert + verschiebt + synchronisiert State für Rename/Move.
 ///
-/// Vorbedingung: `old_path != new_path`. Bei Gleichheit ist der Aufruf
-/// ein No-op und sollte vom Caller abgefangen werden.
-fn perform_rename(
+/// Vorbedingung: Pfade sind bereits über [`prepare_move_paths`] gelaufen
+/// und `old_path != new_path`. Wird auch von `move_entry` genutzt.
+pub(crate) fn perform_move(
     old_path: &str,
     new_path: &str,
     state: &State<'_, AppState>,
     handle: &AppHandle,
 ) -> Result<(), String> {
-    // Auf Forward-Slashes normalisieren wie in document_service::open —
-    // die Vergleiche unten (store.path, recent) laufen gegen
-    // normalisierte Pfade.
-    let old_path = old_path.replace('\\', "/");
-    let new_path = new_path.replace('\\', "/");
-    let (old_path, new_path) = (old_path.as_str(), new_path.as_str());
     let target = Path::new(new_path);
-    if target.exists() {
+    // Residual-TOCTOU zwischen exists() und fs::rename: einen portabel
+    // atomaren No-Replace-Rename gibt es nicht (renameat2/RENAME_NOREPLACE
+    // ist Linux-spezifisch und nicht auf jedem FS; macOS kennt ihn nicht).
+    // Das Fenster ist mikroskopisch; der Nutzer ist im Vault der einzige
+    // Akteur. Der Copy-Pfad nutzt create_new (siehe copy_file_exclusive).
+    if destination_blocks_move(old_path, new_path) {
         let detail = target
             .file_name()
             .and_then(|n| n.to_str())
@@ -106,101 +135,369 @@ fn perform_rename(
             &[("detail", detail)],
         ));
     }
-    fs::rename(old_path, new_path).map_err(|error| {
-        let detail = error.to_string();
-        t_args("errors.file.renameFailed", &[("detail", &detail)])
-    })?;
 
-    let (is_open, is_current) = {
-        let mut tabs = state
-            .tabs
-            .lock()
-            .map_err(|_| "tabs lock poisoned".to_string())?;
-        if let Some(tab_id) = tabs.find_by_path(old_path) {
-            let is_active = tabs.is_active(tab_id);
-            let tab = tabs
-                .tab_mut(tab_id)
-                .expect("find_by_path returned an existing tab");
-            if tab.pending_path().is_some() {
-                // Noch nie geladener Restore-Tab: nur den Pfad umhaengen,
-                // weiterhin kein Watcher und kein Datei-Load.
-                tab.retarget_pending_path(new_path.to_string());
-            } else {
-                if is_active {
-                    tab.document_store.rename_to(new_path).map_err(|error| {
-                        let detail = error.to_string();
-                        t_args("errors.file.renameFailed", &[("detail", &detail)])
-                    })?;
-                } else {
-                    tab.document_store
-                        .rename_to_silent(new_path)
-                        .map_err(|error| {
-                            let detail = error.to_string();
-                            t_args("errors.file.renameFailed", &[("detail", &detail)])
-                        })?;
-                }
-                tab.navigation.navigate(new_path.to_string(), None);
-            }
-            (true, is_active)
-        } else {
-            (false, false)
-        }
-    };
+    let src_is_dir = Path::new(old_path).is_dir();
+    rename_or_copy(old_path, new_path)?;
 
-    finish_rename(state, handle, old_path, new_path, is_open, is_current)
+    // Ab hier ist der Move auf der Platte unwiderruflich. Die gesamte
+    // State-Choreografie läuft best-effort durch — Einzelfehler werden
+    // gewarnt, nicht per `?` abgebrochen.
+    apply_move_state(state, handle, old_path, new_path, src_is_dir);
+    Ok(())
 }
 
-fn finish_rename(
-    state: &State<'_, AppState>,
+fn destination_blocks_move(old_path: &str, new_path: &str) -> bool {
+    if !Path::new(new_path).exists() {
+        return false;
+    }
+    !is_case_only_same_entry(old_path, new_path)
+}
+
+fn is_case_only_same_entry(old_path: &str, new_path: &str) -> bool {
+    old_path != new_path
+        && old_path.eq_ignore_ascii_case(new_path)
+        && match (fs::canonicalize(old_path), fs::canonicalize(new_path)) {
+            (Ok(left), Ok(right)) => left == right,
+            _ => false,
+        }
+}
+
+fn rename_or_copy(old_path: &str, new_path: &str) -> Result<(), String> {
+    match fs::rename(old_path, new_path) {
+        Ok(()) => Ok(()),
+        Err(error) if is_cross_device(&error) => {
+            let report = crate::fs_copy::copy_recursively(Path::new(old_path), Path::new(new_path))
+                .map_err(|error| {
+                    let detail = error.to_string();
+                    t_args("errors.file.renameFailed", &[("detail", &detail)])
+                })?;
+            finish_exdev_copy(old_path, new_path, &report)
+        }
+        Err(error) => {
+            let detail = error.to_string();
+            Err(t_args("errors.file.renameFailed", &[("detail", &detail)]))
+        }
+    }
+}
+
+fn is_cross_device(error: &io::Error) -> bool {
+    match error.raw_os_error() {
+        // EXDEV on Unix, ERROR_NOT_SAME_DEVICE on Windows.
+        #[cfg(unix)]
+        Some(18) => true,
+        #[cfg(windows)]
+        Some(17) => true,
+        _ => false,
+    }
+}
+
+/// Nach EXDEV-Kopie: nur bei vollständigem Report die Quelle löschen.
+fn finish_exdev_copy(
+    old_path: &str,
+    new_path: &str,
+    report: &crate::fs_copy::CopyReport,
+) -> Result<(), String> {
+    if !report.is_complete() {
+        let detail = report.skipped_symlinks.join(", ");
+        return Err(t_args(
+            "errors.file.copySkippedSymlinks",
+            &[("detail", &detail)],
+        ));
+    }
+    if let Err(error) = crate::fs_copy::remove_entry(Path::new(old_path)) {
+        tracing::warn!(
+            target: "folio::ipc",
+            %error,
+            old_path,
+            new_path,
+            "perform_move: Quelle nach EXDEV-Kopie nicht entfernt"
+        );
+    }
+    Ok(())
+}
+
+fn apply_move_state(
+    state: &AppState,
     handle: &AppHandle,
     old_path: &str,
     new_path: &str,
-    is_open: bool,
-    is_current: bool,
-) -> Result<(), String> {
-    // Recent-Liste in einem einzigen Lock-Take aktualisieren: was_in_recent
-    // lesen → remove_recent → optional add_recent. Vorher hingen die drei
-    // Schritte als separate `if let Ok(...)`-Blocks, was bei Lock-Poisoning
-    // zwischen den Schritten Halb-Updates produziert haette.
-    {
-        let mut workspace = state
-            .workspace
-            .lock()
-            .map_err(|_| "workspace lock poisoned".to_string())?;
-        let was_in_recent = workspace.recent().iter().any(|r| r.path == old_path);
-        workspace
-            .remove_recent(old_path)
-            .map_err(|error| error.to_string())?;
-        if was_in_recent || is_open {
-            workspace
-                .add_recent(new_path.to_string())
-                .map_err(|error| error.to_string())?;
+    src_is_dir: bool,
+) {
+    // Workspace + Wikilink VOR den Tabs: rename_to des aktiven Tabs
+    // emittiert synchron document:loaded, das den Index und die Pins liest.
+    let file_is_open = if src_is_dir {
+        false
+    } else {
+        match state.tabs.lock() {
+            Ok(tabs) => tabs.find_by_path(old_path).is_some(),
+            Err(error) => {
+                tracing::warn!(
+                    target: "folio::ipc",
+                    %error,
+                    "perform_move: tabs lock poisoned beim Open-Check"
+                );
+                false
+            }
+        }
+    };
+    match state.workspace.lock() {
+        Ok(mut workspace) => {
+            if let Err(error) = workspace.remap_prefix(old_path, new_path) {
+                tracing::warn!(
+                    target: "folio::ipc",
+                    %error,
+                    "perform_move: Workspace-Remap fehlgeschlagen"
+                );
+            } else if !src_is_dir
+                && (file_is_open || workspace.recent().iter().any(|item| item.path == new_path))
+            {
+                if let Err(error) = workspace.add_recent(new_path.to_string()) {
+                    tracing::warn!(
+                        target: "folio::ipc",
+                        %error,
+                        "perform_move: add_recent fehlgeschlagen"
+                    );
+                }
+            }
+        }
+        Err(error) => {
+            tracing::warn!(
+                target: "folio::ipc",
+                %error,
+                "perform_move: workspace lock poisoned"
+            );
         }
     }
-    crate::menu::refresh_recent_from_workspace(handle);
-    // Rename aendert den indizierten Dateinamen.
     state.invalidate_wikilink_index();
+    crate::menu::refresh_recent_from_workspace(handle);
+    crate::commands::workspace_cmd::sync_git_head_watcher(state);
+
+    remap_open_tabs(state, old_path, new_path);
     crate::git_status::refresh_for_paths(&state.git_status, [old_path, new_path], handle);
+    remap_vault_and_watchers(state, old_path, new_path);
 
-    if is_current {
-        state
-            .vault
-            .lock()
-            .map_err(|_| "vault lock poisoned".to_string())?
-            .set_active(Some(new_path.to_string()));
+    match state.workspace.lock() {
+        Ok(workspace) => {
+            match crate::commands::vault_cmd::compute_refresh_delta_synced(state, &workspace) {
+                Ok(delta) => {
+                    if let Err(error) = handle.emit("vault:refresh", delta) {
+                        tracing::warn!(
+                            target: "folio::ipc",
+                            %error,
+                            "perform_move: vault:refresh emit fehlgeschlagen"
+                        );
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        target: "folio::ipc",
+                        %error,
+                        "perform_move: compute_refresh_delta fehlgeschlagen"
+                    );
+                }
+            }
+        }
+        Err(error) => {
+            tracing::warn!(
+                target: "folio::ipc",
+                %error,
+                "perform_move: workspace lock poisoned beim vault:refresh"
+            );
+        }
+    }
+    if let Err(error) = AppState::emit_tabs_changed(handle) {
+        tracing::warn!(
+            target: "folio::ipc",
+            %error,
+            "perform_move: tabs:changed emit fehlgeschlagen"
+        );
+    }
+}
+
+fn remap_open_tabs(state: &AppState, old_path: &str, new_path: &str) {
+    let mut tabs = match state.tabs.lock() {
+        Ok(tabs) => tabs,
+        Err(error) => {
+            tracing::warn!(
+                target: "folio::ipc",
+                %error,
+                "perform_move: tabs lock poisoned beim Remap"
+            );
+            return;
+        }
+    };
+    let ids: Vec<u64> = tabs.tabs().iter().map(|tab| tab.id).collect();
+    for id in ids {
+        let is_active = tabs.is_active(id);
+        let tab = tabs.tab_mut(id).expect("id came from the live tab list");
+        tab.navigation.rewrite_prefix(old_path, new_path);
+        if let Some(pending) = tab.pending_path() {
+            if let Some(rewritten) = crate::path_migration::remap(pending, old_path, new_path) {
+                tab.retarget_pending_path(rewritten);
+            }
+            continue;
+        }
+        let Some(current) = tab.document_store.path.clone() else {
+            continue;
+        };
+        let Some(rewritten) = crate::path_migration::remap(&current, old_path, new_path) else {
+            continue;
+        };
+        let result = if is_active {
+            tab.document_store.rename_to(&rewritten)
+        } else {
+            tab.document_store.rename_to_silent(&rewritten)
+        };
+        if let Err(error) = result {
+            tracing::warn!(
+                target: "folio::ipc",
+                %error,
+                tab_id = id,
+                "perform_move: Tab-Pfad konnte nicht umgehängt werden"
+            );
+        }
+    }
+    tabs.remap_recently_closed(old_path, new_path);
+}
+
+fn remap_vault_and_watchers(state: &AppState, old_path: &str, new_path: &str) {
+    let (unwatch, watch) = match state.vault.lock() {
+        Ok(mut vault) => vault.remap_prefix(old_path, new_path),
+        Err(error) => {
+            tracing::warn!(
+                target: "folio::ipc",
+                %error,
+                "perform_move: vault lock poisoned"
+            );
+            return;
+        }
+    };
+    match state.vault_watcher.lock() {
+        Ok(mut watcher) => {
+            for path in &unwatch {
+                watcher.unwatch(path);
+            }
+            for path in &watch {
+                if let Err(error) = watcher.watch(path) {
+                    tracing::warn!(
+                        target: "folio::vault",
+                        %error,
+                        path,
+                        "perform_move: watch after remap failed"
+                    );
+                }
+            }
+        }
+        Err(error) => {
+            tracing::warn!(
+                target: "folio::vault",
+                %error,
+                "perform_move: vault_watcher lock poisoned — neue expanded_dirs ohne Watch"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        destination_blocks_move, is_case_only_same_entry, prepare_move_paths, MovePathError,
+    };
+    use std::fs;
+    use std::path::Path;
+    use tempfile::TempDir;
+
+    #[test]
+    fn prepare_rejects_parent_traversal() {
+        assert_eq!(
+            prepare_move_paths("/vault/a", "/vault/../outside").unwrap_err(),
+            MovePathError::InvalidName
+        );
+        assert_eq!(
+            prepare_move_paths("/vault/a/../b", "/vault/c").unwrap_err(),
+            MovePathError::InvalidName
+        );
     }
 
-    // Finaler Sync: vault:refresh-Event mit aktualisiertem Pinned/Recent-Delta.
-    {
-        let workspace = state
-            .workspace
-            .lock()
-            .map_err(|_| "workspace lock poisoned".to_string())?;
-        let delta = crate::commands::vault_cmd::compute_refresh_delta_synced(state, &workspace)?;
-        handle
-            .emit("vault:refresh", delta)
-            .map_err(|error| error.to_string())?;
+    #[test]
+    fn prepare_normalizes_then_treats_slash_variants_as_equal() {
+        let (old, new) = prepare_move_paths(r"C:\x", "C:/x").unwrap();
+        assert_eq!(old, new);
+        assert_eq!(old, "C:/x");
     }
-    AppState::emit_tabs_changed(handle)?;
-    Ok(())
+
+    #[test]
+    fn prepare_trims_trailing_slash_before_compare() {
+        let (old, new) = prepare_move_paths("/vault/ordner/", "/vault/ordner2").unwrap();
+        assert_eq!(old, "/vault/ordner");
+        assert_eq!(new, "/vault/ordner2");
+    }
+
+    #[test]
+    fn prepare_rejects_move_into_self() {
+        assert_eq!(
+            prepare_move_paths("/vault/a", "/vault/a/b").unwrap_err(),
+            MovePathError::MoveIntoSelf
+        );
+    }
+
+    #[test]
+    fn destination_blocks_real_collision_but_not_missing_target() {
+        let temp = TempDir::new().unwrap();
+        let old = temp.path().join("Foo");
+        let other = temp.path().join("Bar");
+        fs::write(&old, "x").unwrap();
+        fs::write(&other, "y").unwrap();
+        let old_s = old.to_string_lossy().replace('\\', "/");
+        let other_s = other.to_string_lossy().replace('\\', "/");
+        let missing = temp.path().join("missing");
+        let missing_s = missing.to_string_lossy().replace('\\', "/");
+        assert!(destination_blocks_move(&old_s, &other_s));
+        assert!(!destination_blocks_move(&old_s, &missing_s));
+    }
+
+    #[test]
+    fn case_only_same_entry_matches_only_when_fs_agrees() {
+        let temp = TempDir::new().unwrap();
+        let old = temp.path().join("Foo");
+        fs::write(&old, "x").unwrap();
+        let old_s = old.to_string_lossy().replace('\\', "/");
+        let mut new_s = old_s.clone();
+        if let Some(pos) = new_s.rfind("Foo") {
+            new_s.replace_range(pos..pos + 3, "foo");
+        }
+        let same = is_case_only_same_entry(&old_s, &new_s);
+        if same {
+            assert!(!destination_blocks_move(&old_s, &new_s));
+        } else {
+            let new_exists = Path::new(&new_s).exists();
+            if new_exists {
+                assert_ne!(fs::canonicalize(&old_s).ok(), fs::canonicalize(&new_s).ok());
+            }
+            assert!(!destination_blocks_move(&old_s, &new_s) || new_exists);
+        }
+        assert!(!is_case_only_same_entry(&old_s, &old_s));
+    }
+
+    #[test]
+    fn finish_exdev_copy_keeps_source_when_symlinks_were_skipped() {
+        let temp = TempDir::new().unwrap();
+        let src = temp.path().join("src");
+        fs::create_dir(&src).unwrap();
+        fs::write(src.join("keep.txt"), "x").unwrap();
+        let src_s = src.to_string_lossy().replace('\\', "/");
+        let report = crate::fs_copy::CopyReport {
+            skipped_symlinks: vec![src.join("link").to_string_lossy().into_owned()],
+        };
+        let result = std::panic::catch_unwind(|| {
+            super::finish_exdev_copy(&src_s, "/tmp/folio-exdev-dst", &report)
+        });
+        assert!(
+            src.join("keep.txt").exists(),
+            "incomplete EXDEV copy must not delete the source"
+        );
+        if let Ok(Ok(())) = result {
+            panic!("incomplete copy must not be treated as success");
+        }
+    }
 }

@@ -577,6 +577,58 @@ impl Vault {
         self.active_path = path.map(|p| p.replace('\\', "/"));
     }
 
+    /// Schreibt `expanded_dirs` und `active_path` unter `old_root` um.
+    /// Rückgabe: (alte Pfade zum Unwatch, neue Pfade zum Watch).
+    pub fn remap_prefix(&mut self, old_root: &str, new_root: &str) -> (Vec<String>, Vec<String>) {
+        let old_root = old_root.replace('\\', "/");
+        let new_root = new_root.replace('\\', "/");
+        let mut unwatch = Vec::new();
+        let mut watch = Vec::new();
+        let next: BTreeSet<String> = self
+            .expanded_dirs
+            .iter()
+            .map(|path| {
+                if let Some(rewritten) = crate::path_migration::remap(path, &old_root, &new_root) {
+                    unwatch.push(path.clone());
+                    watch.push(rewritten.clone());
+                    rewritten
+                } else {
+                    path.clone()
+                }
+            })
+            .collect();
+        self.expanded_dirs = next;
+        if let Some(active) = &self.active_path {
+            if let Some(rewritten) = crate::path_migration::remap(active, &old_root, &new_root) {
+                self.active_path = Some(rewritten);
+            }
+        }
+        (unwatch, watch)
+    }
+
+    /// Wirft `expanded_dirs` unter `root` raus und leert `active_path`,
+    /// wenn es darunter liegt. Rückgabe: entfernte Watch-Pfade.
+    pub fn remove_under(&mut self, root: &str) -> Vec<String> {
+        let root = root.replace('\\', "/");
+        let mut removed = Vec::new();
+        self.expanded_dirs.retain(|path| {
+            if crate::path_migration::is_under(path, &root) {
+                removed.push(path.clone());
+                false
+            } else {
+                true
+            }
+        });
+        if self
+            .active_path
+            .as_deref()
+            .is_some_and(|path| crate::path_migration::is_under(path, &root))
+        {
+            self.active_path = None;
+        }
+        removed
+    }
+
     pub fn is_expanded(&self, path: &str) -> bool {
         let normalized = path.replace('\\', "/");
         self.expanded_dirs.contains(&normalized)
@@ -1590,5 +1642,46 @@ mod tests {
         assert!(vault.is_expanded("/tmp/repo/.github"));
         assert!(!vault.is_expanded("/tmp/repo/.git"));
         assert_eq!(pruned, vec!["/tmp/repo/.git".to_string()]);
+    }
+
+    #[test]
+    fn remap_prefix_rewrites_expanded_dirs_and_active_path() {
+        let mut vault = Vault::new();
+        vault.expanded_dirs.insert("/a/notizen".into());
+        vault.expanded_dirs.insert("/a/notizen/sub".into());
+        vault.expanded_dirs.insert("/a/notizen-alt".into());
+        vault.set_active(Some("/a/notizen/x.md".into()));
+
+        let (unwatch, watch) = vault.remap_prefix("/a/notizen", "/a/notes");
+
+        assert!(vault.is_expanded("/a/notes"));
+        assert!(vault.is_expanded("/a/notes/sub"));
+        assert!(vault.is_expanded("/a/notizen-alt"));
+        assert!(!vault.is_expanded("/a/notizen"));
+        assert_eq!(vault.active_path.as_deref(), Some("/a/notes/x.md"));
+        assert!(unwatch.contains(&"/a/notizen".to_string()));
+        assert!(unwatch.contains(&"/a/notizen/sub".to_string()));
+        assert!(!unwatch.iter().any(|p| p == "/a/notizen-alt"));
+        assert!(watch.contains(&"/a/notes".to_string()));
+        assert!(watch.contains(&"/a/notes/sub".to_string()));
+    }
+
+    #[test]
+    fn remove_under_prunes_expanded_dirs_and_active_path() {
+        let mut vault = Vault::new();
+        vault.expanded_dirs.insert("/a/notizen".into());
+        vault.expanded_dirs.insert("/a/notizen/sub".into());
+        vault.expanded_dirs.insert("/a/notizen-alt".into());
+        vault.set_active(Some("/a/notizen/x.md".into()));
+
+        let removed = vault.remove_under("/a/notizen");
+
+        assert!(!vault.is_expanded("/a/notizen"));
+        assert!(!vault.is_expanded("/a/notizen/sub"));
+        assert!(vault.is_expanded("/a/notizen-alt"));
+        assert_eq!(vault.active_path, None);
+        assert!(removed.contains(&"/a/notizen".to_string()));
+        assert!(removed.contains(&"/a/notizen/sub".to_string()));
+        assert!(!removed.iter().any(|p| p == "/a/notizen-alt"));
     }
 }

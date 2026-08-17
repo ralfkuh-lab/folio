@@ -258,6 +258,99 @@ impl Workspace {
         self.save()
     }
 
+    /// Schreibt alle gehaltenen Pfade unter `old_root` auf `new_root` um
+    /// (Pins, Recents, `image_dirs` Key *und* Value, `last_export_dir`).
+    /// Präfix-Match auf Segmentgrenze.
+    pub fn remap_prefix(&mut self, old_root: &str, new_root: &str) -> io::Result<()> {
+        let old_root = crate::path_migration::normalize(old_root);
+        let new_root = crate::path_migration::normalize(new_root);
+        let mut dirty = false;
+
+        for item in &mut self.data.pinned {
+            if let Some(rewritten) = crate::path_migration::remap(&item.path, &old_root, &new_root)
+            {
+                item.path = rewritten;
+                dirty = true;
+            }
+        }
+        for item in &mut self.data.recent {
+            if let Some(rewritten) = crate::path_migration::remap(&item.path, &old_root, &new_root)
+            {
+                item.path = rewritten;
+                dirty = true;
+            }
+        }
+
+        let mut next_dirs = HashMap::new();
+        let mut dirs_changed = false;
+        for (key, value) in &self.data.image_dirs {
+            let new_key = crate::path_migration::remap(key, &old_root, &new_root)
+                .unwrap_or_else(|| key.clone());
+            let new_value = crate::path_migration::remap(value, &old_root, &new_root)
+                .unwrap_or_else(|| value.clone());
+            if new_key != *key || new_value != *value {
+                dirs_changed = true;
+            }
+            next_dirs.insert(new_key, new_value);
+        }
+        if dirs_changed {
+            self.data.image_dirs = next_dirs;
+            dirty = true;
+        }
+
+        if let Some(dir) = &self.data.last_export_dir {
+            if let Some(rewritten) = crate::path_migration::remap(dir, &old_root, &new_root) {
+                self.data.last_export_dir = Some(rewritten);
+                dirty = true;
+            }
+        }
+
+        if dirty {
+            self.save()
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Entfernt Pins, Recents und Image-Dir-Einträge unter `root`
+    /// (inklusive `root` selbst). `last_export_dir` wird geleert, wenn
+    /// es darunter liegt.
+    pub fn remove_under(&mut self, root: &str) -> io::Result<()> {
+        let root = crate::path_migration::normalize(root);
+        let pinned_before = self.data.pinned.len();
+        let recent_before = self.data.recent.len();
+        self.data
+            .pinned
+            .retain(|item| !crate::path_migration::is_under(&item.path, &root));
+        self.data
+            .recent
+            .retain(|item| !crate::path_migration::is_under(&item.path, &root));
+        let dirs_before = self.data.image_dirs.len();
+        self.data.image_dirs.retain(|key, value| {
+            !crate::path_migration::is_under(key, &root)
+                && !crate::path_migration::is_under(value, &root)
+        });
+        let mut export_cleared = false;
+        if self
+            .data
+            .last_export_dir
+            .as_deref()
+            .is_some_and(|dir| crate::path_migration::is_under(dir, &root))
+        {
+            self.data.last_export_dir = None;
+            export_cleared = true;
+        }
+        if pinned_before != self.data.pinned.len()
+            || recent_before != self.data.recent.len()
+            || dirs_before != self.data.image_dirs.len()
+            || export_cleared
+        {
+            self.save()
+        } else {
+            Ok(())
+        }
+    }
+
     fn save(&self) -> io::Result<()> {
         persist::save_json_atomic(&self.path, &self.data)
     }
@@ -425,5 +518,71 @@ mod tests {
         assert!(pinned[2].is_directory);
         assert_eq!(pinned[3].path, "/d");
         assert!(!pinned[3].is_directory);
+    }
+
+    #[test]
+    fn remap_prefix_migrates_pins_recents_and_image_dirs() {
+        let temp = TempDir::new().unwrap();
+        let mut workspace = Workspace::load_from(temp.path().join("workspace.json"));
+        workspace.pin("/a/notizen".into(), true).unwrap();
+        workspace.pin("/a/notizen-alt".into(), true).unwrap();
+        workspace.pin("/a/notizen/sub".into(), true).unwrap();
+        workspace.add_recent("/a/notizen/x.md".into()).unwrap();
+        workspace.add_recent("/a/other.md".into()).unwrap();
+        workspace
+            .set_image_dir("/a/notizen/doc.md".into(), "/a/notizen/imgs".into())
+            .unwrap();
+        workspace
+            .set_image_dir("/a/other.md".into(), "/a/notizen/imgs".into())
+            .unwrap();
+        workspace
+            .set_last_export_dir("/a/notizen/out".into())
+            .unwrap();
+
+        workspace.remap_prefix("/a/notizen", "/a/notes").unwrap();
+
+        let pins: Vec<&str> = workspace.pinned().iter().map(|p| p.path.as_str()).collect();
+        assert_eq!(pins, ["/a/notes", "/a/notizen-alt", "/a/notes/sub"]);
+
+        let recents: Vec<&str> = workspace.recent().iter().map(|r| r.path.as_str()).collect();
+        assert_eq!(recents, ["/a/other.md", "/a/notes/x.md"]);
+
+        assert_eq!(
+            workspace.image_dir("/a/notes/doc.md"),
+            Some("/a/notes/imgs")
+        );
+        assert_eq!(workspace.image_dir("/a/notizen/doc.md"), None);
+        assert_eq!(workspace.image_dir("/a/other.md"), Some("/a/notes/imgs"));
+        assert_eq!(Some("/a/notes/out"), workspace.last_export_dir());
+    }
+
+    #[test]
+    fn remove_under_drops_pins_recents_image_dirs_and_export() {
+        let temp = TempDir::new().unwrap();
+        let mut workspace = Workspace::load_from(temp.path().join("workspace.json"));
+        workspace.pin("/a/notizen".into(), true).unwrap();
+        workspace.pin("/a/notizen-alt".into(), true).unwrap();
+        workspace.pin("/a/notizen/sub".into(), true).unwrap();
+        workspace.add_recent("/a/notizen/x.md".into()).unwrap();
+        workspace.add_recent("/a/other.md".into()).unwrap();
+        workspace
+            .set_image_dir("/a/notizen/doc.md".into(), "/tmp/imgs".into())
+            .unwrap();
+        workspace
+            .set_image_dir("/a/other.md".into(), "/a/notizen/imgs".into())
+            .unwrap();
+        workspace
+            .set_last_export_dir("/a/notizen/out".into())
+            .unwrap();
+
+        workspace.remove_under("/a/notizen").unwrap();
+
+        let pins: Vec<&str> = workspace.pinned().iter().map(|p| p.path.as_str()).collect();
+        assert_eq!(pins, ["/a/notizen-alt"]);
+        let recents: Vec<&str> = workspace.recent().iter().map(|r| r.path.as_str()).collect();
+        assert_eq!(recents, ["/a/other.md"]);
+        assert_eq!(workspace.image_dir("/a/notizen/doc.md"), None);
+        assert_eq!(workspace.image_dir("/a/other.md"), None);
+        assert_eq!(workspace.last_export_dir(), None);
     }
 }

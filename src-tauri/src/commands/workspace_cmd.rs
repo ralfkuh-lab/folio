@@ -149,8 +149,17 @@ pub(crate) fn sync_git_head_watcher(state: &AppState) {
                 .collect()
         })
         .unwrap_or_default();
-    if let Ok(mut w) = state.git_head_watcher.lock() {
-        let _ = w.sync(gitdirs);
+    match state.git_head_watcher.lock() {
+        Ok(mut w) => {
+            let _ = w.sync(gitdirs);
+        }
+        Err(error) => {
+            tracing::warn!(
+                target: "folio::git",
+                %error,
+                "git_head_watcher lock poisoned during sync"
+            );
+        }
     }
 }
 

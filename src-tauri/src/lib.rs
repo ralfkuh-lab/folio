@@ -9,6 +9,7 @@ pub mod file_icon;
 pub mod file_kind;
 pub mod file_resolver;
 pub mod frontmatter;
+pub mod fs_copy;
 pub mod git_branch;
 pub mod git_ignore;
 pub mod git_status;
@@ -20,6 +21,7 @@ pub mod menu;
 pub mod navigation;
 pub mod palette;
 pub mod panel_state;
+pub mod path_migration;
 pub mod pdf_export;
 mod persist;
 pub mod renderer;
@@ -534,8 +536,12 @@ pub fn builder(settings: crate::settings::SettingsService) -> tauri::Builder<tau
             commands::file::save_as::save_as,
             commands::file::close::close_document,
             commands::file::rename::rename_file,
-            commands::file::delete::trash_file,
+            commands::file::delete::trash_path,
             commands::file::create::create_file,
+            commands::file::dir::create_directory,
+            commands::file::transfer::duplicate_entry,
+            commands::file::transfer::copy_entry,
+            commands::file::transfer::move_entry,
             commands::git_cmd::git_show_head,
             commands::file::image::save_clipboard_image,
             commands::file::image::save_file_image,

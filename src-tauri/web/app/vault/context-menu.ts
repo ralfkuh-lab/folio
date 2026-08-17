@@ -16,6 +16,8 @@ import { confirmRunFile, showConfirmDialog, showRenameDialog } from '../ui/dialo
 import { searchInFolder } from './search';
 import { t } from '../i18n/translate';
 import { openGitDiff } from '../ui/git-diff';
+import { getTabsSnapshot } from '../state/tabs';
+import { clearClip, clearClipIfUnder, getClip, remapClip, setClip } from './clipboard';
 
 // Monochrome 16x16-Feather-Icons je data-act. Kein width/height im SVG
 // (CSS steuert die Groesse), stroke=currentColor faerbt mit Hover/Theme mit.
@@ -25,6 +27,7 @@ const ICONS: Record<string, string> = {
     run: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 3l8 5-8 5z"/></svg>',
     'open-default': '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V7"/><path d="M10 2h4v4"/><path d="M7 9l7-7"/></svg>',
     'new-file': '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 1.5H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5.5z"/><path d="M9 1.5V5.5H13"/><path d="M8 8.5v3M6.5 10h3"/></svg>',
+    'new-folder': '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5a1 1 0 0 1 1-1h3l1.5 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/><path d="M8 7.5v4M6 9.5h4"/></svg>',
     rename: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5l2 2L6 12l-2.5.5L4 10z"/></svg>',
     pin: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h4M9 2v5l2 2v1H5V9l2-2V2M8 10v4"/></svg>',
     unpin: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h4M9 2v5l2 2v1H5V9l2-2V2M8 10v4"/><path d="M2 2l12 12"/></svg>',
@@ -32,6 +35,10 @@ const ICONS: Record<string, string> = {
     show: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4a1 1 0 0 1 1-1h3l1.5 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/></svg>',
     terminal: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="10" rx="1"/><path d="M5 7l2 2-2 2M9 11h3"/></svg>',
     copy: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1"/><path d="M3.5 10.5H3a.5.5 0 0 1-.5-.5V3a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 .5.5v.5"/></svg>',
+    cut: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="4.5" cy="12" r="1.5"/><circle cx="11.5" cy="12" r="1.5"/><path d="M8 8.5L4.5 12M8 8.5L11.5 12M8 8.5L13 2.5M8 8.5L3 2.5"/></svg>',
+    'clip-copy': '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1"/><path d="M3.5 10.5H3a.5.5 0 0 1-.5-.5V3a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 .5.5v.5"/></svg>',
+    duplicate: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1"/><path d="M3.5 10.5H3a.5.5 0 0 1-.5-.5V3a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 .5.5v.5"/><path d="M9.5 8v3M8 9.5h3"/></svg>',
+    paste: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="9" height="11" rx="1"/><path d="M6 3.5V3a2 2 0 0 1 4 0v.5"/><path d="M6.5 8.5h3M8 7v3"/></svg>',
     delete: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5h10M6.5 4.5V3a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1.5M5 4.5l.5 8a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1l.5-8"/></svg>',
     'search-folder': '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>',
     'show-changes': '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3.5h4.5M3 8h3M3 12.5h4.5"/><path d="M10 3.5h3v9h-3z"/></svg>',
@@ -65,6 +72,18 @@ function basename(p: string): string {
     const n = p.replace(/\\/g, '/');
     const i = n.lastIndexOf('/');
     return i >= 0 ? n.slice(i + 1) : n;
+}
+
+function isPathUnder(path: string, root: string): boolean {
+    const p = path.replace(/\\/g, '/');
+    const r = root.replace(/\\/g, '/');
+    return p === r || p.startsWith(r + '/');
+}
+
+function hasDirtyTabsUnder(root: string): boolean {
+    return getTabsSnapshot().tabs.some(function (tab) {
+        return !!tab.dirty && !!tab.path && isPathUnder(tab.path, root);
+    });
 }
 
 // Externe Datei-Aktion, geteilt von Kontextmenü und Doppelklick im Tree:
@@ -114,16 +133,23 @@ export function openContextMenu(
         else appendItem(ctxMenu, 'open-default', t('vault.contextMenu.openWithDefault'));
         headCount = 3;
     }
-    // Verzeichnis: „Neue Datei…" wird erstes Item; Datei: in der mittleren
-    // Aktions-Gruppe bei „Umbenennen".
+    // Verzeichnis: „Neue Datei…" / „Neuer Ordner…" zuerst; Datei: in der
+    // mittleren Aktions-Gruppe bei „Umbenennen".
     const mid: Array<[string, string]> = [];
     if (isDir) mid.push(['new-file', t('vault.contextMenu.newFile')]);
+    if (isDir) mid.push(['new-folder', t('vault.contextMenu.newFolder')]);
     if (isDir) mid.push(['search-folder', t('vault.contextMenu.searchInFolder')]);
-    if (!isDir) mid.push(['rename', t('vault.contextMenu.rename')]);
+    mid.push(['rename', t('vault.contextMenu.rename')]);
     if (!isDir && options?.gitModified && options?.isText) {
         mid.push(['show-changes', t('vault.contextMenu.showChanges')]);
     }
+    const isPinRootDir = isDir && inPinned;
+    mid.push(['cut', t('vault.contextMenu.cut')]);
+    mid.push(['clip-copy', t('vault.contextMenu.copy')]);
+    mid.push(['duplicate', t('vault.contextMenu.duplicate')]);
+    if (isDir && getClip()) mid.push(['paste', t('vault.contextMenu.paste')]);
     if (!isDir) mid.push(['new-file', t('vault.contextMenu.newFile')]);
+    if (!isDir) mid.push(['new-folder', t('vault.contextMenu.newFolder')]);
     if (!inPinned) mid.push(['pin', t('vault.contextMenu.pin')]);
     if (inPinned) mid.push(['unpin', t('vault.contextMenu.unpin')]);
     if (inRecent) mid.push(['remove-recent', t('vault.contextMenu.removeRecent')]);
@@ -133,8 +159,12 @@ export function openContextMenu(
     appendItem(ctxMenu, 'show', t('vault.contextMenu.showInExplorer'));
     appendItem(ctxMenu, 'terminal', t('vault.contextMenu.openTerminal'));
     appendItem(ctxMenu, 'copy', t('vault.contextMenu.copyPath'));
-    // Löschen (nur Dateien) ganz unten, durch Separator abgesetzt.
-    if (!isDir) {
+    // Löschen ganz unten, durch Separator abgesetzt. NICHT auf einer
+    // Pin-Wurzel-Verzeichnis-Zeile: dort ist fast immer „Aus Vault
+    // entfernen" (unpin) gemeint, und ein Fehlklick schöbe ein ganzes
+    // Projektverzeichnis in den Papierkorb. Gepinnte Einzeldateien bleiben
+    // löschbar — dort ist der Schaden lokal und das Verhalten alt.
+    if (!isPinRootDir) {
         appendSep(ctxMenu);
         appendItem(ctxMenu, 'delete', t('vault.contextMenu.delete'), 'ctx-item-danger');
     }
@@ -174,7 +204,7 @@ export function startInlineRename(path: string): void {
     let nodeEl: HTMLElement | null = null;
     for (let i = 0; i < nodes.length; i++) {
         const n = nodes[i] as HTMLElement;
-        if (n.getAttribute('data-path') === path && n.getAttribute('data-kind') !== 'dir') {
+        if (n.getAttribute('data-path') === path) {
             nodeEl = n;
             break;
         }
@@ -222,13 +252,20 @@ export function startInlineRename(path: string): void {
             restore();
             return;
         }
+        if (isInvalidFileName(newName)) {
+            restore();
+            deps.showStatus(t('errors.file.invalidName'));
+            return;
+        }
         cleanup();
         labelEl.textContent = newName; // optimistisch bis vault:refresh kommt
         const normalized = path.replace(/\\/g, '/');
         const lastSlash = normalized.lastIndexOf('/');
         const parent = lastSlash >= 0 ? path.slice(0, lastSlash + 1) : '';
         const newPath = parent + newName;
-        invoke('rename_file', { oldPath: path, newPath }).catch(function (err) {
+        invoke('rename_file', { oldPath: path, newPath }).then(function () {
+            remapClip(path, newPath);
+        }).catch(function (err) {
             deps.showStatus(typeof err === 'string' ? err : t('errors.vault.renameFailed'));
             deps.refreshVault();
         });
@@ -248,9 +285,14 @@ export function startInlineRename(path: string): void {
     input.addEventListener('blur', onBlur);
 
     input.focus();
-    const dot = basename.lastIndexOf('.');
-    if (dot > 0) input.setSelectionRange(0, dot);
-    else input.select();
+    const isDir = nodeEl.getAttribute('data-kind') === 'dir';
+    if (isDir) {
+        input.select();
+    } else {
+        const dot = basename.lastIndexOf('.');
+        if (dot > 0) input.setSelectionRange(0, dot);
+        else input.select();
+    }
 }
 
 export function initContextMenu(d: Deps): void {
@@ -291,6 +333,27 @@ export function initContextMenu(d: Deps): void {
             safeInvoke('open_terminal_at', { path }, 'open_terminal_at');
         } else if (act === 'copy') {
             if (navigator.clipboard) navigator.clipboard.writeText(path).catch(function () { /* clipboard write may reject silently */ });
+        } else if (act === 'cut') {
+            setClip(path, 'cut');
+        } else if (act === 'clip-copy') {
+            setClip(path, 'copy');
+        } else if (act === 'duplicate') {
+            invoke('duplicate_entry', { path }).catch(function (err) {
+                deps.showStatus(typeof err === 'string' ? err : t('errors.file.copyTreeFailed', { detail: String(err) }));
+            });
+        } else if (act === 'paste' && isDir) {
+            const held = getClip();
+            if (!held) return;
+            const cmd = held.mode === 'cut' ? 'move_entry' : 'copy_entry';
+            invoke(cmd, { src: held.path, destDir: path }).then(function () {
+                if (held.mode === 'cut') clearClip();
+            }).catch(function (err) {
+                const message = typeof err === 'string' ? err : t('errors.file.copyTreeFailed', { detail: String(err) });
+                if (typeof err === 'string' && err === t('errors.file.sourceMissing', { detail: held.path })) {
+                    clearClip();
+                }
+                deps.showStatus(message);
+            });
         } else if (act === 'new-file') {
             const dir = isDir ? path : path.replace(/\\/g, '/').replace(/\/[^/]*$/, '');
             showRenameDialog('untitled.md', t('vault.contextMenu.newFile.prompt'), { title: t('vault.contextMenu.newFile.title'), okLabel: t('vault.contextMenu.newFile.action') }).then(function (name) {
@@ -307,10 +370,41 @@ export function initContextMenu(d: Deps): void {
                     deps.showStatus(typeof err === 'string' ? err : t('errors.vault.createFailed'));
                 });
             });
-        } else if (act === 'delete' && !isDir) {
+        } else if (act === 'new-folder') {
+            const dir = isDir ? path : path.replace(/\\/g, '/').replace(/\/[^/]*$/, '');
+            showRenameDialog('untitled', t('vault.contextMenu.newFolder.prompt'), { title: t('vault.contextMenu.newFolder.title'), okLabel: t('vault.contextMenu.newFolder.action') }).then(function (name) {
+                const trimmed = (name || '').trim();
+                if (!trimmed) return;
+                if (isInvalidFileName(trimmed)) {
+                    deps.showStatus(t('errors.file.invalidName'));
+                    return;
+                }
+                const newPath = joinDirFile(dir, trimmed);
+                invoke('create_directory', { path: newPath }).catch(function (err) {
+                    deps.showStatus(typeof err === 'string' ? err : t('errors.vault.createFailed'));
+                });
+            });
+        } else if (act === 'delete') {
             const name = basename(path);
-            showConfirmDialog(t('vault.contextMenu.deleteConfirm', { name }), { title: t('vault.contextMenu.delete.title'), okLabel: t('vault.contextMenu.delete.action') }).then(function (ok) {
-                if (ok) safeInvoke('trash_file', { path }, 'trash_file', 'warn');
+            const confirmOpts = isDir
+                ? {
+                    title: t('vault.contextMenu.deleteFolder.title'),
+                    okLabel: t('vault.contextMenu.delete.action'),
+                }
+                : {
+                    title: t('vault.contextMenu.delete.title'),
+                    okLabel: t('vault.contextMenu.delete.action'),
+                };
+            const message = isDir
+                ? (hasDirtyTabsUnder(path)
+                    ? t('vault.contextMenu.deleteFolderConfirmUnsaved', { name })
+                    : t('vault.contextMenu.deleteFolderConfirm', { name }))
+                : t('vault.contextMenu.deleteConfirm', { name });
+            showConfirmDialog(message, confirmOpts).then(function (ok) {
+                if (ok) {
+                    clearClipIfUnder(path);
+                    safeInvoke('trash_path', { path }, 'trash_path', 'warn');
+                }
             });
         }
     });

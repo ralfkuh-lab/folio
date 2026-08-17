@@ -72,9 +72,18 @@ Diese Ideen kamen von 2–4 Quellen unabhängig. Das ist der beste Startpunkt.
     (Quelle: agy, codex)
 14. **Export-Presets & Batch-Export** — benannte Konfigs (Theme+Layout+Optionen),
     Mehrfachauswahl im Vault → Sammelexport. `[M]` (Quelle: codex, grok)
-15. **Vault-Dateioperationen vervollständigen** — „Neuer Ordner", Duplizieren,
-    Verschieben, Mehrfachauswahl; macht den Vault zum vollwertigen Dateibrowser.
-    `[M]` (Quelle: codex; ergänzt das gerade gebaute Löschen/Neue-Datei)
+15. **Vault-Dateioperationen vervollständigen** — ✅ **umgesetzt
+    (V1 + V2, 2026-08-17)**, siehe
+    [`spec-vault-fileops.md`](spec-vault-fileops.md): „Neuer Ordner",
+    Ordner umbenennen und löschen, Duplizieren sowie Verschieben/Kopieren
+    über Ausschneiden/Einfügen. Getragen von einer präfixweisen
+    Pfad-Migration (`path_migration.rs`) über Tabs, History, Workspace,
+    Vault-Watches, Wikilink-Index, Git-Watcher und Clipboard.
+    **Zurückgestellt (V3)**: Mehrfachauswahl und Drag & Drop — Ctrl+Klick
+    ist im Vault schon mit „In neuem Tab öffnen" belegt, die Standardgeste
+    für Mehrfachauswahl also vergeben. *(Schätzung `[M]` traf zu, aber
+    nicht aus dem erwarteten Grund: die Datei-IO war der kleine Teil, die
+    Migration der Pfad-Halter der große.)* (Quelle: codex)
 
 ---
 
