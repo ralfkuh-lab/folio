@@ -103,9 +103,16 @@ Escape ist bereits für Kontextmenü, Find-Bar, Command Palette und Dialoge
 belegt. Der Zen-Ausstieg ist der **letzte** Kandidat in dieser Kette: nur
 greifen, wenn keiner der anderen etwas zu schließen hatte.
 
-Beide Kürzel laufen wie die übrigen über den DOM-Capture-Block in
-`ui/toolbar-actions.ts` → `menu_dispatch`, nicht über Tauri-Accelerators
-(siehe die offene Accelerator-Baustelle in `TODO.md`).
+Ausgelöst werden beide Kürzel wie die übrigen über den DOM-Capture-Block
+in `ui/toolbar-actions.ts` → `menu_dispatch`, nicht über den
+OS-Accelerator-Dispatch (siehe die offene Accelerator-Baustelle in
+`TODO.md`). Die Menü-Items tragen den Accelerator trotzdem — als
+**Anzeige**, sonst wären die beiden einzigen Shortcuts der App ohne
+Fundstelle im Menü. Ein Doppel-Toggle entsteht dadurch nicht: dieselbe
+Konstellation hat Strg+Z seit jeher, und beide Pfade münden in denselben
+`menu_dispatch`-Aufruf. Nachgemessen am 2026-08-18 mit echten X-Events
+(XTEST unter Xvfb, kein synthetisches WebView-Event): vier Shift+F11 →
+genau vier Zen-Wechsel, F11 schaltet Vollbild 1:1.
 
 ### Ausstiegs-Hinweis
 

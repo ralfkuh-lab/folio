@@ -171,11 +171,19 @@ pub fn build(handle: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let item_minimap = MenuItemBuilder::with_id(ids::VIEW_MINIMAP, l.view_minimap.as_str())
         .enabled(false)
         .build(handle)?;
-    // Vollbild und Zen bewusst ohne Accelerator: F11/Shift+F11 laufen
-    // ueber den DOM-Capture-Block (Tauri-Accelerators sind unzuverlaessig).
+    // Accelerator hier vor allem als ANZEIGE: ausgeloest werden beide
+    // Toggles vom DOM-Capture-Block (toolbar-actions.ts), weil die WebView
+    // die Taste in der Regel vor dem OS-Accelerator-Dispatch schluckt.
+    // Doppel-Toggle droht dadurch nicht — dieselbe Konstellation hat
+    // Strg+Z (Accelerator + DOM-Capture) seit jeher, und beide Pfade muenden
+    // ohnehin in denselben `menu_dispatch`-Aufruf.
     let item_fullscreen =
-        MenuItemBuilder::with_id(ids::VIEW_FULLSCREEN, l.view_fullscreen.as_str()).build(handle)?;
-    let item_zen = MenuItemBuilder::with_id(ids::VIEW_ZEN, l.view_zen.as_str()).build(handle)?;
+        MenuItemBuilder::with_id(ids::VIEW_FULLSCREEN, l.view_fullscreen.as_str())
+            .accelerator("F11")
+            .build(handle)?;
+    let item_zen = MenuItemBuilder::with_id(ids::VIEW_ZEN, l.view_zen.as_str())
+        .accelerator("Shift+F11")
+        .build(handle)?;
     let view_menu = SubmenuBuilder::new(handle, l.view.as_str())
         .item(&item_mode_view)
         .item(&item_mode_edit)
