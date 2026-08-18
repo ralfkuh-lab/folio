@@ -374,7 +374,7 @@ impl AppState {
                         "document:saved",
                         serde_json::json!({
                             "path": path,
-                            "kind": crate::file_kind::classify(&path),
+                            "kind": crate::file_kind::classify_deep(&path),
                             "language": crate::file_kind::editor_language(&path),
                             "text": text,
                             "content": renderer::render_body_with_wikilinks(&text, wikilinks.as_ref()),
@@ -506,7 +506,7 @@ impl AppState {
             "document:loaded",
             serde_json::json!({
                 "path": path,
-                "kind": crate::file_kind::classify(path),
+                "kind": crate::file_kind::classify_deep(path),
                 "language": crate::file_kind::editor_language(path),
                 "encoding": encoding,
                 "lineEnding": line_ending,

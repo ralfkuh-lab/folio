@@ -433,6 +433,20 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   für Markdown gilt (Edit-Toolbar-Markdown-Gruppen, TOC-Rail,
   Rail-Right-Toggle), wird ausschließlich über CSS auf `.kind-markdown`
   beschränkt — keine eigene Endungs-Heuristik im Frontend.
+  `classify_deep` gilt für die umgestellten Einzel-Stellen: Öffnen-Gate
+  in `read_file`, `kind` in `document:loaded`/`saved`, Default-Mode,
+  EOL-Toggle, Save-As-Filter und das Git-Diff-Gate. Bleibt `classify`
+  bei `Binary`, entscheidet ein Inhalts-Sniff (bekannte BOM am
+  Dateianfang → Text; sonst NUL irgendwo in der Datei innerhalb 32 MiB
+  → Binary; darüber bleibt Binary). Das **zentrale** Gate im
+  Öffnen-Service (`document_service::load_by_kind`) fehlt noch —
+  `tab_open`, Automation-API, Session-Restore und History-Reload laden
+  dort seit jeher alles außer `Image` als Text. Vault-Baum, Filter,
+  Wikilinks, Tags und der Such-Walk bleiben endungsbasiert und IO-frei.
+  Eine nur per Sniff erkannte Textdatei lässt sich öffnen, bearbeiten
+  und speichern, hat im Vault aber kein `data-text="1"` (also kein
+  „Änderungen anzeigen" im Kontextmenü) und wird von
+  `fileFilter: allText` nicht durchsucht.
 - **Split-Mode** (`tb-mode-split`, `body.split-mode` in `content.css`):
   drei Anzeigemodi (view/edit/split) sind sich gegenseitig ausschließende
   Body-Klassen. Im Split-Mode ist die View-Region und die Editor-Region

@@ -15,7 +15,6 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::file_kind::{classify, FileKind};
 use crate::search::{
     self, BufferDoc, BufferSource, ExtendedSearchOptions, FileFilter, FileResult, SearchError,
     SearchOptions, SearchRoots, SearchScope, SearchScopeEx,
@@ -41,10 +40,11 @@ fn resolve_roots(state: &AppState, scope: Option<String>) -> Result<SearchRoots,
 /// klont pro Tab Pfad (+ ggf. Text) und gibt den Lock vor jeglichem IO/
 /// `spawn_blocking` frei (keine zyklische Lock-Reihenfolge; der O(Puffergröße)-
 /// Klon unter Lock ist bewusst akzeptiert). Geladener textueller Store →
-/// [`BufferSource::InMemory`] (unabhängig von Textleere); opaque/Image-Stores →
-/// [`BufferSource::OnDisk`] (via `FileKind`); `pending_path`-Tabs →
-/// [`BufferSource::OnDisk`]. Dedup über normalisierte Pfade; leere Container-
-/// Tabs fallen raus. Wird von Tauri-Command **und** Automation-Handler genutzt.
+/// [`BufferSource::InMemory`] (unabhängig von Textleere); opaque Stores →
+/// [`BufferSource::OnDisk`] (via `is_opaque()`, kein Datei-Sniff);
+/// `pending_path`-Tabs → [`BufferSource::OnDisk`]. Dedup über normalisierte
+/// Pfade; leere Container-Tabs fallen raus. Wird von Tauri-Command **und**
+/// Automation-Handler genutzt.
 pub(crate) fn snapshot_open_tab_docs(state: &AppState) -> Result<Vec<BufferDoc>, String> {
     let tabs = state
         .tabs
@@ -63,23 +63,23 @@ pub(crate) fn snapshot_open_tab_docs(state: &AppState) -> Result<Vec<BufferDoc>,
     Ok(docs)
 }
 
-/// FileKind-/pending-/Textleere-Auswahl für einen einzelnen Tab. Aus
+/// Opaque-/pending-/Textleere-Auswahl für einen einzelnen Tab. Aus
 /// [`snapshot_open_tab_docs`] ausgelagert, damit dieser Kern ohne `AppState`
 /// (der im Unit-Test nicht konstruierbar ist) direkt testbar ist; der Helper
 /// delegiert und ergänzt nur Lock + Pfad-Dedup. Geladener textueller Store →
 /// [`BufferSource::InMemory`] **unabhängig von Textleere** (ein geleerter
 /// Markdown-/Text-Puffer bleibt `InMemory("")` und fällt nicht auf den Disk-
-/// Inhalt zurück); opaque/Image-Stores → [`BufferSource::OnDisk`] (via
-/// `FileKind`, nicht über Textleere); `pending_path`-Tabs →
+/// Inhalt zurück); opaque Stores → [`BufferSource::OnDisk`] (via
+/// `is_opaque()`, nicht über Disk-Inhalt oder Endung); `pending_path`-Tabs →
 /// [`BufferSource::OnDisk`]; ein leerer Container-Tab liefert `None`.
 fn buffer_doc_for_tab(tab: &Tab) -> Option<BufferDoc> {
     if let Some(p) = tab.document_store.path.as_deref() {
         let norm = p.replace('\\', "/");
-        let source = match classify(&norm) {
-            FileKind::Markdown | FileKind::Text => {
-                BufferSource::InMemory(tab.document_store.text.clone())
-            }
-            FileKind::Image | FileKind::Binary => BufferSource::OnDisk,
+        let store = &tab.document_store;
+        let source = if store.is_opaque() {
+            BufferSource::OnDisk
+        } else {
+            BufferSource::InMemory(store.text.clone())
         };
         return Some(BufferDoc { path: norm, source });
     }
@@ -365,12 +365,15 @@ mod tests {
             .unwrap()
             .set_pending_path("/vault/c.md".to_string());
 
-        // Opaque/Image-Store → OnDisk via FileKind, nicht über Textleere.
+        // Opaque/Image-Store → OnDisk via is_opaque(), nicht über Textleere.
+        let img_tmp = tempfile::TempDir::new().unwrap();
+        let img_path = img_tmp.path().join("d.png");
+        std::fs::write(&img_path, b"").unwrap();
+        let img_path = img_path.to_str().unwrap().replace('\\', "/");
         let img_id = tm.add_tab();
         {
             let tab = tm.tab_mut(img_id).unwrap();
-            tab.document_store.path = Some("/vault/d.png".to_string());
-            tab.document_store.text = String::new();
+            tab.document_store.load_opaque(&img_path).unwrap();
         }
 
         assert_eq!(buffer_doc_for_tab(tm.tab(empty_id).unwrap()), None);
@@ -388,8 +391,40 @@ mod tests {
         assert_eq!(pending.source, BufferSource::OnDisk);
 
         let img = buffer_doc_for_tab(tm.tab(img_id).unwrap()).unwrap();
-        assert_eq!(img.path, "/vault/d.png");
+        assert_eq!(img.path, img_path);
         assert_eq!(img.source, BufferSource::OnDisk);
+    }
+
+    #[test]
+    fn test_buffer_doc_for_tab_keeps_dirty_inmemory_when_disk_gone_or_binary() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("untitled");
+        std::fs::write(&path, b"original on disk\n").unwrap();
+        let path_str = path.to_str().unwrap().replace('\\', "/");
+
+        let mut tm = TabManager::new();
+        let id = tm.add_tab();
+        {
+            let tab = tm.tab_mut(id).unwrap();
+            tab.document_store.path = Some(path_str.clone());
+            tab.document_store.text = "dirty buffer content".to_string();
+            tab.document_store.is_dirty = true;
+        }
+
+        std::fs::remove_file(&path).unwrap();
+        let gone = buffer_doc_for_tab(tm.tab(id).unwrap()).unwrap();
+        assert_eq!(gone.path, path_str);
+        assert_eq!(
+            gone.source,
+            BufferSource::InMemory("dirty buffer content".to_string())
+        );
+
+        std::fs::write(&path, b"\0\0\0").unwrap();
+        let replaced = buffer_doc_for_tab(tm.tab(id).unwrap()).unwrap();
+        assert_eq!(
+            replaced.source,
+            BufferSource::InMemory("dirty buffer content".to_string())
+        );
     }
 
     // Der Persistenz-Command (`set_search_options`) prüft denselben Vertrag wie

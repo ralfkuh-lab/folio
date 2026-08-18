@@ -116,7 +116,7 @@ pub async fn discard_editor_changes(state: State<'_, AppState>) -> Result<bool, 
 #[tauri::command]
 pub async fn set_line_ending(eol: String, state: State<'_, AppState>) -> Result<(), String> {
     use crate::document_store::LineEnding;
-    use crate::file_kind::{classify, FileKind};
+    use crate::file_kind::{classify_deep, FileKind};
 
     let wanted = LineEnding::from_label(&eol)
         .ok_or_else(|| i18n::t_args("errors.document.invalidLineEnding", &[("detail", &eol)]))?;
@@ -131,7 +131,7 @@ pub async fn set_line_ending(eol: String, state: State<'_, AppState>) -> Result<
         return Err(i18n::t("errors.document.noneLoaded"));
     };
     // Zweite Verteidigung neben store.opaque (Rename kann Endung aendern).
-    let kind = classify(&path);
+    let kind = classify_deep(&path);
     if matches!(kind, FileKind::Image | FileKind::Binary) || store.is_opaque() {
         return Err(i18n::t("errors.document.imageReadOnly"));
     }

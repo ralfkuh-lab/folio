@@ -1,6 +1,6 @@
 //! Tauri-Commands fuer Git-Anzeige (HEAD-Fassung fuer den Diff).
 
-use crate::file_kind::{classify, editor_language, FileKind};
+use crate::file_kind::{classify_deep, editor_language, FileKind};
 use crate::git_status::{show_head, ShowHeadError};
 use crate::i18n;
 use serde::Serialize;
@@ -17,7 +17,7 @@ pub struct GitHeadPayload {
 #[tauri::command]
 pub async fn git_show_head(path: String) -> Result<GitHeadPayload, String> {
     let path = path.replace('\\', "/");
-    match classify(&path) {
+    match classify_deep(&path) {
         FileKind::Markdown | FileKind::Text => {}
         _ => {
             let detail = Path::new(&path)

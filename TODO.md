@@ -8,7 +8,14 @@
 
 ## Hohe Priorität
 
-_(leer)_
+- **Binary-/Größen-Gate im gemeinsamen Öffnen-Service
+  (`document_service::load_by_kind`) zentralisieren**, Kind einmal
+  bestimmen und durch Load/Default-Mode/Lifecycle-Payload weiterreichen,
+  statt an jeder Stelle neu zu sniffen — heute umgehen `tab_open`,
+  Automation, Session-Restore und History das Gate in
+  `commands/file/read.rs`. Die geplante Hex-Ansicht
+  ([`docs/spec-hex-view.md`](docs/spec-hex-view.md)) braucht genau
+  diesen Umbau und bringt ihn mit.
 
 ## Mittlere Priorität
 

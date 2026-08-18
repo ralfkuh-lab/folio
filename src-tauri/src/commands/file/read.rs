@@ -1,5 +1,5 @@
 use crate::document_service::{self, DirtyPolicy, OpenDocumentOptions, ReloadPolicy};
-use crate::file_kind::{classify, editor_language, FileKind};
+use crate::file_kind::{classify_deep, editor_language, FileKind};
 use crate::i18n;
 use crate::state::AppState;
 use std::path::Path;
@@ -13,7 +13,7 @@ pub async fn read_file(
     handle: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<FileData, String> {
-    let kind = classify(&path);
+    let kind = classify_deep(&path);
     if matches!(kind, FileKind::Binary) {
         let detail = Path::new(&path)
             .file_name()

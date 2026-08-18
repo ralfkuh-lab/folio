@@ -13,7 +13,7 @@
 use std::sync::Mutex;
 
 use crate::document_store::{DocumentStore, LoadedDocument};
-use crate::file_kind::{classify, FileKind};
+use crate::file_kind::{classify, classify_deep, FileKind};
 use crate::navigation::Entry as NavigationEntry;
 use crate::settings::{DefaultViewMode, SettingsService};
 use crate::state::AppState;
@@ -314,7 +314,7 @@ fn apply_default_mode(
     tab: &mut Tab,
     path: &str,
 ) -> Option<String> {
-    let kind = classify(path);
+    let kind = classify_deep(path);
     if !matches!(kind, FileKind::Markdown | FileKind::Text | FileKind::Image) {
         return None;
     }

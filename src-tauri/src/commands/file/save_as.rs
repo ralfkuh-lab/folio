@@ -1,4 +1,4 @@
-use crate::file_kind::{classify, FileKind};
+use crate::file_kind::{classify_deep, FileKind};
 use crate::i18n;
 use crate::menu::strings as menu_strings;
 use crate::state::AppState;
@@ -34,7 +34,7 @@ pub fn run_save_as(
 
     // 2) Dialog mit Filter aus aktueller Endung + immer „Alle Dateien".
     let labels = menu_strings::labels();
-    let kind = classify(&current_path);
+    let kind = classify_deep(&current_path);
     let mut builder = handle
         .dialog()
         .file()
