@@ -70,14 +70,33 @@ impl TextEncoding {
 /// der Text Zeichen enthaelt, die sich nicht ins Original-Encoding
 /// (Windows-1252) kodieren lassen — die Datei wird dann NICHT geschrieben,
 /// statt Zeichen still durch HTML-Entities zu ersetzen (was encoding_rs
-/// sonst tun wuerde).
+/// sonst tun wuerde). `Opaque` ist die Store-Grenze gegen Datenverlust:
+/// ein Bild/Binary darf nie als Text auf Disk landen.
 #[derive(Debug)]
 pub enum SaveError {
     Io(io::Error),
     /// Zeichen, die sich nicht in Windows-1252 darstellen lassen
     /// (dedupliziert, in Reihenfolge des ersten Auftretens).
     Unmappable(Vec<char>),
+    /// Opaque-Dokument (Image/Binary) — kein Text-Save.
+    Opaque,
 }
+
+/// Textmutation an einem Store, der kein Textdokument hält.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoreWriteError {
+    Opaque,
+}
+
+impl std::fmt::Display for StoreWriteError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StoreWriteError::Opaque => write!(f, "opaque document is read-only"),
+        }
+    }
+}
+
+impl std::error::Error for StoreWriteError {}
 
 impl From<io::Error> for SaveError {
     fn from(error: io::Error) -> Self {
@@ -97,6 +116,7 @@ impl std::fmt::Display for SaveError {
                     .join(", ");
                 write!(f, "characters not representable in windows-1252: {list}")
             }
+            SaveError::Opaque => write!(f, "opaque document is read-only"),
         }
     }
 }
@@ -288,6 +308,16 @@ impl DocumentStore {
         let Some(path) = self.path.clone() else {
             return Ok(false);
         };
+        // Bewusster No-op für Opaque: `Ok(false)` bedeutet hier NICHT
+        // „unverändert gegenüber Disk", sondern „dieser Pfad ist nicht
+        // zuständig". `read_and_decode` würde ein Bild/Binary über den
+        // 1252-Fallback in den Store ziehen und `opaque` löschen.
+        // Zuständig ist der Image-Watcher: `document:external_changed`
+        // → Frontend `reloadImageView`. Ein späterer Binary-/Hex-Watcher
+        // muss denselben Event-Pfad nutzen, nicht diesen Reload.
+        if self.opaque {
+            return Ok(false);
+        }
         let (text, line_ending, had_bom, encoding) = read_and_decode(&path)?;
         if text == self.text {
             // Inhalt unveraendert. Falls extern ausschliesslich BOM,
@@ -368,9 +398,21 @@ impl DocumentStore {
         }
     }
 
-    pub fn update_text(&mut self, text: String) {
+    fn reject_opaque(&self) -> Result<(), StoreWriteError> {
+        if self.opaque {
+            Err(StoreWriteError::Opaque)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Schreibt den Editor-Text in den Store. Opaque-Dokumente lehnen
+    /// ab, ohne State oder Events anzufassen — das ist die
+    /// Datenintegritätsgrenze (kein Frontend-Gating).
+    pub fn update_text(&mut self, text: String) -> Result<(), StoreWriteError> {
+        self.reject_opaque()?;
         if self.text == text {
-            return;
+            return Ok(());
         }
         self.text = text.clone();
         if self.path.is_some() {
@@ -381,18 +423,18 @@ impl DocumentStore {
         if let Some(callback) = &self.events.text_changed {
             callback(text);
         }
+        Ok(())
     }
 
-    /// Setzt die Zeilenenden des aktiven Dokuments. No-op bei gleichem Wert
-    /// oder bei Opaque-Docs. Dirty wird analog zu `update_text` aus Text-
-    /// und EOL-Referenzstand abgeleitet. Feuert `eol_changed` vor
-    /// `dirty_changed`. Liefert `true`, wenn sich der Wert geaendert hat.
-    pub fn set_line_ending(&mut self, eol: LineEnding) -> bool {
-        if self.opaque {
-            return false;
-        }
+    /// Setzt die Zeilenenden des aktiven Dokuments. No-op bei gleichem Wert.
+    /// Opaque-Docs liefern [`StoreWriteError::Opaque`] statt eines
+    /// stillen `false`. Dirty wird analog zu `update_text` aus Text- und
+    /// EOL-Referenzstand abgeleitet. Feuert `eol_changed` vor
+    /// `dirty_changed`. Liefert `Ok(true)`, wenn sich der Wert geaendert hat.
+    pub fn set_line_ending(&mut self, eol: LineEnding) -> Result<bool, StoreWriteError> {
+        self.reject_opaque()?;
         if self.line_ending == eol {
-            return false;
+            return Ok(false);
         }
         self.line_ending = eol;
         if let Some(callback) = &self.events.eol_changed {
@@ -401,7 +443,7 @@ impl DocumentStore {
         if self.path.is_some() {
             self.set_dirty(self.is_content_dirty());
         }
-        true
+        Ok(true)
     }
 
     /// Restauriert Line-Endings (LF→Original) und kodiert in das
@@ -415,6 +457,9 @@ impl DocumentStore {
     }
 
     pub fn save(&mut self) -> Result<bool, SaveError> {
+        if self.opaque {
+            return Err(SaveError::Opaque);
+        }
         let Some(path) = self.path.clone() else {
             return Ok(false);
         };
@@ -435,6 +480,9 @@ impl DocumentStore {
     /// `loaded`-Callback (damit das Frontend mit neuem Pfad/Kind/
     /// Sprache re-rendert) und triggert `dirty_changed(false)`.
     pub fn save_as(&mut self, new_path: &str) -> Result<LoadedDocument, SaveError> {
+        if self.opaque {
+            return Err(SaveError::Opaque);
+        }
         let bytes = self.encode_for_disk()?;
         fs::write(new_path, bytes)?;
 
@@ -820,7 +868,7 @@ mod tests {
             fs::write(&path, &input).unwrap();
             let mut store = DocumentStore::new();
             store.load(path.to_str().unwrap()).unwrap();
-            store.update_text("one\nzwei\n".into());
+            store.update_text("one\nzwei\n".into()).unwrap();
             assert!(store.save().unwrap());
 
             let mut expected = Vec::new();
@@ -852,7 +900,7 @@ mod tests {
         assert_eq!(LineEnding::Crlf, store.line_ending);
         assert_eq!("a\nb\nc\n", store.text);
 
-        store.update_text("a\nb\nc\nd\n".into());
+        store.update_text("a\nb\nc\nd\n".into()).unwrap();
         assert!(store.save().unwrap());
         assert_eq!(b"a\r\nb\r\nc\r\nd\r\n".to_vec(), fs::read(&path).unwrap());
     }
@@ -864,7 +912,7 @@ mod tests {
         fs::write(&path, "one").unwrap();
         let mut store = DocumentStore::new();
         store.load(path.to_str().unwrap()).unwrap();
-        store.update_text("two".into());
+        store.update_text("two".into()).unwrap();
         assert!(store.is_dirty);
     }
 
@@ -876,19 +924,19 @@ mod tests {
         let mut store = DocumentStore::new();
         store.load(path.to_str().unwrap()).unwrap();
 
-        store.update_text("two".into());
+        store.update_text("two".into()).unwrap();
         assert!(store.is_dirty);
         // Undo zurueck zum geladenen Stand -> Store wieder clean.
-        store.update_text("one".into());
+        store.update_text("one".into()).unwrap();
         assert!(!store.is_dirty);
 
         // Nach einem Save ist der gespeicherte Text die neue Referenz.
-        store.update_text("three".into());
+        store.update_text("three".into()).unwrap();
         store.save().unwrap();
         assert!(!store.is_dirty);
-        store.update_text("one".into());
+        store.update_text("one".into()).unwrap();
         assert!(store.is_dirty);
-        store.update_text("three".into());
+        store.update_text("three".into()).unwrap();
         assert!(!store.is_dirty);
     }
 
@@ -900,7 +948,7 @@ mod tests {
         fs::write(&src, b"hello\r\n").unwrap();
         let mut store = DocumentStore::new();
         store.load(src.to_str().unwrap()).unwrap();
-        store.update_text("world\n".into());
+        store.update_text("world\n".into()).unwrap();
         assert!(store.is_dirty);
         let loaded = store.save_as(dst.to_str().unwrap()).unwrap();
         assert_eq!(dst.to_string_lossy().to_string(), loaded.path);
@@ -963,7 +1011,7 @@ mod tests {
         fs::write(&path, b"\xEF\xBB\xBFone\r\n").unwrap();
         let mut store = DocumentStore::new();
         store.load(path.to_str().unwrap()).unwrap();
-        store.update_text("a\nb\n".into());
+        store.update_text("a\nb\n".into()).unwrap();
         assert!(store.save().unwrap());
         assert_eq!(b"\xEF\xBB\xBFa\r\nb\r\n".to_vec(), fs::read(path).unwrap());
         assert!(!store.is_dirty);
@@ -998,7 +1046,7 @@ mod tests {
         assert_eq!("windows1252", store.encoding_label());
 
         // Weiteres Umlaut einfuegen + speichern → Umlaute als 1252-Bytes.
-        store.update_text("Käse ö\n".into());
+        store.update_text("Käse ö\n".into()).unwrap();
         assert!(store.save().unwrap());
         assert_eq!(b"K\xE4se \xF6\r\n".to_vec(), fs::read(&path).unwrap());
     }
@@ -1041,7 +1089,7 @@ mod tests {
             assert_eq!(input, fs::read(&path).unwrap());
 
             // Editieren + speichern + neu laden → Encoding/Text erhalten.
-            store.update_text("Hi\nÄ!".into());
+            store.update_text("Hi\nÄ!".into()).unwrap();
             assert!(store.save().unwrap());
             let mut reloaded = DocumentStore::new();
             reloaded.load(path.to_str().unwrap()).unwrap();
@@ -1062,7 +1110,7 @@ mod tests {
         assert_eq!(TextEncoding::Windows1252, store.encoding);
 
         // Emoji einfuegen → nicht in Windows-1252 darstellbar.
-        store.update_text("Käse 😀\n".into());
+        store.update_text("Käse 😀\n".into()).unwrap();
         match store.save() {
             Err(SaveError::Unmappable(chars)) => assert!(chars.contains(&'😀')),
             other => panic!("expected Unmappable, got {other:?}"),
@@ -1135,12 +1183,12 @@ mod tests {
         assert_eq!(LineEnding::Lf, store.line_ending);
         assert!(!store.is_dirty);
 
-        assert!(store.set_line_ending(LineEnding::Crlf));
+        assert!(store.set_line_ending(LineEnding::Crlf).unwrap());
         assert_eq!(LineEnding::Crlf, store.line_ending);
         assert!(store.is_dirty);
 
         // Gleicher Wert → No-op, bleibt dirty.
-        assert!(!store.set_line_ending(LineEnding::Crlf));
+        assert!(!store.set_line_ending(LineEnding::Crlf).unwrap());
         assert!(store.is_dirty);
     }
 
@@ -1153,7 +1201,7 @@ mod tests {
         store.load(path.to_str().unwrap()).unwrap();
         assert_eq!(LineEnding::Crlf, store.line_ending);
 
-        assert!(store.set_line_ending(LineEnding::Lf));
+        assert!(store.set_line_ending(LineEnding::Lf).unwrap());
         assert!(store.is_dirty);
         assert!(store.save().unwrap());
         assert!(!store.is_dirty);
@@ -1171,14 +1219,14 @@ mod tests {
         store.load(path.to_str().unwrap()).unwrap();
 
         // EOL umschalten → dirty.
-        assert!(store.set_line_ending(LineEnding::Crlf));
+        assert!(store.set_line_ending(LineEnding::Crlf).unwrap());
         assert!(store.is_dirty);
 
         // Text aendern und wieder zum clean_text reverten — EOL bleibt
         // abweichend, also dirty (nicht fälschlich clean).
-        store.update_text("two\n".into());
+        store.update_text("two\n".into()).unwrap();
         assert!(store.is_dirty);
-        store.update_text("one\n".into());
+        store.update_text("one\n".into()).unwrap();
         assert!(store.is_dirty);
         assert_eq!(LineEnding::Crlf, store.line_ending);
     }
@@ -1191,15 +1239,15 @@ mod tests {
         let mut store = DocumentStore::new();
         store.load(path.to_str().unwrap()).unwrap();
 
-        assert!(store.set_line_ending(LineEnding::Crlf));
+        assert!(store.set_line_ending(LineEnding::Crlf).unwrap());
         assert!(store.is_dirty);
-        assert!(store.set_line_ending(LineEnding::Lf));
+        assert!(store.set_line_ending(LineEnding::Lf).unwrap());
         assert!(!store.is_dirty);
         assert_eq!(LineEnding::Lf, store.line_ending);
     }
 
     #[test]
-    fn set_line_ending_on_opaque_returns_false_and_stays_clean() {
+    fn set_line_ending_on_opaque_is_error_and_stays_clean() {
         let temp = TempDir::new().unwrap();
         let path = temp.path().join("photo.png");
         fs::write(&path, b"\x89PNG").unwrap();
@@ -1209,10 +1257,14 @@ mod tests {
         assert!(!store.is_dirty);
         assert_eq!(LineEnding::Lf, store.line_ending);
 
-        assert!(!store.set_line_ending(LineEnding::Crlf));
+        assert_eq!(
+            Err(StoreWriteError::Opaque),
+            store.set_line_ending(LineEnding::Crlf)
+        );
         assert!(!store.is_dirty);
         assert_eq!(LineEnding::Lf, store.line_ending);
         assert!(store.is_opaque());
+        assert_eq!(b"\x89PNG".as_slice(), fs::read(&path).unwrap());
     }
 
     #[test]
@@ -1243,5 +1295,126 @@ mod tests {
         // Erneuter Reload ohne Aenderung → kein weiterer Callback.
         assert!(!store.reload_if_changed().unwrap());
         assert_eq!(1, seen.lock().unwrap().len());
+    }
+
+    fn opaque_probe(temp: &TempDir) -> (DocumentStore, std::path::PathBuf, Vec<u8>) {
+        let path = temp.path().join("probe.png");
+        let bytes = b"\x89PNG\r\n\x1a\nOPAQUE-PROBE".to_vec();
+        fs::write(&path, &bytes).unwrap();
+        let mut store = DocumentStore::new();
+        store.load_opaque(path.to_str().unwrap()).unwrap();
+        (store, path, bytes)
+    }
+
+    #[test]
+    fn update_text_on_opaque_errors_without_mutating_store_or_disk() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let temp = TempDir::new().unwrap();
+        let (mut store, path, before) = opaque_probe(&temp);
+        let text_changed = Arc::new(AtomicUsize::new(0));
+        let dirty_changed = Arc::new(AtomicUsize::new(0));
+        let eol_changed = Arc::new(AtomicUsize::new(0));
+        let saved = Arc::new(AtomicUsize::new(0));
+        let text_cb = text_changed.clone();
+        let dirty_cb = dirty_changed.clone();
+        let eol_cb = eol_changed.clone();
+        let saved_cb = saved.clone();
+        store.set_events(DocumentEvents {
+            text_changed: Some(Arc::new(move |_| {
+                text_cb.fetch_add(1, Ordering::SeqCst);
+            })),
+            dirty_changed: Some(Arc::new(move |_| {
+                dirty_cb.fetch_add(1, Ordering::SeqCst);
+            })),
+            eol_changed: Some(Arc::new(move |_| {
+                eol_cb.fetch_add(1, Ordering::SeqCst);
+            })),
+            saved: Some(Arc::new(move |_, _| {
+                saved_cb.fetch_add(1, Ordering::SeqCst);
+            })),
+            ..DocumentEvents::default()
+        });
+
+        assert_eq!(
+            Err(StoreWriteError::Opaque),
+            store.update_text("KAPUTT".into())
+        );
+        assert_eq!(
+            Err(StoreWriteError::Opaque),
+            store.set_line_ending(LineEnding::Crlf)
+        );
+        assert!(matches!(store.save(), Err(SaveError::Opaque)));
+        assert!(store.is_opaque());
+        assert_eq!("", store.text);
+        assert!(!store.is_dirty);
+        assert_eq!(0, text_changed.load(Ordering::SeqCst));
+        assert_eq!(0, dirty_changed.load(Ordering::SeqCst));
+        assert_eq!(0, eol_changed.load(Ordering::SeqCst));
+        assert_eq!(0, saved.load(Ordering::SeqCst));
+        assert_eq!(before, fs::read(&path).unwrap());
+    }
+
+    #[test]
+    fn save_on_opaque_errors_and_leaves_disk_byte_identical() {
+        let temp = TempDir::new().unwrap();
+        let (mut store, path, before) = opaque_probe(&temp);
+        assert!(matches!(store.save(), Err(SaveError::Opaque)));
+        assert!(store.is_opaque());
+        assert_eq!(before, fs::read(&path).unwrap());
+    }
+
+    #[test]
+    fn save_as_on_opaque_errors_and_writes_nothing() {
+        let temp = TempDir::new().unwrap();
+        let (mut store, path, before) = opaque_probe(&temp);
+        let target = temp.path().join("out.txt");
+        assert!(matches!(
+            store.save_as(target.to_str().unwrap()),
+            Err(SaveError::Opaque)
+        ));
+        assert!(!target.exists());
+        assert!(store.is_opaque());
+        assert_eq!(before, fs::read(&path).unwrap());
+    }
+
+    #[test]
+    fn opaque_update_then_save_replays_reported_overwrite() {
+        let temp = TempDir::new().unwrap();
+        let (mut store, path, before) = opaque_probe(&temp);
+        assert!(store.update_text("KAPUTT".into()).is_err());
+        assert!(store.save().is_err());
+        assert_eq!(before, fs::read(&path).unwrap());
+        assert_eq!("", store.text);
+        assert!(store.is_opaque());
+    }
+
+    #[test]
+    fn text_document_mutations_remain_allowed() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("note.md");
+        fs::write(&path, b"hello\n").unwrap();
+        let mut store = DocumentStore::new();
+        store.load(path.to_str().unwrap()).unwrap();
+
+        store.update_text("world\n".into()).unwrap();
+        assert!(store.is_dirty);
+        assert!(store.set_line_ending(LineEnding::Crlf).unwrap());
+        assert!(store.save().unwrap());
+        assert_eq!(b"world\r\n".as_slice(), fs::read(&path).unwrap());
+
+        let target = temp.path().join("copy.md");
+        store.save_as(target.to_str().unwrap()).unwrap();
+        assert_eq!(b"world\r\n".as_slice(), fs::read(&target).unwrap());
+        assert!(!store.is_opaque());
+    }
+
+    #[test]
+    fn reload_if_changed_on_opaque_is_noop_and_stays_opaque() {
+        let temp = TempDir::new().unwrap();
+        let (mut store, path, before) = opaque_probe(&temp);
+        assert!(!store.reload_if_changed().unwrap());
+        assert!(store.is_opaque());
+        assert_eq!("", store.text);
+        assert_eq!(before, fs::read(&path).unwrap());
     }
 }

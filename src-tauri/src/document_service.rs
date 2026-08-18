@@ -350,6 +350,30 @@ fn apply_default_mode(
     Some(target_mode.to_string())
 }
 
+/// Opaque-Dokumente kennen keinen Edit-/Split-Mode. Toolbar und Menü
+/// bleiben die zweite Verteidigung — das Backend clampt hier.
+pub fn clamp_view_mode(store: &DocumentStore, requested: &str) -> String {
+    if store.is_opaque() {
+        "view".to_string()
+    } else {
+        requested.to_string()
+    }
+}
+
+/// Verwirft ungespeicherte Änderungen. Saubere opaque Dokumente sind
+/// No-op (kein `load`, das das Bild in Text verwandeln würde); sonst
+/// läuft der kind-bewusste Pfad [`load_by_kind`].
+pub fn discard_editor_changes(store: &mut DocumentStore) -> std::io::Result<bool> {
+    let Some(path) = store.path.clone() else {
+        return Ok(false);
+    };
+    if store.is_opaque() && !store.is_dirty {
+        return Ok(true);
+    }
+    load_by_kind(store, &path)?;
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -535,7 +559,7 @@ mod tests {
             let mut tabs = tabs.lock().unwrap();
             let store = &mut tabs.active_mut().document_store;
             store.load(&path_a).unwrap();
-            store.update_text("a-modified".into());
+            store.update_text("a-modified".into()).unwrap();
             assert!(store.is_dirty);
         }
 
@@ -573,7 +597,7 @@ mod tests {
             let mut tabs = tabs.lock().unwrap();
             let store = &mut tabs.active_mut().document_store;
             store.load(&path_a).unwrap();
-            store.update_text("a-modified".into());
+            store.update_text("a-modified".into()).unwrap();
         }
 
         let outcome = open_inner(
@@ -727,5 +751,55 @@ mod tests {
 
         assert!(move_history(&tabs, &vault, false).unwrap().is_none());
         assert!(move_history(&tabs, &vault, true).unwrap().is_none());
+    }
+
+    #[test]
+    fn discard_on_text_reloads_from_disk() {
+        let temp = TempDir::new().unwrap();
+        let path = write_doc(&temp, "a.md", "hello");
+        let mut store = DocumentStore::new();
+        store.load(&path).unwrap();
+        store.update_text("dirty".into()).unwrap();
+        assert!(discard_editor_changes(&mut store).unwrap());
+        assert_eq!("hello", store.text);
+        assert!(!store.is_dirty);
+        assert!(!store.is_opaque());
+    }
+
+    #[test]
+    fn discard_on_opaque_keeps_flag_and_does_not_load_text() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("photo.png");
+        fs::write(&path, b"\x89PNG\r\nnot-utf8").unwrap();
+        let mut store = DocumentStore::new();
+        store.load_opaque(path.to_str().unwrap()).unwrap();
+        assert!(store.is_opaque());
+
+        assert!(discard_editor_changes(&mut store).unwrap());
+        assert!(store.is_opaque());
+        assert_eq!("", store.text);
+        assert!(!store.is_dirty);
+    }
+
+    #[test]
+    fn clamp_view_mode_forces_view_for_opaque() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("photo.png");
+        fs::write(&path, b"\x89PNG").unwrap();
+        let mut store = DocumentStore::new();
+        store.load_opaque(path.to_str().unwrap()).unwrap();
+        assert_eq!("view", clamp_view_mode(&store, "edit"));
+        assert_eq!("view", clamp_view_mode(&store, "split"));
+        assert_eq!("view", clamp_view_mode(&store, "view"));
+    }
+
+    #[test]
+    fn clamp_view_mode_leaves_text_documents_alone() {
+        let temp = TempDir::new().unwrap();
+        let path = write_doc(&temp, "a.md", "hello");
+        let mut store = DocumentStore::new();
+        store.load(&path).unwrap();
+        assert_eq!("edit", clamp_view_mode(&store, "edit"));
+        assert_eq!("split", clamp_view_mode(&store, "split"));
     }
 }

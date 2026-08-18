@@ -900,8 +900,8 @@ Dieses Dokument ist die **verbindliche I0-Arbeits-Checkliste** (Spec v3.1). Keys
 | 137 | `Bereit` | literal | `statusBar.ready` | German string found |
 | 149 | `Wörter ·` | literal | `statusBar.wordCount.wordsPart` | German string found |
 | 290 | `Kein Dokument geladen` | literal | `errors.document.noneLoaded` | German string found |
-| 297 | `Kein Dokument geladen` / `Bilder sind read-only` | literal | `errors.document.noneLoaded` / `errors.document.imageReadOnly` | Mode-Tooltip disabled |
-| 307 | `Kein Dokument geladen` / `Bilder sind read-only` | literal | `errors.document.noneLoaded` / `errors.document.imageReadOnly` | Mode-Tooltip disabled |
+| 297 | `Kein Dokument geladen` / `Dieses Dokument ist schreibgeschützt.` | literal | `errors.document.noneLoaded` / `errors.document.readOnly` | Mode-Tooltip disabled |
+| 307 | `Kein Dokument geladen` / `Dieses Dokument ist schreibgeschützt.` | literal | `errors.document.noneLoaded` / `errors.document.readOnly` | Mode-Tooltip disabled |
 | 312 | `Export nur für Markdown verfügbar` | literal | `statusBar.exportMarkdownOnly` | German string found |
 | 349 | `Datei konnte nicht geöffnet werden` | literal | `errors.file.openFailed` | German string found |
 | 426 | `Bereit` | literal | `statusBar.ready` | German string found |

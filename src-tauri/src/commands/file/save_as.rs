@@ -28,6 +28,9 @@ pub fn run_save_as(
         if store.path.is_none() {
             return Err(i18n::t("errors.document.noneOpen"));
         }
+        if store.is_opaque() {
+            return Err(i18n::t("errors.document.readOnly"));
+        }
         store.path.clone()
     };
     let current_path = current_path.expect("path checked above");
@@ -101,6 +104,7 @@ pub fn run_save_as(
             crate::document_store::SaveError::Io(error) => {
                 i18n::t_args("errors.file.saveFailed", &[("detail", &error.to_string())])
             }
+            crate::document_store::SaveError::Opaque => i18n::t("errors.document.readOnly"),
         })?;
     drop(tabs);
 

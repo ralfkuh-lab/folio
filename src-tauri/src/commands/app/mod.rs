@@ -33,6 +33,7 @@ pub async fn set_view_mode(
         .lock()
         .map_err(|_| "tabs lock poisoned".to_string())?;
     let tab = tabs.active_mut();
+    let mode = crate::document_service::clamp_view_mode(&tab.document_store, &mode);
     tab.view_mode = mode.clone();
     tab.navigation.update_view_mode(&mode);
     drop(tabs);

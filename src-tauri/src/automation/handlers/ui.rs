@@ -28,15 +28,17 @@ pub(in crate::automation) async fn post_mode(
         return Err(ApiError::bad_request(format!("unknown mode '{mode}'")));
     }
     let state = context.app_handle.state::<AppState>();
-    {
+    let mode = {
         let mut tabs = state
             .tabs
             .lock()
             .map_err(|_| ApiError::internal("tabs lock poisoned"))?;
         let tab = tabs.active_mut();
+        let mode = crate::document_service::clamp_view_mode(&tab.document_store, &mode);
         tab.view_mode = mode.clone();
         tab.navigation.update_view_mode(&mode);
-    }
+        mode
+    };
     let (request_id, receiver) = ack::register(state.inner()).map_err(ApiError::internal)?;
     emit(
         &context,

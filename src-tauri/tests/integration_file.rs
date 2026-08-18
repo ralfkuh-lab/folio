@@ -34,7 +34,9 @@ fn document_store_file_resolver_and_workspace_work_together() {
     assert!(store.had_bom);
     assert!(!store.is_dirty);
 
-    store.update_text("# Updated\nSee [linked](linked%20file.md)\n".into());
+    store
+        .update_text("# Updated\nSee [linked](linked%20file.md)\n".into())
+        .unwrap();
     assert!(store.is_dirty);
     assert!(store.save().unwrap());
     assert!(!store.is_dirty);

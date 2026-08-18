@@ -200,13 +200,7 @@ pub(in crate::automation) async fn post_editor_text(
 ) -> ApiResult<Json<AckedResponse>> {
     let Json(payload) = json_payload(payload)?;
     let state = context.app_handle.state::<AppState>();
-    state
-        .tabs
-        .lock()
-        .map_err(|_| ApiError::internal("tabs lock poisoned"))?
-        .active_mut()
-        .document_store
-        .update_text(payload.text.clone());
+    set_active_editor_text(&state, payload.text.clone())?;
     let (request_id, receiver) = ack::register(state.inner()).map_err(ApiError::internal)?;
     emit(
         &context,
@@ -225,17 +219,29 @@ pub(in crate::automation) async fn post_editor_text(
 pub(in crate::automation) async fn post_save(
     AxumState(context): AxumState<AutomationContext>,
 ) -> ApiResult<Json<OkResponse>> {
-    let saved = context
-        .app_handle
-        .state::<AppState>()
+    let saved = save_active_document(&context.app_handle.state::<AppState>())?;
+    Ok(Json(OkResponse { ok: saved }))
+}
+
+fn save_active_document(state: &AppState) -> ApiResult<bool> {
+    state
         .tabs
         .lock()
         .map_err(|_| ApiError::internal("tabs lock poisoned"))?
         .active_mut()
         .document_store
         .save()
-        .map_err(|error| ApiError::internal(error.to_string()))?;
-    Ok(Json(OkResponse { ok: saved }))
+        .map_err(|error| match error {
+            crate::document_store::SaveError::Opaque => {
+                ApiError::bad_request(crate::commands::editor::localize_save_error(error))
+            }
+            other => ApiError::internal(other.to_string()),
+        })
+}
+
+fn set_active_editor_text(state: &AppState, text: String) -> ApiResult<()> {
+    crate::commands::editor::apply_editor_text_changed(state, text, None)
+        .map_err(ApiError::bad_request)
 }
 
 pub(in crate::automation) async fn mock_post_save(
@@ -263,4 +269,55 @@ pub(in crate::automation) async fn mock_post_quit(
         .map_err(|_| ApiError::internal("mock automation state lock poisoned"))?
         .quit_requested = true;
     ok()
+}
+
+#[cfg(test)]
+mod opaque_http_tests {
+    use super::*;
+    use crate::i18n;
+    use axum::http::StatusCode;
+    use tempfile::TempDir;
+
+    fn opaque_app_state() -> (AppState, TempDir, std::path::PathBuf, Vec<u8>) {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("probe.png");
+        let before = b"\x89PNG\r\n\x1a\nOPAQUE-PROBE".to_vec();
+        std::fs::write(&path, &before).unwrap();
+        let state = AppState::new();
+        {
+            let mut tabs = state.tabs.lock().expect("tabs lock");
+            tabs.active_mut()
+                .document_store
+                .load_opaque(path.to_str().unwrap())
+                .unwrap();
+        }
+        (state, temp, path, before)
+    }
+
+    #[test]
+    fn post_editor_text_and_save_on_opaque_are_http_400() {
+        let _ = crate::i18n::set_process_translator(crate::i18n::Translator::new(
+            crate::i18n::load_embedded_registry(),
+            crate::i18n::ResolvedLanguage {
+                catalog_tag: "de".into(),
+                format_locale: "de-DE".into(),
+            },
+        ));
+        let (state, _temp, path, before) = opaque_app_state();
+        let expected = i18n::t("errors.document.readOnly");
+
+        let text_err = set_active_editor_text(&state, "KAPUTT".into()).unwrap_err();
+        assert_eq!(StatusCode::BAD_REQUEST, text_err.status);
+        assert_eq!(expected, text_err.message);
+
+        let save_err = save_active_document(&state).unwrap_err();
+        assert_eq!(StatusCode::BAD_REQUEST, save_err.status);
+        assert_eq!(expected, save_err.message);
+
+        let tabs = state.tabs.lock().expect("tabs lock");
+        assert!(tabs.active().document_store.is_opaque());
+        assert_eq!("", tabs.active().document_store.text);
+        assert!(!tabs.active().document_store.is_dirty);
+        assert_eq!(before, std::fs::read(&path).unwrap());
+    }
 }

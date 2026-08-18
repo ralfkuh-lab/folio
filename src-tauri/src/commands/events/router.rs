@@ -105,7 +105,8 @@ pub fn route_editor_event(
                 .map_err(|_| "tabs lock poisoned".to_string())?
                 .active_mut()
                 .document_store
-                .update_text(string_field(payload, "text")?);
+                .update_text(string_field(payload, "text")?)
+                .map_err(crate::commands::editor::localize_store_write_error)?;
             Ok(())
         }
         "editorSelection" => {

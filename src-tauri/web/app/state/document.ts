@@ -422,7 +422,7 @@ export function applyDocKind(kind: string | null, path?: string | null): void {
     const hasViewMode = md || resolved === 'text' || isImage;
     const canEdit = md || resolved === 'text';
     const noneLoaded = t('errors.document.noneLoaded');
-    const imageReadOnly = t('errors.document.imageReadOnly');
+    const docReadOnly = t('errors.document.readOnly');
     const btnView = $('tb-mode-view') as HTMLButtonElement;
     if (btnView) {
         btnView.disabled = !hasViewMode;
@@ -433,7 +433,7 @@ export function applyDocKind(kind: string | null, path?: string | null): void {
         btnEdit.disabled = !canEdit;
         btnEdit.title = canEdit
             ? t('toolbar.modeEdit.tooltip')
-            : (isImage ? imageReadOnly : noneLoaded);
+            : (isImage ? docReadOnly : noneLoaded);
     }
     // Split braucht eine editierbare Datei (Editor-Seite) + eine
     // anzeigbare Seite — also dieselbe Bedingung wie Edit. Bilder sind
@@ -443,7 +443,7 @@ export function applyDocKind(kind: string | null, path?: string | null): void {
         btnSplit.disabled = !canEdit;
         btnSplit.title = canEdit
             ? t('toolbar.modeSplit.tooltip')
-            : (isImage ? imageReadOnly : noneLoaded);
+            : (isImage ? docReadOnly : noneLoaded);
     }
     const btnExport = $('tb-export') as HTMLButtonElement;
     if (btnExport) {

@@ -32,6 +32,14 @@ pub async fn editor_text_changed(
     tab_id: Option<u64>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    apply_editor_text_changed(&state, text, tab_id)
+}
+
+pub(crate) fn apply_editor_text_changed(
+    state: &AppState,
+    text: String,
+    tab_id: Option<u64>,
+) -> Result<(), String> {
     let mut tabs = state
         .tabs
         .lock()
@@ -44,15 +52,25 @@ pub async fn editor_text_changed(
             if crate::ai::mask::has_lone_carriage_return(&tab.document_store.text) {
                 return Err(i18n::t("errors.editor.unsupportedLineEndings"));
             }
-            tab.document_store.update_text(text);
+            tab.document_store
+                .update_text(text)
+                .map_err(localize_store_write_error)?;
         }
-        None => tabs.active_mut().document_store.update_text(text),
+        None => tabs
+            .active_mut()
+            .document_store
+            .update_text(text)
+            .map_err(localize_store_write_error)?,
     }
     Ok(())
 }
 
 #[tauri::command]
 pub async fn editor_save_requested(state: State<'_, AppState>) -> Result<bool, String> {
+    apply_editor_save_requested(&state)
+}
+
+pub(crate) fn apply_editor_save_requested(state: &AppState) -> Result<bool, String> {
     state
         .tabs
         .lock()
@@ -78,6 +96,13 @@ pub(crate) fn localize_save_error(error: crate::document_store::SaveError) -> St
             "errors.editor.saveFailed",
             &[("detail", &error.to_string())],
         ),
+        crate::document_store::SaveError::Opaque => i18n::t("errors.document.readOnly"),
+    }
+}
+
+pub(crate) fn localize_store_write_error(error: crate::document_store::StoreWriteError) -> String {
+    match error {
+        crate::document_store::StoreWriteError::Opaque => i18n::t("errors.document.readOnly"),
     }
 }
 
@@ -99,14 +124,10 @@ pub async fn discard_editor_changes(state: State<'_, AppState>) -> Result<bool, 
         .lock()
         .map_err(|_| "tabs lock poisoned".to_string())?;
     let store = &mut tabs.active_mut().document_store;
-    let Some(path) = store.path.clone() else {
-        return Ok(false);
-    };
-    store.load(&path).map_err(|error| {
+    crate::document_service::discard_editor_changes(store).map_err(|error| {
         let detail = error.to_string();
         i18n::t_args("errors.editor.discardFailed", &[("detail", &detail)])
-    })?;
-    Ok(true)
+    })
 }
 
 /// Setzt die Zeilenenden des aktiven Dokuments (`lf` | `crlf`).
@@ -133,11 +154,13 @@ pub async fn set_line_ending(eol: String, state: State<'_, AppState>) -> Result<
     // Zweite Verteidigung neben store.opaque (Rename kann Endung aendern).
     let kind = classify_deep(&path);
     if matches!(kind, FileKind::Image | FileKind::Binary) || store.is_opaque() {
-        return Err(i18n::t("errors.document.imageReadOnly"));
+        return Err(i18n::t("errors.document.readOnly"));
     }
     // Events laufen ueber DocumentEvents::eol_changed / dirty_changed.
-    let _ = store.set_line_ending(wanted);
-    Ok(())
+    store
+        .set_line_ending(wanted)
+        .map(|_| ())
+        .map_err(localize_store_write_error)
 }
 
 #[tauri::command]
@@ -333,6 +356,60 @@ mod tests {
                 format_locale: "en-US".to_string(),
             },
         )
+    }
+
+    #[test]
+    fn read_only_key_is_localized_in_de_and_en() {
+        assert_eq!(
+            "This document is read-only.",
+            translator("en").t("errors.document.readOnly")
+        );
+        assert_eq!(
+            "Dieses Dokument ist schreibgeschützt.",
+            translator("de").t("errors.document.readOnly")
+        );
+    }
+
+    #[test]
+    fn editor_text_changed_then_save_rejects_opaque_and_leaves_disk() {
+        use crate::state::AppState;
+        use std::fs;
+        use tempfile::TempDir;
+
+        let _ = crate::i18n::set_process_translator(crate::i18n::Translator::new(
+            crate::i18n::load_embedded_registry(),
+            crate::i18n::ResolvedLanguage {
+                catalog_tag: "de".into(),
+                format_locale: "de-DE".into(),
+            },
+        ));
+
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("probe.png");
+        let before = b"\x89PNG\r\n\x1a\nOPAQUE-PROBE".to_vec();
+        fs::write(&path, &before).unwrap();
+
+        let state = AppState::new();
+        {
+            let mut tabs = state.tabs.lock().unwrap();
+            tabs.active_mut()
+                .document_store
+                .load_opaque(path.to_str().unwrap())
+                .unwrap();
+        }
+
+        let text_err = apply_editor_text_changed(&state, "KAPUTT".into(), None).unwrap_err();
+        assert_eq!(text_err, i18n::t("errors.document.readOnly"));
+
+        let save_err = apply_editor_save_requested(&state).unwrap_err();
+        assert_eq!(save_err, i18n::t("errors.document.readOnly"));
+
+        let tabs = state.tabs.lock().unwrap();
+        let store = &tabs.active().document_store;
+        assert!(store.is_opaque());
+        assert_eq!("", store.text);
+        assert!(!store.is_dirty);
+        assert_eq!(before, fs::read(&path).unwrap());
     }
 
     #[test]
