@@ -286,11 +286,21 @@ export function __resetVaultTagsForTests(): void {
     lastResult = null;
     openTags.clear();
     wired = false;
+    if ((window as any).__folioVaultTagsReset === resetVaultTagsForAutomation) {
+        delete (window as any).__folioVaultTagsReset;
+    }
+}
+
+/** Test-/Automation-Reset: Tags-Sektion einklappen und Zustand persistieren. */
+export function resetVaultTagsForAutomation(): void {
+    setExpanded(false, true);
 }
 
 export function initVaultTags(): void {
     if (wired) return;
     wired = true;
+
+    (window as any).__folioVaultTagsReset = resetVaultTagsForAutomation;
 
     const header = $('vault-tags-header');
     if (header) {
@@ -326,3 +336,4 @@ export function initVaultTags(): void {
         applyExpandedUi();
     }
 }
+

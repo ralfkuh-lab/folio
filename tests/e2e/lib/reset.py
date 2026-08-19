@@ -24,8 +24,8 @@ die Event-Verarbeitung bestaetigt, nicht den sichtbaren Endzustand.
 
 Bewusst NICHT zurueckgesetzt: Pins (Szenarien raeumen ihre eigenen
 Pins auf, Konvention siehe 17_workspace_pin) und Panel-State jenseits
-des Split-Teilers (Minimap, Section-Expansion, Fenster-Geometrie —
-kein Endpunkt vorhanden).
+des Split-Teilers und der Tags-Sektion (Minimap, Pinned-/Recent-
+Expansion, Fenster-Geometrie — kein Endpunkt vorhanden).
 """
 
 from __future__ import annotations
@@ -175,6 +175,29 @@ def reset_canonical_state(api: AutomationApi, settings_snapshot: dict[str, Any])
             break
         if time.monotonic() > deadline:
             raise RuntimeError(f"Reset: Zen-Layer bleibt an (zen={zen_on!r})")
+        time.sleep(0.05)
+    # 9d) Tags-Sektion einklappen (kanonischer Default aus panel_state.rs).
+    #    Warum: 54_tags klappt sie auf und persistiert `tags_expanded: true`
+    #    in panel-state.json. Der Wrapper-Lauf legt pro Lauf ein frisches
+    #    Config-Verzeichnis an und merkt davon nichts; im --attach-Modus
+    #    ueberlebt der Zustand und verschiebt in spaeteren Szenarien die
+    #    Ergebnisliste (47_vault_search_ui kippte damit um ~1,5 % visuell).
+    #    Der Hook setzt DOM und Persistenz gemeinsam; pinned/recent bleiben
+    #    unangetastet, weil kein Szenario sie dauerhaft zuklappt.
+    api.eval(
+        "typeof window.__folioVaultTagsReset==='function'"
+        "&&window.__folioVaultTagsReset()"
+    )
+    deadline = time.monotonic() + 2.0
+    while True:
+        tags_open = api.eval(
+            "document.getElementById('vault-tags-header')"
+            "?.getAttribute('aria-expanded')==='true'"
+        ).get("value")
+        if tags_open is not True:
+            break
+        if time.monotonic() > deadline:
+            raise RuntimeError(f"Reset: Tags-Sektion bleibt offen (open={tags_open!r})")
         time.sleep(0.05)
     # 10) Reflow settlen lassen, bevor das Szenario startet.
     _expect_acked("sync_render", api.sync_render())
