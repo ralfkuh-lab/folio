@@ -8,6 +8,7 @@
 
 use crate::file_kind::{classify, FileKind};
 use crate::file_resolver::make_relative;
+use crate::path_identity::lexical_paths_equal;
 use crate::renderer::slugify_heading;
 use crate::search::{resolve_scope, SearchScope, MAX_FILE_SIZE};
 use crate::workspace::PinnedItem;
@@ -149,23 +150,6 @@ fn relative_to(root: &Path, file: &Path) -> String {
     }
 }
 
-/// Vergleicht zwei bereits Forward-Slash-normalisierte Pfade so, wie das
-/// Dateisystem sie behandelt: case-insensitiv auf Windows/macOS, sonst
-/// exakt. Die Namensaufloesung ist case-insensitiv — ein exakter Vergleich
-/// am Ende liess auf case-insensitiven Volumes Backlinks verschwinden,
-/// wenn die Schreibweise des geoeffneten Dokuments vom Walk abwich
-/// (Review kimi #6).
-pub fn paths_equal(a: &str, b: &str) -> bool {
-    #[cfg(any(windows, target_os = "macos"))]
-    {
-        a.eq_ignore_ascii_case(b) || a.to_lowercase() == b.to_lowercase()
-    }
-    #[cfg(not(any(windows, target_os = "macos")))]
-    {
-        a == b
-    }
-}
-
 /// Suffix-Match auf Komponentengrenze: `notes/alpha` matcht
 /// `/vault/notes/alpha`, aber `otes/alpha` nicht.
 fn ends_with_components(path: &str, needle_lowercase: &str) -> bool {
@@ -173,14 +157,9 @@ fn ends_with_components(path: &str, needle_lowercase: &str) -> bool {
     path == needle_lowercase || path.ends_with(&format!("/{needle_lowercase}"))
 }
 
-/// Gleichheit zweier normalisierter Pfade (FS-Semantik wie [`paths_equal`]).
-fn path_strings_equal(a: &str, b: &str) -> bool {
-    paths_equal(a, b)
-}
-
 /// `path` liegt unter `root` (inkl. Gleichheit), komponentengrenzen-sicher.
 fn path_under_root(path: &str, root: &str) -> bool {
-    if path_strings_equal(path, root) {
+    if lexical_paths_equal(path, root) {
         return true;
     }
     #[cfg(any(windows, target_os = "macos"))]
@@ -205,7 +184,7 @@ fn directory_pin_roots(pinned: &[PinnedItem]) -> Vec<String> {
         let pb = PathBuf::from(item.path.replace('\\', "/"));
         if pb.is_dir() {
             let n = normalize_path(&pb);
-            if !roots.iter().any(|r| path_strings_equal(r, &n)) {
+            if !roots.iter().any(|r| lexical_paths_equal(r, &n)) {
                 roots.push(n);
             }
         }
@@ -240,7 +219,7 @@ fn entry_parent_equals(entry_path: &str, ctx_dir: &str) -> bool {
         Some(i) => &entry_path[..i],
         None => "",
     };
-    path_strings_equal(parent, ctx_dir)
+    lexical_paths_equal(parent, ctx_dir)
 }
 
 // ---------------------------------------------------------------------------
@@ -446,7 +425,7 @@ impl WikilinkIndex {
         if let Some(ctx_root) = self.home_root_for(&ctx_path) {
             if let Some(entry) = candidates
                 .iter()
-                .find(|entry| pred(entry) && path_strings_equal(&entry.root, ctx_root))
+                .find(|entry| pred(entry) && lexical_paths_equal(&entry.root, ctx_root))
             {
                 return Some(entry);
             }
@@ -1049,7 +1028,7 @@ pub fn find_backlinks(
         if !seen.insert(normalized.clone()) {
             return;
         }
-        if paths_equal(&normalized, &target) {
+        if lexical_paths_equal(&normalized, &target) {
             return;
         }
         let Some(content) = read_md_for_backlinks(&path) else {
@@ -1157,7 +1136,7 @@ fn scan_file_for_backlinks(
             let Some(entry) = index.resolve_name_from(&parsed.name, source) else {
                 continue;
             };
-            if !paths_equal(&entry.path, target_path) {
+            if !lexical_paths_equal(&entry.path, target_path) {
                 continue;
             }
             if hits.len() >= BACKLINKS_MAX_HITS_PER_FILE {
@@ -1569,7 +1548,7 @@ fn insert_resolves_to(
 ) -> bool {
     index
         .resolve_name_from(insert, context)
-        .is_some_and(|hit| paths_equal(&hit.path, expected_path))
+        .is_some_and(|hit| lexical_paths_equal(&hit.path, expected_path))
 }
 
 fn make_snippet(line: &str, match_start: usize, match_end: usize) -> String {
@@ -2430,24 +2409,6 @@ mod tests {
     }
 
     #[test]
-    fn paths_equal_matches_platform_filesystem_semantics() {
-        assert!(paths_equal("/vault/Notes/Beta.md", "/vault/Notes/Beta.md"));
-        assert!(!paths_equal(
-            "/vault/Notes/Beta.md",
-            "/vault/Notes/Other.md"
-        ));
-        let mixed_case_matches = paths_equal("/vault/Notes/Beta.md", "/vault/notes/beta.md");
-        if cfg!(any(windows, target_os = "macos")) {
-            assert!(
-                mixed_case_matches,
-                "case-insensitive Volumes vergleichen gefaltet"
-            );
-        } else {
-            assert!(!mixed_case_matches, "Linux vergleicht exakt");
-        }
-    }
-
-    #[test]
     fn backlinks_exclude_self_links() {
         let temp = vault();
         write(
@@ -2922,7 +2883,7 @@ mod tests {
                 panic!("insert {:?} did not resolve (kind={})", c.insert, c.kind)
             });
             assert!(
-                paths_equal(&resolved.path, &c.path),
+                lexical_paths_equal(&resolved.path, &c.path),
                 "invariant: resolve_name_from({:?}, ctx) = {} but candidate.path = {} (kind={})",
                 c.insert,
                 resolved.path,
@@ -2997,7 +2958,7 @@ mod tests {
         let hit = index.resolve_name("note").expect("note");
         let expected = normalize_path(&v.path().join("x/note.md"));
         assert!(
-            paths_equal(&hit.path, &expected),
+            lexical_paths_equal(&hit.path, &expected),
             "pre-W7 global rank: walk-relative x/note.md (depth 2) beats a/b/note.md (depth 3); got {} want {}",
             hit.path,
             expected
@@ -3012,7 +2973,7 @@ mod tests {
         assert_eq!("a/b/note.md", nested_note.relative);
         assert!(
             nested_note.root.ends_with("/a")
-                || paths_equal(&nested_note.root, &normalize_path(&nested)),
+                || lexical_paths_equal(&nested_note.root, &normalize_path(&nested)),
             "root is longest pin, not walk root: {}",
             nested_note.root
         );
@@ -3041,7 +3002,7 @@ mod tests {
             .find(|e| e.path.ends_with("/tracked.md"))
             .expect("tracked");
         assert!(
-            paths_equal(&t.root, &folder_root),
+            lexical_paths_equal(&t.root, &folder_root),
             "walk path: root = folder pin, got {}",
             t.root
         );
@@ -3053,7 +3014,7 @@ mod tests {
             .find(|e| e.path.ends_with("/secret.md"))
             .expect("secret via file pin");
         assert!(
-            paths_equal(&s.root, &folder_root),
+            lexical_paths_equal(&s.root, &folder_root),
             "file-pin bypass under folder: root must be folder pin, got {}",
             s.root
         );
@@ -3075,7 +3036,7 @@ mod tests {
             .expect("orphan");
         let parent = normalize_path(outside.path());
         assert!(
-            paths_equal(&e.root, &parent),
+            lexical_paths_equal(&e.root, &parent),
             "orphan file pin root = parent dir, got {} want {}",
             e.root,
             parent

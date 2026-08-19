@@ -266,6 +266,16 @@ pub fn focus_existing_tab_with_anchor(
     }
 }
 
+/// Der Vergleich laeuft ueber die Datei-Identitaet, nicht ueber den
+/// Pfad-String: sonst gilt dieselbe Datei ueber ein Symlink-Verzeichnis
+/// (oder eine abweichende Schreibweise) als "noch nicht offen" und
+/// bekommt einen zweiten Tab.
+///
+/// Der Aktiv-Test laeuft bewusst NICHT ueber einen zweiten eigenen
+/// Identitaets-Schluessel: der String-Vergleich vorweg deckt den Normalfall
+/// syscall-frei ab, und faellt er durch, entscheidet `find_by_path` — trifft
+/// dessen Ergebnis den aktiven Tab, ist der Zielpfad eben doch das aktive
+/// Dokument. Damit wird pro Aufruf hoechstens einmal kanonisiert.
 fn tab_to_focus_for_path(tabs: &crate::tab_manager::TabManager, path: &str) -> Option<u64> {
     let normalized = path.replace('\\', "/");
     if tabs.active().document_path() == Some(normalized.as_str()) {
@@ -692,6 +702,56 @@ mod tests {
         assert_eq!(2, tabs.tabs().len());
         assert!(tabs.active().document_store.is_opaque());
         assert_eq!(Some(FileKind::Binary), tabs.active().document_store.kind());
+    }
+
+    /// Prueft die beiden Bausteine, mit denen [`open_with_anchor`] und
+    /// [`focus_existing_tab`] entscheiden, ob ein Pfad schon offen ist:
+    /// `normalized_file_path` → `find_by_path` sowie `tab_to_focus_for_path`.
+    /// Die Commands selbst brauchen einen AppHandle, den es im Unit-Test
+    /// nicht gibt — der vollstaendige Open-Ablauf ist im E2E-Szenario
+    /// `62_path_identity.py` abgedeckt.
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_directory_path_resolves_to_the_existing_tab_in_the_open_lookup() {
+        use crate::state::AppState;
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp = TempDir::new().unwrap();
+        let real = temp.path().join("real");
+        fs::create_dir(&real).unwrap();
+        fs::write(real.join("a.md"), "hallo").unwrap();
+        fs::write(real.join("b.md"), "hallo").unwrap();
+        let link = temp.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let via_real = real.join("a.md").to_string_lossy().into_owned();
+        let via_link = link.join("a.md").to_string_lossy().into_owned();
+        assert_ne!(via_real, via_link);
+
+        let state = AppState::new();
+        {
+            let mut tabs = state.tabs.lock().unwrap();
+            tabs.restore_session(std::slice::from_ref(&via_real), Some(0));
+        }
+
+        // Der Symlink-Pfad landet auf dem bestehenden Tab, statt einen
+        // zweiten Puffer auf derselben Datei anzulegen.
+        let normalized = normalized_file_path(via_link.clone()).unwrap();
+        let tabs = state.tabs.lock().unwrap();
+        assert_eq!(Some(1), tabs.find_by_path(&normalized));
+        // Er ist bereits aktiv — kein Tab-Wechsel noetig.
+        assert_eq!(None, tab_to_focus_for_path(&tabs, &normalized));
+        drop(tabs);
+
+        // Ein anderer Tab wird dagegen sehr wohl fokussiert.
+        {
+            let mut tabs = state.tabs.lock().unwrap();
+            let other = tabs.add_tab();
+            tabs.active_mut().document_store.path =
+                Some(real.join("b.md").to_string_lossy().into_owned());
+            assert_eq!(Some(1), tab_to_focus_for_path(&tabs, &normalized));
+            assert_ne!(Some(other), tab_to_focus_for_path(&tabs, &normalized));
+        }
     }
 
     #[test]

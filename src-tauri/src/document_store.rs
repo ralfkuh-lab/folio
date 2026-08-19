@@ -894,8 +894,15 @@ fn is_write_event(event: &Event) -> bool {
     )
 }
 
+/// Watcher-Filter: gehoert das Event zur beobachteten Datei?
+///
+/// Frueher `fs::canonicalize(a).ok() == fs::canonicalize(b).ok()` — das war
+/// `true`, sobald **beide** Pfade nicht mehr existierten (`None == None`).
+/// Beim Loeschen hielt der Filter damit jedes fremde Remove-Event fuer das
+/// eigene Dokument. `same_file` faellt stattdessen auf den lexikalischen
+/// Schluessel zurueck und haelt zwei verschiedene tote Pfade verschieden.
 fn same_path(a: &Path, b: &Path) -> bool {
-    a == b || fs::canonicalize(a).ok() == fs::canonicalize(b).ok()
+    a == b || crate::path_identity::same_file(&a.to_string_lossy(), &b.to_string_lossy())
 }
 
 /// Liest `path` und liefert (LF-normalisierter Text, originales
@@ -1101,6 +1108,18 @@ fn unmappable_windows1252(text: &str) -> Vec<char> {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn same_path_keeps_two_deleted_paths_apart() {
+        let temp = TempDir::new().unwrap();
+        let watched = temp.path().join("meins.md");
+        let foreign = temp.path().join("fremd.md");
+        // Beide existieren NICHT — genau der Zustand, in dem der frühere
+        // `canonicalize(..).ok() == canonicalize(..).ok()` zweimal `None`
+        // verglich und jedes fremde Remove-Event durchliess.
+        assert!(!same_path(&foreign, &watched));
+        assert!(same_path(&watched, &watched));
+    }
 
     #[test]
     fn load_detects_bom_and_normalizes_crlf() {

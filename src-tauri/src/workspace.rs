@@ -1,3 +1,4 @@
+use crate::path_identity::FileMatcher;
 use crate::persist;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -168,7 +169,8 @@ impl Workspace {
 
     pub fn add_recent(&mut self, path: String) -> io::Result<()> {
         let path = normalize_path(&path);
-        self.data.recent.retain(|item| item.path != path);
+        let matcher = FileMatcher::new(&path);
+        self.data.recent.retain(|item| !matcher.matches(&item.path));
         self.data.recent.insert(
             0,
             RecentItem {
@@ -182,7 +184,8 @@ impl Workspace {
 
     pub fn remove_recent(&mut self, path: &str) -> io::Result<()> {
         let path = normalize_path(path);
-        self.data.recent.retain(|item| item.path != path);
+        let matcher = FileMatcher::new(&path);
+        self.data.recent.retain(|item| !matcher.matches(&item.path));
         self.save()
     }
 
@@ -194,7 +197,7 @@ impl Workspace {
 
     pub fn pin(&mut self, path: String, is_directory: bool) -> io::Result<()> {
         let path = normalize_path(&path);
-        if !self.is_pinned(&path) {
+        if !self.is_pinned_file(&path) {
             self.data.pinned.push(PinnedItem { path, is_directory });
         }
         self.save()
@@ -202,13 +205,29 @@ impl Workspace {
 
     pub fn unpin(&mut self, path: &str) -> io::Result<()> {
         let path = normalize_path(path);
-        self.data.pinned.retain(|item| item.path != path);
+        let matcher = FileMatcher::new(&path);
+        self.data.pinned.retain(|item| !matcher.matches(&item.path));
         self.save()
     }
 
+    /// Lese-Prädikat für den Vault-Render: läuft pro Pin-Wurzel und **pro
+    /// Knoten**, bleibt deshalb bewusst rein lexikalisch (kein Datei-IO).
+    /// Wer „ist diese Datei schon gepinnt?" beantworten muss, nimmt
+    /// [`Workspace::is_pinned_file`].
     pub fn is_pinned(&self, path: &str) -> bool {
         let path = normalize_path(path);
         self.data.pinned.iter().any(|item| item.path == path)
+    }
+
+    /// Wie [`Workspace::is_pinned`], aber identitätsbasiert: verhindert
+    /// einen zweiten Pin auf dieselbe Datei über eine andere Schreibweise.
+    /// Nur für das Setzen eines Pins gedacht — ein `canonicalize` je Pin.
+    fn is_pinned_file(&self, path: &str) -> bool {
+        let matcher = FileMatcher::new(path);
+        self.data
+            .pinned
+            .iter()
+            .any(|item| matcher.matches(&item.path))
     }
 
     pub fn reorder_pinned(&mut self, paths: Vec<String>) -> io::Result<()> {
@@ -217,9 +236,10 @@ impl Workspace {
 
         for path in paths {
             let normalized = normalize_path(&path);
+            let matcher = FileMatcher::new(&normalized);
             if let Some(pos) = remaining_pins
                 .iter()
-                .position(|item| item.path == normalized)
+                .position(|item| matcher.matches(&item.path))
             {
                 let item = remaining_pins.remove(pos);
                 new_pinned.push(item);
@@ -233,9 +253,20 @@ impl Workspace {
 
     /// Letztes Image-Speicherverzeichnis fuer das Dokument `doc_path`,
     /// falls vorhanden.
+    /// Erst der exakte Map-Treffer (kein Datei-IO im Normalfall), sonst ein
+    /// identitätsbasierter Scan: dasselbe Dokument über eine andere
+    /// Schreibweise geöffnet soll sein gemerktes Bildverzeichnis behalten.
     pub fn image_dir(&self, doc_path: &str) -> Option<&str> {
-        let key = normalize_path(doc_path);
-        self.data.image_dirs.get(&key).map(String::as_str)
+        let normalized = normalize_path(doc_path);
+        if let Some(dir) = self.data.image_dirs.get(&normalized) {
+            return Some(dir.as_str());
+        }
+        let matcher = FileMatcher::new(&normalized);
+        self.data
+            .image_dirs
+            .iter()
+            .find(|(stored, _)| matcher.matches(stored))
+            .map(|(_, dir)| dir.as_str())
     }
 
     /// Merkt das zuletzt fuer ein Dokument gewaehlte Image-Speicher-
@@ -449,6 +480,42 @@ mod tests {
         assert!(workspace.is_pinned(r"C:\Users\rakul\file.md"));
         assert!(workspace.is_pinned("C:/Users/rakul/file.md"));
         assert_eq!("C:/Users/rakul/file.md", workspace.pinned()[0].path);
+    }
+
+    /// Pin, Unpin und die Recent-Dedup vergleichen ueber die Datei-Identitaet;
+    /// gespeichert bleibt die Schreibweise, die der Nutzer sieht.
+    #[cfg(unix)]
+    #[test]
+    fn pin_and_recent_treat_two_spellings_as_one_file() {
+        let temp = TempDir::new().unwrap();
+        let real = temp.path().join("real");
+        std::fs::create_dir(&real).unwrap();
+        std::fs::write(real.join("a.md"), "").unwrap();
+        let link = temp.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let via_real = real.join("a.md").to_string_lossy().into_owned();
+        let via_link = link.join("a.md").to_string_lossy().into_owned();
+
+        let mut workspace = Workspace::load_from(temp.path().join("workspace.json"));
+        workspace.pin(via_real.clone(), false).unwrap();
+        workspace.pin(via_link.clone(), false).unwrap();
+        assert_eq!(1, workspace.pinned().len());
+        assert_eq!(via_real, workspace.pinned()[0].path);
+
+        workspace.add_recent(via_real.clone()).unwrap();
+        workspace.add_recent(via_link.clone()).unwrap();
+        assert_eq!(1, workspace.recent().len());
+        assert_eq!(via_link, workspace.recent()[0].path);
+
+        workspace
+            .set_image_dir(via_real.clone(), "/bilder".into())
+            .unwrap();
+        assert_eq!(Some("/bilder"), workspace.image_dir(&via_link));
+
+        workspace.unpin(&via_link).unwrap();
+        assert!(workspace.pinned().is_empty());
+        workspace.remove_recent(&via_real).unwrap();
+        assert!(workspace.recent().is_empty());
     }
 
     #[test]

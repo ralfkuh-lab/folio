@@ -239,7 +239,13 @@ fn open_inner(
         let store = &tab.document_store;
         let needs_load = match options.reload {
             ReloadPolicy::Always => true,
-            ReloadPolicy::IfPathChanged => store.path.as_deref() != Some(path.as_str()),
+            // Identitaet statt String-Gleichheit: derselbe Puffer auf
+            // derselben Datei ueber zwei Schreibweisen (Link-Klick vs.
+            // Vault-Klick) soll nur den Anker springen, nicht neu laden.
+            ReloadPolicy::IfPathChanged => !store
+                .path
+                .as_deref()
+                .is_some_and(|open| crate::path_identity::same_file(open, &path)),
         };
         needs_load
     };
@@ -298,7 +304,12 @@ pub fn load_by_kind_limited(
     if file_size > max_bytes {
         return Err(LoadError::TooLarge { size: file_size });
     }
-    let same_path = store.path.as_deref() == Some(path);
+    // Kind-Cache nur wiederverwenden, wenn der Store wirklich dieselbe
+    // Datei haelt — ueber die Identitaet, nicht ueber den Pfad-String.
+    let same_path = store
+        .path
+        .as_deref()
+        .is_some_and(|open| crate::path_identity::same_file(open, path));
     let kind = if same_path {
         store.kind().unwrap_or_else(|| classify_deep(path))
     } else {

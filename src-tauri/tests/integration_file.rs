@@ -1,6 +1,7 @@
 use folio_lib::{
     document_store::{DocumentStore, LineEnding},
     file_resolver,
+    path_identity::same_file,
     workspace::Workspace,
 };
 use std::fs;
@@ -22,10 +23,7 @@ fn document_store_file_resolver_and_workspace_work_together() {
 
     let resolved =
         file_resolver::resolve(current.to_str().unwrap(), "linked%20file.md#top").unwrap();
-    assert!(file_resolver::paths_equal(
-        &resolved,
-        linked.to_str().unwrap()
-    ));
+    assert!(same_file(&resolved, linked.to_str().unwrap()));
 
     let mut store = DocumentStore::new();
     let loaded = store.load(current.to_str().unwrap()).unwrap();
@@ -69,10 +67,7 @@ fn anchor_only_resolution_loads_current_document() {
     let mut store = DocumentStore::new();
     store.load(&resolved).unwrap();
 
-    assert!(file_resolver::paths_equal(
-        &resolved,
-        current.to_str().unwrap()
-    ));
+    assert!(same_file(&resolved, current.to_str().unwrap()));
     assert_eq!("Body\n", store.text);
 }
 

@@ -197,6 +197,46 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   (`\U` = Unicode-Escape). `Workspace::load_from` migriert bestehende
   Backslash-Pfade beim Boot. Windows-APIs akzeptieren beide
   Schreibweisen, daher bricht das keine Datei-IO.
+- **Pfad-Identität vs. lexikalischer Vergleich** (`path_identity.rs`):
+  Forward-Slash-Normalisierung allein beantwortet nicht „ist das dieselbe
+  Datei?" — ein Symlink-Verzeichnis, macOS' `/tmp`→`/private/tmp` oder
+  eine abweichende Schreibweise auf case-insensitiven Volumes erzeugen für
+  eine Datei zwei Strings (und damit zwei Tabs mit je eigenem Puffer).
+  Es gibt deshalb genau zwei Vergleichsfunktionen, und jede Aufrufstelle
+  wählt bewusst: `same_file`/`identity_key` **mit** Datei-IO
+  (`fs::canonicalize`, Windows-UNC-Präfix in **beiden** Zweigen gestrippt,
+  Fallback auf den lexikalisch normalisierten Pfad, wenn die Datei nicht
+  existiert — kein Cache) und `lexical_paths_equal` **ohne** Datei-IO (FS-Case-Regeln auf
+  den Strings, für Pfade aus demselben Walk; früher `wikilink::paths_equal`).
+  Der Identitäts-Schlüssel ist **nur** ein Vergleichswert: gespeichert,
+  angezeigt und ins DOM gegeben wird weiterhin die Schreibweise, mit der
+  der Nutzer navigiert hat. Identitätsbasiert vergleichen: `find_by_path`,
+  `tab_to_focus_for_path`, `push_recently_closed`, `navigation::navigate`,
+  `ReloadPolicy::IfPathChanged` + Kind-Cache, der Watcher-Filter
+  `document_store::same_path` sowie in `workspace.rs` Pin-Doppelprüfung,
+  `unpin`, `reorder_pinned`, Recent-Dedup und `image_dir`-Lookup. Bewusst
+  **nicht**: Render- und Walk-Pfade (`Workspace::is_pinned` als
+  Lese-Prädikat, `vault.rs::is_expanded`/`item_html`, Wikilink-/Tag-/
+  Such-/Palette-Dedup) — dort wäre `canonicalize` ein IO-Aufschlag pro
+  Knoten bzw. pro Datei. Präfix-Operationen bleiben komplett bei
+  `path_migration` (lexikalisch, Segmentgrenze).
+  Zwei Fallen aus dem Kreuz-Review: (1) `lexical_normalize` behandelt die
+  **Wurzel als unteilbar** — `/`, Laufwerk (`C:/`) und UNC-Freigabe
+  (`//server/share/`); ohne das machte `C:/a/../../b.md` aus einem absoluten
+  einen relativen Pfad, und zwar auf Windows im Produktionspfad jedes
+  Link-Klicks (`resolve_existing_path` normalisiert damit). Laufwerksrelative
+  Pfade (`C:a/b`) bleiben bewusst relativ. (2) Jede Dedup-Schleife nutzt
+  `FileMatcher` statt beidseitigem `identity_key`: gleiche Schreibweise wird
+  ohne Syscall entschieden, der Schlüssel entsteht erst beim ersten
+  abweichenden Kandidaten (`reorder_pinned` war sonst O(n·m) `canonicalize`
+  pro Pin-Drag).
+  Gegenstück dazu: `file_resolver::resolve_existing_path` kanonisiert
+  **nicht mehr** (nur Existenzprüfung, Case-Korrektur und lexikalische
+  Normalform) — der Link-Klick war die einzige Stelle, die physisch
+  auflöste, und genau daraus entstand die Asymmetrie. **Reihenfolge ist
+  dort Vertrag**: erst normalisieren, dann die Existenz genau dieses Pfads
+  prüfen. Andersherum liefert ein Link über ein Symlink-Verzeichnis
+  (`link/../x.md`) einen Pfad, den es gar nicht gibt.
 - **Vault-Watcher** (`vault_watcher.rs`): pro aufgeklappten Vault-
   Ordner ein NonRecursive-`notify`-Watch. `Vault::on_expand`
   registriert, `on_collapse` deregistriert. Bei FS-Event emit
@@ -1000,7 +1040,7 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
 
 ## E2E-Test-Suite
 
-Vollständige UI-Coverage in `tests/e2e/` (61 Szenarien, Python +
+Vollständige UI-Coverage in `tests/e2e/` (62 Szenarien, Python +
 Pillow): Boot, View-/Edit-/Split-Mode, Theme, Vault, Find (inkl.
 Code-View), Workspace, Save-Roundtrip durch alle BOM/EOL-Kombis,
 Undo/Redo, Toolbar-Commands (Bold/Italic/Heading), Menü-Coverage
@@ -1013,7 +1053,8 @@ Vault-Filter, Tab-Kontextmenü, Command Palette, Statusleiste,
 Wikilinks/Tags, Task-Checkboxen, Git-Status/-Diff/-Filter,
 versteckte Vault-Einträge, Find-Bar-Regex/-Ersetzen,
 Vault-Dateioperationen (Ordner anlegen/umbenennen/löschen),
-Zen-Modus, Hex-Ansicht sowie
+Zen-Modus, Hex-Ansicht, Pfad-Identität (Symlink-Verzeichnis → ein Tab)
+sowie
 KI-Settings, KI-Übersetzung, KI-Theme-Autor, Export-KI-Draft und
 KI-Aktionen (Mock-Provider). Der englische Boot ist über
 `scripts/run-e2e.sh --lang-smoke` separat abgedeckt.
@@ -1041,6 +1082,14 @@ ein `unterordner/` mit `notiz.md`; das Szenario öffnet einen Tab auf die
 Notiz und prüft nach dem Ordner-Rename, dass der **Tab-Pfad präfixweise
 mitgewandert** ist (der eigentliche V1-Vertrag) und beim Löschen wieder
 verschwindet.
+
+**Szenario mit Symlink-Fixture** (`62_path_identity.py`):
+`/tmp/folio-e2e-symlink` mit `real/notiz.md` und dem Symlink-Verzeichnis
+`link` → `real` — selbst angelegt statt sich auf plattformabhängige
+Symlinks wie macOS' `/tmp`→`/private/tmp` zu verlassen. Geprüft wird, dass
+beide Schreibweisen **einen** Tab ergeben (beide Reihenfolgen, plus der
+Replace-Open-Pfad `/open`) und dass der Pfad dabei **nicht** aufgelöst
+wird. Ohne Screenshot: das Szenario prüft nur Backend-State.
 
 Wrapper: `bash scripts/run-e2e.sh` (Linux+Xvfb). Visual-Baselines in
 `tests/e2e/baselines/`, Artefakte (gitignored) in

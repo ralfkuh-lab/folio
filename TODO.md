@@ -8,40 +8,7 @@
 
 ## Hohe Priorität
 
-- **Pfad-Identität: gleiche Datei, zwei Tabs** (Befund macOS-Verifikations-
-  lauf 2026-08-19). `commands/tabs.rs::normalized_file_path` und
-  `tab_manager.rs::find_by_path` vergleichen Pfade als **Strings** und
-  normalisieren nur `\` → `/` — ohne `canonicalize`, ohne Case-Folding.
-  `link_interceptor.rs:81/100` kanonisiert dagegen beim Link-Klick. Aus
-  dieser Asymmetrie entstehen für dieselbe Datei zwei Strings und damit
-  zwei Tabs mit je eigenem `DocumentStore` (nachgestellt auf macOS:
-  `/tmp/x/a.md` + `/private/tmp/x/a.md` → zwei Tabs). Zwei unabhängige
-  Puffer auf einer Datei heißt: konkurrierende Saves fangen nur noch die
-  External-Changed-Kette ab.
-
-  **Nicht mac-spezifisch** — im Pfad steckt kein `cfg(target_os)`:
-  - macOS: `/tmp` und `/var` sind Symlinks auf `/private/…`.
-  - Linux: jedes symlinkte Verzeichnis (`~/notes` → `/mnt/data/notes`),
-    Bind-Mounts. Fällt in der E2E-Suite nicht auf, weil die Fixtures unter
-    echten `/tmp`-Pfaden liegen.
-  - Windows: schon **ohne** Symlinks, weil case-insensitiv —
-    `C:/…/Notiz.md` vs. `C:/…/notiz.md` ist dieselbe Datei, zwei Strings.
-    Dazu Junctions, `subst`-Laufwerke, UNC vs. gemapptes Laufwerk.
-    Vermutlich der häufigste Alltagsfall.
-
-  **Fix an einer Stelle**: `normalized_file_path` (und die Workspace-/
-  Vault-Normalisierung) über dieselbe Kanonisierung schicken, die
-  `file_resolver::paths_equal`/`case_insensitive_path` schon benutzen.
-  Dabei mitdenken: `canonicalize` verlangt eine existierende Datei (für
-  `pending_path`/Restore-Pfade also fallback-fähig halten) und liefert auf
-  Windows UNC-Präfixe (`\\?\C:\…`), die in `data-path`-Attributen und
-  `workspace.json` nicht auftauchen dürfen.
-
-  **Gegenprobe**: macht die drei auf macOS roten E2E-Szenarien grün
-  (`41_link_new_tab`, `53_wikilinks`, `61_hex_view`) — sie scheitern
-  ausschließlich an dieser Asymmetrie. Ein neues Szenario mit **selbst
-  angelegtem** Symlink (statt `/var`) deckt den Fall plattformübergreifend
-  ab; auf Windows zusätzlich eine Case-Variante.
+_(leer)_
 
 ## Mittlere Priorität
 

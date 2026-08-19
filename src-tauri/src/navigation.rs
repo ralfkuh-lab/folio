@@ -46,10 +46,14 @@ impl NavigationController {
 
     pub fn navigate(&mut self, absolute_path: impl Into<String>, anchor: Option<String>) -> &Entry {
         let absolute_path = absolute_path.into();
-        if self
-            .current()
-            .is_some_and(|entry| entry.absolute_path == absolute_path && entry.anchor == anchor)
-        {
+        // Dedup gegen den aktuellen Eintrag ueber die Datei-Identitaet:
+        // dieselbe Datei ueber zwei Schreibweisen (Symlink-Verzeichnis,
+        // Case) erzeugte sonst einen zweiten History-Eintrag, dessen
+        // Back-Schritt optisch nichts tut.
+        if self.current().is_some_and(|entry| {
+            entry.anchor == anchor
+                && crate::path_identity::same_file(&entry.absolute_path, &absolute_path)
+        }) {
             return self.current().expect("current entry exists");
         }
 

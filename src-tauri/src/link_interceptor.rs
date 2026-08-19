@@ -58,8 +58,17 @@ fn is_external(href: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::path_identity::lexical_normalize;
     use std::fs;
     use tempfile::TempDir;
+
+    /// Erwartungswert fuer `LinkAction::Navigate`: der Eingabepfad,
+    /// lexikalisch normalisiert — **nicht** `fs::canonicalize`. Der
+    /// Link-Klick war frueher die einzige Stelle der App, die physisch
+    /// aufloeste; genau daraus entstanden zwei Tabs auf einer Datei.
+    fn expected_path(path: &std::path::Path) -> String {
+        lexical_normalize(&path.to_string_lossy())
+    }
 
     #[test]
     fn external_urls_open_in_shell() {
@@ -78,10 +87,7 @@ mod tests {
         fs::write(&target, "").unwrap();
         assert_eq!(
             LinkAction::Navigate {
-                path: fs::canonicalize(target)
-                    .unwrap()
-                    .to_string_lossy()
-                    .into_owned(),
+                path: expected_path(&target),
                 anchor: Some("a".into())
             },
             LinkInterceptor::new().handle("target.md#a", current.to_str())
@@ -97,13 +103,35 @@ mod tests {
         fs::write(&target, "").unwrap();
         assert_eq!(
             LinkAction::Navigate {
-                path: fs::canonicalize(target)
-                    .unwrap()
-                    .to_string_lossy()
-                    .into_owned(),
+                path: expected_path(&target),
                 anchor: None
             },
             LinkInterceptor::new().handle("target.html", current.to_str())
+        );
+    }
+
+    /// Regressionsfall des Pfad-Identitaets-Fixes: die Datei ist ueber ein
+    /// Symlink-Verzeichnis erreichbar; der Link-Klick muss den Pfad MIT
+    /// Symlink liefern, sonst oeffnet sich ein zweiter Tab neben dem, den
+    /// der Vault-Klick auf dieselbe Datei erzeugt hat.
+    #[cfg(unix)]
+    #[test]
+    fn navigation_keeps_the_symlinked_directory_path() {
+        let temp = TempDir::new().unwrap();
+        let real = temp.path().join("real");
+        fs::create_dir(&real).unwrap();
+        fs::write(real.join("current.md"), "").unwrap();
+        fs::write(real.join("target.md"), "").unwrap();
+        let link = temp.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        let current = link.join("current.md");
+        assert_eq!(
+            LinkAction::Navigate {
+                path: expected_path(&link.join("target.md")),
+                anchor: None
+            },
+            LinkInterceptor::new().handle("target.md", current.to_str())
         );
     }
 

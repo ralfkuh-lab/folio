@@ -67,31 +67,45 @@ fn to_posix_string(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
 
-pub fn paths_equal(a: &str, b: &str) -> bool {
-    let Ok(a) = fs::canonicalize(a) else {
-        return false;
-    };
-    let Ok(b) = fs::canonicalize(b) else {
-        return false;
-    };
+/// Prueft die Existenz und korrigiert die Schreibweise ueber
+/// [`case_insensitive_path`] (ein Link `Notiz.md` auf die Datei `notiz.md`
+/// muss weiter funktionieren), loest den Pfad aber **nicht physisch** auf:
+/// zurueck kommt der lexikalisch normalisierte Pfad (`.`-Segmente weg, `..`
+/// gegen das Vorgaengersegment gekuerzt, Forward-Slashes).
+///
+/// Fruehere Fassungen riefen hier `fs::canonicalize`. Das machte den
+/// Link-Klick zur einzigen Stelle der App, die kanonische Pfade lieferte —
+/// Vault, Workspace, DOM und Persistenz fuehren durchgaengig die
+/// Schreibweise, mit der der Nutzer navigiert hat. Fuer dieselbe Datei
+/// entstanden so zwei Strings und damit zwei Tabs mit je eigenem Puffer.
+///
+/// Bewusst in Kauf genommen: `a/symlink/../b.md` kuerzt lexikalisch anders
+/// als physisch. Das ist der Preis dafuer, dass ein Link-Klick denselben
+/// Pfad liefert wie der Vault-Klick auf dieselbe Datei; was danach noch
+/// auseinanderlaeuft, faengt `path_identity::same_file` an den
+/// Vergleichsstellen ab.
+///
+/// **Reihenfolge ist Vertrag**: erst lexikalisch normalisieren, DANN die
+/// Existenz genau dieses Pfads pruefen. Andersherum (Pruefung auf dem rohen
+/// Pfad, Rueckgabe des gekuerzten) koennen beide auseinanderfallen: zeigt
+/// `link` auf `/outside/sub`, existiert `/vault/link/../secret.md` physisch
+/// als `/outside/secret.md`, waehrend die Rueckgabe `/vault/secret.md`
+/// waere — ein Pfad, den es nicht gibt, und ein Link-Klick ins Leere. So
+/// gilt: entweder der zurueckgegebene Pfad existiert, oder es kommt `None`.
+fn resolve_existing_path(path: &Path) -> Option<PathBuf> {
+    let normalized = lexically_normalized(path);
+    if normalized.exists() {
+        return Some(normalized);
+    }
 
-    a.to_string_lossy()
-        .eq_ignore_ascii_case(&b.to_string_lossy())
+    let corrected = case_insensitive_path(&normalized)?;
+    corrected.exists().then(|| lexically_normalized(&corrected))
 }
 
-fn resolve_existing_path(path: &Path) -> Option<PathBuf> {
-    if path.exists() {
-        return fs::canonicalize(path)
-            .ok()
-            .or_else(|| Some(path.to_path_buf()));
-    }
-
-    let corrected = case_insensitive_path(path)?;
-    if corrected.exists() {
-        fs::canonicalize(&corrected).ok().or(Some(corrected))
-    } else {
-        None
-    }
+fn lexically_normalized(path: &Path) -> PathBuf {
+    PathBuf::from(crate::path_identity::lexical_normalize(
+        &path.to_string_lossy(),
+    ))
 }
 
 fn case_insensitive_path(path: &Path) -> Option<PathBuf> {
@@ -166,6 +180,7 @@ fn hex_value(byte: u8) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::path_identity::same_file;
     use std::io;
     use tempfile::TempDir;
 
@@ -209,7 +224,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(paths_equal(
+        assert!(same_file(
             resolved.as_str(),
             docs.join("linked file.md").to_str().unwrap()
         ));
@@ -224,7 +239,7 @@ mod tests {
 
         let resolved = resolve(current.to_str().unwrap(), "#anchor").unwrap();
 
-        assert!(paths_equal(resolved.as_str(), current.to_str().unwrap()));
+        assert!(same_file(resolved.as_str(), current.to_str().unwrap()));
         Ok(())
     }
 
@@ -238,7 +253,7 @@ mod tests {
 
         let resolved = resolve(current.to_str().unwrap(), target.to_str().unwrap()).unwrap();
 
-        assert!(paths_equal(resolved.as_str(), target.to_str().unwrap()));
+        assert!(same_file(resolved.as_str(), target.to_str().unwrap()));
         Ok(())
     }
 
@@ -254,7 +269,7 @@ mod tests {
 
         let resolved = resolve(current.to_str().unwrap(), "target%20file.MD").unwrap();
 
-        assert!(paths_equal(resolved.as_str(), target.to_str().unwrap()));
+        assert!(same_file(resolved.as_str(), target.to_str().unwrap()));
         Ok(())
     }
 
@@ -294,19 +309,85 @@ mod tests {
     }
 
     #[test]
-    fn paths_equal_canonicalizes_and_compares_case_insensitively() -> io::Result<()> {
+    fn resolve_normalizes_lexically_without_touching_the_filesystem_layout() -> io::Result<()> {
         let temp = TempDir::new()?;
-        let file = temp.path().join("File.md");
-        fs::write(&file, "")?;
-        let dotted = temp.path().join(".").join("File.md");
+        let docs = temp.path().join("docs");
+        fs::create_dir(&docs)?;
+        fs::write(docs.join("current.md"), "")?;
+        fs::write(docs.join("target.md"), "")?;
 
-        assert!(paths_equal(
-            file.to_str().unwrap(),
-            dotted.to_str().unwrap()
-        ));
-        assert!(!paths_equal(
-            file.to_str().unwrap(),
-            temp.path().join("missing.md").to_str().unwrap()
+        let resolved = resolve(docs.join("current.md").to_str().unwrap(), "./target.md").unwrap();
+
+        // `.`-Segment weg, Forward-Slashes — aber kein canonicalize.
+        assert_eq!(
+            crate::path_identity::lexical_normalize(&docs.join("target.md").to_string_lossy()),
+            resolved
+        );
+        Ok(())
+    }
+
+    /// Der zurueckgegebene Pfad muss selbst existieren: `link` zeigt aus dem
+    /// Vault heraus, `link/../secret.md` existiert deshalb NUR physisch
+    /// (`/outside/secret.md`), lexikalisch waere es `/vault/secret.md`.
+    /// Frueher wurde die Existenz auf dem rohen Pfad geprueft und der
+    /// gekuerzte zurueckgegeben — der Link-Klick lief ins Leere.
+    #[cfg(unix)]
+    #[test]
+    fn resolve_rejects_a_target_that_only_exists_physically() -> io::Result<()> {
+        let temp = TempDir::new()?;
+        let outside = temp.path().join("outside");
+        let sub = outside.join("sub");
+        fs::create_dir_all(&sub)?;
+        fs::write(outside.join("secret.md"), "")?;
+        let vault = temp.path().join("vault");
+        fs::create_dir(&vault)?;
+        let current = vault.join("current.md");
+        fs::write(&current, "")?;
+        std::os::unix::fs::symlink(&sub, vault.join("link"))?;
+
+        // Physisch vorhanden (ueber den Symlink), lexikalisch nicht.
+        assert!(vault.join("link").join("..").join("secret.md").exists());
+        assert!(!vault.join("secret.md").exists());
+
+        assert_eq!(
+            None,
+            resolve(current.to_str().unwrap(), "link/../secret.md")
+        );
+
+        // Gegenprobe: liegt die Datei da, wo der gekuerzte Pfad hinzeigt,
+        // wird sie aufgeloest.
+        fs::write(vault.join("secret.md"), "")?;
+        let resolved = resolve(current.to_str().unwrap(), "link/../secret.md").unwrap();
+        assert_eq!(
+            crate::path_identity::lexical_normalize(&vault.join("secret.md").to_string_lossy()),
+            resolved
+        );
+        Ok(())
+    }
+
+    /// Teil 2 des Pfad-Identitaets-Fixes: ein Link-Klick unterhalb eines
+    /// Symlink-Verzeichnisses liefert den Pfad MIT Symlink — sonst zeigt der
+    /// so geoeffnete Tab auf einen anderen String als der Vault-Klick.
+    #[cfg(unix)]
+    #[test]
+    fn resolve_keeps_the_symlinked_directory_path() -> io::Result<()> {
+        let temp = TempDir::new()?;
+        let real = temp.path().join("real");
+        fs::create_dir(&real)?;
+        fs::write(real.join("current.md"), "")?;
+        fs::write(real.join("target.md"), "")?;
+        let link = temp.path().join("link");
+        std::os::unix::fs::symlink(&real, &link)?;
+
+        let resolved = resolve(link.join("current.md").to_str().unwrap(), "target.md").unwrap();
+
+        assert_eq!(
+            crate::path_identity::lexical_normalize(&link.join("target.md").to_string_lossy()),
+            resolved
+        );
+        assert!(same_file(
+            resolved.as_str(),
+            real.join("target.md").to_str().unwrap()
         ));
         Ok(())
     }

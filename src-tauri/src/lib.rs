@@ -21,6 +21,7 @@ pub mod menu;
 pub mod navigation;
 pub mod palette;
 pub mod panel_state;
+pub mod path_identity;
 pub mod path_migration;
 pub mod pdf_export;
 mod persist;

@@ -1,5 +1,6 @@
 use crate::document_store::{DocumentEvents, DocumentStore, LoadedDocument};
 use crate::navigation::NavigationController;
+use crate::path_identity::FileMatcher;
 use serde::Serialize;
 use std::{path::Path, sync::Arc};
 
@@ -105,13 +106,15 @@ impl TabManager {
     }
 
     /// Push eines geschlossenen Dokument-Pfads. Duplikate werden vorher
-    /// entfernt (ein Eintrag pro Pfad, jüngster gewinnt). Cap 10.
+    /// entfernt (ein Eintrag pro **Datei**, jüngster gewinnt — zwei
+    /// Schreibweisen derselben Datei sind ein Eintrag). Cap 10.
     pub fn push_recently_closed(&mut self, path: String) {
         let path = path.replace('\\', "/");
         if path.is_empty() {
             return;
         }
-        self.recently_closed.retain(|p| p != &path);
+        let matcher = FileMatcher::new(&path);
+        self.recently_closed.retain(|p| !matcher.matches(p));
         self.recently_closed.push(path);
         if self.recently_closed.len() > RECENTLY_CLOSED_CAP {
             let excess = self.recently_closed.len() - RECENTLY_CLOSED_CAP;
@@ -180,11 +183,22 @@ impl TabManager {
         self.tabs.iter_mut().find(|tab| tab.id == id)
     }
 
+    /// Sucht den Tab, der **dieselbe Datei** zeigt — nicht denselben
+    /// Pfad-String. Ein Symlink-Verzeichnis, `/tmp` vs. `/private/tmp` oder
+    /// eine abweichende Schreibweise auf case-insensitiven Volumes erzeugte
+    /// sonst einen zweiten Tab mit eigenem `DocumentStore` auf derselben
+    /// Datei. Der [`FileMatcher`] entscheidet gleiche Schreibweisen ohne
+    /// Syscall und bildet den Schlüssel des Suchpfads höchstens einmal —
+    /// n+1 `canonicalize` im schlechtesten Fall, kein n².
     pub fn find_by_path(&self, path: &str) -> Option<u64> {
-        let path = path.replace('\\', "/");
+        let normalized = path.replace('\\', "/");
+        let matcher = FileMatcher::new(&normalized);
         self.tabs
             .iter()
-            .find(|tab| tab.document_path() == Some(path.as_str()))
+            .find(|tab| {
+                tab.document_path()
+                    .is_some_and(|open| matcher.matches(open))
+            })
             .map(|tab| tab.id)
     }
 
@@ -573,6 +587,52 @@ mod tests {
                 active: true,
             }],
             manager.summaries()
+        );
+    }
+
+    /// Kern des Pfad-Identitaets-Fixes: derselbe Tab wird gefunden, obwohl
+    /// die beiden Pfad-Strings verschieden sind. Symlinks anlegen braucht
+    /// auf Windows den Developer Mode — dort ist ohnehin die
+    /// Case-Insensitivitaet der Trigger, die `canonicalize` mit abdeckt.
+    #[cfg(unix)]
+    #[test]
+    fn find_by_path_matches_the_same_file_through_a_symlinked_directory() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let real = temp.path().join("real");
+        std::fs::create_dir(&real).unwrap();
+        std::fs::write(real.join("a.md"), "").unwrap();
+        let link = temp.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let via_real = real.join("a.md").to_string_lossy().into_owned();
+        let via_link = link.join("a.md").to_string_lossy().into_owned();
+        assert_ne!(via_real, via_link);
+
+        let mut manager = TabManager::new();
+        manager.active_mut().document_store.path = Some(via_real);
+
+        assert_eq!(Some(1), manager.find_by_path(&via_link));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn push_recently_closed_dedupes_two_spellings_of_one_file() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let real = temp.path().join("real");
+        std::fs::create_dir(&real).unwrap();
+        std::fs::write(real.join("a.md"), "").unwrap();
+        let link = temp.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        let mut manager = TabManager::new();
+        manager.push_recently_closed(real.join("a.md").to_string_lossy().into_owned());
+        manager.push_recently_closed(link.join("a.md").to_string_lossy().into_owned());
+
+        assert_eq!(1, manager.recently_closed_count());
+        // Gespeichert bleibt die zuletzt gesehene Schreibweise, nicht der
+        // kanonische Pfad — der Schluessel dient nur dem Vergleich.
+        assert_eq!(
+            Some(link.join("a.md").to_string_lossy().into_owned()),
+            manager.pop_recently_closed()
         );
     }
 
