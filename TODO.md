@@ -8,7 +8,45 @@
 
 ## Hohe Priorität
 
-_(leer)_
+- **Hex-Ansicht verriegelt sich still bei Revisions-Versatz** (Befund
+  macOS-Verifikationslauf 2026-08-19, reproduzierbar; E2E `61_hex_view`,
+  Schritt „Dokumentwechsel setzt die offene Suche auf das neue Dokument").
+  Nach einem Dokumentwechsel mit offener Hex-Suche bleibt die Ansicht
+  **dauerhaft** auf `status: "loading"`, `loadedChunks: []` — ohne
+  Fehlermeldung und ohne Retry. Auch nach 30 s unverändert.
+
+  **Mechanik** (im Stall-Moment direkt am Backend gemessen):
+
+  ```
+  read_file_chunk(rev=27) -> ERR stale:revision 27 != 28
+          rev=28          -> OK
+  ```
+
+  Das Frontend hält Revision 27, das Backend steht auf 28; jeder Chunk-Read
+  wird abgelehnt. Der Stale-Zweig in `view/hex.ts:620-625` setzt daraufhin
+  `fetchPaused = true`, leert die Queue und kehrt **vor** `setStatus('error',
+  …)` zurück. Danach steigen `requestChunk`, `pumpQueue` und der
+  `finally`-Zweig alle sofort bei `fetchPaused` aus — der Zustand ist still
+  verriegelt.
+
+  **Nur Neu-Öffnen heilt** (gemessen): Scrollen → bleibt `loading`, Suche
+  schließen → bleibt `loading`, Datei erneut öffnen → `ready`. Grund:
+  `mountHexView` ist der einzige Pfad, der `bumpGeneration()` ruft, und nur
+  dort wird `fetchPaused` zurückgesetzt.
+
+  **Zwei Defekte, getrennt zu beheben**:
+  1. Die Revision des Hex-Views läuft bei diesem Wechsel dem Backend
+     hinterher (Ursache noch offen — Verdacht: der Wechsel mit aktiver
+     Suche bumpt die Revision erneut, nachdem das `document:loaded`-Payload
+     raus ist).
+  2. Wichtiger: Der Stale-Zweig darf keinen Zustand ohne Ausweg
+     hinterlassen. Aktuelle Revision neu ziehen und den Fetch fortsetzen —
+     und als Fallback einen sichtbaren, retry-baren Fehler setzen. Sonst
+     wird aus jedem Revisions-Versatz ein toter Tab.
+
+  **Nicht neu**: identische Signatur schon vor dem Pfad-Fix (`fcc0560`).
+  Unter Linux läuft das Szenario grün; ob macOS-spezifisch oder nur ein
+  Timing, das dort zuverlässig getroffen wird, ist offen.
 
 ## Mittlere Priorität
 
