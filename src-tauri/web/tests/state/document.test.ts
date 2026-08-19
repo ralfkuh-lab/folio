@@ -27,6 +27,10 @@ vi.mock('../../app/view/hex', () => ({
     isBinaryDocument: vi.fn((kind: string) => kind === 'binary'),
     mountHexView: vi.fn(),
     reloadHexView: vi.fn(),
+    revealHexOffset: vi.fn(),
+    clearHexHighlight: vi.fn(),
+    getHexSearchContext: vi.fn(),
+    setHexContextListener: vi.fn(),
 }));
 vi.mock('../../app/view/html', () => ({
     clearHtmlView: vi.fn(),
@@ -301,7 +305,7 @@ describe('state/document — synchronous setters', () => {
         });
         expect(tauri.invoke).toHaveBeenCalledWith('menu_set_enabled', {
             id: 'edit.find',
-            enabled: false,
+            enabled: true,
         });
     });
 });

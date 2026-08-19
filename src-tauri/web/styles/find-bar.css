@@ -102,3 +102,22 @@ body.split-mode .find-bar.replace-open .find-bar__replace {
   opacity: 0.55;
   cursor: default;
 }
+.find-bar__hex-mode {
+  display: none;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+body.kind-binary .find-bar__hex-mode:not([hidden]) {
+  display: inline-flex;
+}
+.find-bar__hex-mode .find-mode-btn {
+  padding: 3px 8px;
+  border-radius: 0;
+}
+.find-bar__hex-mode .find-mode-btn.active,
+.find-bar__hex-mode .find-mode-btn[aria-pressed="true"] {
+  background: var(--rail-selected-bg);
+  color: var(--rail-selected-fg);
+}

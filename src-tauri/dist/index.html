@@ -153,6 +153,10 @@
     <div class="find-bar__row">
       <button type="button" class="find-btn find-bar__toggle-replace" id="find-replace-toggle" title="Ersetzen" data-i18n-title="find.bar.replace.toggle.tooltip" aria-expanded="false" aria-controls="find-replace-row">&#x25B8;</button>
       <input type="text" id="find-input" class="find-input" placeholder="Suchen…" data-i18n-placeholder="find.bar.placeholder" autocomplete="off" spellcheck="false" />
+      <div class="find-bar__hex-mode" id="find-hex-mode" hidden role="group">
+        <button type="button" class="find-btn find-mode-btn active" id="find-mode-text" data-i18n="find.bar.modeText" aria-pressed="true">Text</button>
+        <button type="button" class="find-btn find-mode-btn" id="find-mode-hex" data-i18n="find.bar.modeHex" aria-pressed="false">Hex</button>
+      </div>
       <span class="find-counter" id="find-counter"></span>
       <button type="button" class="find-btn" id="find-prev" title="Zurück (Shift+Enter)" data-i18n-title="find.bar.prev.tooltip">&#x25B2;</button>
       <button type="button" class="find-btn" id="find-next" title="Weiter (Enter)" data-i18n-title="find.bar.next.tooltip">&#x25BC;</button>

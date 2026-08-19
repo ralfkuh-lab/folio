@@ -84,6 +84,12 @@ tracing-appender = "0.2"
 # OS-Locale für i18n-Default (system → BCP-47).
 sys-locale = "0.3"
 
+# `O_NONBLOCK` fuer den Open-Pfad der Hex-Commands: nur so blockiert ein
+# FIFO das `open` nicht, wenn er zwischen `stat` und `open` untergeschoben
+# wird (siehe commands::file::chunk::open_regular_file).
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [target.'cfg(target_os = "linux")'.dependencies]
 freedesktop-icons = "0.2"
 xdg-mime = "0.4"

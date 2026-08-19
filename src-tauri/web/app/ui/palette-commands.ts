@@ -150,7 +150,7 @@ export const PALETTE_COMMANDS: readonly PaletteCommand[] = [
         label: () => t('menu.edit.find'),
         menuAction: 'edit.find',
         shortcut: 'Ctrl+F',
-        enabled: () => hasDoc() && !bodyHas('kind-binary'),
+        enabled: () => hasDoc() && !bodyHas('kind-image'),
     },
     {
         id: 'edit.search_vault',

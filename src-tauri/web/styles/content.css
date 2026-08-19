@@ -205,6 +205,10 @@ body.kind-binary .image-view-region { display: none; }
 }
 .hex-bytes { padding-right: 1.5em; }
 .hex-ascii { color: var(--fg-muted); }
+.hex-bytes .hex-cell,
+.hex-ascii .hex-cell { display: inline; }
+.hex-cell.hex-hit { background: #FFD700; color: #000; }
+.hex-cell.hex-hit-active { background: #FF8C00; color: #000; }
 .image-view-region {
   flex: 1 1 auto;
   min-width: 0;

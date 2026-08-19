@@ -9,6 +9,8 @@
 
 import { ViewFinder } from '../view/markdown';
 import { HtmlFinder } from '../view/html';
+import { HexFinder, getHexPatternMode, setHexPatternMode } from '../view/hex-find';
+import { formatMatchOffset } from '../view/hex-search';
 import { t } from '../i18n/translate';
 
 let bar: HTMLElement = null;
@@ -27,6 +29,9 @@ let replaceToggle: HTMLElement = null;
 let replaceInput: HTMLInputElement = null;
 let replaceOneBtn: HTMLElement = null;
 let replaceAllBtn: HTMLElement = null;
+let hexModeEl: HTMLElement = null;
+let modeTextBtn: HTMLElement = null;
+let modeHexBtn: HTMLElement = null;
 
 let ensureEditorMountedDep: (initial?: string) => Promise<boolean> = null;
 let focusEditorDep: () => void = null;
@@ -42,9 +47,12 @@ function isCodeViewMode(): boolean {
     return isTextKind() && !isEditMode() && !isSplitMode() && !isHtmlPreviewMode();
 }
 
+function isBinaryKind(): boolean {
+    return document.body.classList.contains('kind-binary');
+}
+
 function isSearchableKind(): boolean {
-    const body = document.body;
-    return !body.classList.contains('kind-image') && !body.classList.contains('kind-binary');
+    return !document.body.classList.contains('kind-image');
 }
 
 function canReplace(): boolean {
@@ -97,6 +105,7 @@ const SplitHtmlFinder = makeSplitFinder(HtmlFinder);
 const SplitCodeFinder = makeSplitFinder(CodeViewFinder);
 
 function getFinder(): Finder | undefined {
+    if (isBinaryKind()) return HexFinder;
     if (isEditMode()) return window.FolioEditor;
     if (isSplitMode()) {
         if (isHtmlPreviewMode()) return SplitHtmlFinder;
@@ -131,6 +140,28 @@ function closeAllFinders(): void {
     if (ViewFinder) ViewFinder.closeFind();
     if (HtmlFinder) HtmlFinder.closeFind();
     if (window.FolioCodeView) window.FolioCodeView.closeFind();
+    if (HexFinder) HexFinder.closeFind();
+}
+
+function syncHexSurface(): void {
+    const binary = isBinaryKind();
+    if (hexModeEl) hexModeEl.hidden = !binary;
+    if (binary) {
+        if (regexChk) regexChk.disabled = true;
+        if (wordChk) wordChk.disabled = true;
+    } else if (regexChk) {
+        regexChk.disabled = false;
+        syncWholeWordEnabled();
+    }
+    const mode = getHexPatternMode();
+    if (modeTextBtn) {
+        modeTextBtn.classList.toggle('active', mode === 'text');
+        modeTextBtn.setAttribute('aria-pressed', mode === 'text' ? 'true' : 'false');
+    }
+    if (modeHexBtn) {
+        modeHexBtn.classList.toggle('active', mode === 'hex');
+        modeHexBtn.setAttribute('aria-pressed', mode === 'hex' ? 'true' : 'false');
+    }
 }
 
 function doOpen(initial?: string): void {
@@ -138,6 +169,7 @@ function doOpen(initial?: string): void {
     if (typeof initial === 'string' && initial.length > 0) {
         input.value = initial;
     }
+    syncHexSurface();
     const f = getFinder();
     if (f) {
         f.setFindOptions(currentFindOptions());
@@ -308,6 +340,7 @@ export function afterModeSwitch(): void {
     setTimeout(function () {
         if (bar.classList.contains('open')) {
             closeAllFinders();
+            syncHexSurface();
             const f = getFinder();
             if (f) {
                 f.setFindOptions(currentFindOptions());
@@ -332,6 +365,7 @@ export function afterDocumentSwitch(): void {
         }
         const activeBefore = document.activeElement as HTMLElement | null;
         closeAllFinders();
+        syncHexSurface();
         const f = getFinder();
         if (f) {
             f.setFindOptions(currentFindOptions());
@@ -368,6 +402,9 @@ export function initFindBar(deps: {
     replaceInput = document.getElementById('find-replace-input') as HTMLInputElement;
     replaceOneBtn = document.getElementById('find-replace-one');
     replaceAllBtn = document.getElementById('find-replace-all');
+    hexModeEl = document.getElementById('find-hex-mode');
+    modeTextBtn = document.getElementById('find-mode-text');
+    modeHexBtn = document.getElementById('find-mode-hex');
 
     // Debounce: setFindTerm laeuft erst nach kurzer Tipp-Pause. Sonst startet
     // pro Zeichen eine Suche, die in grossen Dokumenten zwar dank Chunking
@@ -412,6 +449,19 @@ export function initFindBar(deps: {
     regexChk.addEventListener('change', syncOptions);
     syncWholeWordEnabled();
     syncInSelectionEnabled();
+    syncHexSurface();
+    if (modeTextBtn) {
+        modeTextBtn.addEventListener('click', function () {
+            setHexPatternMode('text');
+            syncHexSurface();
+        });
+    }
+    if (modeHexBtn) {
+        modeHexBtn.addEventListener('click', function () {
+            setHexPatternMode('hex');
+            syncHexSurface();
+        });
+    }
     window.addEventListener('folio-editor-selection', function (e: CustomEvent) {
         if (!inSelectionChk) return;
         const chars = e.detail && typeof e.detail.selChars === 'number' ? e.detail.selChars : 0;
@@ -483,11 +533,16 @@ export function initFindBar(deps: {
             lastTermMemo = s.term;
         }
         if (isSplitMode() && s.source !== 'editor') return;
-        if (s.invalidRegex) {
+        // Hex-Zustaende gehoeren zur Binaerdarstellung und alle uebrigen zu den
+        // Textsurfaces. Ohne diese Zuordnung kapert eine verspaetete Antwort der
+        // gerade verlassenen Surface den Zaehler des neuen Dokuments — die
+        // Finder laufen asynchron und werden beim Wechsel nur abgeloest.
+        if (!!s.hex !== isBinaryKind()) return;
+        if (s.invalidRegex || s.invalidHex) {
             input.classList.add('find-input--invalid');
             input.setAttribute('aria-invalid', 'true');
             counter.classList.add('find-counter--invalid');
-            counter.textContent = t('find.bar.invalidRegex');
+            counter.textContent = s.invalidHex ? t('find.bar.invalidHex') : t('find.bar.invalidRegex');
             return;
         }
         if (s.replaceLimited) {
@@ -497,6 +552,21 @@ export function initFindBar(deps: {
             return;
         }
         clearInvalidUi();
+        if (s.hex) {
+            if (s.scanning) {
+                counter.textContent = '…';
+                return;
+            }
+            if (typeof s.matchOffset === 'number') {
+                const label = typeof s.offsetLabel === 'string'
+                    ? s.offsetLabel
+                    : formatMatchOffset(s.matchOffset);
+                counter.textContent = t('find.bar.matchAt', { offset: label });
+            } else {
+                counter.textContent = (input.value || s.term) ? t('find.bar.noMatch') : '';
+            }
+            return;
+        }
         if (!s.term && !input.value) { counter.textContent = ''; return; }
         const totalStr = (s.capped ? '5000+' : (typeof s.total === 'number' ? s.total : 0));
         if (typeof s.total !== 'number' || s.total === 0) {

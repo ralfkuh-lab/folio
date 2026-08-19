@@ -97,6 +97,12 @@ pub struct AppState {
     /// vom User editiert ist. Geht in die Quit-Gates ein, weil der
     /// Backend-Dirty-Check (`tabs.any_dirty`) virtuelle Tabs nicht kennt.
     pub ai_review_dirty: AtomicBool,
+    /// Cancel-Flag des juengsten Hex-Suchlaufs (`commands::file::hex_find`).
+    /// Jeder neue Aufruf setzt das Flag des Vorgaengers und legt sein eigenes
+    /// ab; der gecancelte Scan bricht mit `stale:` ab. Bewusst ein Token pro
+    /// Lauf statt eines Zaehlers — ein Zaehler kann ueberlaufen und deckt
+    /// nicht ab, dass ein Lauf ohne Nachfolger (leeres Pattern) endet.
+    pub hex_find_cancel: Mutex<Option<Arc<AtomicBool>>>,
     /// Monotone runId-Quelle fuer Vault-Suchlaeufe (`commands::search_cmd`).
     pub search_run_seq: AtomicU64,
     /// Aktive Suchlaeufe: runId -> kooperatives Cancel-Flag. `vault_search_start`
@@ -189,6 +195,7 @@ impl AppState {
             ai_job_active: Mutex::new(None),
             ai_action_run_seq: AtomicU64::new(0),
             ai_review_dirty: AtomicBool::new(false),
+            hex_find_cancel: Mutex::new(None),
             search_run_seq: AtomicU64::new(0),
             search_cancels: Mutex::new(HashMap::new()),
             vault: Mutex::new(vault),

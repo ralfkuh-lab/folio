@@ -9,6 +9,7 @@ import {
     MAX_WINDOW_BYTES,
     chunkStartFor,
     formatLine,
+    formatLineCells,
     offsetWidthFor,
     parseOffsetInput,
     rowOffset,
@@ -17,6 +18,7 @@ import {
     windowStartFor,
     type FormattedHexLine,
 } from './hex-format';
+import { rowHighlightRange } from './hex-search';
 
 export const CHUNK_BYTES = 64 * 1024;
 export const HEX_MAX_INFLIGHT = 4;
@@ -46,6 +48,15 @@ export type HexViewState = {
     tabId: number | null;
     firstLine: FormattedHexLine | null;
     lineHeightPx: number;
+};
+
+/** Was der Finder zum Suchen braucht — Pfad inklusive, damit er eine
+    veraltete Antwort auch bei gleicher Tab-/Revisionsnummer erkennt. */
+export type HexSearchContext = {
+    tabId: number;
+    revision: number;
+    fileSize: number;
+    path: string;
 };
 
 export type HexMountOptions = {
@@ -105,6 +116,7 @@ let activeFetches = 0;
 let fetchPaused = false;
 let maxInflight = HEX_MAX_INFLIGHT;
 let chunkBytes = CHUNK_BYTES;
+let highlight: { offset: number; length: number } | null = null;
 
 function MIN_WINDOW_FALLBACK(): number {
     return BYTES_PER_ROW;
@@ -297,6 +309,33 @@ function span(className: string, text: string): HTMLSpanElement {
     return el;
 }
 
+function fillHexCells(
+    bytesEl: HTMLElement,
+    asciiEl: HTMLElement,
+    input: Array<number | null>,
+    rowStart: number,
+): void {
+    bytesEl.textContent = '';
+    asciiEl.textContent = '';
+    const cells = formatLineCells(input);
+    const range = highlight
+        ? rowHighlightRange(rowStart, highlight.offset, highlight.length)
+        : null;
+    for (let i = 0; i < BYTES_PER_ROW; i += 1) {
+        if (i > 0) bytesEl.appendChild(document.createTextNode(' '));
+        if (i === 8) bytesEl.appendChild(document.createTextNode(' '));
+        const hit = !!(range && i >= range.start && i < range.end && i < input.length);
+        const hexCell = document.createElement('span');
+        hexCell.className = hit ? 'hex-cell hex-hit hex-hit-active' : 'hex-cell';
+        hexCell.textContent = cells[i].hex;
+        bytesEl.appendChild(hexCell);
+        const asciiCell = document.createElement('span');
+        asciiCell.className = hit ? 'hex-cell hex-hit hex-hit-active' : 'hex-cell';
+        asciiCell.textContent = cells[i].ascii;
+        asciiEl.appendChild(asciiCell);
+    }
+}
+
 function ensureScroller(): HTMLElement | null {
     const mount = getMount();
     if (!mount) return null;
@@ -473,8 +512,7 @@ function renderVisible(): void {
         const formatted = formatLine(input, off, width);
         rowEl.dataset.offset = String(off);
         (rowEl.children[0] as HTMLElement).textContent = formatted.offset;
-        (rowEl.children[1] as HTMLElement).textContent = formatted.bytes;
-        (rowEl.children[2] as HTMLElement).textContent = formatted.ascii;
+        fillHexCells(rowEl.children[1] as HTMLElement, rowEl.children[2] as HTMLElement, input, off);
     }
 
     if (!fetchPaused) requestChunksForRange(first, last);
@@ -616,9 +654,100 @@ function applyWindow(target: number, opts?: { bump?: boolean; resetScroll?: bool
     renderVisible();
 }
 
-function jumpToOffset(target: number): void {
+/**
+ * Fensterwechsel auf einen Offset. Benutzerinitiierte Spruenge (Home/End,
+ * Gehe-zu, Vor/Zurueck) raeumen die Fundstellen-Markierung auf: sie waere im
+ * neuen Fenster nur unsichtbar und tauchte beim Zurueckspringen wieder auf.
+ * Nur der Sprung der Suche selbst haelt sie ueber `preserveHighlight`.
+ */
+function jumpToOffset(target: number, opts?: { preserveHighlight?: boolean }): void {
+    if (!opts || !opts.preserveHighlight) highlight = null;
     applyWindow(target, { bump: true, resetScroll: true });
     rememberTabOffset();
+}
+
+function clipHighlight(): void {
+    if (!highlight) return;
+    if (fileSize <= 0 || highlight.offset >= fileSize) {
+        highlight = null;
+        return;
+    }
+    const maxLen = fileSize - highlight.offset;
+    if (highlight.length > maxLen) highlight = { offset: highlight.offset, length: maxLen };
+}
+
+export function revealHexOffset(offset: number, length: number): void {
+    if (!Number.isFinite(offset) || offset < 0) return;
+    const len = Number.isFinite(length) && length > 0 ? Math.floor(length) : 1;
+    const safeOffset = Math.floor(offset);
+    highlight = { offset: safeOffset, length: len };
+    clipHighlight();
+    if (!highlight) {
+        renderVisible();
+        return;
+    }
+    const end = currentWindowEnd();
+    if (highlight.offset < windowStart || highlight.offset >= end) {
+        jumpToOffset(highlight.offset, { preserveHighlight: true });
+        return;
+    }
+    const scroller = getScroller();
+    if (scroller && lineHeightPx > 0) {
+        const row = Math.floor((highlight.offset - windowStart) / BYTES_PER_ROW);
+        const top = row * lineHeightPx;
+        const viewBottom = scroller.scrollTop + scroller.clientHeight;
+        if (top < scroller.scrollTop || top + lineHeightPx > viewBottom) {
+            scroller.scrollTop = Math.max(0, top - lineHeightPx);
+        }
+    }
+    renderVisible();
+}
+
+export function clearHexHighlight(): void {
+    if (!highlight) return;
+    highlight = null;
+    renderVisible();
+}
+
+export function getHexSearchContext(): HexSearchContext | null {
+    if (tabId === null) return null;
+    if (!available || tooLarge) return null;
+    return { tabId, revision, fileSize, path };
+}
+
+function contextKey(): string {
+    const ctx = getHexSearchContext();
+    if (!ctx) return '';
+    return ctx.tabId + '\0' + ctx.revision + '\0' + ctx.fileSize + '\0' + ctx.path;
+}
+
+/**
+ * Ein einzelner Beobachter des Hex-Kontexts (der Finder). Bewusst ein Slot
+ * statt einer Liste: ein erneut geladenes Modul ersetzt seinen Vorgaenger,
+ * statt dass sich veraltete Abonnenten anhaeufen. hex.ts kennt dadurch keinen
+ * Finder, sondern nur „jemand haengt am Kontext".
+ */
+let contextListener: ((ctx: HexSearchContext | null) => void) | null = null;
+
+export function setHexContextListener(
+    listener: ((ctx: HexSearchContext | null) => void) | null,
+): void {
+    contextListener = listener;
+}
+
+/**
+ * Signalisiert einen Wechsel des Hex-Kontexts (Tab, Revision, Pfad, Groesse
+ * oder Verfuegbarkeit). Der Aufruf ist synchron: Treffer, Zaehler und
+ * Markierung sind damit im selben Tick konsistent, nicht erst im
+ * `setTimeout(0)` des Dokumentwechsels.
+ */
+function notifyHexContextChanged(): void {
+    if (!contextListener) return;
+    try {
+        contextListener(getHexSearchContext());
+    } catch {
+        /* ignore */
+    }
 }
 
 function syncMetrics(): void {
@@ -745,11 +874,13 @@ function onNext(): void {
 }
 
 function onRetry(): void {
+    const contextBefore = contextKey();
     available = true;
     lastError = null;
     bumpGeneration();
     clearCache();
     showDocumentBody();
+    if (contextKey() !== contextBefore) notifyHexContextChanged();
 }
 
 function ensureListeners(): void {
@@ -797,6 +928,7 @@ function resetSession(): void {
     status = 'idle';
     lastError = null;
     windowStart = 0;
+    highlight = null;
     setGotoError(null);
     const mount = getMount();
     if (mount) {
@@ -816,6 +948,7 @@ export function mountHexView(options: HexMountOptions): void {
         rememberTabOffset();
     }
     bumpGeneration();
+    highlight = null;
     if (revision !== options.revision || path !== nextPath) {
         clearCache();
     }
@@ -828,10 +961,12 @@ export function mountHexView(options: HexMountOptions): void {
     lastError = null;
     syncMetrics();
     showDocumentBody();
+    notifyHexContextChanged();
 }
 
 export function reloadHexView(options?: HexReloadOptions): void {
     if (!path) return;
+    const contextBefore = contextKey();
     if (options && typeof options.tabId === 'number' && tabId !== null
         && options.tabId !== tabId) {
         return;
@@ -854,13 +989,18 @@ export function reloadHexView(options?: HexReloadOptions): void {
     if (options && options.available !== undefined) available = !!options.available;
     revision = nextRevision;
     bumpGeneration();
-    if (revisionChanged) clearCache();
+    if (revisionChanged) {
+        clearCache();
+        highlight = null;
+    }
+    clipHighlight();
     const target = currentTopOffset();
     if (fileSize > 0 && target >= fileSize && tabId !== null && path) {
         tabOffsets.set(offsetKey(tabId, path), fileSize - 1);
     }
     syncMetrics();
     showDocumentBody();
+    if (contextKey() !== contextBefore) notifyHexContextChanged();
 }
 
 export function clearHexView(): void {
@@ -868,6 +1008,7 @@ export function clearHexView(): void {
     bumpGeneration();
     clearCache();
     resetSession();
+    notifyHexContextChanged();
 }
 
 export function getHexViewState(): HexViewState {
@@ -905,6 +1046,7 @@ export function configureHexViewForTests(opts?: {
     chunkBytes?: number;
     maxInflight?: number;
 }): void {
+    contextListener = null;
     chunkBytes = opts && opts.chunkBytes ? opts.chunkBytes : CHUNK_BYTES;
     maxInflight = opts && opts.maxInflight ? opts.maxInflight : HEX_MAX_INFLIGHT;
     listenersAttached = false;
@@ -915,6 +1057,7 @@ export function configureHexViewForTests(opts?: {
     queuedStarts.clear();
     queue.length = 0;
     tabOffsets.clear();
+    highlight = null;
     cancelScrollRaf();
     if (resizeObserver) {
         resizeObserver.disconnect();

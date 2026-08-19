@@ -11,7 +11,7 @@ use tauri::{ipc::Response, State};
 
 /// Maximales Fenster je Aufruf (Spec). Längere `len` werden gekürzt.
 pub const MAX_CHUNK_BYTES: u32 = 1024 * 1024;
-const STALE_PREFIX: &str = "stale:";
+pub(crate) const STALE_PREFIX: &str = "stale:";
 
 fn chunk_error(detail: &str) -> String {
     i18n::t_args("errors.file.readChunk", &[("detail", detail)])
@@ -47,6 +47,54 @@ pub(crate) fn authorize_chunk_read(
         .ok_or_else(|| chunk_error("no path"))
 }
 
+/// Öffnet `path` zum Lesen und akzeptiert ausschließlich reguläre Dateien.
+/// Gemeinsamer Einstieg für [`read_file_chunk_bytes`] und
+/// [`super::hex_find::find_in_file`]; liefert Handle plus Dateilänge.
+///
+/// Unix öffnet mit `O_NONBLOCK`: ein FIFO ohne Writer ließe `open` sonst
+/// unbegrenzt hängen, und eine `metadata`-Vorprüfung schließt das Fenster
+/// zwischen `stat` und `open` nicht (die Datei kann dazwischen ersetzt
+/// werden). Reguläre Dateien ignorieren das Flag; autoritativ ist danach
+/// ausschließlich `fstat` **auf dem Handle**.
+///
+/// Windows hat kein Äquivalent: der blockierende Fall ist dort das Öffnen
+/// einer Named Pipe (`\\.\pipe\…`), und weder `FILE_FLAG_OVERLAPPED` noch
+/// ein `GetFileType` nach dem Open verhindern den Block *während* des
+/// `CreateFile`. Das bräuchte einen eigenen Win32-Pfad
+/// (`WaitNamedPipe`/Timeout-Thread) und bleibt bewusst offen — es bleibt
+/// beim `metadata`-Vorcheck plus Handle-Prüfung.
+pub(crate) fn open_regular_file(path: &str) -> Result<(std::fs::File, u64), String> {
+    let file = open_read_only(path).map_err(|error| chunk_error(&error.to_string()))?;
+    let meta = file
+        .metadata()
+        .map_err(|error| chunk_error(&error.to_string()))?;
+    if !meta.is_file() {
+        return Err(chunk_error("not a regular file"));
+    }
+    Ok((file, meta.len()))
+}
+
+#[cfg(unix)]
+fn open_read_only(path: &str) -> std::io::Result<std::fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(path)
+}
+
+#[cfg(not(unix))]
+fn open_read_only(path: &str) -> std::io::Result<std::fs::File> {
+    let pre = std::fs::metadata(path)?;
+    if !pre.is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "not a regular file",
+        ));
+    }
+    std::fs::File::open(path)
+}
+
 /// Liest `len` Bytes ab `offset`. `len` wird auf [`MAX_CHUNK_BYTES`]
 /// geklemmt. `len == 0`, Offset jenseits EOF und überlaufende
 /// Offset-Rechnung liefern eine leere Antwort.
@@ -55,22 +103,8 @@ pub(crate) fn read_file_chunk_bytes(path: &str, offset: u64, len: u32) -> Result
     if len == 0 || offset.checked_add(u64::from(len)).is_none() {
         return Ok(Vec::new());
     }
-
-    // Vorprüfung: `File::open` auf einem FIFO ohne Writer blockiert
-    // unbegrenzt. Handle-Metadaten danach gegen TOCTOU nach dem Open.
-    let pre = std::fs::metadata(path).map_err(|error| chunk_error(&error.to_string()))?;
-    if !pre.is_file() {
-        return Err(chunk_error("not a regular file"));
-    }
-
-    let mut file = std::fs::File::open(path).map_err(|error| chunk_error(&error.to_string()))?;
-    let meta = file
-        .metadata()
-        .map_err(|error| chunk_error(&error.to_string()))?;
-    if !meta.is_file() {
-        return Err(chunk_error("not a regular file"));
-    }
-    read_chunk_from(&mut file, meta.len(), offset, len)
+    let (mut file, file_len) = open_regular_file(path)?;
+    read_chunk_from(&mut file, file_len, offset, len)
 }
 
 /// Leseschleife über einen beliebigen `Read + Seek` — ein einzelnes

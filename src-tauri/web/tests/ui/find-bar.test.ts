@@ -27,6 +27,16 @@ const htmlFinder = {
     findNext: vi.fn(),
     findPrev: vi.fn(),
 };
+const hexFinder = {
+    setFindOptions: vi.fn(),
+    openFind: vi.fn(),
+    closeFind: vi.fn(),
+    setFindTerm: vi.fn(),
+    findNext: vi.fn(),
+    findPrev: vi.fn(),
+};
+const getHexPatternMode = vi.fn(() => 'text' as 'text' | 'hex');
+const setHexPatternMode = vi.fn();
 vi.mock('../../app/view/markdown', () => ({
     ViewFinder: viewFinder,
 }));
@@ -38,6 +48,11 @@ vi.mock('../../app/view/html', () => ({
     mountHtmlView: vi.fn(),
     clearHtmlView: vi.fn(),
     isHtmlDocument: vi.fn(() => false),
+}));
+vi.mock('../../app/view/hex-find', () => ({
+    HexFinder: hexFinder,
+    getHexPatternMode,
+    setHexPatternMode,
 }));
 vi.mock('../../app/view/code-live', () => ({
     invalidateCodeLive: vi.fn(),
@@ -81,6 +96,10 @@ function buildDom(): void {
         <div id="find-bar">
             <button id="find-replace-toggle"></button>
             <input id="find-input" />
+            <div id="find-hex-mode" hidden>
+                <button id="find-mode-text" type="button">Text</button>
+                <button id="find-mode-hex" type="button">Hex</button>
+            </div>
             <span id="find-counter"></span>
             <button id="find-prev"></button>
             <button id="find-next"></button>
@@ -102,7 +121,7 @@ function buildDom(): void {
     document.body.className = '';
 }
 
-beforeEach(() => {
+beforeEach(async () => {
     installTauriMock();
     buildDom();
     delete (window as any).FolioEditor;
@@ -119,7 +138,21 @@ beforeEach(() => {
     htmlFinder.setFindTerm.mockClear();
     htmlFinder.findNext.mockClear();
     htmlFinder.findPrev.mockClear();
+    hexFinder.setFindOptions.mockClear();
+    hexFinder.openFind.mockClear();
+    hexFinder.closeFind.mockClear();
+    hexFinder.setFindTerm.mockClear();
+    hexFinder.findNext.mockClear();
+    hexFinder.findPrev.mockClear();
+    getHexPatternMode.mockReset();
+    getHexPatternMode.mockReturnValue('text');
+    setHexPatternMode.mockClear();
     vi.resetModules();
+    // Nach resetModules seeden, damit JEDE frisch importierte find-bar-Instanz
+    // einen Katalog sieht. Die Bar registriert globale Listener auf
+    // document/window; frühere Instanzen bleiben daran hängen und würden sonst
+    // bei jedem späteren Zustands-Event „missing key" ins Log schreiben.
+    await seedDeCatalog();
 });
 
 describe('ui/find-bar — open path', () => {
@@ -409,7 +442,7 @@ describe('ui/find-bar — image/binary gating (audit fix)', () => {
         expect(viewFinder.openFind).not.toHaveBeenCalled();
     });
 
-    it('openEditorFind does nothing on kind-binary', async () => {
+    it('openEditorFind on kind-binary uses HexFinder and shows the mode toggle', async () => {
         const findBar = await import('../../app/ui/find-bar');
         findBar.initFindBar({
             ensureEditorMounted: vi.fn().mockResolvedValue(true),
@@ -417,12 +450,17 @@ describe('ui/find-bar — image/binary gating (audit fix)', () => {
         });
         document.body.classList.add('kind-binary');
 
-        findBar.openEditorFind('x');
+        findBar.openEditorFind('o');
 
-        expect(document.getElementById('find-bar')!.classList.contains('open')).toBe(false);
+        expect(document.getElementById('find-bar')!.classList.contains('open')).toBe(true);
+        expect(hexFinder.openFind).toHaveBeenCalledWith('o');
+        expect(viewFinder.openFind).not.toHaveBeenCalled();
+        expect(document.getElementById('find-hex-mode')!.hidden).toBe(false);
+        expect((document.getElementById('find-regex') as HTMLInputElement).disabled).toBe(true);
+        expect((document.getElementById('find-word') as HTMLInputElement).disabled).toBe(true);
     });
 
-    it('afterDocumentSwitch closes bar when switching to kind-binary', async () => {
+    it('afterDocumentSwitch to kind-binary keeps the bar open and re-opens HexFinder', async () => {
         const findBar = await import('../../app/ui/find-bar');
         findBar.initFindBar({
             ensureEditorMounted: vi.fn().mockResolvedValue(true),
@@ -437,7 +475,24 @@ describe('ui/find-bar — image/binary gating (audit fix)', () => {
         findBar.afterDocumentSwitch();
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        expect(document.getElementById('find-bar')!.classList.contains('open')).toBe(false);
+        expect(document.getElementById('find-bar')!.classList.contains('open')).toBe(true);
+        expect(hexFinder.openFind).toHaveBeenCalledWith('term');
+        expect(document.getElementById('find-hex-mode')!.hidden).toBe(false);
+    });
+
+    it('Text|Hex toggle restarts the hex search with the same input', async () => {
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: vi.fn().mockResolvedValue(true),
+            focusEditor: vi.fn(),
+        });
+        document.body.classList.add('kind-binary');
+        findBar.openEditorFind('6f');
+        hexFinder.openFind.mockClear();
+
+        document.getElementById('find-mode-hex')!.click();
+
+        expect(setHexPatternMode).toHaveBeenCalledWith('hex');
     });
 
     it('afterDocumentSwitch closes bar when switching to kind-image', async () => {
@@ -551,7 +606,6 @@ describe('ui/find-bar — setEditorFindTerm with automation options (audit fix)'
     });
 
     it('invalidRegex find-state marks the input and counter, then clears on a valid state', async () => {
-        await seedDeCatalog();
         const findBar = await import('../../app/ui/find-bar');
         findBar.initFindBar({
             ensureEditorMounted: vi.fn().mockResolvedValue(true),
@@ -579,6 +633,94 @@ describe('ui/find-bar — setEditorFindTerm with automation options (audit fix)'
         expect(inputEl.hasAttribute('aria-invalid')).toBe(false);
         expect(counterEl.classList.contains('find-counter--invalid')).toBe(false);
         expect(counterEl.textContent).toBe('0/0');
+    });
+
+    it('invalidHex find-state marks the input and shows the hex error, not 0/0', async () => {
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: vi.fn().mockResolvedValue(true),
+            focusEditor: vi.fn(),
+        });
+        document.body.classList.add('kind-binary');
+        findBar.openEditorFind('123');
+        const inputEl = document.getElementById('find-input') as HTMLInputElement;
+        const counterEl = document.getElementById('find-counter')!;
+
+        window.dispatchEvent(new CustomEvent('folio-find-state', {
+            detail: { hex: true, term: '123', total: 0, active: -1, invalidHex: true },
+        }));
+
+        expect(inputEl.classList.contains('find-input--invalid')).toBe(true);
+        expect(counterEl.classList.contains('find-counter--invalid')).toBe(true);
+        expect(counterEl.textContent).toBe('Ungültig');
+    });
+
+    it('hex matchOffset shows the offset, not n of m', async () => {
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: vi.fn().mockResolvedValue(true),
+            focusEditor: vi.fn(),
+        });
+        document.body.classList.add('kind-binary');
+        findBar.openEditorFind('o');
+        const counterEl = document.getElementById('find-counter')!;
+
+        window.dispatchEvent(new CustomEvent('folio-find-state', {
+            detail: { hex: true, term: 'o', scanning: true, total: 0, active: -1 },
+        }));
+        expect(counterEl.textContent).toBe('…');
+
+        window.dispatchEvent(new CustomEvent('folio-find-state', {
+            detail: {
+                hex: true,
+                term: 'o',
+                total: 1,
+                active: 0,
+                matchOffset: 1,
+                offsetLabel: '0x00000001',
+            },
+        }));
+        expect(counterEl.textContent).toBe('Treffer bei 0x00000001');
+
+        window.dispatchEvent(new CustomEvent('folio-find-state', {
+            detail: { hex: true, term: 'o', total: 0, active: -1, matchOffset: null },
+        }));
+        expect(counterEl.textContent).toBe('Kein Treffer');
+    });
+
+    it('ignoriert Zaehlerzustaende der jeweils anderen Surface', async () => {
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: vi.fn().mockResolvedValue(true),
+            focusEditor: vi.fn(),
+        });
+        document.body.classList.add('kind-binary');
+        findBar.openEditorFind('o');
+        const counterEl = document.getElementById('find-counter')!;
+
+        window.dispatchEvent(new CustomEvent('folio-find-state', {
+            detail: { hex: true, term: 'o', total: 1, active: 0, matchOffset: 1 },
+        }));
+        expect(counterEl.textContent).toBe('Treffer bei 0x00000001');
+
+        // Nachzuegler der Text-Surface, waehrend eine Binaerdatei offen ist.
+        window.dispatchEvent(new CustomEvent('folio-find-state', {
+            detail: { term: 'o', total: 0, active: -1 },
+        }));
+        expect(counterEl.textContent).toBe('Treffer bei 0x00000001');
+
+        // Und umgekehrt, nachdem das Dokument gewechselt hat.
+        document.body.classList.remove('kind-binary');
+        document.body.classList.add('kind-text');
+        window.dispatchEvent(new CustomEvent('folio-find-state', {
+            detail: { hex: true, term: 'o', total: 0, active: -1, matchOffset: null },
+        }));
+        expect(counterEl.textContent).toBe('Treffer bei 0x00000001');
+
+        window.dispatchEvent(new CustomEvent('folio-find-state', {
+            detail: { term: 'o', total: 2, active: 1 },
+        }));
+        expect(counterEl.textContent).toBe('2/2');
     });
 
     it('setEditorFindTerm(term, {caseSensitive}) leaves other option untouched', async () => {

@@ -467,9 +467,10 @@ export function applyDocKind(kind: string | null, path?: string | null): void {
     safeInvoke('menu_set_enabled', { id: 'file.rename', enabled: hasDoc }, 'menu_set_enabled file.rename', 'debug');
     safeInvoke('menu_set_enabled', { id: 'file.export', enabled: md }, 'menu_set_enabled file.export', 'debug');
     safeInvoke('menu_set_enabled', { id: 'file.close', enabled: hasDoc }, 'menu_set_enabled file.close', 'debug');
-    safeInvoke('menu_set_enabled', { id: 'edit.find', enabled: canEdit }, 'menu_set_enabled edit.find', 'debug');
+    const canFind = hasDoc && !isImage;
+    safeInvoke('menu_set_enabled', { id: 'edit.find', enabled: canFind }, 'menu_set_enabled edit.find', 'debug');
     const btnFind = $('tb-find') as HTMLButtonElement | null;
-    if (btnFind) btnFind.disabled = !canEdit;
+    if (btnFind) btnFind.disabled = !canFind;
     syncCheatsheetMenu();
     // Haekchen nach dem Enable-Wechsel erneut anwenden — Tauri scheint
     // set_checked auf disabled Items zu verwerfen, sodass beim ersten

@@ -11,6 +11,9 @@ import {
     isBinaryDocument,
     mountHexView,
     reloadHexView,
+    revealHexOffset,
+    setHexContextListener,
+    type HexSearchContext,
 } from '../../app/view/hex';
 
 let tauri: TauriMockHandles;
@@ -52,6 +55,29 @@ function flush(): Promise<void> {
 
 async function settle(): Promise<void> {
     for (let i = 0; i < 8; i += 1) await flush();
+}
+
+/** Loest alle offenen Chunk-Reads auf — auch die, die erst nachruecken,
+    wenn ein Inflight-Slot frei wird. */
+async function resolveAllPending(fill: number): Promise<void> {
+    for (let round = 0; round < 8 && pending.size > 0; round += 1) {
+        const open = Array.from(pending.entries());
+        pending.clear();
+        open.forEach(([, handle]) => {
+            handle.resolve(Uint8Array.from(new Array(16).fill(fill)).buffer);
+        });
+        await settle();
+    }
+}
+
+function hitCells(): number {
+    return document.querySelectorAll('.hex-hit-active').length;
+}
+
+function pressKey(key: string): void {
+    document.getElementById('hex-view-region')!.dispatchEvent(new KeyboardEvent('keydown', {
+        key, bubbles: true, cancelable: true,
+    }));
 }
 
 beforeEach(async () => {
@@ -375,6 +401,100 @@ describe('view/hex', () => {
         } finally {
             HTMLElement.prototype.getBoundingClientRect = proto;
         }
+    });
+
+    it('markiert einen Treffer ueber die Zeilengrenze in Bytes und ASCII', async () => {
+        const data = Array.from({ length: 32 }, (_, i) => i);
+        mountHexView({ path: '/tmp/a.bin', fileSize: 32, revision: 1, tabId: 1 });
+        pending.get(chunkKey(1, 1, 0))!.resolve(bytes(data));
+        await settle();
+        revealHexOffset(14, 4);
+        const rows = document.querySelectorAll('.hex-row');
+        expect(rows.length).toBeGreaterThanOrEqual(2);
+        expect(rows[0].querySelectorAll('.hex-hit-active').length).toBe(4);
+        expect(rows[1].querySelectorAll('.hex-hit-active').length).toBe(4);
+        expect(document.querySelectorAll('.hex-bytes .hex-hit-active').length).toBe(4);
+        expect(document.querySelectorAll('.hex-ascii .hex-hit-active').length).toBe(4);
+    });
+
+    it('raeumt die Markierung bei Home/End-Spruengen auf', async () => {
+        const data = Array.from({ length: 32 }, (_, i) => i);
+        mountHexView({ path: '/tmp/a.bin', fileSize: 32, revision: 1, tabId: 1 });
+        pending.get(chunkKey(1, 1, 0))!.resolve(bytes(data));
+        await settle();
+        revealHexOffset(14, 4);
+        expect(hitCells()).toBe(8);
+
+        pressKey('End');
+        expect(hitCells()).toBe(0);
+    });
+
+    it('raeumt die Markierung beim Gehe-zu-Offset auf', async () => {
+        const data = Array.from({ length: 32 }, (_, i) => i);
+        mountHexView({ path: '/tmp/a.bin', fileSize: 32, revision: 1, tabId: 1 });
+        pending.get(chunkKey(1, 1, 0))!.resolve(bytes(data));
+        await settle();
+        revealHexOffset(2, 2);
+        expect(hitCells()).toBe(4);
+
+        const goto = document.getElementById('hex-view-goto') as HTMLInputElement;
+        goto.value = '0x10';
+        goto.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'Enter', bubbles: true, cancelable: true,
+        }));
+
+        expect(hitCells()).toBe(0);
+        expect(document.getElementById('hex-view-goto-error')!.textContent).toBe('');
+    });
+
+    it('laesst die Markierung nach Vor/Zurueck nicht wieder auftauchen', async () => {
+        configureHexViewForTests({ chunkBytes: 16 });
+        const page = 4 * 1024 * 1024;
+        mountHexView({ path: '/tmp/a.bin', fileSize: page + 32, revision: 1, tabId: 1 });
+        pending.get(chunkKey(1, 1, 0))!.resolve(bytes(new Array(16).fill(0x41)));
+        await settle();
+        revealHexOffset(0, 4);
+        expect(hitCells()).toBe(8);
+
+        (document.getElementById('hex-view-next') as HTMLButtonElement).click();
+        expect(getHexViewState().windowStart).toBe(page);
+        (document.getElementById('hex-view-prev') as HTMLButtonElement).click();
+        await settle();
+
+        expect(getHexViewState().windowStart).toBe(0);
+        expect(hitCells()).toBe(0);
+    });
+
+    it('haelt die Markierung, wenn die Suche selbst das Fenster wechselt', async () => {
+        configureHexViewForTests({ chunkBytes: 16 });
+        const page = 4 * 1024 * 1024;
+        mountHexView({ path: '/tmp/a.bin', fileSize: page + 32, revision: 1, tabId: 1 });
+        await resolveAllPending(0x41);
+
+        revealHexOffset(page + 1, 2);
+        expect(getHexViewState().windowStart).toBe(page);
+        await resolveAllPending(0x42);
+
+        expect(hitCells()).toBe(4);
+    });
+
+    it('meldet Kontextwechsel synchron an den Suchbeobachter', async () => {
+        const seen: Array<HexSearchContext | null> = [];
+        setHexContextListener((ctx) => { seen.push(ctx); });
+
+        mountHexView({ path: '/tmp/a.bin', fileSize: 16, revision: 1, tabId: 1 });
+        expect(seen).toHaveLength(1);
+        expect(seen[0]).toEqual({ tabId: 1, revision: 1, fileSize: 16, path: '/tmp/a.bin' });
+
+        reloadHexView({ tabId: 1, revision: 2, fileSize: 8 });
+        expect(seen).toHaveLength(2);
+        expect(seen[1]).toMatchObject({ revision: 2, fileSize: 8 });
+
+        reloadHexView({ tabId: 9, revision: 3, fileSize: 8 });
+        expect(seen).toHaveLength(2);
+
+        clearHexView();
+        expect(seen[seen.length - 1]).toBeNull();
     });
 
     it('clearHexView leert State und DOM', async () => {

@@ -145,7 +145,12 @@ pub async fn read_file_chunk(
   einen Runtime-Thread, und genau hier wird sichtbar lange gelesen.
 - Metadaten kommen vom **geöffneten Handle**; nur reguläre, seekbare Dateien
   werden bedient (FIFO, Verzeichnis, Gerät → lokalisierter Fehler). Symlinks
-  auf reguläre Dateien sind erlaubt.
+  auf reguläre Dateien sind erlaubt. Geöffnet wird über den gemeinsamen Helfer
+  `chunk::open_regular_file`, auf Unix mit `O_NONBLOCK`: eine `metadata`-
+  Vorprüfung schließt das Fenster zwischen `stat` und `open` nicht — wird die
+  Datei dazwischen durch einen FIFO ersetzt, hinge `open` ohne das Flag
+  unbegrenzt. Auf Windows bleibt es beim Vorcheck (Named Pipes bräuchten einen
+  eigenen Win32-Pfad, siehe Kommentar am Helfer).
 - Gelesen wird in einer Schleife bzw. `take(...).read_to_end(...)` — ein
   einzelnes `read` darf laut `Read`-Vertrag kurz liefern.
 - Die Revisionsprüfung **vor** dem Read schließt eine Änderung **währenddessen**
@@ -449,10 +454,14 @@ pub async fn hex_find(
 - Autorisierung exakt wie `read_file_chunk`: Tab, opaquer Deskriptor und
   Revision unter dem Tabs-Lock prüfen, Pfad kopieren, Lock **vor** dem I/O
   freigeben, `stale:`-Präfix bei Revision-Mismatch.
-- I/O in `spawn_blocking`, Vorprüfung auf reguläre Datei **vor** `File::open`
-  (FIFO-Falle, siehe Chunk-Command), Leseschleife mit kurzen Reads.
-- Blockweise (64 KiB) mit Overlap `pattern.len() - 1`; rückwärts analog von
-  hinten.
+- I/O in `spawn_blocking`, Öffnen über denselben FIFO-sicheren Helfer wie der
+  Chunk-Command (`open_regular_file`), Leseschleife mit kurzen Reads.
+- Blockweise: **64 KiB frische Bytes je Runde in einem Puffer der Größe
+  `pattern.len() - 1 + 64 KiB`**. Die Fenstergröße muss das Muster übersteigen,
+  sonst findet der Scan nichts, was länger als ein Block ist, und Muster knapp
+  darunter kämen nur ein Byte pro Read voran. Vorwärts wird sequenziell
+  gelesen (Overlap wird im Puffer nach vorn kopiert), rückwärts analog von
+  hinten mit Fenstern derselben Größe.
 - `case_insensitive` gilt **nur für ASCII-Buchstaben** (byteweises Falten von
   `A-Z`/`a-z`). Alles andere wäre bei roher Byte-Suche geraten.
 - Leeres Pattern → `Ok(None)`, kein Fehler.
@@ -460,8 +469,14 @@ pub async fn hex_find(
   nichts, fragt das Frontend erneut ab 0 (bzw. ab EOF rückwärts). So bleibt der
   Command eine reine Funktion und die UI entscheidet über das Umlaufen.
 - **Abbrechbarkeit**: Ein laufender Scan über eine sehr große Datei muss enden,
-  wenn der Nutzer weitertippt oder den Tab wechselt. Generation im State wie bei
-  den Suchläufen der Vault-Suche; abgebrochene Läufe liefern `stale:`.
+  wenn der Nutzer weitertippt oder den Tab wechselt. Im State liegt dafür das
+  Cancel-Token (`Arc<AtomicBool>`) des jüngsten Laufs — kein Zähler, der
+  überlaufen kann und der ein Cancel ohne Nachfolger (leeres Pattern) nicht
+  abbildet. Jeder Aufruf cancelt **zuerst** den Vorgänger und legt dann sein
+  eigenes Token ab, autorisiert wird erst danach. Geprüft wird am Rundenbeginn,
+  **nach jedem Read** und ein letztes Mal unmittelbar vor der Rückgabe im
+  Blocking-Task: ein Lauf, der seinen Treffer im schon gelesenen Block findet,
+  nachdem er abgelöst wurde, liefert `stale:` statt eines überholten Offsets.
 
 ## Frontend
 

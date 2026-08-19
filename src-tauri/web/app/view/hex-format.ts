@@ -11,6 +11,10 @@ export const MIN_WINDOW_BYTES = BYTES_PER_ROW;
 
 export type HexLineByte = number | null;
 export type HexLineInput = Uint8Array | readonly HexLineByte[];
+export type HexLineCell = {
+    hex: string;
+    ascii: string;
+};
 export type FormattedHexLine = {
     offset: string;
     bytes: string;
@@ -113,6 +117,27 @@ function byteAt(input: HexLineInput, index: number): HexLineByte | undefined {
     return value;
 }
 
+/** Eine 16-Byte-Zeile als Zellen; fehlende Eintraege sind EOF-Padding. */
+export function formatLineCells(input: HexLineInput): HexLineCell[] {
+    const cells: HexLineCell[] = [];
+    for (let index = 0; index < BYTES_PER_ROW; index += 1) {
+        const value = byteAt(input, index);
+        if (value === undefined) {
+            cells.push({ hex: '  ', ascii: ' ' });
+        } else if (value === null) {
+            cells.push({ hex: HEX_PLACEHOLDER, ascii: ASCII_PLACEHOLDER });
+        } else {
+            cells.push({
+                hex: value.toString(16).padStart(2, '0'),
+                ascii: value >= 0x20 && value <= 0x7e
+                    ? String.fromCharCode(value)
+                    : '.',
+            });
+        }
+    }
+    return cells;
+}
+
 /**
  * Formatiert genau eine 16-Byte-Zeile. Fehlende Array-Eintraege bedeuten
  * EOF-Padding; explizite `null`-Eintraege bedeuten noch nicht geladene Bytes
@@ -123,29 +148,12 @@ export function formatLine(
     offset: number,
     width: number,
 ): FormattedHexLine {
-    const hexTokens: string[] = [];
-    const asciiTokens: string[] = [];
-
-    for (let index = 0; index < BYTES_PER_ROW; index += 1) {
-        const value = byteAt(input, index);
-        if (value === undefined) {
-            hexTokens.push('  ');
-            asciiTokens.push(' ');
-        } else if (value === null) {
-            hexTokens.push(HEX_PLACEHOLDER);
-            asciiTokens.push(ASCII_PLACEHOLDER);
-        } else {
-            hexTokens.push(value.toString(16).padStart(2, '0'));
-            asciiTokens.push(value >= 0x20 && value <= 0x7e
-                ? String.fromCharCode(value)
-                : '.');
-        }
-    }
-
+    const cells = formatLineCells(input);
+    const hexTokens = cells.map(function (cell) { return cell.hex; });
     return {
         offset: formatOffset(offset, width),
         bytes: hexTokens.slice(0, 8).join(' ') + '  ' + hexTokens.slice(8).join(' '),
-        ascii: asciiTokens.join(''),
+        ascii: cells.map(function (cell) { return cell.ascii; }).join(''),
     };
 }
 

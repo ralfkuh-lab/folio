@@ -2,7 +2,8 @@
 
 Deckt das Öffnen ohne Fehlerdialog, body.kind-binary, die erste Zeile
 byteweise, den gesperrten Edit-Button, Tab-/History-Wechsel, externen
-Truncate und den Save-Negativtest (Bytes bleiben unverändert).
+Truncate, den Save-Negativtest (Bytes bleiben unverändert) sowie die
+Hex-Suche (Text, Hex-Bytes, Weiter, ungültige Eingabe).
 
 Fixture auf festem Temp-Pfad, weil der Pfad in Statusleiste und Vault
 sichtbar und damit Teil der Visual-Baseline ist (wie 56/57/59).
@@ -75,6 +76,54 @@ def _wait_hex(ctx, path: str | None = None, timeout: float = 6.0) -> dict:
     snap = _poll(ready, timeout=timeout)
     ctx.expect(bool(snap), f"Hex-Ansicht wurde nicht bereit: {_hex_state(ctx)!r}")
     return snap
+
+
+def _counter(ctx) -> str:
+    return _evalv(
+        ctx,
+        "(function(){var c=document.getElementById('find-counter');"
+        "return c ? c.textContent : '';})()",
+    ) or ""
+
+
+def _counter_has(ctx, needle: str):
+    text = _counter(ctx)
+    return text if needle in text else None
+
+
+def _click(ctx, element_id: str) -> None:
+    clicked = _evalv(
+        ctx,
+        "(function(){var el=document.getElementById('" + element_id + "');"
+        "if(!el)return false;el.click();return true;})()",
+    )
+    ctx.expect(clicked is True, f"#{element_id} fehlt")
+
+
+def _set_find_mode(ctx, mode: str) -> None:
+    button = "find-mode-hex" if mode == "hex" else "find-mode-text"
+    _click(ctx, button)
+    pressed = _poll(
+        lambda: _evalv(
+            ctx,
+            "(function(){var b=document.getElementById('" + button + "');"
+            "return b && b.getAttribute('aria-pressed');})()",
+        ) == "true",
+        timeout=3.0,
+    )
+    ctx.expect(bool(pressed), f"Suchmodus {mode} nicht aktiv")
+
+
+def _goto_offset(ctx, value: str) -> None:
+    """Offset über die Toolbar der Hex-Ansicht anspringen (Enter im Feld)."""
+    ok = _evalv(
+        ctx,
+        "(function(){var i=document.getElementById('hex-view-goto');"
+        "if(!i)return false;i.value='" + value + "';"
+        "i.dispatchEvent(new KeyboardEvent('keydown',"
+        "{key:'Enter',bubbles:true,cancelable:true}));return true;})()",
+    )
+    ctx.expect(ok is True, "Gehe-zu-Feld fehlt (Toolbar ausgeblendet?)")
 
 
 def _setup_fixture() -> tuple[Path, Path, Path]:
@@ -252,6 +301,174 @@ def run(ctx):
             )
             kind_body = _evalv(ctx, "document.body.classList.contains('kind-binary')")
             ctx.expect(kind_body is True, "History-Back ohne kind-binary")
+
+        with ctx.step("Textsuche findet ein bekanntes Zeichen der Fixture"):
+            ctx.api.open(_norm(small), discard=True)
+            _wait_hex(ctx, _norm(small))
+            ctx.api.find_text("o")
+
+            def text_hit():
+                snap = _evalv(
+                    ctx,
+                    "(function(){var c=document.getElementById('find-counter');"
+                    "var hits=document.querySelectorAll('.hex-hit-active');"
+                    "return {text: c && c.textContent, hits: hits.length};})()",
+                ) or {}
+                text = snap.get("text") or ""
+                if "0x00000001" in text and snap.get("hits", 0) >= 2:
+                    return snap
+                return None
+
+            hit = _poll(text_hit, timeout=4.0)
+            ctx.expect(bool(hit), f"Textsuche fand 'o' nicht: {_evalv(ctx, 'document.getElementById(\"find-counter\") && document.getElementById(\"find-counter\").textContent')!r}")
+
+        with ctx.step("Hex-Suche findet dieselbe Stelle über ihre Bytes"):
+            switched = _evalv(
+                ctx,
+                "(function(){var b=document.getElementById('find-mode-hex');"
+                "if(!b)return false;b.click();return true;})()",
+            )
+            ctx.expect(switched is True, "Hex-Modus-Button fehlt")
+            ctx.api.find_text("6f")
+
+            def hex_hit():
+                snap = _evalv(
+                    ctx,
+                    "(function(){var c=document.getElementById('find-counter');"
+                    "var mode=document.getElementById('find-mode-hex');"
+                    "return {text: c && c.textContent,"
+                    "pressed: mode && mode.getAttribute('aria-pressed')};})()",
+                ) or {}
+                if "0x00000001" in (snap.get("text") or "") and snap.get("pressed") == "true":
+                    return snap
+                return None
+
+            hex_ok = _poll(hex_hit, timeout=4.0)
+            ctx.expect(bool(hex_ok), f"Hex-Suche landete nicht bei 0x00000001: {hex_ok!r} counter={_evalv(ctx, 'document.getElementById(\"find-counter\") && document.getElementById(\"find-counter\").textContent')!r}")
+
+        with ctx.step("Weiter springt zum zweiten Vorkommen"):
+            clicked = _evalv(
+                ctx,
+                "(function(){var n=document.getElementById('find-next');"
+                "if(!n)return false;n.click();return true;})()",
+            )
+            ctx.expect(clicked is True, "find-next fehlt")
+
+            def second_hit():
+                text = _evalv(
+                    ctx,
+                    "document.getElementById('find-counter') && document.getElementById('find-counter').textContent",
+                ) or ""
+                return "0x00000004" in text and text
+
+            nxt = _poll(second_hit, timeout=4.0)
+            ctx.expect(bool(nxt), f"Weiter sprang nicht zum zweiten 'o': {_evalv(ctx, 'document.getElementById(\"find-counter\") && document.getElementById(\"find-counter\").textContent')!r}")
+
+        with ctx.step("Ungültige Hex-Eingabe zeigt den Fehler"):
+            ctx.api.find_text("123")
+
+            def invalid():
+                snap = _evalv(
+                    ctx,
+                    "(function(){var i=document.getElementById('find-input');"
+                    "var c=document.getElementById('find-counter');"
+                    "return {invalid: i && i.classList.contains('find-input--invalid'),"
+                    "counter: c && c.textContent,"
+                    "counterInvalid: c && c.classList.contains('find-counter--invalid')};})()",
+                ) or {}
+                if snap.get("invalid") and snap.get("counterInvalid") and snap.get("counter"):
+                    return snap
+                return None
+
+            bad = _poll(invalid, timeout=4.0)
+            ctx.expect(bool(bad), f"Ungültige Hex-Eingabe ohne Fehlerzustand: {bad!r}")
+            ctx.expect(
+                "0/0" not in (bad.get("counter") or ""),
+                f"Ungültige Hex-Eingabe als 0 Treffer: {bad!r}",
+            )
+
+        with ctx.step("Zurück findet den direkten Nachbar-Treffer"):
+            # Eigene Fixture: das Sample hat keine zwei benachbarten gleichen
+            # Bytes, genau die deckten den Rückwärts-Off-by-one aber auf
+            # (`from` ist rückwärts die exklusive Obergrenze).
+            pair = ROOT_DIR / "pair.bin"
+            pair.write_bytes(bytes([0x41, 0x6F, 0x6F, 0x00]))
+            _set_find_mode(ctx, "text")
+            ctx.api.open(_norm(pair), discard=True)
+            _wait_hex(ctx, _norm(pair))
+            ctx.api.find_text("o")
+            ctx.expect(
+                bool(_poll(lambda: _counter_has(ctx, "0x00000001"), timeout=4.0)),
+                f"Textsuche fand den ersten Nachbarn nicht: {_counter(ctx)!r}",
+            )
+
+            _click(ctx, "find-next")
+            ctx.expect(
+                bool(_poll(lambda: _counter_has(ctx, "0x00000002"), timeout=4.0)),
+                f"Weiter sprang nicht auf den zweiten Nachbarn: {_counter(ctx)!r}",
+            )
+
+            _click(ctx, "find-prev")
+            ctx.expect(
+                bool(_poll(lambda: _counter_has(ctx, "0x00000001"), timeout=4.0)),
+                f"Zurück übersprang den direkten Nachbarn: {_counter(ctx)!r}",
+            )
+
+        with ctx.step("Dokumentwechsel setzt die offene Suche auf das neue Dokument"):
+            ctx.api.open(_norm(small), discard=True)
+            _wait_hex(ctx, _norm(small))
+
+            def switched_counter():
+                snap = _evalv(
+                    ctx,
+                    "(function(){var c=document.getElementById('find-counter');"
+                    "var hits=document.querySelectorAll('.hex-hit-active');"
+                    "return {text: c && c.textContent, hits: hits.length};})()",
+                ) or {}
+                text = snap.get("text") or ""
+                if "0x00000001" in text and snap.get("hits", 0) >= 2:
+                    return snap
+                return None
+
+            moved = _poll(switched_counter, timeout=4.0)
+            ctx.expect(
+                bool(moved),
+                f"Suche folgte dem Dokumentwechsel nicht: {_counter(ctx)!r}",
+            )
+
+        with ctx.step("Gehe-zu-Offset räumt die Fundstellen-Markierung auf"):
+            ctx.api.open(_norm(large), discard=True)
+            _wait_hex(ctx, _norm(large))
+            ctx.api.find_text("HEAD")
+            ctx.expect(
+                bool(_poll(lambda: _counter_has(ctx, "0x00000000"), timeout=4.0)),
+                f"Suche in large.bin fand HEAD nicht: {_counter(ctx)!r}",
+            )
+            marked = _poll(
+                lambda: (_evalv(ctx, "document.querySelectorAll('.hex-hit-active').length") or 0) >= 8,
+                timeout=4.0,
+            )
+            ctx.expect(bool(marked), "Treffer in large.bin wurde nicht markiert")
+
+            _goto_offset(ctx, "0x100000")
+            cleared = _poll(
+                lambda: (_evalv(ctx, "document.querySelectorAll('.hex-hit-active').length") or 0) == 0
+                or None,
+                timeout=4.0,
+            )
+            ctx.expect(bool(cleared), "Markierung überlebte den Gehe-zu-Sprung")
+
+            _goto_offset(ctx, "0x0")
+            back = _poll(
+                lambda: (_hex_state(ctx) or {}).get("windowStart") == 0 and _hex_state(ctx),
+                timeout=4.0,
+            )
+            ctx.expect(bool(back), f"Rücksprung auf 0 misslang: {_hex_state(ctx)!r}")
+            still_clear = _evalv(ctx, "document.querySelectorAll('.hex-hit-active').length")
+            ctx.expect(
+                still_clear == 0,
+                f"Markierung tauchte beim Zurückspringen wieder auf: {still_clear!r}",
+            )
 
         with ctx.step("Externer Truncate klemmt das Fenster"):
             ctx.api.open(_norm(large), discard=True)
