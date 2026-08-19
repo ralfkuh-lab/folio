@@ -481,6 +481,39 @@ pub fn repo_root_normalized(path: &str) -> Option<String> {
     crate::git_branch::repo_root(Path::new(path)).map(|p| normalize_abs(&path_to_string(&p)))
 }
 
+/// Gemeinsamer Konstruktor fuer alle `git`-Spawns dieser Datei: Arbeits-
+/// verzeichnis, defensiv bereinigte Umgebung (`GIT_OPTIONAL_LOCKS=0`, geerbte
+/// `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE` raus) und Stdio (kein stdin,
+/// stdout gepiped, stderr verworfen). Argumente setzt der Aufrufer.
+///
+/// Unter **Windows** kommt `CREATE_NO_WINDOW` dazu, und das ist kein Detail:
+/// Folio ist eine GUI-Subsystem-App, ein Konsolen-Kindprozess bekommt dort
+/// ohne dieses Flag ein eigenes, sichtbares Konsolen-/Terminal-Fenster.
+/// Zusammen mit mehreren gepinnten Repo-Roots (ein `git status` pro Root) und
+/// der Fokus-Invalidierung des Git-Status entstand daraus eine Rueckkopplung:
+/// jedes aufpoppende Fenster klaut den Fokus, Folio bekommt ihn danach zurueck,
+/// das loest die naechste Status-Runde aus — und damit die naechsten Fenster
+/// (User-Report 2026-08-19, 9 Pins = 9 Fenster pro Runde).
+fn git_command(repo_root: &Path) -> Command {
+    let mut cmd = Command::new("git");
+    cmd.current_dir(repo_root)
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NO_WINDOW aus winbase.h — kein eigenes Konsolenfenster.
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
+
 /// `git status --porcelain=v1 -z --untracked-files=normal` im Repo-Root.
 /// Fail-open: jeder Fehler, Timeout, kein Binary, kein Repo → `None`.
 pub fn collect_status(repo_root: &Path) -> Option<GitRepoStatus> {
@@ -491,16 +524,8 @@ fn collect_status_timed(repo_root: &Path, timeout: Duration) -> Option<GitRepoSt
     if !repo_root.is_dir() {
         return None;
     }
-    let mut child = match Command::new("git")
+    let mut child = match git_command(repo_root)
         .args(["status", "--porcelain=v1", "-z", "--untracked-files=normal"])
-        .current_dir(repo_root)
-        .env("GIT_OPTIONAL_LOCKS", "0")
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_INDEX_FILE")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
         .spawn()
     {
         Ok(child) => child,
@@ -848,18 +873,7 @@ fn map_show_capture(err: GitCaptureError) -> ShowHeadError {
 }
 
 fn run_git_capture(repo: &Path, args: &[&str]) -> Result<Vec<u8>, GitCaptureError> {
-    let mut child = match Command::new("git")
-        .args(args)
-        .current_dir(repo)
-        .env("GIT_OPTIONAL_LOCKS", "0")
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_INDEX_FILE")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-    {
+    let mut child = match git_command(repo).args(args).spawn() {
         Ok(child) => child,
         Err(error) => {
             tracing::debug!(
