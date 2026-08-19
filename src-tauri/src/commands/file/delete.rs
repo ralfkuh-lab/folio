@@ -23,10 +23,19 @@ pub async fn trash_path(
     } else {
         path.clone()
     };
-    trash::delete(&native).map_err(|error| {
+    // Alle Watcher, die Verzeichnis-Handles unterhalb von `path` halten,
+    // vor der Shell-Operation stilllegen (siehe suspend_watches_under).
+    // Der Vault-/Workspace-/Tab-State bleibt dabei unberuehrt — er wird
+    // wie bisher erst nach erfolgreichem Loeschen bereinigt.
+    let suspended = suspend_watches_under(&state, &path);
+    if let Err(error) = trash::delete(&native) {
+        restore_watches(&state, &suspended);
         let detail = error.to_string();
-        i18n::t_args("errors.file.deleteFailed", &[("detail", &detail)])
-    })?;
+        return Err(i18n::t_args(
+            "errors.file.deleteFailed",
+            &[("detail", &detail)],
+        ));
+    }
 
     // Der Pfad ist ab hier irreversibel im Papierkorb. Fehler beim
     // Aufräumen dürfen die restliche Bereinigung NICHT per `?`
@@ -62,6 +71,185 @@ pub async fn trash_path(
         );
     }
     Ok(())
+}
+
+/// Fuer die Dauer der Shell-Loeschung stillgelegte Watcher.
+struct SuspendedWatches {
+    /// Tabs, deren `DocumentStore`-Watcher gestoppt wurde. Enthaelt auch
+    /// Tabs ohne Watcher (`pending_path`, fehlgeschlagener Watch) — das
+    /// Wiederherstellen ist dort ein No-op.
+    tab_ids: Vec<u64>,
+    /// Zuvor gewatchte aufgeklappte Vault-Ordner unter dem Root.
+    vault_dirs: Vec<String>,
+    /// Es lagen `.git`-HEAD-Watches unter dem Root; Restore laeuft ueber
+    /// einen erneuten `sync_git_head_watcher`.
+    git_head_suspended: bool,
+}
+
+/// Stoppt alle Watcher, die ein Verzeichnis-Handle unterhalb von `root`
+/// halten. Hintergrund: `notify` nutzt auf Windows
+/// `ReadDirectoryChangesW` und haelt damit ein offenes Handle auf das
+/// beobachtete Verzeichnis (bei Datei-Watches auf dessen Elternordner).
+/// Die Windows-Shell (`IFileOperation`, vom `trash`-Crate benutzt) bricht
+/// das Verschieben eines ORDNERS in den Papierkorb bei einem solchen
+/// Handle mit „Some operations were aborted" ab — reproduzierbar fuer
+/// „Ordner loeschen, waehrend ein Tab auf eine Datei darunter offen ist".
+/// Bewusst ohne `cfg(windows)`: ein Codepfad, auf Linux harmlos.
+///
+/// **Bekanntes Restfenster**: `trash::delete` laeuft lockfrei, also kann
+/// zwischen Suspend und Shell-Operation ein paralleler Command (Tab-Open
+/// unter dem Pfad, Ordner-Expand) ein neues notify-Handle anlegen — bei
+/// konkurrierender Bedienung bleibt der Windows-Fehler damit moeglich.
+/// Bewusst KEINE globale Dateioperations-Sperre: dieselbe akzeptierte
+/// Restluecken-Klasse wie das Residual-TOCTOU in
+/// `rename.rs::perform_move` — der Nutzer ist im Vault der einzige Akteur,
+/// und eine App-weite Sperre waere teurer als der Fehlerfall, der sich mit
+/// einer sichtbaren Meldung und einem zweiten Klick heilt.
+fn suspend_watches_under(state: &AppState, root: &str) -> SuspendedWatches {
+    let mut tab_ids = Vec::new();
+    match state.tabs.lock() {
+        Ok(mut tabs) => {
+            tab_ids = tabs.ids_under(root);
+            for id in &tab_ids {
+                if let Some(tab) = tabs.tab_mut(*id) {
+                    tab.document_store.unwatch();
+                }
+            }
+        }
+        Err(error) => {
+            tracing::warn!(
+                target: "folio::ipc",
+                %error,
+                "trash_path: tabs lock poisoned beim Watcher-Suspend"
+            );
+        }
+    }
+
+    let mut vault_dirs = Vec::new();
+    match state.vault_watcher.lock() {
+        Ok(mut watcher) => {
+            vault_dirs = watcher.watched_under(root);
+            for dir in &vault_dirs {
+                watcher.unwatch(dir);
+            }
+        }
+        Err(error) => {
+            tracing::warn!(
+                target: "folio::ipc",
+                %error,
+                "trash_path: vault_watcher lock poisoned beim Watcher-Suspend"
+            );
+        }
+    }
+
+    let mut git_head_suspended = false;
+    match state.git_head_watcher.lock() {
+        Ok(mut watcher) => {
+            git_head_suspended = watcher.unwatch_under(root) > 0;
+        }
+        Err(error) => {
+            tracing::warn!(
+                target: "folio::ipc",
+                %error,
+                "trash_path: git_head_watcher lock poisoned beim Watcher-Suspend"
+            );
+        }
+    }
+
+    SuspendedWatches {
+        tab_ids,
+        vault_dirs,
+        git_head_suspended,
+    }
+}
+
+/// Nur fuer den Fehlerfall: der Pfad existiert noch, also muessen die
+/// Watcher wieder laufen. Im Erfolgsfall bleibt es beim Suspend — die
+/// betroffenen Tabs werden gleich geschlossen, die Vault-Pfade aus
+/// `expanded_dirs` gepruned und der GitHeadWatcher ohnehin neu gesynct.
+/// Filtert Watch-Kandidaten auf die Pfade, die der Vault-State JETZT noch
+/// als aufgeklappt fuehrt. Haelt den `vault`-Lock nur fuer die Abfrage —
+/// der Caller nimmt den `vault_watcher`-Lock erst danach. Bei poisoned
+/// Lock wird nichts re-gewatcht (lieber ein fehlender Watch als einer, den
+/// der State nicht kennt; identische Wahl wie in
+/// `rename.rs::remap_vault_and_watchers`).
+fn still_expanded(state: &AppState, candidates: &[String]) -> Vec<String> {
+    match state.vault.lock() {
+        Ok(vault) => candidates
+            .iter()
+            .filter(|path| vault.is_expanded(path))
+            .cloned()
+            .collect(),
+        Err(error) => {
+            tracing::warn!(
+                target: "folio::vault",
+                %error,
+                "trash_path: vault lock poisoned beim Watcher-Restore — keine Vault-Watches wiederhergestellt"
+            );
+            Vec::new()
+        }
+    }
+}
+
+fn restore_watches(state: &AppState, suspended: &SuspendedWatches) {
+    match state.tabs.lock() {
+        Ok(mut tabs) => {
+            for id in &suspended.tab_ids {
+                if let Some(tab) = tabs.tab_mut(*id) {
+                    tab.document_store.rewatch();
+                }
+            }
+        }
+        Err(error) => {
+            tracing::warn!(
+                target: "folio::ipc",
+                %error,
+                "trash_path: tabs lock poisoned beim Watcher-Restore"
+            );
+        }
+    }
+
+    // Der Snapshot darf NICHT blind zurueckgespielt werden: `trash::delete`
+    // laeuft lockfrei, in der Zeit kann der User einen Ordner zuklappen
+    // oder ein Refresh `expanded_dirs` aendern. Dessen `unwatch` war wegen
+    // des Suspends ein No-op — ein blindes Re-Watch hinterliesse also einen
+    // Watch, den der Vault-State nicht kennt (Leak, den niemand mehr
+    // deregistriert). Deshalb gegen den aktuellen Vault-State filtern.
+    // Lock-Reihenfolge wie in `rename.rs::remap_vault_and_watchers`: erst
+    // `vault`, freigeben, DANN `vault_watcher` — nie beide gleichzeitig.
+    // Das Mikrofenster zwischen Pruefung und `vault_watcher`-Lock (paralleles
+    // Collapse genau dazwischen) bleibt bewusst offen: dasselbe Fenster hat
+    // by design jeder Pfad, der Watch-Listen unter dem `vault`-Lock berechnet
+    // und erst danach anwendet (siehe `remap_vault_and_watchers`). Der
+    // Schaden ist ein einzelner Zombie-Watch, der sich beim naechsten
+    // Expand/Collapse des Ordners selbst heilt — Atomik ueber beide Locks
+    // waere ein neues Lock-Ordering-Regime fuer einen Fehlerpfad-Sonderfall.
+    let vault_dirs = still_expanded(state, &suspended.vault_dirs);
+    match state.vault_watcher.lock() {
+        Ok(mut watcher) => {
+            for dir in &vault_dirs {
+                if let Err(error) = watcher.watch(dir) {
+                    tracing::warn!(
+                        target: "folio::vault",
+                        %error,
+                        path = %dir,
+                        "trash_path: Vault-Watch nach fehlgeschlagenem Papierkorb nicht wiederhergestellt"
+                    );
+                }
+            }
+        }
+        Err(error) => {
+            tracing::warn!(
+                target: "folio::ipc",
+                %error,
+                "trash_path: vault_watcher lock poisoned beim Watcher-Restore"
+            );
+        }
+    }
+
+    if suspended.git_head_suspended {
+        crate::commands::workspace_cmd::sync_git_head_watcher(state);
+    }
 }
 
 fn close_tabs_under(state: &AppState, handle: &AppHandle, root: &str) {

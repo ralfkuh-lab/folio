@@ -719,6 +719,43 @@ impl DocumentStore {
         }
     }
 
+    /// Beendet den Datei-Watcher, ohne den Dokument-State anzufassen
+    /// (Pfad, Text, Dirty bleiben). Notwendig vor Shell-Operationen, die
+    /// an einem offenen Verzeichnis-Handle scheitern: `notify` nutzt auf
+    /// Windows `ReadDirectoryChangesW` und haelt damit ein Handle auf das
+    /// Elternverzeichnis der beobachteten Datei — die Windows-Shell
+    /// (`IFileOperation`, vom `trash`-Crate benutzt) bricht das
+    /// Verschieben eines ORDNERS in den Papierkorb dann mit
+    /// „Some operations were aborted" ab. Gegenstueck: [`Self::rewatch`].
+    pub fn unwatch(&mut self) {
+        self.watcher = None;
+        self.watcher_tx = None;
+    }
+
+    /// Registriert den Watcher fuer den aktuell geladenen Pfad erneut.
+    /// No-op ohne Pfad (leerer Store, `pending_path`-Tab). Fehler sind
+    /// wie ueberall nicht-fatal und landen nur im Log.
+    ///
+    /// **Bekanntes Restfenster (bewusst nicht geschlossen)**: eine externe
+    /// Aenderung, die zwischen [`Self::unwatch`] und hier passiert, bleibt
+    /// unbemerkt — `rewatch` registriert nur neu und gleicht nicht ab. Es
+    /// gibt dafuer keinen vorhandenen billigen Hook: der Store trackt nur
+    /// `file_size`/`revision` (kein mtime, kein Hash), eine
+    /// gleichgrosse Aenderung faende ein Size-Vergleich also nicht.
+    /// `reload_if_changed` ist kein Kandidat, weil es Text und
+    /// Referenzstand ersetzt und damit ungespeicherte Editor-Aenderungen
+    /// verwerfen wuerde — im Fehlerpfad einer Loeschung erst recht nicht.
+    /// Und `events.external_changed` laesst sich hier nicht inline feuern:
+    /// der Callback nimmt in `state.rs` selbst den `tabs`-Lock, unter dem
+    /// `restore_watches` diese Funktion aufruft (Selbst-Deadlock).
+    /// Praktische Folge ist klein: der Pfad ist Fehlerpfad-only (Delete
+    /// fehlgeschlagen), und das naechste FS-Event auf der Datei heilt es.
+    pub fn rewatch(&mut self) {
+        if let Some(path) = self.path.clone() {
+            self.watch_non_fatal(&path);
+        }
+    }
+
     /// Watch-Fehler sind nicht-fatal (wie beim VaultWatcher): Load/
     /// Save-As/Rename haben den Store-State zu diesem Zeitpunkt bereits
     /// mutiert — ein `Err` hier wuerde den `loaded`-Callback (und damit
@@ -1709,6 +1746,114 @@ mod tests {
         store.load(path.to_str().unwrap()).unwrap();
         let second = store.descriptor().unwrap().revision;
         assert!(second > first);
+    }
+
+    #[test]
+    fn unwatch_stops_watcher_and_rewatch_restores_it() {
+        // Suspend/Restore rund um die Shell-Loeschung (Windows-Papierkorb):
+        // unwatch muss das Handle freigeben, rewatch denselben Pfad wieder
+        // beobachten — ohne den Dokument-State anzufassen.
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("doc.md");
+        fs::write(&path, "one\n").unwrap();
+        let mut store = DocumentStore::new();
+        store.load(path.to_str().unwrap()).unwrap();
+        store.update_text("dirty\n".into()).unwrap();
+        assert!(store.watcher.is_some());
+
+        store.unwatch();
+        assert!(store.watcher.is_none());
+        assert!(store.watcher_tx.is_none());
+        // State bleibt unberuehrt.
+        assert_eq!(Some(path.to_str().unwrap()), store.path.as_deref());
+        assert_eq!("dirty\n", store.text);
+        assert!(store.is_dirty);
+
+        store.rewatch();
+        assert!(store.watcher.is_some());
+        assert!(store.watcher_tx.is_some());
+    }
+
+    #[test]
+    fn rewatch_without_path_is_noop() {
+        let mut store = DocumentStore::new();
+        store.rewatch();
+        assert!(store.watcher.is_none());
+        assert!(store.watcher_tx.is_none());
+    }
+
+    #[test]
+    fn rewatch_detects_external_change_again() {
+        use std::sync::Mutex;
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("doc.md");
+        fs::write(&path, "one\n").unwrap();
+        let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let seen_cb = seen.clone();
+        let mut store = DocumentStore::new();
+        store.set_events(DocumentEvents {
+            external_changed: Some(Arc::new(move |p| seen_cb.lock().unwrap().push(p))),
+            ..DocumentEvents::default()
+        });
+        store.load(path.to_str().unwrap()).unwrap();
+
+        let wait_for_event = |seen: &Arc<Mutex<Vec<String>>>| {
+            let deadline = std::time::Instant::now() + Duration::from_secs(4);
+            while std::time::Instant::now() < deadline {
+                if !seen.lock().unwrap().is_empty() {
+                    return true;
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+            false
+        };
+
+        // Erst pruefen, ob `notify` in dieser Umgebung ueberhaupt feuert
+        // (manche /tmp-Mounts liefern keine Events) — sonst Test skippen.
+        fs::write(&path, "two\n").unwrap();
+        if !wait_for_event(&seen) {
+            eprintln!("fs notify nicht verfuegbar, Test geskippt");
+            return;
+        }
+
+        store.unwatch();
+        // Der Debounce-Thread kann nach dem Drop des Senders noch einmal
+        // callbacken. Statt einen festen Sleep zu raten, auf Ruhe warten:
+        // Baseline ist die Anzahl, die sich 300 ms nicht mehr aendert.
+        let wait_quiet = |seen: &Arc<Mutex<Vec<String>>>| {
+            let deadline = std::time::Instant::now() + Duration::from_secs(3);
+            let mut last = seen.lock().unwrap().len();
+            let mut stable_since = std::time::Instant::now();
+            while std::time::Instant::now() < deadline {
+                thread::sleep(Duration::from_millis(50));
+                let now = seen.lock().unwrap().len();
+                if now == last {
+                    if stable_since.elapsed() >= Duration::from_millis(300) {
+                        return now;
+                    }
+                } else {
+                    last = now;
+                    stable_since = std::time::Instant::now();
+                }
+            }
+            last
+        };
+        let baseline = wait_quiet(&seen);
+        fs::write(&path, "three\n").unwrap();
+        thread::sleep(Duration::from_millis(700));
+        assert_eq!(
+            baseline,
+            seen.lock().unwrap().len(),
+            "unwatch: externe Aenderung darf nicht mehr melden"
+        );
+
+        seen.lock().unwrap().clear();
+        store.rewatch();
+        fs::write(&path, "four\n").unwrap();
+        assert!(
+            wait_for_event(&seen),
+            "rewatch: externe Aenderung wird nicht wieder erkannt"
+        );
     }
 
     #[test]

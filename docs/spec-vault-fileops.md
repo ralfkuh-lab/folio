@@ -148,6 +148,66 @@ kopieren.
 - Pins/Recents unterhalb entfernen, `expanded_dirs` + Watches darunter
   aufräumen.
 
+**Nachtrag 2026-08-18 — Watcher-Suspend vor `trash::delete` (Windows).**
+Auf Windows scheiterte das Löschen eines **Ordners** zuverlässig mit
+`Unknown { description: "Some operations were aborted" }`, sobald ein Tab
+auf eine Datei darunter offen war. Ursache ist kein Pfad- oder
+Rechteproblem: `notify` nutzt auf Windows `ReadDirectoryChangesW` und hält
+damit ein offenes Verzeichnis-Handle — beim Tab-Watcher
+(`DocumentStore::watch`) auf dem **Elternverzeichnis** der beobachteten
+Datei, beim `VaultWatcher` auf jedem aufgeklappten Ordner, beim
+`GitHeadWatcher` auf dem aufgelösten `.git`. Die Windows-Shell
+(`IFileOperation`, vom `trash`-Crate benutzt) bricht den Move in den
+Papierkorb bei einem solchen Handle ab. Isoliert funktionieren einzelne
+Datei, Ordner ohne offene Tabs, Ordner mit Junction und Junction direkt —
+nur die Kombination „Ordner + offener Tab darunter" bricht.
+
+Deshalb legt `suspend_watches_under` **vor** `trash::delete` alle Watcher
+unterhalb des Pfads still: Tab-Watcher über `TabManager::ids_under` +
+`DocumentStore::unwatch` (State bleibt unberührt), `VaultWatcher` über
+`watched_under` + `unwatch`, `GitHeadWatcher` über `unwatch_under`. Die
+Reihenfolge „erst löschen, dann State aufräumen" bleibt davon unberührt —
+suspendiert wird nur das Handle, nicht der Zustand. Schlägt
+`trash::delete` fehl, stellt `restore_watches` alles wieder her
+(`DocumentStore::rewatch`, `VaultWatcher::watch`, erneutes
+`sync_git_head_watcher`) und der bestehende Fehler-Return bleibt; im
+Erfolgsfall bleibt es beim Suspend, weil die Tabs gleich geschlossen, die
+Vault-Pfade gepruned und der GitHeadWatcher ohnehin neu gesynct werden
+(`VaultWatcher::unwatch` ist für nicht-registrierte Pfade ein No-op).
+Bewusst **ohne** `cfg(windows)`: ein Codepfad, auf Linux harmlos. Der
+EXDEV-Move-Pfad (`rename.rs`/`fs_copy.rs`) bleibt unverändert — er nutzt
+`fs::rename`/`fs`-Löschung und ist von der Shell-Semantik nicht betroffen.
+
+Der Restore spielt den Vault-Snapshot **nicht blind** zurück: `trash::delete`
+läuft lockfrei, in der Zeit kann der User einen Ordner zuklappen: dessen
+`unwatch` ist wegen des Suspends ein No-op, und ein blindes Re-Watch
+hinterließe einen Watch, den `expanded_dirs` nicht kennt und den niemand mehr
+deregistriert. `restore_watches` filtert die Kandidaten deshalb über
+`Vault::is_expanded` gegen den aktuellen State — Lock-Reihenfolge wie in
+`rename.rs::remap_vault_and_watchers`: erst `vault`, freigeben, dann
+`vault_watcher`, nie beide gleichzeitig.
+
+Zwei bewusst offene Restfenster. (1) Zwischen Suspend und `trash::delete`
+kann ein parallel laufender Command (Tab-Open unter dem Pfad,
+Ordner-Expand) ein neues notify-Handle anlegen; bei konkurrierender
+Bedienung bleibt der Windows-Fehler damit möglich. Eine globale
+Dateioperations-Sperre wird dafür **nicht** gebaut — das ist dieselbe
+akzeptierte Klasse wie das Residual-TOCTOU in `rename.rs::perform_move`
+(„der Nutzer ist im Vault der einzige Akteur"), und der Fehlerfall heilt
+sich mit einer sichtbaren Meldung und einem zweiten Klick. (2) Eine externe
+Änderung im Suspend-Fenster bleibt unbemerkt: `DocumentStore::rewatch`
+registriert nur neu und gleicht nicht ab. Ein Abgleich hätte keinen
+billigen Hook (der Store trackt nur `file_size`, kein mtime/Hash;
+`reload_if_changed` würde ungespeicherte Änderungen verwerfen; der
+`external_changed`-Callback nimmt selbst den `tabs`-Lock, unter dem der
+Restore läuft → Selbst-Deadlock). Der Pfad ist Fehlerpfad-only, das nächste
+FS-Event heilt ihn; Begründung steht am `rewatch`-Doc-Kommentar. (3) Beim
+Fehler-Restore bleibt zwischen der `still_expanded`-Prüfung und dem
+`vault_watcher`-Lock ein Mikrofenster für ein paralleles Collapse — dasselbe
+Fenster hat by design jeder Pfad, der Watch-Listen unter dem `vault`-Lock
+berechnet und erst danach anwendet (`remap_vault_and_watchers`). Schaden:
+ein Zombie-Watch, der sich beim nächsten Expand/Collapse selbst heilt.
+
 ### V1.2 Frontend
 
 `vault/context-menu.ts`:

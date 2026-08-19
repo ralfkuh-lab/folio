@@ -8,21 +8,7 @@
 
 ## Hohe Priorität
 
-- **Ordner in den Papierkorb scheitert auf Windows bei offenem Tab darunter**
-  (Befund Windows-Verifikationsdurchgang 2026-08-18): `trash_path` schlägt
-  mit `Unknown { description: "Some operations were aborted" }` fehl, sobald
-  ein Tab auf eine Datei unterhalb des Ordners offen ist — der
-  `notify`-Watcher des Tabs (`ReadDirectoryChangesW`) hält ein
-  Verzeichnis-Handle, das den Shell-Move in den Papierkorb blockiert.
-  Isoliert (Datei, Ordner, Ordner mit Junction, Junction einzeln) läuft
-  alles durch; nur die Kombination mit offenem Tab bricht. Ursache ist die
-  bewusste Reihenfolge in `commands/file/delete.rs` (erst `trash::delete`,
-  dann Tabs schließen) — auf Linux harmlos, auf Windows kaputt. Genau
-  diesen Flow testet E2E 59 („Ordner löschen schließt die Tabs darunter");
-  auf Windows wäre das Szenario rot. Kein Datenverlust, Fehler ist sichtbar.
-  Fix-Richtung: Watcher unter dem Pfad VOR `trash::delete` stoppen und bei
-  Fehlschlag reaktivieren; die Tabs selbst weiterhin erst nach Erfolg
-  schließen (die Begründung der Reihenfolge bleibt gültig).
+_(leer)_
 
 ## Mittlere Priorität
 
@@ -65,11 +51,27 @@
      dokumentiert reproduziert (Rename über abweichende Schreibweise
      gelingt auf der Platte, Tab bleibt auf dem alten Pfad zurück).
      Bewusst nicht gefixt, Eintrag bleibt dort bestehen.
-  6. ❌ **Ordner in den Papierkorb**: Backslash-Konvertierung und
-     Verzeichnisse an sich funktionieren (Datei, Ordner, Ordner mit
-     Junction, Junction einzeln alle grün) — aber mit offenem Tab
-     unterhalb schlägt es fehl. **Neuer Bug-Eintrag unter „Hohe
-     Priorität"** (Watcher-Handle blockiert den Shell-Move).
+  6. ✅ **Ordner in den Papierkorb**: Backslash-Konvertierung und
+     Verzeichnisse an sich funktionierten von Anfang an (Datei, Ordner,
+     Ordner mit Junction, Junction einzeln alle grün) — mit offenem Tab
+     unterhalb schlug es fehl (Watcher-Handle blockierte den Shell-Move).
+     **Behoben 2026-08-19**: `trash_path` suspendiert vor `trash::delete`
+     alle Watcher mit Handles unter dem Pfad (Tab-DocumentStore,
+     VaultWatcher, GitHeadWatcher) und stellt sie nur im Fehlerfall
+     wieder her — Restore gegen den aktuellen Vault-State gefiltert.
+     Auf Windows verifiziert; bewusst offene Restfenster stehen in
+     [`docs/spec-vault-fileops.md`](docs/spec-vault-fileops.md).
+
+- **Wikilink-W7-Unit-Tests schlagen auf Windows fehl** (Befund beim
+  Windows-Durchgang 2026-08-19, vorbestehend und unabhängig vom
+  Papierkorb-Fix): `cargo test --lib` → 6 Failures, alle
+  `wikilink::tests::w7_*` — auf dem sauberen HEAD reproduzierbar
+  (`7 passed; 6 failed`). Vermutlich Pfad-/Case-Annahmen der
+  W7-Lokalitäts-Tests, die nur auf Linux gelten. Dazu passend meldet
+  `cargo clippy --all-targets -- -D warnings` auf Windows 7 vorbestehende
+  Errors in `#[cfg(unix)]`-gerahmtem Test-Code (unused imports/Variablen in
+  `transfer.rs`, `fs_copy.rs`, `unreachable statement` in `palette.rs:256`)
+  — auf Linux unsichtbar, bricht aber jedes Windows-Gate.
 
 - **E2E `42_mermaid` flaky — Fix 2026-07-25, Beobachtung**: erneut
   aufgetreten (2026-07-21 + 2026-07-25, „mermaid svg nicht gefunden").
