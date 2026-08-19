@@ -228,7 +228,9 @@ impl Workspace {
         // Pinnen desselben Ordners das Feature stillschweigend wieder
         // einschaltet. Identitaetsbasiert wie der Pin-Retain darueber —
         // die Wurzel wurde mit dem Pin-Pfad gespeichert.
-        self.data.wikilink_roots.retain(|root| !matcher.matches(root));
+        self.data
+            .wikilink_roots
+            .retain(|root| !matcher.matches(root));
         self.save()
     }
 
