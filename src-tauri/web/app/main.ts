@@ -52,6 +52,7 @@ import { initCodeCopy } from './view/code-copy';
 import { initMarkdownScrollSync, syncViewSlugToEditor, tocClickToEditor } from './view/scroll-sync';
 import { scrollHtmlViewToAnchor } from './view/html';
 import { initHtmlScrollSync } from './view/html-scroll-sync';
+import { initWikilinkRefresh } from './view/wikilink-refresh';
 import { initBacklinks } from './view/backlinks';
 import {
     initDocumentState,
@@ -154,6 +155,7 @@ function runModuleInits(): void {
     initTabs();
     initDocumentState();
     initPreview({ getCurrentPath });
+    initWikilinkRefresh();
     initHtmlLiveUpdate();
     initCodeLiveUpdate({ getCurrentPath });
     initCodeCopy();

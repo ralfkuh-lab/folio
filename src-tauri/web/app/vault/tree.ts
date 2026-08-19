@@ -366,9 +366,11 @@ export function initVaultTree(d: Deps): void {
         const isExec = item.getAttribute('data-exec') === '1';
         const gitModified = item.classList.contains('git-modified');
         const isText = item.getAttribute('data-text') === '1';
+        const wikilinkRoot = item.getAttribute('data-wikilink-root') === '1';
         openContextMenu(e.clientX, e.clientY, path, isDir, inPinned, inRecent, isExec, {
             gitModified,
             isText,
+            wikilinkRoot,
         });
     });
 

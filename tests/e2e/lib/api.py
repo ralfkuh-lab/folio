@@ -277,6 +277,21 @@ class AutomationApi:
     def workspace_clear_recents(self) -> dict:
         return self._request("POST", "/workspace/clear_recents", {})
 
+    def workspace_wikilink_root(self, path: str, enabled: bool = True) -> dict:
+        """Schaltet eine Pin-Wurzel als Wikilink-/Tag-Wurzel frei (Spec W8).
+
+        Ohne dieses Opt-in ist der Wikilink-Index leer (Default), es laeuft
+        gar kein Vault-Walk. Bewusst ueber /eval + invoke statt eines eigenen
+        Automation-Endpunkts: der Toggle ist reines Workspace-State-Setzen und
+        laeuft im Produktivpfad ueber genau diesen Command.
+        """
+        payload = json.dumps({"path": path, "enabled": bool(enabled)})
+        js = (
+            "(async () => { await window.__TAURI__.core.invoke("
+            f"'workspace_wikilink_root_set', {payload}); return true; }})()"
+        )
+        return self.eval(js, timeout_ms=8000)
+
     def search(
         self,
         query: str,

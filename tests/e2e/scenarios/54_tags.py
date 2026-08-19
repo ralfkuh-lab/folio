@@ -1,6 +1,11 @@
 """E2E Tag-Browser (W6): Sektion, Dateiliste, Search-Präfill.
 
 Kopiert fixtures/tags nach Temp (isoliert), pinnt, lazy Tag-Scan.
+
+W8: Der Tag-Scan hängt am selben Opt-in-Suchraum wie der Wikilink-Index
+(`Workspace::wikilink_pins`). Ohne `workspace_wikilink_root_set` bliebe die
+Tag-Sektion leer („Keine Tags") — der Pin muss also zusätzlich als Wurzel
+freigeschaltet werden.
 """
 
 from __future__ import annotations
@@ -42,6 +47,8 @@ def run(ctx):
         with ctx.step("Tags-Temp-Ordner pinnen + Datei oeffnen"):
             ctx.api.tabs_close_all()
             ctx.api.workspace_pin(folder, is_directory=True)
+            # W8-Opt-in: der Tag-Scan laeuft nur ueber freigeschaltete Wurzeln.
+            ctx.api.workspace_wikilink_root(folder, True)
             pinned = True
             ctx.api.open(projekt, discard=True)
             try:

@@ -298,6 +298,17 @@ async function doFetch(path: string, gen: number): Promise<void> {
     }
 }
 
+/**
+ * Der Wikilink-Index wurde im Hintergrund fertig gebaut
+ * (Backend-Event `wikilink:index_ready`, Spec W8): das angezeigte Panel
+ * beruht dann noch auf dem leeren/alten Index. Debounced über denselben
+ * Pfad wie document:loaded; ohne angezeigtes Dokument ein No-op.
+ */
+export function refreshBacklinksAfterIndexReady(): void {
+    if (!lastBacklinksPath) return;
+    scheduleBacklinksRefresh(lastBacklinksPath);
+}
+
 /** document:saved-Handler (exportiert für Tests). */
 export function onDocumentSaved(payload: {
     path?: unknown;

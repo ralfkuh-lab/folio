@@ -804,6 +804,8 @@
   "vault.contextMenu.showChanges": "Änderungen anzeigen",
   "vault.contextMenu.showInExplorer": "Im Explorer zeigen",
   "vault.contextMenu.unpin": "Vom Pin lösen",
+  "vault.contextMenu.wikilinkRootDisable": "Wikilinks & Tags hier deaktivieren",
+  "vault.contextMenu.wikilinkRootEnable": "Wikilinks & Tags hier aktivieren",
   "vault.filter.clear.ariaLabel": "Filter löschen",
   "vault.filter.clear.tooltip": "Filter löschen",
   "vault.filter.close.ariaLabel": "Filterzeile schließen",

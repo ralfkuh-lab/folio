@@ -12,7 +12,7 @@ use crate::{
     vault::Vault,
     vault_watcher::{GitHeadWatcher, VaultWatcher},
     wikilink::{WikilinkContext, WikilinkIndexCache},
-    workspace::Workspace,
+    workspace::{PinnedItem, Workspace},
 };
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -112,7 +112,9 @@ pub struct AppState {
     pub vault: Mutex<Vault>,
     /// Namens-Index fuer Wikilinks (`docs/spec-wikilinks.md`). Haelt sein
     /// eigenes Lock, deshalb kein zusaetzliches `Mutex` hier. Invalidierung
-    /// ueber [`AppState::invalidate_wikilink_index`], TTL-Fallback 30 s.
+    /// ueber [`AppState::invalidate_wikilink_index`], TTL-Fallback 5 min
+    /// (adaptiv angehoben, siehe `wikilink::INDEX_TTL`). Suchraum sind die
+    /// Opt-in-Wurzeln aus [`AppState::wikilink_pins`], nicht alle Pins.
     pub wikilink_index: WikilinkIndexCache,
     /// Git-Status-Dots (modified/untracked) pro Repo-Root. Eigenes Lock,
     /// TTL 15 s, Single-Flight, Fokus-Invalidierung.
@@ -225,22 +227,40 @@ impl AppState {
     /// bewusst auf missing-Optik zurueck.
     pub fn wikilink_context(&self, path: Option<&str>) -> Option<WikilinkContext> {
         let path = path?;
-        let pinned = match self.workspace.lock() {
-            Ok(workspace) => workspace.pinned().to_vec(),
+        let pinned = self.wikilink_pins()?;
+        Some(WikilinkContext::new(self.wikilink_index.get(&pinned), path))
+    }
+
+    /// Suchraum fuer Wikilink-Index, Backlinks und Tag-Browser: die
+    /// **Opt-in-Wurzeln** (`pinned ∩ workspace.wikilink_roots`, Spec W8).
+    /// Einzige Quelle fuer alle Konsumenten — die Filterung passiert bewusst
+    /// VOR `WikilinkIndexCache::get`, damit der Fingerprint des Caches einen
+    /// Wurzel-Wechsel automatisch als neuen Suchraum erkennt.
+    ///
+    /// `None` nur bei vergiftetem Workspace-Lock; eine leere Liste ist der
+    /// legitime Default (Feature aus, kein Vault-Walk).
+    pub fn wikilink_pins(&self) -> Option<Vec<PinnedItem>> {
+        match self.workspace.lock() {
+            Ok(workspace) => Some(workspace.wikilink_pins()),
             Err(_) => {
                 tracing::warn!(
                     target: "folio::wikilink",
-                    "workspace lock poisoned; rendering wikilinks without vault context"
+                    "workspace lock poisoned; skipping wikilink vault context"
                 );
-                return None;
+                None
             }
-        };
-        Some(WikilinkContext::new(self.wikilink_index.get(&pinned), path))
+        }
     }
 
     /// Wikilink-Index verwerfen (Pin-Aenderung, Datei-CRUD, Watcher-Event).
     pub fn invalidate_wikilink_index(&self) {
         self.wikilink_index.invalidate();
+    }
+
+    /// Wikilink-Index bei Fenster-Fokus verwerfen — gedrosselt, siehe
+    /// [`crate::wikilink::WikilinkIndexCache::invalidate_on_focus`].
+    pub fn invalidate_wikilink_index_on_focus(&self) {
+        self.wikilink_index.invalidate_on_focus();
     }
 
     /// Wie [`Self::wikilink_context`], aber ueber ein `AppHandle` — fuer

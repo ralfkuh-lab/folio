@@ -210,6 +210,12 @@ pub fn builder(settings: crate::settings::SettingsService) -> tauri::Builder<tau
                     // Rueckkehr-Pfad nach einem Terminal-Commit.
                     if let Some(state) = app.try_state::<AppState>() {
                         state.git_status.invalidate_all();
+                        // Wikilink-Index gleicher Gedanke: externe
+                        // Aenderungen passieren, waehrend Folio den Fokus
+                        // nicht hat, und der VaultWatcher sieht nur
+                        // aufgeklappte Ordner. Gedrosselt (30 s), sonst
+                        // rebuildet jedes Alt-Tab den ganzen Vault.
+                        state.invalidate_wikilink_index_on_focus();
                         // Nur Pfade unter dem Lock; Root-Discovery
                         // (stat-Kette auf .git) danach, damit ein
                         // haengender Mount den Fenster-Eventpfad nicht
@@ -263,6 +269,29 @@ pub fn builder(settings: crate::settings::SettingsService) -> tauri::Builder<tau
             // den aktiven Zustand, sobald das Frontend lauscht.
             state.restore_tabs()?;
             state.install_document_events(app.handle().clone())?;
+            // Publish-Callback des Wikilink-Index-Caches: seit W8 baut der
+            // Cold-Pfad im Hintergrund, das Frontend haelt also kurzzeitig
+            // einen leeren Index in der Hand. Ohne dieses Signal blieben die
+            // Wikilinks der sichtbaren View bis zum naechsten Tastendruck
+            // `missing`. Bewusst KEIN Re-Emit von `document:loaded` (Scroll-
+            // und Seiteneffekte) — das Frontend nutzt den scroll-erhaltenden
+            // Live-Render-Pfad.
+            {
+                let handle = app.handle().clone();
+                state
+                    .wikilink_index
+                    .set_publish_callback(std::sync::Arc::new(move || {
+                        if let Err(error) =
+                            handle.emit("wikilink:index_ready", serde_json::json!({}))
+                        {
+                            tracing::debug!(
+                                target: "folio::wikilink",
+                                %error,
+                                "could not emit wikilink:index_ready"
+                            );
+                        }
+                    }));
+            }
             // VaultWatcher-Callback registrieren + initial-State aus
             // dem persistierten `vaultAutoRefresh`-Setting setzen.
             // Vault-Command-Handler (expand-dir/collapse-dir) rufen
@@ -634,6 +663,7 @@ pub fn builder(settings: crate::settings::SettingsService) -> tauri::Builder<tau
             commands::workspace_cmd::workspace_pin,
             commands::workspace_cmd::workspace_unpin,
             commands::workspace_cmd::workspace_reorder_pinned,
+            commands::workspace_cmd::workspace_wikilink_root_set,
             commands::workspace_cmd::workspace_add_recent,
             commands::workspace_cmd::workspace_remove_recent,
             commands::workspace_cmd::workspace_get,

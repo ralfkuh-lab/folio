@@ -820,6 +820,8 @@
   "vault.contextMenu.showChanges": "Показать изменения",
   "vault.contextMenu.showInExplorer": "Показать в проводнике",
   "vault.contextMenu.unpin": "Открепить",
+  "vault.contextMenu.wikilinkRootDisable": "Отключить вики-ссылки и теги здесь",
+  "vault.contextMenu.wikilinkRootEnable": "Включить вики-ссылки и теги здесь",
   "vault.filter.clear.ariaLabel": "Очистить фильтр",
   "vault.filter.clear.tooltip": "Очистить фильтр",
   "vault.filter.close.ariaLabel": "Закрыть панель фильтра",

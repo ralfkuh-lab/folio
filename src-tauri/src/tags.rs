@@ -60,6 +60,12 @@ fn file_name_of(path: &Path) -> String {
 }
 
 /// Scannt den Vault und aggregiert Tags aus Fließtext + Frontmatter.
+///
+/// `pinned` ist **nicht** die volle Pin-Liste, sondern der Opt-in-Suchraum
+/// aus `Workspace::wikilink_pins()` (Spec W8): der Tag-Scan walkt denselben
+/// Baum wie der Wikilink-Index und hätte sonst dasselbe Kostenproblem
+/// (1-Mio-Dateien-Vault → 20–26 s pro Lauf). Leere Liste = leeres Ergebnis
+/// ohne Walk.
 pub fn collect_vault_tags(pinned: &[PinnedItem]) -> VaultTagsResult {
     let roots = resolve_scope(pinned, &SearchScope::Vault);
     let mut seen_files: HashSet<String> = HashSet::new();

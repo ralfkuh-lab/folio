@@ -413,7 +413,7 @@ impl Vault {
                 let ignored = matcher
                     .as_ref()
                     .is_some_and(|m| m.is_ignored(p, info.is_directory));
-                self.item_html(&p.to_string_lossy(), info, None, ignored, None)
+                self.item_html(&p.to_string_lossy(), info, None, ignored, None, false)
             })
             .collect())
     }
@@ -643,6 +643,10 @@ impl Vault {
     /// `force_open_children`: wenn `Some(html)`, wird der Ordner unabhängig
     /// von `expanded_dirs` mit `caret open` und diesen Kindern gerendert
     /// (Filter-Render-Modus). `None` = Lazy-Verhalten über `expanded_dirs`.
+    ///
+    /// `wikilink_root`: nur an **Pin-Wurzeln** wahr — setzt
+    /// `data-wikilink-root="1"` (Opt-in-Zustand für das Kontextmenü, Spec W8,
+    /// analog `data-text`).
     pub(crate) fn item_html(
         &self,
         original_path: &str,
@@ -650,6 +654,7 @@ impl Vault {
         branch: Option<&crate::git_branch::BranchInfo>,
         ignored: bool,
         force_open_children: Option<&str>,
+        wikilink_root: bool,
     ) -> String {
         // Bei .lnk-Shortcuts navigieren wir zum aufgelösten Ziel; die
         // Beschriftung verliert die `.lnk`-Endung (analog Explorer).
@@ -744,6 +749,11 @@ impl Vault {
         } else {
             ""
         };
+        let wikilink_root_attr = if wikilink_root {
+            r#" data-wikilink-root="1""#
+        } else {
+            ""
+        };
         let text_attr = if !is_directory {
             match crate::file_kind::classify(&nav_path) {
                 crate::file_kind::FileKind::Markdown | crate::file_kind::FileKind::Text => {
@@ -784,7 +794,7 @@ impl Vault {
             title.push_str("\ngitignored");
         }
         format!(
-            r#"<li class="{classes}" data-kind="{kind}"{exec_attr}{text_attr} data-path="{datapath}" title="{title}"><div class="row"><span class="{caret_class}">▾</span>{icon_html}<span class="label">{name}</span>{branch_html}</div><ul class="{children_class}">{children}</ul></li>"#,
+            r#"<li class="{classes}" data-kind="{kind}"{exec_attr}{text_attr}{wikilink_root_attr} data-path="{datapath}" title="{title}"><div class="row"><span class="{caret_class}">▾</span>{icon_html}<span class="label">{name}</span>{branch_html}</div><ul class="{children_class}">{children}</ul></li>"#,
             datapath = escape_attr(&nav_path),
             title = escape_attr(&title),
             name = escape_html(&label_name),
@@ -854,7 +864,14 @@ impl Vault {
                 let ignored = matcher
                     .as_ref()
                     .is_some_and(|m| m.is_ignored(path, info.is_directory));
-                self.item_html(&item.path, &info, branch.as_ref(), ignored, None)
+                self.item_html(
+                    &item.path,
+                    &info,
+                    branch.as_ref(),
+                    ignored,
+                    None,
+                    workspace.is_wikilink_root(&item.path),
+                )
             })
             .collect::<String>();
         empty_placeholder(html)
@@ -871,7 +888,7 @@ impl Vault {
                 } else {
                     EntryInfo::plain(false)
                 };
-                self.item_html(&item.path, &info, None, false, None)
+                self.item_html(&item.path, &info, None, false, None, false)
             })
             .collect::<String>();
         empty_placeholder(html)
@@ -958,14 +975,27 @@ mod tests {
     fn active_item_gets_active_class() {
         let mut vault = Vault::new();
         vault.set_active(Some("/tmp/a.md".into()));
-        let html = vault.item_html("/tmp/a.md", &EntryInfo::plain(false), None, false, None);
+        let html = vault.item_html(
+            "/tmp/a.md",
+            &EntryInfo::plain(false),
+            None,
+            false,
+            None,
+            false,
+        );
         assert!(html.contains("node active"));
     }
 
     #[test]
     fn ignored_true_adds_class_and_gitignored_to_title() {
-        let html =
-            Vault::new().item_html("/tmp/ign.md", &EntryInfo::plain(false), None, true, None);
+        let html = Vault::new().item_html(
+            "/tmp/ign.md",
+            &EntryInfo::plain(false),
+            None,
+            true,
+            None,
+            false,
+        );
         assert!(html.contains("node ignored"));
         // \n stays literal in the attr (no html-escape for LF in escape_attr)
         assert!(html.contains("/tmp/ign.md\ngitignored"));
@@ -974,8 +1004,14 @@ mod tests {
             label: "main".into(),
             detached: false,
         };
-        let html2 =
-            Vault::new().item_html("/tmp/ign", &EntryInfo::plain(true), Some(&bi), true, None);
+        let html2 = Vault::new().item_html(
+            "/tmp/ign",
+            &EntryInfo::plain(true),
+            Some(&bi),
+            true,
+            None,
+            false,
+        );
         assert!(html2.contains("node ignored"));
         assert!(html2.contains("gitignored"));
         assert!(html2.contains("Branch: main"));
@@ -998,6 +1034,7 @@ mod tests {
             None,
             false,
             None,
+            false,
         );
         assert!(exec_html.contains(r#"data-exec="1""#));
 
@@ -1008,6 +1045,7 @@ mod tests {
             None,
             false,
             None,
+            false,
         );
         assert!(!plain_html.contains("data-exec"));
     }
@@ -1019,7 +1057,7 @@ mod tests {
             is_link: true,
             target: None,
         };
-        let html = Vault::new().item_html("/tmp/junction", &info, None, false, None);
+        let html = Vault::new().item_html("/tmp/junction", &info, None, false, None, false);
         assert!(html.contains("class=\"node link\""));
         assert!(html.contains(r#"data-kind="dir""#));
     }
@@ -1031,7 +1069,7 @@ mod tests {
             is_link: true,
             target: Some(PathBuf::from("/real/target")),
         };
-        let html = Vault::new().item_html("/tmp/Shortcut.lnk", &info, None, false, None);
+        let html = Vault::new().item_html("/tmp/Shortcut.lnk", &info, None, false, None, false);
         assert!(html.contains(r#"data-path="/real/target""#));
         assert!(html.contains("<span class=\"label\">Shortcut</span>"));
         assert!(html.contains("class=\"node link\""));
@@ -1044,7 +1082,7 @@ mod tests {
             is_link: true,
             target: Some(PathBuf::from("/real/notes.md")),
         };
-        let html = Vault::new().item_html("/tmp/Notes.lnk", &info, None, false, None);
+        let html = Vault::new().item_html("/tmp/Notes.lnk", &info, None, false, None, false);
         assert!(html.contains(r#"data-ext="md""#));
     }
 
@@ -1276,10 +1314,51 @@ mod tests {
 
     #[test]
     fn directories_render_caret_and_child_container() {
-        let html = Vault::new().item_html("/tmp/dir", &EntryInfo::plain(true), None, false, None);
+        let html = Vault::new().item_html(
+            "/tmp/dir",
+            &EntryInfo::plain(true),
+            None,
+            false,
+            None,
+            false,
+        );
         assert!(html.contains(r#"data-kind="dir""#));
         assert!(html.contains(r#"class="caret""#));
         assert!(html.contains(r#"class="children collapsed""#));
+    }
+
+    #[test]
+    fn pinned_roots_carry_wikilink_root_attribute_only_when_opted_in() {
+        let temp = TempDir::new().unwrap();
+        let mut workspace = Workspace::load_from(temp.path().join("workspace.json"));
+        let on = temp.path().join("mit");
+        let off = temp.path().join("ohne");
+        fs::create_dir(&on).unwrap();
+        fs::create_dir(&off).unwrap();
+        let on_norm = on.to_string_lossy().replace('\\', "/");
+        let off_norm = off.to_string_lossy().replace('\\', "/");
+        workspace.pin(on_norm.clone(), true).unwrap();
+        workspace.pin(off_norm.clone(), true).unwrap();
+
+        let html = Vault::new().pinned_children_html(&workspace);
+        assert!(!html.contains("data-wikilink-root"), "{html}");
+
+        workspace.set_wikilink_root(&on_norm, true).unwrap();
+        let html = Vault::new().pinned_children_html(&workspace);
+        assert_eq!(
+            1,
+            html.matches(r#"data-wikilink-root="1""#).count(),
+            "{html}"
+        );
+        // Das Attribut sitzt am freigeschalteten Knoten, nicht am anderen.
+        assert!(
+            html.contains(&format!(r#"data-wikilink-root="1" data-path="{on_norm}""#)),
+            "{html}"
+        );
+        assert!(
+            !html.contains(&format!(r#"data-wikilink-root="1" data-path="{off_norm}""#)),
+            "{html}"
+        );
     }
 
     #[test]

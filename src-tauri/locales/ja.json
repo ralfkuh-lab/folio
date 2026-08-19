@@ -796,6 +796,8 @@
   "vault.contextMenu.showChanges": "変更を表示",
   "vault.contextMenu.showInExplorer": "ファイルマネージャーで表示",
   "vault.contextMenu.unpin": "ピン留めを解除",
+  "vault.contextMenu.wikilinkRootDisable": "ここでWikiリンクとタグを無効にする",
+  "vault.contextMenu.wikilinkRootEnable": "ここでWikiリンクとタグを有効にする",
   "vault.filter.clear.ariaLabel": "フィルターをクリア",
   "vault.filter.clear.tooltip": "フィルターをクリア",
   "vault.filter.close.ariaLabel": "フィルターバーを閉じる",

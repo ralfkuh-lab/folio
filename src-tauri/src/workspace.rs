@@ -42,6 +42,15 @@ pub struct WorkspaceData {
     /// Dokument, damit `exportDirMode=last` dokumentuebergreifend wirkt.
     #[serde(default)]
     pub last_export_dir: Option<String>,
+    /// Opt-in-Wurzeln fuer Wikilink-Index und Tag-Browser (Spec W8).
+    /// Jeder Eintrag entspricht **genau einem Pin-Pfad** (Verzeichnis oder
+    /// Einzeldatei); der Wikilink-Suchraum ist `pinned ∩ wikilink_roots`.
+    /// Leer (Default) = Feature aus, es laeuft gar kein Vault-Walk — bei
+    /// grossen Vaults (Befund: ~1 Mio. Dateien, 20–26 s pro Rebuild) waere
+    /// ein implizites „alle Pins" unbenutzbar. Serde-Default migriert
+    /// bestehende workspace.json-Dateien.
+    #[serde(default)]
+    pub wikilink_roots: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -113,6 +122,13 @@ impl Workspace {
             let normalized = normalize_path(dir);
             if normalized != *dir {
                 *dir = normalized;
+                dirty = true;
+            }
+        }
+        for root in &mut data.wikilink_roots {
+            let normalized = normalize_path(root);
+            if normalized != *root {
+                *root = normalized;
                 dirty = true;
             }
         }
@@ -207,7 +223,58 @@ impl Workspace {
         let path = normalize_path(path);
         let matcher = FileMatcher::new(&path);
         self.data.pinned.retain(|item| !matcher.matches(&item.path));
+        // Ein Pin ohne Pin ist keine Wikilink-Wurzel mehr. Ohne dieses
+        // Aufraeumen bliebe ein toter Eintrag stehen, der beim erneuten
+        // Pinnen desselben Ordners das Feature stillschweigend wieder
+        // einschaltet. Identitaetsbasiert wie der Pin-Retain darueber —
+        // die Wurzel wurde mit dem Pin-Pfad gespeichert.
+        self.data.wikilink_roots.retain(|root| !matcher.matches(root));
         self.save()
+    }
+
+    /// Opt-in-Wurzeln fuer Wikilinks/Tags (roh, inkl. evtl. toter Eintraege).
+    pub fn wikilink_roots(&self) -> &[String] {
+        &self.data.wikilink_roots
+    }
+
+    /// Ist `path` als Wikilink-/Tag-Wurzel freigeschaltet?
+    pub fn is_wikilink_root(&self, path: &str) -> bool {
+        let path = normalize_path(path);
+        self.data.wikilink_roots.contains(&path)
+    }
+
+    /// Schaltet `path` als Wikilink-/Tag-Wurzel ein oder aus.
+    /// `Ok(true)` = die Liste hat sich geaendert (Aufrufer invalidiert dann
+    /// den Index); `Ok(false)` = No-op, nichts persistiert.
+    pub fn set_wikilink_root(&mut self, path: &str, enabled: bool) -> io::Result<bool> {
+        let path = normalize_path(path);
+        let present = self.data.wikilink_roots.contains(&path);
+        if present == enabled {
+            return Ok(false);
+        }
+        if enabled {
+            self.data.wikilink_roots.push(path);
+        } else {
+            self.data.wikilink_roots.retain(|root| *root != path);
+        }
+        self.save()?;
+        Ok(true)
+    }
+
+    /// Suchraum fuer Wikilink-Index, Backlinks und Tag-Browser:
+    /// **Pins ∩ `wikilink_roots`**, in Pin-Reihenfolge (der Fingerprint des
+    /// Index-Caches haengt an dieser Reihenfolge). Wurzeln ohne passenden
+    /// Pin werden still verworfen — wie tote Vault-Pins in der Suche.
+    pub fn wikilink_pins(&self) -> Vec<PinnedItem> {
+        if self.data.wikilink_roots.is_empty() {
+            return Vec::new();
+        }
+        self.data
+            .pinned
+            .iter()
+            .filter(|item| self.data.wikilink_roots.contains(&item.path))
+            .cloned()
+            .collect()
     }
 
     /// Lese-Prädikat für den Vault-Render: läuft pro Pin-Wurzel und **pro
@@ -336,6 +403,13 @@ impl Workspace {
             }
         }
 
+        for root in &mut self.data.wikilink_roots {
+            if let Some(rewritten) = crate::path_migration::remap(root, &old_root, &new_root) {
+                *root = rewritten;
+                dirty = true;
+            }
+        }
+
         if dirty {
             self.save()
         } else {
@@ -361,6 +435,10 @@ impl Workspace {
             !crate::path_migration::is_under(key, &root)
                 && !crate::path_migration::is_under(value, &root)
         });
+        let roots_before = self.data.wikilink_roots.len();
+        self.data
+            .wikilink_roots
+            .retain(|item| !crate::path_migration::is_under(item, &root));
         let mut export_cleared = false;
         if self
             .data
@@ -374,6 +452,7 @@ impl Workspace {
         if pinned_before != self.data.pinned.len()
             || recent_before != self.data.recent.len()
             || dirs_before != self.data.image_dirs.len()
+            || roots_before != self.data.wikilink_roots.len()
             || export_cleared
         {
             self.save()
@@ -621,6 +700,94 @@ mod tests {
         assert_eq!(workspace.image_dir("/a/notizen/doc.md"), None);
         assert_eq!(workspace.image_dir("/a/other.md"), Some("/a/notes/imgs"));
         assert_eq!(Some("/a/notes/out"), workspace.last_export_dir());
+    }
+
+    #[test]
+    fn wikilink_pins_are_pins_intersected_with_opt_in_roots() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("workspace.json");
+        let mut workspace = Workspace::load_from(path.clone());
+        workspace.pin("/a/notizen".into(), true).unwrap();
+        workspace.pin("/a/projekt".into(), true).unwrap();
+        workspace.pin("/a/einzeln.md".into(), false).unwrap();
+
+        // Default: leer → gar kein Suchraum, also gar kein Walk.
+        assert!(workspace.wikilink_pins().is_empty());
+        assert!(!workspace.is_wikilink_root("/a/notizen"));
+
+        assert!(workspace.set_wikilink_root("/a/notizen", true).unwrap());
+        // Idempotent: zweiter Aufruf ist ein No-op.
+        assert!(!workspace.set_wikilink_root("/a/notizen", true).unwrap());
+        assert!(workspace.set_wikilink_root("/a/einzeln.md", true).unwrap());
+        // Tote Wurzel (kein Pin) wird still verworfen.
+        assert!(workspace
+            .set_wikilink_root(r"C:\weg\nirgendwo", true)
+            .unwrap());
+
+        let pins: Vec<String> = workspace
+            .wikilink_pins()
+            .iter()
+            .map(|p| p.path.clone())
+            .collect();
+        assert_eq!(pins, ["/a/notizen", "/a/einzeln.md"]);
+
+        // Persistiert (inkl. Backslash-Normalisierung der toten Wurzel).
+        let reloaded = Workspace::load_from(path);
+        assert!(reloaded.is_wikilink_root("/a/notizen"));
+        assert!(reloaded
+            .wikilink_roots()
+            .contains(&"C:/weg/nirgendwo".to_string()));
+    }
+
+    #[test]
+    fn unpin_drops_matching_wikilink_root() {
+        let temp = TempDir::new().unwrap();
+        let mut workspace = Workspace::load_from(temp.path().join("workspace.json"));
+        workspace.pin("/a/notizen".into(), true).unwrap();
+        workspace.set_wikilink_root("/a/notizen", true).unwrap();
+        workspace.unpin("/a/notizen").unwrap();
+        assert!(workspace.wikilink_roots().is_empty());
+        // Erneutes Pinnen darf das Feature nicht heimlich reaktivieren.
+        workspace.pin("/a/notizen".into(), true).unwrap();
+        assert!(workspace.wikilink_pins().is_empty());
+    }
+
+    #[test]
+    fn remap_prefix_migrates_wikilink_roots_on_segment_boundary() {
+        let temp = TempDir::new().unwrap();
+        let mut workspace = Workspace::load_from(temp.path().join("workspace.json"));
+        workspace.pin("/a/notizen".into(), true).unwrap();
+        workspace.pin("/a/notizen-alt".into(), true).unwrap();
+        workspace.set_wikilink_root("/a/notizen", true).unwrap();
+        workspace.set_wikilink_root("/a/notizen-alt", true).unwrap();
+
+        workspace.remap_prefix("/a/notizen", "/a/notes").unwrap();
+
+        assert_eq!(
+            workspace.wikilink_roots(),
+            ["/a/notes".to_string(), "/a/notizen-alt".to_string()]
+        );
+        // Roots und Pins wandern gemeinsam — sonst ist die Wurzel tot.
+        let pins: Vec<String> = workspace
+            .wikilink_pins()
+            .iter()
+            .map(|p| p.path.clone())
+            .collect();
+        assert_eq!(pins, ["/a/notes", "/a/notizen-alt"]);
+    }
+
+    #[test]
+    fn remove_under_drops_wikilink_roots() {
+        let temp = TempDir::new().unwrap();
+        let mut workspace = Workspace::load_from(temp.path().join("workspace.json"));
+        workspace.pin("/a/notizen".into(), true).unwrap();
+        workspace.pin("/a/notizen-alt".into(), true).unwrap();
+        workspace.set_wikilink_root("/a/notizen", true).unwrap();
+        workspace.set_wikilink_root("/a/notizen-alt", true).unwrap();
+
+        workspace.remove_under("/a/notizen").unwrap();
+
+        assert_eq!(workspace.wikilink_roots(), ["/a/notizen-alt".to_string()]);
     }
 
     #[test]

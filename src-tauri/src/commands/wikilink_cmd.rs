@@ -2,6 +2,10 @@
 //!
 //! Kernlogik lebt in `crate::wikilink` / `crate::tags`; hier nur State-
 //! Verdrahtung.
+//!
+//! **Suchraum ist ueberall `Workspace::wikilink_pins()`** (Opt-in-Wurzeln,
+//! Spec W8) — nie `pinned()`. Der Tag-Browser haengt am selben Walk und
+//! haette sonst dasselbe Kostenproblem.
 
 use crate::state::AppState;
 use crate::tags::{self, VaultTagsResult};
@@ -22,11 +26,12 @@ pub async fn backlinks_for(
             .workspace
             .lock()
             .map_err(|_| "workspace lock poisoned".to_string())?;
-        workspace.pinned().to_vec()
+        workspace.wikilink_pins()
     };
-    // Index-Zugriff bewusst IM Blocking-Task: ein Cache-Miss (Cold Start /
-    // gewechselter Suchraum) baut synchron und darf den Tokio-Worker nicht
-    // blockieren (Review codex #2 / kimi #1).
+    // Index-Zugriff bewusst IM Blocking-Task: `find_backlinks` selbst walkt
+    // den Suchraum, und der Cache-Zugriff gehoert an dieselbe Stelle
+    // (Review codex #2 / kimi #1). Seit W8 baut auch ein Cache-Miss nicht
+    // mehr synchron — der Walk hier ist der teure Teil.
     let cache = state.wikilink_index.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
@@ -52,7 +57,7 @@ pub async fn wikilink_headings(
             .workspace
             .lock()
             .map_err(|_| "workspace lock poisoned".to_string())?;
-        workspace.pinned().to_vec()
+        workspace.wikilink_pins()
     };
     let cache = state.wikilink_index.clone();
     let current = current_path.map(|p| p.replace('\\', "/"));
@@ -74,7 +79,7 @@ pub async fn vault_tags(state: State<'_, AppState>) -> Result<VaultTagsResult, S
             .workspace
             .lock()
             .map_err(|_| "workspace lock poisoned".to_string())?;
-        workspace.pinned().to_vec()
+        workspace.wikilink_pins()
     };
     tauri::async_runtime::spawn_blocking(move || tags::collect_vault_tags(&pinned))
         .await
@@ -94,7 +99,7 @@ pub async fn wikilink_candidates(
             .workspace
             .lock()
             .map_err(|_| "workspace lock poisoned".to_string())?;
-        workspace.pinned().to_vec()
+        workspace.wikilink_pins()
     };
     let cache = state.wikilink_index.clone();
     let context = current_path

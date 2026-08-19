@@ -22,9 +22,23 @@ use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
-/// TTL-Fallback des Index-Caches. Der Vault-Watcher sieht nur aufgeklappte
+/// Basis-TTL des Index-Caches. Der Vault-Watcher sieht nur aufgeklappte
 /// Ordner; tiefere externe Änderungen wären ohne TTL unsichtbar (Spec).
-pub const INDEX_TTL: Duration = Duration::from_secs(30);
+///
+/// W8: von 30 s auf 5 Minuten angehoben. Eine TTL **unterhalb** der
+/// Buildzeit erzeugt eine Rebuild-Dauerschleife (Befund 2026-08-19: bei
+/// ~1 Mio. Dateien dauert ein Rebuild 20–26 s, die alte TTL lief also
+/// jedes Mal vor dem Ende des vorigen Builds ab). Zusätzlich greift die
+/// adaptive Anhebung in [`CacheState::effective_ttl`].
+pub const INDEX_TTL: Duration = Duration::from_secs(300);
+
+/// Faktor der adaptiven TTL: effektive TTL = `max(Basis, letzte Builddauer
+/// × FAKTOR)`. Damit kann kein Suchraum eine Rebuild-Schleife erzeugen.
+const ADAPTIVE_TTL_FACTOR: u32 = 10;
+
+/// Mindestalter des letzten Builds, damit die Fokus-Invalidierung greift.
+/// Ohne diese Bremse rebuildet jedes Alt-Tab den ganzen Vault.
+pub const FOCUS_INVALIDATE_MIN_AGE: Duration = Duration::from_secs(30);
 
 /// URL-Schema für nicht auflösbare Wikilinks. Das Frontend (W2) fängt es ab
 /// und öffnet den „Notiz anlegen?"-Dialog.
@@ -265,6 +279,11 @@ impl WikilinkIndex {
     /// `collapse_overlapping_dirs`, hidden/gitignore-Filter, `.git`-Skip).
     /// Explizit gepinnte Einzeldateien umgehen die Filter (wie in der Suche).
     pub fn build(pinned: &[PinnedItem]) -> Self {
+        // Opt-in-Wurzeln (W8): ohne freigeschaltete Wurzel gibt es keinen
+        // Suchraum — hier explizit raus, damit garantiert kein Walk startet.
+        if pinned.is_empty() {
+            return WikilinkIndex::default();
+        }
         let started = Instant::now();
         let walk_roots = resolve_scope(pinned, &SearchScope::Vault);
         // Alle existierenden Ordner-Pins (vor Overlap-Collapse) — für
@@ -597,10 +616,67 @@ enum RefreshMode {
     Inline,
 }
 
+/// Callback, den der Cache nach jedem beendeten Hintergrund-Build aufruft
+/// (in `lib.rs` mit dem `AppHandle` verdrahtet: emittiert
+/// `wikilink:index_ready`). Laeuft **nie** unter dem Cache-Mutex.
+///
+/// Semantik ist bewusst **„der Index-Zustand hat sich geaendert — bitte neu
+/// ziehen"**, nicht „ein Build wurde veroeffentlicht": ein waehrend des Builds
+/// invalidierter (und damit verworfener) Build braucht dasselbe Signal, sonst
+/// gaebe es keinen Wiederanlauf und die sichtbare View bliebe auf dem
+/// leeren/alten Index stehen, bis zufaellig ein Render kommt (Review sol,
+/// MAJOR #1). Der vom Callback ausgeloeste Re-Render ruft `get()` mit dem
+/// **aktuellen** Suchraum und startet damit den richtigen Build — ein
+/// cache-interner Restart wuerde mit dem alten Pin-Snapshot arbeiten.
+///
+/// Deshalb feuert das Signal beim Discard **auch dann, wenn der verworfene
+/// Build und der Cache beide leer sind**: genau so sieht der Fall aus, in dem
+/// waehrend eines leeren Builds die erste Wurzel eingeschaltet wird.
+pub type IndexPublishCallback = Arc<dyn Fn() + Send + Sync>;
+
+/// Setzt `refreshing` zurueck, wenn der Refresh-Scope vorzeitig verlassen
+/// wird — insbesondere bei einem **Panic in `WikilinkIndex::build`** im
+/// Hintergrund-Thread. Ohne diesen Guard blieb das Flag stehen und es gab bis
+/// zum Neustart nie wieder einen Build (Review sol, MINOR #3). Muster wie
+/// `git_status.rs::RefreshingGuard`.
+///
+/// **Disarmbar**: sobald `publish` die Freigabe uebernimmt, wird der Guard
+/// entschaerft. Sonst koennte sein `drop` das Flag eines inzwischen
+/// gestarteten *anderen* Builds loeschen und damit den Single-Flight-Schutz
+/// aushebeln.
+struct RefreshingGuard {
+    cache: WikilinkIndexCache,
+    armed: bool,
+}
+
+impl RefreshingGuard {
+    fn new(cache: WikilinkIndexCache) -> Self {
+        Self { cache, armed: true }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for RefreshingGuard {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        // `drop` darf nicht panicken (sonst double-panic beim Unwind), also
+        // hier kein `lock_state()`: ein vergifteter Mutex wird toleriert.
+        match self.cache.inner.state.lock() {
+            Ok(mut state) => state.refreshing = false,
+            Err(poisoned) => poisoned.into_inner().refreshing = false,
+        }
+    }
+}
+
 /// Index-Cache mit expliziter Invalidierung, TTL-Fallback und
 /// **stale-while-revalidate**.
 ///
-/// Vertrag (nach Review codex #1/#2, kimi #1):
+/// Vertrag (nach Review codex #1/#2, kimi #1; Cold-Pfad seit W8):
 /// - Passender, frischer Eintrag → sofort.
 /// - Passender, **abgelaufener oder invalidierter** Eintrag → der alte
 ///   Index wird sofort zurueckgegeben, der Rebuild laeuft im Hintergrund.
@@ -611,22 +687,74 @@ enum RefreshMode {
 ///   die Dauer eines Rebuilds kann ein frisch angelegtes Ziel noch als
 ///   missing rendern; der naechste Render ist korrekt.
 /// - **Kein** passender Eintrag (Cold Start, anderer Pin-Fingerprint) →
-///   synchroner Build, weil es nichts auszuliefern gaebe.
+///   **leerer** Index sofort, Build im Hintergrund (W8). Vorher wurde hier
+///   synchron gebaut; beim Boot hing damit das `document:loaded` des
+///   wiederhergestellten Tabs an der Buildzeit (Befund 2026-08-19: ~25 s
+///   bei einem 1-Mio-Dateien-Vault). Kein Render-Pfad darf auf einen
+///   Index-Build warten.
+/// - **Single-Flight in beiden Pfaden**: `refreshing` deckt seit W8 auch den
+///   Cold-Pfad ab — zwei parallele Cold-`get()` bauten sonst doppelt.
 /// - Ein fertiger Build wird nur veroeffentlicht, wenn seither weder
 ///   invalidiert wurde (Generation) noch der Suchraum wechselte
 ///   (Fingerprint) — sonst wird er verworfen.
+/// - Nach **jedem** beendeten Build — veroeffentlicht ODER verworfen — feuert
+///   der [`IndexPublishCallback`], damit das Frontend die sichtbare View
+///   nachziehen kann (sonst bleiben Wikilinks bis zum naechsten
+///   Tastendruck `missing`). Beim **Discard bedingungslos** (das Signal ist
+///   der Wiederanlauf); beim **Erfolg** unterdrueckt, wenn weder der neue noch
+///   der gecachte Index Inhalt hat — der Default-Fall „keine Opt-in-Wurzel"
+///   darf keinen Re-Render ausloesen. Begruendung der Asymmetrie an
+///   [`Self::publish`].
+///
+/// **Selbstheilung bei Fingerprint-Wechsel und verworfenen Builds**: kommt
+/// waehrend eines laufenden Builds ein `get()` mit anderem Fingerprint, wird
+/// kein zweiter Build gestartet (Single-Flight); ebenso endet ein waehrend des
+/// Builds invalidierter Build ohne neuen Cache-Eintrag. In beiden Faellen
+/// loest der Callback einen Re-Render aus, dessen `get()` den passenden Build
+/// anstoesst — es kostet eine zusaetzliche Runde, nie einen dauerhaft
+/// falschen Zustand.
+///
+/// **Schleifenfreiheit**: ein Discard setzt `state.generation !=
+/// snapshot_generation` voraus, also eine Invalidierung **nach** dem Start des
+/// Builds. Der Folge-Build startet mit der dann aktuellen Generation und wird
+/// nur verworfen, wenn erneut invalidiert wird. Jede weitere Runde braucht
+/// damit eine **neue** Invalidierung von aussen (Watcher/CRUD/Pin/Fokus) —
+/// der Callback allein kann sich nicht selbst nachfuettern. Nach einem
+/// erfolgreichen Publish trifft der Re-Render einen frischen Eintrag und
+/// startet gar keinen Build.
 ///
 /// Gebaut wird **nie** unter dem Cache-Mutex.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct WikilinkIndexCache {
     inner: Arc<CacheInner>,
 }
 
-#[derive(Debug)]
+impl std::fmt::Debug for WikilinkIndexCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // `IndexPublishCallback` ist nicht `Debug`, deshalb handgeschrieben.
+        // Bewusst `try_lock`: ein Debug-Print darf nie blockieren, auch nicht,
+        // wenn der Aufrufer den Cache-Mutex schon haelt.
+        let mut out = f.debug_struct("WikilinkIndexCache");
+        out.field("ttl", &self.inner.ttl);
+        match self.inner.state.try_lock() {
+            Ok(state) => out
+                .field("generation", &state.generation)
+                .field("refreshing", &state.refreshing)
+                .field("rebuilds", &state.rebuilds),
+            Err(_) => out.field("state", &"<locked>"),
+        };
+        out.finish()
+    }
+}
+
 struct CacheInner {
     ttl: Duration,
     refresh_mode: RefreshMode,
     state: Mutex<CacheState>,
+    /// Einmalig beim App-Setup gesetzt. Eigenes `OnceLock` statt eines
+    /// Feldes in [`CacheState`], damit der Callback garantiert ausserhalb
+    /// des Cache-Mutex gelesen und aufgerufen wird.
+    on_publish: std::sync::OnceLock<IndexPublishCallback>,
 }
 
 #[derive(Debug, Default)]
@@ -636,9 +764,25 @@ struct CacheState {
     /// aelterer Generation darf nicht mehr veroeffentlicht werden.
     generation: u64,
     /// Laeuft bereits ein Hintergrund-Refresh? Verhindert Thread-Herden,
-    /// wenn viele Renders gleichzeitig auf einen stale Index treffen.
+    /// wenn viele Renders gleichzeitig auf einen stale/fehlenden Index
+    /// treffen.
     refreshing: bool,
     rebuilds: usize,
+    /// Dauer des letzten (auch verworfenen) Builds — Grundlage der
+    /// adaptiven TTL.
+    last_build: Option<Duration>,
+}
+
+impl CacheState {
+    /// Effektive TTL: nie kuerzer als `ADAPTIVE_TTL_FACTOR` × letzte
+    /// Builddauer. Ein Vault, dessen Rebuild laenger als die Basis-TTL
+    /// dauert, wuerde sonst permanent rebuilden.
+    fn effective_ttl(&self, base: Duration) -> Duration {
+        match self.last_build {
+            Some(elapsed) => base.max(elapsed.saturating_mul(ADAPTIVE_TTL_FACTOR)),
+            None => base,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -651,13 +795,15 @@ struct CachedIndex {
 
 /// Was `get_at` nach dem Lock-Scope zu tun hat.
 enum CacheAction {
+    /// Stale-Index ausliefern, Rebuild im Hintergrund starten.
     Stale {
         index: Arc<WikilinkIndex>,
         generation: u64,
     },
-    BuildSync {
-        generation: u64,
-    },
+    /// Nichts auszuliefern: leeren Index zurueckgeben, Build im Hintergrund.
+    BuildBackground { generation: u64 },
+    /// Nichts auszuliefern, ein Build laeuft schon: nur leeren Index.
+    Empty,
 }
 
 impl Default for WikilinkIndexCache {
@@ -689,7 +835,19 @@ impl WikilinkIndexCache {
                 ttl,
                 refresh_mode,
                 state: Mutex::new(CacheState::default()),
+                on_publish: std::sync::OnceLock::new(),
             }),
+        }
+    }
+
+    /// Registriert den Publish-Callback (einmalig beim App-Setup).
+    /// Weitere Aufrufe sind No-ops.
+    pub fn set_publish_callback(&self, callback: IndexPublishCallback) {
+        if self.inner.on_publish.set(callback).is_err() {
+            tracing::warn!(
+                target: "folio::wikilink",
+                "wikilink index publish callback already installed; ignoring"
+            );
         }
     }
 
@@ -708,10 +866,11 @@ impl WikilinkIndexCache {
                 .cached
                 .as_ref()
                 .filter(|cached| cached.fingerprint == fingerprint);
+            let ttl = state.effective_ttl(self.inner.ttl);
             match usable {
                 Some(cached) => {
                     let fresh = cached.generation == state.generation
-                        && now.saturating_duration_since(cached.built_at) < self.inner.ttl;
+                        && now.saturating_duration_since(cached.built_at) < ttl;
                     let index = Arc::clone(&cached.index);
                     if fresh {
                         return index;
@@ -726,9 +885,19 @@ impl WikilinkIndexCache {
                         generation: state.generation,
                     }
                 }
-                None => CacheAction::BuildSync {
-                    generation: state.generation,
-                },
+                None => {
+                    if state.refreshing {
+                        // Single-Flight auch im Cold-Pfad: zwei parallele
+                        // Cold-`get()` bauten sonst denselben Vault doppelt
+                        // (Befund 2026-08-19: zwei Rebuilds à 22 s beim Boot).
+                        CacheAction::Empty
+                    } else {
+                        state.refreshing = true;
+                        CacheAction::BuildBackground {
+                            generation: state.generation,
+                        }
+                    }
+                }
             }
         };
 
@@ -737,11 +906,11 @@ impl WikilinkIndexCache {
                 self.start_refresh(pinned.to_vec(), generation, fingerprint);
                 index
             }
-            CacheAction::BuildSync { generation } => {
-                let index = Arc::new(WikilinkIndex::build(pinned));
-                self.publish(Arc::clone(&index), generation, fingerprint, now);
-                index
+            CacheAction::BuildBackground { generation } => {
+                self.start_refresh(pinned.to_vec(), generation, fingerprint);
+                Arc::new(WikilinkIndex::default())
             }
+            CacheAction::Empty => Arc::new(WikilinkIndex::default()),
         }
     }
 
@@ -751,6 +920,32 @@ impl WikilinkIndexCache {
     pub fn invalidate(&self) {
         let mut state = self.lock_state();
         state.generation += 1;
+    }
+
+    /// Fokus-Invalidierung (`WindowEvent::Focused(true)`): externe
+    /// Aenderungen passieren typischerweise, waehrend Folio den Fokus nicht
+    /// hat, und der Vault-Watcher sieht nur aufgeklappte Ordner.
+    ///
+    /// **Gedrosselt**: ist der letzte Build juenger als
+    /// [`FOCUS_INVALIDATE_MIN_AGE`], passiert nichts — sonst rebuildet jedes
+    /// Alt-Tab den ganzen Vault. Explizite [`Self::invalidate`]-Aufrufe
+    /// (CRUD/Watcher) bleiben ungedrosselt.
+    ///
+    /// Rueckgabe: `true`, wenn tatsaechlich invalidiert wurde.
+    pub fn invalidate_on_focus(&self) -> bool {
+        self.invalidate_on_focus_at(Instant::now())
+    }
+
+    /// Wie [`Self::invalidate_on_focus`], mit injizierter „Jetzt"-Zeit (Tests).
+    pub fn invalidate_on_focus_at(&self, now: Instant) -> bool {
+        let mut state = self.lock_state();
+        if let Some(cached) = &state.cached {
+            if now.saturating_duration_since(cached.built_at) < FOCUS_INVALIDATE_MIN_AGE {
+                return false;
+            }
+        }
+        state.generation += 1;
+        true
     }
 
     /// Aktuelle Invalidierungs-Generation (Diagnose + Build-Snapshots).
@@ -772,6 +967,37 @@ impl WikilinkIndexCache {
 
     /// Veroeffentlicht einen fertigen Build, sofern Generation und
     /// Fingerprint noch aktuell sind. `false` = verworfen.
+    ///
+    /// Gibt in **beiden** Faellen das Single-Flight-Flag frei: sobald der
+    /// Eintrag im Cache steht (oder feststeht, dass er verworfen wird), darf
+    /// ein `get()` mit anderem Fingerprint sofort seinen eigenen Build
+    /// starten. Wuerde das erst nach dem Callback passieren, muesste der vom
+    /// Callback ausgeloeste Re-Render noch eine Runde warten.
+    ///
+    /// Der [`IndexPublishCallback`] feuert in **beiden** Faellen — **nach**
+    /// Freigabe des Cache-Mutex — aber nach unterschiedlichen Regeln:
+    ///
+    /// - **Discard: immer.** Der Callback ist hier der einzige Wiederanlauf;
+    ///   der Re-Render ruft `get()` mit dem aktuellen Suchraum und startet den
+    ///   korrekten Build (Review sol, MAJOR #1). Die Leer-Heuristik darf hier
+    ///   **nicht** greifen: laeuft gerade ein Build mit leerem Suchraum und
+    ///   schaltet der Nutzer waehrenddessen eine Wurzel ein, ist sowohl der
+    ///   verworfene Build als auch der Cache leer — ein unterdrucktes Signal
+    ///   liesse die neue Wurzel bis zum naechsten zufaelligen Render
+    ///   wirkungslos (der `roots_changed`-Render traf `refreshing == true` und
+    ///   bekam nur den leeren Index; Sol-Nachpruefung).
+    /// - **Erfolg: nur bei Inhalt.** Uebersprungen, wenn weder der neue noch
+    ///   der gecachte Index Inhalt hat — der Default-Fall „keine
+    ///   Opt-in-Wurzel" darf keinen Re-Render ausloesen. Hier ist das
+    ///   gefahrlos, weil der Eintrag danach frisch im Cache steht: ein
+    ///   spaeterer Render findet ihn, und ein echter Suchraum-Wechsel bringt
+    ///   sein eigenes `roots_changed`-Signal mit.
+    ///
+    /// Schleifenfrei bleibt es trotzdem: ein Discard setzt eine Invalidierung
+    /// **nach** dem Build-Start voraus. Der vom Retry ausgeloeste Folge-Build
+    /// wird entweder veroeffentlicht (und ist damit still, wenn leer→leer)
+    /// oder braucht fuer einen weiteren Discard eine **abermals neue**
+    /// Invalidierung von aussen.
     fn publish(
         &self,
         index: Arc<WikilinkIndex>,
@@ -779,24 +1005,43 @@ impl WikilinkIndexCache {
         fingerprint: u64,
         now: Instant,
     ) -> bool {
-        let mut state = self.lock_state();
-        if state.generation != snapshot_generation {
-            tracing::debug!(
-                target: "folio::wikilink",
-                snapshot_generation,
-                current_generation = state.generation,
-                "discarding wikilink index build invalidated during rebuild"
-            );
-            return false;
+        let mut published = true;
+        let notify = {
+            let mut state = self.lock_state();
+            if state.generation != snapshot_generation {
+                state.refreshing = false;
+                published = false;
+                tracing::debug!(
+                    target: "folio::wikilink",
+                    snapshot_generation,
+                    current_generation = state.generation,
+                    "discarding wikilink index build invalidated during rebuild"
+                );
+                // Discard signalisiert bedingungslos (siehe Doku oben).
+                true
+            } else {
+                let cached_non_empty = state
+                    .cached
+                    .as_ref()
+                    .is_some_and(|cached| !cached.index.is_empty());
+                let notify = cached_non_empty || !index.is_empty();
+                state.cached = Some(CachedIndex {
+                    index,
+                    built_at: now,
+                    generation: snapshot_generation,
+                    fingerprint,
+                });
+                state.rebuilds += 1;
+                state.refreshing = false;
+                notify
+            }
+        };
+        if notify {
+            if let Some(callback) = self.inner.on_publish.get() {
+                callback();
+            }
         }
-        state.cached = Some(CachedIndex {
-            index,
-            built_at: now,
-            generation: snapshot_generation,
-            fingerprint,
-        });
-        state.rebuilds += 1;
-        true
+        published
     }
 
     /// Startet den Rebuild ausserhalb des Locks.
@@ -822,9 +1067,23 @@ impl WikilinkIndexCache {
     }
 
     fn run_refresh(&self, pinned: &[PinnedItem], generation: u64, fingerprint: u64) {
+        // Panic-Sicherheit: panickt `WikilinkIndex::build` im Hintergrund-
+        // Thread, gibt der Guard `refreshing` beim Unwind frei. Ohne ihn blieb
+        // das Flag stehen und es gab bis zum Neustart nie wieder einen Build.
+        let mut guard = RefreshingGuard::new(self.clone());
+        let started = Instant::now();
         let index = Arc::new(WikilinkIndex::build(pinned));
+        let elapsed = started.elapsed();
+        // Auch ein verworfener Build ist eine gueltige Kostenmessung fuer die
+        // adaptive TTL — deshalb VOR publish und unabhaengig vom Ergebnis.
+        self.lock_state().last_build = Some(elapsed);
+        // Ab hier uebernimmt `publish` die Freigabe — und zwar innerhalb
+        // seines Lock-Scopes, also VOR dem Callback. Der Guard muss deshalb
+        // vorher entschaerft werden: sein `drop` liefe erst nach dem Callback
+        // und koennte das Flag eines dann schon gestarteten anderen Builds
+        // loeschen (Single-Flight-Schutz ausgehebelt).
+        guard.disarm();
         self.publish(index, generation, fingerprint, Instant::now());
-        self.lock_state().refreshing = false;
     }
 }
 
@@ -1986,14 +2245,26 @@ mod tests {
 
     // --- Cache --------------------------------------------------------------
 
+    /// Cold-Get + Folge-Get: seit W8 liefert der Cold-Pfad einen leeren Index
+    /// und baut im Hintergrund (inline im Test). Alle Stale-Tests brauchen
+    /// deshalb erst einen befuellten Cache.
+    fn warm_cache(
+        cache: &WikilinkIndexCache,
+        pins: &[PinnedItem],
+        now: Instant,
+    ) -> Arc<WikilinkIndex> {
+        assert!(cache.get_at(pins, now).is_empty(), "Cold-Get ist leer");
+        cache.get_at(pins, now)
+    }
+
     #[test]
     fn cache_reuses_index_within_ttl() {
         let temp = vault();
         let pins = [pin_dir(temp.path())];
-        let cache = WikilinkIndexCache::with_ttl(Duration::from_secs(30));
+        let cache = WikilinkIndexCache::with_inline_refresh(Duration::from_secs(30));
         let t0 = Instant::now();
 
-        let first = cache.get_at(&pins, t0);
+        let first = warm_cache(&cache, &pins, t0);
         write(temp.path(), "Neu.md", "# Neu\n");
         let second = cache.get_at(&pins, t0 + Duration::from_secs(29));
 
@@ -2014,7 +2285,7 @@ mod tests {
         let cache = WikilinkIndexCache::with_inline_refresh(Duration::from_secs(30));
         let t0 = Instant::now();
 
-        let first = cache.get_at(&pins, t0);
+        let first = warm_cache(&cache, &pins, t0);
         write(temp.path(), "Neu.md", "# Neu\n");
         let stale = cache.get_at(&pins, t0 + Duration::from_secs(31));
 
@@ -2036,7 +2307,7 @@ mod tests {
         let cache = WikilinkIndexCache::with_inline_refresh(Duration::from_secs(30));
         let t0 = Instant::now();
 
-        let first = cache.get_at(&pins, t0);
+        let first = warm_cache(&cache, &pins, t0);
         write(temp.path(), "Neu.md", "# Neu\n");
         cache.invalidate();
         let stale = cache.get_at(&pins, t0 + Duration::from_millis(1));
@@ -2050,34 +2321,316 @@ mod tests {
         assert!(fresh.resolve_name("Neu").is_some());
     }
 
+    // W8-Vertragsaenderung: der Cold-Pfad baut NICHT mehr synchron. Sonst
+    // haengt das `document:loaded` des Boot-Tabs an der Buildzeit.
     #[test]
-    fn cold_start_builds_synchronously() {
+    fn cold_start_returns_empty_index_and_builds_in_background() {
         let temp = vault();
         let pins = [pin_dir(temp.path())];
-        let cache = WikilinkIndexCache::with_ttl(Duration::from_secs(30));
+        let cache = WikilinkIndexCache::with_inline_refresh(Duration::from_secs(30));
+        let t0 = Instant::now();
 
-        // Ohne vorhandenen Eintrag gibt es nichts stale auszuliefern.
-        let index = cache.get_at(&pins, Instant::now());
-        assert!(index.resolve_name("Alpha").is_some());
+        let cold = cache.get_at(&pins, t0);
+        assert!(
+            cold.is_empty(),
+            "Cold-get liefert sofort einen leeren Index, kein Warten auf den Build"
+        );
+        // Der Hintergrund-Build (inline) ist gelaufen und veroeffentlicht.
+        assert_eq!(1, cache.rebuild_count());
+        let warm = cache.get_at(&pins, t0 + Duration::from_millis(1));
+        assert!(warm.resolve_name("Alpha").is_some());
         assert_eq!(1, cache.rebuild_count());
     }
 
     #[test]
-    fn changed_pin_fingerprint_forces_synchronous_rebuild() {
+    fn cold_start_is_single_flight() {
+        let temp = vault();
+        let pins = [pin_dir(temp.path())];
+        // Background-Mode + haengender Build waere im Test nicht
+        // deterministisch — stattdessen den Single-Flight-Zustand direkt
+        // setzen: genau das sieht ein zweiter paralleler Cold-Aufrufer.
+        let cache = WikilinkIndexCache::with_inline_refresh(Duration::from_secs(30));
+        cache.lock_state().refreshing = true;
+
+        let index = cache.get_at(&pins, Instant::now());
+        assert!(index.is_empty());
+        assert_eq!(
+            0,
+            cache.rebuild_count(),
+            "laufender Build darf keinen zweiten Build ausloesen"
+        );
+    }
+
+    #[test]
+    fn empty_roots_produce_empty_index_without_walk() {
+        // Opt-in-Wurzeln (W8): ohne freigeschaltete Wurzel ist der Index leer
+        // und es laeuft kein Vault-Walk.
+        let index = WikilinkIndex::build(&[]);
+        assert!(index.is_empty());
+        assert_eq!(0, index.file_count());
+        assert!(index.resolve_name("Alpha").is_none());
+        assert!(collect_wikilink_candidates(&index, None).is_empty());
+    }
+
+    #[test]
+    fn changed_pin_fingerprint_rebuilds_for_new_search_space() {
         let temp = vault();
         let other = TempDir::new().unwrap();
         write(other.path(), "Extern.md", "# E\n");
-        let cache = WikilinkIndexCache::with_ttl(Duration::from_secs(30));
+        let cache = WikilinkIndexCache::with_inline_refresh(Duration::from_secs(30));
         let t0 = Instant::now();
 
-        let first = cache.get_at(&[pin_dir(temp.path())], t0);
+        cache.get_at(&[pin_dir(temp.path())], t0);
+        let first = cache.get_at(&[pin_dir(temp.path())], t0 + Duration::from_millis(1));
+        assert!(first.resolve_name("Alpha").is_some());
         assert!(first.resolve_name("Extern").is_none());
 
-        // Anderer Suchraum: stale waere falsch, nicht nur veraltet.
-        let second = cache.get_at(&[pin_dir(other.path())], t0 + Duration::from_millis(1));
+        // Anderer Suchraum: stale waere falsch, nicht nur veraltet — es gibt
+        // nichts auszuliefern, also leer + Hintergrund-Build.
+        let cold = cache.get_at(&[pin_dir(other.path())], t0 + Duration::from_millis(2));
+        assert!(cold.is_empty());
+        let second = cache.get_at(&[pin_dir(other.path())], t0 + Duration::from_millis(3));
         assert!(second.resolve_name("Extern").is_some());
         assert!(second.resolve_name("Alpha").is_none());
         assert_eq!(2, cache.rebuild_count());
+    }
+
+    #[test]
+    fn wikilink_root_toggle_changes_fingerprint() {
+        // Der Suchraum ist `pinned ∩ wikilink_roots`; das Umschalten einer
+        // Wurzel erreicht den Cache also als neue Pin-Liste. Ohne
+        // Fingerprint-Wechsel wuerde der alte Index weiterbenutzt.
+        let temp = vault();
+        let all = [
+            pin_dir(temp.path()),
+            pin_file(&temp.path().join("Alpha.md")),
+        ];
+        let none: [PinnedItem; 0] = [];
+        let one = [pin_dir(temp.path())];
+        assert_ne!(fingerprint_of(&none), fingerprint_of(&one));
+        assert_ne!(fingerprint_of(&one), fingerprint_of(&all));
+    }
+
+    #[test]
+    fn adaptive_ttl_never_falls_below_ten_times_the_last_build() {
+        let base = Duration::from_secs(300);
+        let mut state = CacheState::default();
+        assert_eq!(base, state.effective_ttl(base));
+        // Schneller Build → Basis-TTL gewinnt (auch der 25-s-Rebuild des
+        // 1-Mio-Dateien-Vaults liegt mit 250 s noch unter der Basis).
+        state.last_build = Some(Duration::from_secs(1));
+        assert_eq!(base, state.effective_ttl(base));
+        state.last_build = Some(Duration::from_secs(25));
+        assert_eq!(base, state.effective_ttl(base));
+        // Noch teurerer Build → TTL waechst mit, damit sie nie vor dem Ende
+        // des naechsten Builds ablaeuft (das war die Rebuild-Dauerschleife).
+        state.last_build = Some(Duration::from_secs(60));
+        assert_eq!(Duration::from_secs(600), state.effective_ttl(base));
+        state.last_build = Some(Duration::MAX);
+        assert_eq!(Duration::MAX, state.effective_ttl(base));
+    }
+
+    #[test]
+    fn adaptive_ttl_keeps_expensive_index_out_of_a_rebuild_loop() {
+        let temp = vault();
+        let pins = [pin_dir(temp.path())];
+        // Basis-TTL absichtlich winzig; die gemessene Builddauer hebt sie an.
+        let cache = WikilinkIndexCache::with_inline_refresh(Duration::from_nanos(1));
+        let t0 = Instant::now();
+        cache.get_at(&pins, t0);
+        assert_eq!(1, cache.rebuild_count());
+        // Ohne adaptive TTL waere hier sofort der naechste Rebuild faellig.
+        cache.lock_state().last_build = Some(Duration::from_secs(10));
+        cache.get_at(&pins, t0 + Duration::from_secs(30));
+        assert_eq!(1, cache.rebuild_count());
+        // Jenseits von 10 × Builddauer greift der Refresh wieder.
+        cache.get_at(&pins, t0 + Duration::from_secs(101));
+        assert_eq!(2, cache.rebuild_count());
+    }
+
+    #[test]
+    fn focus_invalidation_is_debounced_against_young_builds() {
+        let temp = vault();
+        let pins = [pin_dir(temp.path())];
+        let cache = WikilinkIndexCache::with_inline_refresh(Duration::from_secs(300));
+        let t0 = Instant::now();
+        cache.get_at(&pins, t0);
+        let generation = cache.generation();
+
+        // Frischer Build: Alt-Tab darf keinen Vault-Walk ausloesen.
+        assert!(!cache.invalidate_on_focus_at(t0 + Duration::from_secs(5)));
+        assert_eq!(generation, cache.generation());
+
+        // Alt genug → invalidieren.
+        let built_at = cache.lock_state().cached.as_ref().map(|c| c.built_at);
+        let built_at = built_at.expect("Build veroeffentlicht");
+        assert!(cache.invalidate_on_focus_at(built_at + Duration::from_secs(31)));
+        assert_eq!(generation + 1, cache.generation());
+    }
+
+    /// Zaehlt Callback-Aufrufe (Publish-Signal) fuer die Tests.
+    fn counting_cache(ttl: Duration) -> (WikilinkIndexCache, Arc<std::sync::atomic::AtomicUsize>) {
+        let cache = WikilinkIndexCache::with_inline_refresh(ttl);
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let sink = Arc::clone(&calls);
+        cache.set_publish_callback(Arc::new(move || {
+            sink.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }));
+        (cache, calls)
+    }
+
+    // Review sol MAJOR #1: ein waehrend des Builds invalidierter Build wird
+    // verworfen. Ohne Signal gaebe es keinen Wiederanlauf — die sichtbare
+    // View bliebe auf dem leeren Index, bis zufaellig ein Render kommt.
+    #[test]
+    fn discarded_build_signals_and_next_get_starts_a_new_build() {
+        let temp = vault();
+        let pins = [pin_dir(temp.path())];
+        let (cache, calls) = counting_cache(Duration::from_secs(300));
+        let t0 = Instant::now();
+
+        // Cache mit Inhalt fuellen (sonst greift die leer-leer-Unterdrueckung).
+        warm_cache(&cache, &pins, t0);
+        let published = cache.rebuild_count();
+        let signals = calls.load(std::sync::atomic::Ordering::SeqCst);
+
+        // Build mit veralteter Generation (Invalidierung waehrend des Builds,
+        // z. B. Fenster-Fokus mitten im Cold-Build).
+        let snapshot = cache.generation();
+        let built = Arc::new(WikilinkIndex::build(&pins));
+        cache.invalidate();
+        cache.lock_state().refreshing = true;
+        assert!(!cache.publish(built, snapshot, fingerprint_of(&pins), t0));
+        assert_eq!(published, cache.rebuild_count(), "verworfen, nicht gecacht");
+        assert_eq!(
+            signals + 1,
+            calls.load(std::sync::atomic::Ordering::SeqCst),
+            "auch der Discard muss ein Re-Ziehen-Signal senden"
+        );
+        assert!(
+            !cache.lock_state().refreshing,
+            "Single-Flight-Flag ist frei, der Folge-Build darf starten"
+        );
+
+        // Genau das tut der vom Signal ausgeloeste Re-Render: `get()` mit dem
+        // aktuellen Suchraum startet den korrekten Build.
+        cache.get_at(&pins, t0 + Duration::from_millis(1));
+        assert_eq!(
+            published + 1,
+            cache.rebuild_count(),
+            "Folge-get startet und veroeffentlicht den Ersatz-Build"
+        );
+        // Schleifenfreiheit: der Folge-Build lief mit aktueller Generation und
+        // wurde veroeffentlicht — der naechste get trifft einen frischen
+        // Eintrag und baut gar nicht mehr. Ein weiterer Discard braucht eine
+        // NEUE Invalidierung von aussen.
+        cache.get_at(&pins, t0 + Duration::from_millis(2));
+        assert_eq!(published + 1, cache.rebuild_count());
+    }
+
+    // Sol-Nachpruefung zu MAJOR #1: die Leer-Heuristik darf im Discard-Zweig
+    // NICHT greifen. Szenario: ein Build mit leerem Suchraum laeuft, der
+    // Nutzer schaltet waehrenddessen eine Wurzel ein (→ Invalidierung). Der
+    // `roots_changed`-Render trifft `refreshing == true` und bekommt nur den
+    // leeren Index; der leere Build wird danach verworfen. Ohne Signal bliebe
+    // die neue Wurzel bis zum naechsten zufaelligen Render wirkungslos.
+    #[test]
+    fn discarded_empty_build_still_signals_and_retries() {
+        let temp = vault();
+        let pins = [pin_dir(temp.path())];
+        let (cache, calls) = counting_cache(Duration::from_secs(300));
+        let t0 = Instant::now();
+
+        // Cold-Build ohne Opt-in-Wurzeln startet (leerer Suchraum) …
+        let snapshot = cache.generation();
+        let empty_build = Arc::new(WikilinkIndex::build(&[]));
+        cache.lock_state().refreshing = true;
+        // … waehrenddessen wird eine Wurzel eingeschaltet.
+        cache.invalidate();
+        // Der `roots_changed`-Render laeuft in den Single-Flight und bekommt
+        // nur den leeren Index — kein Build.
+        assert!(cache.get_at(&pins, t0).is_empty());
+        assert_eq!(0, cache.rebuild_count());
+
+        // Jetzt endet der leere Build und wird verworfen: leer → leer, aber
+        // das Signal MUSS trotzdem raus.
+        assert!(!cache.publish(empty_build, snapshot, fingerprint_of(&[]), t0));
+        assert_eq!(
+            1,
+            calls.load(std::sync::atomic::Ordering::SeqCst),
+            "verworfener leerer Build muss das Retry-Signal senden"
+        );
+        assert!(!cache.lock_state().refreshing);
+
+        // Der vom Signal ausgeloeste Re-Render startet den echten Build.
+        cache.get_at(&pins, t0 + Duration::from_millis(1));
+        assert_eq!(1, cache.rebuild_count());
+        let fresh = cache.get_at(&pins, t0 + Duration::from_millis(2));
+        assert!(
+            fresh.resolve_name("Alpha").is_some(),
+            "die neu freigeschaltete Wurzel ist jetzt im Index"
+        );
+    }
+
+    #[test]
+    fn published_empty_build_stays_silent() {
+        // Erfolgs-Zweig: Default-Fall ohne Opt-in-Wurzeln. leer → leer, der
+        // Eintrag steht danach frisch im Cache — ein Re-Render waere reine
+        // Arbeit ohne Wirkung. Hier bleibt die Unterdrueckung.
+        let (cache, calls) = counting_cache(Duration::from_secs(300));
+        cache.get_at(&[], Instant::now());
+        assert_eq!(1, cache.rebuild_count());
+        assert_eq!(0, calls.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    // Review sol MINOR #3: Panic in `WikilinkIndex::build` darf `refreshing`
+    // nicht dauerhaft haengen lassen (sonst nie wieder ein Build).
+    #[test]
+    fn refreshing_guard_releases_on_panic() {
+        let cache = WikilinkIndexCache::with_inline_refresh(Duration::from_secs(300));
+        cache.lock_state().refreshing = true;
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = RefreshingGuard::new(cache.clone());
+            panic!("simulated build panic");
+        }));
+        assert!(panicked.is_err());
+        assert!(
+            !cache.lock_state().refreshing,
+            "Guard gibt das Flag beim Unwind frei"
+        );
+    }
+
+    #[test]
+    fn disarmed_refreshing_guard_does_not_clobber_a_later_build() {
+        // Genau darum ist der Guard disarmbar: nach `publish` gehoert das Flag
+        // ggf. schon einem NEUEN Build; ein nachlaufendes `drop` wuerde dessen
+        // Single-Flight-Schutz aushebeln.
+        let cache = WikilinkIndexCache::with_inline_refresh(Duration::from_secs(300));
+        {
+            let mut guard = RefreshingGuard::new(cache.clone());
+            guard.disarm();
+            // Ein anderer Build startet, waehrend der alte Guard noch lebt.
+            cache.lock_state().refreshing = true;
+        }
+        assert!(
+            cache.lock_state().refreshing,
+            "der entschaerfte Guard laesst ein fremdes Flag stehen"
+        );
+    }
+
+    #[test]
+    fn publish_callback_fires_only_for_non_empty_transitions() {
+        let temp = vault();
+        let pins = [pin_dir(temp.path())];
+        let (cache, calls) = counting_cache(Duration::from_secs(300));
+
+        // Kein Opt-in: leer → leer, kein Re-Render-Signal.
+        cache.get_at(&[], Instant::now());
+        assert_eq!(0, calls.load(std::sync::atomic::Ordering::SeqCst));
+
+        // Echter Index → das Frontend muss die View nachziehen.
+        cache.get_at(&pins, Instant::now());
+        assert_eq!(1, calls.load(std::sync::atomic::Ordering::SeqCst));
     }
 
     #[test]
@@ -2093,12 +2646,18 @@ mod tests {
         let built = Arc::new(WikilinkIndex::build(&pins));
         // Paralleler Pin-/Datei-Befehl invalidiert waehrend des Builds.
         cache.invalidate();
+        cache.lock_state().refreshing = true;
 
         assert!(
             !cache.publish(Arc::clone(&built), snapshot, fingerprint_of(&pins), t0),
             "Build mit veralteter Generation darf nicht veroeffentlicht werden"
         );
         assert_eq!(0, cache.rebuild_count());
+        assert!(
+            !cache.lock_state().refreshing,
+            "auch ein verworfener Build gibt das Single-Flight-Flag frei, \
+             sonst blockiert er alle weiteren Builds dauerhaft"
+        );
 
         // Gegenprobe: mit aktueller Generation greift die Veroeffentlichung.
         assert!(cache.publish(built, cache.generation(), fingerprint_of(&pins), t0));
@@ -2738,7 +3297,8 @@ mod tests {
             .resolve_name_from("README", &ctx)
             .expect("README from docs/");
         assert!(
-            hit.path.ends_with("/docs/README.md") && hit.path.contains(a.path().to_str().unwrap()),
+            hit.path.ends_with("/docs/README.md")
+                && hit.path.contains(normalize_path(a.path()).as_str()),
             "same-dir docs/README must win, got {}",
             hit.path
         );
@@ -2756,7 +3316,7 @@ mod tests {
         assert!(
             hit.path.ends_with("/README.md")
                 && !hit.path.contains("/docs/")
-                && hit.path.contains(a.path().to_str().unwrap()),
+                && hit.path.contains(normalize_path(a.path()).as_str()),
             "A/README.md (same root) must beat B and docs/, got {}",
             hit.path
         );
@@ -2774,7 +3334,7 @@ mod tests {
             .resolve_name_from("Unique", &ctx)
             .expect("cross-root Unique");
         assert!(
-            hit.path.contains(b.path().to_str().unwrap()),
+            hit.path.contains(normalize_path(b.path()).as_str()),
             "no local Unique → fall back to B, got {}",
             hit.path
         );
@@ -2819,7 +3379,8 @@ mod tests {
             .resolve_name_from("docs/README", &ctx)
             .expect("docs/README");
         assert!(
-            hit.path.contains(a.path().to_str().unwrap()) && hit.path.ends_with("/docs/README.md"),
+            hit.path.contains(normalize_path(a.path()).as_str())
+                && hit.path.ends_with("/docs/README.md"),
             "path-qualified + locality → A/docs/README, got {}",
             hit.path
         );
@@ -2896,7 +3457,7 @@ mod tests {
             .iter()
             .find(|c| {
                 c.path.ends_with("/README.md")
-                    && c.path.contains(a.path().to_str().unwrap())
+                    && c.path.contains(normalize_path(a.path()).as_str())
                     && !c.path.contains("/docs/")
             })
             .expect("A/README");
@@ -2908,7 +3469,8 @@ mod tests {
         let b_logo = cands
             .iter()
             .find(|c| {
-                c.path.ends_with("/images/logo.png") && c.path.contains(b.path().to_str().unwrap())
+                c.path.ends_with("/images/logo.png")
+                    && c.path.contains(normalize_path(b.path()).as_str())
             })
             .expect("B/logo");
         assert_ne!(
@@ -2928,7 +3490,7 @@ mod tests {
         let ctx = normalize_path(&a.path().join("notes/x.md"));
         let path = resolve_heading_source(&index, "README", Some(&ctx)).expect("README");
         assert!(
-            path.contains(a.path().to_str().unwrap())
+            path.contains(normalize_path(a.path()).as_str())
                 && path.ends_with("/README.md")
                 && !path.contains("/docs/"),
             "headings resolve with locality: {path}"

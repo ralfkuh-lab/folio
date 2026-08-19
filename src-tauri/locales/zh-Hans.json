@@ -796,6 +796,8 @@
   "vault.contextMenu.showChanges": "显示更改",
   "vault.contextMenu.showInExplorer": "在文件管理器中显示",
   "vault.contextMenu.unpin": "取消固定",
+  "vault.contextMenu.wikilinkRootDisable": "在此停用维基链接和标签",
+  "vault.contextMenu.wikilinkRootEnable": "在此启用维基链接和标签",
   "vault.filter.clear.ariaLabel": "清除筛选",
   "vault.filter.clear.tooltip": "清除筛选",
   "vault.filter.close.ariaLabel": "关闭筛选栏",

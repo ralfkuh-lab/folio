@@ -774,6 +774,8 @@
   "vault.contextMenu.showChanges": "Context menu action item in the vault sidebar that opens a read-only Git diff of the file against HEAD.",
   "vault.contextMenu.showInExplorer": "Context menu action item in the vault sidebar that triggers the 'Show in file manager' operation.",
   "vault.contextMenu.unpin": "Context menu action item in the vault sidebar that triggers the 'Unpin' operation.",
+  "vault.contextMenu.wikilinkRootDisable": "Context menu action item on a pinned vault root that turns OFF the opt-in for including this root in the wikilink index and tag browser.",
+  "vault.contextMenu.wikilinkRootEnable": "Context menu action item on a pinned vault root that turns ON the opt-in for including this root in the wikilink index and tag browser.",
   "vault.filter.clear.ariaLabel": "Accessibility label for the vault tree filter clear button that empties the name filter input.",
   "vault.filter.clear.tooltip": "Tooltip for the vault tree filter clear button that empties the name filter input.",
   "vault.filter.close.ariaLabel": "Accessibility label for the vault tree filter bar close button that closes the bar and clears the name filter.",

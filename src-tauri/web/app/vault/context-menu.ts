@@ -42,6 +42,8 @@ const ICONS: Record<string, string> = {
     delete: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5h10M6.5 4.5V3a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1.5M5 4.5l.5 8a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1l.5-8"/></svg>',
     'search-folder': '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>',
     'show-changes': '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3.5h4.5M3 8h3M3 12.5h4.5"/><path d="M10 3.5h3v9h-3z"/></svg>',
+    'wikilink-root-on': '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 9.5l3-3"/><path d="M8.5 4.5l1-1a2.5 2.5 0 0 1 3.5 3.5l-1 1"/><path d="M7.5 11.5l-1 1a2.5 2.5 0 0 1-3.5-3.5l1-1"/></svg>',
+    'wikilink-root-off': '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 4.5l1-1a2.5 2.5 0 0 1 3.5 3.5l-1 1"/><path d="M7.5 11.5l-1 1a2.5 2.5 0 0 1-3.5-3.5l1-1"/><path d="M2 2l12 12"/></svg>',
 };
 
 // Baut ein Kontextmenue-Item mit Icon + Label als DOM-Nodes.
@@ -110,6 +112,9 @@ function invoke(cmd: string, args?: any): Promise<any> {
 export type ContextMenuOptions = {
     gitModified?: boolean;
     isText?: boolean;
+    /** Pin-Wurzel ist als Wikilink-/Tag-Wurzel freigeschaltet
+     *  (`data-wikilink-root="1"` aus dem Backend-Markup, Spec W8). */
+    wikilinkRoot?: boolean;
 };
 
 export function openContextMenu(
@@ -152,6 +157,17 @@ export function openContextMenu(
     if (!isDir) mid.push(['new-folder', t('vault.contextMenu.newFolder')]);
     if (!inPinned) mid.push(['pin', t('vault.contextMenu.pin')]);
     if (inPinned) mid.push(['unpin', t('vault.contextMenu.unpin')]);
+    // Wikilink-/Tag-Opt-in gibt es nur auf Pin-Wurzeln (Verzeichnis wie
+    // Einzeldatei) — der Suchraum des Index ist eine Teilmenge der Pins.
+    // Toggle über zwei Labels statt eines Häkchens: das ctx-Menü kennt
+    // keinen Checked-Zustand.
+    if (inPinned) {
+        mid.push(
+            options?.wikilinkRoot
+                ? ['wikilink-root-off', t('vault.contextMenu.wikilinkRootDisable')]
+                : ['wikilink-root-on', t('vault.contextMenu.wikilinkRootEnable')],
+        );
+    }
     if (inRecent) mid.push(['remove-recent', t('vault.contextMenu.removeRecent')]);
     if (mid.length && headCount) appendSep(ctxMenu);
     for (const [act, label] of mid) appendItem(ctxMenu, act, label);
@@ -319,6 +335,12 @@ export function initContextMenu(d: Deps): void {
             safeInvoke('workspace_pin', { path, isDirectory: isDir }, 'workspace_pin');
         } else if (act === 'unpin') {
             safeInvoke('workspace_unpin', { path }, 'workspace_unpin');
+        } else if (act === 'wikilink-root-on' || act === 'wikilink-root-off') {
+            safeInvoke(
+                'workspace_wikilink_root_set',
+                { path, enabled: act === 'wikilink-root-on' },
+                'workspace_wikilink_root_set',
+            );
         } else if (act === 'remove-recent') {
             safeInvoke('workspace_remove_recent', { path }, 'workspace_remove_recent');
         } else if (act === 'search-folder' && isDir) {

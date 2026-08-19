@@ -60,6 +60,7 @@ async function openMenu(
         isText?: boolean;
         path?: string;
         inPinned?: boolean;
+        wikilinkRoot?: boolean;
     },
 ): Promise<HTMLElement> {
     const mod = await import('../../app/vault/context-menu');
@@ -76,7 +77,11 @@ async function openMenu(
         opts.inPinned === true,
         false,
         opts.isExec,
-        { gitModified: opts.gitModified, isText: opts.isText },
+        {
+            gitModified: opts.gitModified,
+            isText: opts.isText,
+            wikilinkRoot: opts.wikilinkRoot,
+        },
     );
     return document.getElementById('context-menu') as HTMLElement;
 }
@@ -364,5 +369,95 @@ describe('vault/context-menu — Click-Handler V2', () => {
         await Promise.resolve();
         await Promise.resolve();
         expect(getClip()).toBeNull();
+    });
+});
+
+describe('vault/context-menu — Wikilink-/Tag-Wurzel-Toggle (W8)', () => {
+    function acts(menu: HTMLElement): string[] {
+        return Array.from(menu.querySelectorAll('.ctx-item')).map(
+            (el) => el.getAttribute('data-act') || '',
+        );
+    }
+
+    it('bietet den Toggle nur auf Pin-Wurzeln an', async () => {
+        const inTree = await openMenu({ isDir: true, isExec: false, path: '/vault/sub' });
+        expect(acts(inTree)).not.toContain('wikilink-root-on');
+        expect(acts(inTree)).not.toContain('wikilink-root-off');
+
+        const pinRoot = await openMenu({
+            isDir: true,
+            isExec: false,
+            path: '/vault',
+            inPinned: true,
+        });
+        expect(acts(pinRoot)).toContain('wikilink-root-on');
+    });
+
+    it('zeigt Aktivieren bzw. Deaktivieren je nach Opt-in-Zustand', async () => {
+        const off = await openMenu({
+            isDir: true,
+            isExec: false,
+            path: '/vault',
+            inPinned: true,
+            wikilinkRoot: false,
+        });
+        expect(off.querySelector('[data-act="wikilink-root-on"]')!.textContent).toBe(
+            'Wikilinks & Tags hier aktivieren',
+        );
+        expect(off.querySelector('[data-act="wikilink-root-off"]')).toBeNull();
+
+        const on = await openMenu({
+            isDir: true,
+            isExec: false,
+            path: '/vault',
+            inPinned: true,
+            wikilinkRoot: true,
+        });
+        expect(on.querySelector('[data-act="wikilink-root-off"]')!.textContent).toBe(
+            'Wikilinks & Tags hier deaktivieren',
+        );
+        expect(on.querySelector('[data-act="wikilink-root-on"]')).toBeNull();
+    });
+
+    it('gilt auch fuer gepinnte Einzeldateien', async () => {
+        const menu = await openMenu({
+            isDir: false,
+            isExec: false,
+            path: '/vault/notiz.md',
+            inPinned: true,
+        });
+        expect(acts(menu)).toContain('wikilink-root-on');
+    });
+
+    it('ruft workspace_wikilink_root_set mit dem passenden enabled-Flag', async () => {
+        const off = await openMenu({
+            isDir: true,
+            isExec: false,
+            path: '/vault',
+            inPinned: true,
+            wikilinkRoot: false,
+        });
+        const invoke = (window as unknown as { __TAURI__: { core: { invoke: ReturnType<typeof vi.fn> } } })
+            .__TAURI__.core.invoke;
+        invoke.mockClear();
+        (off.querySelector('[data-act="wikilink-root-on"]') as HTMLElement).click();
+        expect(invoke).toHaveBeenCalledWith('workspace_wikilink_root_set', {
+            path: '/vault',
+            enabled: true,
+        });
+
+        const on = await openMenu({
+            isDir: true,
+            isExec: false,
+            path: '/vault',
+            inPinned: true,
+            wikilinkRoot: true,
+        });
+        invoke.mockClear();
+        (on.querySelector('[data-act="wikilink-root-off"]') as HTMLElement).click();
+        expect(invoke).toHaveBeenCalledWith('workspace_wikilink_root_set', {
+            path: '/vault',
+            enabled: false,
+        });
     });
 });

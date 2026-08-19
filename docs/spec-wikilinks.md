@@ -1,8 +1,11 @@
 # Spec: Wikilinks + Backlinks + Autocomplete + Tag-Browser (Obsidian-kompatibel)
 
-Status: **W1–W6 umgesetzt 2026-07-25**, Kreuz-Review (codex gpt-5.6-sol high
-+ kimi K3) konsolidiert und Fixes F1–F10 eingearbeitet, Endabnahme mit
-grünem E2E-Voll-Lauf (54 Szenarien) am selben Tag.
+Status: **W1–W8 umgesetzt** — W1–W6 am 2026-07-25, W7 am 2026-07-26,
+W8 am 2026-08-19.
+
+Erste Runde (W1–W6): Kreuz-Review (codex gpt-5.6-sol high + kimi K3)
+konsolidiert und Fixes F1–F10 eingearbeitet, Endabnahme mit grünem
+E2E-Voll-Lauf (54 Szenarien) am selben Tag.
 
 ## Ziel & Designprinzip
 
@@ -33,9 +36,12 @@ Wo wir (bewusst) abweichen, steht es hier unter „Bewusste Abweichungen".
 
 ## Auflösungsregeln
 
-- **Suchraum** = Vault wie bei der Volltextsuche: Union der gepinnten Ordner
-  (rekursiv, hidden/gitignore-gefiltert wie `search::resolve_scope` +
-  `collapse_overlapping_dirs`) + explizit gepinnte Einzeldateien.
+- **Suchraum** = Union der Wikilink-Wurzeln, aufgelöst wie bei der
+  Volltextsuche (rekursiv, hidden/gitignore-gefiltert wie
+  `search::resolve_scope` + `collapse_overlapping_dirs`) + explizit gepinnte
+  Einzeldateien. **Seit W8 sind die Wurzeln Opt-in** (`wikilink_roots`,
+  Teilmenge der Pins, Default leer) — nicht mehr automatisch alle Pins;
+  Begründung und Vertrag unter „W8“.
 - **Match per Dateiname** (Basename ohne `.md`), **case-insensitiv** (Obsidian-
   Verhalten). Für Embeds zählen auch Nicht-MD-Dateien (Bilder) mit Extension:
   `![[foo.png]]` matcht per vollem Dateinamen.
@@ -48,8 +54,10 @@ Wo wir (bewusst) abweichen, steht es hier unter „Bewusste Abweichungen".
   den „Datei anlegen?"-Dialog (W2). Anlage-Ort: **Verzeichnis des aktuellen
   Dokuments** (einfachste Regel; Obsidian-Default „Vault-Root" ergibt bei
   folios Multi-Pin-Vault keinen eindeutigen Root).
-- **Ohne Vault-Kontext** (keine Pins, oder Datei außerhalb der Pins geöffnet):
-  Auflösung läuft trotzdem über die Pins; schlägt alles fehl → missing.
+- **Ohne Vault-Kontext** (keine Wikilink-Wurzel freigeschaltet, oder Datei
+  außerhalb der Wurzeln geöffnet): Auflösung läuft trotzdem über die Wurzeln;
+  schlägt alles fehl → missing. Bei leerer Wurzelliste ist der Index leer,
+  also rendert alles als missing — das ist der Opt-in-Default aus W8.
 
 ### Bewusste Abweichungen von Obsidian (V1)
 
@@ -72,10 +80,15 @@ In-Memory-Index `Name(lowercase) → Vec<AbsPath>` über den Vault-Walk
 
 - explizit bei Pin-Änderungen, `create_file`/Rename/Delete/Save-neuer-Datei,
   `vault:dir_changed` (Watcher);
-- zusätzlich **TTL-Fallback 30 s** — der Vault-Watcher beobachtet nur
-  aufgeklappte Ordner, externe Änderungen tiefer im Baum wären sonst unsichtbar.
+- zusätzlich **TTL-Fallback** — der Vault-Watcher beobachtet nur
+  aufgeklappte Ordner, externe Änderungen tiefer im Baum wären sonst
+  unsichtbar. **Seit W8**: Basis 5 Minuten, adaptiv auf
+  `10 × letzte Builddauer` angehoben, plus gedrosselte Invalidierung bei
+  Fenster-Fokus.
 - Rebuild lazy beim nächsten Zugriff (Renderer/Autocomplete/Backlinks), nie
   im Hot-Path eines Tastendrucks: Live-Preview-Renders greifen auf den Cache.
+  **Seit W8** läuft auch der Cold-Start-Build im Hintergrund — kein
+  Render-Pfad wartet auf einen Index-Build.
 
 ### Render-Integration (`renderer.rs`)
 
@@ -201,6 +214,8 @@ und Markup-Gates beachten (Vertrag `docs/spec-i18n.md`).
 | **W4** | Autocomplete-Provider + `wikilink_headings` | grok | ✅ |
 | **W5** | Tag-Scan + Tag-Browser-Sektion + Such-Präfill | grok | ✅ |
 | **W6** | Export-Feinschliff, E2E-Szenarien (`53_wikilinks`, `54_tags`), Doku (CLAUDE.md, automation-contract falls API-Zusätze) | grok | ✅ |
+| **W7** | Lokalitäts-Priorität bei der Auflösung + Insert-Verkürzung | Opus | ✅ |
+| **W8** | Opt-in-Wurzeln (`wikilink_roots`), Cold-Start entkoppelt, adaptive TTL, Fokus-Invalidierung | Opus | ✅ |
 
 Gates pro Etappe: `cargo test`, `cargo clippy --all-targets -- -D warnings`,
 `cargo fmt --check`; bei Frontend-Anteil `npm run build` + vitest; E2E in W6.
@@ -329,6 +344,196 @@ Projekt A erzeugt keinen Backlink auf `B/README.md`); Insert-Roundtrip-Invariant
 
 Frontmatter-`aliases` (eigene Etappe), Unlinked Mentions, Link-Refactoring
 beim Umbenennen.
+
+## W8: Opt-in-Wurzeln + entkoppelter Index-Build (2026-08-19)
+
+Kreuz-Review (gpt-5.6-sol) am selben Tag: Gesamturteil positiv, drei Befunde
+eingearbeitet — Signal + Wiederanlauf für verworfene Builds (MAJOR),
+`wikilink:roots_changed` fürs Wurzel-Toggle (MAJOR) und Panic-Sicherheit des
+`refreshing`-Flags (MINOR). Alle drei sind unten an ihrer Sachstelle
+beschrieben.
+
+### Problem (belegt, Log + Nutzer-Vault)
+
+`WikilinkIndex::build` walkt **alle** Vault-Pins. Im Vault des Nutzers sind
+das ~1.000.000 Dateien; ein Rebuild dauert dort **20–26 s**. Daraus folgten
+drei Fehler, alle im Log belegt:
+
+1. **Boot blockiert.** `state.rs::wikilink_context` ruft
+   `wikilink_index.get(&pinned)`. Beim Cold Start (leerer Cache) nahm `get_at`
+   den `CacheAction::BuildSync`-Zweig — das `document:loaded` des
+   wiederhergestellten Tabs wartete damit ~25 s auf einen Vault-Walk.
+2. **Kein Single-Flight im Cold-Pfad.** Das `refreshing`-Flag deckte nur den
+   Stale-Pfad ab; zwei parallele Cold-`get()` bauten denselben Index doppelt
+   (im Log: zwei Rebuilds à 22 s direkt hintereinander beim Boot).
+3. **TTL kürzer als die Buildzeit.** `INDEX_TTL` war 30 s. Bei 20–26 s
+   Buildzeit war der Eintrag praktisch immer abgelaufen, sobald er
+   veröffentlicht war → Rebuild-Dauerschleife und permanente CPU-Last durch
+   `build_parallel`.
+
+Der Kern ist nicht die Cache-Mechanik, sondern die **Suchraum-Annahme**:
+„Vault = alle Pins" ist für die Volltextsuche richtig (sie läuft auf
+Anforderung), für einen Index, der bei jedem Render gebraucht wird, aber
+nicht. Ein automatisch mitlaufendes Feature darf keinen Suchraum erben, den
+der Nutzer für einen ganz anderen Zweck gepinnt hat.
+
+### Teil A: Opt-in-Wurzeln (`wikilink_roots`)
+
+- Neues persistiertes Feld `wikilink_roots: Vec<String>` in `WorkspaceData`
+  (`workspace.json`, `#[serde(default)]`, Forward-Slash-normalisiert wie alle
+  Workspace-Pfade; die Backslash-Migration in `Workspace::load_from` deckt es
+  mit ab).
+- **Semantik**: ein Eintrag entspricht **genau einem Pin-Pfad** (Verzeichnis
+  ODER Einzeldatei). Der Suchraum ist `pinned ∩ wikilink_roots`. Wurzeln ohne
+  passenden Pin werden **still verworfen** — wie tote Vault-Pins in der Suche.
+- **Default leer → Feature effektiv aus, und es läuft gar kein Walk.**
+  `WikilinkIndex::build(&[])` kehrt sofort mit einem leeren Index zurück
+  (explizite `pinned.is_empty()`-Vorprüfung, damit garantiert kein
+  `WalkBuilder` startet). Backlinks-Sektion, `[[`-Autocomplete und
+  Tag-Sektion verhalten sich dann wie „keine Treffer" (kein Spinner, kein
+  Fehler).
+- **Eine zentrale Quelle**: `Workspace::wikilink_pins()` bzw.
+  `AppState::wikilink_pins()`. Alle Konsumenten stellen darauf um:
+  `state.rs::wikilink_context`, die drei `cache.get(&pinned)`-Stellen in
+  `commands/wikilink_cmd.rs` (candidates/headings/backlinks) **und
+  `tags::collect_vault_tags`** — der Tag-Browser hängt am selben Walk und
+  hatte dasselbe Kostenproblem.
+- Die Filterung passiert **vor** `WikilinkIndexCache::get`. Damit erkennt
+  `fingerprint_of` einen Wurzel-Wechsel automatisch als neuen Suchraum; der
+  Cache selbst bleibt von der Opt-in-Logik unberührt.
+- `resolve_name_from` (W7-Lokalitätsrangfolge) ist **unverändert** — sie
+  arbeitet nur auf einem kleineren Index.
+- **Pfad-Migration**: `wikilink_roots` läuft in `Workspace::remap_prefix` und
+  `Workspace::remove_under` mit (Segmentgrenzen-Matching aus
+  `path_migration.rs`, kein zweiter Migrationspfad). Damit zieht die Wurzel
+  bei Rename/Move mit dem Pin um, statt tot zurückzubleiben.
+- **Unpin räumt auf**: `Workspace::unpin` entfernt den passenden
+  `wikilink_roots`-Eintrag. Sonst würde ein erneutes Pinnen desselben Ordners
+  das Feature stillschweigend wieder einschalten.
+- **UI**: Kontextmenü-Toggle auf Pin-Wurzeln (Verzeichnis wie Einzeldatei),
+  `vault.contextMenu.wikilinkRootEnable` / `…Disable`. Zustand kommt aus dem
+  Backend-Markup: `Vault::item_html` setzt `data-wikilink-root="1"` (analog
+  `data-text`), gesetzt ausschließlich in `pinned_children_html`. Command
+  `workspace_wikilink_root_set { path, enabled }` → Wurzel setzen,
+  Index invalidieren, `vault:refresh`. Zwei Labels statt eines Häkchens, weil
+  das Kontextmenü keinen Checked-Zustand kennt.
+  *Bekannte Grenze*: bei einem gepinnten `.lnk`-Shortcut trägt der Knoten den
+  **aufgelösten** Zielpfad in `data-path`, der Toggle würde also eine Wurzel
+  ohne passenden Pin speichern (→ still ignoriert). Solche Pins sind für den
+  Index schon vorher wirkungslos (`resolve_scope` prüft `is_dir()` auf dem
+  `.lnk`-Pfad), es geht damit nichts verloren.
+
+### Teil B: Cold-Start entkoppeln + Single-Flight
+
+- Der `None`-Zweig von `WikilinkIndexCache::get_at` baut **nicht mehr
+  synchron**: er liefert sofort einen leeren Index und startet den Build über
+  den bestehenden `start_refresh`-Pfad. **Kein Render-Pfad wartet mehr auf
+  einen Index-Build** — das gilt für alle `get()`-Aufrufer.
+- `refreshing` deckt jetzt **beide** Pfade ab (Single-Flight im Cold-Pfad).
+- **Re-Render nach jedem beendeten Build**: der Cache hat einen optionalen
+  `IndexPublishCallback` (in `lib.rs::setup` mit dem `AppHandle` verdrahtet),
+  der `wikilink:index_ready` emittiert. Semantik ist bewusst **„der
+  Index-Zustand hat sich geändert — bitte neu ziehen"**, nicht „ein Build
+  wurde veröffentlicht": das Signal feuert auch für einen **verworfenen**
+  Build (siehe Wiederanlauf unten).
+  Der Callback läuft **nie unter dem Cache-Mutex** (eigenes `OnceLock`).
+  Unterdrückt wird er **nur im Erfolgs-Zweig**, und dort nur, wenn weder der
+  neue noch der gecachte Index Inhalt hat — der Default-Fall „keine
+  Opt-in-Wurzel" löst also keinen Re-Render aus. Beim **Discard feuert er
+  bedingungslos** (siehe Wiederanlauf).
+- **Zweites Event `wikilink:roots_changed`**: das Wurzel-Toggle
+  (`workspace_wikilink_root_set`) invalidiert nur und rendert den Vault-Baum
+  neu — eine bereits sichtbare Markdown-View würde davon nichts mitbekommen
+  und, weil der Cold-Build erst beim nächsten `get()` startet, wäre die neue
+  Wurzel bis zum nächsten Tipp-/Mode-/Dokument-Ereignis **wirkungslos** (beim
+  Deaktivieren blieben aufgelöste Links stehen). Das Command emittiert deshalb
+  bei echter Änderung zusätzlich `wikilink:roots_changed`. Der erste Render
+  danach startet den Build, `index_ready` zieht nach dessen Abschluss final
+  nach. `index_ready` bleibt damit den beendeten Builds vorbehalten.
+- **Ein Frontend-Handler für beide Events** (`view/wikilink-refresh.ts`,
+  `initWikilinkRefresh()`): `flushPreviewRender()` — der scroll-erhaltende
+  Live-Render-Pfad mit eigenem `renderGen`-Stale-Guard — plus
+  `refreshBacklinksAfterIndexReady()`. **Bewusst kein Re-Emit von
+  `document:loaded`** (Scroll- und Seiteneffekte). Eigenes Modul statt zweier
+  Kopien im Bootstrap, und damit unit-testbar.
+- **Wiederanlauf verworfener Builds**: ein `publish` verwirft das Ergebnis,
+  wenn seit dem Build-Start invalidiert wurde — und genau das trifft den
+  20–26-s-Cold-Build leicht (Alt-Tab → Fokus-Invalidierung, Watcher-Event,
+  Datei-CRUD). Ohne Signal gäbe es **keinen** Wiederanlauf: die sichtbare View
+  bliebe auf dem leeren Index, bis zufällig ein Render kommt. Deshalb feuert
+  der Callback auch beim Discard. Der ausgelöste Re-Render ruft `get()` mit
+  dem **aktuellen** Suchraum — bewusst kein cache-interner Restart, der mit
+  dem alten Pin-Snapshot arbeiten würde.
+  **Die Leer-Unterdrückung gilt hier ausdrücklich nicht** (Sol-Nachprüfung):
+  Läuft ein Build mit leerem Suchraum — weil noch keine Wurzel frei war oder
+  die Wurzel keine indexierbaren Dateien enthält — und schaltet der Nutzer
+  währenddessen eine Wurzel ein, dann trifft der `roots_changed`-Render den
+  laufenden Single-Flight (`refreshing == true`) und bekommt nur den leeren
+  Index; danach wird der leere Build verworfen. Sind Build **und** Cache leer,
+  hätte eine Leer-Heuristik genau hier das Retry-Signal geschluckt und die
+  neue Wurzel wäre bis zum nächsten zufälligen Render wirkungslos geblieben.
+  **Schleifenfrei**, weil ein Discard `state.generation !=
+  snapshot_generation` voraussetzt: jede weitere Runde braucht eine **neue**
+  Invalidierung von außen; der Callback kann sich nicht selbst nachfüttern.
+  Der vom Retry ausgelöste Folge-Build wird entweder veröffentlicht (und ist
+  dann bei leer→leer still) oder braucht für einen weiteren Discard eine
+  abermals neue Invalidierung. Nach einem erfolgreichen Publish trifft der
+  Re-Render einen frischen Eintrag und startet gar keinen Build.
+- **Selbstheilung bei Fingerprint-Wechsel**: trifft ein `get()` mit anderem
+  Fingerprint auf einen laufenden Build, wird kein zweiter Build gestartet
+  (Single-Flight). Der Callback löst aber einen Re-Render aus, dessen `get()`
+  dann den passenden Build anstößt — Kosten: eine zusätzliche Runde, nie ein
+  dauerhaft falscher Zustand.
+- **Panic-Sicherheit** (`RefreshingGuard`, Muster aus `git_status.rs`):
+  panickt `WikilinkIndex::build` im Hintergrund-Thread, würde `refreshing`
+  dauerhaft stehen bleiben und es gäbe **bis zum Neustart nie wieder einen
+  Build**. Der Guard gibt das Flag beim Unwind frei und panickt selbst nicht
+  (toleriert einen vergifteten Mutex). Er wird **entschärft**, sobald
+  `publish` die Freigabe übernimmt — sonst könnte sein späteres `drop` das
+  Flag eines inzwischen gestarteten *anderen* Builds löschen und den
+  Single-Flight-Schutz aushebeln.
+
+### Teil C: TTL entschärfen + Fokus-Invalidierung
+
+- `INDEX_TTL` (Basis) **30 s → 5 Minuten**.
+- **Adaptive TTL**: der Cache merkt sich die Dauer des letzten Builds (auch
+  eines verworfenen — die Kostenmessung gilt trotzdem); effektive TTL =
+  `max(Basis, 10 × letzte Builddauer)`. Damit kann kein Suchraum der Welt
+  eine Rebuild-Schleife erzeugen.
+- **Fokus-Invalidierung**: `WindowEvent::Focused(true)` in `lib.rs`
+  invalidiert zusätzlich den Wikilink-Index (dort tut der Git-Status genau
+  dasselbe) — externe Änderungen passieren typischerweise, während Folio den
+  Fokus nicht hat, und der VaultWatcher sieht nur aufgeklappte Ordner.
+  **Gedrosselt**: übersprungen, wenn der letzte Build jünger als 30 s ist
+  (`FOCUS_INVALIDATE_MIN_AGE`), sonst rebuildet jedes Alt-Tab den Vault.
+  Explizite Invalidierungen (CRUD/Watcher/Pin) bleiben ungedrosselt.
+
+### Tests
+
+Unit (`wikilink.rs`): leere Wurzeln → leerer Index ohne Walk; Cold-`get`
+liefert sofort leer und published im Hintergrund (`RefreshMode::Inline`);
+Single-Flight im Cold-Pfad; adaptive TTL (Formel + „kein Rebuild-Loop" über
+`get_at`-Zeitinjektion); Fokus-Debounce; Callback beim **Publish** nur bei
+nicht-leerem Übergang; **Discard signalisiert und der Folge-`get()` startet
+den Ersatz-Build** (inkl. Nachweis, dass danach nicht weitergebaut wird);
+**Discard signalisiert auch bei leer→leer** (Wurzel-Einschalten während eines
+leeren Builds — mit Nachweis, dass der Folge-Build die neue Wurzel
+indexiert); `RefreshingGuard` gibt `refreshing` beim Panic frei und lässt
+entschärft ein fremdes Flag stehen; Fingerprint-Wechsel beim Wurzel-Toggle.
+Unit (`workspace.rs`): `wikilink_pins` = Pins ∩ Wurzeln (inkl. toter Wurzel),
+Idempotenz von `set_wikilink_root`, Unpin-Aufräumen, `remap_prefix` auf
+Segmentgrenze, `remove_under`. Unit (`vault.rs`): `data-wikilink-root` nur am
+freigeschalteten Pin. Frontend (vitest): Kontextmenü-Toggle (Sichtbarkeit,
+Label-Richtung, Datei-Pins, Command-Argumente),
+`refreshBacklinksAfterIndexReady` und `view/wikilink-refresh.ts` (beide
+Events routen identisch, Listener nur einmal registriert). E2E: `53_wikilinks` und `54_tags` schalten
+ihre Wurzeln im Setup frei (`api.workspace_wikilink_root`).
+
+### Nicht in W8
+
+Ein UI zum Verwalten der Wurzelliste in den Einstellungen (heute nur das
+Kontextmenü), ein Fortschrittsindikator während des Hintergrund-Builds und
+ein persistenter Index (tantivy) bleiben Folgepunkte.
 
 ## Folgepunkte (bewusst nicht V1)
 

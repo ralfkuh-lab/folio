@@ -33,6 +33,14 @@ umbenannt werden:
   `tabs:changed`,
   `app:set_mode`, `app:set_theme`, `vault:refresh`,
   `vault:dir_changed`, `vault:git_status` (`repoRoot`, `entries`, `generation`, optional `activeRoots`),
+  `wikilink:index_ready` (payloadlos; ein Hintergrund-Build des
+  Wikilink-Index-Caches ist beendet — veröffentlicht **oder** verworfen; beim
+  verworfenen Build ist der ausgelöste Re-Render zugleich der Wiederanlauf),
+  `wikilink:roots_changed` (payloadlos; eine Opt-in-Wurzel wurde ein- oder
+  ausgeschaltet, der Suchraum hat sich geändert, es läuft aber noch kein
+  Build). Beide behandelt das Frontend identisch
+  (`view/wikilink-refresh.ts`): sichtbare View scroll-erhaltend neu rendern
+  plus Backlinks-Refresh. Details in W8 in `docs/spec-wikilinks.md`,
   Command `git_show_head` (HEAD-Text + Disk-Text + language für den read-only Git-Diff),
   `navigation:changed`, `navigation:toc_click`,
   `editor:load_text`, `editor:apply_replace`, `editor:open_find`,

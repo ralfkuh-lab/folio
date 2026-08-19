@@ -55,6 +55,46 @@ pub async fn workspace_reorder_pinned(
     emit_vault_refresh(state.inner(), &handle)
 }
 
+/// Schaltet eine Pin-Wurzel als Wikilink-/Tag-Wurzel ein oder aus
+/// (Opt-in-Modell, Spec W8). `path` ist der Pin-Pfad aus dem Vault-Baum.
+#[tauri::command]
+pub async fn workspace_wikilink_root_set(
+    path: String,
+    enabled: bool,
+    state: State<'_, AppState>,
+    handle: AppHandle,
+) -> Result<(), String> {
+    let changed = state
+        .workspace
+        .lock()
+        .map_err(|_| "workspace lock poisoned".to_string())?
+        .set_wikilink_root(&path, enabled)
+        .map_err(|error| error.to_string())?;
+    if changed {
+        // Der Suchraum ist `pinned ∩ wikilink_roots` — die Wurzel-Aenderung
+        // wechselt ihn genauso wie ein Pin.
+        state.invalidate_wikilink_index();
+    }
+    // Immer neu rendern: das `data-wikilink-root`-Attribut steuert den
+    // Kontextmenue-Zustand.
+    emit_vault_refresh(state.inner(), &handle)?;
+    if changed {
+        // Der Vault-Baum allein reicht nicht: eine bereits sichtbare
+        // Markdown-View wuerde ohne Signal weder neu rendern noch ueberhaupt
+        // einen Build anstossen (der Cold-Build startet erst beim naechsten
+        // `get()`). Die Wurzel waere bis zum naechsten Tipp-/Mode-/Dokument-
+        // Ereignis wirkungslos, beim Deaktivieren blieben aufgeloeste Links
+        // stehen (Review sol, MAJOR #2). Bewusst ein **eigenes** Event:
+        // `wikilink:index_ready` bleibt den beendeten Builds vorbehalten.
+        // Der erste Render nach diesem Signal startet den Build,
+        // `index_ready` zieht nach dessen Abschluss final nach.
+        handle
+            .emit("wikilink:roots_changed", serde_json::json!({}))
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn workspace_add_recent(
     path: String,

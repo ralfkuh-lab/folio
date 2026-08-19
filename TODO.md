@@ -50,6 +50,21 @@
 
 ## Mittlere Priorität
 
+- 🔍 **E2E-Nachlauf für Wikilink-W8 unter Linux+Xvfb** (offen seit
+  2026-08-19, Implementierung auf Windows entstanden): W8 hat die
+  Wikilink-/Tag-Wurzeln auf Opt-in umgestellt — `53_wikilinks` und `54_tags`
+  schalten ihre Wurzeln jetzt im Setup über `api.workspace_wikilink_root(...)`
+  frei, und der Index-Build läuft im Hintergrund (Re-Render über
+  `wikilink:index_ready`). Die Suite läuft nur unter Linux+Xvfb, also:
+  `bash scripts/run-e2e.sh 53_wikilinks 54_tags` fahren, danach Voll-Lauf.
+  Inhaltlich sollten die Screenshots identisch bleiben (gleiche Doku, gleicher
+  Index); fällt der Visual-Vergleich dennoch, sind
+  `53_wikilinks__wikilinks_view.png` und `54_tags__tags_browser.png` die
+  einzigen betroffenen Baselines (`--update-baselines`). Das Vault-Kontextmenü
+  hat einen Eintrag mehr (`wikilink-root-on`/`-off` auf Pin-Wurzeln) —
+  `19_context_menus` macht keinen Screenshot und prüft nur gezielte
+  `data-act`-Selektoren, ist also nicht betroffen.
+
 - **Hex-Ansicht: Härtungspaket** (aus dem Kreuz-Review, bewusst vertagt) —
   `/state` nimmt Pfad/Kind/Größe unter dem Tabs-Lock, die Hex-Felder danach
   asynchron aus der Surface; bei einem Tabwechsel dazwischen fehlt der
@@ -100,16 +115,22 @@
      Auf Windows verifiziert; bewusst offene Restfenster stehen in
      [`docs/spec-vault-fileops.md`](docs/spec-vault-fileops.md).
 
-- **Wikilink-W7-Unit-Tests schlagen auf Windows fehl** (Befund beim
-  Windows-Durchgang 2026-08-19, vorbestehend und unabhängig vom
-  Papierkorb-Fix): `cargo test --lib` → 6 Failures, alle
-  `wikilink::tests::w7_*` — auf dem sauberen HEAD reproduzierbar
-  (`7 passed; 6 failed`). Vermutlich Pfad-/Case-Annahmen der
-  W7-Lokalitäts-Tests, die nur auf Linux gelten. Dazu passend meldet
-  `cargo clippy --all-targets -- -D warnings` auf Windows 7 vorbestehende
-  Errors in `#[cfg(unix)]`-gerahmtem Test-Code (unused imports/Variablen in
-  `transfer.rs`, `fs_copy.rs`, `unreachable statement` in `palette.rs:256`)
-  — auf Linux unsichtbar, bricht aber jedes Windows-Gate.
+- ✅ **Wikilink-W7-Unit-Tests auf Windows — behoben 2026-08-19** (im
+  Zuge von W8): die 6 `wikilink::tests::w7_*`-Failures kamen aus
+  `hit.path.contains(temp.path().to_str().unwrap())` — `TempDir::path()`
+  liefert auf Windows Backslashes, Index-Pfade sind
+  Forward-Slash-normalisiert, der Vergleich konnte dort nie greifen.
+  Die Assertions laufen jetzt über `normalize_path(...)`; `cargo test` ist
+  auf Windows grün.
+
+- 🔍 **`cargo clippy --all-targets -- -D warnings` bricht auf Windows**
+  (vorbestehend, unabhängig von W8): 7 Errors in `#[cfg(unix)]`-gerahmtem
+  Test-Code — unused imports/Variablen in `commands/file/transfer.rs`
+  (`copy_recursively`, `dst`, `alias`, `src`) und `fs_copy.rs`
+  (`is_physically_under`, `alias`), `unreachable statement` in
+  `palette.rs:256` (das `return` im `#[cfg(not(unix))]`-Zweig). Auf Linux
+  unsichtbar, weil dort alle Symbole benutzt werden — bricht aber jedes
+  Windows-Gate. Fix: `_`-Prefix bzw. Import/`return` cfg-gaten.
 
 - **E2E `42_mermaid` flaky — Fix 2026-07-25, Beobachtung**: erneut
   aufgetreten (2026-07-21 + 2026-07-25, „mermaid svg nicht gefunden").
@@ -200,30 +221,34 @@
 
 ## Niedrige Priorität
 
-- **Wikilink-Index-TTL: gemessen und ENTSCHIEDEN 2026-08-13 — bleibt bei
-  30 s.** Die offene Frage von 2026-07-26 (TTL hoch + Fokus-Invalidierung?)
-  ist damit erledigt und soll nicht neu aufgerollt werden.
-  **Messung** (`bench_real_workspace_index`, `#[ignore]`-Test in
-  `wikilink.rs` — liest die realen Pins aus `workspace.json`, daher
-  jederzeit wiederholbar): realer Workspace mit 17 Pins und ~8 200
-  Dateien, Median **328 ms** vor der Parallelisierung, **205 ms**
-  danach; Max von 739 auf 255 ms.
-  **Warum der TTL trotzdem bleibt**: der Cache ist rein pull-basiert
-  (`get_at`) — im Leerlauf läuft kein Timer, Kosten entstehen nur bei
-  aktiver Nutzung. Der Rebuild läuft stale-while-revalidate im
-  Hintergrund-Thread und blockiert den Render-Hot-Path nicht. Der
-  einzige synchrone Pfad (`CacheAction::BuildSync`) greift nur ohne
-  Cache-Eintrag oder bei Pin-Fingerprint-Wechsel — und genau der hat
-  von der Parallelisierung am meisten profitiert. Eine
-  Fokus-Invalidierung wäre zusätzliche Mechanik mit eigenen
-  Fehlerquellen ohne belegten Nutzen.
-  **Weiterhin gültig**: **keine** rekursiven Watcher auf die
-  Pin-Wurzeln — läuft auf Linux bei mehreren Projektverzeichnissen
-  gegen `fs.inotify.max_user_watches` und scheitert dann still.
-  **Falls das Thema doch wiederkommt** (spürbar veraltete Wikilinks
-  nach `git pull` o. ä.): der unangenehme Fall ist nicht der fehlende
-  Link, sondern dass ein Klick auf eine extern angelegte Datei den
-  „Notiz anlegen?"-Dialog zeigt. Dann zuerst den Bench erneut fahren.
+- ✅ **Wikilink-Index-TTL + Fokus-Invalidierung — durch W8 erledigt
+  2026-08-19.** Die Entscheidung von 2026-08-13 („bleibt bei 30 s") ist
+  **überholt**: sie beruhte auf einem 8 200-Dateien-Workspace. In einem
+  realen 1-Mio-Dateien-Vault dauert der Rebuild 20–26 s — die 30-s-TTL lief
+  damit praktisch immer vor dem Ende des nächsten Builds ab
+  (Rebuild-Dauerschleife), und der als unkritisch eingeschätzte synchrone
+  `BuildSync`-Pfad blockierte den Boot ~25 s. W8 macht daraus: Basis-TTL
+  5 min + adaptiv `max(Basis, 10 × letzte Builddauer)`, Cold-Start-Build im
+  Hintergrund (kein Render-Pfad wartet mehr), Single-Flight auch im
+  Cold-Pfad, gedrosselte Fokus-Invalidierung (30 s) und Opt-in-Wurzeln statt
+  „alle Pins" (`docs/spec-wikilinks.md`, W8).
+  **Weiterhin gültig**: **keine** rekursiven Watcher auf die Pin-Wurzeln —
+  läuft auf Linux bei mehreren Projektverzeichnissen gegen
+  `fs.inotify.max_user_watches` und scheitert dann still.
+  **Historischer Messkontext** (Referenz, Bewertung von 2026-08-13 durch W8
+  überholt): `bench_real_workspace_index` (`#[ignore]`-Test in `wikilink.rs`,
+  liest die realen Pins aus `workspace.json`, daher jederzeit wiederholbar)
+  — Workspace mit 17 Pins und ~8 200 Dateien, Median **328 ms** vor der
+  Parallelisierung, **205 ms** danach; Max von 739 auf 255 ms. Die daraus
+  gezogene Folgerung („der synchrone `BuildSync`-Pfad ist unkritisch, weil er
+  von der Parallelisierung am meisten profitiert") gilt nur für diese
+  Größenordnung; der Bench läuft über einen Workspace mit ~8 200 Dateien und
+  hätte den 1-Mio-Fall nie gezeigt. Lehre fürs nächste Mal: bei Kostenfragen
+  nicht nur den eigenen Workspace messen, sondern die Größenordnung des
+  schlimmsten realistischen Vaults abschätzen.
+  Der übrige Gebrauchswert des alten Eintrags bleibt: der Cache ist rein
+  pull-basiert (`get_at`), im Leerlauf läuft kein Timer, und der Rebuild
+  läuft stale-while-revalidate im Hintergrund-Thread.
 
 - **Frontmatter-`aliases`** (Obsidian-Feature, Design 2026-07-26
   durchdacht — Umsetzung bewusst zurückgestellt): `aliases: [Zweitname]`
@@ -247,7 +272,7 @@
   ggf. reichen sprechende Dateinamen im Notiz-Vault plus gelegentliches
   `[[projekt/TODO]]`.
 
-- **Wikilinks — weitere Folgepunkte** (W1–W7 abgeschlossen, Spec
+- **Wikilinks — weitere Folgepunkte** (W1–W8 abgeschlossen, Spec
   [`docs/spec-wikilinks.md`](docs/spec-wikilinks.md)): Notiz-Embeds mit
   echtem Inhalt (Transclusion), Block-Referenzen `#^id`,
   Backlinks für normale relative MD-Links, Link-Refactoring

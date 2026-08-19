@@ -14,6 +14,7 @@ import {
     formatBacklinksHeader,
     isBacklinksPanelEmpty,
     onDocumentSaved,
+    refreshBacklinksAfterIndexReady,
     refreshBacklinksNow,
     renderBacklinks,
     scheduleBacklinksRefresh,
@@ -288,5 +289,38 @@ describe('view/backlinks', () => {
         expect(list.textContent).toContain('third.md');
         expect(__lastBacklinksPathForTests()).toBe('/third.md');
         expect(__backlinksFetchGenForTests()).toBe(3);
+    });
+
+    // W8: der Wikilink-Index wird im Hintergrund gebaut; das Panel muss
+    // danach nachziehen, sonst zeigt es das Ergebnis des leeren Index.
+    it('refreshBacklinksAfterIndexReady laedt das angezeigte Dokument neu', async () => {
+        vi.useFakeTimers();
+        try {
+            __setLastBacklinksPathForTests('/vault/target.md');
+            const genBefore = __backlinksFetchGenForTests();
+            const invoke = (window as unknown as {
+                __TAURI__: { core: { invoke: ReturnType<typeof vi.fn> } };
+            }).__TAURI__.core.invoke;
+            invoke.mockClear();
+            invoke.mockResolvedValue({ sources: [], truncated: false });
+
+            refreshBacklinksAfterIndexReady();
+            expect(__backlinksFetchGenForTests()).toBe(genBefore + 1);
+            expect(invoke).not.toHaveBeenCalled();
+
+            await vi.advanceTimersByTimeAsync(400);
+            expect(invoke).toHaveBeenCalledWith('backlinks_for', {
+                path: '/vault/target.md',
+            });
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('refreshBacklinksAfterIndexReady ist ohne Dokument ein No-op', () => {
+        __setLastBacklinksPathForTests(null);
+        const genBefore = __backlinksFetchGenForTests();
+        refreshBacklinksAfterIndexReady();
+        expect(__backlinksFetchGenForTests()).toBe(genBefore);
     });
 });

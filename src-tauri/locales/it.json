@@ -812,6 +812,8 @@
   "vault.contextMenu.showChanges": "Mostra modifiche",
   "vault.contextMenu.showInExplorer": "Mostra nel file manager",
   "vault.contextMenu.unpin": "Rimuovi dai fissati",
+  "vault.contextMenu.wikilinkRootDisable": "Disattiva wikilink e tag qui",
+  "vault.contextMenu.wikilinkRootEnable": "Attiva wikilink e tag qui",
   "vault.filter.clear.ariaLabel": "Cancella filtro",
   "vault.filter.clear.tooltip": "Cancella filtro",
   "vault.filter.close.ariaLabel": "Chiudi barra filtro",

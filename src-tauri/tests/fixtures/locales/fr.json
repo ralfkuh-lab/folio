@@ -812,6 +812,8 @@
   "vault.contextMenu.showChanges": "Afficher les modifications",
   "vault.contextMenu.showInExplorer": "Afficher dans l’explorateur",
   "vault.contextMenu.unpin": "Désépingler",
+  "vault.contextMenu.wikilinkRootDisable": "Désactiver les wikilinks et les tags ici",
+  "vault.contextMenu.wikilinkRootEnable": "Activer les wikilinks et les tags ici",
   "vault.filter.clear.ariaLabel": "Effacer le filtre",
   "vault.filter.clear.tooltip": "Effacer le filtre",
   "vault.filter.close.ariaLabel": "Fermer la barre de filtre",

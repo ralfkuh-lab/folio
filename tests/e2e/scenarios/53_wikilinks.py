@@ -2,6 +2,13 @@
 
 Kopiert fixtures/wikilinks nach Temp (isoliert vom Repo-Gitignore/Walk),
 pinnt den Temp-Ordner, öffnet A im View-Mode.
+
+W8: Wikilinks sind **Opt-in pro Pin-Wurzel** (`workspace_wikilink_root_set`).
+Ohne die Freischaltung ist der Index leer und alles würde als `missing`
+rendern — jeder Pin dieses Szenarios muss also zusätzlich als Wurzel
+aktiviert werden. Der Index-Build läuft danach im Hintergrund; das
+`wikilink:index_ready`-Event zieht die View nach, die Polls unten warten
+darauf ab (kein zusätzlicher Sleep nötig).
 """
 
 from __future__ import annotations
@@ -47,6 +54,8 @@ def run(ctx):
             # (Datei-Pins sind explizit im Index — robuster im Voll-Lauf).
             for fpath in (a_path, b_path, str(tmp / "bild.png")):
                 ctx.api.workspace_pin(fpath, is_directory=False)
+                # W8-Opt-in: ohne Wurzel-Freischaltung bleibt der Index leer.
+                ctx.api.workspace_wikilink_root(fpath, True)
             pinned_folder = True
             ctx.api.open(a_path, discard=True)
             try:
@@ -180,6 +189,8 @@ def run(ctx):
         except Exception:
             pass
         if pinned_folder:
+            # `workspace_unpin` raeumt den passenden wikilink_roots-Eintrag
+            # mit ab (Workspace::unpin) — kein separates Opt-out noetig.
             for fpath in (a_path, b_path, str(tmp / "bild.png"), folder):
                 try:
                     ctx.api.workspace_unpin(fpath)
