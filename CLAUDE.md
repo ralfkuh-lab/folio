@@ -1099,6 +1099,21 @@ der Orchestrator skipt sie standardmäßig, `--include-desktop-only`
 schaltet sie ein. Heute hat kein Szenario den Marker — die Infrastruktur
 ist Vorhaltung für zukünftige Dialog-/OS-Eingang-Tests.
 
+## README-Screenshots
+
+`bash scripts/make-readme-screenshots.sh` erzeugt die Bilder unter
+`docs/images/` neu (einzelne Aufnahmen: `... hero search`; Namen siehe
+Skriptkopf). Gleicher Aufbau wie der E2E-Wrapper — Xvfb, isoliertes
+XDG-Home, Release-Binary —, aber auf Display `:98`, mit `FOLIO_LANG=en`
+(die README ist englisch) und dem versionierten Demo-Vault aus
+`scripts/readme-screenshots/demo-vault/`. Das Vault wird nach
+`/tmp/folio-demo` kopiert und von dort gepinnt: der Pfad steht in
+Statusleiste und Vault-Baum und darf nicht das Home-Verzeichnis des
+Bauenden zeigen. Neue Aufnahme ergänzen = Funktion in
+`scripts/readme-screenshots/shots.py` + Eintrag in `SHOTS`; Zustände, die
+andere Aufnahmen sehen (Tag-Browser, Suchmodus, Recent-Liste), immer
+idempotent setzen statt zu togglen.
+
 ## GitHub
 
 Remote: `ralfkuh-lab/folio`.
