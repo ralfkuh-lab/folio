@@ -51,9 +51,10 @@ You only have to do this the first time.
 **Read comfortably**
 - Live GitHub-Flavored Markdown preview: task lists, tables, footnotes, frontmatter
 - Mermaid diagrams rendered right in the page
+- Tick task list checkboxes right in the preview — the source updates with them
 - Light and dark theme, plus a whole set of **view themes** you can switch between
 - A document outline (table of contents) you can click to jump around
-- Full-text search inside a single file, or across your whole workspace
+- **Zen mode** (`Shift+F11`) hides every panel when you just want to read
 
 **Edit properly**
 - Three layouts you switch anytime: **View**, **Edit**, and **Split** (editor +
@@ -62,12 +63,24 @@ You only have to do this the first time.
   highlighting, minimap and multi-level undo
 - A formatting toolbar for bold, italic, headings, lists, links and tables —
   with a built-in cheat sheet if you forget the Markdown syntax
+- Find and replace with regular expressions, in the document or just the selection
 - Paste an image straight from the clipboard and Folio saves it next to your
   document and inserts the link for you
+- A status bar with cursor position, word and character counts, the detected
+  text encoding and a click-to-switch LF/CRLF button
 
 **Keep your files organized**
 - A **Vault** sidebar: browse folders, pin the ones you use most (drag to
   reorder), and jump back to recent files
+- Manage files without leaving the app: new folder, rename, duplicate, move by
+  cut & paste, delete to the system trash — open tabs follow renamed folders
+- **Full-text search** across your pinned folders, a single folder or just your
+  open tabs, with regex, file-type filters and jump-to-match
+- A **command palette** on `Ctrl+P`: files, `>` for commands, `#` for headings
+- **Wikilinks** — `[[note]]`, `[[note|alias]]`, `[[note#heading]]` and
+  `![[image.png]]` — with autocomplete, a backlinks panel and a tag browser
+- **Git aware**: changed and untracked files get a marker, "Show changes" opens
+  a read-only diff against HEAD, and the tree can filter down to changed files
 - Open several files at once in **tabs** — reorder them by dragging, and Folio
   remembers them for next time
 - Files ignored by `.gitignore` are dimmed so your working tree stays readable
@@ -90,15 +103,32 @@ You only have to do this the first time.
   leave your machine except to call your chosen provider
 
 **Handle more than Markdown**
-- Code and text files open read-only with syntax highlighting
+- Code and text files open read-only with syntax highlighting — including
+  dotfiles and unknown extensions
 - HTML files render in a sandboxed preview
-- Images (PNG, JPG, GIF, WebP, SVG, BMP, ICO, AVIF) are shown scaled to fit
+- Images (PNG, JPG, GIF, WebP, SVG, BMP, ICO, AVIF) are shown scaled to fit,
+  with zoom and pan
+- Binary files open as a **hex dump** you can search by text or byte sequence
+- Windows-1252 and UTF-16 files open and save round-trip-faithfully
 
 ## Screenshots
 
 Rendered Markdown with GFM tables, syntax-highlighted code and Mermaid diagrams:
 
 ![View mode showing a table, a syntax-highlighted code block and a Mermaid flowchart](docs/images/view-features.png)
+
+Search across every pinned folder, with the hits grouped by file:
+
+![Vault search results in the sidebar, matches highlighted per file](docs/images/vault-search.png)
+
+Wikilinks resolve across the vault; backlinks and tags show up next to the
+document:
+
+![A document with wikilinks, the backlinks panel on the right and the tag browser on the left](docs/images/wikilinks.png)
+
+The command palette (`Ctrl+P`) finds files, commands and headings:
+
+![Command palette listing open tabs, recent files and vault files](docs/images/command-palette.png)
 
 Light and dark theme:
 
@@ -117,8 +147,11 @@ Light and dark theme:
 2. **Switch how you look at it** — Ctrl/Cmd+**1** for View, **2** for Edit,
    **3** for Split.
 3. **Pin a folder** — open a folder in the Vault sidebar on the left and pin it
-   so it's always one click away.
-4. **Export** — **File → Export…** to turn the current document into a PDF or
+   so it's always one click away. Pinned folders are what vault search,
+   wikilinks and tags look at.
+4. **Jump anywhere** — Ctrl/Cmd+**P** opens the command palette; start typing a
+   file name, `>` for a command or `#` for a heading in the current document.
+5. **Export** — **File → Export…** to turn the current document into a PDF or
    HTML file.
 
 On Linux you can also register Folio's icon for `.md` files in your file
@@ -138,12 +171,14 @@ On macOS use **Cmd** instead of **Ctrl**.
 | Ctrl+S / Ctrl+Shift+S | Save / Save As |
 | Ctrl+W | Close current tab |
 | Ctrl+Q | Quit |
+| Ctrl+P | Command palette (files, `>` commands, `#` headings) |
 | Ctrl+1 / Ctrl+2 / Ctrl+3 | View / Edit / Split mode |
 | Ctrl+Tab / Ctrl+Shift+Tab | Next / previous tab |
 | Ctrl+Z / Ctrl+Shift+Z | Undo / Redo |
 | Ctrl+F / F3 | Find in document / find next |
 | Ctrl+Shift+F | Search the whole vault |
 | Ctrl+V | Paste an image into the document |
+| F11 / Shift+F11 | Fullscreen / Zen mode |
 
 ## Languages
 
@@ -191,7 +226,7 @@ cargo fmt --check
 cd web && npm test                         # frontend (Vitest / jsdom)
 ```
 
-The end-to-end suite (48 scenarios, Python + Pillow, visual regression) runs
+The end-to-end suite (61 scenarios, Python + Pillow, visual regression) runs
 headless on Linux via Xvfb:
 
 ```bash

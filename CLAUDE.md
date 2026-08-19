@@ -1000,7 +1000,7 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
 
 ## E2E-Test-Suite
 
-Vollständige UI-Coverage in `tests/e2e/` (60 Szenarien, Python +
+Vollständige UI-Coverage in `tests/e2e/` (61 Szenarien, Python +
 Pillow): Boot, View-/Edit-/Split-Mode, Theme, Vault, Find (inkl.
 Code-View), Workspace, Save-Roundtrip durch alle BOM/EOL-Kombis,
 Undo/Redo, Toolbar-Commands (Bold/Italic/Heading), Menü-Coverage
@@ -1013,7 +1013,7 @@ Vault-Filter, Tab-Kontextmenü, Command Palette, Statusleiste,
 Wikilinks/Tags, Task-Checkboxen, Git-Status/-Diff/-Filter,
 versteckte Vault-Einträge, Find-Bar-Regex/-Ersetzen,
 Vault-Dateioperationen (Ordner anlegen/umbenennen/löschen),
-Zen-Modus sowie
+Zen-Modus, Hex-Ansicht sowie
 KI-Settings, KI-Übersetzung, KI-Theme-Autor, Export-KI-Draft und
 KI-Aktionen (Mock-Provider). Der englische Boot ist über
 `scripts/run-e2e.sh --lang-smoke` separat abgedeckt.
