@@ -8,44 +8,59 @@
 
 ## Hohe Priorität
 
-_(leer)_
+- **Ordner in den Papierkorb scheitert auf Windows bei offenem Tab darunter**
+  (Befund Windows-Verifikationsdurchgang 2026-08-18): `trash_path` schlägt
+  mit `Unknown { description: "Some operations were aborted" }` fehl, sobald
+  ein Tab auf eine Datei unterhalb des Ordners offen ist — der
+  `notify`-Watcher des Tabs (`ReadDirectoryChangesW`) hält ein
+  Verzeichnis-Handle, das den Shell-Move in den Papierkorb blockiert.
+  Isoliert (Datei, Ordner, Ordner mit Junction, Junction einzeln) läuft
+  alles durch; nur die Kombination mit offenem Tab bricht. Ursache ist die
+  bewusste Reihenfolge in `commands/file/delete.rs` (erst `trash::delete`,
+  dann Tabs schließen) — auf Linux harmlos, auf Windows kaputt. Genau
+  diesen Flow testet E2E 59 („Ordner löschen schließt die Tabs darunter");
+  auf Windows wäre das Szenario rot. Kein Datenverlust, Fehler ist sichtbar.
+  Fix-Richtung: Watcher unter dem Pfad VOR `trash::delete` stoppen und bei
+  Fehlschlag reaktivieren; die Tabs selbst weiterhin erst nach Erfolg
+  schließen (die Begründung der Reihenfolge bleibt gültig).
 
 ## Mittlere Priorität
 
-- **Windows-Verifikationsdurchgang** (gesammelt, alles manuell — die
-  E2E-Suite läuft auf Windows nicht, siehe eigener Eintrag unter
-  „Niedrige Priorität"). Sechs Punkte, die auf Linux prinzipbedingt
-  nicht auslösbar sind:
+- **Windows-Verifikationsdurchgang — DURCHGEFÜHRT 2026-08-18** (per
+  Automation-API gegen das Release-Binary, 18/21 Checks grün; die
+  E2E-Suite selbst läuft auf Windows weiterhin nicht, siehe eigener
+  Eintrag unter „Niedrige Priorität"). Ergebnis der sechs Punkte:
 
-  1. **Git-Pipe-Deadlock** (Rest aus der E2E-Etappe): `56_git_status.py`
-     deckt seit 2026-08-15 Dots, Tooltip, Tab-Marker, Diff, Kontextmenü-
-     Gate und den „nur geänderte"-Filter ab — aber nur auf Linux. Der
-     Deadlock-Fix in `wait_child_with_timeout` ist ausschließlich gegen
-     Linux' 64-KiB-Pipe-Puffer verifiziert; Windows hat 4 KiB, das
-     Problem träte dort bei deutlich weniger geänderten Dateien auf.
-     Test: Repo mit vielen geänderten/untrackten Einträgen öffnen.
-  2. **Verzeichnis-Symlinks und Junctions beim Kopieren/Verschieben**
-     (`fs_copy.rs`, aus dem Kreuz-Review 2026-08-17): Der Fix nutzt
-     `FileTypeExt::{is_symlink_dir, is_symlink_file}` und löscht solche
-     Links mit `remove_dir` statt `remove_file`. Dieser Code ist
-     **`cfg(windows)` und wurde nie ausgeführt** — nur kompiliert.
-  3. **Symlink-Anlegen ohne Developer Mode**: schlägt auf Windows
-     regelmäßig fehl und landet dann im `skipped_symlinks`-Pfad. Prüfen,
-     dass ein EXDEV-Move die Quelle in dem Fall wirklich **behält** und
-     der Fehler sichtbar wird (das war der Datenverlust-Befund).
-  4. **Case-only-Rename** (`Foo` → `foo`): auf case-insensitiven
-     Dateisystemen der einzige Ort, an dem `is_case_only_same_entry`
-     überhaupt greift.
-  5. **Case-insensitive Pfad-Migration**: bekannter offener Befund,
-     bewusst nicht gefixt — ein Tab kann als `C:/Vault/Dir/a.md` offen
-     sein, während der Tree-Knoten `c:/vault/dir` als Move-Quelle
-     liefert; die Halter mit abweichender Schreibweise bleiben dann auf
-     dem alten Pfad zurück. Details und Umbauhinweis in
-     [`docs/spec-vault-fileops.md`](docs/spec-vault-fileops.md).
-     **Hier geht es ums Nachstellen**, nicht ums Beheben.
-  6. **Ordner in den Papierkorb** (`trash_path`): das `trash`-Crate
-     braucht auf Windows native Backslash-Pfade. Für Einzeldateien ist
-     das erprobt, für Verzeichnisse seit 2026-08-17 nicht.
+  1. ✅ **Git-Pipe-Deadlock**: Repo mit 1 500 geänderten/untrackten
+     Einträgen (73 KB porcelain-Output, weit über Windows' 4-KiB-Puffer)
+     — Dots nach 1,3 s, der Reader-Thread-Fix in
+     `wait_child_with_timeout` greift auch auf Windows.
+  2. ⚠️ **Verzeichnis-Junctions beim Kopieren** (`fs_copy.rs`): Junction
+     wird als `is_symlink_dir` erkannt, beim Duplizieren NICHT verfolgt
+     (kein Rekursions-Leak ins Junction-Ziel), Fehler
+     `copySkippedSymlinks` sichtbar, Quelle intakt. **Restpunkt**: der
+     Erfolgs-Zweig (Junction wird als Symlink-Kopie angelegt) und der
+     `remove_entry`-Zweig (Junction via `remove_dir` löschen) brauchen
+     Developer Mode / Symlink-Privileg und bleiben unverifiziert.
+  3. ✅ **EXDEV + skipped_symlinks behält die Quelle**: Move D:→C: ohne
+     Links läuft durch (Fehlercode-17-Erkennung greift, Tab wandert
+     mit); Move mit Junction schlägt sichtbar fehl, Quelle vollständig
+     erhalten — kein Datenverlust. **Restpunkt**: die partielle
+     Zielkopie bleibt nach dem Fehlschlag am Ziel liegen (kein Cleanup
+     in `rename_or_copy`) — abwägen, ob aufräumen oder dokumentieren.
+  4. ✅ **Case-only-Rename** `Foo` → `foo`: gelingt (kein
+     `targetAlreadyExists`), Verzeichnis trägt die neue Schreibweise,
+     Tab migriert — `is_case_only_same_entry` greift.
+  5. ✅ **Case-insensitive Pfad-Migration**: bekannter Befund exakt wie
+     in [`docs/spec-vault-fileops.md`](docs/spec-vault-fileops.md)
+     dokumentiert reproduziert (Rename über abweichende Schreibweise
+     gelingt auf der Platte, Tab bleibt auf dem alten Pfad zurück).
+     Bewusst nicht gefixt, Eintrag bleibt dort bestehen.
+  6. ❌ **Ordner in den Papierkorb**: Backslash-Konvertierung und
+     Verzeichnisse an sich funktionieren (Datei, Ordner, Ordner mit
+     Junction, Junction einzeln alle grün) — aber mit offenem Tab
+     unterhalb schlägt es fehl. **Neuer Bug-Eintrag unter „Hohe
+     Priorität"** (Watcher-Handle blockiert den Shell-Move).
 
 - **E2E `42_mermaid` flaky — Fix 2026-07-25, Beobachtung**: erneut
   aufgetreten (2026-07-21 + 2026-07-25, „mermaid svg nicht gefunden").
