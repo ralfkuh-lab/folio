@@ -388,3 +388,117 @@ bleiben alphabetisch sortiert und key-gleich.
 Hex-Toggle für Text-/Markdown-Dateien (als Umschalter im View-Mode, nicht als
 Mode), „als Hex kopieren" und Bereichsselektion, Suche nach Byte-Mustern,
 Editieren, Positions-Restore über Neustarts.
+
+---
+
+# Nachtrag: Suche in der Hex-Ansicht
+
+Stand: 2026-08-19 · Status: Entwurf zur Umsetzung
+
+## Ziel
+
+In einem geöffneten Binärdokument nach **Text** oder nach **Hex-Bytes** suchen,
+mit Weiter/Zurück-Navigation und hervorgehobenem Treffer. Damit fällt das
+Nicht-Ziel „keine Suche im Hex-Dump" aus der Hauptspec.
+
+## Architektur-Entscheidungen
+
+### 1. Die Suche läuft im Backend, nicht über die geladenen Chunks
+
+Das Frontend hält nur das aktuelle Fenster und einen kleinen Chunk-Cache. Eine
+Suche über die geladenen Blöcke fände nur, was ohnehin sichtbar ist. Gesucht
+wird deshalb serverseitig über die Datei — gestreamt in Blöcken mit einem
+Überlappungsbereich von `pattern.len() - 1`, sonst geht jeder Treffer verloren,
+der auf einer Blockgrenze liegt.
+
+### 2. Bestehende Find-Bar statt eigener Leiste
+
+Strg+F ist die erwartete Taste, und das Projekt hat für jede Surface bereits
+einen `Finder` (Editor, ViewFinder, HtmlFinder, CodeViewFinder, Split-Varianten).
+Die Hex-Ansicht bekommt einen `HexFinder` im selben `getFinder()`-Routing;
+`isSearchableKind()` lässt `kind-binary` künftig zu.
+
+Der Zähler der Find-Bar kennt in seinem Event bereits `scanning`, `total`,
+`capped` und `invalidRegex` — eine asynchrone Suche passt ohne Umbau hinein.
+
+**Gesperrt bleibt in dieser Surface**: Ersetzen (read-only), Regex und
+„Ganzes Wort". Neu ist ein Umschalter **Text | Hex**, nur bei `kind-binary`
+sichtbar.
+
+### 3. Weiter/Zurück statt „n von m"
+
+Anders als in Textdokumenten zeigt der Zähler **keine Gesamtzahl**, sondern den
+Offset des aktuellen Treffers (z. B. `0x00600012`). Eine Gesamtzahl über eine
+Mehr-Gigabyte-Datei kostet einen vollständigen Scan und sagt wenig; die Position
+ist hier die nützlichere Information. Die Suche liefert deshalb pro Aufruf genau
+den nächsten Treffer ab einem Offset.
+
+Bewusst kein Cap-Modell wie in der Vault-Suche: dort ist die Trefferliste das
+Produkt, hier ist es die Navigation.
+
+## Backend
+
+```rust
+#[tauri::command]
+pub async fn hex_find(
+    tab_id: u64, revision: u64, pattern: Vec<u8>, from: u64,
+    backwards: bool, case_insensitive: bool, state: State<'_, AppState>,
+) -> Result<Option<u64>, String>
+```
+
+- Autorisierung exakt wie `read_file_chunk`: Tab, opaquer Deskriptor und
+  Revision unter dem Tabs-Lock prüfen, Pfad kopieren, Lock **vor** dem I/O
+  freigeben, `stale:`-Präfix bei Revision-Mismatch.
+- I/O in `spawn_blocking`, Vorprüfung auf reguläre Datei **vor** `File::open`
+  (FIFO-Falle, siehe Chunk-Command), Leseschleife mit kurzen Reads.
+- Blockweise (64 KiB) mit Overlap `pattern.len() - 1`; rückwärts analog von
+  hinten.
+- `case_insensitive` gilt **nur für ASCII-Buchstaben** (byteweises Falten von
+  `A-Z`/`a-z`). Alles andere wäre bei roher Byte-Suche geraten.
+- Leeres Pattern → `Ok(None)`, kein Fehler.
+- **Wrap-around macht der Aufrufer**, nicht der Command: Findet er ab `from`
+  nichts, fragt das Frontend erneut ab 0 (bzw. ab EOF rückwärts). So bleibt der
+  Command eine reine Funktion und die UI entscheidet über das Umlaufen.
+- **Abbrechbarkeit**: Ein laufender Scan über eine sehr große Datei muss enden,
+  wenn der Nutzer weitertippt oder den Tab wechselt. Generation im State wie bei
+  den Suchläufen der Vault-Suche; abgebrochene Läufe liefern `stale:`.
+
+## Frontend
+
+- `view/hex-find.ts` (oder als Teil von `hex.ts`, wenn es dort natürlicher
+  sitzt): implementiert das `Finder`-Interface asynchron und meldet den
+  Zählerzustand über dasselbe Event wie die übrigen Finder — `scanning: true`
+  während der Backend-Lauf läuft.
+- **Pattern-Parser, DOM-frei und testbar** (gehört zu `hex-format.ts` oder
+  einem Geschwistermodul):
+  - Text → UTF-8-Bytes der Eingabe.
+  - Hex → tolerant: Leerzeichen, Kommas und `0x`-Präfixe erlaubt, Groß-/
+    Kleinschreibung egal. Ungerade Ziffernzahl oder Nicht-Hex-Zeichen sind ein
+    **sichtbarer** Fehler (Input-Markierung + Hinweis im Zähler, wie
+    `invalidRegex`), niemals „0 Treffer".
+- **Sprung zum Treffer**: Fenster ggf. wechseln, Zeile ins Bild scrollen,
+  Treffer-Bytes **und** die zugehörigen Zeichen in der ASCII-Spalte
+  hervorheben. Farben wie in den anderen Surfaces (`#FFD700` passiv, `#FF8C00`
+  aktiv). Ein Treffer, der über eine Zeilengrenze läuft, wird in beiden Zeilen
+  markiert.
+- Der Umschalter Text|Hex merkt sich seinen Zustand für die Sitzung (nicht
+  persistiert), Umschalten löst eine neue Suche mit demselben Eingabetext aus.
+
+## i18n
+
+Neue Keys in allen neun Katalogen plus Kontextdatei: `find.bar.modeText`,
+`find.bar.modeHex`, `find.bar.invalidHex`, `find.bar.matchAt` („Treffer bei
+{offset}"), `find.bar.noMatch`.
+
+## Tests
+
+- **Rust**: Treffer am Dateianfang, am Ende, **exakt auf einer Blockgrenze**
+  (der Overlap-Fall — ohne ihn ist die Suche still unvollständig), rückwärts,
+  ASCII-case-insensitive, leeres Pattern, Pattern länger als die Datei,
+  Revision-Mismatch, Verzeichnis/FIFO, abgebrochener Lauf.
+- **Vitest**: Pattern-Parser in allen Zweigen (Text, Hex mit/ohne Trenner,
+  ungerade Länge, Müll), Zählerzustände (scanning → Treffer → kein Treffer),
+  Wrap-around-Logik, Markierung über Zeilengrenzen.
+- **E2E** (`61_hex_view.py` erweitern): Textsuche findet einen bekannten String
+  in der Fixture, Hex-Suche findet dieselbe Stelle über ihre Bytes, Weiter
+  springt zum zweiten Vorkommen, ungültige Hex-Eingabe zeigt den Fehler.
