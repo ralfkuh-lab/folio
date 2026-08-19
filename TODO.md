@@ -8,14 +8,12 @@
 
 ## Hohe Priorität
 
-- **Binary-/Größen-Gate im gemeinsamen Öffnen-Service
-  (`document_service::load_by_kind`) zentralisieren**, Kind einmal
-  bestimmen und durch Load/Default-Mode/Lifecycle-Payload weiterreichen,
-  statt an jeder Stelle neu zu sniffen — heute umgehen `tab_open`,
-  Automation, Session-Restore und History das Gate in
-  `commands/file/read.rs`. Die geplante Hex-Ansicht
-  ([`docs/spec-hex-view.md`](docs/spec-hex-view.md)) braucht genau
-  diesen Umbau und bringt ihn mit.
+- **Hex-Ansicht Etappe 2/3**: `read_file_chunk` + Hex-UI. Der Deskriptor
+  und das zentrale `load_by_kind` (ein `classify_deep` pro Öffnen) sind
+  da. Etappe 1+2 lehnen Binary **im Loader** ab
+  (`errors.file.unsupportedType`); Etappe 3 entfernt den Zweig und
+  schaltet Hex frei. Spec:
+  [`docs/spec-hex-view.md`](docs/spec-hex-view.md).
 
 ## Mittlere Priorität
 

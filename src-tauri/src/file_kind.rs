@@ -1,5 +1,25 @@
 use serde::Serialize;
+#[cfg(test)]
+use std::cell::Cell;
 use std::path::Path;
+
+#[cfg(test)]
+thread_local! {
+    static SNIFF_IO_COUNT: Cell<u64> = const { Cell::new(0) };
+}
+
+/// Test-Hook: wie oft [`classify_deep`] in *diesem* Test-Thread
+/// wirklich in die Datei geschaut hat. Thread-lokal, damit parallele
+/// `cargo test`-Läufe sich nicht gegenseitig den Zähler verderben.
+#[cfg(test)]
+pub fn reset_sniff_io_count() {
+    SNIFF_IO_COUNT.with(|c| c.set(0));
+}
+
+#[cfg(test)]
+pub fn sniff_io_count() -> u64 {
+    SNIFF_IO_COUNT.with(|c| c.get())
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -278,6 +298,11 @@ fn classify_deep_with_limit(path: &str, max_bytes: u64) -> FileKind {
 
 fn sniff_unknown(path: &str, max_bytes: u64) -> FileKind {
     use std::io::Read;
+
+    #[cfg(test)]
+    {
+        SNIFF_IO_COUNT.with(|c| c.set(c.get().saturating_add(1)));
+    }
 
     // Vorprüfung per Pfad-Metadaten: hält uns von FIFOs fern, deren
     // `File::open` ohne Writer blockiert. Das geöffnete Handle wird

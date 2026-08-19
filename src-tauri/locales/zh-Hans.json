@@ -267,6 +267,7 @@
   "errors.file.sourceMissing": "源文件不存在：{detail}",
   "errors.file.targetAlreadyExists": "目标文件已存在：{detail}",
   "errors.file.tempCreateFailed": "无法创建临时文件：{detail}",
+  "errors.file.tooLargeToAddress": "文件过大，无法寻址：{detail}",
   "errors.file.unsupportedType": "不支持的文件类型：{detail}",
   "errors.git.diffTooLarge": "文件过大，无法显示差异。",
   "errors.git.noHead": "此仓库还没有任何提交。",

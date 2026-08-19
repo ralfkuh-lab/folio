@@ -76,11 +76,16 @@ pub(super) fn link_click(
                     apply_default_mode: false,
                 },
             )
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| error.user_message())?;
             if let Some(mode) = outcome.mode_override.as_deref() {
                 let _ = handle.emit("app:set_mode", serde_json::json!({ "mode": mode }));
             }
-            let entry = crate::commands::nav::NavEntry::from(&outcome.nav_entry);
+            let kind = state
+                .tabs
+                .lock()
+                .ok()
+                .and_then(|tabs| tabs.active().document_store.kind());
+            let entry = crate::commands::nav::NavEntry::from_kind(&outcome.nav_entry, kind);
             handle
                 .emit("navigation:changed", &entry)
                 .map_err(|error| error.to_string())

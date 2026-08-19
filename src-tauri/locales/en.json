@@ -268,6 +268,7 @@
   "errors.file.sourceMissing": "Source file does not exist: {detail}",
   "errors.file.targetAlreadyExists": "Target file already exists: {detail}",
   "errors.file.tempCreateFailed": "Could not create temporary file: {detail}",
+  "errors.file.tooLargeToAddress": "This file is too large to address: {detail}",
   "errors.file.unsupportedType": "Unsupported file type: {detail}",
   "errors.git.diffTooLarge": "This file is too large to diff.",
   "errors.git.noHead": "This repository has no commits yet.",

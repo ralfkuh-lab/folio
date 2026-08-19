@@ -1,3 +1,4 @@
+use crate::file_kind::FileKind;
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
 use std::{
@@ -7,6 +8,40 @@ use std::{
     thread,
     time::Duration,
 };
+
+/// Number.MAX_SAFE_INTEGER — groesster Integer, den JS exakt darstellt.
+pub const MAX_SAFE_INTEGER: u64 = (1u64 << 53) - 1;
+/// Maximales Hex-Fenster (Spec). `windowStart + windowBytes` muss
+/// innerhalb von [`MAX_SAFE_INTEGER`] bleiben.
+pub const MAX_WINDOW_BYTES: u64 = 4 * 1024 * 1024;
+pub const MAX_ADDRESSABLE_BYTES: u64 = MAX_SAFE_INTEGER - MAX_WINDOW_BYTES;
+
+pub fn is_addressable(size: u64) -> bool {
+    size <= MAX_ADDRESSABLE_BYTES
+}
+
+/// Aufgelöster Dokumenttyp für die Lebensdauer eines Tabs. `kind` wird
+/// beim Load einmal bestimmt und danach nicht neu berechnet (Rename
+/// ändert Pfad/Größe/Revision, nicht den Typ). `file_size` ist immer
+/// adressierbar — wächst die Datei darüber, bleibt der letzte gültige
+/// Wert stehen und `too_large` wird wahr.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DocumentDescriptor {
+    pub kind: FileKind,
+    pub file_size: u64,
+    pub revision: u64,
+    pub too_large: bool,
+}
+
+/// Ergebnis einer Watcher-Aktualisierung. Additive Felder für
+/// `document:external_changed`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExternalChangeInfo {
+    pub file_size: u64,
+    pub revision: u64,
+    pub available: bool,
+    pub too_large: bool,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LineEnding {
@@ -132,13 +167,19 @@ pub struct LoadedDocument {
     pub encoding: String,
     /// Zeilenenden-Label (`lf` | `crlf`), additiv fuer die Statusleiste.
     pub line_ending: String,
+    pub kind: FileKind,
+    pub file_size: u64,
+    pub revision: u64,
+    pub too_large: bool,
 }
+
+pub type SavedCallback = Arc<dyn Fn(String, String, FileKind) + Send + Sync>;
 
 #[derive(Clone, Default)]
 pub struct DocumentEvents {
     pub loaded: Option<Arc<dyn Fn(LoadedDocument) + Send + Sync>>,
     pub dirty_changed: Option<Arc<dyn Fn(bool) + Send + Sync>>,
-    pub saved: Option<Arc<dyn Fn(String, String) + Send + Sync>>,
+    pub saved: Option<SavedCallback>,
     pub text_changed: Option<Arc<dyn Fn(String) + Send + Sync>>,
     pub external_changed: Option<Arc<dyn Fn(String) + Send + Sync>>,
     /// Feuert, wenn ein Reload NUR Metadaten (BOM/Encoding) aendert, der
@@ -171,6 +212,11 @@ pub struct DocumentStore {
     /// Bleibt ueber Rename erhalten — verhindert EOL-Toggle auf umbenannten
     /// Opaque-Docs (z. B. Bild → .txt).
     opaque: bool,
+    descriptor: Option<DocumentDescriptor>,
+    /// Monotoner Revisionszaehler, unabhaengig vom optionalen Deskriptor.
+    /// `close` setzt ihn nicht zurueck — sonst koennte eine veraltete
+    /// Chunk-Antwort nach Close/Reopen dieselbe Revision tragen.
+    revision: u64,
     watcher: Option<RecommendedWatcher>,
     watcher_tx: Option<mpsc::Sender<PathBuf>>,
     events: DocumentEvents,
@@ -188,6 +234,8 @@ impl Default for DocumentStore {
             had_bom: false,
             encoding: TextEncoding::Utf8,
             opaque: false,
+            descriptor: None,
+            revision: 0,
             watcher: None,
             watcher_tx: None,
             events: DocumentEvents::default(),
@@ -220,40 +268,118 @@ impl DocumentStore {
         self.opaque
     }
 
+    pub fn descriptor(&self) -> Option<DocumentDescriptor> {
+        self.descriptor
+    }
+
+    pub fn kind(&self) -> Option<FileKind> {
+        self.descriptor.map(|d| d.kind)
+    }
+
+    pub fn snapshot(&self) -> LoadedDocument {
+        let d = self.descriptor.unwrap_or(DocumentDescriptor {
+            kind: FileKind::Text,
+            file_size: 0,
+            revision: self.revision,
+            too_large: false,
+        });
+        LoadedDocument {
+            path: self.path.clone().unwrap_or_default(),
+            text: self.text.clone(),
+            encoding: self.encoding_label().to_string(),
+            line_ending: self.line_ending_label().to_string(),
+            kind: d.kind,
+            file_size: d.file_size,
+            revision: d.revision,
+            too_large: d.too_large,
+        }
+    }
+
+    fn next_revision(&mut self) -> u64 {
+        self.revision = self.revision.saturating_add(1);
+        self.revision
+    }
+
+    fn set_descriptor(&mut self, kind: FileKind, file_size: u64) {
+        let revision = self.next_revision();
+        self.descriptor = Some(DocumentDescriptor {
+            kind,
+            file_size,
+            revision,
+            too_large: false,
+        });
+    }
+
+    /// Schreibt eine beobachtete Groesse in den Deskriptor. Werte ueber
+    /// `max_bytes` landen nie in `file_size`; stattdessen steigt die
+    /// Revision und `too_large` wird gesetzt.
+    fn apply_observed_size(&mut self, size: u64, max_bytes: u64) {
+        let revision = self.next_revision();
+        if let Some(d) = &mut self.descriptor {
+            d.revision = revision;
+            if size > max_bytes {
+                d.too_large = true;
+            } else {
+                d.file_size = size;
+                d.too_large = false;
+            }
+        }
+    }
+
+    fn bump_revision_only(&mut self) {
+        let revision = self.next_revision();
+        if let Some(d) = &mut self.descriptor {
+            d.revision = revision;
+        }
+    }
+
+    fn observe_path_size(&mut self, path: &str) {
+        match regular_file_size(path) {
+            Ok(size) => self.apply_observed_size(size, MAX_ADDRESSABLE_BYTES),
+            Err(_) => self.bump_revision_only(),
+        }
+    }
+
     /// Dirty aus Text- und EOL-Referenzstand. Beide muessen matchen.
     fn is_content_dirty(&self) -> bool {
         self.text != self.clean_text || self.line_ending != self.clean_line_ending
     }
 
     pub fn load(&mut self, path: &str) -> io::Result<LoadedDocument> {
-        self.load_inner(path, true)
+        let kind = text_kind_for_load(self, path);
+        let file_size = regular_file_size(path)?;
+        self.load_as(path, kind, true, file_size)
     }
 
     /// Reloads an inactive tab without publishing an active-document event.
     pub(crate) fn load_silent(&mut self, path: &str) -> io::Result<LoadedDocument> {
-        self.load_inner(path, false)
+        let kind = text_kind_for_load(self, path);
+        let file_size = regular_file_size(path)?;
+        self.load_as(path, kind, false, file_size)
     }
 
-    fn load_inner(&mut self, path: &str, emit_loaded: bool) -> io::Result<LoadedDocument> {
+    pub(crate) fn load_as(
+        &mut self,
+        path: &str,
+        kind: FileKind,
+        emit_loaded: bool,
+        file_size: u64,
+    ) -> io::Result<LoadedDocument> {
         let (text, line_ending, had_bom, encoding) = read_and_decode(path)?;
 
         self.path = Some(path.to_string());
-        self.text = text.clone();
-        self.clean_text = text.clone();
+        self.text = text;
+        self.clean_text = self.text.clone();
         self.is_dirty = false;
         self.line_ending = line_ending;
         self.clean_line_ending = line_ending;
         self.had_bom = had_bom;
         self.encoding = encoding;
         self.opaque = false;
+        self.set_descriptor(kind, file_size);
         self.watch_non_fatal(path);
 
-        let loaded = LoadedDocument {
-            path: path.to_string(),
-            text,
-            encoding: self.encoding_label().to_string(),
-            line_ending: self.line_ending_label().to_string(),
-        };
+        let loaded = self.snapshot();
         if emit_loaded {
             if let Some(callback) = &self.events.loaded {
                 callback(loaded.clone());
@@ -274,6 +400,20 @@ impl DocumentStore {
     /// auch fuer Image-View Live-Reload bei externen Aenderungen
     /// funktioniert.
     pub fn load_opaque(&mut self, path: &str) -> io::Result<LoadedDocument> {
+        let kind = match self.kind() {
+            Some(kind @ (FileKind::Image | FileKind::Binary)) => kind,
+            _ => FileKind::Image,
+        };
+        let file_size = regular_file_size(path)?;
+        self.load_opaque_as(path, kind, file_size)
+    }
+
+    pub(crate) fn load_opaque_as(
+        &mut self,
+        path: &str,
+        kind: FileKind,
+        file_size: u64,
+    ) -> io::Result<LoadedDocument> {
         self.path = Some(path.to_string());
         self.text = String::new();
         self.clean_text = String::new();
@@ -282,13 +422,9 @@ impl DocumentStore {
         // Text-Saves; das Frontend zeigt fuer Bilder keine Encoding-/EOL-Zelle.
         self.clean_line_ending = self.line_ending;
         self.opaque = true;
+        self.set_descriptor(kind, file_size);
         self.watch_non_fatal(path);
-        let loaded = LoadedDocument {
-            path: path.to_string(),
-            text: String::new(),
-            encoding: self.encoding_label().to_string(),
-            line_ending: self.line_ending_label().to_string(),
-        };
+        let loaded = self.snapshot();
         if let Some(callback) = &self.events.loaded {
             callback(loaded.clone());
         }
@@ -318,7 +454,25 @@ impl DocumentStore {
         if self.opaque {
             return Ok(false);
         }
-        let (text, line_ending, had_bom, encoding) = read_and_decode(&path)?;
+        self.reload_if_changed_limited(&path, MAX_ADDRESSABLE_BYTES)
+    }
+
+    fn reload_if_changed_limited(&mut self, path: &str, max_bytes: u64) -> io::Result<bool> {
+        let size = match regular_file_size(path) {
+            Ok(size) => size,
+            Err(error) => {
+                self.bump_revision_only();
+                return Err(error);
+            }
+        };
+        if size > max_bytes {
+            self.apply_observed_size(size, max_bytes);
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("file too large to address ({size} bytes)"),
+            ));
+        }
+        let (text, line_ending, had_bom, encoding) = read_and_decode(path)?;
         if text == self.text {
             // Inhalt unveraendert. Falls extern ausschliesslich BOM,
             // Line-Ending oder Encoding umgestellt wurde, hier die Metadaten
@@ -352,22 +506,23 @@ impl DocumentStore {
             }
             // EOL-Dirty entfaellt, Text-Dirty bleibt.
             self.set_dirty(self.text != self.clean_text);
+            self.apply_observed_size(size, max_bytes);
             return Ok(false);
         }
-        self.text = text.clone();
-        self.clean_text = text.clone();
+        self.text = text;
+        self.clean_text = self.text.clone();
         self.is_dirty = false;
         self.line_ending = line_ending;
         self.clean_line_ending = line_ending;
         self.had_bom = had_bom;
         self.encoding = encoding;
         self.opaque = false;
-        let loaded = LoadedDocument {
-            path: path.clone(),
-            text,
-            encoding: self.encoding_label().to_string(),
-            line_ending: self.line_ending_label().to_string(),
-        };
+        if self.descriptor.is_some() {
+            self.apply_observed_size(size, max_bytes);
+        } else {
+            self.set_descriptor(FileKind::Text, size);
+        }
+        let loaded = self.snapshot();
         if let Some(callback) = &self.events.loaded {
             callback(loaded);
         }
@@ -391,6 +546,7 @@ impl DocumentStore {
         self.had_bom = false;
         self.encoding = TextEncoding::Utf8;
         self.opaque = false;
+        self.descriptor = None;
         self.watcher = None;
         self.watcher_tx = None;
         if let Some(callback) = &self.events.dirty_changed {
@@ -464,12 +620,22 @@ impl DocumentStore {
             return Ok(false);
         };
         let bytes = self.encode_for_disk()?;
+        let size = bytes.len() as u64;
         fs::write(&path, bytes)?;
         self.clean_text = self.text.clone();
         self.clean_line_ending = self.line_ending;
         self.set_dirty(false);
+        if let Some(d) = &mut self.descriptor {
+            if is_addressable(size) {
+                d.file_size = size;
+                d.too_large = false;
+            } else {
+                d.too_large = true;
+            }
+        }
+        let kind = self.kind().unwrap_or(FileKind::Text);
         if let Some(callback) = &self.events.saved {
-            callback(path, self.text.clone());
+            callback(path, self.text.clone(), kind);
         }
         Ok(true)
     }
@@ -484,6 +650,7 @@ impl DocumentStore {
             return Err(SaveError::Opaque);
         }
         let bytes = self.encode_for_disk()?;
+        let size = bytes.len() as u64;
         fs::write(new_path, bytes)?;
 
         self.path = Some(new_path.to_string());
@@ -492,14 +659,17 @@ impl DocumentStore {
         // save_as schreibt Text → kein Opaque-Doc mehr.
         self.opaque = false;
         self.set_dirty(false);
+        if self.descriptor.is_some() {
+            self.apply_observed_size(size, MAX_ADDRESSABLE_BYTES);
+        } else if is_addressable(size) {
+            self.set_descriptor(FileKind::Text, size);
+        } else {
+            self.set_descriptor(FileKind::Text, 0);
+            self.apply_observed_size(size, MAX_ADDRESSABLE_BYTES);
+        }
         self.watch_non_fatal(new_path);
 
-        let loaded = LoadedDocument {
-            path: new_path.to_string(),
-            text: self.text.clone(),
-            encoding: self.encoding_label().to_string(),
-            line_ending: self.line_ending_label().to_string(),
-        };
+        let loaded = self.snapshot();
         if let Some(callback) = &self.events.loaded {
             callback(loaded.clone());
         }
@@ -525,14 +695,12 @@ impl DocumentStore {
 
     fn rename_to_inner(&mut self, new_path: &str, emit_loaded: bool) -> io::Result<LoadedDocument> {
         self.path = Some(new_path.to_string());
+        // Typ bleibt stehen — ein Bild, das nach .txt umbenannt wird,
+        // darf nicht ploetzlich als Editor ohne Text erscheinen.
+        self.observe_path_size(new_path);
         self.watch_non_fatal(new_path);
 
-        let loaded = LoadedDocument {
-            path: new_path.to_string(),
-            text: self.text.clone(),
-            encoding: self.encoding_label().to_string(),
-            line_ending: self.line_ending_label().to_string(),
-        };
+        let loaded = self.snapshot();
         if emit_loaded {
             if let Some(callback) = &self.events.loaded {
                 callback(loaded.clone());
@@ -613,6 +781,72 @@ impl DocumentStore {
             .map_err(io::Error::other)?;
         self.watcher = Some(watcher);
         Ok(())
+    }
+
+    /// Aktualisiert Größe/Revision nach einem Watcher-Event. Läuft auch
+    /// für inaktive Tabs — nur das Frontend-Event bleibt aktiv-only.
+    pub fn note_external_change(&mut self, path: &str) -> ExternalChangeInfo {
+        self.note_external_change_limited(path, MAX_ADDRESSABLE_BYTES)
+    }
+
+    pub fn note_external_change_limited(
+        &mut self,
+        path: &str,
+        max_bytes: u64,
+    ) -> ExternalChangeInfo {
+        match regular_file_size(path) {
+            Ok(size) => {
+                self.apply_observed_size(size, max_bytes);
+                let d = self.descriptor();
+                ExternalChangeInfo {
+                    file_size: d.map(|d| d.file_size).unwrap_or(0),
+                    revision: d.map(|d| d.revision).unwrap_or(self.revision),
+                    available: true,
+                    too_large: d.map(|d| d.too_large).unwrap_or(size > max_bytes),
+                }
+            }
+            Err(_) => {
+                self.bump_revision_only();
+                let d = self.descriptor();
+                ExternalChangeInfo {
+                    file_size: d.map(|d| d.file_size).unwrap_or(0),
+                    revision: d.map(|d| d.revision).unwrap_or(self.revision),
+                    available: false,
+                    too_large: false,
+                }
+            }
+        }
+    }
+}
+
+/// Metadaten einer regulaeren, lesbaren Datei. Folgt Symlinks;
+/// Verzeichnisse, Geraete, fehlende Pfade und nicht lesbare Dateien
+/// (z. B. `chmod 000`) sind Fehler — der Watcher meldet sie als
+/// `available: false`.
+pub fn regular_file_size(path: &str) -> io::Result<u64> {
+    let meta = fs::metadata(path)?;
+    if !meta.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("not a regular file: {path}"),
+        ));
+    }
+    // `metadata` gelingt auch ohne Leserecht. Hex und Text brauchen
+    // den Inhalt — ohne Open waere `available: true` gelogen.
+    drop(fs::File::open(path)?);
+    Ok(meta.len())
+}
+
+fn text_kind_for_load(store: &DocumentStore, path: &str) -> FileKind {
+    if let Some(kind) = store.kind() {
+        if !matches!(kind, FileKind::Image | FileKind::Binary) {
+            return kind;
+        }
+    }
+    match crate::file_kind::classify(path) {
+        FileKind::Markdown => FileKind::Markdown,
+        other if other != FileKind::Image && other != FileKind::Binary => other,
+        _ => FileKind::Text,
     }
 }
 
@@ -1329,7 +1563,7 @@ mod tests {
             eol_changed: Some(Arc::new(move |_| {
                 eol_cb.fetch_add(1, Ordering::SeqCst);
             })),
-            saved: Some(Arc::new(move |_, _| {
+            saved: Some(Arc::new(move |_, _, _| {
                 saved_cb.fetch_add(1, Ordering::SeqCst);
             })),
             ..DocumentEvents::default()
@@ -1406,6 +1640,165 @@ mod tests {
         store.save_as(target.to_str().unwrap()).unwrap();
         assert_eq!(b"world\r\n".as_slice(), fs::read(&target).unwrap());
         assert!(!store.is_opaque());
+    }
+
+    #[test]
+    fn descriptor_survives_rename_without_changing_kind() {
+        let temp = TempDir::new().unwrap();
+        let src = temp.path().join("photo.png");
+        fs::write(&src, b"\x89PNG\r\n\x1a\nxxxx").unwrap();
+        let mut store = DocumentStore::new();
+        store.load_opaque(src.to_str().unwrap()).unwrap();
+        let first = store.descriptor().unwrap();
+        assert_eq!(FileKind::Image, first.kind);
+        let dst = temp.path().join("photo.txt");
+        fs::rename(&src, &dst).unwrap();
+        store.rename_to(dst.to_str().unwrap()).unwrap();
+        let after = store.descriptor().unwrap();
+        assert_eq!(FileKind::Image, after.kind);
+        assert_eq!(dst.to_str().unwrap(), store.path.as_deref().unwrap());
+        assert!(after.revision > first.revision);
+        assert_eq!(after.file_size, first.file_size);
+        assert!(store.is_opaque());
+    }
+
+    #[test]
+    fn reload_bumps_revision() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("doc.md");
+        fs::write(&path, "one").unwrap();
+        let mut store = DocumentStore::new();
+        store.load(path.to_str().unwrap()).unwrap();
+        let first = store.descriptor().unwrap().revision;
+        fs::write(&path, "two").unwrap();
+        assert!(store.reload_if_changed().unwrap());
+        let after = store.descriptor().unwrap();
+        assert!(after.revision > first);
+        assert_eq!(FileKind::Markdown, after.kind);
+        assert_eq!(3, after.file_size);
+    }
+
+    #[test]
+    fn external_change_updates_size_and_revision_for_opaque() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("photo.png");
+        fs::write(&path, b"\x89PNG").unwrap();
+        let mut store = DocumentStore::new();
+        store.load_opaque(path.to_str().unwrap()).unwrap();
+        let first = store.descriptor().unwrap();
+        fs::write(&path, b"\x89PNG\r\n\x1a\nMORE").unwrap();
+        let info = store.note_external_change(path.to_str().unwrap());
+        assert!(info.available);
+        assert!(info.revision > first.revision);
+        assert_eq!(info.file_size, fs::metadata(&path).unwrap().len());
+        assert!(!info.too_large);
+        assert_eq!(FileKind::Image, store.kind().unwrap());
+    }
+
+    #[test]
+    fn revision_survives_close_and_increases_on_reload() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("doc.md");
+        fs::write(&path, "one").unwrap();
+        let mut store = DocumentStore::new();
+        store.load(path.to_str().unwrap()).unwrap();
+        let first = store.descriptor().unwrap().revision;
+        store.close();
+        assert!(store.descriptor().is_none());
+        fs::write(&path, "two").unwrap();
+        store.load(path.to_str().unwrap()).unwrap();
+        let second = store.descriptor().unwrap().revision;
+        assert!(second > first);
+    }
+
+    #[test]
+    fn watcher_updates_size_on_grow_shrink_and_delete() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("photo.png");
+        fs::write(&path, b"\x89PNG").unwrap();
+        let mut store = DocumentStore::new();
+        store.load_opaque(path.to_str().unwrap()).unwrap();
+        let first = store.descriptor().unwrap();
+
+        fs::write(&path, b"\x89PNG\r\nMORE").unwrap();
+        let grown = store.note_external_change(path.to_str().unwrap());
+        assert!(grown.available);
+        assert!(grown.revision > first.revision);
+        assert_eq!(grown.file_size, fs::metadata(&path).unwrap().len());
+
+        fs::write(&path, b"\x89").unwrap();
+        let shrunk = store.note_external_change(path.to_str().unwrap());
+        assert!(shrunk.available);
+        assert!(shrunk.revision > grown.revision);
+        assert_eq!(1, shrunk.file_size);
+
+        fs::remove_file(&path).unwrap();
+        let gone = store.note_external_change(path.to_str().unwrap());
+        assert!(!gone.available);
+        assert!(gone.revision > shrunk.revision);
+        assert_eq!(1, gone.file_size, "last addressable size stays");
+    }
+
+    #[test]
+    fn reload_rejects_oversize_before_replacing_text() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("doc.md");
+        fs::write(&path, "small").unwrap();
+        let mut store = DocumentStore::new();
+        store.load(path.to_str().unwrap()).unwrap();
+        fs::write(&path, "0123456789").unwrap();
+        let err = store
+            .reload_if_changed_limited(path.to_str().unwrap(), 9)
+            .unwrap_err();
+        assert_eq!(io::ErrorKind::InvalidData, err.kind());
+        assert_eq!("small", store.text);
+        let d = store.descriptor().unwrap();
+        assert!(d.too_large);
+        assert_eq!(5, d.file_size);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_regular_file_is_unavailable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("photo.png");
+        fs::write(&path, b"\x89PNG").unwrap();
+        let mut store = DocumentStore::new();
+        store.load_opaque(path.to_str().unwrap()).unwrap();
+
+        let mut perms = fs::metadata(&path).unwrap().permissions();
+        perms.set_mode(0o000);
+        fs::set_permissions(&path, perms).unwrap();
+
+        let info = store.note_external_change(path.to_str().unwrap());
+        assert!(!info.available);
+        assert!(regular_file_size(path.to_str().unwrap()).is_err());
+
+        let mut perms = fs::metadata(&path).unwrap().permissions();
+        perms.set_mode(0o644);
+        fs::set_permissions(&path, perms).unwrap();
+    }
+
+    #[test]
+    fn oversized_external_change_never_stores_unaddressable_size() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("photo.png");
+        fs::write(&path, b"\x89PNG").unwrap();
+        let mut store = DocumentStore::new();
+        store.load_opaque(path.to_str().unwrap()).unwrap();
+        let first = store.descriptor().unwrap();
+        fs::write(&path, b"\x89PNG-bigger").unwrap();
+        let info = store.note_external_change_limited(path.to_str().unwrap(), 4);
+        assert!(info.too_large);
+        assert!(info.available);
+        assert_eq!(first.file_size, info.file_size);
+        assert!(info.revision > first.revision);
+        let d = store.descriptor().unwrap();
+        assert!(d.too_large);
+        assert_eq!(first.file_size, d.file_size);
+        assert!(d.file_size <= 4);
     }
 
     #[test]

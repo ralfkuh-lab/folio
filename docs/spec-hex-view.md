@@ -67,10 +67,16 @@ und legt einen Deskriptor im Store/Tab ab:
 ```rust
 struct DocumentDescriptor {
     kind: FileKind,     // aufgelöst, nicht neu berechenbar
-    file_size: u64,
-    revision: u64,      // monoton je Load/Reload dieses Tabs
+    file_size: u64,     // letzte adressierbare Größe, nie über der Grenze
+    revision: u64,      // monoton je Tab, überlebt Close
+    too_large: bool,    // letzte beobachtete Größe über MAX_ADDRESSABLE
 }
 ```
+
+`tooLarge` geht additiv in `document:loaded` und `document:external_changed`.
+Das Frontend darf `fileSize` dann nicht als aktuelle Länge behandeln: keine
+neuen Chunk-Fenster jenseits der letzten adressierbaren Größe, Hex-Ansicht
+zeigt den expliziten Übergrößen-Zustand statt eines abgeschnittenen Dumps.
 
 Alles Weitere liest diesen Deskriptor, statt erneut zu klassifizieren:
 `FileData`, `document:loaded`/`saved`, Default-Mode, History-Mode,
@@ -79,7 +85,7 @@ Tab-Aktivierung, `focus_existing_tab` und die Chunk-Autorisierung.
 `load_opaque` — **mit `classify_deep`, nicht `classify`**: sonst landet eine
 endungslose Textdatei (`INSTALL`, `untitled`) als leeres Binärdokument in der
 Hex-Ansicht und die Inhaltserkennung der Vor-Etappe wäre im Lade-Pfad wieder
-ausgehebelt.
+ausgehebelt. Bis Etappe 3 wird `Binary` dort abgelehnt statt opaque geladen.
 
 Damit ist zugleich das **zentrale Gate** gebaut, das `TODO.md` fordert: die
 drei Load-Funnels `document_service::open`, `load_active_pending` und
@@ -87,6 +93,11 @@ drei Load-Funnels `document_service::open`, `load_active_pending` und
 Recent/Menü, CLI-Argument, Single-Instance-Reinvoke, `tab_restore_last`,
 Session-Restore, History und die Automation-Endpunkte ab — ohne Binary-
 Sonderfall an jedem einzelnen Einstieg.
+
+**Stufenvertrag:** Etappe 1+2 lehnen `FileKind::Binary` in `load_by_kind`
+ab, **bevor** Store, History oder Events mutieren (`errors.file.unsupportedType`).
+`read_file` hat kein eigenes Gate. Etappe 3 entfernt genau diesen Zweig
+und lädt Binary opaque in die Hex-Ansicht.
 
 ### 3. Der aufgelöste Typ bleibt für die Lebensdauer des Tabs stabil
 
@@ -152,7 +163,9 @@ pub async fn read_file_chunk(
 
 `document:external_changed` trägt heute nur Pfad und Tab-ID. Für Binärdokumente
 aktualisiert das Backend Größe und Revision und gibt beides im Event mit, plus
-einen Verfügbarkeitszustand (`available: false` bei gelöscht/Rechte weg).
+einen Verfügbarkeitszustand (`available: false` bei gelöscht, nicht regulär
+oder nicht lesbar — `regular_file_size` prüft Metadaten **und** `File::open`)
+sowie `tooLarge`, wenn die Datei über der Adressierungsgrenze gewachsen ist.
 
 Ohne das zeigt die Ansicht nach einem Truncate in einen Bereich, den es nicht
 mehr gibt, liefert leere Chunks und scrollt ins Nichts; nach Wachstum bleibt
@@ -171,10 +184,11 @@ ehrlichere Lösung.
 
 ### Was **nicht** passiert
 
-`errors.file.unsupportedType` bleibt im Katalog: `commands/git_cmd.rs`
-referenziert ihn weiterhin für den gesperrten Binär-Git-Diff. Erst wenn die
-letzte Referenz fällt, wird der Key aus allen neun Katalogen und
-`locales/context/keys.json` entfernt (hartes Referenz-Gate).
+`errors.file.unsupportedType` bleibt im Katalog: Etappe 1+2 nutzen ihn als
+zentrales Binary-Gate im Loader, `commands/git_cmd.rs` weiterhin für den
+gesperrten Binär-Git-Diff. Erst wenn die letzte Referenz fällt, wird der Key
+aus allen neun Katalogen und `locales/context/keys.json` entfernt (hartes
+Referenz-Gate).
 
 ## Frontend
 
@@ -337,8 +351,9 @@ Dokumenttypen und soll unabhängig von der Hex-UI geprüft werden können.
 1. **Deskriptor-Umbau**: `DocumentDescriptor` in Store/Tab, einmalige
    Typauflösung mit `classify_deep` in den drei Load-Funnels, stabile
    Kind-Semantik über Rename, Watcher-/Event-Vertrag mit Größe und Revision,
-   Größengrenze. **Das Binary-Gate bleibt in dieser Etappe noch geschlossen** —
-   nach außen ändert sich nichts, innen wird alles konsistent.
+   Größengrenze. **Binary wird zentral im Loader abgelehnt** (nicht in
+   `read_file`) — nach außen ändert sich nichts, innen ist das Gate an
+   der Stelle, die Etappe 3 wieder öffnet.
 2. **Chunk-Command** `read_file_chunk` plus `view/hex-format.ts` (DOM-frei)
    mit Rust- und Vitest-Tests. Weiterhin ohne sichtbare UI.
 3. **Öffnen freischalten**: Binary läuft durch, `view/hex.ts` + Region + CSS +

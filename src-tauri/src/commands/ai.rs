@@ -7,7 +7,7 @@ use crate::{
         mask,
         types::{AiConfig, AuthStatus, Catalog, CustomProviderDefinition},
     },
-    file_kind::{classify, FileKind},
+    file_kind::FileKind,
     i18n,
     state::{AiJob, AiJobKind, AppState},
     theme::author,
@@ -318,7 +318,7 @@ pub async fn ai_translate_document(
             .path
             .clone()
             .ok_or_else(|| i18n::t("errors.ai.translateNeedsSavedDoc"))?;
-        if classify(&path) != FileKind::Markdown {
+        if store.kind() != Some(FileKind::Markdown) {
             return Err(i18n::t("errors.ai.translateMarkdownOnly"));
         }
         // `DocumentStore::text` ist derselbe kanonische Inhalt, den Save
@@ -767,7 +767,7 @@ pub async fn ai_action_run(
         if path.replace('\\', "/") != request.source_path.replace('\\', "/") {
             return Err(i18n::t("errors.ai.sourceChangedDuringRun"));
         }
-        if classify(&path) != FileKind::Markdown {
+        if store.kind() != Some(FileKind::Markdown) {
             return Err(i18n::t("errors.ai.actionsMarkdownOnly"));
         }
         store.text.clone()

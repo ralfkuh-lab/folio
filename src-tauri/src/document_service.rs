@@ -10,9 +10,10 @@
 //! "Navigate-vor-Load"-Pfad konnte bei IO-Fehlern einen History-Eintrag
 //! auf einem nie geladenen Ziel hinterlassen.
 
+use std::path::Path;
 use std::sync::Mutex;
 
-use crate::document_store::{DocumentStore, LoadedDocument};
+use crate::document_store::{regular_file_size, DocumentStore, LoadedDocument};
 use crate::file_kind::{classify, classify_deep, FileKind};
 use crate::navigation::Entry as NavigationEntry;
 use crate::settings::{DefaultViewMode, SettingsService};
@@ -71,11 +72,71 @@ pub struct OpenDocumentOutcome {
     pub mode_override: Option<String>,
 }
 
+pub use crate::document_store::{MAX_ADDRESSABLE_BYTES, MAX_SAFE_INTEGER, MAX_WINDOW_BYTES};
+
+#[derive(Debug)]
+pub enum LoadError {
+    Io(std::io::Error),
+    TooLarge { size: u64 },
+    UnsupportedType { path: String },
+}
+
+impl From<std::io::Error> for LoadError {
+    fn from(error: std::io::Error) -> Self {
+        Self::Io(error)
+    }
+}
+
+impl std::fmt::Display for LoadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(error) => write!(f, "{error}"),
+            Self::TooLarge { size } => write!(f, "file too large to address ({size} bytes)"),
+            Self::UnsupportedType { path } => write!(f, "unsupported file type: {path}"),
+        }
+    }
+}
+
+impl std::error::Error for LoadError {}
+
+fn map_load_error(error: LoadError) -> OpenDocumentError {
+    match error {
+        LoadError::Io(error) => OpenDocumentError::Load(error),
+        LoadError::TooLarge { size } => OpenDocumentError::TooLarge { size },
+        LoadError::UnsupportedType { path } => OpenDocumentError::UnsupportedType { path },
+    }
+}
+
+fn file_name_detail(path: &str) -> &str {
+    Path::new(path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(path)
+}
+
 #[derive(Debug)]
 pub enum OpenDocumentError {
     DirtyRejected,
     LockPoisoned(&'static str),
     Load(std::io::Error),
+    TooLarge { size: u64 },
+    UnsupportedType { path: String },
+}
+
+impl OpenDocumentError {
+    pub fn user_message(&self) -> String {
+        match self {
+            Self::TooLarge { size } => crate::i18n::t_args(
+                "errors.file.tooLargeToAddress",
+                &[("detail", &size.to_string())],
+            ),
+            Self::UnsupportedType { path } => crate::i18n::t_args(
+                "errors.file.unsupportedType",
+                &[("detail", file_name_detail(path))],
+            ),
+            other => other.to_string(),
+        }
+    }
 }
 
 impl std::fmt::Display for OpenDocumentError {
@@ -84,6 +145,8 @@ impl std::fmt::Display for OpenDocumentError {
             Self::DirtyRejected => f.write_str("unsaved changes; dirty policy rejects open"),
             Self::LockPoisoned(name) => write!(f, "{name} lock poisoned"),
             Self::Load(error) => write!(f, "{error}"),
+            Self::TooLarge { size } => write!(f, "file too large to address ({size} bytes)"),
+            Self::UnsupportedType { path } => write!(f, "unsupported file type: {path}"),
         }
     }
 }
@@ -92,7 +155,7 @@ impl std::error::Error for OpenDocumentError {}
 
 impl From<OpenDocumentError> for String {
     fn from(error: OpenDocumentError) -> Self {
-        error.to_string()
+        error.user_message()
     }
 }
 
@@ -129,7 +192,7 @@ fn load_active_pending_inner(
         .map_err(|_| OpenDocumentError::LockPoisoned("tabs"))?;
     let loaded = tabs
         .load_active_pending(load_by_kind)
-        .map_err(OpenDocumentError::Load)?;
+        .map_err(map_load_error)?;
     let Some(loaded) = loaded else {
         return Ok(None);
     };
@@ -185,7 +248,7 @@ fn open_inner(
         if options.dirty == DirtyPolicy::Reject && tab.document_store.is_dirty {
             return Err(OpenDocumentError::DirtyRejected);
         }
-        Some(load_by_kind(&mut tab.document_store, &path).map_err(OpenDocumentError::Load)?)
+        Some(load_by_kind(&mut tab.document_store, &path).map_err(map_load_error)?)
     } else {
         None
     };
@@ -219,29 +282,56 @@ fn open_inner(
     })
 }
 
-/// Laedt ein Dokument passend zu seinem FileKind in den Store. Bilder
-/// werden nicht als Text geladen — das Frontend rendert sie ueber
-/// `convertFileSrc` direkt von Disk; `load_opaque` setzt nur den Pfad,
-/// damit Vault-Active, History und das `document:loaded`-Event mit dem
-/// richtigen Pfad feuern. Alles andere laeuft als Text ueber `load`.
-pub fn load_by_kind(store: &mut DocumentStore, path: &str) -> std::io::Result<LoadedDocument> {
-    if matches!(classify(path), FileKind::Image) {
-        store.load_opaque(path)
+/// Laedt ein Dokument passend zu seinem einmal aufgeloesten FileKind.
+/// `classify_deep` — nicht `classify` — damit endungslose Textdateien
+/// (`INSTALL`) Text bleiben. Image geht opaque. Binary wird in Etappe
+/// 1+2 **vor jeder Store-Mutation** abgelehnt; Etappe 3 entfernt diesen
+/// Zweig und schaltet Hex frei.
+pub fn load_by_kind(store: &mut DocumentStore, path: &str) -> Result<LoadedDocument, LoadError> {
+    load_by_kind_limited(store, path, MAX_ADDRESSABLE_BYTES)
+}
+
+pub fn load_by_kind_limited(
+    store: &mut DocumentStore,
+    path: &str,
+    max_bytes: u64,
+) -> Result<LoadedDocument, LoadError> {
+    let file_size = regular_file_size(path)?;
+    if file_size > max_bytes {
+        return Err(LoadError::TooLarge { size: file_size });
+    }
+    let same_path = store.path.as_deref() == Some(path);
+    let kind = if same_path {
+        store.kind().unwrap_or_else(|| classify_deep(path))
     } else {
-        store.load(path)
+        classify_deep(path)
+    };
+    // Etappe 1+2: Binary zentral ablehnen. Etappe 3 entfernt diesen Arm.
+    if kind == FileKind::Binary {
+        return Err(LoadError::UnsupportedType {
+            path: path.to_string(),
+        });
+    }
+    match kind {
+        FileKind::Image => Ok(store.load_opaque_as(path, kind, file_size)?),
+        _ => Ok(store.load_as(path, kind, true, file_size)?),
     }
 }
 
 /// View-Mode fuer einen History-Restore: Markdown und HTML behalten den
-/// im Entry gespeicherten Mode (echte Preview vorhanden). Bilder
-/// erzwingen `view` — Edit ist fuer Images gesperrt, `load_opaque` legt
-/// keinen Text ab. Alle uebrigen Text-/Binary-Pfade clampen auf `edit`,
+/// im Entry gespeicherten Mode (echte Preview vorhanden). Bilder und
+/// Binary erzwingen `view` — Edit ist gesperrt, `load_opaque` legt
+/// keinen Text ab. Alle uebrigen Text-Pfade clampen auf `edit`,
 /// damit ein zuvor gespeicherter `view`-Wert beim Restore nicht in einen
 /// leeren Markdown-Body fuehrt.
 pub fn history_view_mode(path: &str, stored: &str) -> String {
-    match classify(path) {
+    history_view_mode_for_kind(classify(path), path, stored)
+}
+
+pub fn history_view_mode_for_kind(kind: FileKind, path: &str, stored: &str) -> String {
+    match kind {
         FileKind::Markdown => stored.to_string(),
-        FileKind::Image => "view".to_string(),
+        FileKind::Image | FileKind::Binary => "view".to_string(),
         _ if crate::file_resolver::is_html(path) => stored.to_string(),
         _ => "edit".to_string(),
     }
@@ -293,7 +383,7 @@ pub fn move_history(
         } else {
             tab.navigation.go_forward();
         }
-        return Err(OpenDocumentError::Load(error));
+        return Err(map_load_error(error));
     }
     drop(tabs);
 
@@ -314,15 +404,19 @@ fn apply_default_mode(
     tab: &mut Tab,
     path: &str,
 ) -> Option<String> {
-    let kind = classify_deep(path);
-    if !matches!(kind, FileKind::Markdown | FileKind::Text | FileKind::Image) {
+    let kind = tab
+        .document_store
+        .kind()
+        .unwrap_or_else(|| classify_deep(path));
+    if !matches!(
+        kind,
+        FileKind::Markdown | FileKind::Text | FileKind::Image | FileKind::Binary
+    ) {
         return None;
     }
-    // Bilder kennen keinen Edit-Mode (`document_store.load_opaque` legt
-    // keinen Text ab) — beim Open immer auf View zwingen, ohne ueber
-    // ein Setting zu gehen. Damit landet der User auch dann auf der
-    // Bild-Vorschau, wenn er vorher im Edit-Mode auf einer .md-Datei war.
-    if matches!(kind, FileKind::Image) {
+    // Opaque-Kinds kennen keinen Edit-Mode (`load_opaque` legt keinen
+    // Text ab) — beim Open immer auf View zwingen.
+    if matches!(kind, FileKind::Image | FileKind::Binary) {
         if tab.view_mode == "view" {
             return None;
         }
@@ -370,7 +464,17 @@ pub fn discard_editor_changes(store: &mut DocumentStore) -> std::io::Result<bool
     if store.is_opaque() && !store.is_dirty {
         return Ok(true);
     }
-    load_by_kind(store, &path)?;
+    load_by_kind(store, &path).map_err(|error| match error {
+        LoadError::Io(error) => error,
+        LoadError::TooLarge { size } => std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("too large: {size}"),
+        ),
+        LoadError::UnsupportedType { path } => std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("unsupported file type: {path}"),
+        ),
+    })?;
     Ok(true)
 }
 
@@ -676,6 +780,10 @@ mod tests {
         assert_eq!("view", history_view_mode("/page.html", "view"));
         assert_eq!("view", history_view_mode("/pic.png", "edit"));
         assert_eq!("edit", history_view_mode("/data.json", "view"));
+        assert_eq!(
+            "view",
+            history_view_mode_for_kind(FileKind::Binary, "/x.bin", "edit")
+        );
     }
 
     #[test]
@@ -801,5 +909,325 @@ mod tests {
         store.load(&path).unwrap();
         assert_eq!("edit", clamp_view_mode(&store, "edit"));
         assert_eq!("split", clamp_view_mode(&store, "split"));
+    }
+
+    fn write_extensionless(temp: &TempDir, name: &str, bytes: &[u8]) -> String {
+        let path = temp.path().join(name);
+        fs::write(&path, bytes).unwrap();
+        path.to_string_lossy().replace('\\', "/")
+    }
+
+    fn open_path(tabs: &Mutex<TabManager>, vault: &Mutex<Vault>, path: &str) {
+        open_inner(
+            tabs,
+            vault,
+            None,
+            path.to_string(),
+            OpenDocumentOptions {
+                anchor: None,
+                reload: ReloadPolicy::Always,
+                dirty: DirtyPolicy::Discard,
+                apply_default_mode: false,
+            },
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn open_loads_extensionless_text_into_store() {
+        let temp = TempDir::new().unwrap();
+        let path = write_extensionless(&temp, "INSTALL", b"hello\n");
+        let (tabs, vault) = make_components();
+        open_path(&tabs, &vault, &path);
+        let tabs = tabs.lock().unwrap();
+        let store = &tabs.active().document_store;
+        assert_eq!("hello\n", store.text);
+        assert!(!store.is_opaque());
+        assert_eq!(Some(FileKind::Text), store.kind());
+    }
+
+    fn assert_store_and_history_untouched(tabs: &Mutex<TabManager>, expected_path: Option<&str>) {
+        let guard = tabs.lock().unwrap();
+        let tab = guard.active();
+        assert_eq!(expected_path, tab.document_store.path.as_deref());
+        match expected_path {
+            None => assert!(tab.navigation.current().is_none()),
+            Some(path) => {
+                assert_eq!(path, tab.navigation.current().unwrap().absolute_path)
+            }
+        }
+    }
+
+    #[test]
+    fn open_rejects_nul_binary() {
+        let temp = TempDir::new().unwrap();
+        let path = write_extensionless(&temp, "blob", b"pre\0post");
+        let (tabs, vault) = make_components();
+        let err = open_inner(
+            &tabs,
+            &vault,
+            None,
+            path.clone(),
+            OpenDocumentOptions {
+                anchor: None,
+                reload: ReloadPolicy::Always,
+                dirty: DirtyPolicy::Discard,
+                apply_default_mode: false,
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(err, OpenDocumentError::UnsupportedType { .. }));
+        assert_store_and_history_untouched(&tabs, None);
+    }
+
+    #[test]
+    fn pending_restore_loads_extensionless_text_and_rejects_binary() {
+        let temp = TempDir::new().unwrap();
+        let text_path = write_extensionless(&temp, "INSTALL", b"hello\n");
+        let bin_path = write_extensionless(&temp, "blob", b"x\0y");
+        let (tabs, vault) = make_components();
+        tabs.lock()
+            .unwrap()
+            .active_mut()
+            .set_pending_path(text_path.clone());
+        let loaded = load_active_pending_inner(&tabs, &vault, None)
+            .unwrap()
+            .unwrap();
+        assert_eq!("hello\n", loaded.loaded.as_ref().unwrap().text);
+        assert_eq!(
+            Some(FileKind::Text),
+            tabs.lock().unwrap().active().document_store.kind()
+        );
+
+        {
+            let mut guard = tabs.lock().unwrap();
+            let tab = guard.active_mut();
+            tab.document_store.close();
+            tab.set_pending_path(bin_path.clone());
+        }
+        let err = load_active_pending_inner(&tabs, &vault, None).unwrap_err();
+        assert!(matches!(err, OpenDocumentError::UnsupportedType { .. }));
+        let guard = tabs.lock().unwrap();
+        let tab = guard.active();
+        assert!(tab.document_store.path.is_none());
+        assert_eq!(Some(bin_path.as_str()), tab.pending_path());
+        assert!(!tab.document_store.is_opaque());
+        assert!(tab.document_store.kind().is_none());
+    }
+
+    #[test]
+    fn move_history_loads_extensionless_text_and_rejects_binary() {
+        let temp = TempDir::new().unwrap();
+        let text_path = write_extensionless(&temp, "INSTALL", b"hello\n");
+        let bin_path = write_extensionless(&temp, "blob", b"x\0y");
+        let (tabs, vault) = make_components();
+        open_path(&tabs, &vault, &text_path);
+        {
+            let mut guard = tabs.lock().unwrap();
+            let tab = guard.active_mut();
+            tab.navigation.navigate(bin_path.clone(), None);
+            tab.navigation.go_back();
+        }
+
+        let err = move_history(&tabs, &vault, true).unwrap_err();
+        assert!(matches!(err, OpenDocumentError::UnsupportedType { .. }));
+        let guard = tabs.lock().unwrap();
+        let tab = guard.active();
+        assert_eq!(text_path, tab.navigation.current().unwrap().absolute_path);
+        assert_eq!(Some(text_path.as_str()), tab.document_store.path.as_deref());
+        assert_eq!("hello\n", tab.document_store.text);
+        assert_eq!(Some(FileKind::Text), tab.document_store.kind());
+        assert!(tab.navigation.can_go_forward());
+    }
+
+    #[test]
+    fn open_sniffs_extensionless_text_exactly_once() {
+        crate::file_kind::reset_sniff_io_count();
+        let temp = TempDir::new().unwrap();
+        let path = write_extensionless(&temp, "INSTALL", b"hello\n");
+        let (tabs, vault) = make_components();
+        open_path(&tabs, &vault, &path);
+        assert_eq!(1, crate::file_kind::sniff_io_count());
+        open_path(&tabs, &vault, &path);
+        assert_eq!(
+            1,
+            crate::file_kind::sniff_io_count(),
+            "same-path reload must reuse the descriptor"
+        );
+    }
+
+    #[test]
+    fn existing_tab_stays_focusable_after_disk_becomes_binary() {
+        crate::file_kind::reset_sniff_io_count();
+        let temp = TempDir::new().unwrap();
+        let path = write_extensionless(&temp, "INSTALL", b"hello\n");
+        let other = write_doc(&temp, "b.md", "other");
+        let (tabs, vault) = make_components();
+        open_path(&tabs, &vault, &path);
+        let first_id = tabs.lock().unwrap().active().id;
+        tabs.lock().unwrap().add_tab();
+        open_path(&tabs, &vault, &other);
+        assert_eq!(1, crate::file_kind::sniff_io_count());
+        fs::write(&path, b"pre\0post").unwrap();
+        let found = tabs.lock().unwrap().find_by_path(&path);
+        assert_eq!(Some(first_id), found);
+        assert_eq!(
+            Some(FileKind::Text),
+            tabs.lock()
+                .unwrap()
+                .tab(first_id)
+                .unwrap()
+                .document_store
+                .kind()
+        );
+        assert!(tabs.lock().unwrap().activate(first_id));
+        open_path(&tabs, &vault, &path);
+        let guard = tabs.lock().unwrap();
+        let store = &guard.active().document_store;
+        assert_eq!(Some(FileKind::Text), store.kind());
+        assert!(!store.is_opaque());
+        assert_eq!(1, crate::file_kind::sniff_io_count());
+    }
+
+    #[test]
+    fn open_rejects_missing_path_without_mutating_state() {
+        let temp = TempDir::new().unwrap();
+        let missing = temp
+            .path()
+            .join("gone.md")
+            .to_string_lossy()
+            .replace('\\', "/");
+        let (tabs, vault) = make_components();
+        let err = open_inner(
+            &tabs,
+            &vault,
+            None,
+            missing,
+            OpenDocumentOptions {
+                anchor: None,
+                reload: ReloadPolicy::Always,
+                dirty: DirtyPolicy::Discard,
+                apply_default_mode: false,
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(err, OpenDocumentError::Load(_)));
+        assert_store_and_history_untouched(&tabs, None);
+    }
+
+    #[test]
+    fn open_rejects_directory_without_mutating_state() {
+        let temp = TempDir::new().unwrap();
+        let dir = temp.path().to_string_lossy().replace('\\', "/");
+        let (tabs, vault) = make_components();
+        let err = open_inner(
+            &tabs,
+            &vault,
+            None,
+            dir,
+            OpenDocumentOptions {
+                anchor: None,
+                reload: ReloadPolicy::Always,
+                dirty: DirtyPolicy::Discard,
+                apply_default_mode: false,
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(err, OpenDocumentError::Load(_)));
+        assert_store_and_history_untouched(&tabs, None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_follows_symlink_to_regular_file() {
+        let temp = TempDir::new().unwrap();
+        let target = write_doc(&temp, "real.md", "via-link");
+        let link = temp.path().join("alias.md");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let link_path = link.to_string_lossy().replace('\\', "/");
+        let (tabs, vault) = make_components();
+        open_path(&tabs, &vault, &link_path);
+        let guard = tabs.lock().unwrap();
+        let store = &guard.active().document_store;
+        assert_eq!("via-link", store.text);
+        assert_eq!(Some(FileKind::Markdown), store.kind());
+    }
+
+    #[test]
+    fn inactive_tab_records_grow_shrink_and_delete_before_activate() {
+        let temp = TempDir::new().unwrap();
+        let img = write_image(&temp, "pic.png");
+        let md = write_doc(&temp, "a.md", "hello");
+        let (tabs, vault) = make_components();
+        open_path(&tabs, &vault, &img);
+        let img_id = tabs.lock().unwrap().active().id;
+        tabs.lock().unwrap().add_tab();
+        open_path(&tabs, &vault, &md);
+        assert!(!tabs.lock().unwrap().is_active(img_id));
+
+        fs::write(&img, b"\x89PNG\r\n\x1a\nGROW").unwrap();
+        {
+            let mut guard = tabs.lock().unwrap();
+            guard
+                .tab_mut(img_id)
+                .unwrap()
+                .document_store
+                .note_external_change(&img);
+        }
+        fs::write(&img, b"\x89").unwrap();
+        {
+            let mut guard = tabs.lock().unwrap();
+            guard
+                .tab_mut(img_id)
+                .unwrap()
+                .document_store
+                .note_external_change(&img);
+        }
+        fs::remove_file(&img).unwrap();
+        {
+            let mut guard = tabs.lock().unwrap();
+            guard
+                .tab_mut(img_id)
+                .unwrap()
+                .document_store
+                .note_external_change(&img);
+        }
+
+        assert!(tabs.lock().unwrap().activate(img_id));
+        let snap = tabs.lock().unwrap().active().document_store.snapshot();
+        assert_eq!(1, snap.file_size, "last addressable size before delete");
+        assert!(!snap.too_large);
+        assert!(snap.revision >= 3);
+    }
+
+    #[test]
+    fn nav_mode_for_loaded_extensionless_text_uses_descriptor() {
+        let temp = TempDir::new().unwrap();
+        let path = write_extensionless(&temp, "INSTALL", b"hello\n");
+        let (tabs, vault) = make_components();
+        open_path(&tabs, &vault, &path);
+        let guard = tabs.lock().unwrap();
+        let tab = guard.active();
+        let stored = tab.navigation.current().unwrap().view_mode.clone();
+        assert_eq!(Some(FileKind::Text), tab.document_store.kind());
+        assert_eq!(
+            "edit",
+            history_view_mode_for_kind(FileKind::Text, &path, &stored)
+        );
+        assert_eq!(
+            "view",
+            history_view_mode(&path, &stored),
+            "path classify must stay the pending-only fallback"
+        );
+    }
+
+    #[test]
+    fn oversized_file_is_rejected_via_limit() {
+        let temp = TempDir::new().unwrap();
+        let path = write_extensionless(&temp, "big", b"0123456789");
+        let mut store = DocumentStore::new();
+        let err = load_by_kind_limited(&mut store, &path, 9).unwrap_err();
+        assert!(matches!(err, LoadError::TooLarge { size: 10 }));
+        assert!(store.path.is_none());
     }
 }

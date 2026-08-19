@@ -269,6 +269,7 @@
   "errors.file.sourceMissing": "Il file di origine non esiste: {detail}",
   "errors.file.targetAlreadyExists": "Il file di destinazione esiste già: {detail}",
   "errors.file.tempCreateFailed": "Impossibile creare il file temporaneo: {detail}",
+  "errors.file.tooLargeToAddress": "Il file è troppo grande per essere indirizzato: {detail}",
   "errors.file.unsupportedType": "Tipo di file non supportato: {detail}",
   "errors.git.diffTooLarge": "Il file è troppo grande per il diff.",
   "errors.git.noHead": "Questo repository non ha ancora commit.",

@@ -1,8 +1,7 @@
 use crate::document_service::{self, DirtyPolicy, OpenDocumentOptions, ReloadPolicy};
-use crate::file_kind::{classify_deep, editor_language, FileKind};
+use crate::file_kind::editor_language;
 use crate::i18n;
 use crate::state::AppState;
-use std::path::Path;
 use tauri::{AppHandle, Emitter, State};
 
 use super::types::FileData;
@@ -13,44 +12,30 @@ pub async fn read_file(
     handle: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<FileData, String> {
-    let kind = classify_deep(&path);
-    if matches!(kind, FileKind::Binary) {
-        let detail = Path::new(&path)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(&path);
-        return Err(i18n::t_args(
-            "errors.file.unsupportedType",
-            &[("detail", detail)],
-        ));
-    }
     // Bereits in einem anderen Tab offen? Dann dorthin springen statt
-    // die Datei doppelt zu oeffnen (Replace im aktiven Tab).
+    // die Datei doppelt zu oeffnen (Replace im aktiven Tab). Bestehende
+    // Tabs entscheiden ausschliesslich ueber ihren Deskriptor — kein
+    // vorgelagerter Sniff, der nach einem externen Typwechsel das
+    // Fokussieren verweigern wuerde.
     if crate::commands::tabs::focus_existing_tab(&state, &handle, &path)
         .map_err(String::from)?
         .is_some()
     {
-        let (path, content, encoding, line_ending) = {
+        let snapshot = {
             let tabs = state
                 .tabs
                 .lock()
                 .map_err(|_| "tabs lock poisoned".to_string())?;
-            let store = &tabs.active().document_store;
-            (
-                store.path.clone().unwrap_or_default(),
-                store.text.clone(),
-                store.encoding_label().to_string(),
-                store.line_ending_label().to_string(),
-            )
+            tabs.active().document_store.snapshot()
         };
-        let language = editor_language(&path).to_string();
+        let language = editor_language(&snapshot.path).to_string();
         return Ok(FileData {
-            path,
-            content,
-            kind,
+            path: snapshot.path,
+            content: snapshot.text,
+            kind: snapshot.kind,
             language,
-            encoding,
-            line_ending,
+            encoding: snapshot.encoding,
+            line_ending: snapshot.line_ending,
         });
     }
     let outcome = document_service::open(
@@ -63,9 +48,13 @@ pub async fn read_file(
             apply_default_mode: true,
         },
     )
-    .map_err(|error| {
-        let detail = error.to_string();
-        i18n::t_args("errors.file.openFailedWithDetail", &[("detail", &detail)])
+    .map_err(|error| match error {
+        document_service::OpenDocumentError::TooLarge { .. }
+        | document_service::OpenDocumentError::UnsupportedType { .. } => error.user_message(),
+        other => {
+            let detail = other.to_string();
+            i18n::t_args("errors.file.openFailedWithDetail", &[("detail", &detail)])
+        }
     })?;
     if let Some(mode) = outcome.mode_override.as_deref() {
         let _ = handle.emit("app:set_mode", serde_json::json!({ "mode": mode }));
@@ -77,7 +66,7 @@ pub async fn read_file(
     Ok(FileData {
         path: loaded.path,
         content: loaded.text,
-        kind,
+        kind: loaded.kind,
         language,
         encoding: loaded.encoding,
         line_ending: loaded.line_ending,

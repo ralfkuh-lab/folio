@@ -283,7 +283,11 @@ impl AppState {
         loop {
             match crate::document_service::load_active_pending(self) {
                 Ok(_) => break,
-                Err(crate::document_service::OpenDocumentError::Load(error)) => {
+                Err(
+                    error @ (crate::document_service::OpenDocumentError::Load(_)
+                    | crate::document_service::OpenDocumentError::TooLarge { .. }
+                    | crate::document_service::OpenDocumentError::UnsupportedType { .. }),
+                ) => {
                     pruned_restore_paths = true;
                     let (id, path) = {
                         let tabs = self
@@ -306,7 +310,7 @@ impl AppState {
                         .map_err(|_| "tabs lock poisoned".to_string())?
                         .close(id);
                 }
-                Err(error) => return Err(error.to_string()),
+                Err(error) => return Err(error.user_message()),
             }
         }
 
@@ -332,14 +336,7 @@ impl AppState {
             loaded: Some(Arc::new({
                 let app = app.clone();
                 move |payload| {
-                    let _ = Self::emit_document_loaded(
-                        &app,
-                        tab_id,
-                        &payload.path,
-                        &payload.text,
-                        &payload.encoding,
-                        &payload.line_ending,
-                    );
+                    let _ = Self::emit_document_loaded(&app, tab_id, &payload);
                     Self::schedule_tabs_changed(app.clone());
                     // Wartende `POST /wait { event: "document.loaded" }` aufwecken.
                     crate::automation::wait::signal_document_loaded(
@@ -364,7 +361,7 @@ impl AppState {
             })),
             saved: Some(Arc::new({
                 let app = app.clone();
-                move |path, text| {
+                move |path, text, kind| {
                     let toc_entries = toc::extract(&text);
                     let wikilinks = Self::wikilink_context_for(&app, Some(&path));
                     // kind/language wie bei document:loaded mitgeben —
@@ -374,7 +371,7 @@ impl AppState {
                         "document:saved",
                         serde_json::json!({
                             "path": path,
-                            "kind": crate::file_kind::classify_deep(&path),
+                            "kind": kind,
                             "language": crate::file_kind::editor_language(&path),
                             "text": text,
                             "content": renderer::render_body_with_wikilinks(&text, wikilinks.as_ref()),
@@ -396,19 +393,29 @@ impl AppState {
             external_changed: Some(Arc::new({
                 let app = app.clone();
                 move |path| {
-                    let is_active = app
-                        .state::<AppState>()
-                        .tabs
-                        .lock()
-                        .map(|tabs| tabs.is_active(tab_id))
-                        .unwrap_or(false);
-                    if !is_active {
+                    let (extra, active) = {
+                        let state = app.state::<AppState>();
+                        let mut tabs = match state.tabs.lock() {
+                            Ok(tabs) => tabs,
+                            Err(_) => return,
+                        };
+                        let extra = tabs
+                            .tab_mut(tab_id)
+                            .map(|tab| tab.document_store.note_external_change(&path));
+                        let active = tabs.is_active(tab_id);
+                        (extra, active)
+                    };
+                    if !active {
                         return;
                     }
-                    let _ = app.emit(
-                        "document:external_changed",
-                        serde_json::json!({ "path": path, "tabId": tab_id }),
-                    );
+                    let mut payload = serde_json::json!({ "path": path, "tabId": tab_id });
+                    if let Some(info) = extra {
+                        payload["fileSize"] = serde_json::json!(info.file_size);
+                        payload["revision"] = serde_json::json!(info.revision);
+                        payload["available"] = serde_json::json!(info.available);
+                        payload["tooLarge"] = serde_json::json!(info.too_large);
+                    }
+                    let _ = app.emit("document:external_changed", payload);
                 }
             })),
             // Metadaten-only-Reload (BOM/Encoding geaendert, Text gleich):
@@ -494,24 +501,24 @@ impl AppState {
     pub fn emit_document_loaded(
         app: &AppHandle,
         tab_id: u64,
-        path: &str,
-        text: &str,
-        encoding: &str,
-        line_ending: &str,
+        loaded: &crate::document_store::LoadedDocument,
     ) -> Result<(), String> {
         let seq = next_doc_seq();
-        let toc_entries = toc::extract(text);
-        let wikilinks = Self::wikilink_context_for(app, Some(path));
+        let toc_entries = toc::extract(&loaded.text);
+        let wikilinks = Self::wikilink_context_for(app, Some(&loaded.path));
         app.emit(
             "document:loaded",
             serde_json::json!({
-                "path": path,
-                "kind": crate::file_kind::classify_deep(path),
-                "language": crate::file_kind::editor_language(path),
-                "encoding": encoding,
-                "lineEnding": line_ending,
-                "text": text,
-                "content": renderer::render_body_with_wikilinks(text, wikilinks.as_ref()),
+                "path": loaded.path,
+                "kind": loaded.kind,
+                "fileSize": loaded.file_size,
+                "revision": loaded.revision,
+                "tooLarge": loaded.too_large,
+                "language": crate::file_kind::editor_language(&loaded.path),
+                "encoding": loaded.encoding,
+                "lineEnding": loaded.line_ending,
+                "text": loaded.text,
+                "content": renderer::render_body_with_wikilinks(&loaded.text, wikilinks.as_ref()),
                 "tocHtml": toc::render_html(&toc_entries),
                 "headingMap": crate::commands::editor::heading_map(&toc_entries),
                 "tabId": tab_id,

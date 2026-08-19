@@ -57,7 +57,11 @@ pub(in crate::automation) async fn post_open(
         crate::document_service::OpenDocumentError::DirtyRejected => {
             ApiError::conflict(error.to_string())
         }
-        other => ApiError::internal(other.to_string()),
+        crate::document_service::OpenDocumentError::TooLarge { .. }
+        | crate::document_service::OpenDocumentError::UnsupportedType { .. } => {
+            ApiError::bad_request(error.user_message())
+        }
+        other => ApiError::internal(other.user_message()),
     })?;
     if let Some(mode) = outcome.mode_override.as_deref() {
         emit(

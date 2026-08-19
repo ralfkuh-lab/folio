@@ -268,6 +268,7 @@
   "errors.file.sourceMissing": "Quelldatei existiert nicht: {detail}",
   "errors.file.targetAlreadyExists": "Zieldatei existiert bereits: {detail}",
   "errors.file.tempCreateFailed": "Tempfile anlegen fehlgeschlagen: {detail}",
+  "errors.file.tooLargeToAddress": "Die Datei ist zu groß, um sie adressieren zu können: {detail}",
   "errors.file.unsupportedType": "Dateityp wird nicht unterstützt: {detail}",
   "errors.git.diffTooLarge": "Die Datei ist zu groß für den Diff.",
   "errors.git.noHead": "Dieses Repository hat noch keinen Commit.",

@@ -164,5 +164,8 @@ fn api_error(error: TabError) -> ApiError {
         TabError::InvalidPath(_) => ApiError::bad_request(error.to_string()),
         TabError::InvalidArgument(_) => ApiError::bad_request(error.to_string()),
         TabError::Internal(_) => ApiError::internal(error.to_string()),
+        TabError::TooLarge { .. } | TabError::UnsupportedType { .. } => {
+            ApiError::bad_request(error.user_message())
+        }
     }
 }

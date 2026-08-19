@@ -259,6 +259,7 @@
   "errors.file.sourceMissing": "Error message displayed when source file does not exist: {detail} (where {detail} represents the technical error description).",
   "errors.file.targetAlreadyExists": "Error message displayed when target file already exists: {detail} (where {detail} represents the technical error description).",
   "errors.file.tempCreateFailed": "Error message displayed when could not create temporary file: {detail} (where {detail} represents the technical error description).",
+  "errors.file.tooLargeToAddress": "Shown when a file exceeds the byte range Folio can address exactly.",
   "errors.file.unsupportedType": "Error message displayed when unsupported file type: {detail} (where {detail} represents the technical error description).",
   "errors.git.diffTooLarge": "Status or error message when a Git diff cannot be shown because the file exceeds the size limit.",
   "errors.git.noHead": "Status or error message when a Git diff cannot be shown because the repository has no commits yet.",

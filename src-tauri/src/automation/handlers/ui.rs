@@ -554,8 +554,15 @@ async fn history_move(
     options: AckOptions,
 ) -> ApiResult<Json<HistoryMoveResponse>> {
     let state = context.app_handle.state::<AppState>();
-    let entry = crate::document_service::move_history(&state.tabs, &state.vault, forward)
-        .map_err(|error| ApiError::internal(error.to_string()))?;
+    let entry = crate::document_service::move_history(&state.tabs, &state.vault, forward).map_err(
+        |error| match error {
+            crate::document_service::OpenDocumentError::TooLarge { .. }
+            | crate::document_service::OpenDocumentError::UnsupportedType { .. } => {
+                ApiError::bad_request(error.user_message())
+            }
+            other => ApiError::internal(other.user_message()),
+        },
+    )?;
     let Some(entry) = entry else {
         // Stack-Edge: can_go_*-Gate hat den Move verhindert.
         return Ok(Json(HistoryMoveResponse {
@@ -566,8 +573,19 @@ async fn history_move(
             entry: None,
         }));
     };
-    let view_mode =
-        crate::document_service::history_view_mode(&entry.absolute_path, &entry.view_mode);
+    let kind = state
+        .tabs
+        .lock()
+        .ok()
+        .and_then(|tabs| tabs.active().document_store.kind());
+    let view_mode = match kind {
+        Some(kind) => crate::document_service::history_view_mode_for_kind(
+            kind,
+            &entry.absolute_path,
+            &entry.view_mode,
+        ),
+        None => crate::document_service::history_view_mode(&entry.absolute_path, &entry.view_mode),
+    };
     let response_entry = HistoryEntryResponse {
         path: entry.absolute_path.clone(),
         anchor: entry.anchor.clone(),

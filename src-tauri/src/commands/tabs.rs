@@ -14,6 +14,31 @@ pub enum TabError {
     /// Permutation der aktuellen Tabs sind) — Automation mappt auf 400.
     InvalidArgument(String),
     Internal(String),
+    TooLarge {
+        size: u64,
+    },
+    UnsupportedType {
+        path: String,
+    },
+}
+
+impl TabError {
+    pub fn user_message(&self) -> String {
+        match self {
+            Self::TooLarge { size } => crate::i18n::t_args(
+                "errors.file.tooLargeToAddress",
+                &[("detail", &size.to_string())],
+            ),
+            Self::UnsupportedType { path } => {
+                let detail = Path::new(path)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(path);
+                crate::i18n::t_args("errors.file.unsupportedType", &[("detail", detail)])
+            }
+            other => other.to_string(),
+        }
+    }
 }
 
 impl std::fmt::Display for TabError {
@@ -26,6 +51,8 @@ impl std::fmt::Display for TabError {
             Self::InvalidPath(path) => write!(f, "invalid file path: {path}"),
             Self::InvalidArgument(message) => f.write_str(message),
             Self::Internal(message) => f.write_str(message),
+            Self::TooLarge { size } => write!(f, "file too large to address ({size} bytes)"),
+            Self::UnsupportedType { path } => write!(f, "unsupported file type: {path}"),
         }
     }
 }
@@ -34,7 +61,7 @@ impl std::error::Error for TabError {}
 
 impl From<TabError> for String {
     fn from(error: TabError) -> Self {
-        error.to_string()
+        error.user_message()
     }
 }
 
@@ -43,6 +70,56 @@ pub struct TabTransition {
     pub tab: TabSummary,
     pub navigation: Option<NavEntry>,
     pub frontend_changed: bool,
+}
+
+fn tab_error_from_open(error: document_service::OpenDocumentError) -> TabError {
+    match error {
+        document_service::OpenDocumentError::Load(error) => {
+            TabError::InvalidPath(error.to_string())
+        }
+        document_service::OpenDocumentError::TooLarge { size } => TabError::TooLarge { size },
+        document_service::OpenDocumentError::UnsupportedType { path } => {
+            TabError::UnsupportedType { path }
+        }
+        other => TabError::Internal(other.to_string()),
+    }
+}
+
+/// Laedt den Pending-Pfad des aktiven Tabs. Load-/Typ-/Groessenfehler
+/// schliessen genau diesen Tab und kommen als Fehler zurueck — der
+/// Nachbar darf nicht als Erfolg der angefragten Datei gelten.
+fn load_pending_after_activate(
+    state: &AppState,
+) -> Result<Option<document_service::OpenDocumentOutcome>, TabError> {
+    match document_service::load_active_pending(state) {
+        Ok(outcome) => Ok(outcome),
+        Err(
+            error @ (document_service::OpenDocumentError::Load(_)
+            | document_service::OpenDocumentError::TooLarge { .. }
+            | document_service::OpenDocumentError::UnsupportedType { .. }),
+        ) => {
+            let mapped = tab_error_from_open(error);
+            let failed_id = {
+                let tabs = state
+                    .tabs
+                    .lock()
+                    .map_err(|_| TabError::Internal("tabs lock poisoned".into()))?;
+                tabs.active().id
+            };
+            tracing::warn!(
+                target: "folio::tabs",
+                %mapped,
+                "closing lazy tab after load failed"
+            );
+            state
+                .tabs
+                .lock()
+                .map_err(|_| TabError::Internal("tabs lock poisoned".into()))?
+                .close(failed_id);
+            Err(mapped)
+        }
+        Err(error) => Err(TabError::Internal(error.to_string())),
+    }
 }
 
 fn normalized_file_path(path: String) -> Result<String, TabError> {
@@ -136,12 +213,7 @@ pub fn open_with_anchor(
                     tabs.close(id);
                 }
             }
-            return Err(match error {
-                document_service::OpenDocumentError::Load(error) => {
-                    TabError::InvalidPath(error.to_string())
-                }
-                other => TabError::Internal(other.to_string()),
-            });
+            return Err(tab_error_from_open(error));
         }
     };
 
@@ -226,63 +298,40 @@ pub fn activate_with_anchor(
     }
 
     // Restore-Tabs tragen bis zur ersten Aktivierung nur `pending_path`.
-    // Schlaegt das Laden inzwischen fehl, wird der tote Tab entfernt und
-    // der dadurch aktive Nachbar bei Bedarf ebenfalls lazy geladen.
+    // Schlaegt das Laden fehl, kommt der Fehler beim Aufrufer an — der
+    // Nachbartab darf nicht als Erfolg der angefragten Datei gelten.
     let mut lazy_loaded = false;
-    loop {
-        match document_service::load_active_pending(state) {
-            Ok(Some(outcome)) => {
-                if let Some(mode) = outcome.mode_override.as_deref() {
-                    handle
-                        .emit("app:set_mode", serde_json::json!({ "mode": mode }))
-                        .map_err(|error| TabError::Internal(error.to_string()))?;
-                }
-                // Der Store-load-Callback hat document:loaded (inkl.
-                // /wait-Signal) und dirty_changed bereits emittiert —
-                // unten NICHT erneut emitten, sonst rendert das Frontend
-                // doppelt und der Model-Cache sieht zwei loaded-Events.
-                lazy_loaded = true;
-                break;
+    match load_pending_after_activate(state) {
+        Ok(Some(outcome)) => {
+            if let Some(mode) = outcome.mode_override.as_deref() {
+                handle
+                    .emit("app:set_mode", serde_json::json!({ "mode": mode }))
+                    .map_err(|error| TabError::Internal(error.to_string()))?;
             }
-            Ok(None) => break,
-            Err(document_service::OpenDocumentError::Load(error)) => {
-                let (failed_id, path) = {
-                    let tabs = state
-                        .tabs
-                        .lock()
-                        .map_err(|_| TabError::Internal("tabs lock poisoned".into()))?;
-                    (
-                        tabs.active().id,
-                        tabs.active().document_path().map(str::to_string),
-                    )
-                };
-                tracing::warn!(
-                    target: "folio::tabs",
-                    ?path,
-                    %error,
-                    "closing lazy tab after load failed"
-                );
-                state
-                    .tabs
-                    .lock()
-                    .map_err(|_| TabError::Internal("tabs lock poisoned".into()))?
-                    .close(failed_id);
-            }
-            Err(error) => return Err(TabError::Internal(error.to_string())),
+            // Der Store-load-Callback hat document:loaded (inkl.
+            // /wait-Signal) und dirty_changed bereits emittiert —
+            // unten NICHT erneut emitten, sonst rendert das Frontend
+            // doppelt und der Model-Cache sieht zwei loaded-Events.
+            lazy_loaded = true;
+        }
+        Ok(None) => {}
+        Err(error) => {
+            let _ = AppState::emit_tabs_changed(handle);
+            return Err(error);
         }
     }
 
-    let (path, text, encoding, line_ending, dirty, tab_id) = {
+    let (loaded, dirty, tab_id) = {
         let tabs = state
             .tabs
             .lock()
             .map_err(|_| TabError::Internal("tabs lock poisoned".into()))?;
         let tab = tabs.active();
         (
-            tab.document_store.path.clone(),
-            tab.document_store.text.clone(),
-            tab.document_store.encoding_label(),
-            tab.document_store.line_ending_label(),
+            tab.document_store
+                .path
+                .as_ref()
+                .map(|_| tab.document_store.snapshot()),
             tab.document_store.is_dirty,
             tab.id,
         )
@@ -292,12 +341,11 @@ pub fn activate_with_anchor(
         .vault
         .lock()
         .map_err(|_| TabError::Internal("vault lock poisoned".into()))?
-        .set_active(path.clone());
+        .set_active(loaded.as_ref().map(|l| l.path.clone()));
 
-    if let Some(path) = path {
+    if let Some(loaded) = loaded {
         if !lazy_loaded {
-            AppState::emit_document_loaded(handle, tab_id, &path, &text, encoding, line_ending)
-                .map_err(TabError::Internal)?;
+            AppState::emit_document_loaded(handle, tab_id, &loaded).map_err(TabError::Internal)?;
             handle
                 .emit(
                     "document:dirty_changed",
@@ -417,7 +465,7 @@ pub fn close_all(state: &AppState, handle: &AppHandle) -> Result<TabTransition, 
 }
 
 fn emit_active_document(state: &AppState, handle: &AppHandle) -> Result<(), TabError> {
-    let (id, path, text, encoding, line_ending, dirty) = {
+    let (id, loaded, dirty) = {
         let tabs = state
             .tabs
             .lock()
@@ -425,10 +473,10 @@ fn emit_active_document(state: &AppState, handle: &AppHandle) -> Result<(), TabE
         let tab = tabs.active();
         (
             tab.id,
-            tab.document_store.path.clone(),
-            tab.document_store.text.clone(),
-            tab.document_store.encoding_label(),
-            tab.document_store.line_ending_label(),
+            tab.document_store
+                .path
+                .as_ref()
+                .map(|_| tab.document_store.snapshot()),
             tab.document_store.is_dirty,
         )
     };
@@ -436,10 +484,9 @@ fn emit_active_document(state: &AppState, handle: &AppHandle) -> Result<(), TabE
         .vault
         .lock()
         .map_err(|_| TabError::Internal("vault lock poisoned".into()))?
-        .set_active(path.clone());
-    if let Some(path) = path {
-        AppState::emit_document_loaded(handle, id, &path, &text, encoding, line_ending)
-            .map_err(TabError::Internal)?;
+        .set_active(loaded.as_ref().map(|l| l.path.clone()));
+    if let Some(loaded) = loaded {
+        AppState::emit_document_loaded(handle, id, &loaded).map_err(TabError::Internal)?;
         handle
             .emit(
                 "document:dirty_changed",
@@ -477,9 +524,11 @@ fn transition_for_active(
         .find(|summary| summary.active)
         .expect("TabManager always has an active tab");
     let navigation = if tab.document_store.path.is_some() {
-        tab.navigation.current().map(NavEntry::from)
+        tab.navigation
+            .current()
+            .map(|entry| NavEntry::from_kind(entry, tab.document_store.kind()))
     } else {
-        None
+        tab.navigation.current().map(NavEntry::from)
     };
     Ok(TabTransition {
         tab: summary,
@@ -604,6 +653,49 @@ mod tests {
             Some(target_id),
             tab_to_focus_for_path(&tabs, r"\notes\target.md")
         );
+    }
+
+    #[test]
+    fn activating_pending_binary_returns_error_not_neighbor() {
+        use crate::state::AppState;
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp = TempDir::new().unwrap();
+        let md = temp.path().join("ok.md");
+        fs::write(&md, "hello").unwrap();
+        let md = md.to_string_lossy().replace('\\', "/");
+        let bin = temp.path().join("blob");
+        fs::write(&bin, b"x\0y").unwrap();
+        let bin = bin.to_string_lossy().replace('\\', "/");
+
+        let state = AppState::new();
+        {
+            let mut tabs = state.tabs.lock().unwrap();
+            tabs.restore_session(&[md.clone(), bin.clone()], Some(0));
+        }
+        let loaded = document_service::load_active_pending(&state)
+            .unwrap()
+            .unwrap();
+        assert_eq!(md, loaded.loaded.as_ref().unwrap().path);
+
+        let bin_id = state.tabs.lock().unwrap().find_by_path(&bin).unwrap();
+        assert!(state.tabs.lock().unwrap().activate(bin_id));
+
+        let err = load_pending_after_activate(&state).unwrap_err();
+        assert!(
+            matches!(err, TabError::UnsupportedType { .. }),
+            "caller must see the reject, not Ok(neighbor): {err}"
+        );
+
+        let tabs = state.tabs.lock().unwrap();
+        assert!(
+            tabs.find_by_path(&bin).is_none(),
+            "unreadable tab is closed"
+        );
+        assert_eq!(Some(md.as_str()), tabs.active().document_path());
+        assert_eq!(1, tabs.tabs().len());
+        assert_eq!("hello", tabs.active().document_store.text);
     }
 
     #[test]

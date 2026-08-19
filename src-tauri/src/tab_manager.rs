@@ -1,7 +1,7 @@
 use crate::document_store::{DocumentEvents, DocumentStore, LoadedDocument};
 use crate::navigation::NavigationController;
 use serde::Serialize;
-use std::{io, path::Path, sync::Arc};
+use std::{path::Path, sync::Arc};
 
 pub type DocumentEventFactory = Arc<dyn Fn(u64) -> DocumentEvents + Send + Sync>;
 
@@ -368,9 +368,9 @@ impl TabManager {
     /// Laedt den pending Pfad des aktiven Tabs genau einmal. Der Loader
     /// wird injiziert, damit Restore/Aktivierung ohne AppHandle testbar
     /// bleiben und die FileKind-Auswahl im document_service wohnen kann.
-    pub fn load_active_pending<F>(&mut self, loader: F) -> io::Result<Option<LoadedDocument>>
+    pub fn load_active_pending<F, E>(&mut self, loader: F) -> Result<Option<LoadedDocument>, E>
     where
-        F: FnOnce(&mut DocumentStore, &str) -> io::Result<LoadedDocument>,
+        F: FnOnce(&mut DocumentStore, &str) -> Result<LoadedDocument, E>,
     {
         let Some(path) = self.active().pending_path.clone() else {
             return Ok(None);

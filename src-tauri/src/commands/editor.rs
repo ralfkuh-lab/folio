@@ -137,7 +137,7 @@ pub async fn discard_editor_changes(state: State<'_, AppState>) -> Result<bool, 
 #[tauri::command]
 pub async fn set_line_ending(eol: String, state: State<'_, AppState>) -> Result<(), String> {
     use crate::document_store::LineEnding;
-    use crate::file_kind::{classify_deep, FileKind};
+    use crate::file_kind::FileKind;
 
     let wanted = LineEnding::from_label(&eol)
         .ok_or_else(|| i18n::t_args("errors.document.invalidLineEnding", &[("detail", &eol)]))?;
@@ -148,12 +148,11 @@ pub async fn set_line_ending(eol: String, state: State<'_, AppState>) -> Result<
         .map_err(|_| "tabs lock poisoned".to_string())?;
     let tab = tabs.active_mut();
     let store = &mut tab.document_store;
-    let Some(path) = store.path.clone() else {
+    if store.path.is_none() {
         return Err(i18n::t("errors.document.noneLoaded"));
     };
-    // Zweite Verteidigung neben store.opaque (Rename kann Endung aendern).
-    let kind = classify_deep(&path);
-    if matches!(kind, FileKind::Image | FileKind::Binary) || store.is_opaque() {
+    // Zweite Verteidigung neben store.opaque: Deskriptor, nicht Pfad.
+    if matches!(store.kind(), Some(FileKind::Image | FileKind::Binary)) || store.is_opaque() {
         return Err(i18n::t("errors.document.readOnly"));
     }
     // Events laufen ueber DocumentEvents::eol_changed / dirty_changed.

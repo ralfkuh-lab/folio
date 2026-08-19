@@ -15,9 +15,22 @@ pub struct NavEntry {
 
 impl From<&Entry> for NavEntry {
     fn from(entry: &Entry) -> Self {
-        // Kind-abhaengiges Clamping (Markdown/HTML behalten, Image ->
-        // "view", Rest -> "edit") liegt zentral in document_service.
-        let view_mode = document_service::history_view_mode(&entry.absolute_path, &entry.view_mode);
+        Self::from_kind(entry, None)
+    }
+}
+
+impl NavEntry {
+    pub(crate) fn from_kind(entry: &Entry, kind: Option<crate::file_kind::FileKind>) -> Self {
+        // Kind-abhaengiges Clamping liegt zentral in document_service.
+        // Mit Deskriptor (nach Load) nicht erneut klassifizieren.
+        let view_mode = match kind {
+            Some(kind) => document_service::history_view_mode_for_kind(
+                kind,
+                &entry.absolute_path,
+                &entry.view_mode,
+            ),
+            None => document_service::history_view_mode(&entry.absolute_path, &entry.view_mode),
+        };
         Self {
             path: entry.absolute_path.clone(),
             anchor: entry.anchor.clone(),
@@ -39,9 +52,9 @@ pub async fn navigate(
         .tabs
         .lock()
         .map_err(|_| "tabs lock poisoned".to_string())?;
-    Ok(NavEntry::from(
-        tabs.active_mut().navigation.navigate(path, anchor),
-    ))
+    let tab = tabs.active_mut();
+    let entry = tab.navigation.navigate(path, anchor).clone();
+    Ok(NavEntry::from_kind(&entry, tab.document_store.kind()))
 }
 
 #[tauri::command]
@@ -133,11 +146,17 @@ fn move_history(
     handle: Option<AppHandle>,
 ) -> Result<Option<NavEntry>, String> {
     let entry = document_service::move_history(&state.tabs, &state.vault, forward)
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| error.user_message())?;
 
-    let Some(entry) = entry.as_ref().map(NavEntry::from) else {
+    let Some(raw) = entry.as_ref() else {
         return Ok(None);
     };
+    let kind = state
+        .tabs
+        .lock()
+        .ok()
+        .and_then(|tabs| tabs.active().document_store.kind());
+    let entry = NavEntry::from_kind(raw, kind);
 
     if let Some(handle) = handle {
         handle
@@ -181,7 +200,7 @@ mod tests {
     #[test]
     fn nav_entry_maps_from_navigation_entry() {
         let entry = Entry {
-            absolute_path: "/a".into(),
+            absolute_path: "/a.md".into(),
             anchor: Some("x".into()),
             scroll_y: 1.5,
             view_mode: "edit".into(),
@@ -190,7 +209,7 @@ mod tests {
         };
         assert_eq!(
             NavEntry {
-                path: "/a".into(),
+                path: "/a.md".into(),
                 anchor: Some("x".into()),
                 scroll_y: 1.5,
                 view_mode: "edit".into(),
@@ -259,6 +278,32 @@ mod tests {
         nav.navigate("/a", None);
         nav.update_scroll_position(10.0);
         assert_eq!(10.0, NavEntry::from(nav.current().unwrap()).scroll_y);
+    }
+
+    #[test]
+    fn navigate_builds_entry_from_store_kind() {
+        use crate::document_store::DocumentStore;
+        use crate::file_kind::FileKind;
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("INSTALL");
+        fs::write(&path, b"hello\n").unwrap();
+        let path = path.to_string_lossy().replace('\\', "/");
+        let mut store = DocumentStore::new();
+        store.load(&path).unwrap();
+        assert_eq!(Some(FileKind::Text), store.kind());
+
+        let mut nav = NavigationController::new();
+        let entry = nav.navigate(path, None).clone();
+        let mapped = NavEntry::from_kind(&entry, store.kind());
+        assert_eq!("edit", mapped.view_mode);
+        assert_eq!(
+            "view",
+            NavEntry::from(&entry).view_mode,
+            "path classify stays the pending-only fallback"
+        );
     }
 
     #[test]

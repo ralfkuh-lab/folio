@@ -270,6 +270,7 @@
   "errors.file.sourceMissing": "Исходный файл не существует: {detail}",
   "errors.file.targetAlreadyExists": "Целевой файл уже существует: {detail}",
   "errors.file.tempCreateFailed": "Не удалось создать временный файл: {detail}",
+  "errors.file.tooLargeToAddress": "Файл слишком велик для адресации: {detail}",
   "errors.file.unsupportedType": "Неподдерживаемый тип файла: {detail}",
   "errors.git.diffTooLarge": "Файл слишком большой для diff.",
   "errors.git.noHead": "В этом репозитории ещё нет коммитов.",

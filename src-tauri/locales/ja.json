@@ -267,6 +267,7 @@
   "errors.file.sourceMissing": "ソースファイルが存在しません：{detail}",
   "errors.file.targetAlreadyExists": "出力先ファイルはすでに存在します：{detail}",
   "errors.file.tempCreateFailed": "一時ファイルを作成できませんでした：{detail}",
+  "errors.file.tooLargeToAddress": "このファイルは大きすぎてアドレス指定できません: {detail}",
   "errors.file.unsupportedType": "未対応のファイル形式です：{detail}",
   "errors.git.diffTooLarge": "このファイルは大きすぎて差分を表示できません。",
   "errors.git.noHead": "このリポジトリにはまだコミットがありません。",

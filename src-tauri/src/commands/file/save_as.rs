@@ -1,4 +1,4 @@
-use crate::file_kind::{classify_deep, FileKind};
+use crate::file_kind::FileKind;
 use crate::i18n;
 use crate::menu::strings as menu_strings;
 use crate::state::AppState;
@@ -19,7 +19,7 @@ pub fn run_save_as(
 ) -> Result<Option<String>, String> {
     // 1) Aktuellen Pfad/Text aus dem Store ziehen — hier nur lesen,
     //    damit der Lock vor dem blockierenden Dialog wieder frei ist.
-    let current_path = {
+    let (current_path, kind) = {
         let tabs = state
             .tabs
             .lock()
@@ -31,13 +31,14 @@ pub fn run_save_as(
         if store.is_opaque() {
             return Err(i18n::t("errors.document.readOnly"));
         }
-        store.path.clone()
+        (
+            store.path.clone().expect("path checked above"),
+            store.kind().unwrap_or(FileKind::Text),
+        )
     };
-    let current_path = current_path.expect("path checked above");
 
-    // 2) Dialog mit Filter aus aktueller Endung + immer „Alle Dateien".
+    // 2) Dialog mit Filter aus aktuellem Deskriptor + immer „Alle Dateien".
     let labels = menu_strings::labels();
-    let kind = classify_deep(&current_path);
     let mut builder = handle
         .dialog()
         .file()
