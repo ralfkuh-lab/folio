@@ -191,6 +191,21 @@
   <div class="image-view-region" id="image-view-region">
     <div id="image-view-mount"></div>
   </div>
+  <div class="hex-view-region" id="hex-view-region">
+    <div class="hex-view-toolbar" id="hex-view-toolbar" hidden>
+      <span id="hex-view-range"></span>
+      <button type="button" id="hex-view-prev" data-i18n-title="hexView.previousWindow" disabled>◀</button>
+      <button type="button" id="hex-view-next" data-i18n-title="hexView.nextWindow" disabled>▶</button>
+      <label for="hex-view-goto" data-i18n="hexView.goToOffset">Gehe zu Offset</label>
+      <input type="text" id="hex-view-goto" spellcheck="false" autocomplete="off" aria-describedby="hex-view-goto-error" />
+      <span id="hex-view-goto-error" class="hex-goto-error" aria-live="polite"></span>
+    </div>
+    <div id="hex-view-status" aria-live="polite" hidden>
+      <span id="hex-view-status-text"></span>
+      <button type="button" id="hex-view-retry" hidden data-i18n="hexView.retry">Wiederholen</button>
+    </div>
+    <div id="hex-view-mount" tabindex="0"></div>
+  </div>
   <div class="splitter-mid" id="splitter-mid"></div>
   <div class="editor-region" id="editor-region">
     <div class="editor-content">

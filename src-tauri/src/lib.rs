@@ -538,6 +538,7 @@ pub fn builder(settings: crate::settings::SettingsService) -> tauri::Builder<tau
             commands::app::log_bridge::frontend_log,
             commands::file::read::read_file,
             commands::file::read::reload_document,
+            commands::file::chunk::read_file_chunk,
             commands::file::list::file_list,
             commands::file::save_as::save_as,
             commands::file::close::close_document,

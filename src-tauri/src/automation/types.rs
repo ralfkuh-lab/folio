@@ -6,6 +6,15 @@ use serde::{Deserialize, Serialize};
 pub(super) struct AutomationState {
     pub(super) title: String,
     pub(super) file: Option<String>,
+    /// Aufgeloester Dokumenttyp (`markdown` | `text` | `image` | `binary`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) kind: Option<String>,
+    /// Letzte adressierbare Dateigroesse; fehlt ohne geladenes Dokument.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) file_size: Option<u64>,
+    /// Hex-Ansicht, nur wenn ein Binary-Dokument geladen ist.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) hex: Option<HexAutomationState>,
     pub(super) dirty: bool,
     /// Zeilenenden des aktiven Dokuments (`lf` | `crlf`); `None` ohne Doc.
     pub(super) line_ending: Option<String>,
@@ -28,6 +37,14 @@ pub(super) struct AutomationState {
     pub(super) frontend_ready: bool,
     /// Aufgelöster catalogTag der Prozess-Sprache (z. B. `"de"`).
     pub(super) lang: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct HexAutomationState {
+    pub(super) window_start: u64,
+    pub(super) window_len: u64,
+    pub(super) error: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -457,6 +474,9 @@ mod phase0_request_tests {
         let state = AutomationState {
             title: "Folio".into(),
             file: None,
+            kind: None,
+            file_size: None,
+            hex: None,
             dirty: false,
             line_ending: None,
             view_mode: "split".into(),

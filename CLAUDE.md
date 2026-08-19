@@ -440,12 +440,10 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   Aktivierung gelesen, nicht neu gesnifft. `fileSize` ist immer
   adressierbar; wächst die Datei darüber, bleibt der letzte gültige Wert
   stehen und `tooLarge` wird wahr — die Hex-Ansicht darf dann keine
-  Fenster jenseits dieser Größe anfordern. Image geht opaque; der Typ
-  bleibt für die Tab-Lebensdauer stehen (Rename ändert ihn nicht).
-  **Etappe 1+2 lehnen `FileKind::Binary` zentral im Loader ab**
-  (`errors.file.unsupportedType`), bevor Store, History oder Events
-  mutieren — `read_file` hat kein eigenes Gate mehr. Etappe 3 entfernt
-  diesen Zweig und schaltet Hex frei. Vault-Baum,
+  Fenster jenseits dieser Größe anfordern. Image **und Binary** gehen
+  opaque (`load_opaque_as`); Binary rendert in der Hex-Surface
+  (`view/hex.ts`, nur View-Mode). Der Typ bleibt für die Tab-Lebensdauer
+  stehen (Rename ändert ihn nicht). Vault-Baum,
   Filter, Wikilinks, Tags und der Such-Walk bleiben endungsbasiert
   und IO-frei. Bleibt `classify` bei `Binary`, entscheidet ein
   Inhalts-Sniff (bekannte BOM am Dateianfang → Text; sonst NUL

@@ -13,6 +13,7 @@ import { getCurrentPath, showStatus } from '../state/document';
 import { GIT_STATUS_CHANGED_EVENT, isPathGitModified } from '../vault/git-status';
 import { isAiReviewOpen } from './ai-diff-review';
 import { folioLog, safeInvoke } from '../util/log';
+import { isTextOrMarkdownPath } from '../util/file-kind';
 import { t } from '../i18n/translate';
 
 let gitDiffOpen = false;
@@ -97,6 +98,9 @@ export async function openGitDiff(
     path: string,
     showStatus: (msg: string) => void,
 ): Promise<void> {
+    if (!isTextOrMarkdownPath(path)) {
+        return;
+    }
     if (isAiReviewOpen()) {
         showStatus(t('errors.ai.reviewOpen'));
         return;
@@ -172,13 +176,18 @@ export async function openGitDiff(
     diffView.focus();
 }
 
+function isBinaryOrImageKind(): boolean {
+    const cl = document.body.classList;
+    return cl.contains('kind-binary') || cl.contains('kind-image');
+}
+
 /** Toolbar/Menue: enabled genau dann, wenn das aktive Dokument git-modified ist. */
 let gitDiffEnabledGen = 0;
 let gitDiffEnabledChain: Promise<void> = Promise.resolve();
 
 export function syncGitDiffActionEnabled(): void {
     const path = getCurrentPath();
-    const enabled = !!path && isPathGitModified(path);
+    const enabled = !!path && isPathGitModified(path) && !isBinaryOrImageKind();
     const btn = document.getElementById('tb-git-diff') as HTMLButtonElement | null;
     if (btn) {
         btn.disabled = !enabled;
@@ -205,7 +214,9 @@ export function syncGitDiffActionEnabled(): void {
 /** Gemeinsamer Einstieg fuer Toolbar, Menue, Palette und Tab-Klick. */
 export function openGitDiffForActiveDoc(): void {
     const path = getCurrentPath();
-    if (!path || !isPathGitModified(path)) return;
+    if (!path || !isPathGitModified(path) || !isTextOrMarkdownPath(path) || isBinaryOrImageKind()) {
+        return;
+    }
     void openGitDiff(path, showStatus);
 }
 
@@ -268,7 +279,7 @@ export function initGitDiff(): void {
     window.addEventListener('folio-open-git-diff', (event: Event) => {
         const detail = (event as CustomEvent<{ path?: string }>).detail;
         const path = detail && typeof detail.path === 'string' ? detail.path : '';
-        if (!path) return;
+        if (!path || !isTextOrMarkdownPath(path)) return;
         void openGitDiff(path, showStatus);
     });
     window.addEventListener(GIT_STATUS_CHANGED_EVENT, () => {

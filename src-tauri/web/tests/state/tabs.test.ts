@@ -93,6 +93,24 @@ describe('state/tabs', () => {
         expect(document.querySelector('.tab-git')).toBeNull();
     });
 
+    it('renders no git mark for a modified binary tab', async () => {
+        const git = await import('../../app/vault/git-status');
+        git.__setGitStatusSnapshotForTests([
+            { path: '/notes/blob.bin', status: 'modified' },
+        ]);
+        const { renderTabs } = await import('../../app/state/tabs');
+        renderTabs({
+            activeIndex: 0,
+            tabs: [
+                { id: 1, path: '/notes/blob.bin', dirty: false, active: false },
+                { id: 2, path: '/notes/beta.md', dirty: false, active: true },
+            ],
+        });
+        const items = document.querySelectorAll('#tab-bar .tab-item');
+        expect(items[0].querySelector('.tab-git')).toBeNull();
+        expect(items[0].classList.contains('tab-git-modified')).toBe(false);
+    });
+
     it('hides the bar for the single empty backend tab', async () => {
         const { renderTabs } = await import('../../app/state/tabs');
 

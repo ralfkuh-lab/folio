@@ -19,7 +19,9 @@ Folio schlicht nicht erreichbar.
 - **Keine Suche im Hex-Dump.** Die Find-Bar sperrt bei `kind-binary` bereits ab
   (`ui/find-bar.ts:47`); das bleibt so.
 - **Keine Positions-Wiederherstellung über einen App-Neustart hinweg.** Beim
-  Restore beginnt die Ansicht definiert bei Byte 0.
+  Restore beginnt die Ansicht definiert bei Byte 0. Innerhalb der Sitzung
+  bleibt die Position dagegen pro Tab **und Pfad** erhalten (siehe
+  „Laden, Races, Zustände").
 
 ## Vorbedingung: Opaque-Dokumente sind schreibgeschützt
 
@@ -267,18 +269,23 @@ die Anzeige „Bytes X–Y" inklusive oder exklusive Grenzen meint (inklusiv,
 ### Laden, Races, Zustände
 
 - **Generation-Token** wird erhöht bei Mount, Clear, Tabwechsel, Fenstersprung
-  und Revisionswechsel. Der Cache-Key ist `(revision, chunkStart)`. Verworfen
-  werden veraltete **Erfolgs- und Fehlerantworten**.
+  und Revisionswechsel. Der Cache-Key ist `(tabId, revision, chunkStart)` —
+  Revisionen sind nur **pro Tab** monoton, derselbe Zahlenwert kann in zwei
+  Tabs verschiedene Dateien meinen. Verworfen werden veraltete **Erfolgs-
+  und Fehlerantworten**, sofern die aktuelle Generation den Read nicht
+  weiter nachfragt.
 - **Dedup + Drosselung**: identische Blockanfragen werden zusammengefasst,
   höchstens 4 Reads laufen gleichzeitig — sonst startet schnelles Scrollen
-  Dutzende 64-KiB-Aufträge.
-- **Position pro Tab**: der oberste sichtbare globale Byte-Offset wird je
-  Tab-ID im Modul gehalten, damit ein Tabwechsel nicht auf Byte 0 zurückfällt.
-  Für jeden anderen Dokumentwechsel gilt ausdrücklich Reset auf 0 — ein
-  Offset, der von einem Dokument auf ein anderes überspringt, zeigt an einer
-  beliebigen Stelle einer fremden Datei. Über einen App-Neustart hinweg wird
-  nicht restauriert (Nicht-Ziel), History-Einträge tragen den Offset in V1
-  nicht.
+  Dutzende 64-KiB-Aufträge. Ein Generationswechsel, der denselben Schlüssel
+  noch braucht, hängt sich an den laufenden Read (Interessenten), statt
+  dessen Ergebnis zu verwerfen und das Fenster leer zu lassen.
+- **Position pro Tab und Pfad**: der oberste sichtbare globale Byte-Offset
+  wird je `(tabId, path)` im Modul gehalten. Tabwechsel und History-Rückkehr
+  zur **gleichen** Datei stellen die Stelle wieder her; ein *anderes*
+  Dokument startet bei Byte 0, damit die Position nicht auf eine fremde
+  Datei überspringt. Einträge verschwinden, wenn der Tab geschlossen wird
+  (kein unbegrenztes Wachstum). Über einen App-Neustart hinweg wird nicht
+  restauriert (Nicht-Ziel), History-Einträge tragen den Offset in V1 nicht.
 - **In-Surface-Zustände** statt stiller Leere: *Laden*, *leer* (0 Bytes),
   *nicht verfügbar* (gelöscht/Rechte weg, mit Wiederholen-Aktion) und
   *Lesefehler*. Hinweise mit `aria-live`, das Offset-Feld mit `aria-invalid`
@@ -304,9 +311,10 @@ Alternative; sie lohnt den Aufwand in V1 nicht.
    übernimmt die neue Größe und klemmt Fenster und Scrollposition ans neue
    Ende.
 2. **Tab-Wechsel und History.** Ein erneutes `document:loaded` bei
-   Tab-Aktivierung baut die Ansicht neu auf; ohne gespeicherten Offset springt
-   sie auf Byte 0, mit falsch angewandtem Markdown-Scroll in die falsche
-   Region.
+   Tab-Aktivierung baut die Ansicht neu auf; die Stelle kommt aus dem
+   `(tabId, path)`-Speicher. Ohne Eintrag (anderes Dokument, Tab gerade
+   geschlossen) startet sie bei Byte 0. Ein falsch angewandter
+   Markdown-Scroll landet in der falschen Region.
 3. **Statusleiste.** Cursor-, EOL-, Encoding- und Wortzähler-Zellen sind für
    Binärdokumente sinnlos und bleiben ausgeblendet.
 4. **Session-Restore.** Ein Binär-Tab überlebt den Neustart (`open_tabs`);

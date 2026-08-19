@@ -20,6 +20,14 @@ vi.mock('../../app/view/markdown', () => ({
     prepareMarkdownView: vi.fn(),
     ViewFinder: { setFindTerm: vi.fn() },
 }));
+vi.mock('../../app/view/hex', () => ({
+    clearHexView: vi.fn(),
+    forgetClosedHexTabs: vi.fn(),
+    forgetHexOffsetsForTab: vi.fn(),
+    isBinaryDocument: vi.fn((kind: string) => kind === 'binary'),
+    mountHexView: vi.fn(),
+    reloadHexView: vi.fn(),
+}));
 vi.mock('../../app/view/html', () => ({
     clearHtmlView: vi.fn(),
     HtmlFinder: { setFindTerm: vi.fn() },
@@ -270,6 +278,32 @@ describe('state/document — synchronous setters', () => {
         applyDocKind('image', '/tmp/pic.png');
         expect(seen[0]).toEqual({ kind: 'image', path: '/tmp/pic.png' });
     });
+
+    it('applyDocKind behandelt Binary als Dokument mit View, ohne Edit', async () => {
+        const { applyDocKind } = await import('../../app/state/document');
+        applyDocKind('binary', '/tmp/a.bin');
+        expect(document.body.classList.contains('kind-binary')).toBe(true);
+        expect((document.getElementById('tb-mode-view') as HTMLButtonElement).disabled).toBe(false);
+        expect((document.getElementById('tb-mode-edit') as HTMLButtonElement).disabled).toBe(true);
+        expect((document.getElementById('tb-mode-split') as HTMLButtonElement).disabled).toBe(true);
+        expect((document.getElementById('tb-export') as HTMLButtonElement).disabled).toBe(true);
+        expect(tauri.invoke).toHaveBeenCalledWith('menu_set_enabled', {
+            id: 'file.close',
+            enabled: true,
+        });
+        expect(tauri.invoke).toHaveBeenCalledWith('menu_set_enabled', {
+            id: 'view.mode.view',
+            enabled: true,
+        });
+        expect(tauri.invoke).toHaveBeenCalledWith('menu_set_enabled', {
+            id: 'view.mode.edit',
+            enabled: false,
+        });
+        expect(tauri.invoke).toHaveBeenCalledWith('menu_set_enabled', {
+            id: 'edit.find',
+            enabled: false,
+        });
+    });
 });
 
 describe('state/document — document:loaded listener', () => {
@@ -436,6 +470,81 @@ describe('state/document — document:loaded listener', () => {
         const reloadCalls = tauri.invoke.mock.calls.filter((c: any[]) => c[0] === 'reload_document');
         expect(reloadCalls.length).toBe(0);
         expect(document.getElementById('status-path')!.textContent).toContain('extern geändert');
+    });
+
+    it('document:loaded mountet die Hex-Ansicht fuer Binary', async () => {
+        const hexView = await import('../../app/view/hex');
+        const docMod = await import('../../app/state/document');
+        docMod.initDocumentState();
+        tauri.emitEvent('document:loaded', {
+            path: '/tmp/a.bin',
+            kind: 'binary',
+            fileSize: 32,
+            revision: 4,
+            tabId: 9,
+            tooLarge: false,
+        });
+        expect(document.body.classList.contains('kind-binary')).toBe(true);
+        expect(hexView.mountHexView).toHaveBeenCalledWith({
+            path: '/tmp/a.bin',
+            fileSize: 32,
+            revision: 4,
+            tabId: 9,
+            tooLarge: false,
+            available: true,
+        });
+    });
+
+    it('document:external_changed an Binary ruft reloadHexView, nicht reload_document', async () => {
+        const hexView = await import('../../app/view/hex');
+        const docMod = await import('../../app/state/document');
+        docMod.initDocumentState();
+        tauri.emitEvent('document:loaded', {
+            path: '/tmp/a.bin',
+            kind: 'binary',
+            fileSize: 32,
+            revision: 1,
+            tabId: 2,
+        });
+        tauri.invoke.mockClear();
+        tauri.emitEvent('document:external_changed', {
+            path: '/tmp/a.bin',
+            tabId: 2,
+            fileSize: 8,
+            revision: 2,
+            available: true,
+            tooLarge: false,
+        });
+        expect(hexView.reloadHexView).toHaveBeenCalledWith({
+            tabId: 2,
+            fileSize: 8,
+            revision: 2,
+            tooLarge: false,
+            available: true,
+        });
+        expect(tauri.invoke.mock.calls.some((c: unknown[]) => c[0] === 'reload_document')).toBe(false);
+    });
+
+    it('document:external_changed an Binary verwirft fremde tabId', async () => {
+        const hexView = await import('../../app/view/hex');
+        const docMod = await import('../../app/state/document');
+        docMod.initDocumentState();
+        tauri.emitEvent('document:loaded', {
+            path: '/tmp/a.bin',
+            kind: 'binary',
+            fileSize: 32,
+            revision: 4,
+            tabId: 2,
+        });
+        vi.mocked(hexView.reloadHexView).mockClear();
+        tauri.emitEvent('document:external_changed', {
+            path: '/tmp/a.bin',
+            tabId: 99,
+            fileSize: 8,
+            revision: 9,
+            available: true,
+        });
+        expect(hexView.reloadHexView).not.toHaveBeenCalled();
     });
 
     it('html text files mount sandbox HTML preview instead of code view', async () => {

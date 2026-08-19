@@ -16,6 +16,13 @@ import { addCodeCopyButtons } from '../view/code-copy';
 import { renderMermaidBlocks } from '../view/mermaid';
 import { clearHtmlView, invalidateHtmlLive, isHtmlDocument, mountHtmlView } from '../view/html';
 import { clearImageView, isImageDocument, mountImageView, reloadImageView } from '../view/image';
+import {
+    clearHexView,
+    forgetHexOffsetsForTab,
+    isBinaryDocument,
+    mountHexView,
+    reloadHexView,
+} from '../view/hex';
 import { invalidateCodeLive } from '../view/code-live';
 import { invalidatePreview } from '../view/preview';
 import { clearMarkdownHeadingMap, setMarkdownHeadingMap } from '../view/scroll-sync';
@@ -395,8 +402,7 @@ function syncViewModeMenuChecks(): void {
     const body = document.body;
     // Ohne geladenes Dokument soll kein Mode angehakt sein, auch wenn
     // edit-mode/split-mode-Klassen noch im DOM stehen.
-    const hasDoc = !body.classList.contains('kind-unknown')
-                && !body.classList.contains('kind-binary');
+    const hasDoc = !body.classList.contains('kind-unknown');
     const mode = !hasDoc ? null
               : body.classList.contains('edit-mode') ? 'edit'
               : body.classList.contains('split-mode') ? 'split'
@@ -414,13 +420,13 @@ export function applyDocKind(kind: string | null, path?: string | null): void {
 
     const md = resolved === 'markdown';
     const isImage = resolved === 'image';
-    const hasDoc = resolved !== 'unknown' && resolved !== 'binary';
-    // View-Mode: Markdown (HTML-Render), Text (read-only Monaco) und
-    // Image (`<img>`-Preview). Edit-Mode dagegen nur fuer Markdown/Text
-    // — Bilder sind heute nicht editierbar (`document_store.load_opaque`
-    // legt keinen Text ab; ein Edit-Switch waere ein "leerer Editor").
-    const hasViewMode = md || resolved === 'text' || isImage;
+    const isBinary = resolved === 'binary';
+    const hasDoc = resolved !== 'unknown';
+    // View-Mode: Markdown, Text, Image und Binary (Hex). Edit nur fuer
+    // Markdown/Text — Image und Binary sind opaque/read-only.
+    const hasViewMode = md || resolved === 'text' || isImage || isBinary;
     const canEdit = md || resolved === 'text';
+    const isReadOnlyKind = isImage || isBinary;
     const noneLoaded = t('errors.document.noneLoaded');
     const docReadOnly = t('errors.document.readOnly');
     const btnView = $('tb-mode-view') as HTMLButtonElement;
@@ -433,17 +439,17 @@ export function applyDocKind(kind: string | null, path?: string | null): void {
         btnEdit.disabled = !canEdit;
         btnEdit.title = canEdit
             ? t('toolbar.modeEdit.tooltip')
-            : (isImage ? docReadOnly : noneLoaded);
+            : (isReadOnlyKind ? docReadOnly : noneLoaded);
     }
     // Split braucht eine editierbare Datei (Editor-Seite) + eine
-    // anzeigbare Seite — also dieselbe Bedingung wie Edit. Bilder sind
-    // bewusst aussen vor.
+    // anzeigbare Seite — also dieselbe Bedingung wie Edit. Image/Binary
+    // sind bewusst aussen vor.
     const btnSplit = $('tb-mode-split') as HTMLButtonElement;
     if (btnSplit) {
         btnSplit.disabled = !canEdit;
         btnSplit.title = canEdit
             ? t('toolbar.modeSplit.tooltip')
-            : (isImage ? docReadOnly : noneLoaded);
+            : (isReadOnlyKind ? docReadOnly : noneLoaded);
     }
     const btnExport = $('tb-export') as HTMLButtonElement;
     if (btnExport) {
@@ -461,6 +467,9 @@ export function applyDocKind(kind: string | null, path?: string | null): void {
     safeInvoke('menu_set_enabled', { id: 'file.rename', enabled: hasDoc }, 'menu_set_enabled file.rename', 'debug');
     safeInvoke('menu_set_enabled', { id: 'file.export', enabled: md }, 'menu_set_enabled file.export', 'debug');
     safeInvoke('menu_set_enabled', { id: 'file.close', enabled: hasDoc }, 'menu_set_enabled file.close', 'debug');
+    safeInvoke('menu_set_enabled', { id: 'edit.find', enabled: canEdit }, 'menu_set_enabled edit.find', 'debug');
+    const btnFind = $('tb-find') as HTMLButtonElement | null;
+    if (btnFind) btnFind.disabled = !canEdit;
     syncCheatsheetMenu();
     // Haekchen nach dem Enable-Wechsel erneut anwenden — Tauri scheint
     // set_checked auf disabled Items zu verwerfen, sodass beim ersten
@@ -664,6 +673,18 @@ export function initDocumentState(): void {
         } else {
             clearImageView();
         }
+        if (isBinaryDocument(data.kind)) {
+            mountHexView({
+                path: data.path || '',
+                fileSize: typeof data.fileSize === 'number' ? data.fileSize : 0,
+                revision: typeof data.revision === 'number' ? data.revision : 0,
+                tabId: typeof data.tabId === 'number' ? data.tabId : 0,
+                tooLarge: !!data.tooLarge,
+                available: data.available !== false,
+            });
+        } else {
+            clearHexView();
+        }
         setVaultActive(data.path || '');
 
         // 3. Such-Highlights/Counter auf das neue Dokument umhaengen.
@@ -717,6 +738,20 @@ export function initDocumentState(): void {
             reloadImageView();
             return;
         }
+        if (document.body.classList.contains('kind-binary')) {
+            if (typeof data.tabId === 'number') {
+                const expected = expectedLifecycleTabId();
+                if (expected !== null && data.tabId !== expected) return;
+            }
+            reloadHexView({
+                tabId: typeof data.tabId === 'number' ? data.tabId : undefined,
+                fileSize: typeof data.fileSize === 'number' ? data.fileSize : undefined,
+                revision: typeof data.revision === 'number' ? data.revision : undefined,
+                tooLarge: data.tooLarge,
+                available: data.available,
+            });
+            return;
+        }
         if (isDirty) {
             showStatus(t('statusBar.externalChangedDirty'));
             return;
@@ -761,6 +796,8 @@ export function initDocumentState(): void {
         if (body) (body as HTMLElement).innerHTML = '';
         clearHtmlView();
         clearImageView();
+        clearHexView();
+        if (typeof data.tabId === 'number') forgetHexOffsetsForTab(data.tabId);
         clearMarkdownHeadingMap();
         document.body.classList.remove('html-preview-mode');
         // Code-View ebenfalls leeren — die zweite Monaco-Instanz bleibt

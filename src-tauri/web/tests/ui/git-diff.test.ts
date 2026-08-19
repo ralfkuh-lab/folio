@@ -77,6 +77,7 @@ describe('git-diff', () => {
         await seedDeCatalog();
         buildDom();
         showStatus = vi.fn();
+        document.body.className = '';
         (window as any).FolioEditor = {
             getText: vi.fn(() => 'editor-active'),
             getTextForTab: vi.fn(() => 'editor-tab'),
@@ -222,6 +223,40 @@ describe('git-diff', () => {
         ]);
         syncGitDiffActionEnabled();
         expect(btn.disabled).toBe(true);
+    });
+
+    it('does not enable git-diff for a modified binary document', async () => {
+        const git = await import('../../app/vault/git-status');
+        const { initGitDiff, openGitDiffForActiveDoc } = await import(
+            '../../app/ui/git-diff'
+        );
+        initGitDiff();
+        const btn = document.getElementById('tb-git-diff') as HTMLButtonElement;
+        git.__setGitStatusSnapshotForTests([
+            { path: '/repo/a.bin', status: 'modified' },
+        ]);
+        getCurrentPath.mockReturnValue('/repo/a.bin');
+        document.body.classList.add('kind-binary');
+        const { syncGitDiffActionEnabled } = await import('../../app/ui/git-diff');
+        syncGitDiffActionEnabled();
+        expect(btn.disabled).toBe(true);
+        openGitDiffForActiveDoc();
+        expect(tauri.invoke.mock.calls.some((c) => c[0] === 'git_show_head')).toBe(false);
+        document.body.classList.remove('kind-binary');
+    });
+
+    it('does not start a git-diff for an inactive binary path', async () => {
+        const { initGitDiff, openGitDiff } = await import('../../app/ui/git-diff');
+        initGitDiff();
+        getCurrentPath.mockReturnValue('/repo/a.md');
+        document.body.className = 'kind-markdown';
+        tauri.invoke.mockClear();
+        await openGitDiff('/repo/blob.bin', showStatus);
+        expect(tauri.invoke.mock.calls.some((c) => c[0] === 'git_show_head')).toBe(false);
+        window.dispatchEvent(new CustomEvent('folio-open-git-diff', {
+            detail: { path: '/repo/blob.bin' },
+        }));
+        expect(tauri.invoke.mock.calls.some((c) => c[0] === 'git_show_head')).toBe(false);
     });
 
     async function openActiveDiff(path = '/repo/a.md'): Promise<{

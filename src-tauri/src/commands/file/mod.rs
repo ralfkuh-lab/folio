@@ -1,6 +1,7 @@
 //! Datei-bezogene Tauri-Commands und Helfer.
 //!
 //! - [`read_file`] — Tauri-Command fürs Öffnen/Lesen über den Service-Pfad
+//! - [`read_file_chunk`] — revisionsgebundener Byte-Ausschnitt (Hex).
 //! - [`rename_file`] (Command) + [`run_rename_dialog`] (für Menü-Pfad) —
 //!   teilen sich `perform_move` als gemeinsame State-Choreografie.
 //! - [`create_directory`] — leeren Ordner anlegen (kein `create_dir_all`).
@@ -11,6 +12,7 @@
 //! - [`close_document`] — kapselt Store-Reset + Vault.active + `document:closed`.
 //! - [`file_list`] / `list_dir` — Verzeichnis-Listing.
 
+pub mod chunk;
 pub mod close;
 pub mod create;
 pub mod delete;

@@ -17,6 +17,16 @@
 
 ## Mittlere Priorität
 
+- **Hex-Ansicht: Härtungspaket** (aus dem Kreuz-Review, bewusst vertagt) —
+  `/state` nimmt Pfad/Kind/Größe unter dem Tabs-Lock, die Hex-Felder danach
+  asynchron aus der Surface; bei einem Tabwechsel dazwischen fehlt der
+  Identitätsvergleich (betrifft nur Automation). Prev/Next brauchen
+  lokalisierte `aria-label` — die `title`-Attribute ersetzen den aus „◀/▶"
+  gebildeten Accessible Name nicht. E2E `61_hex_view` akzeptiert beim
+  History-Schritt noch zwei Ziele, prüft die Gate-Matrix nur teilweise und den
+  Inhalt nach einem Truncate gar nicht; Resize-, RAF- und Tastaturtests fehlen.
+
+
 - **Windows-Verifikationsdurchgang** (gesammelt, alles manuell — die
   E2E-Suite läuft auf Windows nicht, siehe eigener Eintrag unter
   „Niedrige Priorität"). Sechs Punkte, die auf Linux prinzipbedingt

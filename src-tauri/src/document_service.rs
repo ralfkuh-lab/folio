@@ -284,9 +284,7 @@ fn open_inner(
 
 /// Laedt ein Dokument passend zu seinem einmal aufgeloesten FileKind.
 /// `classify_deep` — nicht `classify` — damit endungslose Textdateien
-/// (`INSTALL`) Text bleiben. Image geht opaque. Binary wird in Etappe
-/// 1+2 **vor jeder Store-Mutation** abgelehnt; Etappe 3 entfernt diesen
-/// Zweig und schaltet Hex frei.
+/// (`INSTALL`) Text bleiben. Image und Binary gehen opaque.
 pub fn load_by_kind(store: &mut DocumentStore, path: &str) -> Result<LoadedDocument, LoadError> {
     load_by_kind_limited(store, path, MAX_ADDRESSABLE_BYTES)
 }
@@ -306,14 +304,8 @@ pub fn load_by_kind_limited(
     } else {
         classify_deep(path)
     };
-    // Etappe 1+2: Binary zentral ablehnen. Etappe 3 entfernt diesen Arm.
-    if kind == FileKind::Binary {
-        return Err(LoadError::UnsupportedType {
-            path: path.to_string(),
-        });
-    }
     match kind {
-        FileKind::Image => Ok(store.load_opaque_as(path, kind, file_size)?),
+        FileKind::Image | FileKind::Binary => Ok(store.load_opaque_as(path, kind, file_size)?),
         _ => Ok(store.load_as(path, kind, true, file_size)?),
     }
 }
@@ -772,6 +764,22 @@ mod tests {
 
         assert_eq!(path, loaded.path);
         assert_eq!("", loaded.text);
+        assert_eq!(FileKind::Image, loaded.kind);
+    }
+
+    #[test]
+    fn load_by_kind_loads_binary_opaque() {
+        let temp = TempDir::new().unwrap();
+        let path = write_extensionless(&temp, "blob.bin", b"pre\0post");
+        let (tabs, _) = make_components();
+
+        let loaded =
+            load_by_kind(&mut tabs.lock().unwrap().active_mut().document_store, &path).unwrap();
+
+        assert_eq!(path, loaded.path);
+        assert_eq!("", loaded.text);
+        assert_eq!(FileKind::Binary, loaded.kind);
+        assert!(tabs.lock().unwrap().active().document_store.is_opaque());
     }
 
     #[test]
@@ -959,11 +967,11 @@ mod tests {
     }
 
     #[test]
-    fn open_rejects_nul_binary() {
+    fn open_loads_nul_binary_opaque() {
         let temp = TempDir::new().unwrap();
         let path = write_extensionless(&temp, "blob", b"pre\0post");
         let (tabs, vault) = make_components();
-        let err = open_inner(
+        let outcome = open_inner(
             &tabs,
             &vault,
             None,
@@ -975,13 +983,19 @@ mod tests {
                 apply_default_mode: false,
             },
         )
-        .unwrap_err();
-        assert!(matches!(err, OpenDocumentError::UnsupportedType { .. }));
-        assert_store_and_history_untouched(&tabs, None);
+        .unwrap();
+        let loaded = outcome.loaded.unwrap();
+        assert_eq!(path, loaded.path);
+        assert_eq!("", loaded.text);
+        assert_eq!(FileKind::Binary, loaded.kind);
+        let tabs = tabs.lock().unwrap();
+        let store = &tabs.active().document_store;
+        assert!(store.is_opaque());
+        assert_eq!(Some(FileKind::Binary), store.kind());
     }
 
     #[test]
-    fn pending_restore_loads_extensionless_text_and_rejects_binary() {
+    fn pending_restore_loads_extensionless_text_and_binary() {
         let temp = TempDir::new().unwrap();
         let text_path = write_extensionless(&temp, "INSTALL", b"hello\n");
         let bin_path = write_extensionless(&temp, "blob", b"x\0y");
@@ -1005,18 +1019,20 @@ mod tests {
             tab.document_store.close();
             tab.set_pending_path(bin_path.clone());
         }
-        let err = load_active_pending_inner(&tabs, &vault, None).unwrap_err();
-        assert!(matches!(err, OpenDocumentError::UnsupportedType { .. }));
+        let loaded = load_active_pending_inner(&tabs, &vault, None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(bin_path, loaded.loaded.as_ref().unwrap().path);
+        assert_eq!("", loaded.loaded.as_ref().unwrap().text);
         let guard = tabs.lock().unwrap();
         let tab = guard.active();
-        assert!(tab.document_store.path.is_none());
-        assert_eq!(Some(bin_path.as_str()), tab.pending_path());
-        assert!(!tab.document_store.is_opaque());
-        assert!(tab.document_store.kind().is_none());
+        assert_eq!(Some(bin_path.as_str()), tab.document_store.path.as_deref());
+        assert!(tab.document_store.is_opaque());
+        assert_eq!(Some(FileKind::Binary), tab.document_store.kind());
     }
 
     #[test]
-    fn move_history_loads_extensionless_text_and_rejects_binary() {
+    fn move_history_loads_extensionless_text_and_binary() {
         let temp = TempDir::new().unwrap();
         let text_path = write_extensionless(&temp, "INSTALL", b"hello\n");
         let bin_path = write_extensionless(&temp, "blob", b"x\0y");
@@ -1029,15 +1045,15 @@ mod tests {
             tab.navigation.go_back();
         }
 
-        let err = move_history(&tabs, &vault, true).unwrap_err();
-        assert!(matches!(err, OpenDocumentError::UnsupportedType { .. }));
+        let entry = move_history(&tabs, &vault, true).unwrap().unwrap();
+        assert_eq!(bin_path, entry.absolute_path);
         let guard = tabs.lock().unwrap();
         let tab = guard.active();
-        assert_eq!(text_path, tab.navigation.current().unwrap().absolute_path);
-        assert_eq!(Some(text_path.as_str()), tab.document_store.path.as_deref());
-        assert_eq!("hello\n", tab.document_store.text);
-        assert_eq!(Some(FileKind::Text), tab.document_store.kind());
-        assert!(tab.navigation.can_go_forward());
+        assert_eq!(bin_path, tab.navigation.current().unwrap().absolute_path);
+        assert_eq!(Some(bin_path.as_str()), tab.document_store.path.as_deref());
+        assert_eq!("", tab.document_store.text);
+        assert!(tab.document_store.is_opaque());
+        assert_eq!(Some(FileKind::Binary), tab.document_store.kind());
     }
 
     #[test]

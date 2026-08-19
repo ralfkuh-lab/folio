@@ -14,6 +14,8 @@ import {
     GIT_STATUS_CHANGED_EVENT,
     isPathGitModified,
 } from '../vault/git-status';
+import { forgetClosedHexTabs } from '../view/hex';
+import { isTextOrMarkdownPath } from '../util/file-kind';
 
 export interface TabSummary {
     id: number;
@@ -204,6 +206,7 @@ function normalizePayload(payload: any): TabsPayload {
 
 export function renderTabs(payload: TabsPayload): void {
     current = normalizePayload(payload);
+    forgetClosedHexTabs(current.tabs.map(function (tab) { return tab.id; }));
     const bar = document.getElementById('tab-bar');
     if (!bar) return;
 
@@ -246,7 +249,7 @@ export function renderTabs(payload: TabsPayload): void {
         // linker Amber-Balken — dieselbe Farbe wie die Vault-Dots — und
         // bleibt sichtbar, wenn der Tab sauber gespeichert ist. Klick
         // oeffnet den Diff, ohne den Tab zu wechseln oder zu schliessen.
-        if (tab.path && isPathGitModified(tab.path)) {
+        if (tab.path && isPathGitModified(tab.path) && isTextOrMarkdownPath(tab.path)) {
             item.classList.add('tab-git-modified');
             const gitMark = document.createElement('button');
             gitMark.className = 'tab-git';

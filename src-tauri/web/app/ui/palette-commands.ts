@@ -9,6 +9,7 @@ import { t } from '../i18n/translate';
 import { getCurrentPath, getIsDirty } from '../state/document';
 import { getTabsSnapshot, restoreLastTab } from '../state/tabs';
 import { isPathGitModified } from '../vault/git-status';
+import { isTextOrMarkdownPath } from '../util/file-kind';
 
 export type PaletteCommand = {
     id: string;
@@ -31,12 +32,12 @@ function bodyHas(...classes: string[]): boolean {
 
 /** Geladenes Dokument (View-fähig) — analog applyDocKind. */
 function hasDoc(): boolean {
-    return bodyHas('kind-markdown', 'kind-text', 'kind-image');
+    return bodyHas('kind-markdown', 'kind-text', 'kind-image', 'kind-binary');
 }
 
-/** View-Mode: Markdown, Text, Image. */
+/** View-Mode: Markdown, Text, Image, Binary. */
 function hasViewMode(): boolean {
-    return bodyHas('kind-markdown', 'kind-text', 'kind-image');
+    return bodyHas('kind-markdown', 'kind-text', 'kind-image', 'kind-binary');
 }
 
 /** Edit/Split: Markdown + Text (nicht Image). */
@@ -126,7 +127,8 @@ export const PALETTE_COMMANDS: readonly PaletteCommand[] = [
         menuAction: 'view.git_diff',
         enabled: () => {
             const path = getCurrentPath();
-            return !!path && isPathGitModified(path);
+            return !!path && isPathGitModified(path) && isTextOrMarkdownPath(path)
+                && !bodyHas('kind-binary', 'kind-image');
         },
     },
     {
@@ -148,7 +150,7 @@ export const PALETTE_COMMANDS: readonly PaletteCommand[] = [
         label: () => t('menu.edit.find'),
         menuAction: 'edit.find',
         shortcut: 'Ctrl+F',
-        enabled: () => hasDoc(),
+        enabled: () => hasDoc() && !bodyHas('kind-binary'),
     },
     {
         id: 'edit.search_vault',

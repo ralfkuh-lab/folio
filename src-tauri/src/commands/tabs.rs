@@ -656,7 +656,8 @@ mod tests {
     }
 
     #[test]
-    fn activating_pending_binary_returns_error_not_neighbor() {
+    fn activating_pending_binary_loads_opaque_not_neighbor() {
+        use crate::file_kind::FileKind;
         use crate::state::AppState;
         use std::fs;
         use tempfile::TempDir;
@@ -682,20 +683,15 @@ mod tests {
         let bin_id = state.tabs.lock().unwrap().find_by_path(&bin).unwrap();
         assert!(state.tabs.lock().unwrap().activate(bin_id));
 
-        let err = load_pending_after_activate(&state).unwrap_err();
-        assert!(
-            matches!(err, TabError::UnsupportedType { .. }),
-            "caller must see the reject, not Ok(neighbor): {err}"
-        );
+        let outcome = load_pending_after_activate(&state).unwrap().unwrap();
+        assert_eq!(bin, outcome.loaded.as_ref().unwrap().path);
+        assert_eq!("", outcome.loaded.as_ref().unwrap().text);
 
         let tabs = state.tabs.lock().unwrap();
-        assert!(
-            tabs.find_by_path(&bin).is_none(),
-            "unreadable tab is closed"
-        );
-        assert_eq!(Some(md.as_str()), tabs.active().document_path());
-        assert_eq!(1, tabs.tabs().len());
-        assert_eq!("hello", tabs.active().document_store.text);
+        assert_eq!(Some(bin.as_str()), tabs.active().document_path());
+        assert_eq!(2, tabs.tabs().len());
+        assert!(tabs.active().document_store.is_opaque());
+        assert_eq!(Some(FileKind::Binary), tabs.active().document_store.kind());
     }
 
     #[test]

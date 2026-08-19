@@ -422,6 +422,24 @@ describe('ui/find-bar — image/binary gating (audit fix)', () => {
         expect(document.getElementById('find-bar')!.classList.contains('open')).toBe(false);
     });
 
+    it('afterDocumentSwitch closes bar when switching to kind-binary', async () => {
+        const findBar = await import('../../app/ui/find-bar');
+        findBar.initFindBar({
+            ensureEditorMounted: vi.fn().mockResolvedValue(true),
+            focusEditor: vi.fn(),
+        });
+        document.body.classList.add('kind-text');
+        findBar.openEditorFind('term');
+        await Promise.resolve();
+
+        document.body.classList.remove('kind-text');
+        document.body.classList.add('kind-binary');
+        findBar.afterDocumentSwitch();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(document.getElementById('find-bar')!.classList.contains('open')).toBe(false);
+    });
+
     it('afterDocumentSwitch closes bar when switching to kind-image', async () => {
         const findBar = await import('../../app/ui/find-bar');
         findBar.initFindBar({

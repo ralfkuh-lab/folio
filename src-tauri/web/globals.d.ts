@@ -163,6 +163,20 @@ interface Window {
     __folioClosePalette?: () => void;
     /** Test/Automation-Hook: Zen-Layer verlassen (ohne Hinweis-Flag zurückzusetzen). */
     __folioZenReset?: () => void | Promise<void>;
+    /** Test/Automation-Hook: Hex-Ansicht-State (Pfad, Fenster, Fehler). */
+    __folioHexViewState?: () => {
+        path: string;
+        fileSize: number;
+        windowStart: number;
+        windowLen: number;
+        loadedChunks: number[];
+        error: string | null;
+        status: string;
+        revision: number;
+        tabId: number | null;
+        firstLine: { offset: string; bytes: string; ascii: string } | null;
+        lineHeightPx: number;
+    };
     openDocument?: (path: string) => Promise<boolean>;
     openThemeEditor?: (id: string) => Promise<boolean>;
     monaco?: any;

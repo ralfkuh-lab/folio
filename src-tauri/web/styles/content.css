@@ -128,6 +128,83 @@ body:not(.kind-image) .image-view-region,
 body.edit-mode .image-view-region { display: none; }
 body.kind-image .view-region,
 body.kind-image .code-view-region { display: none; }
+
+/* Hex-View: nur im View-Mode bei kind-binary. :not(.edit-mode) allein
+   wuerde im Split-Mode mitmatchen. */
+body:not(.kind-binary) .hex-view-region,
+body.edit-mode .hex-view-region,
+body.split-mode .hex-view-region { display: none; }
+body.kind-binary .view-region,
+body.kind-binary .code-view-region,
+body.kind-binary .html-view-region,
+body.kind-binary .image-view-region { display: none; }
+.hex-view-region {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+}
+#hex-view-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  flex: 0 0 auto;
+}
+#hex-view-toolbar[hidden] { display: none; }
+#hex-view-range { color: var(--fg-muted); }
+#hex-view-goto {
+  width: 12em;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+#hex-view-goto[aria-invalid="true"] { outline: 2px solid #cf222e; }
+.hex-goto-error { color: #cf222e; font-size: 12px; }
+#hex-view-status {
+  padding: 16px 20px;
+  color: var(--fg-muted);
+}
+#hex-view-status[hidden] { display: none; }
+#hex-view-retry { margin-left: 12px; }
+#hex-view-mount {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  outline: none;
+}
+#hex-view-mount:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+#hex-view-mount[hidden] { display: none; }
+.hex-scroller {
+  height: 100%;
+  overflow: auto;
+}
+.hex-row {
+  display: flex;
+  box-sizing: border-box;
+  height: 18px;
+  line-height: 18px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  white-space: pre;
+  padding: 0 12px;
+}
+.hex-offset {
+  user-select: none;
+  -webkit-user-select: none;
+  color: var(--fg-muted);
+  padding-right: 1.5em;
+}
+.hex-bytes { padding-right: 1.5em; }
+.hex-ascii { color: var(--fg-muted); }
 .image-view-region {
   flex: 1 1 auto;
   min-width: 0;
