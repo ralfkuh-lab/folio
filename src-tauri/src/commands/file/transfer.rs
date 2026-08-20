@@ -291,6 +291,7 @@ mod tests {
     use super::{
         duplicate_candidate_name, plan_dest, plan_move, try_duplicate, PlannedMove, TransferError,
     };
+    #[cfg(unix)]
     use crate::fs_copy::copy_recursively;
     use std::fs;
     use tempfile::TempDir;
@@ -354,6 +355,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn recursive_copy_does_not_follow_directory_symlink() {
         let temp = TempDir::new().unwrap();
@@ -363,15 +365,12 @@ mod tests {
         fs::create_dir(&src).unwrap();
         fs::create_dir(&other).unwrap();
         fs::write(other.join("secret.txt"), "nope").unwrap();
-        #[cfg(unix)]
-        {
-            std::os::unix::fs::symlink(&other, src.join("linkdir")).unwrap();
-            copy_recursively(&src, &dst).unwrap();
-            let meta = fs::symlink_metadata(dst.join("linkdir")).unwrap();
-            assert!(meta.file_type().is_symlink());
-            assert_eq!(fs::read_link(dst.join("linkdir")).unwrap(), other);
-            assert!(!dst.join("secret.txt").is_file());
-        }
+        std::os::unix::fs::symlink(&other, src.join("linkdir")).unwrap();
+        copy_recursively(&src, &dst).unwrap();
+        let meta = fs::symlink_metadata(dst.join("linkdir")).unwrap();
+        assert!(meta.file_type().is_symlink());
+        assert_eq!(fs::read_link(dst.join("linkdir")).unwrap(), other);
+        assert!(!dst.join("secret.txt").is_file());
     }
 
     #[test]
@@ -383,6 +382,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn dest_dir_via_symlink_into_source_is_rejected() {
         let temp = TempDir::new().unwrap();
@@ -390,33 +390,28 @@ mod tests {
         let sub = src.join("sub");
         fs::create_dir_all(&sub).unwrap();
         let alias = temp.path().join("alias");
-        #[cfg(unix)]
-        {
-            std::os::unix::fs::symlink(&sub, &alias).unwrap();
-            let src_s = src.to_string_lossy().replace('\\', "/");
-            let alias_s = alias.to_string_lossy().replace('\\', "/");
-            assert_eq!(
-                plan_dest(&src_s, &alias_s).unwrap_err(),
-                TransferError::MoveIntoSelf
-            );
-        }
+        std::os::unix::fs::symlink(&sub, &alias).unwrap();
+        let src_s = src.to_string_lossy().replace('\\', "/");
+        let alias_s = alias.to_string_lossy().replace('\\', "/");
+        assert_eq!(
+            plan_dest(&src_s, &alias_s).unwrap_err(),
+            TransferError::MoveIntoSelf
+        );
     }
 
+    #[cfg(unix)]
     #[test]
     fn duplicate_dangling_symlink() {
         let temp = TempDir::new().unwrap();
         let src = temp.path().join("gone.link");
-        #[cfg(unix)]
-        {
-            std::os::unix::fs::symlink(temp.path().join("missing"), &src).unwrap();
-            assert!(!src.exists());
-            assert!(fs::symlink_metadata(&src).is_ok());
-            let (dest, report) = try_duplicate(&src).unwrap();
-            assert!(report.is_complete());
-            let meta = fs::symlink_metadata(&dest).unwrap();
-            assert!(meta.file_type().is_symlink());
-            assert_eq!(dest.file_name().unwrap(), "gone copy.link");
-        }
+        std::os::unix::fs::symlink(temp.path().join("missing"), &src).unwrap();
+        assert!(!src.exists());
+        assert!(fs::symlink_metadata(&src).is_ok());
+        let (dest, report) = try_duplicate(&src).unwrap();
+        assert!(report.is_complete());
+        let meta = fs::symlink_metadata(&dest).unwrap();
+        assert!(meta.file_type().is_symlink());
+        assert_eq!(dest.file_name().unwrap(), "gone copy.link");
     }
 
     #[test]

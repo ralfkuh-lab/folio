@@ -234,6 +234,7 @@ mod tests {
         assert!(!names.contains(&"config"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn skips_symlink_directories() {
         let tmp = TempDir::new().unwrap();
@@ -243,15 +244,7 @@ mod tests {
         write(outside.path(), "inside.md", "# i\n");
         write(root, "top.md", "# t\n");
         let link = root.join("link_dir");
-        #[cfg(unix)]
-        {
-            std::os::unix::fs::symlink(outside.path(), &link).unwrap();
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = (link, outside);
-            return;
-        }
+        std::os::unix::fs::symlink(outside.path(), &link).unwrap();
 
         let res = collect_palette_files(&[pin_dir(root)]);
         let names: Vec<_> = res.files.iter().map(|f| f.name.as_str()).collect();

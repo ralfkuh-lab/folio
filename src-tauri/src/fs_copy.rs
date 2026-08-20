@@ -153,9 +153,9 @@ pub fn remove_entry(path: &Path) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        copy_dir_contents, copy_file_exclusive, copy_recursively, is_physically_under, CopyReport,
-    };
+    #[cfg(unix)]
+    use super::is_physically_under;
+    use super::{copy_dir_contents, copy_file_exclusive, copy_recursively, CopyReport};
     use std::fs;
     use tempfile::TempDir;
 
@@ -247,6 +247,7 @@ mod tests {
         .is_complete());
     }
 
+    #[cfg(unix)]
     #[test]
     fn physically_under_follows_symlink_into_source() {
         let temp = TempDir::new().unwrap();
@@ -254,12 +255,9 @@ mod tests {
         let sub = src.join("sub");
         fs::create_dir_all(&sub).unwrap();
         let alias = temp.path().join("alias");
-        #[cfg(unix)]
-        {
-            std::os::unix::fs::symlink(&sub, &alias).unwrap();
-            assert!(is_physically_under(&alias, &src));
-            assert!(!is_physically_under(&alias, &temp.path().join("other")));
-        }
+        std::os::unix::fs::symlink(&sub, &alias).unwrap();
+        assert!(is_physically_under(&alias, &src));
+        assert!(!is_physically_under(&alias, &temp.path().join("other")));
     }
 
     #[cfg(unix)]
