@@ -26,6 +26,8 @@ const LRU_CAP = 32;
 const ROW_BUFFER = 20;
 const FALLBACK_LINE_HEIGHT = 18;
 const STALE_PREFIX = 'stale:';
+/** Aufeinanderfolgende Revisions-Resyncs, bevor sichtbar aufgegeben wird. */
+const MAX_REVISION_RESYNCS = 3;
 
 export type HexStatus =
     | 'idle'
@@ -117,6 +119,15 @@ let fetchPaused = false;
 let maxInflight = HEX_MAX_INFLIGHT;
 let chunkBytes = CHUNK_BYTES;
 let highlight: { offset: number; length: number } | null = null;
+/**
+ * Generation, fuer die gerade ein Revisions-Resync laeuft — bewusst die
+ * Generation und kein blosses `inFlight`-Flag: bumpt ein Mount die Generation,
+ * waehrend ein Resync noch offen ist, muss der naechste `stale:` sofort wieder
+ * resyncen duerfen. Ein globales Flag haette ihn blockiert und `fetchPaused`
+ * erneut stehen lassen — derselbe stumme Deadlock, nur seltener.
+ */
+let resyncGen: number | null = null;
+let resyncAttempts = 0;
 
 function MIN_WINDOW_FALLBACK(): number {
     return BYTES_PER_ROW;
@@ -613,6 +624,7 @@ function startFetch(start: number): void {
     }).then(function (raw) {
         const entry = inflight.get(key);
         if (!entry || !entry.waiters.has(generation)) return;
+        resyncAttempts = 0;
         lruSet(id, rev, start, toUint8Array(raw));
     }).catch(function (err) {
         const entry = inflight.get(key);
@@ -621,9 +633,11 @@ function startFetch(start: number): void {
         queuedStarts.clear();
         queue.length = 0;
         const message = typeof err === 'string' ? err : String(err);
-        if (message.indexOf(STALE_PREFIX) === 0) return;
-        lastError = t('errors.view.hexLoadFailed');
-        setStatus('error', lastError, { retry: true });
+        if (message.indexOf(STALE_PREFIX) === 0) {
+            resyncRevisionAfterStale(tabId, generation);
+            return;
+        }
+        failVisibly();
     }).finally(function () {
         const current = inflight.get(key);
         const waiters = current && current.token === token ? current.waiters : new Set<number>();
@@ -635,6 +649,86 @@ function startFetch(start: number): void {
         deriveReadyFromCache();
         renderVisible();
         updateToolbar();
+    });
+}
+
+/** Sichtbarer, wiederholbarer Fehler statt eines stummen Zustands. */
+function failVisibly(): void {
+    lastError = t('errors.view.hexLoadFailed');
+    setStatus('error', lastError, { retry: true });
+}
+
+/**
+ * Holt nach einem `stale:`-Reject die aktuelle Revision ein und setzt den
+ * Fetch fort.
+ *
+ * Ein `stale:` auf einem Chunk der AKTUELLEN Generation heisst eindeutig:
+ * das Frontend haelt eine veraltete Revision. Dorthin zu geraten ist kein
+ * Fehler, sondern regulaer — `note_external_change` bumpt die Revision im
+ * Backend auch fuer **inaktive** Tabs, und das zugehoerige
+ * `document:external_changed` verwerfen drei Stellen legitim: der
+ * Aktiv-Check im Watcher-Callback (`state.rs`) sowie Pfad- und Tab-Guard im
+ * Frontend-Handler (`state/document.ts`). Ein Fix an einer dieser Stellen
+ * liesse die beiden anderen offen; deshalb heilt die Ansicht sich hier
+ * selbst, statt auf ein Event zu hoffen.
+ *
+ * Vorher kehrte der Zweig still zurueck und liess `fetchPaused = true`
+ * stehen. Danach stiegen `requestChunk`, `pumpQueue` und der
+ * `finally`-Zweig alle sofort wieder aus: die Ansicht blieb dauerhaft auf
+ * `loading` — ohne Meldung, ohne Retry, und nur ein Neu-Oeffnen heilte das
+ * (allein `mountHexView` bumpt die Generation). Aus jedem Revisions-Versatz
+ * wurde so ein toter Tab.
+ *
+ * `MAX_REVISION_RESYNCS` deckelt den Fall, dass die Datei schneller waechst,
+ * als wir nachziehen koennen (Logdatei am Ende der Datei): dann bleibt ein
+ * sichtbarer, wiederholbarer Fehler statt einer Resync-Dauerschleife. Jeder
+ * erfolgreiche Chunk setzt den Zaehler zurueck.
+ */
+function resyncRevisionAfterStale(id: number | null, gen: number): void {
+    if (id === null) return;
+    if (resyncGen === gen) return;
+    if (resyncAttempts >= MAX_REVISION_RESYNCS) {
+        failVisibly();
+        return;
+    }
+    resyncGen = gen;
+    resyncAttempts += 1;
+    invoke('hex_document_state', { tabId: id }).then(function (raw) {
+        if (resyncGen === gen) resyncGen = null;
+        // Kontext inzwischen gewechselt: der neue Mount hat den Fetch
+        // laengst selbst wieder aufgenommen.
+        if (gen !== generation || tabId !== id) return;
+        const data = (raw || {}) as {
+            revision?: number;
+            fileSize?: number;
+            tooLarge?: boolean;
+        };
+        const nextRevision = Number(data.revision);
+        if (!Number.isFinite(nextRevision) || nextRevision === revision) {
+            // Die Revision war nicht die Ursache — dann darf der Zustand
+            // erst recht nicht stumm bleiben.
+            failVisibly();
+            return;
+        }
+        const contextBefore = contextKey();
+        revision = nextRevision;
+        if (typeof data.fileSize === 'number' && Number.isFinite(data.fileSize)) {
+            fileSize = Math.max(0, data.fileSize);
+        }
+        if (typeof data.tooLarge === 'boolean') tooLarge = data.tooLarge;
+        clearCache();
+        highlight = null;
+        bumpGeneration();
+        syncMetrics();
+        showDocumentBody();
+        // Die Suche haengt an derselben Revision (`getHexSearchContext`) —
+        // ohne diese Meldung liefe sie mit der alten weiter und bekaeme von
+        // `hex_find` ihrerseits nur noch `stale:`.
+        if (contextKey() !== contextBefore) notifyHexContextChanged();
+    }).catch(function () {
+        if (resyncGen === gen) resyncGen = null;
+        if (gen !== generation) return;
+        failVisibly();
     });
 }
 
@@ -877,6 +971,7 @@ function onRetry(): void {
     const contextBefore = contextKey();
     available = true;
     lastError = null;
+    resyncAttempts = 0;
     bumpGeneration();
     clearCache();
     showDocumentBody();
@@ -919,6 +1014,7 @@ function ensureListeners(): void {
 }
 
 function resetSession(): void {
+    resyncAttempts = 0;
     path = '';
     fileSize = 0;
     revision = 0;
@@ -942,6 +1038,7 @@ function resetSession(): void {
 
 export function mountHexView(options: HexMountOptions): void {
     ensureListeners();
+    resyncAttempts = 0;
     const nextTab = options.tabId;
     const nextPath = options.path || '';
     if (tabId !== null && path) {
@@ -1047,6 +1144,8 @@ export function configureHexViewForTests(opts?: {
     maxInflight?: number;
 }): void {
     contextListener = null;
+    resyncGen = null;
+    resyncAttempts = 0;
     chunkBytes = opts && opts.chunkBytes ? opts.chunkBytes : CHUNK_BYTES;
     maxInflight = opts && opts.maxInflight ? opts.maxInflight : HEX_MAX_INFLIGHT;
     listenersAttached = false;

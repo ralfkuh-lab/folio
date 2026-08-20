@@ -139,8 +139,10 @@ pub async fn read_file_chunk(
   stimmt. Danach wird der Pfad kopiert und **der Lock vor dem I/O freigegeben**.
   Bei Revision-Mismatch antwortet der Command mit einem Fehler, dessen Text mit
   einem stabilen Präfix (`stale:`) beginnt — `Result<Response, String>` trägt
-  keinen Fehlertyp, und das Frontend muss „veraltet" (still verwerfen) von
-  „kaputt" (Fehlerzustand zeigen) unterscheiden können.
+  keinen Fehlertyp, und das Frontend muss „veraltet" von „kaputt" (Fehlerzustand
+  zeigen) unterscheiden können. **„Veraltet" heißt seit 0.7.1 aber nicht mehr
+  „still verwerfen"**, siehe [Revisions-Versatz heilt sich
+  selbst](#revisions-versatz-heilt-sich-selbst).
 - I/O läuft in `spawn_blocking` — `std::fs` im async-Command blockiert sonst
   einen Runtime-Thread, und genau hier wird sichtbar lange gelesen.
 - Metadaten kommen vom **geöffneten Handle**; nur reguläre, seekbare Dateien
@@ -165,6 +167,53 @@ pub async fn read_file_chunk(
 - Antwort sind rohe Bytes über `tauri::ipc::Response::new(Vec<u8>)`
   (verifiziert in Tauri 2.11: `Vec<u8>` wird `Raw`-Body, im Frontend
   `ArrayBuffer`). **Kein** JSON-Array von Zahlen.
+
+### Revisions-Versatz heilt sich selbst
+
+Ein `stale:` auf einem Chunk der **aktuellen** Generation bedeutet eindeutig:
+das Frontend hält eine veraltete Revision. Dorthin zu geraten ist kein Fehler,
+sondern regulär — die Revision steigt im Backend auf Wegen, die das Frontend
+nicht zwingend erreichen:
+
+- `note_external_change` bumpt die Revision auch für **inaktive** Tabs;
+- das zugehörige `document:external_changed` verwerfen drei Stellen legitim:
+  der Aktiv-Check im Watcher-Callback (`state.rs`) sowie Pfad- und Tab-Guard im
+  Frontend-Handler (`state/document.ts`).
+
+Deshalb ruft der Stale-Zweig `hex_document_state(tabId)` — Deskriptor-Stand
+unter dem Tabs-Lock, **ohne** Datei-IO — übernimmt Revision, Größe und
+`tooLarge`, leert den Cache, bumpt die Generation und nimmt den Fetch wieder
+auf. Ist die Datei verschwunden, fällt das im nächsten Chunk-Read auf und
+landet im normalen, sichtbaren Fehlerpfad.
+
+Drei Pflichten dabei:
+
+1. **Der Suchkontext muss mitgehen.** `getHexSearchContext` enthält die
+   Revision; ohne `notifyHexContextChanged` liefe der Finder mit der alten
+   weiter und bekäme von `hex_find` seinerseits nur noch `stale:`.
+2. **Der Resync ist gedeckelt** (`MAX_REVISION_RESYNCS`, 3). Wächst eine Datei
+   schneller, als wir nachziehen können (Logdatei), bleibt ein sichtbarer,
+   wiederholbarer Fehler statt einer Resync-Dauerschleife; jeder erfolgreiche
+   Chunk setzt den Zähler zurück.
+3. **Der laufende Resync ist an die Generation gebunden**, nicht an ein
+   globales `inFlight`-Flag. Bumpt ein Mount die Generation, während ein
+   Resync noch offen ist, muss der nächste `stale:` sofort wieder resyncen
+   dürfen — ein globales Flag hätte ihn blockiert und `fetchPaused` erneut
+   stehen lassen: derselbe stumme Deadlock, nur seltener. Deshalb hält
+   `resyncGen` die Generation, und nur der Resync *dieser* Generation gibt sie
+   wieder frei.
+
+**Warum an dieser Stelle und nicht an den Guards**: Ein Fix an einer der drei
+Verwerfungsstellen ließe die beiden anderen offen. Die Ansicht heilt sich
+deshalb selbst, statt auf ein Event zu hoffen.
+
+**Der Defekt davor** (bis 0.7.0): Der Zweig kehrte still zurück und ließ
+`fetchPaused = true` stehen. Danach stiegen `requestChunk`, `pumpQueue` und der
+`finally`-Zweig alle sofort wieder aus — die Ansicht blieb **dauerhaft** auf
+`status: "loading"`, `loadedChunks: []`, ohne Meldung und ohne Retry. Nur ein
+Neu-Öffnen heilte das, weil allein `mountHexView` die Generation bumpt. Aus
+jedem Revisions-Versatz wurde so ein toter Tab (Befund macOS-Verifikationslauf
+2026-08-19).
 
 ### Deskriptor-Aktualisierung durch den Watcher
 

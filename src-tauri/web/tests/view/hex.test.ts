@@ -18,6 +18,11 @@ import {
 
 let tauri: TauriMockHandles;
 const pending = new Map<string, { resolve: (v: unknown) => void; reject: (e: unknown) => void }>();
+/** Antwort des Backends auf `hex_document_state`; `null` = Command schlaegt fehl. */
+let backendState: { revision: number; fileSize: number; tooLarge?: boolean } | null = null;
+/** Laesst `hex_document_state` offen, um einen laufenden Resync zu simulieren. */
+let holdBackendState = false;
+const heldStateCalls: ((v: unknown) => void)[] = [];
 
 function chunkKey(tabId: number, revision: number, offset: number): string {
     return `${tabId}:${revision}:${offset}`;
@@ -91,7 +96,18 @@ beforeEach(async () => {
         unobserve(): void { /* noop */ }
         disconnect(): void { /* noop */ }
     });
+    backendState = null;
+    holdBackendState = false;
+    heldStateCalls.length = 0;
     tauri.invoke.mockImplementation((cmd: string, args?: Record<string, unknown>) => {
+        if (cmd === 'hex_document_state') {
+            if (holdBackendState) {
+                return new Promise((resolve) => { heldStateCalls.push(resolve); });
+            }
+            return backendState
+                ? Promise.resolve(backendState)
+                : Promise.reject('unknown tab');
+        }
         if (cmd !== 'read_file_chunk') return Promise.resolve(undefined);
         const key = chunkKey(
             Number(args?.tabId),
@@ -162,12 +178,132 @@ describe('view/hex', () => {
         expect(getHexViewState().error).toBeNull();
     });
 
-    it('verwirft stale:-Fehler still', async () => {
+    it('holt nach stale: die Revision ein und laedt weiter', async () => {
+        mountHexView({ path: '/tmp/a.bin', fileSize: 16, revision: 1, tabId: 1 });
+        backendState = { revision: 2, fileSize: 16 };
+        pending.get(chunkKey(1, 1, 0))!.reject('stale:revision 1 != 2');
+        await settle();
+
+        expect(getHexViewState().revision).toBe(2);
+        expect(getHexViewState().status).not.toBe('error');
+        expect(getHexViewState().error).toBeNull();
+        // Entscheidend: der Fetch laeuft weiter, statt still verriegelt zu
+        // bleiben (frueher blieb fetchPaused stehen -> ewiges "loading").
+        expect(getHexFetchStats().paused).toBe(false);
+        expect(pending.has(chunkKey(1, 2, 0))).toBe(true);
+        pending.get(chunkKey(1, 2, 0))!.resolve(bytes(new Array(16).fill(3)));
+        await settle();
+        expect(getHexViewState().status).toBe('ready');
+    });
+
+    it('zieht beim Resync auch eine geaenderte Dateigroesse nach', async () => {
+        mountHexView({ path: '/tmp/a.bin', fileSize: 16, revision: 1, tabId: 1 });
+        backendState = { revision: 2, fileSize: 32 };
+        pending.get(chunkKey(1, 1, 0))!.reject('stale:revision 1 != 2');
+        await settle();
+        expect(getHexViewState().fileSize).toBe(32);
+    });
+
+    it('meldet der Suche die eingeholte Revision', async () => {
+        const seen: (HexSearchContext | null)[] = [];
+        mountHexView({ path: '/tmp/a.bin', fileSize: 16, revision: 1, tabId: 1 });
+        setHexContextListener((ctx) => { seen.push(ctx); });
+        backendState = { revision: 5, fileSize: 16 };
+        pending.get(chunkKey(1, 1, 0))!.reject('stale:revision 1 != 5');
+        await settle();
+        // Ohne diese Meldung suchte der Finder mit der alten Revision
+        // weiter und bekaeme von hex_find seinerseits nur noch stale:.
+        expect(seen.at(-1)?.revision).toBe(5);
+    });
+
+    it('haengt nach einem Mount nicht am Resync der alten Generation', async () => {
+        // Resync laeuft, das Backend antwortet noch nicht.
+        holdBackendState = true;
         mountHexView({ path: '/tmp/a.bin', fileSize: 16, revision: 1, tabId: 1 });
         pending.get(chunkKey(1, 1, 0))!.reject('stale:revision 1 != 2');
         await settle();
+        expect(heldStateCalls).toHaveLength(1);
+
+        // Ein neuer Mount bumpt die Generation, waehrend jener Resync offen
+        // bleibt. Ein globales inFlight-Flag haette den naechsten stale:
+        // blockiert und fetchPaused erneut stehen lassen.
+        holdBackendState = false;
+        backendState = { revision: 8, fileSize: 16 };
+        mountHexView({ path: '/tmp/b.bin', fileSize: 16, revision: 7, tabId: 2 });
+        await settle();
+        pending.get(chunkKey(2, 7, 0))!.reject('stale:revision 7 != 8');
+        await settle();
+
+        expect(getHexViewState().revision).toBe(8);
+        expect(getHexFetchStats().paused).toBe(false);
         expect(getHexViewState().status).not.toBe('error');
-        expect(getHexViewState().error).toBeNull();
+    });
+
+    it('macht den Fehler sichtbar, wenn der Resync scheitert', async () => {
+        mountHexView({ path: '/tmp/a.bin', fileSize: 16, revision: 1, tabId: 1 });
+        backendState = null; // Command schlaegt fehl (z. B. Tab weg)
+        pending.get(chunkKey(1, 1, 0))!.reject('stale:revision 1 != 2');
+        await settle();
+        expect(getHexViewState().status).toBe('error');
+        expect(document.getElementById('hex-view-retry')!.hidden).toBe(false);
+    });
+
+    it('macht den Fehler sichtbar, wenn die Revision nicht die Ursache war', async () => {
+        mountHexView({ path: '/tmp/a.bin', fileSize: 16, revision: 1, tabId: 1 });
+        backendState = { revision: 1, fileSize: 16 }; // unveraendert
+        pending.get(chunkKey(1, 1, 0))!.reject('stale:revision 1 != 2');
+        await settle();
+        expect(getHexViewState().status).toBe('error');
+    });
+
+    it('gibt nach wiederholtem stale: sichtbar auf statt endlos zu resyncen', async () => {
+        mountHexView({ path: '/tmp/a.bin', fileSize: 16, revision: 1, tabId: 1 });
+        // Datei waechst schneller, als wir nachziehen: jede eingeholte
+        // Revision ist beim naechsten Read schon wieder veraltet.
+        let rev = 1;
+        for (let round = 0; round < 5; round += 1) {
+            const key = chunkKey(1, rev, 0);
+            if (!pending.has(key)) break;
+            rev += 1;
+            backendState = { revision: rev, fileSize: 16 };
+            pending.get(key)!.reject(`stale:revision ${rev - 1} != ${rev}`);
+            await settle();
+        }
+        expect(getHexViewState().status).toBe('error');
+        expect(getHexFetchStats().paused).toBe(true);
+    });
+
+    it('nimmt den Resync nach einem erfolgreichen Chunk wieder auf', async () => {
+        mountHexView({ path: '/tmp/a.bin', fileSize: 16, revision: 1, tabId: 1 });
+        // Drei Resyncs verbrauchen das Budget ...
+        let rev = 1;
+        for (let round = 0; round < 3; round += 1) {
+            const key = chunkKey(1, rev, 0);
+            expect(pending.has(key)).toBe(true);
+            rev += 1;
+            backendState = { revision: rev, fileSize: 16 };
+            pending.get(key)!.reject(`stale:revision ${rev - 1} != ${rev}`);
+            await settle();
+        }
+        // ... ein geglueckter Chunk setzt den Zaehler zurueck ...
+        const good = chunkKey(1, rev, 0);
+        expect(pending.has(good)).toBe(true);
+        pending.get(good)!.resolve(bytes(new Array(16).fill(1)));
+        pending.delete(good);
+        await settle();
+        expect(getHexViewState().status).toBe('ready');
+
+        // ... und ein spaeterer Versatz heilt wieder, statt am
+        // aufgebrauchten Budget der ersten Runde haengen zu bleiben.
+        reloadHexView({ revision: rev + 1, fileSize: 16 });
+        await settle();
+        const stale = chunkKey(1, rev + 1, 0);
+        expect(pending.has(stale)).toBe(true);
+        backendState = { revision: rev + 2, fileSize: 16 };
+        pending.get(stale)!.reject(`stale:revision ${rev + 1} != ${rev + 2}`);
+        await settle();
+        expect(getHexViewState().revision).toBe(rev + 2);
+        expect(getHexViewState().status).not.toBe('error');
     });
 
     it('zeigt einen Lesefehler sichtbar', async () => {
@@ -272,9 +408,12 @@ describe('view/hex', () => {
         mountDom();
         mountHexView({ path: '/tmp/b.bin', fileSize: 16, revision: 2, tabId: 1 });
         expect(tauri.invoke.mock.calls.filter((c) => c[0] === 'read_file_chunk')).toHaveLength(afterError + 1);
+        // Laesst sich die Revision nicht einholen, bleibt es bei angehaltenen
+        // Reads — aber sichtbar und wiederholbar, nicht stumm.
+        backendState = null;
         pending.get(chunkKey(1, 2, 0))!.reject('stale:revision 2 != 3');
         await settle();
-        expect(getHexViewState().status).not.toBe('error');
+        expect(getHexViewState().status).toBe('error');
         expect(getHexFetchStats().paused).toBe(true);
         const afterStale = tauri.invoke.mock.calls.filter((c) => c[0] === 'read_file_chunk').length;
         document.getElementById('hex-view-mount')!.dispatchEvent(new Event('scroll', { bubbles: true }));

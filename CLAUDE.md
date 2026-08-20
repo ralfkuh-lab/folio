@@ -485,7 +485,18 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   stehen und `tooLarge` wird wahr — die Hex-Ansicht darf dann keine
   Fenster jenseits dieser Größe anfordern. Image **und Binary** gehen
   opaque (`load_opaque_as`); Binary rendert in der Hex-Surface
-  (`view/hex.ts`, nur View-Mode). Der Typ bleibt für die Tab-Lebensdauer
+  (`view/hex.ts`, nur View-Mode). **Ein `stale:` aus `read_file_chunk` ist
+  kein Grund, still auszusteigen**: die Frontend-Revision kann dem Backend
+  regulär hinterherhinken (`note_external_change` bumpt auch für inaktive
+  Tabs; das `document:external_changed` verwerfen Aktiv-Check in `state.rs`
+  sowie Pfad- und Tab-Guard in `state/document.ts`). Der Stale-Zweig zieht
+  die Revision deshalb über `hex_document_state` nach und setzt den Fetch
+  fort — gedeckelt und mit sichtbarem Fehler als Fallback; der Suchkontext
+  muss dabei mitgehen (`notifyHexContextChanged`), sonst läuft der Finder
+  mit der alten Revision weiter. Bis 0.7.0 verriegelte der Zweig sich still
+  (`fetchPaused` blieb stehen) und machte aus jedem Revisions-Versatz einen
+  dauerhaft auf `loading` stehenden Tab — Details in
+  [`docs/spec-hex-view.md`](docs/spec-hex-view.md). Der Typ bleibt für die Tab-Lebensdauer
   stehen (Rename ändert ihn nicht). Vault-Baum,
   Filter, Wikilinks, Tags und der Such-Walk bleiben endungsbasiert
   und IO-frei. Bleibt `classify` bei `Binary`, entscheidet ein

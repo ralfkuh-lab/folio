@@ -3,6 +3,8 @@
 //! - [`read_file`] — Tauri-Command fürs Öffnen/Lesen über den Service-Pfad
 //! - [`read_file_chunk`] — revisionsgebundener Byte-Ausschnitt (Hex).
 //! - [`hex_find`] — nächster Byte-Treffer in der Hex-Ansicht.
+//! - [`hex_document_state`] — aktueller Deskriptor-Stand eines binären
+//!   Tabs; die Hex-Ansicht holt damit nach einem `stale:` ihre Revision ein.
 //! - [`rename_file`] (Command) + [`run_rename_dialog`] (für Menü-Pfad) —
 //!   teilen sich `perform_move` als gemeinsame State-Choreografie.
 //! - [`create_directory`] — leeren Ordner anlegen (kein `create_dir_all`).

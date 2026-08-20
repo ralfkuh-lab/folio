@@ -132,6 +132,61 @@ fn read_chunk_from<R: Read + Seek>(
     Ok(buf)
 }
 
+/// Aktueller Deskriptor-Stand eines binaeren Tabs (Revision, Groesse,
+/// Adressierbarkeit).
+///
+/// Die Hex-Ansicht zieht ihn, wenn ein Chunk-Read mit `stale:` abgelehnt
+/// wurde. Die Revision im Frontend kann dem Backend naemlich hinterherhinken,
+/// ohne dass ein `document:external_changed` sie je nachgezogen haette:
+/// [`DocumentStore::note_external_change`] bumpt die Revision auch fuer
+/// **inaktive** Tabs, und das zugehoerige Frontend-Event verwerfen gleich
+/// drei Stellen legitim — der Aktiv-Check im Watcher-Callback (`state.rs`)
+/// sowie Pfad- und Tab-Guard im Frontend-Handler. Ohne einen Weg, die
+/// Revision aktiv nachzuziehen, bliebe ein solcher Versatz dauerhaft:
+/// **jeder** Chunk-Read scheitert dann, und die Ansicht kaeme nie wieder
+/// aus `loading` heraus.
+///
+/// Bewusst ohne Datei-IO — nur der Deskriptor unter dem Tabs-Lock. Ist die
+/// Datei verschwunden, faellt das im naechsten Chunk-Read auf und landet im
+/// normalen, sichtbaren Fehlerpfad.
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HexDocumentState {
+    pub revision: u64,
+    pub file_size: u64,
+    pub too_large: bool,
+}
+
+pub(crate) fn hex_document_state_for(
+    state: &AppState,
+    tab_id: u64,
+) -> Result<HexDocumentState, String> {
+    let tabs = state
+        .tabs
+        .lock()
+        .map_err(|_| chunk_error("tabs lock poisoned"))?;
+    let tab = tabs.tab(tab_id).ok_or_else(|| chunk_error("unknown tab"))?;
+    let Some(desc) = tab.document_store.descriptor() else {
+        return Err(chunk_error("no document"));
+    };
+    if desc.kind != FileKind::Binary {
+        return Err(chunk_error("not a binary document"));
+    }
+    Ok(HexDocumentState {
+        revision: desc.revision,
+        file_size: desc.file_size,
+        too_large: desc.too_large,
+    })
+}
+
+#[tauri::command]
+pub fn hex_document_state(
+    tab_id: u64,
+    state: State<'_, AppState>,
+) -> Result<HexDocumentState, String> {
+    hex_document_state_for(&state, tab_id)
+}
+
 #[tauri::command]
 pub async fn read_file_chunk(
     tab_id: u64,
@@ -239,6 +294,63 @@ mod tests {
             err.starts_with(STALE_PREFIX),
             "expected stale: prefix, got {err}"
         );
+    }
+
+    #[test]
+    fn hex_document_state_reports_the_current_revision() {
+        install_translator();
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("blob.bin");
+        fs::write(&path, b"abcdefghij").unwrap();
+        let state = AppState::new();
+        let (tab_id, revision) = load_binary(&state, path.to_str().unwrap());
+        let first = hex_document_state_for(&state, tab_id).unwrap();
+        assert_eq!(revision, first.revision);
+        assert_eq!(10, first.file_size);
+        assert!(!first.too_large);
+
+        // Externe Aenderung bumpt die Revision — genau der Versatz, den die
+        // Ansicht nach einem `stale:` wieder einholen koennen muss.
+        fs::write(&path, b"abcdefghijkl").unwrap();
+        {
+            let mut tabs = state.tabs.lock().unwrap();
+            tabs.tab_mut(tab_id)
+                .unwrap()
+                .document_store
+                .note_external_change(path.to_str().unwrap());
+        }
+        let second = hex_document_state_for(&state, tab_id).unwrap();
+        assert!(
+            second.revision > first.revision,
+            "expected a bumped revision, got {} then {}",
+            first.revision,
+            second.revision
+        );
+        assert_eq!(12, second.file_size);
+        // Und der Chunk-Read gelingt mit genau dieser Revision wieder.
+        assert!(authorize_chunk_read(&state, tab_id, first.revision).is_err());
+        assert!(authorize_chunk_read(&state, tab_id, second.revision).is_ok());
+    }
+
+    #[test]
+    fn hex_document_state_rejects_unknown_tab_and_non_binary() {
+        install_translator();
+        let state = AppState::new();
+        let err = hex_document_state_for(&state, 99_999).unwrap_err();
+        assert!(!err.starts_with(STALE_PREFIX));
+        assert!(err.contains("unknown tab"), "got {err}");
+
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("note.md");
+        fs::write(&path, "hello").unwrap();
+        let tab_id = {
+            let mut tabs = state.tabs.lock().unwrap();
+            let tab = tabs.active_mut();
+            tab.document_store.load(path.to_str().unwrap()).unwrap();
+            tab.id
+        };
+        let err = hex_document_state_for(&state, tab_id).unwrap_err();
+        assert!(err.contains("not a binary document"), "got {err}");
     }
 
     #[test]
