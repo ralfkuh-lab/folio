@@ -8,6 +8,10 @@
 
 ## Hohe Priorität
 
+- **E2E-Run 2026-08-20 13:01: 1 Fehler** — Details in
+  [`tests/e2e/artifacts/20260820-125721/errors.md`](tests/e2e/artifacts/20260820-125721/errors.md). Run-Report:
+  [`tests/e2e/artifacts/20260820-125721/report.md`](tests/e2e/artifacts/20260820-125721/report.md).
+
 - 🔍 **E2E `61_hex_view` flaky auf macOS: „Zurück findet den direkten
   Nachbar-Treffer"** (1 von 10 Läufen, 2026-08-20, macOS 14.8.4). Der Zähler
   stand auf `Treffer bei 0x00000002` statt `0x00000001` — die
@@ -24,6 +28,24 @@
   lediglich aus, dass der Fehlschlag ein direkter Effekt der Heilung ist.
   Nächster Schritt bei Wiederauftreten: Resync-Präsenz pro Lauf gegen
   PASS/FAIL protokollieren, statt beides getrennt zu zählen.
+
+  **Passender Defekt gefunden und behoben 2026-08-20** (Code-Befund, nicht
+  reproduziert): `hex_find` autorisiert über dieselbe Revisionsprüfung wie
+  `read_file_chunk` und liefert bei Versatz ebenfalls `stale:` — der Finder
+  verwarf das aber **still**, mit der Begründung „der Lauf wurde abgelöst".
+  Das gilt nur für `stale:cancelled`; beim Revisions-Versatz gibt es keinen
+  ablösenden Lauf, die Suche endet lautlos und Zähler samt Markierung bleiben
+  stehen. Das ist **exakt** das beobachtete Symptom (`find-prev` wirkungslos,
+  Zähler bleibt auf `0x00000002`), und es erklärt auch, warum der gefailte
+  Lauf resync-frei aussah: bei einer 4-Byte-Datei fordert der Chunk-Pfad
+  nichts mehr nach, nur `hex_find` läuft noch — und der loggte nicht.
+  Behoben über `STALE_REVISION_PREFIX` (Vertrag, Rust-Test) +
+  `pullHexRevisionAfterStale`.
+
+  **Beweis steht aus**: Ob dieser Defekt der Fehlschlag *war*, zeigt erst der
+  nächste Mac-Lauf. Die Log-Spur trägt dafür jetzt ein `reason`-Feld —
+  `reason: "search"` heißt, der Versatz wurde im Such-Pfad bemerkt (also
+  genau dieser Fall), `reason: "chunk"` wie bisher in der Ansicht.
 
 - ✅ **Hex-Ansicht: macOS-Gegenprobe zum 0.7.1-Fix — verifiziert 2026-08-20**
   (Fix 2026-08-20, Befund macOS-Verifikationslauf 2026-08-19). Der ausweglose
@@ -220,6 +242,21 @@
   Speicherdruck fehlen). Nächster Schritt: bei Wiederauftreten prüfen, ob ein
   angehobenes `testTimeout` für diesen Test das Fenster schließt — ein
   reiner Timeout unter Last spricht für zu enge Marge, nicht für einen Defekt.
+
+- **Inline-Rename überlebt einen Vault-Rebuild nicht** (Produktbefund aus
+  einem E2E-Flake, 2026-08-20, niedrig-mittel): Ein asynchroner Tree-Rebuild
+  (`vault:refresh` → `refreshVault`) ersetzt die Baumzeile samt offenem
+  `input.vault-rename-input` — die angefangene Eingabe ist dann weg. Im Test
+  löste ein vorangegangenes `tab_open` den Rebuild aus; im Alltag reicht
+  dafür der VaultWatcher, wenn sich im aufgeklappten Ordner nebenbei etwas
+  ändert (Build-Ordner, Logdatei, `git`-Operation). Der Nutzer tippt dann
+  einen Namen, und die Zeile springt ohne Erklärung zurück.
+  **E2E ist gehärtet** (`59_vault_fileops`: der Commit gehört jetzt in
+  denselben Retry-Versuch wie das Erscheinen des Inputs), der Produktpfad
+  **nicht** — ein Rename-in-flight müsste den Rebuild überleben oder ihn
+  aufschieben. Vorher entscheiden: aufschieben (einfach, aber der Baum
+  hinkt) oder Eingabe über den Rebuild retten (richtiger, aber der Rebuild
+  ersetzt heute pauschal DOM).
 
 - **E2E `42_mermaid` flaky — Fix 2026-07-25, Beobachtung**: erneut
   aufgetreten (2026-07-21 + 2026-07-25, „mermaid svg nicht gefunden").

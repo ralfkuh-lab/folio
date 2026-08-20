@@ -135,8 +135,15 @@ def _rename_via_context(ctx, path: str, value: str, attempts: int = 3) -> None:
     `tab_open` stößt einen asynchronen Tree-Rebuild an (`vault:refresh` →
     `refreshVault`), der die Zeile kurzzeitig ersetzt. Im Einzellauf gewinnt
     der Test das Rennen, im Voll-Lauf nicht zuverlässig.
+
+    **Der Commit gehört in denselben Versuch.** Der Rebuild kann den Input
+    auch NACH seinem Erscheinen wieder entfernen — dann brach der Test ab,
+    obwohl ein neuer Versuch ihn gerettet hätte (Voll-Lauf-Fehlschlag
+    2026-08-20: die Schleife fand den Input, `_inline_rename` sah ihn nicht
+    mehr). Ein Versuch zählt deshalb erst als geglückt, wenn Enter auf einem
+    noch vorhandenen Input abgesetzt wurde.
     """
-    for attempt in range(attempts):
+    for _attempt in range(attempts):
         # Vor jedem Versuch sicherstellen, dass die Zeile wieder da ist.
         ctx.expect(
             bool(_poll(lambda: _node_exists(ctx, path))),
@@ -144,31 +151,27 @@ def _rename_via_context(ctx, path: str, value: str, attempts: int = 3) -> None:
         )
         _ctx_open(ctx, path)
         _ctx_click(ctx, "rename")
-        if _poll(
+        if not _poll(
             lambda: _evalv(ctx, "!!document.querySelector('input.vault-rename-input')") is True,
             timeout=2.0,
         ):
-            break
-        if attempt == attempts - 1:
-            ctx.expect(False, "Inline-Rename-Input erschien nicht")
-    _inline_rename(ctx, value)
+            continue
+        if _commit_inline_rename(ctx, value):
+            return
+    ctx.expect(False, f"Inline-Rename von {path} kam nicht zustande")
 
 
-def _inline_rename(ctx, value: str) -> None:
-    """Inline-Rename im Baum: Input füllen, Enter committen."""
-    ready = _poll(
-        lambda: _evalv(ctx, "!!document.querySelector('input.vault-rename-input')") is True
-    )
-    ctx.expect(bool(ready), "Inline-Rename-Input erschien nicht")
-    ok = _evalv(
+def _commit_inline_rename(ctx, value: str) -> bool:
+    """Input füllen und mit Enter committen. `False`, wenn er zwischenzeitlich
+    verschwunden ist — das ist ein wiederholbarer Zustand, kein Testfehler."""
+    return _evalv(
         ctx,
         "(function(){var i=document.querySelector('input.vault-rename-input');"
         "if(!i)return false;"
         f"i.value={json.dumps(value)};"
         "i.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));"
         "return true;})()",
-    )
-    ctx.expect(ok is True, "Inline-Rename-Input verschwand vor dem Commit")
+    ) is True
 
 
 def _tab_paths(ctx) -> list[str]:

@@ -604,6 +604,14 @@ describe('view/hex', () => {
         expect(hitCells()).toBe(0);
     });
 
+    // Eigenes Timeout: der Test simuliert bewusst eine 4-MiB-Datei mit
+    // 16-Byte-Chunks, also ein Chunk je Bildschirmzeile — jeder aufgeloeste
+    // Chunk zieht ein renderVisible + updateToolbar nach sich, und in jsdom
+    // kostet diese DOM-Arbeit ~1 s. Unter Last riss das den 5-s-Default
+    // (gemessen 5657 ms, ~1 Fehlschlag pro 9 Voll-Laeufen).
+    // KEIN Produktproblem: renderVisible, requestChunksForRange und
+    // deriveReadyFromCache sind alle O(sichtbare Zeilen), nicht
+    // O(Fenstergroesse) — geprueft 2026-08-20.
     it('haelt die Markierung, wenn die Suche selbst das Fenster wechselt', async () => {
         configureHexViewForTests({ chunkBytes: 16 });
         const page = 4 * 1024 * 1024;
@@ -615,7 +623,7 @@ describe('view/hex', () => {
         await resolveAllPending(0x42);
 
         expect(hitCells()).toBe(4);
-    });
+    }, 20_000);
 
     it('meldet Kontextwechsel synchron an den Suchbeobachter', async () => {
         const seen: Array<HexSearchContext | null> = [];
