@@ -8,34 +8,42 @@
 
 ## Hohe Priorität
 
-- 🔍 **Hex-Ansicht: macOS-Gegenprobe zum 0.7.1-Fix** (Fix 2026-08-20, Befund
-  macOS-Verifikationslauf 2026-08-19). Der ausweglose Zustand ist behoben: der
-  `stale:`-Zweig in `view/hex.ts` verwirft nicht mehr still, sondern zieht über
-  den neuen Command `hex_document_state` die aktuelle Revision nach, leert den
-  Cache, bumpt die Generation und setzt den Fetch fort — mit Deckel
-  (`MAX_REVISION_RESYNCS`, 3) gegen eine Resync-Dauerschleife und sichtbarem,
-  wiederholbarem Fehler als Fallback. Details in
+- ✅ **Hex-Ansicht: macOS-Gegenprobe zum 0.7.1-Fix — verifiziert 2026-08-20**
+  (Fix 2026-08-20, Befund macOS-Verifikationslauf 2026-08-19). Der ausweglose
+  Zustand ist behoben: der `stale:`-Zweig in `view/hex.ts` verwirft nicht mehr
+  still, sondern zieht über den neuen Command `hex_document_state` die aktuelle
+  Revision nach, leert den Cache, bumpt die Generation und setzt den Fetch fort
+  — mit Deckel (`MAX_REVISION_RESYNCS`, 3) gegen eine Resync-Dauerschleife und
+  sichtbarem, wiederholbarem Fehler als Fallback. Details in
   [`docs/spec-hex-view.md`](docs/spec-hex-view.md) („Revisions-Versatz heilt
   sich selbst").
 
-  **Was verifiziert ist**: Unit-Tests decken beide Seiten ab (Rust:
-  `hex_document_state_reports_the_current_revision` belegt den Bump durch
-  `note_external_change`; vitest: Heilung, Größen-Nachzug, Kontextmeldung an
-  die Suche, beide Fehler-Fallbacks, Deckel und Zähler-Reset). Der
-  Linux-E2E-Voll-Lauf ist grün.
+  **Gegenprobe gefahren** (macOS 14.8.4 / Darwin 23.6.0, x86_64, Release-Binary
+  auf dem Stand von `4007a6b`):
 
-  **Was offen ist**: Die konkrete macOS-Auslösung wurde **nicht** reproduziert
-  — unter Linux tritt der Versatz nicht auf. Identifiziert ist die *Klasse* der
-  Ursache: `note_external_change` bumpt die Revision auch für **inaktive**
-  Tabs, und das `document:external_changed` verwerfen drei Stellen legitim
-  (Aktiv-Check in `state.rs`, Pfad- und Tab-Guard in `state/document.ts`).
-  Genau deshalb sitzt der Fix in der Selbstheilung und nicht an einem der
-  Guards — ein Fix dort ließe die anderen beiden offen. **Gegenprobe auf dem
-  Mac**: `61_hex_view` fahren, insbesondere den Schritt „Dokumentwechsel setzt
-  die offene Suche auf das neue Dokument"; die Ansicht darf nicht mehr auf
-  `status: "loading"` stehen bleiben. Bleibt sie es doch, ist der Resync-Pfad
-  selbst betroffen und der Fehler jetzt **sichtbar** statt stumm — das
-  Fehlerbild unterscheidet die beiden Fälle.
+  ```
+  python3 tests/e2e/run.py --attach --attach-reset --no-visual 61_hex_view
+  ```
+
+  **6× in Folge grün**, 15/15 Schritte, 0 Console-Errors, 0 WARN/ERROR im
+  Folio-Log. Grün ist insbesondere Schritt 13 „Dokumentwechsel setzt die offene
+  Suche auf das neue Dokument" — genau der Schritt, in dem der Stall am
+  2026-08-19 auf dieser Maschine **reproduzierbar** war — sowie Schritt 15
+  („Externer Truncate klemmt das Fenster"), der über `note_external_change` den
+  Revisions-Bump auslöst. Die Ansicht bleibt nicht mehr auf
+  `status: "loading"`, `loadedChunks: []` stehen.
+
+  **Was die Gegenprobe NICHT trennt**: ob der Resync-Pfad tatsächlich gefeuert
+  hat oder ob der Versatz gar nicht mehr auftrat. Weder `read_file_chunk` noch
+  `resyncRevisionAfterStale` loggen, und `getHexViewState` exponiert
+  `resyncAttempts` nicht — eine Heilung liefe unsichtbar durch. Für den Nutzer
+  ist beides äquivalent (Symptom weg), für die Diagnose nicht: **Defekt 1 aus
+  dem Ursprungsbefund — der Revisions-Nachlauf selbst — bleibt ursächlich
+  ungeklärt.** Deterministisch erzwingen ließ er sich nicht; jeder Tab-Wechsel
+  emittiert `document:loaded` und remountet mit frischer Revision, der Versatz
+  ist ein Rennen. Wer das trennscharf will, setzt ein `folioLog.debug` in den
+  `stale:`-Zweig von `view/hex.ts` — dann sagt ein Lauf, ob geheilt wurde oder
+  nichts zu heilen war.
 
 ## Mittlere Priorität
 
