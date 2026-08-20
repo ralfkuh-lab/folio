@@ -29,6 +29,39 @@
   Nächster Schritt bei Wiederauftreten: Resync-Präsenz pro Lauf gegen
   PASS/FAIL protokollieren, statt beides getrennt zu zählen.
 
+  **Nachgemessen 2026-08-20 auf macOS, genau so** (40 Läufe, Resync-Präsenz
+  pro Lauf gegen PASS/FAIL, `reason` aus `565f1c2` als Trennmerkmal):
+
+  | | Läufe | PASS | chunk-Resync | search-Resync |
+  |---|---:|---:|---:|---:|
+  | Batch A | 15 | 15 | 8 | 0 |
+  | Batch B | 25 | 25 | 13 | 1 |
+
+  **40/40 grün.** Und in Batch B ist der gesuchte Fall einmal aufgetreten:
+
+  ```
+  stale revision — pulling current  {"attempt":1,"reason":"search","staleRevision":8,"tabId":30}
+  revision resynced — resuming fetch {"fileSize":4,"reason":"search","revision":9,"tabId":30}
+  ```
+
+  Damit ist die Hypothese aus `565f1c2` **belegt**: der Suchpfad gerät auf
+  macOS tatsächlich in den Revisions-Versatz (1 von 40), und mit dem Fix
+  zieht er nach statt still zu verwerfen — der Lauf blieb grün. Vor dem Fix
+  war genau das der stehende Zähler.
+
+  Zur Beweiskraft, fair gerechnet: 0/40 bei einer früheren Rate von ~1/10
+  hat p ≈ 0,9⁴⁰ ≈ 1,5 %. Das allein wäre nur ein Indiz; zusammen mit dem
+  beobachteten, geheilten `reason=search`-Vorfall ist die Ursachenkette
+  geschlossen.
+
+  **Eine Beobachtung bleibt offen**: Im Batch davor (15 Läufe, noch mit dem
+  veralteten `dist`-Bundle — funktional identisch, es fehlte nur das
+  `reason`-Feld) fiel **ein** Lauf mit einem *anderen* Fehler: „Suche folgte
+  dem Dokumentwechsel nicht" (Schritt 13), Zähler `'…'`, ohne jeden
+  Resync-Eintrag. Danach 40 Läufe sauber. Also entweder seltener als 1/55
+  oder ein dritter, noch unverstandener Pfad — bei Wiederauftreten dieselbe
+  Methodik anwenden.
+
   **Passender Defekt gefunden und behoben 2026-08-20** (Code-Befund, nicht
   reproduziert): `hex_find` autorisiert über dieselbe Revisionsprüfung wie
   `read_file_chunk` und liefert bei Versatz ebenfalls `stale:` — der Finder
