@@ -41,3 +41,12 @@ release-notes.md
 
 # Temporaeres Config-Verzeichnis des README-Screenshot-Laufs
 /scripts/readme-screenshots/.temp_home/
+
+# Von tauri-build erzeugte ACL-/Capability-Schemas. Rein generiert, und ein
+# Build erzeugt nur die Dateien SEINER Plattform (macOS: desktop + macOS,
+# Linux: desktop + linux) — die committeten Fassungen wanderten dadurch je
+# nach Build-Maschine hin und her, und die macOS-Fassung hinkte zuletzt dem
+# Plugin-Stand hinterher. Die vier Plattform-Schemas sind ohnehin
+# inhaltsgleich. Tauris eigenes Template ignoriert das Verzeichnis ebenfalls;
+# ein frischer Checkout erzeugt beim ersten `cargo build` alles Noetige.
+/src-tauri/gen/schemas/
