@@ -41,9 +41,18 @@
   dem Ursprungsbefund — der Revisions-Nachlauf selbst — bleibt ursächlich
   ungeklärt.** Deterministisch erzwingen ließ er sich nicht; jeder Tab-Wechsel
   emittiert `document:loaded` und remountet mit frischer Revision, der Versatz
-  ist ein Rennen. Wer das trennscharf will, setzt ein `folioLog.debug` in den
-  `stale:`-Zweig von `view/hex.ts` — dann sagt ein Lauf, ob geheilt wurde oder
-  nichts zu heilen war.
+  ist ein Rennen.
+
+  **Diagnose-Spur ergänzt 2026-08-20** (aus genau diesem Vorbehalt): der
+  Resync-Pfad in `view/hex.ts` loggt jetzt über `folioLog.warn('hex', …)` —
+  Auslöser (`stale chunk — pulling current revision`), Erfolg
+  (`revision resynced — resuming fetch`) und die drei Aufgabe-Fälle. Bewusst
+  `warn` statt `debug`: erst ab `warn` steht der Eintrag im Default-Log
+  (Level `info`), sonst bräuchte die Gegenprobe eine Sonderkonfiguration.
+  Damit trennt ein Mac-Lauf die beiden Fälle: **Einträge im Log** = Versatz
+  trat auf und wurde geheilt (Defekt 1 real, Fix greift); **keine Einträge** =
+  es gab nichts zu heilen. Beim Nachtest ist ein `WARN` aus `source=hex`
+  also das gesuchte Signal, kein Fehler.
 
 ## Mittlere Priorität
 
@@ -128,6 +137,15 @@
   Target (`rustup target list --installed` kennt nur Linux) — der Beleg ist
   die Zuordnung Fehler↔Fundstelle, nicht ein grüner Windows-Lauf. Beim
   nächsten Windows-Durchgang mitlaufen lassen.
+
+- 🔍 **vitest-Suite: ein nicht reproduzierter Fehlschlag** (Beobachtung
+  2026-08-20): Im ersten Voll-Lauf nach dem Hex-Logging fiel **1 von 815**
+  Tests; der Name ging in einer abgeschnittenen Ausgabe verloren. Danach
+  9 weitere Voll-Läufe grün und `tests/view/hex.test.ts` gezielt 10× grün —
+  der Änderungsbereich ist damit unverdächtig, der Flake sitzt vermutlich
+  woanders und ist selten (~1/9). Bei erneutem Auftreten die **volle**
+  vitest-Ausgabe sichern (nicht `| tail -5`, das schluckt den Testnamen und
+  maskiert obendrein den Exit-Code der Pipeline).
 
 - **E2E `42_mermaid` flaky — Fix 2026-07-25, Beobachtung**: erneut
   aufgetreten (2026-07-21 + 2026-07-25, „mermaid svg nicht gefunden").

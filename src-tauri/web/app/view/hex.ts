@@ -19,6 +19,7 @@ import {
     type FormattedHexLine,
 } from './hex-format';
 import { rowHighlightRange } from './hex-search';
+import { folioLog } from '../util/log';
 
 export const CHUNK_BYTES = 64 * 1024;
 export const HEX_MAX_INFLIGHT = 4;
@@ -688,11 +689,25 @@ function resyncRevisionAfterStale(id: number | null, gen: number): void {
     if (id === null) return;
     if (resyncGen === gen) return;
     if (resyncAttempts >= MAX_REVISION_RESYNCS) {
+        folioLog.warn('hex', 'giving up after repeated stale chunks', {
+            tabId: id,
+            attempts: resyncAttempts,
+        });
         failVisibly();
         return;
     }
     resyncGen = gen;
     resyncAttempts += 1;
+    // Bewusst `warn` und nicht `debug`: ein Revisions-Versatz ist eine
+    // Anomalie, und erst ab `warn` steht er im Default-Log (Level `info`).
+    // Ohne diese Spur ist nach einem gruenen Lauf nicht zu trennen, ob der
+    // Resync geheilt hat oder ob gar nichts zu heilen war — genau die Luecke,
+    // die die macOS-Gegenprobe am 2026-08-20 offenliess.
+    folioLog.warn('hex', 'stale chunk — pulling current revision', {
+        tabId: id,
+        staleRevision: revision,
+        attempt: resyncAttempts,
+    });
     invoke('hex_document_state', { tabId: id }).then(function (raw) {
         if (resyncGen === gen) resyncGen = null;
         // Kontext inzwischen gewechselt: der neue Mount hat den Fetch
@@ -707,6 +722,11 @@ function resyncRevisionAfterStale(id: number | null, gen: number): void {
         if (!Number.isFinite(nextRevision) || nextRevision === revision) {
             // Die Revision war nicht die Ursache — dann darf der Zustand
             // erst recht nicht stumm bleiben.
+            folioLog.warn('hex', 'resync did not yield a new revision', {
+                tabId: id,
+                revision,
+                reported: data.revision,
+            });
             failVisibly();
             return;
         }
@@ -725,9 +745,18 @@ function resyncRevisionAfterStale(id: number | null, gen: number): void {
         // ohne diese Meldung liefe sie mit der alten weiter und bekaeme von
         // `hex_find` ihrerseits nur noch `stale:`.
         if (contextKey() !== contextBefore) notifyHexContextChanged();
-    }).catch(function () {
+        folioLog.warn('hex', 'revision resynced — resuming fetch', {
+            tabId: id,
+            revision: nextRevision,
+            fileSize,
+        });
+    }).catch(function (err) {
         if (resyncGen === gen) resyncGen = null;
         if (gen !== generation) return;
+        folioLog.warn('hex', 'resync failed — showing retryable error', {
+            tabId: id,
+            error: String(err),
+        });
         failVisibly();
     });
 }
