@@ -59,6 +59,17 @@ bereits gebautes `target/release/folio` die Änderung NICHT; erst
 `cargo build --release` (bzw. der run-e2e.sh-Wrapper, der das immer tut)
 liefert den neuen Frontend-Stand aus.
 
+**Bundle-Drift ist ein eigenes Gate**: `bash scripts/check-bundles.sh` baut
+die Bundles und meldet, wenn die eingecheckten nicht zum Quellstand passen
+(Exit 1; Exit 2 = nicht prüfbar, kein npm/node_modules). `run-e2e.sh` ruft
+es vor dem cargo-Build und **bricht bei Drift ab**. Grund: `dist/` ist
+eingecheckt und wird zur Compile-Zeit eingebettet — wer eine Quelle in
+`web/` ändert und `npm run build` vergisst, testet und committet Code, der
+nicht im Repo steht. Weder `tsc --noEmit` noch vitest noch cargo bemerken
+das, weil alle drei die **Quellen** lesen. Real passiert 2026-08-20
+(`565f1c2` → `3ed5714`): der funktionale Fix war im Bundle, die kurz darauf
+ergänzte Diagnose-Spur nicht — und genau die brauchte die Verifikation.
+
 Die `tsconfig.json` hat `noUnusedLocals`/`noUnusedParameters` an (Gate im
 Build, weil `npm run build` mit `tsc --noEmit` startet): ungenutzte
 Variablen, modul-private Funktionen und Importe sind **Fehler**, keine

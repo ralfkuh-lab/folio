@@ -140,6 +140,22 @@ export DISPLAY="${DISPLAY_ARG}"
 export WEBKIT_DISABLE_COMPOSITING_MODE=1
 export WEBKIT_DISABLE_DMABUF_RENDERER=1
 
+# 2b) Frontend-Bundles gegen den Quellstand pruefen. Dieselbe Falle wie
+# beim stalen Release-Binary unten, nur eine Ebene tiefer: `src-tauri/dist/`
+# ist eingecheckt und wird beim cargo-Build EINGEBETTET — ein vergessenes
+# `npm run build` laesst die Suite gegen Frontend-Code laufen, der nicht im
+# Repo steht (passiert real 2026-08-20, Commit 565f1c2 -> 3ed5714).
+# Exit 2 heisst „nicht pruefbar" (kein npm/node_modules) und ist kein Fehler.
+if [[ -x "${REPO_ROOT}/scripts/check-bundles.sh" ]]; then
+    bash "${REPO_ROOT}/scripts/check-bundles.sh"
+    bundle_check=$?
+    if [[ ${bundle_check} -eq 1 ]]; then
+        log "Abbruch: die Suite wuerde einen anderen Frontend-Stand testen"
+        log "als im Repo steht. Neu gebaute Bundles pruefen und mitcommitten."
+        exit 1
+    fi
+fi
+
 # 3) Folio-Release-Binary sicherstellen. Immer bauen, nicht nur bei
 # fehlendem Binary: cargo ist inkrementell (Sekunden, wenn aktuell),
 # und ein stales Release-Binary testet sonst stillschweigend alten
