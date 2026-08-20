@@ -8,6 +8,23 @@
 
 ## Hohe Priorität
 
+- 🔍 **E2E `61_hex_view` flaky auf macOS: „Zurück findet den direkten
+  Nachbar-Treffer"** (1 von 10 Läufen, 2026-08-20, macOS 14.8.4). Der Zähler
+  stand auf `Treffer bei 0x00000002` statt `0x00000001` — die
+  Rückwärts-Navigation übersprang den direkten Nachbarn. Fixture ist
+  `pair.bin` (4 Bytes `41 6F 6F 00`), Suchbegriff `o` mit Treffern bei
+  Offset 1 und 2.
+
+  **Nicht** durch den Hex-Resync erklärt, obwohl derselbe Schritt betroffen
+  ist: In denselben 10 Läufen feuerte der Revisions-Resync 8× (siehe
+  Hex-Eintrag unten) — der gefailte Lauf (UTC 10:27:16–10:27:29) liegt aber
+  in der Lücke zwischen zwei Resync-Einträgen (10:27:11 und 10:27:34), ist
+  also einer der **zwei Läufe ohne** Versatz. Bei nur zwei resync-freien
+  Läufen trägt diese Gegenkorrelation noch keine Aussage; sie schließt
+  lediglich aus, dass der Fehlschlag ein direkter Effekt der Heilung ist.
+  Nächster Schritt bei Wiederauftreten: Resync-Präsenz pro Lauf gegen
+  PASS/FAIL protokollieren, statt beides getrennt zu zählen.
+
 - ✅ **Hex-Ansicht: macOS-Gegenprobe zum 0.7.1-Fix — verifiziert 2026-08-20**
   (Fix 2026-08-20, Befund macOS-Verifikationslauf 2026-08-19). Der ausweglose
   Zustand ist behoben: der `stale:`-Zweig in `view/hex.ts` verwirft nicht mehr
@@ -53,6 +70,44 @@
   trat auf und wurde geheilt (Defekt 1 real, Fix greift); **keine Einträge** =
   es gab nichts zu heilen. Beim Nachtest ist ein `WARN` aus `source=hex`
   also das gesuchte Signal, kein Fehler.
+
+  **Nachtest gefahren 2026-08-20 — Defekt 1 ist real und jetzt ursächlich
+  geklärt.** Der Resync feuert auf macOS in **8 von 10 Läufen**, ausnahmslos
+  mit demselben Profil:
+
+  ```
+  stale chunk — pulling current revision  {"attempt":1,"staleRevision":8,"tabId":13}
+  revision resynced — resuming fetch      {"fileSize":4,"revision":9,"tabId":13}
+  ```
+
+  Immer `attempt: 1`, immer geheilt, ~10 ms bis zur Fortsetzung des Fetch.
+  `fileSize: 4` identifiziert die Stelle eindeutig: **`pair.bin`**, die im
+  Szenario geschrieben und **unmittelbar danach geöffnet** wird.
+
+  **Ursache** (gemessen, nicht hergeleitet): macOS' FSEvents liefert
+  Ereignisse von kurz **vor** dem Stream-Start nach. Der Write auf `pair.bin`
+  landet dadurch als externe Änderung im gerade erst gestarteten Watcher,
+  `note_external_change` bumpt die Revision — nachdem `document:loaded` mit
+  der alten hinausging. Linux/inotify kennt diese Nachlieferung nicht, und
+  genau deshalb tritt der Versatz dort nie auf. Es ist **dieselbe
+  FSEvents-Eigenschaft**, die den Watcher-Test in `b79e0cb` auf macOS
+  unzuverlässig rot machte.
+
+  **Diskriminierender Test**: 1,5 s Pause zwischen `write` und `open` im
+  Szenario → **0 von 6** Läufen mit Resync (gegen 8 von 10 ohne Pause). Bei
+  80 % Grundrate liegt 0/6 bei p ≈ 0,00006.
+
+  Damit erklärt sich auch, warum der Ursprungsbefund vom 2026-08-19 als
+  „reproduzierbar" notiert war: bei ~80 % Trefferrate war der tote Tab vor
+  0.7.1 auf macOS der Normalfall, nicht die Ausnahme.
+
+  **Offen bleibt eine Design-Frage** (kein Defekt): Der Resync heilt die
+  Folge zuverlässig, die spurious Revisions-Bumps durch FSEvents-Nachlieferung
+  entstehen aber weiterhin. Wer sie an der Quelle vermeiden will, müsste den
+  Watcher-Start gegen den Backlog abgrenzen (z. B. Events vor dem
+  `watch()`-Zeitpunkt verwerfen) — das berührt jeden Watcher-Pfad auf macOS,
+  nicht nur die Hex-Ansicht, und ist ohne konkreten Leidensdruck bewusst
+  nicht angefasst.
 
 ## Mittlere Priorität
 
@@ -142,10 +197,29 @@
   2026-08-20): Im ersten Voll-Lauf nach dem Hex-Logging fiel **1 von 815**
   Tests; der Name ging in einer abgeschnittenen Ausgabe verloren. Danach
   9 weitere Voll-Läufe grün und `tests/view/hex.test.ts` gezielt 10× grün —
-  der Änderungsbereich ist damit unverdächtig, der Flake sitzt vermutlich
-  woanders und ist selten (~1/9). Bei erneutem Auftreten die **volle**
+  der Flake schien selten (~1/9). Bei erneutem Auftreten die **volle**
   vitest-Ausgabe sichern (nicht `| tail -5`, das schluckt den Testnamen und
   maskiert obendrein den Exit-Code der Pipeline).
+
+  **Wieder aufgetreten 2026-08-20 auf macOS, Name jetzt gesichert**:
+
+  ```
+  × view/hex > haelt die Markierung, wenn die Suche selbst das Fenster wechselt
+    → Test timed out in 5000ms.   (gemessen: 5657 ms)
+  ```
+
+  Damit ist die frühere Einschätzung „der Änderungsbereich ist unverdächtig"
+  **überholt** — der Test sitzt in `tests/view/hex.test.ts`. Es ist ein
+  **Timeout, keine Assertion**: der Test lief 5657 ms gegen ein 5000-ms-Limit,
+  war also inhaltlich auf Kurs und nur zu langsam.
+
+  Aufgetreten während parallel `cargo build --release` lief. Die naheliegende
+  Erklärung „CPU-Konkurrenz" ließ sich aber **nicht** bestätigen: ohne Last
+  8/8 grün, unter synthetischer Volllast (8 Busy-Loops auf 8 Kernen) 4/4 grün.
+  Synthetische CPU-Last bildet den echten Build offenbar nicht ab (I/O- und
+  Speicherdruck fehlen). Nächster Schritt: bei Wiederauftreten prüfen, ob ein
+  angehobenes `testTimeout` für diesen Test das Fenster schließt — ein
+  reiner Timeout unter Last spricht für zu enge Marge, nicht für einen Defekt.
 
 - **E2E `42_mermaid` flaky — Fix 2026-07-25, Beobachtung**: erneut
   aufgetreten (2026-07-21 + 2026-07-25, „mermaid svg nicht gefunden").
