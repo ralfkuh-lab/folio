@@ -8,62 +8,45 @@
 
 ## Hohe Priorität
 
-- **Hex-Ansicht verriegelt sich still bei Revisions-Versatz** (Befund
-  macOS-Verifikationslauf 2026-08-19, reproduzierbar; E2E `61_hex_view`,
-  Schritt „Dokumentwechsel setzt die offene Suche auf das neue Dokument").
-  Nach einem Dokumentwechsel mit offener Hex-Suche bleibt die Ansicht
-  **dauerhaft** auf `status: "loading"`, `loadedChunks: []` — ohne
-  Fehlermeldung und ohne Retry. Auch nach 30 s unverändert.
+- 🔍 **Hex-Ansicht: macOS-Gegenprobe zum 0.7.1-Fix** (Fix 2026-08-20, Befund
+  macOS-Verifikationslauf 2026-08-19). Der ausweglose Zustand ist behoben: der
+  `stale:`-Zweig in `view/hex.ts` verwirft nicht mehr still, sondern zieht über
+  den neuen Command `hex_document_state` die aktuelle Revision nach, leert den
+  Cache, bumpt die Generation und setzt den Fetch fort — mit Deckel
+  (`MAX_REVISION_RESYNCS`, 3) gegen eine Resync-Dauerschleife und sichtbarem,
+  wiederholbarem Fehler als Fallback. Details in
+  [`docs/spec-hex-view.md`](docs/spec-hex-view.md) („Revisions-Versatz heilt
+  sich selbst").
 
-  **Mechanik** (im Stall-Moment direkt am Backend gemessen):
+  **Was verifiziert ist**: Unit-Tests decken beide Seiten ab (Rust:
+  `hex_document_state_reports_the_current_revision` belegt den Bump durch
+  `note_external_change`; vitest: Heilung, Größen-Nachzug, Kontextmeldung an
+  die Suche, beide Fehler-Fallbacks, Deckel und Zähler-Reset). Der
+  Linux-E2E-Voll-Lauf ist grün.
 
-  ```
-  read_file_chunk(rev=27) -> ERR stale:revision 27 != 28
-          rev=28          -> OK
-  ```
-
-  Das Frontend hält Revision 27, das Backend steht auf 28; jeder Chunk-Read
-  wird abgelehnt. Der Stale-Zweig in `view/hex.ts:620-625` setzt daraufhin
-  `fetchPaused = true`, leert die Queue und kehrt **vor** `setStatus('error',
-  …)` zurück. Danach steigen `requestChunk`, `pumpQueue` und der
-  `finally`-Zweig alle sofort bei `fetchPaused` aus — der Zustand ist still
-  verriegelt.
-
-  **Nur Neu-Öffnen heilt** (gemessen): Scrollen → bleibt `loading`, Suche
-  schließen → bleibt `loading`, Datei erneut öffnen → `ready`. Grund:
-  `mountHexView` ist der einzige Pfad, der `bumpGeneration()` ruft, und nur
-  dort wird `fetchPaused` zurückgesetzt.
-
-  **Zwei Defekte, getrennt zu beheben**:
-  1. Die Revision des Hex-Views läuft bei diesem Wechsel dem Backend
-     hinterher (Ursache noch offen — Verdacht: der Wechsel mit aktiver
-     Suche bumpt die Revision erneut, nachdem das `document:loaded`-Payload
-     raus ist).
-  2. Wichtiger: Der Stale-Zweig darf keinen Zustand ohne Ausweg
-     hinterlassen. Aktuelle Revision neu ziehen und den Fetch fortsetzen —
-     und als Fallback einen sichtbaren, retry-baren Fehler setzen. Sonst
-     wird aus jedem Revisions-Versatz ein toter Tab.
-
-  **Nicht neu**: identische Signatur schon vor dem Pfad-Fix (`fcc0560`).
-  Unter Linux läuft das Szenario grün; ob macOS-spezifisch oder nur ein
-  Timing, das dort zuverlässig getroffen wird, ist offen.
+  **Was offen ist**: Die konkrete macOS-Auslösung wurde **nicht** reproduziert
+  — unter Linux tritt der Versatz nicht auf. Identifiziert ist die *Klasse* der
+  Ursache: `note_external_change` bumpt die Revision auch für **inaktive**
+  Tabs, und das `document:external_changed` verwerfen drei Stellen legitim
+  (Aktiv-Check in `state.rs`, Pfad- und Tab-Guard in `state/document.ts`).
+  Genau deshalb sitzt der Fix in der Selbstheilung und nicht an einem der
+  Guards — ein Fix dort ließe die anderen beiden offen. **Gegenprobe auf dem
+  Mac**: `61_hex_view` fahren, insbesondere den Schritt „Dokumentwechsel setzt
+  die offene Suche auf das neue Dokument"; die Ansicht darf nicht mehr auf
+  `status: "loading"` stehen bleiben. Bleibt sie es doch, ist der Resync-Pfad
+  selbst betroffen und der Fehler jetzt **sichtbar** statt stumm — das
+  Fehlerbild unterscheidet die beiden Fälle.
 
 ## Mittlere Priorität
 
-- 🔍 **E2E-Nachlauf für Wikilink-W8 unter Linux+Xvfb** (offen seit
-  2026-08-19, Implementierung auf Windows entstanden): W8 hat die
-  Wikilink-/Tag-Wurzeln auf Opt-in umgestellt — `53_wikilinks` und `54_tags`
-  schalten ihre Wurzeln jetzt im Setup über `api.workspace_wikilink_root(...)`
-  frei, und der Index-Build läuft im Hintergrund (Re-Render über
-  `wikilink:index_ready`). Die Suite läuft nur unter Linux+Xvfb, also:
-  `bash scripts/run-e2e.sh 53_wikilinks 54_tags` fahren, danach Voll-Lauf.
-  Inhaltlich sollten die Screenshots identisch bleiben (gleiche Doku, gleicher
-  Index); fällt der Visual-Vergleich dennoch, sind
-  `53_wikilinks__wikilinks_view.png` und `54_tags__tags_browser.png` die
-  einzigen betroffenen Baselines (`--update-baselines`). Das Vault-Kontextmenü
-  hat einen Eintrag mehr (`wikilink-root-on`/`-off` auf Pin-Wurzeln) —
-  `19_context_menus` macht keinen Screenshot und prüft nur gezielte
-  `data-act`-Selektoren, ist also nicht betroffen.
+- ✅ **E2E-Nachlauf für Wikilink-W8 unter Linux+Xvfb — erledigt 2026-08-20**:
+  Voll-Lauf grün (62/62 Szenarien, 35/35 visuelle Vergleiche).
+  `53_wikilinks` (0,085 %) und `54_tags` (0,132 %) blieben unter der
+  1-%-Schwelle — die Opt-in-Wurzeln und der asynchrone Index-Build ändern die
+  Screenshots also nicht, **keine** Baseline-Erneuerung nötig. Im selben Lauf
+  bestätigt: `62_path_identity` ist mit `fcc0560` grün (der rote Lauf davor
+  stammte von *vor* dem Fix), und die Flake-Kandidaten `30_tabs_ui` und
+  `42_mermaid` liefen durch.
 
 - **Hex-Ansicht: Härtungspaket** (aus dem Kreuz-Review, bewusst vertagt) —
   `/state` nimmt Pfad/Kind/Größe unter dem Tabs-Lock, die Hex-Felder danach
@@ -123,14 +106,20 @@
   Die Assertions laufen jetzt über `normalize_path(...)`; `cargo test` ist
   auf Windows grün.
 
-- 🔍 **`cargo clippy --all-targets -- -D warnings` bricht auf Windows**
-  (vorbestehend, unabhängig von W8): 7 Errors in `#[cfg(unix)]`-gerahmtem
-  Test-Code — unused imports/Variablen in `commands/file/transfer.rs`
-  (`copy_recursively`, `dst`, `alias`, `src`) und `fs_copy.rs`
-  (`is_physically_under`, `alias`), `unreachable statement` in
-  `palette.rs:256` (das `return` im `#[cfg(not(unix))]`-Zweig). Auf Linux
-  unsichtbar, weil dort alle Symbole benutzt werden — bricht aber jedes
-  Windows-Gate. Fix: `_`-Prefix bzw. Import/`return` cfg-gaten.
+- ✅ **`cargo clippy --all-targets -- -D warnings` auf Windows — behoben
+  2026-08-20** (vorbestehend, unabhängig von W8): Die 7 Errors saßen alle in
+  Tests, die ausschließlich Symlink-Verhalten prüfen und deren
+  `#[cfg(not(unix))]`-Zweig auf Windows nichts testete — unused
+  imports/Variablen in `commands/file/transfer.rs` und `fs_copy.rs`, plus
+  `unreachable statement` in `palette.rs` (das `return` im
+  `not(unix)`-Zweig). Statt die Warnungen mit `_`-Prefixen zu übertünchen,
+  sind die fünf betroffenen Tests jetzt komplett `#[cfg(unix)]` und die
+  zugehörigen Importe mitgegated: damit verschwinden die Diagnosen
+  strukturell, und auf Windows taucht kein Test mehr als Schein-Pass auf, der
+  dort gar nichts prüft. **Nicht gegengeprüft**: Für Windows fehlt hier das
+  Target (`rustup target list --installed` kennt nur Linux) — der Beleg ist
+  die Zuordnung Fehler↔Fundstelle, nicht ein grüner Windows-Lauf. Beim
+  nächsten Windows-Durchgang mitlaufen lassen.
 
 - **E2E `42_mermaid` flaky — Fix 2026-07-25, Beobachtung**: erneut
   aufgetreten (2026-07-21 + 2026-07-25, „mermaid svg nicht gefunden").
