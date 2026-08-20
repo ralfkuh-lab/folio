@@ -140,7 +140,7 @@ pub async fn read_file_chunk(
   Bei Revision-Mismatch antwortet der Command mit einem Fehler, dessen Text mit
   einem stabilen Präfix (`stale:`) beginnt — `Result<Response, String>` trägt
   keinen Fehlertyp, und das Frontend muss „veraltet" von „kaputt" (Fehlerzustand
-  zeigen) unterscheiden können. **„Veraltet" heißt seit 0.7.1 aber nicht mehr
+  zeigen) unterscheiden können. **„Veraltet" heißt seit 0.8.0 aber nicht mehr
   „still verwerfen"**, siehe [Revisions-Versatz heilt sich
   selbst](#revisions-versatz-heilt-sich-selbst).
 - I/O läuft in `spawn_blocking` — `std::fs` im async-Command blockiert sonst
@@ -209,7 +209,7 @@ gibt es dort **keinen ablösenden Lauf**. Der Finder verwarf das still (die
 Begründung „der Lauf wurde abgelöst" gilt eben nur für `stale:cancelled`),
 und Zähler samt Markierung blieben stehen: `find-prev` wirkte dann einfach
 nicht. Damit beide Fälle trennbar sind, ist das Präfix des Revisions-Versatzes
-seit 0.7.1 eigens benannt — `chunk.rs::STALE_REVISION_PREFIX`
+seit 0.8.0 eigens benannt — `chunk.rs::STALE_REVISION_PREFIX`
 (`"stale:revision "`), per Test `stale_prefixes_stay_distinguishable`
 festgeschrieben. Der Finder zieht darauf über `pullHexRevisionAfterStale`
 nach; gelingt es, startet `onHexContextChanged` die Suche ohnehin neu, und

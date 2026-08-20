@@ -80,7 +80,7 @@
   `reason: "search"` heißt, der Versatz wurde im Such-Pfad bemerkt (also
   genau dieser Fall), `reason: "chunk"` wie bisher in der Ansicht.
 
-- ✅ **Hex-Ansicht: macOS-Gegenprobe zum 0.7.1-Fix — verifiziert 2026-08-20**
+- ✅ **Hex-Ansicht: macOS-Gegenprobe zum Hex-Fix (0.8.0) — verifiziert 2026-08-20**
   (Fix 2026-08-20, Befund macOS-Verifikationslauf 2026-08-19). Der ausweglose
   Zustand ist behoben: der `stale:`-Zweig in `view/hex.ts` verwirft nicht mehr
   still, sondern zieht über den neuen Command `hex_document_state` die aktuelle
@@ -154,7 +154,7 @@
 
   Damit erklärt sich auch, warum der Ursprungsbefund vom 2026-08-19 als
   „reproduzierbar" notiert war: bei ~80 % Trefferrate war der tote Tab vor
-  0.7.1 auf macOS der Normalfall, nicht die Ausnahme.
+  0.8.0 auf macOS der Normalfall, nicht die Ausnahme.
 
   **Offen bleibt eine Design-Frage** (kein Defekt): Der Resync heilt die
   Folge zuverlässig, die spurious Revisions-Bumps durch FSEvents-Nachlieferung
