@@ -633,6 +633,16 @@ mod tests {
         assert!(w.watched.is_empty());
     }
 
+    // Nur Linux: Die Regression, die dieser Test bewacht, existiert nur
+    // unter inotify. macOS/FSEvents meldet fuer einen reinen Lesezugriff
+    // ueberhaupt kein Event (gemessen 2026-08-20) — der Test waere dort
+    // vakuum-gruen und koennte einen Filter-Rueckfall nicht bemerken.
+    // Schlimmer noch: er wurde dort unzuverlaessig ROT, weil FSEvents
+    // Ereignisse von kurz VOR dem Stream-Start nachliefert und das
+    // `fs::write` aus dem Setup im Callback landete. Statt das mit einer
+    // Wartezeit zu uebertuenchen (Schein-Pass, der nichts prueft) ist der
+    // Test wie die Symlink-Tests in 06b7bc5 auf seine Plattform gegatet.
+    #[cfg(target_os = "linux")]
     #[test]
     fn git_head_read_does_not_fire() {
         // Regression: notify mappt Lese-Zugriffe (IN_ACCESS/IN_OPEN/
