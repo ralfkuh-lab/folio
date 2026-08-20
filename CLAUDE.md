@@ -1177,6 +1177,18 @@ auf den Run-Start-Snapshot zurück, Theme light, Find-Bar zu, Mode view
 jede Baseline nur noch den Zustand ihres eigenen Szenarios; der Reset
 läuft in Voll- wie Auswahl-Läufen identisch.
 
+**Läufe abseits von Linux 1280×800**: `--no-visual` nimmt Screenshots auf,
+vergleicht sie aber nicht (`bash scripts/run-e2e.sh 61_hex_view --no-visual`,
+bzw. auf macOS/Windows ohne Xvfb: Folio mit `FOLIO_AUTOMATION=1` starten und
+`python3 tests/e2e/run.py --attach --attach-reset --no-visual <szenario>`).
+Die Baselines sind **Monitor**-Captures und damit an Linux 1280×800 gebunden —
+ohne den Schalter bricht ein Szenario am ersten Screenshot mit `size mismatch`
+ab, und die funktionalen Schritte dahinter laufen nie (der Grund, warum der
+Windows-Durchgang 2026-08-18 per Automation-API statt per Suite lief).
+Übersprungene Aufnahmen zählen im Report als *übersprungen*, nie als PASS.
+Bewusst **opt-in**: automatisch im Attach-Mode zu skippen würde auf der
+Baseline-Maschine echte Visual-Regressionen verstecken.
+
 **Einzelszenario-Läufe**: `bash scripts/run-e2e.sh 21_split_mode`
 (Name oder Präfix, mehrere möglich) — vergleicht wie der Voll-Lauf
 gegen die Baselines. Einzelne Baselines lassen sich direkt erneuern:

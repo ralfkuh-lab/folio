@@ -121,6 +121,12 @@ class ScenarioContext:
         ScenarioAbort wie gewohnt.
         """
         full_name = f"{self.name}__{name}"
+        if getattr(self.visual, "skip_compare", False):
+            # Aufnahme trotzdem — sie ist zum Anschauen nützlich —, aber
+            # ohne Vergleich gegen eine Baseline fremder Auflösung.
+            self.api.sync_render()
+            self.visual.capture_only(full_name, self.api.screenshot())
+            return
         # Deterministische Render-Synchronisation statt fixem Sleep: wartet,
         # bis das Frontend den durch Backend-State-Wechsel ausgeloesten
         # Reflow gerendert hat (Microtask + zwei Frames + laufende
@@ -210,8 +216,12 @@ class ReportWriter:
         lines.append("")
         lines.append(f"- Dauer: **{duration:.2f}s**")
         lines.append(f"- Szenarien: **{len(results)}** – {passed} PASS, {failed} FAIL")
-        lines.append(f"- Visuelle Vergleiche: **{visual_summary['total']}** – "
-                     f"{visual_summary['passed']} PASS, {visual_summary['failed']} FAIL")
+        visual_line = (f"- Visuelle Vergleiche: **{visual_summary['total']}** – "
+                       f"{visual_summary['passed']} PASS, {visual_summary['failed']} FAIL")
+        if visual_summary.get("skipped"):
+            visual_line += (f" – **{visual_summary['skipped']} übersprungen** "
+                            f"(`--no-visual`: nur aufgenommen, nicht verglichen)")
+        lines.append(visual_line)
         lines.append(f"- Binary: `{binary_path}`")
         lines.append(f"- Folio-Konsole: [`{console_log_path.name}`]({console_log_path.name})")
         lines.append("")

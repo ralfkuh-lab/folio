@@ -352,9 +352,14 @@
   bleibt ein Stolperstein: **Visual-Baselines an Linux 1280×800
   gebunden** — 6 Szenarien (01–06) liefern auf einem 1920×1080-Monitor
   `size mismatch` und brechen am ersten Screenshot ab, obwohl ihre
-  funktionalen Asserts grün waren. Optionen: vor dem Capture per
-  `/resize` auf eine feste Größe, oder ein zweites Baseline-Set pro
-  Plattform, oder Visual-Tests im `--attach`-Mode standardmäßig skippen.
+  funktionalen Asserts grün waren. **Teilweise entschärft 2026-08-20**:
+  `--no-visual` nimmt Screenshots auf, vergleicht sie aber nicht — damit
+  laufen die funktionalen Schritte auf fremder Auflösung durch (Report zählt
+  sie als *übersprungen*, nie als PASS). Bewusst opt-in statt automatisch im
+  Attach-Mode: sonst verstecken sich echte Visual-Regressionen auf der
+  Baseline-Maschine. Offen bleibt echte **visuelle** Abdeckung außerhalb von
+  Linux — dafür weiterhin: `/resize` auf feste Größe vor dem Capture, oder
+  ein zweites Baseline-Set pro Plattform.
   (Der zweite Stolperstein — `/open` blockte mit 409 bei dirty
   Recent-Datei — ist über das `discard`-Flag im `/open`-Body gelöst.)
 

@@ -63,6 +63,7 @@ class VisualSuite:
         update_baselines: bool = False,
         threshold_ratio: float = 0.01,
         diff_threshold: int = 12,
+        skip_compare: bool = False,
     ):
         self.baselines_dir = Path(baselines_dir)
         self.screenshots_dir = Path(artifacts_dir) / "screenshots"
@@ -73,6 +74,14 @@ class VisualSuite:
         self.update_baselines = update_baselines
         self.threshold_ratio = threshold_ratio
         self.diff_threshold = diff_threshold
+        # Aufnahme ja, Vergleich nein. Für Läufe auf einer anderen
+        # Plattform/Auflösung als der Baseline-Maschine: die Baselines sind
+        # Monitor-Captures und damit an Linux 1280x800 gebunden — ohne
+        # diesen Schalter bricht jedes Szenario an seinem ersten Screenshot
+        # mit `size mismatch` ab, und die funktionalen Schritte dahinter
+        # laufen nie.
+        self.skip_compare = skip_compare
+        self.skipped_count = 0
         self.results: list[CompareResult] = []
 
     def compare(self, name: str, png_bytes: bytes,
@@ -158,6 +167,17 @@ class VisualSuite:
         self.results.append(result)
         return result
 
+    def capture_only(self, name: str, png_bytes: bytes) -> Path:
+        """Speichert die Aufnahme ohne Vergleichs-Aussage (`skip_compare`).
+        Die Datei bleibt zum Anschauen im Artefakt-Ordner; gezählt wird sie
+        als *übersprungen*, nie als PASS — ein Grün für etwas, das gar nicht
+        geprüft wurde, wäre schlimmer als gar keine Zahl.
+        """
+        captured_path = self.screenshots_dir / f"{name}.png"
+        captured_path.write_bytes(png_bytes)
+        self.skipped_count += 1
+        return captured_path
+
     def discard(self, result: CompareResult) -> None:
         """Nimmt ein bereits registriertes Ergebnis aus der Summary zurück
         (Retry-Pfad in `report.py::screenshot` — der Fehlversuch soll nicht
@@ -216,5 +236,6 @@ class VisualSuite:
             "total": len(self.results),
             "passed": passed,
             "failed": failed,
+            "skipped": self.skipped_count,
             "results": [r.to_dict() for r in self.results],
         }

@@ -127,6 +127,13 @@ def main(argv: list[str]) -> int:
         help="Nicht selbst starten — gegen bereits laufende Folio-Instanz testen.",
     )
     parser.add_argument(
+        "--no-visual", action="store_true",
+        help="Screenshots aufnehmen, aber nicht vergleichen. Für Läufe auf "
+             "anderer Plattform/Auflösung als der Baseline-Maschine (die "
+             "Baselines sind Monitor-Captures auf Linux 1280x800; sonst "
+             "bricht jedes Szenario an seinem ersten Screenshot ab).",
+    )
+    parser.add_argument(
         "--attach-reset", action="store_true",
         help="Auch im --attach-Modus den kanonischen Reset vor jedem Szenario "
              "ausfuehren. ACHTUNG: verwirft offene Tabs und leert die echte "
@@ -312,7 +319,12 @@ def main(argv: list[str]) -> int:
         baselines_dir=baselines_dir,
         artifacts_dir=artifacts_dir,
         update_baselines=args.update_baselines,
+        skip_compare=args.no_visual,
     )
+    if args.no_visual:
+        print("[WARN] --no-visual: Screenshots werden aufgenommen, aber NICHT "
+              "gegen die Baselines verglichen. Nur die funktionalen Schritte "
+              "sind aussagekräftig.")
 
     run_start = time.monotonic()
     run_start_wall = time.time()
