@@ -13,6 +13,7 @@
 import {
     clearHexHighlight,
     getHexSearchContext,
+    pullHexRevisionAfterStale,
     revealHexOffset,
     setHexContextListener,
     type HexSearchContext,
@@ -25,6 +26,11 @@ import {
 } from './hex-search';
 
 const STALE_PREFIX = 'stale:';
+/**
+ * Untermenge von [`STALE_PREFIX`] fuer den Revisions-Versatz — Vertrag mit
+ * `chunk.rs::STALE_REVISION_PREFIX` (dort per Test festgeschrieben).
+ */
+const STALE_REVISION_PREFIX = 'stale:revision ';
 
 type HexFindState = {
     source: 'hex';
@@ -62,6 +68,10 @@ function errorText(err: unknown): string {
 
 function isStaleError(err: unknown): boolean {
     return errorText(err).indexOf(STALE_PREFIX) === 0;
+}
+
+function isRevisionStaleError(err: unknown): boolean {
+    return errorText(err).indexOf(STALE_REVISION_PREFIX) === 0;
 }
 
 function parseHit(value: unknown): number | null {
@@ -197,10 +207,27 @@ function researchFrom(backwards: boolean, fromCurrent: boolean): void {
             run(plan.wrapFrom, false);
         }).catch(function (err) {
             if (!stillCurrent(token, ctx)) return;
-            // `stale:` heisst: der Lauf wurde abgeloest — still verwerfen.
-            // Ein Zaehlerzustand hier erschiene ohne bisherigen Treffer als
-            // sichtbares „Kein Treffer"; das Beenden des scanning-Zustands
-            // uebernimmt der Lauf bzw. der Kontext, der abgeloest hat.
+            // Revisions-Versatz: anders als beim Abbruch gibt es hier
+            // KEINEN abloesenden Lauf. Wer das still verwirft, laesst
+            // Zaehler und Markierung stehen — `find-prev` bliebe wirkungslos
+            // (Verdacht zum macOS-Flake 2026-08-20). Also die Revision
+            // nachziehen; gelingt das, startet `onHexContextChanged` die
+            // Suche neu, und der Zaehler kommt von dort.
+            if (isRevisionStaleError(err)) {
+                void pullHexRevisionAfterStale().then(function (outcome) {
+                    // `changed` -> Neustart laeuft bereits; `contextChanged`/
+                    // `inFlight` -> ein anderer Pfad raeumt auf.
+                    if (outcome !== 'unchanged' && outcome !== 'failed') return;
+                    if (!stillCurrent(token, ctx)) return;
+                    dispatchNoMatch();
+                });
+                return;
+            }
+            // `stale:cancelled` heisst: der Lauf wurde abgeloest — still
+            // verwerfen. Ein Zaehlerzustand hier erschiene ohne bisherigen
+            // Treffer als sichtbares „Kein Treffer"; das Beenden des
+            // scanning-Zustands uebernimmt der Lauf bzw. der Kontext, der
+            // abgeloest hat.
             if (isStaleError(err)) return;
             dispatchNoMatch();
         });

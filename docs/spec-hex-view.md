@@ -203,6 +203,20 @@ Drei Pflichten dabei:
    `resyncGen` die Generation, und nur der Resync *dieser* Generation gibt sie
    wieder frei.
 
+**Der Suchpfad hängt am selben Vertrag.** `hex_find` autorisiert über
+dieselbe Revisionsprüfung und liefert bei Versatz ebenfalls `stale:` — nur
+gibt es dort **keinen ablösenden Lauf**. Der Finder verwarf das still (die
+Begründung „der Lauf wurde abgelöst" gilt eben nur für `stale:cancelled`),
+und Zähler samt Markierung blieben stehen: `find-prev` wirkte dann einfach
+nicht. Damit beide Fälle trennbar sind, ist das Präfix des Revisions-Versatzes
+seit 0.7.1 eigens benannt — `chunk.rs::STALE_REVISION_PREFIX`
+(`"stale:revision "`), per Test `stale_prefixes_stay_distinguishable`
+festgeschrieben. Der Finder zieht darauf über `pullHexRevisionAfterStale`
+nach; gelingt es, startet `onHexContextChanged` die Suche ohnehin neu, und
+der Zähler kommt von dort. Ein Fehlschlag färbt bewusst **nicht** die Ansicht
+ein — betroffen war nur die Suche, deren Zustand der Finder selbst auflöst
+(`dispatchNoMatch`).
+
 **Warum an dieser Stelle und nicht an den Guards**: Ein Fix an einer der drei
 Verwerfungsstellen ließe die beiden anderen offen. Die Ansicht heilt sich
 deshalb selbst, statt auf ein Event zu hoffen.

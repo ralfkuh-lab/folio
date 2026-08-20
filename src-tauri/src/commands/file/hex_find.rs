@@ -28,6 +28,11 @@ fn stale_cancelled() -> String {
     format!("{STALE_PREFIX}cancelled")
 }
 
+#[cfg(test)]
+pub(crate) fn stale_cancelled_for_tests() -> String {
+    stale_cancelled()
+}
+
 #[inline]
 fn fold_ascii(byte: u8) -> u8 {
     byte.to_ascii_lowercase()

@@ -12,6 +12,17 @@ use tauri::{ipc::Response, State};
 /// Maximales Fenster je Aufruf (Spec). Längere `len` werden gekürzt.
 pub const MAX_CHUNK_BYTES: u32 = 1024 * 1024;
 pub(crate) const STALE_PREFIX: &str = "stale:";
+/// Revisions-Versatz — eine **Untermenge** von [`STALE_PREFIX`], die das
+/// Frontend davon unterscheiden koennen muss.
+///
+/// Beide Faelle kommen als `stale:` an, verlangen aber gegenteiliges
+/// Verhalten: `stale:cancelled` heisst „ein neuer Lauf hat diesen abgeloest"
+/// — den still zu verwerfen ist richtig, der ablloesende Lauf aktualisiert
+/// die Anzeige. Ein Revisions-Versatz hat dagegen **keinen** abloesenden
+/// Lauf: wer ihn still verwirft, laesst Anzeige bzw. Suche lautlos stehen.
+/// Der String ist damit Vertrag zwischen Backend und Frontend (Test
+/// `stale_prefixes_stay_distinguishable`), kein blosser Fehlertext.
+pub(crate) const STALE_REVISION_PREFIX: &str = "stale:revision ";
 
 fn chunk_error(detail: &str) -> String {
     i18n::t_args("errors.file.readChunk", &[("detail", detail)])
@@ -37,7 +48,7 @@ pub(crate) fn authorize_chunk_read(
     }
     if desc.revision != revision {
         return Err(format!(
-            "{STALE_PREFIX}revision {revision} != {}",
+            "{STALE_REVISION_PREFIX}{revision} != {}",
             desc.revision
         ));
     }
@@ -282,6 +293,19 @@ mod tests {
     }
 
     #[test]
+    fn stale_prefixes_stay_distinguishable() {
+        // Vertrag mit dem Frontend: der Revisions-Versatz ist als `stale:`
+        // erkennbar UND von einem Abbruch trennbar. Faellt das zusammen,
+        // verwirft der Finder einen Versatz wieder still (Befund macOS
+        // 2026-08-20) oder behandelt einen normalen Abbruch als Fehler.
+        assert!(STALE_REVISION_PREFIX.starts_with(STALE_PREFIX));
+        assert_ne!(STALE_REVISION_PREFIX, STALE_PREFIX);
+        let cancelled = super::super::hex_find::stale_cancelled_for_tests();
+        assert!(cancelled.starts_with(STALE_PREFIX));
+        assert!(!cancelled.starts_with(STALE_REVISION_PREFIX));
+    }
+
+    #[test]
     fn revision_mismatch_uses_stale_prefix() {
         install_translator();
         let temp = TempDir::new().unwrap();
@@ -293,6 +317,10 @@ mod tests {
         assert!(
             err.starts_with(STALE_PREFIX),
             "expected stale: prefix, got {err}"
+        );
+        assert!(
+            err.starts_with(STALE_REVISION_PREFIX),
+            "expected stale:revision prefix, got {err}"
         );
     }
 

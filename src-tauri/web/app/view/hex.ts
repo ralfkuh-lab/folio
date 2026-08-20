@@ -30,6 +30,20 @@ const STALE_PREFIX = 'stale:';
 /** Aufeinanderfolgende Revisions-Resyncs, bevor sichtbar aufgegeben wird. */
 const MAX_REVISION_RESYNCS = 3;
 
+/**
+ * Ausgang eines Revisions-Nachzugs. `contextChanged`/`inFlight` verlangen vom
+ * Aufrufer nichts — dort raeumt ein anderer Pfad auf.
+ */
+/** Welcher Pfad den Versatz bemerkt hat — nur fuer die Log-Spur. */
+export type RevisionPullReason = 'chunk' | 'search';
+
+export type RevisionPullOutcome =
+    | 'changed'
+    | 'unchanged'
+    | 'failed'
+    | 'contextChanged'
+    | 'inFlight';
+
 export type HexStatus =
     | 'idle'
     | 'loading'
@@ -685,16 +699,19 @@ function failVisibly(): void {
  * sichtbarer, wiederholbarer Fehler statt einer Resync-Dauerschleife. Jeder
  * erfolgreiche Chunk setzt den Zaehler zurueck.
  */
-function resyncRevisionAfterStale(id: number | null, gen: number): void {
-    if (id === null) return;
-    if (resyncGen === gen) return;
+function pullCurrentRevision(
+    id: number | null,
+    gen: number,
+    reason: RevisionPullReason,
+): Promise<RevisionPullOutcome> {
+    if (id === null) return Promise.resolve('failed');
+    if (resyncGen === gen) return Promise.resolve('inFlight');
     if (resyncAttempts >= MAX_REVISION_RESYNCS) {
         folioLog.warn('hex', 'giving up after repeated stale chunks', {
             tabId: id,
             attempts: resyncAttempts,
         });
-        failVisibly();
-        return;
+        return Promise.resolve('failed');
     }
     resyncGen = gen;
     resyncAttempts += 1;
@@ -703,16 +720,20 @@ function resyncRevisionAfterStale(id: number | null, gen: number): void {
     // Ohne diese Spur ist nach einem gruenen Lauf nicht zu trennen, ob der
     // Resync geheilt hat oder ob gar nichts zu heilen war — genau die Luecke,
     // die die macOS-Gegenprobe am 2026-08-20 offenliess.
-    folioLog.warn('hex', 'stale chunk — pulling current revision', {
+    folioLog.warn('hex', 'stale revision — pulling current', {
         tabId: id,
         staleRevision: revision,
         attempt: resyncAttempts,
+        // Welcher Pfad den Versatz bemerkt hat. Der Chunk-Pfad zeigt sich
+        // als haengende Ansicht, der Such-Pfad als stehender Zaehler — ohne
+        // diese Angabe waeren die beiden im Log nicht auseinanderzuhalten.
+        reason,
     });
-    invoke('hex_document_state', { tabId: id }).then(function (raw) {
+    return invoke('hex_document_state', { tabId: id }).then(function (raw) {
         if (resyncGen === gen) resyncGen = null;
         // Kontext inzwischen gewechselt: der neue Mount hat den Fetch
         // laengst selbst wieder aufgenommen.
-        if (gen !== generation || tabId !== id) return;
+        if (gen !== generation || tabId !== id) return 'contextChanged';
         const data = (raw || {}) as {
             revision?: number;
             fileSize?: number;
@@ -727,8 +748,7 @@ function resyncRevisionAfterStale(id: number | null, gen: number): void {
                 revision,
                 reported: data.revision,
             });
-            failVisibly();
-            return;
+            return 'unchanged';
         }
         const contextBefore = contextKey();
         revision = nextRevision;
@@ -749,16 +769,45 @@ function resyncRevisionAfterStale(id: number | null, gen: number): void {
             tabId: id,
             revision: nextRevision,
             fileSize,
+            reason,
         });
+        return 'changed';
     }).catch(function (err) {
         if (resyncGen === gen) resyncGen = null;
-        if (gen !== generation) return;
-        folioLog.warn('hex', 'resync failed — showing retryable error', {
-            tabId: id,
-            error: String(err),
-        });
-        failVisibly();
+        if (gen !== generation) return 'contextChanged' as RevisionPullOutcome;
+        folioLog.warn('hex', 'resync failed', { tabId: id, error: String(err) });
+        return 'failed' as RevisionPullOutcome;
     });
+}
+
+/**
+ * Chunk-Pfad: nach dem Nachziehen entscheidet die ANSICHT ueber ihre
+ * Fehleranzeige. `unchanged`/`failed` heisst hier: der Fetch bleibt
+ * angehalten (`fetchPaused`), also muss ein sichtbarer, wiederholbarer
+ * Fehler her — sonst entstuende genau der stumme Zustand zurueck, den
+ * dieser Pfad beseitigt.
+ */
+function resyncRevisionAfterStale(id: number | null, gen: number): void {
+    void pullCurrentRevision(id, gen, 'chunk').then(function (outcome) {
+        if (outcome === 'unchanged' || outcome === 'failed') failVisibly();
+    });
+}
+
+/**
+ * Such-Pfad (`hex-find.ts`): `hex_find` autorisiert ueber dieselbe
+ * Revisionspruefung wie `read_file_chunk` und liefert bei Versatz ebenfalls
+ * `stale:` — aber **ohne** abloesenden Lauf, anders als bei einem Abbruch.
+ * Der Finder verwarf das still und liess Zaehler und Markierung stehen
+ * (Verdacht zum macOS-Flake 2026-08-20: `find-prev` blieb wirkungslos).
+ *
+ * Bei `changed` muss der Aufrufer nichts tun: das Nachziehen feuert
+ * `notifyHexContextChanged`, und der Finder startet seine Suche darueber
+ * ohnehin neu. Ein Fehlschlag faerbt hier bewusst NICHT die Ansicht ein —
+ * betroffen war nur die Suche, und deren Zustand loest der Finder selbst
+ * auf.
+ */
+export function pullHexRevisionAfterStale(): Promise<RevisionPullOutcome> {
+    return pullCurrentRevision(tabId, generation, 'search');
 }
 
 function applyWindow(target: number, opts?: { bump?: boolean; resetScroll?: boolean }): void {

@@ -8,12 +8,14 @@ const revealHexOffset = vi.fn();
 const clearHexHighlight = vi.fn();
 const getHexSearchContext = vi.fn();
 const setHexContextListener = vi.fn();
+const pullHexRevisionAfterStale = vi.fn(() => Promise.resolve('changed'));
 
 vi.mock('../../app/view/hex', () => ({
     revealHexOffset,
     clearHexHighlight,
     getHexSearchContext,
     setHexContextListener,
+    pullHexRevisionAfterStale,
 }));
 
 type HexCtx = { tabId: number; revision: number; fileSize: number; path: string };
@@ -108,6 +110,8 @@ describe('view/hex-find', () => {
         getHexSearchContext.mockReset();
         getHexSearchContext.mockReturnValue({ ...CTX });
         setHexContextListener.mockClear();
+        pullHexRevisionAfterStale.mockReset();
+        pullHexRevisionAfterStale.mockResolvedValue('changed');
         vi.resetModules();
         const mod = await import('../../app/view/hex-find');
         HexFinder = mod.HexFinder;
@@ -213,21 +217,49 @@ describe('view/hex-find', () => {
         expect(last(states).matchOffset).toBe(4);
     });
 
-    it('discards a stale: error silently instead of showing "no match"', async () => {
+    it('zieht bei stale:revision die Revision nach, statt still zu enden', async () => {
         const states = collectStates();
         tauri.invoke.mockRejectedValue('stale:revision 3 != 4');
+        pullHexRevisionAfterStale.mockResolvedValue('changed');
 
         HexFinder.setFindTerm('o');
         await settle();
 
-        // Genau der scanning-Zustand, danach nichts: ein Zaehlerzustand hier
-        // erschiene als sichtbares „Kein Treffer", obwohl nur eine veraltete
-        // Antwort eintraf.
-        expect(tauri.invoke).toHaveBeenCalledTimes(1);
+        // Anders als beim Abbruch gibt es hier KEINEN abloesenden Lauf.
+        // Wird das still verworfen, bleiben Zaehler und Markierung stehen —
+        // `find-prev` waere wirkungslos.
+        expect(pullHexRevisionAfterStale).toHaveBeenCalledTimes(1);
+        // Gelingt das Nachziehen, startet onHexContextChanged die Suche neu;
+        // ein „Kein Treffer" hier waere falsch.
         expect(states).toHaveLength(1);
         expect(states[0].scanning).toBe(true);
-        expect(revealHexOffset).not.toHaveBeenCalled();
         expect(clearHexHighlight).not.toHaveBeenCalled();
+    });
+
+    it('beendet den scanning-Zustand, wenn das Nachziehen nichts bringt', async () => {
+        const states = collectStates();
+        tauri.invoke.mockRejectedValue('stale:revision 3 != 4');
+        pullHexRevisionAfterStale.mockResolvedValue('unchanged');
+
+        HexFinder.setFindTerm('o');
+        await settle();
+
+        // Kein Neustart in Sicht — dann muss die Suche ihren eigenen
+        // Zustand aufloesen, statt dauerhaft „scanning" zu zeigen.
+        expect(last(states).scanning).toBe(false);
+        expect(last(states).matchOffset).toBeNull();
+    });
+
+    it('laesst einen laufenden Resync aufraeumen, ohne selbst zu melden', async () => {
+        const states = collectStates();
+        tauri.invoke.mockRejectedValue('stale:revision 3 != 4');
+        pullHexRevisionAfterStale.mockResolvedValue('inFlight');
+
+        HexFinder.setFindTerm('o');
+        await settle();
+
+        expect(states).toHaveLength(1);
+        expect(states[0].scanning).toBe(true);
     });
 
     it('keeps the shown match when a stale: error arrives for it', async () => {
@@ -245,6 +277,9 @@ describe('view/hex-find', () => {
 
         expect(last(states).scanning).toBe(true);
         expect(clearHexHighlight).not.toHaveBeenCalled();
+        // Ein Abbruch hat einen abloesenden Lauf — hier ist nichts
+        // nachzuziehen, sonst wuerde jeder Tastendruck einen IPC ausloesen.
+        expect(pullHexRevisionAfterStale).not.toHaveBeenCalled();
     });
 
     it('does not wrap or retry after a real error', async () => {
