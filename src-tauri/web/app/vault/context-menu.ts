@@ -18,6 +18,7 @@ import { t } from '../i18n/translate';
 import { openGitDiff } from '../ui/git-diff';
 import { getTabsSnapshot } from '../state/tabs';
 import { clearClip, clearClipIfUnder, getClip, remapClip, setClip } from './clipboard';
+import { beginVaultRename, endVaultRename } from './rename-guard';
 
 // Monochrome 16x16-Feather-Icons je data-act. Kein width/height im SVG
 // (CSS steuert die Groesse), stroke=currentColor faerbt mit Hover/Theme mit.
@@ -213,7 +214,9 @@ export function closeContextMenu(): void {
    temporär durch ein <input>, vorselektiert den Stamm ohne Endung. Enter/
    Blur committen, Escape bricht ab. Nach erfolgreichem rename_file
    emittiert das Backend vault:refresh, das den Baum neu baut — das Input
-   verschwindet damit automatisch. */
+   verschwindet damit automatisch. Fuer die Dauer der Eingabe schiebt der
+   rename-guard alle Baum-Rebuilds auf, damit ein nebenher laufender
+   Watcher-Refresh die angefangene Eingabe nicht wegraeumt. */
 export function startInlineRename(path: string): void {
     if (!path) return;
     const nodes = document.querySelectorAll('#vault-tree li.node[data-path]');
@@ -242,6 +245,7 @@ export function startInlineRename(path: string): void {
     input.autocomplete = 'off';
     input.setAttribute('data-rename-input', '1');
     labelEl.appendChild(input);
+    beginVaultRename();
 
     function stop(e: Event): void { e.stopPropagation(); }
     input.addEventListener('click', stop);
@@ -255,6 +259,7 @@ export function startInlineRename(path: string): void {
         input.removeEventListener('blur', onBlur);
         labelEl.classList.remove('editing');
         delete labelEl.dataset.editing;
+        endVaultRename();
     }
     function restore(): void {
         cleanup();

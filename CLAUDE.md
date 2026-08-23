@@ -357,6 +357,19 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   nicht (destruktiver Fehlklick; „Aus Vault entfernen" ist gemeint),
   „Ausschneiden" dagegen schon — `perform_move` migriert den Pin sauber
   mit. E2E `59_vault_fileops.py`.
+  **Inline-Rename und Baum-Rebuilds schließen sich aus**
+  (`vault/rename-guard.ts`): Solange ein `input.vault-rename-input` offen
+  ist, schieben ALLE DOM-ersetzenden Setter in `vault/tree.ts` auf
+  (`renderVault`, `setVaultPinned`, `setVaultRecent`,
+  `insertVaultChildren`, früher Ausstieg in `refreshVault`); nach
+  Commit/Abbruch läuft **ein** kompletter Rebuild als Microtask nach.
+  Ohne das räumt ein nebenher laufender `vault:refresh` — im Alltag
+  genügt eine Logdatei oder ein `git`-Lauf im aufgeklappten Ordner — die
+  angefangene Eingabe kommentarlos weg. Der Guard verifiziert den Zustand
+  am DOM (`isConnected`) statt nur am Flag, sonst friert ein Input, das
+  `cleanup()` umgeht, den Baum bis zum Neustart ein; `tree.ts` meldet
+  seinen Nachzieh-Rebuild per `setVaultRenameFlush` an, weil ein direkter
+  Import den Zyklus `tree → context-menu → tree` schlösse.
 - **Vault-Volltextsuche** (`search.rs` + `commands/search_cmd.rs` +
   `automation/handlers/search.rs`; Frontend `vault/search.ts` +
   `#vault-search`; Spec + Etappen in

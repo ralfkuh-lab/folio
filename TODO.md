@@ -8,11 +8,14 @@
 
 ## Hohe Priorität
 
-- **E2E-Run 2026-08-20 13:01: 1 Fehler** — Details in
-  [`tests/e2e/artifacts/20260820-125721/errors.md`](tests/e2e/artifacts/20260820-125721/errors.md). Run-Report:
-  [`tests/e2e/artifacts/20260820-125721/report.md`](tests/e2e/artifacts/20260820-125721/report.md).
+_Nichts offen (Stand 2026-08-23)._ Die Hex-Punkte aus 0.8.0 sind gefixt und
+stehen als Beobachtung unter „Mittlere Priorität"; der E2E-Voll-Lauf ist grün
+(62/62 Szenarien, 35/35 visuelle Vergleiche, `20260820-162717`).
 
-- 🔍 **E2E `61_hex_view` flaky auf macOS: „Zurück findet den direkten
+## Mittlere Priorität
+
+- 🔍 **Nur beobachten — Fix ist drin, es fehlt der Beleg am nächsten Mac-Lauf.**
+  **E2E `61_hex_view` flaky auf macOS: „Zurück findet den direkten
   Nachbar-Treffer"** (1 von 10 Läufen, 2026-08-20, macOS 14.8.4). Der Zähler
   stand auf `Treffer bei 0x00000002` statt `0x00000001` — die
   Rückwärts-Navigation übersprang den direkten Nachbarn. Fixture ist
@@ -79,6 +82,7 @@
   nächste Mac-Lauf. Die Log-Spur trägt dafür jetzt ein `reason`-Feld —
   `reason: "search"` heißt, der Versatz wurde im Such-Pfad bemerkt (also
   genau dieser Fall), `reason: "chunk"` wie bisher in der Ansicht.
+
 
 - ✅ **Hex-Ansicht: macOS-Gegenprobe zum Hex-Fix (0.8.0) — verifiziert 2026-08-20**
   (Fix 2026-08-20, Befund macOS-Verifikationslauf 2026-08-19). Der ausweglose
@@ -164,7 +168,6 @@
   nicht nur die Hex-Ansicht, und ist ohne konkreten Leidensdruck bewusst
   nicht angefasst.
 
-## Mittlere Priorität
 
 - ✅ **E2E-Nachlauf für Wikilink-W8 unter Linux+Xvfb — erledigt 2026-08-20**:
   Voll-Lauf grün (62/62 Szenarien, 35/35 visuelle Vergleiche).
@@ -276,20 +279,36 @@
   angehobenes `testTimeout` für diesen Test das Fenster schließt — ein
   reiner Timeout unter Last spricht für zu enge Marge, nicht für einen Defekt.
 
-- **Inline-Rename überlebt einen Vault-Rebuild nicht** (Produktbefund aus
-  einem E2E-Flake, 2026-08-20, niedrig-mittel): Ein asynchroner Tree-Rebuild
-  (`vault:refresh` → `refreshVault`) ersetzt die Baumzeile samt offenem
-  `input.vault-rename-input` — die angefangene Eingabe ist dann weg. Im Test
-  löste ein vorangegangenes `tab_open` den Rebuild aus; im Alltag reicht
-  dafür der VaultWatcher, wenn sich im aufgeklappten Ordner nebenbei etwas
-  ändert (Build-Ordner, Logdatei, `git`-Operation). Der Nutzer tippt dann
-  einen Namen, und die Zeile springt ohne Erklärung zurück.
-  **E2E ist gehärtet** (`59_vault_fileops`: der Commit gehört jetzt in
-  denselben Retry-Versuch wie das Erscheinen des Inputs), der Produktpfad
-  **nicht** — ein Rename-in-flight müsste den Rebuild überleben oder ihn
-  aufschieben. Vorher entscheiden: aufschieben (einfach, aber der Baum
-  hinkt) oder Eingabe über den Rebuild retten (richtiger, aber der Rebuild
-  ersetzt heute pauschal DOM).
+- ✅ **Inline-Rename überlebt einen Vault-Rebuild nicht — behoben 2026-08-23**
+  (Produktbefund aus einem E2E-Flake, 2026-08-20): Ein asynchroner
+  Tree-Rebuild (`vault:refresh` → `refreshVault`) ersetzte die Baumzeile samt
+  offenem `input.vault-rename-input` — die angefangene Eingabe war dann weg.
+  Im Test löste ein vorangegangenes `tab_open` den Rebuild aus; im Alltag
+  reicht dafür der VaultWatcher, wenn sich im aufgeklappten Ordner nebenbei
+  etwas ändert (Build-Ordner, Logdatei, `git`-Operation).
+
+  Umgesetzt ist die **aufschiebende** Variante (`vault/rename-guard.ts`):
+  solange ein Rename offen ist, liefert `deferVaultTreeUpdate()` an allen
+  DOM-ersetzenden Settern `true` (`renderVault`, `setVaultPinned`,
+  `setVaultRecent`, `insertVaultChildren`, plus früher Ausstieg in
+  `refreshVault`, der den `vault_build_tree`-Roundtrip spart); nach
+  Commit/Abbruch läuft **ein** kompletter Rebuild als Microtask nach.
+  Der Baum hinkt für die Dauer der Eingabe hinterher — bewusst gegenüber
+  einem Rebuild, der die Eingabe durch den DOM-Austausch hindurchrettet:
+  der ersetzt heute pauschal DOM, und der Umbau kostet mehr als der
+  Sekundenbruchteil Baumaktualität wert ist.
+
+  Zwei Details, die den Guard tragen: (1) Der Zustand wird **am DOM
+  verifiziert** (`#vault-tree .vault-rename-input` + `isConnected`), nicht
+  nur am Flag — verschwindet das Input auf einem Weg, der `cleanup()`
+  umgeht, wäre der Baum sonst bis zum Neustart eingefroren. (2) Der
+  Nachzieh-Rebuild läuft über `queueMicrotask`, nie synchron aus einem
+  Render heraus, und `tree.ts` meldet ihn per `setVaultRenameFlush` an —
+  ein direkter Import wäre der Zyklus `tree → context-menu → tree`.
+  Der Automation-Ack am `vault:refresh`-Handler bleibt unangetastet: das
+  Promise aus `refreshVault` löst auch im aufgeschobenen Fall auf.
+  Abgedeckt von `tests/vault/rename-guard.test.ts` (7 Fälle; ohne Guard
+  fallen 5 davon, darunter alle drei Integrationsfälle).
 
 - **E2E `42_mermaid` flaky — Fix 2026-07-25, Beobachtung**: erneut
   aufgetreten (2026-07-21 + 2026-07-25, „mermaid svg nicht gefunden").

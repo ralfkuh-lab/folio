@@ -9,9 +9,15 @@
    Listener-Fusion: vault:refresh-Handler vereinigt die
    bisher zwei komplementaeren Haelften aus IIFE #1 (pinned/recent setzen
    aus Event-Payload) und IIFE #2 (Tree-Rebuild via invoke). Reihenfolge:
-   pinned/recent zuerst (sync DOM-Patches), dann refreshVault async. */
+   pinned/recent zuerst (sync DOM-Patches), dann refreshVault async.
+
+   Alle vier DOM-ersetzenden Setter (renderVault, setVaultPinned,
+   setVaultRecent, insertVaultChildren) fragen zuerst den rename-guard:
+   ein offenes Inline-Rename schiebt sie auf, statt die Eingabe des
+   Nutzers wegzuraeumen. */
 
 import { openContextMenu, runOrOpenFile } from './context-menu';
+import { deferVaultTreeUpdate, setVaultRenameFlush } from './rename-guard';
 import { folioLog, safeInvoke } from '../util/log';
 import { t } from '../i18n/translate';
 
@@ -64,6 +70,7 @@ function reapplyActiveMarker(): void {
 }
 
 export function setVaultPinned(html: string): void {
+    if (deferVaultTreeUpdate()) return;
     const section = ROOT.querySelector('li.section[data-section="pinned"]');
     if (!section) return;
     const ul = section.querySelector(':scope > ul.children');
@@ -74,6 +81,7 @@ export function setVaultPinned(html: string): void {
 }
 
 export function setVaultRecent(html: string): void {
+    if (deferVaultTreeUpdate()) return;
     const section = ROOT.querySelector('li.section[data-section="recent"]');
     if (!section) return;
     const ul = section.querySelector(':scope > ul.children');
@@ -82,6 +90,7 @@ export function setVaultRecent(html: string): void {
 }
 
 export function insertVaultChildren(path: string, html: string): void {
+    if (deferVaultTreeUpdate()) return;
     // Pfad kann mehrfach im Baum vorkommen (z. B. neu angepinntes Unterverzeichnis
     // eines bereits angepinnten Ordners). Alle Vorkommen aktualisieren, sonst
     // landen die Children im falschen (ersten) Node.
@@ -209,6 +218,7 @@ function applyIconsToNode(rootNode: Element): void {
 
 function renderVault(html: string): void {
     if (!ROOT) return;
+    if (deferVaultTreeUpdate()) return;
     if (!html || html.length === 0) {
         // textContent only — never interpolate t() into innerHTML.
         ROOT.replaceChildren();
@@ -231,6 +241,11 @@ export function renderVaultFromHtml(html: string): void {
 }
 
 export function refreshVault(): Promise<void> {
+    // Frueh raus: waehrend eines Inline-Renames spart das den
+    // vault_build_tree-Roundtrip, dessen Ergebnis renderVault ohnehin
+    // aufschieben wuerde. Das Promise loest trotzdem auf — der
+    // vault:refresh-Handler haengt seinen Automation-Ack daran.
+    if (deferVaultTreeUpdate()) return Promise.resolve();
     return invoke('vault_build_tree').then(function (html) {
         renderVault(html);
     }).catch(function (err) {
@@ -254,6 +269,10 @@ export function initVaultTree(d: Deps): void {
     ROOT = document.getElementById('vault-tree');
     REGION = document.getElementById('vault-region');
     if (!ROOT || !REGION) return;
+
+    // Waehrend eines Inline-Renames aufgeschobene Baum-Updates werden
+    // danach als EIN kompletter Rebuild nachgezogen (siehe rename-guard).
+    setVaultRenameFlush(function () { void refreshVault(); });
 
     // ----- Klick-Routing auf Tree-Reihen (Haupt-Tree) + Header-Buttons -----
     REGION.addEventListener('click', function (e: MouseEvent) {
