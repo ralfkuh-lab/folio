@@ -90,6 +90,20 @@ fn monitor_work_area_rect(monitor: &tauri::window::Monitor) -> window_geometry::
     }
 }
 
+/// Hyprland setzt beim Sessionstart eine Instanz-Signatur; sie wird an jeden
+/// Client vererbt und ist damit der verlaesslichste Hinweis auf den
+/// Compositor. `XDG_CURRENT_DESKTOP` kommt als zweiter Anlauf dazu, falls die
+/// Anwendung aus einer Umgebung ohne die Signatur gestartet wird.
+#[cfg(target_os = "linux")]
+fn running_under_hyprland() -> bool {
+    if std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some() {
+        return true;
+    }
+    std::env::var("XDG_CURRENT_DESKTOP")
+        .map(|value| value.contains("Hyprland"))
+        .unwrap_or(false)
+}
+
 pub fn builder(settings: crate::settings::SettingsService) -> tauri::Builder<tauri::Wry> {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
@@ -460,6 +474,17 @@ pub fn builder(settings: crate::settings::SettingsService) -> tauri::Builder<tau
                     _ => Color(0x1e, 0x1e, 0x1e, 0xff),
                 };
                 let _ = window.set_background_color(Some(bg));
+                // Unter Hyprland kostet die GTK-Titelleiste nur Platz: Bewegen,
+                // Minimieren und Schliessen laufen im Tiling-WM ueber Keybinds.
+                // Der Compositor kann sie nicht selbst abschalten — GTK zeichnet
+                // sie client-seitig ins Fenster, GTK_CSD=0 bleibt unter Wayland
+                // wirkungslos. Andere Desktops behalten sie, dort ist sie der
+                // uebliche Bedienweg. Muss vor show() stehen, damit das Fenster
+                // nicht kurz mit Leiste aufblitzt.
+                #[cfg(target_os = "linux")]
+                if running_under_hyprland() {
+                    let _ = window.set_decorations(false);
+                }
                 let _ = window.show();
             }
             if automation::enabled() {
