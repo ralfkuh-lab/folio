@@ -186,7 +186,7 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   Service- und Side-Effect-Pfad wie die Tauri-Commands; `POST /split`
   setzt den persistierten Split-Teiler. Geteilte Backend-Events erhalten
   nur für Automation ein optionales `requestId` und acken nach Anwendung.
-- **assetProtocol-Scope `["**"]`** (tauri.conf.json): bewusste
+- **assetProtocol-Scope `allow: ["**"]`** (tauri.conf.json): bewusste
   Entscheidung — der Image-View rendert Bilder von beliebigen Pfaden via
   `convertFileSrc`, ein engerer Scope würde jeden Ordner außerhalb einer
   Whitelist brechen. Konsequenz: die WebView kann jede lokale Datei
@@ -194,6 +194,16 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   (`sandbox="allow-same-origin allow-scripts"`) ist der HTML-Sanitizer
   die einzige Barriere zwischen einer fremden `.html`-Datei und lokalen
   Dateien. Bei Änderungen an HTML-View/Sanitizer mitdenken.
+  **`requireLiteralLeadingDot: false` ist Pflicht** (seit 2026-09-07):
+  Tauri setzt bei der Listen-Form `["**"]` auf Unix
+  `require_literal_leading_dot = true`, damit matcht `**` keine
+  Pfadkomponente mit führendem Punkt — jedes Bild unter `.preview/`,
+  `.github/` oder in einem Dotfile-Vault kam als `403` zurück und der
+  Image-View zeigte „Bild konnte nicht geladen werden" (User-Report,
+  Windows war nie betroffen). Die Dotfile-Regel war also nie ein
+  Schutz, sondern eine plattformabhängige Lücke; stattdessen steht
+  Folios Schlüsseldatei `$CONFIG/folio/auth.json` explizit in `deny`
+  (gleicher Pfad wie `persist::config_file`, auf allen drei OS).
 - **Vault-Markup**: Frontend erwartet Baum-Markup mit `.section`, `.node`, `.row`,
   `.caret`, `ul.children`. Jedes `.node` hat `data-path="<abs-path>"`
   und `title="<abs-path>"` (Tooltip).

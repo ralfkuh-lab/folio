@@ -5,7 +5,11 @@ Oeffnet ein zur Laufzeit erzeugtes PNG aus einem Temp-Verzeichnis
 Visual-Baselines anderer Szenarien). Prueft via /eval: kind-image,
 <img> vorhanden, synthetisches WheelEvent erhoeht transform-scale,
 Doppelklick setzt auf Fit zurueck. Zusaetzlich Mini-SVG nur mit viewBox
-(naturalWidth oft 0) — Fit-Fallback + Zoom greifen. Keine Screenshots.
+(naturalWidth oft 0) — Fit-Fallback + Zoom greifen. Zum Schluss ein PNG
+in einem Punkt-Verzeichnis (`.versteckt/`): Tauris Asset-Scope liess
+Dotfile-Komponenten auf Unix per Default nicht durch (403, Regression
+2026-09-07), `requireLiteralLeadingDot: false` in tauri.conf.json ist
+der Vertrag. Keine Screenshots.
 """
 
 import shutil
@@ -130,6 +134,13 @@ def run(ctx):
         "</svg>\n",
         encoding="utf-8",
     )
+
+    # Punkt-Verzeichnis: Tauris Asset-Scope muss Dotfile-Komponenten
+    # durchlassen (requireLiteralLeadingDot: false), sonst 403.
+    dot_dir = tmp / ".versteckt"
+    dot_dir.mkdir()
+    dot_png_path = dot_dir / "dot-sample.png"
+    Image.new("RGB", (200, 150), color=(200, 120, 80)).save(dot_png_path)
 
     try:
         with ctx.step("PNG oeffnen und kind-image + img abwarten"):
@@ -273,6 +284,17 @@ def run(ctx):
             ctx.expect(
                 scale_after > 1.0 + 1e-6,
                 f"SVG Zoom wuchs nicht: after={scale_after!r} raw={value!r}",
+            )
+
+        with ctx.step("PNG in Punkt-Verzeichnis laedt (Asset-Scope Dotfiles)"):
+            ctx.api.open(str(dot_png_path), discard=True)
+            ctx.api.mode("view")
+            snap = _wait_image(ctx, require_natural=True)
+            ctx.expect(snap.get("kindImage") is True, f"kein kind-image: {snap!r}")
+            ctx.expect(snap.get("hasImg") is True, f"kein <img> (Ladefehler?): {snap!r}")
+            ctx.expect(
+                (snap.get("naturalWidth") or 0) > 0,
+                f"Bild aus .versteckt/ nicht geladen (Asset-Scope 403?): {snap!r}",
             )
 
     finally:

@@ -71,7 +71,11 @@
     "security": {
       "assetProtocol": {
         "enable": true,
-        "scope": ["**"]
+        "scope": {
+          "allow": ["**"],
+          "deny": ["$CONFIG/folio/auth.json"],
+          "requireLiteralLeadingDot": false
+        }
       }
     }
   }
