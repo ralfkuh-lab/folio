@@ -16,6 +16,7 @@ import { showCheatSheet, hideCheatSheet, getCheatSheetRows } from './cheatsheet'
 import { folioLog, safeInvoke } from '../util/log';
 import { computeWikilinkEdit } from '../util/wikilink-edit';
 import { togglePalette } from './command-palette';
+import { applyContentWide } from './rails';
 
 export function initToolbarActions(): void {
     const core = window.__TAURI__ && window.__TAURI__.core;
@@ -70,6 +71,17 @@ export function initToolbarActions(): void {
         // (fuer Automation- und Multi-Window-Sync).
         if (window.FolioEditor) window.FolioEditor.setMinimap(on);
         safeInvoke('set_editor_minimap_visible', { visible: on }, 'set_editor_minimap_visible');
+    });
+    /* Volle Breite fuer die gerenderte Markdown-View. Sicht-Zustand, kein
+       Mode: wirkt in View und Split gleichermassen (die View-Seite im Split
+       ist dieselbe .markdown-body). Sofort lokal anwenden, damit der Toggle
+       nicht auf den IPC-Roundtrip wartet; das Backend persistiert und
+       emittiert panel:content_wide_changed fuer Automation-/Window-Sync. */
+    bind('tb-content-width', function () {
+        var btn = $('tb-content-width'); if (!btn) return;
+        var on = !btn.classList.contains('active');
+        applyContentWide(on);
+        safeInvoke('set_content_wide', { wide: on }, 'set_content_wide');
     });
     bind('tb-find', function () { safeInvoke('open_find', undefined, 'open_find'); });
     // tb-reload: erscheint nur bei documentAutoReload=false + pending

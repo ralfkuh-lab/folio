@@ -23,6 +23,7 @@ export const BOOT_EVENT_NAMES: readonly string[] = [
     'panel:rail_changed',
     'panel:minimap_changed',
     'panel:split_mid_changed',
+    'panel:content_wide_changed',
     // Document / tabs
     'document:loaded',
     'document:dirty_changed',
@@ -63,6 +64,7 @@ export const BOOT_EVENT_NAMES: readonly string[] = [
     'menu:edit_ai_translate',
     'menu:edit_ai_actions',
     'menu:view_minimap',
+    'menu:view_content_width',
     'menu:view_mode_view',
     'menu:view_mode_edit',
     'menu:view_mode_split',

@@ -24,8 +24,9 @@ die Event-Verarbeitung bestaetigt, nicht den sichtbaren Endzustand.
 
 Bewusst NICHT zurueckgesetzt: Pins (Szenarien raeumen ihre eigenen
 Pins auf, Konvention siehe 17_workspace_pin) und Panel-State jenseits
-des Split-Teilers und der Tags-Sektion (Minimap, Pinned-/Recent-
-Expansion, Fenster-Geometrie — kein Endpunkt vorhanden).
+des Split-Teilers, der Tags-Sektion und des Breiten-Toggles (Minimap,
+Pinned-/Recent-Expansion, Fenster-Geometrie — sie veraendern das
+gerenderte Dokument nicht).
 """
 
 from __future__ import annotations
@@ -198,6 +199,29 @@ def reset_canonical_state(api: AutomationApi, settings_snapshot: dict[str, Any])
             break
         if time.monotonic() > deadline:
             raise RuntimeError(f"Reset: Tags-Sektion bleibt offen (open={tags_open!r})")
+        time.sleep(0.05)
+    # 9e) „Volle Breite" ausschalten (kanonischer Default aus
+    #    panel_state.rs). Warum hier und nicht „Panel-State, kein
+    #    Endpunkt vorhanden": der Toggle hebt die Lesebreite der
+    #    gerenderten View auf und wandert damit in JEDE spaetere
+    #    Visual-Baseline, in der Markdown zu sehen ist — anders als
+    #    Minimap oder Fenster-Geometrie. Ein Invoke genuegt: das Backend
+    #    persistiert und emittiert panel:content_wide_changed, worauf das
+    #    Frontend Body-Klasse und Button-State nachzieht (deshalb der
+    #    Poll statt eines Einmal-Reads).
+    api.eval(
+        "window.__TAURI__&&window.__TAURI__.core"
+        "&&window.__TAURI__.core.invoke('set_content_wide',{wide:false})"
+    )
+    deadline = time.monotonic() + 2.0
+    while True:
+        wide = api.eval(
+            "document.body.classList.contains('content-wide')"
+        ).get("value")
+        if wide is not True:
+            break
+        if time.monotonic() > deadline:
+            raise RuntimeError(f"Reset: content-wide bleibt an (wide={wide!r})")
         time.sleep(0.05)
     # 10) Reflow settlen lassen, bevor das Szenario startet.
     _expect_acked("sync_render", api.sync_render())

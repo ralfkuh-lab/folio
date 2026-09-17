@@ -55,6 +55,8 @@ You only have to do this the first time.
 - Light and dark theme, plus a whole set of **view themes** you can switch between
 - A document outline (table of contents) you can click to jump around
 - **Zen mode** (`Shift+F11`) hides every panel when you just want to read
+- A **full-width toggle** in the toolbar: stay at the theme's reading width, or
+  let wide tables use the whole window once you have collapsed the side panels
 
 **Edit properly**
 - Three layouts you switch anytime: **View**, **Edit**, and **Split** (editor +

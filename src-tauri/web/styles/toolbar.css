@@ -54,3 +54,7 @@
 .statusbar button.ti-emoji { font-size: 14px; }
 body:not(.edit-mode):not(.split-mode) .toolbar .edit-only { display: none; }
 body:not(.kind-markdown) .toolbar .md-only { display: none; }
+/* Gegenstueck zu .edit-only: sichtbar, wo gerendertes Markdown steht
+   (View- und Split-Mode). Im reinen Edit-Mode gibt es keine
+   `.markdown-body`, auf die ein Breiten-Toggle wirken koennte. */
+body.edit-mode .toolbar .view-only { display: none; }

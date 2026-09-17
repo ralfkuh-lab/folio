@@ -7,11 +7,14 @@
    ueber das Panel-State-Command set_split_mid_percent (Muster wie der
    Minimap-Toggle).
 
+   Sowie der „volle Breite"-Toggle fuer die gerenderte Markdown-View
+   (Body-Klasse content-wide, Persistenz ueber set_content_wide).
+
    Public API: setRailVisibility(side, visible), setTocWidth(w),
-   setVaultWidth(w), setSplitMidPercent(p), applySplitMidFromBackend(p)
-   — werden von Document-State, ApplyShellState, Boot-Restore und dem
-   panel:split_mid_changed-Listener gerufen. initRails() registriert
-   die drei Splitter-Drag-Listener. */
+   setVaultWidth(w), setSplitMidPercent(p), applySplitMidFromBackend(p),
+   applyContentWide(on) — werden von Document-State, ApplyShellState,
+   Boot-Restore und den panel:*_changed-Listenern gerufen. initRails()
+   registriert die drei Splitter-Drag-Listener. */
 
 import { safeInvoke } from '../util/log';
 
@@ -37,6 +40,18 @@ export function setTocWidth(w: number): void {
 export function setVaultWidth(w: number): void {
     if (typeof w !== 'number' || isNaN(w) || w <= 0) return;
     document.documentElement.style.setProperty('--vault-w', w + 'px');
+}
+
+/* „Volle Breite": hebt die Lesebreite der gerenderten Markdown-View auf
+   (CSS `body.content-wide .markdown-body`). Reiner Sicht-Zustand ohne
+   Backend-Roundtrip — die Persistenz laeuft daneben ueber
+   set_content_wide. Haelt Body-Klasse und Button-State zusammen, damit
+   Toggle, Boot-Restore und der panel:content_wide_changed-Listener nicht
+   je eigene Teilmengen davon setzen. */
+export function applyContentWide(on: boolean): void {
+    document.body.classList.toggle('content-wide', on);
+    const btn = document.getElementById('tb-content-width');
+    if (btn) btn.classList.toggle('active', on);
 }
 
 const SPLIT_MID_MIN = 20;

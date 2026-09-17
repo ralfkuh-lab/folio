@@ -568,6 +568,8 @@ pub fn builder(settings: crate::settings::SettingsService) -> tauri::Builder<tau
             commands::app::editor_minimap_get,
             commands::app::panel_rails_get,
             commands::app::set_editor_minimap_visible,
+            commands::app::content_wide_get,
+            commands::app::set_content_wide,
             commands::app::split_mid_get,
             commands::app::set_split_mid_percent,
             commands::app::search_options_get,

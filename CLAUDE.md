@@ -542,6 +542,31 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   und speichern, hat im Vault aber kein `data-text="1"` (also kein
   „Änderungen anzeigen" im Kontextmenü) und wird von
   `fileFilter: allText` nicht durchsucht.
+- **Breiten-Toggle „volle Breite"** (`tb-content-width`, Body-Klasse
+  `content-wide`, persistiert als `content_wide` in `panel_state.rs`): hebt
+  `max-width` auf `.markdown-body` auf. Bewusst **kein vierter View-Mode** —
+  Modes schließen sich gegenseitig aus und sind pro Tab, die Breite ist dazu
+  orthogonal und in View wie Split sinnvoll (gleiche Begründung wie beim
+  Git-Diff-Button). Drei Punkte, die die Umsetzung klein halten:
+  (1) Der Selektor `body.content-wide .markdown-body` (0,2,1) schlägt die
+  `max-width`-Regeln **aller** View-Themes (0,1,0), obwohl deren CSS als
+  letztes in den `<head>` injiziert wird — kein `!important`, aber auch kein
+  Verlass darauf, falls ein künftiges Theme mit höherer Spezifität setzt.
+  (2) Editor und Export brauchen **keine** Ausnahme: Monaco war nie
+  breitenbegrenzt (`#editor-mount` ist `flex: 1 1 auto`), der Export rendert
+  in ein eigenes Dokument mit der Papierbreite aus `<id>.page.css`, und die
+  Theme-Editor-Vorschau hängt in einem `iframe` mit eigenem `body`. Deshalb
+  reicht **eine** CSS-Zeile. (3) Sichtbarkeit über `md-only view-only`
+  (`body.edit-mode .toolbar .view-only { display: none }` als Gegenstück zu
+  `.edit-only`); den Enabled-Zustand des Menüeintrags `view.content_width`
+  synct `syncCheatsheetMenu` mit — bewusst mit **anderer** Bedingung als
+  Cheatsheet/Minimap (Markdown, aber NICHT Edit-Mode).
+  Wirkt erst, wenn die View-Region breiter als die Lesebreite ist — bei
+  offenen Rails auf 1280 px ist sie ~670 px breit und der Toggle bleibt
+  folgenlos (kein Bug; genau deshalb blendet E2E `63_content_width` beide
+  Rails aus und stellt den Splitter auf 20 %). Der kanonische E2E-Reset
+  schaltet ihn zurück, weil er sonst in jede spätere Baseline mit sichtbarem
+  Markdown wandert.
 - **Split-Mode** (`tb-mode-split`, `body.split-mode` in `content.css`):
   drei Anzeigemodi (view/edit/split) sind sich gegenseitig ausschließende
   Body-Klassen. Im Split-Mode ist die View-Region und die Editor-Region
@@ -1143,7 +1168,7 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
 
 ## E2E-Test-Suite
 
-Vollständige UI-Coverage in `tests/e2e/` (62 Szenarien, Python +
+Vollständige UI-Coverage in `tests/e2e/` (63 Szenarien, Python +
 Pillow): Boot, View-/Edit-/Split-Mode, Theme, Vault, Find (inkl.
 Code-View), Workspace, Save-Roundtrip durch alle BOM/EOL-Kombis,
 Undo/Redo, Toolbar-Commands (Bold/Italic/Heading), Menü-Coverage
@@ -1156,7 +1181,8 @@ Vault-Filter, Tab-Kontextmenü, Command Palette, Statusleiste,
 Wikilinks/Tags, Task-Checkboxen, Git-Status/-Diff/-Filter,
 versteckte Vault-Einträge, Find-Bar-Regex/-Ersetzen,
 Vault-Dateioperationen (Ordner anlegen/umbenennen/löschen),
-Zen-Modus, Hex-Ansicht, Pfad-Identität (Symlink-Verzeichnis → ein Tab)
+Zen-Modus, Hex-Ansicht, Pfad-Identität (Symlink-Verzeichnis → ein Tab),
+Breiten-Toggle
 sowie
 KI-Settings, KI-Übersetzung, KI-Theme-Autor, Export-KI-Draft und
 KI-Aktionen (Mock-Provider). Der englische Boot ist über

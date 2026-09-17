@@ -78,6 +78,13 @@ pub struct PanelStateData {
     // Nur Git-geaenderte Dateien (modified/untracked). Default aus.
     #[serde(default)]
     pub vault_filter_git_changed_only: bool,
+    // Volle Breite fuer die gerenderte Markdown-View (View- und
+    // Split-Mode). Default aus: die Lesebreite aus dem aktiven View-Theme
+    // bleibt der Normalfall, der Schalter ist die bewusste Ausnahme fuer
+    // breite Tabellen. Wirkt nur auf `.markdown-body` — der Editor war nie
+    // begrenzt, der Export bleibt bei seiner Papierbreite.
+    #[serde(default)]
+    pub content_wide: bool,
     // Zen-Modus: transienter Ausstiegs-Hinweis beim ersten Aktivieren
     // wurde gesehen. UI-Historie, kein Verhalten — deshalb hier und
     // nicht in settings.json. Default aus (Hinweis noch nicht gezeigt).
@@ -127,6 +134,7 @@ impl Default for PanelStateData {
             vault_filter_markdown_only: false,
             vault_filter_bar_visible: false,
             vault_filter_git_changed_only: false,
+            content_wide: false,
             zen_hint_seen: false,
         }
     }
@@ -238,6 +246,11 @@ impl PanelState {
         self.data.vault_filter_markdown_only = markdown_only;
         self.data.vault_filter_bar_visible = bar_visible;
         self.data.vault_filter_git_changed_only = git_changed_only;
+        self.save()
+    }
+
+    pub fn set_content_wide(&mut self, wide: bool) -> io::Result<()> {
+        self.data.content_wide = wide;
         self.save()
     }
 
@@ -483,6 +496,37 @@ mod tests {
         assert!(reloaded.vault_filter_git_changed_only);
         assert!(reloaded.vault_filter_bar_visible);
         assert!(!reloaded.vault_filter_markdown_only);
+    }
+
+    #[test]
+    fn content_wide_defaults_off_and_persists() {
+        assert!(!PanelStateData::default().content_wide);
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("panel.json");
+        let mut state = PanelState::load_from(path.clone());
+        assert!(!state.data().content_wide);
+        state.set_content_wide(true).unwrap();
+        assert!(PanelState::load_from(path.clone()).data().content_wide);
+        // Alt-Stand ohne das Feld: serde-Default greift (false).
+        std::fs::write(
+            &path,
+            r#"{
+                "left_rail_visible": true,
+                "right_rail_visible": true,
+                "left_rail_width": 280.0,
+                "right_rail_width": 280.0,
+                "pinned_expanded": true,
+                "recent_expanded": true,
+                "window_x": null,
+                "window_y": null,
+                "window_width": null,
+                "window_height": null,
+                "cheat_sheet_offset_x": 0.0,
+                "cheat_sheet_offset_y": 0.0
+            }"#,
+        )
+        .unwrap();
+        assert!(!PanelState::load_from(path).data().content_wide);
     }
 
     #[test]

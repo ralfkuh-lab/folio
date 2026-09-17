@@ -85,6 +85,9 @@ export function initMenuRouter(deps: Deps): void {
     ev.listen('menu:view_minimap', function () {
         var b = $('tb-minimap'); if (b) b.click();
     });
+    ev.listen('menu:view_content_width', function () {
+        var b = $('tb-content-width'); if (b) b.click();
+    });
     ev.listen('menu:view_mode_view', function () { setMode('view'); });
     ev.listen('menu:view_mode_edit', function () { setMode('edit'); });
     ev.listen('menu:view_mode_split', function () { setMode('split'); });

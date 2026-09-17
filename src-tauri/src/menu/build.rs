@@ -171,6 +171,15 @@ pub fn build(handle: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let item_minimap = MenuItemBuilder::with_id(ids::VIEW_MINIMAP, l.view_minimap.as_str())
         .enabled(false)
         .build(handle)?;
+    // view.content_width: volle Breite fuer die gerenderte Markdown-View.
+    // Nur aktiv, wo ueberhaupt Markdown gerendert wird (View-/Split-Mode bei
+    // Markdown) — im reinen Edit-Mode gibt es keine `.markdown-body`, der
+    // Monaco-Editor war nie breitenbegrenzt. Frontend synct den
+    // Enabled-Zustand (`syncCheatsheetMenu`), analog view.minimap.
+    let item_content_width =
+        MenuItemBuilder::with_id(ids::VIEW_CONTENT_WIDTH, l.view_content_width.as_str())
+            .enabled(false)
+            .build(handle)?;
     // Accelerator hier vor allem als ANZEIGE: ausgeloest werden beide
     // Toggles vom DOM-Capture-Block (toolbar-actions.ts), weil die WebView
     // die Taste in der Regel vor dem OS-Accelerator-Dispatch schluckt.
@@ -195,6 +204,7 @@ pub fn build(handle: &AppHandle) -> tauri::Result<Menu<Wry>> {
         .item(&item_rail_left)
         .item(&item_minimap)
         .item(&item_rail_right)
+        .item(&item_content_width)
         .item(&PredefinedMenuItem::separator(handle)?)
         .item(&item_fullscreen)
         .item(&item_zen)

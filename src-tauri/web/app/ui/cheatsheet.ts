@@ -142,18 +142,27 @@ export function cheatsheetSyncMode(isEdit: boolean): void {
     }
 }
 
-// Tauri-Menue-Items, die nur im Edit-Mode bei Markdown-Dokumenten Sinn
-// ergeben (help.cheatsheet, view.minimap), enable/disable in einem Rutsch.
-// Name historisch — beide Items teilen sich die Aktivierungs-Bedingung,
-// daher hier zentral.
+// Tauri-Menue-Items, deren Enabled-Zustand an Mode + Dokumenttyp haengt.
+// Name historisch — die Funktion laeuft bei jedem Mode- und Kind-Wechsel
+// (editor/shell.ts::setMode, state/document.ts::applyDocKind) und ist
+// damit der eine Ort, an dem solche Abhaengigkeiten zentral landen.
+//
+// Zwei Bedingungen, bewusst getrennt:
+//   help.cheatsheet / view.minimap → Edit oder Split bei Markdown
+//     (beides Editor-Funktionen).
+//   view.content_width → Markdown, aber NICHT im reinen Edit-Mode: der
+//     Toggle wirkt auf `.markdown-body`, die es nur in View und Split
+//     gibt. Spiegelt die CSS-Klassen md-only/view-only am Toolbar-Button.
 export function syncCheatsheetMenu(): void {
     if (!window.__TAURI__ || !window.__TAURI__.core) return;
-    const editorActive = document.body.classList.contains('edit-mode')
+    const isMarkdown = document.body.classList.contains('kind-markdown');
+    const editMode = document.body.classList.contains('edit-mode');
+    const editorActive = editMode
         || document.body.classList.contains('split-mode');
-    const enabled = editorActive
-        && document.body.classList.contains('kind-markdown');
+    const enabled = editorActive && isMarkdown;
     safeInvoke('menu_set_enabled', { id: 'help.cheatsheet', enabled }, 'menu_set_enabled help.cheatsheet', 'debug');
     safeInvoke('menu_set_enabled', { id: 'view.minimap', enabled }, 'menu_set_enabled view.minimap', 'debug');
+    safeInvoke('menu_set_enabled', { id: 'view.content_width', enabled: isMarkdown && !editMode }, 'menu_set_enabled view.content_width', 'debug');
 }
 
 export function initCheatsheet(): void {

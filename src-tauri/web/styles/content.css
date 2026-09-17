@@ -264,6 +264,17 @@ body.kind-binary .image-view-region { display: none; }
   padding: 32px 40px 64px;
   box-sizing: border-box;
 }
+/* „Volle Breite"-Toggle (tb-content-width, persistiert als `content_wide`
+   in panel-state.json). Hebt die Lesebreite auf — die des Defaults oben
+   ebenso wie die des aktiven View-Themes: das Theme-CSS wird zwar als
+   letztes in den `<head>` injiziert, setzt `max-width` aber auf der nackten
+   `.markdown-body` (0,1,0) und verliert damit gegen diesen Selektor
+   (0,2,1). Gilt fuer View- UND Split-Mode, weil die View-Seite im Split
+   dieselbe Surface ist. Editor und Export bleiben unberuehrt: Monaco war
+   nie begrenzt, der Export rendert in ein eigenes Dokument mit der
+   Papierbreite aus `<id>.page.css`, und die Theme-Editor-Vorschau haengt
+   in einem `iframe` mit eigenem `body`. */
+body.content-wide .markdown-body { max-width: none; }
 h1, h2, h3, h4, h5, h6 {
   margin-top: 24px;
   margin-bottom: 16px;

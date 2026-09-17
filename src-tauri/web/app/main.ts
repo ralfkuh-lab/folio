@@ -28,7 +28,7 @@ import { initSettingsDialog } from './ui/settings-dialog';
 import { initThemeEditor, openThemeEditor } from './ui/theme-editor';
 import { initThemeAiDialog } from './ui/theme-ai-dialog';
 import { attachPasteHandler } from './ui/paste-handler';
-import { applySplitMidFromBackend, initRails, setRailVisibility } from './ui/rails';
+import { applyContentWide, applySplitMidFromBackend, initRails, setRailVisibility } from './ui/rails';
 import { initContextMenu } from './vault/context-menu';
 import { initVaultClipboard } from './vault/clipboard';
 import { initTabContextMenu } from './ui/tab-context-menu';
@@ -280,6 +280,15 @@ function installCrossModuleListeners(): void {
         if (window.FolioEditor) window.FolioEditor.setMinimap(data.visible);
     });
 
+    // panel:content_wide_changed analog zu panel:minimap_changed:
+    // Automation oder ein zweites Fenster schreibt den State im Backend,
+    // das Frontend zieht Body-Klasse und Button-State hier nach.
+    ev.listen('panel:content_wide_changed', function (event: any) {
+        var data = event && event.payload;
+        if (!data || typeof data.wide !== 'boolean') return;
+        applyContentWide(data.wide);
+    });
+
     // panel:split_mid_changed: der geclampte Wert kommt vom Backend
     // zurueck (Drag-Ende via set_split_mid_percent) — Frontend zieht die
     // CSS-Variable nach. Automation/Multi-Window-Sync analog zu Minimap.
@@ -331,6 +340,15 @@ function restorePanelStateFromBackend(): void {
         if (window.FolioEditor) window.FolioEditor.setMinimap(on);
     }).catch(function (err) {
         folioLog.warn('boot', 'editor_minimap_get failed', { error: String(err) });
+    });
+
+    // „Volle Breite" aus dem persistierten Panel-State beim Boot
+    // wiederherstellen (analog Minimap). Rein visuell — CSS greift erst,
+    // wenn tatsaechlich Markdown gerendert wird.
+    invoke('content_wide_get').then(function (wide: any) {
+        applyContentWide(!!wide);
+    }).catch(function (err) {
+        folioLog.warn('boot', 'content_wide_get failed', { error: String(err) });
     });
 
     // Split-Mode-Teiler aus dem persistierten Panel-State beim Boot

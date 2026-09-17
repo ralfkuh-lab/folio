@@ -167,6 +167,40 @@ pub async fn set_editor_minimap_visible(
         .map_err(|error| error.to_string())
 }
 
+/// Liefert den persistierten „volle Breite"-Zustand der Markdown-View ans
+/// Frontend. Beim Boot gerufen, damit die Body-Klasse `content-wide` und der
+/// `active`-State von `tb-content-width` synchron zur Persistenz starten
+/// (analog `editor_minimap_get`).
+#[tauri::command]
+pub async fn content_wide_get(state: State<'_, AppState>) -> Result<bool, String> {
+    Ok(state
+        .panel_state
+        .lock()
+        .map_err(|_| "panel state lock poisoned".to_string())?
+        .data()
+        .content_wide)
+}
+
+#[tauri::command]
+pub async fn set_content_wide(
+    wide: bool,
+    handle: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state
+        .panel_state
+        .lock()
+        .map_err(|_| "panel state lock poisoned".to_string())?
+        .set_content_wide(wide)
+        .map_err(|error| error.to_string())?;
+    handle
+        .emit(
+            "panel:content_wide_changed",
+            serde_json::json!({ "wide": wide }),
+        )
+        .map_err(|error| error.to_string())
+}
+
 /// Liefert den persistierten Split-Mode-Teiler (Editor-Pane-Anteil in
 /// Prozent) ans Frontend. Beim Boot gerufen, damit `--split-mid` synchron
 /// zum persistierten Wert steht (analog `editor_minimap_get`).
