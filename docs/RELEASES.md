@@ -46,8 +46,8 @@ Wenn folgende Punkte stehen:
   für ältere Versionen.
 - Die E2E-Suite läuft auf Windows + Linux durchgehend grün.
 - Es gibt keine bekannten Datenverlust-Bugs.
-- Ein dokumentierter Release-Build-Prozess existiert (vorerst manuell,
-  später ggf. CI).
+- Ein dokumentierter Release-Build-Prozess existiert (seit 0.9.0 per
+  GitHub Actions, siehe Release-Workflow).
 
 Ab `1.0.0` ist jede Breaking Change ein Major-Bump (= `2.0.0`). Vorher
 ist die Welt entspannter.
@@ -73,20 +73,38 @@ Schritte:
 4. **Annotierter Tag**: `git tag -a vX.Y.Z -m "Folio vX.Y.Z"`. Tag-Body
    darf länger sein und Release-Notes vorwegnehmen.
 5. **Tag pushen**: `git push origin vX.Y.Z`.
-6. **Release-Bundles bauen**: `cd src-tauri && cargo tauri build` —
-   produziert MSI + NSIS unter `target/release/bundle/{msi,nsis}/`.
-   Auf Linux entsprechend `deb`/`rpm`/`AppImage`.
-7. **GitHub Release** erstellen:
+6. **Bundles baut die CI**: Der Tag-Push startet
+   [`.github/workflows/release.yml`](../.github/workflows/release.yml).
+   Er prüft, dass Tag, `Cargo.toml` und `tauri.conf.json` dieselbe Version
+   tragen, legt ein **Draft-Release** mit Pre-release-Flag an und hängt
+   die Bundles an: Windows (`msi`, NSIS-`exe`), macOS Intel und Apple
+   Silicon (je ein `dmg`, beide auf einem Apple-Silicon-Runner gebaut, das
+   Intel-`dmg` per Cross-Compile) und Linux (`deb`, `rpm`, `AppImage`,
+   gebaut auf Ubuntu 22.04 wegen der glibc-Kompatibilität). Laufzeit etwa
+   15–25 Minuten.
+7. **Notes eintragen und veröffentlichen**:
    ```
-   gh release create vX.Y.Z \
-       --prerelease \         # solange MAJOR == 0
-       --title "Folio vX.Y.Z" \
-       --notes-file release-notes.md \
-       'target/release/bundle/msi/Folio_X.Y.Z_x64_en-US.msi' \
-       'target/release/bundle/nsis/Folio_X.Y.Z_x64-setup.exe'
+   gh release edit vX.Y.Z --notes-file release-notes.md
+   gh release edit vX.Y.Z --draft=false
    ```
+   Vorher im Draft prüfen, ob alle sieben Assets da sind.
 8. **Sanity-Check**: Release auf GitHub öffnen, Pre-release-Badge
    sichtbar? Assets ladbar? Tag matched mit Code?
+
+**Probelauf ohne Release**: Den Workflow unter *Actions → Release → Run
+workflow* (oder `gh workflow run release.yml --ref main`) manuell
+starten. Er baut dieselben Bundles, legt sie aber nur als
+Workflow-Artefakte ab (7 Tage), ohne Tag und ohne Release. Sinnvoll nach
+Änderungen am Workflow, an Abhängigkeiten mit nativen Teilen oder an
+`tauri.conf.json`.
+
+**Signierung**: keine. macOS-Builds sind ad-hoc signiert
+(`signingIdentity: "-"`), nicht notarisiert; Windows-Installer sind
+unsigniert (SmartScreen). Die CI ändert daran nichts.
+
+**Manueller Fallback** (falls die CI ausfällt): `cd src-tauri && cargo
+tauri build` auf der jeweiligen Plattform, dann
+`gh release upload vX.Y.Z <Bundles> --clobber`.
 
 ## Release-Notes-Template
 
@@ -114,8 +132,10 @@ Eine pragmatische Vorlage in `release-notes.md`:
 ## Installation
 
 - Windows: `Folio_X.Y.Z_x64-setup.exe` oder `Folio_X.Y.Z_x64_en-US.msi`.
-- Linux (`deb`-basierte Distros): `Folio_X.Y.Z_amd64.deb`.
-- macOS: noch nicht gebaut.
+- macOS: `Folio_X.Y.Z_aarch64.dmg` (Apple Silicon) oder
+  `Folio_X.Y.Z_x64.dmg` (Intel).
+- Linux: `Folio_X.Y.Z_amd64.deb`, `Folio-X.Y.Z-1.x86_64.rpm` oder
+  `Folio_X.Y.Z_amd64.AppImage`.
 
 ## Commit-Log
 

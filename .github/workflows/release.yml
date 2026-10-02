@@ -1,0 +1,165 @@
+# Baut die Release-Bundles fuer Windows, macOS (Intel + Apple Silicon) und
+# Linux. Ablauf und Hintergrund: docs/RELEASES.md.
+#
+# - Tag-Push `vX.Y.Z`: legt (falls noch nicht vorhanden) ein Draft-Release
+#   mit Pre-release-Flag an und haengt alle Bundles daran. Veroeffentlicht
+#   wird von Hand, nachdem Notes und Assets geprueft sind.
+# - Manueller Start (workflow_dispatch): Probelauf ohne Tag und ohne
+#   Release, die Bundles landen nur als Workflow-Artefakte.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TAURI_CLI: "@tauri-apps/cli@^2.11"
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version aus Cargo.toml lesen
+        id: version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' src-tauri/Cargo.toml | head -1)
+          conf=$(sed -n 's/^  "version": "\(.*\)",$/\1/p' src-tauri/tauri.conf.json | head -1)
+          if [ "$version" != "$conf" ]; then
+            echo "::error::Cargo.toml ($version) und tauri.conf.json ($conf) weichen ab"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Tag gegen Version pruefen
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          if [ "${GITHUB_REF_NAME}" != "v${{ steps.version.outputs.version }}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} passt nicht zur Version ${{ steps.version.outputs.version }}"
+            exit 1
+          fi
+
+      # Eigener Job-Schritt VOR der Build-Matrix: legen die Matrix-Jobs das
+      # Release parallel an, entstehen doppelte Drafts.
+      - name: Draft-Release anlegen
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME existiert bereits, Assets werden angehaengt."
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --draft --prerelease \
+              --verify-tag \
+              --title "Folio $GITHUB_REF_NAME" \
+              --notes "Release-Notes folgen."
+          fi
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: |
+              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          - name: macos-intel
+            os: macos-latest
+            target: x86_64-apple-darwin
+            bundles: |
+              src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
+          - name: macos-arm
+            os: macos-latest
+            target: aarch64-apple-darwin
+            bundles: |
+              src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+          # 22.04 statt latest: das AppImage/deb laeuft dann auch auf
+          # Distributionen mit aelterer glibc.
+          - name: linux
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: |
+              src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb
+              src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/rpm/*.rpm
+              src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage
+    name: build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux-Abhaengigkeiten
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev librsvg2-dev patchelf pkg-config \
+            libdbus-1-dev libxcb1-dev libxcb-randr0-dev libxcb-shm0-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: ${{ matrix.target }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Die Frontend-Bundles in dist/ sind eingecheckt; ein npm-Build ist
+      # hier nicht noetig (Drift prueft scripts/check-bundles.sh lokal).
+      - name: Bundles bauen
+        working-directory: src-tauri
+        shell: bash
+        run: npx --yes "$TAURI_CLI" build --target ${{ matrix.target }}
+
+      - name: Bundles einsammeln
+        shell: bash
+        run: |
+          mkdir -p out
+          while IFS= read -r pattern; do
+            [ -z "$pattern" ] && continue
+            for f in $pattern; do
+              if [ ! -f "$f" ]; then
+                echo "::error::Kein Bundle fuer $pattern"
+                exit 1
+              fi
+              cp "$f" out/
+            done
+          done <<'EOF'
+          ${{ matrix.bundles }}
+          EOF
+          ls -l out
+
+      - name: Als Workflow-Artefakt ablegen
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: folio-${{ needs.prepare.outputs.version }}-${{ matrix.name }}
+          path: out/*
+          retention-days: 7
+
+      - name: An das Draft-Release haengen
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" out/* --clobber
