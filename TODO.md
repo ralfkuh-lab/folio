@@ -432,6 +432,18 @@ nicht aussagekräftig. Zu testen: Kaltstart, laufende Instanz, beide Werte von
 
 ## Niedrige Priorität
 
+### 🔍 Release-Workflow: Actions von Node 20 auf Node 24 anheben
+
+Der erste Lauf von `.github/workflows/release.yml` (2026-10-02, v0.9.0)
+warnte: `actions/checkout@v4`, `actions/setup-node@v4` und
+`actions/upload-artifact@v4` laufen noch auf Node 20 und werden von GitHub
+bereits zwangsweise auf Node 24 umgeleitet. Das ist bislang harmlos, aber vor
+dem Anheben die Nachfolgeversionen prüfen (welche Major-Version auf Node 24
+läuft, Breaking Changes) und danach einen Probelauf per `workflow_dispatch`
+machen. Bei der Gelegenheit gleich mitprüfen: Der `prepare`-Job läuft auf
+`ubuntu-latest`, das laut GitHub ab 2026-10-19 auf Ubuntu 26 wechselt. Für
+den Job ist das egal; der Linux-Build ist bewusst auf `ubuntu-22.04` gepinnt.
+
 - ✅ **Wikilink-Index-TTL + Fokus-Invalidierung — durch W8 erledigt
   2026-08-19.** Die Entscheidung von 2026-08-13 („bleibt bei 30 s") ist
   **überholt**: sie beruhte auf einem 8 200-Dateien-Workspace. In einem
