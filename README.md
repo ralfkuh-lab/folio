@@ -21,7 +21,8 @@ Grab the installer for your platform from the
 
 | Platform | File |
 |---|---|
-| **macOS** | `Folio_<version>_x64.dmg` |
+| **macOS** — Apple Silicon (M1 and newer) | `Folio_<version>_aarch64.dmg` |
+| **macOS** — Intel | `Folio_<version>_x64.dmg` |
 | **Windows** | `Folio_<version>_x64-setup.exe` (or `.msi`) |
 | **Linux** — Debian / Ubuntu | `Folio_<version>_amd64.deb` |
 | **Linux** — Fedora / openSUSE | `Folio-<version>-1.x86_64.rpm` |
@@ -149,8 +150,9 @@ Light and dark theme:
 2. **Switch how you look at it** — Ctrl/Cmd+**1** for View, **2** for Edit,
    **3** for Split.
 3. **Pin a folder** — open a folder in the Vault sidebar on the left and pin it
-   so it's always one click away. Pinned folders are what vault search,
-   wikilinks and tags look at.
+   so it's always one click away. Pinned folders are what vault search looks
+   at. For wikilinks, backlinks and tags, right-click a pinned folder and
+   choose **Enable wikilinks & tags here** — only those folders get indexed.
 4. **Jump anywhere** — Ctrl/Cmd+**P** opens the command palette; start typing a
    file name, `>` for a command or `#` for a heading in the current document.
 5. **Export** — **File → Export…** to turn the current document into a PDF or
@@ -228,7 +230,7 @@ cargo fmt --check
 cd web && npm test                         # frontend (Vitest / jsdom)
 ```
 
-The end-to-end suite (61 scenarios, Python + Pillow, visual regression) runs
+The end-to-end suite (63 scenarios, Python + Pillow, visual regression) runs
 headless on Linux via Xvfb:
 
 ```bash
