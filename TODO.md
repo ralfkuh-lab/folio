@@ -8,9 +8,42 @@
 
 ## Hohe Priorität
 
-_Nichts offen (Stand 2026-08-23)._ Die Hex-Punkte aus 0.8.0 sind gefixt und
-stehen als Beobachtung unter „Mittlere Priorität"; der E2E-Voll-Lauf ist grün
-(62/62 Szenarien, 35/35 visuelle Vergleiche, `20260820-162717`).
+### 🔍 macOS: Doppelklick im Finder öffnet die Datei nicht ([#13](https://github.com/ralfkuh-lab/folio/issues/13))
+
+Gemeldet 2026-07-28, in 0.9.0 noch offen. Folio startet per Doppelklick auf
+eine `.md`-Datei (Folio als Standard-App), zeigt die Datei aber nicht an; nur
+Datei → Öffnen hilft. Die Berechtigungen des Melders (Desktop/Downloads ja,
+Festplattenvollzugriff nein) sind laut Befund nicht die Ursache.
+
+**Vermutete Ursache (Code-Befund, auf dem Mac nicht nachgestellt):** macOS
+übergibt die Datei beim Öffnen aus dem Finder nicht als Kommandozeilen-
+Argument, sondern als Apple Event („open documents"). Tauri liefert das als
+`RunEvent::Opened { urls }`. Folio liest nur die Kommandozeile:
+`first_file_arg(std::env::args())` beim Boot (`src-tauri/src/lib.rs:365`) und
+die `args` im Single-Instance-Callback (`lib.rs:109`). Einen Handler für
+`RunEvent::Opened` gibt es nicht; `.run(|app, event| …)` (`lib.rs:788`)
+behandelt nur `RunEvent::Exit`.
+
+**Fix-Skizze:**
+- `RunEvent::Opened { urls }` im `.run`-Handler auswerten (`file://`-URLs in
+  Pfade umwandeln, nur unter `cfg(target_os = "macos")`).
+- **Kaltstart**: Das Event kann kommen, bevor das Frontend bereit ist. Pfad
+  dann zwischenspeichern und im selben Pfad öffnen, den heute der Boot-CLI-Pfad
+  nimmt (nach dem Tab-Restore als zusätzlicher aktiver Tab bzw. dedupliziert).
+- **Folio läuft schon**: dieselbe Entscheidung wie im Single-Instance-Callback
+  (Setting `openFileTarget`: `newtab` | `replace`). Nicht zweimal
+  implementieren, sondern einen gemeinsamen Pfad nutzen.
+- Mehrere Dateien auf einmal (Mehrfachauswahl im Finder) mitdenken.
+- Ziehen aufs Dock-Symbol läuft vermutlich über dasselbe Event und wird damit
+  gleich mit behoben.
+
+**Auf macOS umsetzen und testen**: Der Zweig kompiliert nur unter macOS, unter
+Windows prüfen weder `cargo build` noch clippy ihn. Vor dem Test einen evtl.
+lokalen Workaround für `.md`-Dateien abschalten, sonst ist der Test
+nicht aussagekräftig. Zu testen: Kaltstart, laufende Instanz, beide Werte von
+`openFileTarget`, Mehrfachauswahl.
+
+**Danach**: Im Issue antworten, sobald der Fix in einem Release ist.
 
 ## Mittlere Priorität
 
