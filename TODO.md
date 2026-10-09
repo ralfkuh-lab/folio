@@ -10,6 +10,10 @@
 
 ### 🔍 macOS: Doppelklick im Finder öffnet die Datei nicht ([#13](https://github.com/ralfkuh-lab/folio/issues/13))
 
+**⏸ Zurückgestellt (2026-10-09):** Auf dem eigenen Mac-Notebook nicht
+nachstellbar. Beim Melder ist nachgefragt; bis zu einer Rückmeldung ruht der
+Punkt. Die Code-Analyse unten bleibt als Ausgangspunkt stehen.
+
 Gemeldet 2026-07-28, in 0.9.0 noch offen. Folio startet per Doppelklick auf
 eine `.md`-Datei (Folio als Standard-App), zeigt die Datei aber nicht an; nur
 Datei → Öffnen hilft. Die Berechtigungen des Melders (Desktop/Downloads ja,
@@ -431,18 +435,6 @@ nicht aussagekräftig. Zu testen: Kaltstart, laufende Instanz, beide Werte von
   LRU erwägen).
 
 ## Niedrige Priorität
-
-### 🔍 Release-Workflow: Actions von Node 20 auf Node 24 anheben
-
-Der erste Lauf von `.github/workflows/release.yml` (2026-10-02, v0.9.0)
-warnte: `actions/checkout@v4`, `actions/setup-node@v4` und
-`actions/upload-artifact@v4` laufen noch auf Node 20 und werden von GitHub
-bereits zwangsweise auf Node 24 umgeleitet. Das ist bislang harmlos, aber vor
-dem Anheben die Nachfolgeversionen prüfen (welche Major-Version auf Node 24
-läuft, Breaking Changes) und danach einen Probelauf per `workflow_dispatch`
-machen. Bei der Gelegenheit gleich mitprüfen: Der `prepare`-Job läuft auf
-`ubuntu-latest`, das laut GitHub ab 2026-10-19 auf Ubuntu 26 wechselt. Für
-den Job ist das egal; der Linux-Build ist bewusst auf `ubuntu-22.04` gepinnt.
 
 - ✅ **Wikilink-Index-TTL + Fokus-Invalidierung — durch W8 erledigt
   2026-08-19.** Die Entscheidung von 2026-08-13 („bleibt bei 30 s") ist
