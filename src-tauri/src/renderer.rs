@@ -85,6 +85,7 @@ fn render_body_with_highlighter(
     let root = parse_document(&arena, &preprocessed, &options);
     let heading_ids = collect_and_apply_explicit_heading_ids(root);
     let wikilink_classes = apply_wikilinks(&arena, root, wikilinks);
+    strip_alert_fold_markers(root);
 
     // Beim eigenen Parse die Mermaid-Literale sammeln (gemeinsam mit
     // collect_mermaid_sources / find_mermaid_blocks). Wird fuer
@@ -268,10 +269,32 @@ pub(crate) fn markdown_options() -> Options<'static> {
     options.extension.tasklist = true;
     // Obsidian-Reihenfolge `[[url|title]]` (Spec docs/spec-wikilinks.md).
     options.extension.wikilinks_title_after_pipe = true;
+    // GitHub-Alerts `> [!NOTE]` usw. (Callouts); Titel bleiben comraks
+    // englische Defaults wie auf GitHub.
+    options.extension.alerts = true;
     options.render.sourcepos = true;
     options.render.unsafe_ = false;
     options.render.escape = true;
     options
+}
+
+/// AST-Postprocess fuer Obsidian-Faltmarker: `> [!note]- Titel` /
+/// `> [!note]+ Titel` liefert bei comrak den Titel `- Titel` bzw. `+ Titel`.
+/// Der Marker wird entfernt; bleibt nichts uebrig, greift der Default-Titel.
+/// Eingeklappt wird bewusst nicht.
+fn strip_alert_fold_markers<'a>(root: &'a AstNode<'a>) {
+    for node in root.descendants() {
+        if let NodeValue::Alert(alert) = &mut node.data.borrow_mut().value {
+            if let Some(rest) = alert
+                .title
+                .as_deref()
+                .and_then(|title| title.strip_prefix(['-', '+']))
+            {
+                let rest = rest.trim_start();
+                alert.title = (!rest.is_empty()).then(|| rest.to_string());
+            }
+        }
+    }
 }
 
 /// AST-Postprocess fuer Wikilinks (analog zum GenericAttributes-/
@@ -1213,5 +1236,96 @@ mod tests {
         let md = "---\ntitle: X\n---\n\n```mermaid\ngraph\n```\n";
         let srcs = collect_mermaid_sources(md);
         assert_eq!(srcs.len(), 1);
+    }
+
+    /// Liefert (Klassenattribut, Titel) des einzigen Callouts im HTML.
+    fn single_alert(html: &str) -> (String, String) {
+        assert_eq!(html.matches("markdown-alert-title").count(), 1, "{html}");
+        let class = html
+            .split(r#"<div class=""#)
+            .nth(1)
+            .and_then(|rest| rest.split('"').next())
+            .unwrap_or_else(|| panic!("kein Alert-div: {html}"))
+            .to_string();
+        let title = html
+            .split(r#"<p class="markdown-alert-title">"#)
+            .nth(1)
+            .and_then(|rest| rest.split("</p>").next())
+            .unwrap()
+            .to_string();
+        (class, title)
+    }
+
+    #[test]
+    fn alerts_render_each_type_with_default_title() {
+        for (marker, class, title) in [
+            ("NOTE", "note", "Note"),
+            ("TIP", "tip", "Tip"),
+            ("IMPORTANT", "important", "Important"),
+            ("WARNING", "warning", "Warning"),
+            ("CAUTION", "caution", "Caution"),
+        ] {
+            let html = render_body(&format!("> [!{marker}]\n> Text\n"));
+            assert_eq!(
+                single_alert(&html),
+                (
+                    format!("markdown-alert markdown-alert-{class}"),
+                    title.to_string()
+                ),
+                "{html}"
+            );
+            assert!(html.contains("<p data-sourcepos="), "{html}");
+            assert!(!html.contains("<blockquote"), "{html}");
+        }
+    }
+
+    #[test]
+    fn alerts_reference_cases() {
+        for (md, class, title) in [
+            ("> [!NOTE]\n> Text\n", "note", "Note"),
+            ("> [!tip]\n> Text\n", "tip", "Tip"),
+            (
+                "> [!WARNING] Achtung, Strom\n> Text\n",
+                "warning",
+                "Achtung, Strom",
+            ),
+            (
+                "> [!caution]- Eingeklappt\n> Text\n",
+                "caution",
+                "Eingeklappt",
+            ),
+            ("> [!note]+ Offen\n> Text\n", "note", "Offen"),
+            ("> [!important]+\n> Text\n", "important", "Important"),
+            ("> [!note]-\n> Text\n", "note", "Note"),
+        ] {
+            let html = render_body(md);
+            assert_eq!(
+                single_alert(&html),
+                (
+                    format!("markdown-alert markdown-alert-{class}"),
+                    title.to_string()
+                ),
+                "{md:?} → {html}"
+            );
+        }
+    }
+
+    #[test]
+    fn alerts_keep_data_line_for_scroll_sync() {
+        let html = render_body("Absatz\n\n> [!TIP]\n> Text\n");
+        assert!(
+            html.contains(r#"<div class="markdown-alert markdown-alert-tip" data-sourcepos="3:1-4:6" data-line="3">"#),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn unknown_alert_type_and_plain_quote_stay_blockquotes() {
+        for md in ["> [!todo]\n> Text\n", "> Normales Zitat\n"] {
+            let html = render_body(md);
+            assert!(html.contains("<blockquote"), "{md:?} → {html}");
+            assert!(!html.contains("markdown-alert"), "{md:?} → {html}");
+        }
+        assert!(render_body("> [!todo]\n> Text\n").contains("[!todo]"));
     }
 }
