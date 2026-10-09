@@ -8,6 +8,11 @@ import { safeInvoke } from '../util/log';
 export type ViewThemeDarkMap = Record<string, boolean>;
 
 let currentThemeId = 'standard';
+// Zuletzt ANGEFORDERTE ID, synchron gesetzt: currentThemeId wechselt erst
+// nach dem await. Ein Reapply (Hell/Dunkel, themes:changed) mitten in einem
+// laufenden Wechsel wuerde sonst das alte Theme anfordern und per
+// Generation-Guard gewinnen.
+let requestedThemeId = 'standard';
 let applyGeneration = 0;
 
 function themeStyle(): HTMLStyleElement {
@@ -25,6 +30,7 @@ export async function applyViewTheme(
     _hasDarkMap?: ViewThemeDarkMap,
 ): Promise<string> {
     var requested = typeof themeId === 'string' && themeId ? themeId : 'standard';
+    requestedThemeId = requested;
     var generation = ++applyGeneration;
     var dark = document.documentElement.classList.contains('theme-dark');
     var css = await safeInvoke<string>(
@@ -44,7 +50,7 @@ export async function applyViewTheme(
 }
 
 export function reapplyCurrentViewTheme(): Promise<string> {
-    return applyViewTheme(currentThemeId);
+    return applyViewTheme(requestedThemeId);
 }
 
 export function initViewTheme(): void {
