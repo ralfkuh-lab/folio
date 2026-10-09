@@ -21,17 +21,19 @@
   --rail-hover-bg: #d6e3f3;
   --rail-selected-bg: #d6e3f3;
   --rail-selected-fg: #1c3a5e;
-  /* Callout-Farben (content.css, GitHub-Palette). */
-  --alert-note: #0969da;
-  --alert-note-bg: rgba(9, 105, 218, 0.07);
-  --alert-tip: #1a7f37;
-  --alert-tip-bg: rgba(26, 127, 55, 0.07);
-  --alert-important: #8250df;
-  --alert-important-bg: rgba(130, 80, 223, 0.07);
-  --alert-warning: #9a6700;
-  --alert-warning-bg: rgba(191, 135, 0, 0.09);
-  --alert-caution: #d1242f;
-  --alert-caution-bg: rgba(209, 36, 47, 0.07);
+  /* Callout-Farben (content.css): GitHub-Palette, Titel leicht abgedunkelt
+     (hell) bzw. aufgehellt (dunkel), damit sie auf der getoenten Box in allen
+     View-Themes >= 4.5:1 bleiben (E2E 64_callouts). */
+  --alert-note: #0964cf;
+  --alert-note-bg: rgba(9, 105, 218, 0.05);
+  --alert-tip: #187734;
+  --alert-tip-bg: rgba(26, 127, 55, 0.05);
+  --alert-important: #7a4bd2;
+  --alert-important-bg: rgba(130, 80, 223, 0.05);
+  --alert-warning: #8e5f00;
+  --alert-warning-bg: rgba(191, 135, 0, 0.06);
+  --alert-caution: #c9232d;
+  --alert-caution-bg: rgba(209, 36, 47, 0.05);
   --toc-w: 260px;
   --vault-w: 240px;
 }
@@ -52,16 +54,16 @@ html.theme-dark {
   --rail-hover-bg: #22304a;
   --rail-selected-bg: #22304a;
   --rail-selected-fg: #e6edf3;
-  --alert-note: #4493f8;
-  --alert-note-bg: rgba(68, 147, 248, 0.10);
+  --alert-note: #58a6ff;
+  --alert-note-bg: rgba(68, 147, 248, 0.08);
   --alert-tip: #3fb950;
-  --alert-tip-bg: rgba(63, 185, 80, 0.10);
-  --alert-important: #ab7df8;
-  --alert-important-bg: rgba(171, 125, 248, 0.10);
+  --alert-tip-bg: rgba(63, 185, 80, 0.08);
+  --alert-important: #b392f8;
+  --alert-important-bg: rgba(171, 125, 248, 0.08);
   --alert-warning: #d29922;
-  --alert-warning-bg: rgba(210, 153, 34, 0.10);
-  --alert-caution: #f85149;
-  --alert-caution-bg: rgba(248, 81, 73, 0.10);
+  --alert-warning-bg: rgba(210, 153, 34, 0.08);
+  --alert-caution: #ff6a61;
+  --alert-caution-bg: rgba(248, 81, 73, 0.08);
 }
 html, body {
   margin: 0;

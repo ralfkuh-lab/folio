@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { installTauriMock, TauriMockHandles } from '../helpers';
-import { applyViewTheme, initViewTheme } from '../../app/view/theme';
+import { applyViewTheme, initViewTheme, reapplyCurrentViewTheme } from '../../app/view/theme';
 
 describe('view/theme', () => {
     let handles: TauriMockHandles;
@@ -77,5 +77,33 @@ describe('view/theme', () => {
             themeId: 'github',
             dark: false,
         });
+    });
+
+    it('reapply waehrend eines laufenden Theme-Wechsels nutzt die angeforderte ID', async () => {
+        // Regression: View-Theme umstellen und direkt danach Hell/Dunkel
+        // wechseln (reapplyCurrentViewTheme) liess das ALTE Theme gewinnen,
+        // weil die ID erst nach dem await uebernommen wurde.
+        handles.invoke.mockResolvedValue('.markdown-body { font-family: serif; }');
+        await applyViewTheme('classic');
+        expect(document.body.dataset.viewTheme).toBe('classic');
+
+        var pending: Array<() => void> = [];
+        handles.invoke.mockImplementation((cmd: string, args?: any) => {
+            if (cmd !== 'view_theme_css') return Promise.resolve();
+            var css = args.themeId === 'standard' ? '' : '.markdown-body { font-family: serif; }';
+            return new Promise((resolve) => pending.push(() => resolve(css)));
+        });
+
+        var switching = applyViewTheme('standard');
+        var reapplying = reapplyCurrentViewTheme();
+        pending.forEach((resolve) => resolve());
+        await Promise.all([switching, reapplying]);
+
+        expect(handles.invoke).toHaveBeenLastCalledWith('view_theme_css', {
+            themeId: 'standard',
+            dark: false,
+        });
+        expect(document.body.dataset.viewTheme).toBe('standard');
+        expect(document.getElementById('view-theme-style')?.textContent).toBe('');
     });
 });
