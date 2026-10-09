@@ -436,6 +436,13 @@ nicht aussagekräftig. Zu testen: Kaltstart, laufende Instanz, beide Werte von
 
 ## Niedrige Priorität
 
+- **E2E-Isolation: Szenario 47 lässt den Vault-Suchmodus offen** (gefunden
+  2026-10-09). `lib/reset.py` beendet die Volltextsuche nicht; läuft `66`
+  direkt nach `47`, zeigt sein Screenshot die Ergebnisliste aus 47
+  (Mismatch knapp über 1 %). In der Gesamtreihenfolge fällt es nicht auf, weil
+  49/57 dazwischen liegen. Fix: kanonischer Reset beendet die Suche (Klick auf
+  `#vault-search-exit` bzw. eigener Hook) oder 47 räumt am Ende selbst auf.
+
 - ✅ **Wikilink-Index-TTL + Fokus-Invalidierung — durch W8 erledigt
   2026-08-19.** Die Entscheidung von 2026-08-13 („bleibt bei 30 s") ist
   **überholt**: sie beruhte auf einem 8 200-Dateien-Workspace. In einem
