@@ -1,7 +1,7 @@
 # Spec: Vault-Tree-Filter (Sicht-Filter über dem Lazy-Baum)
 
-Status: **Revision 3, beschlossen 2026-07-21** (User-Feedback aus zwei
-Test-Runden). Ursprung: `docs/feature-ideen.md` → „Vault-Tree-Filter".
+Status: **Revision 4, beschlossen 2026-10-09** (R3 vom 2026-07-21 gilt
+weiter, R4 ergänzt den Tiefenfilter und den Ordnerbereich). Ursprung: `docs/feature-ideen.md` → „Vault-Tree-Filter".
 
 ## Revisions-Historie (Kurzfassung)
 
@@ -17,6 +17,14 @@ Test-Runden). Ursprung: `docs/feature-ideen.md` → „Vault-Tree-Filter".
   über dem echten Lazy-Baum. Kein Backend-Walk, keine Caps, kein
   separater Render-Modus. Suchraum steuert der User über Aufklappen —
   unterstützt durch „eine Ebene tiefer" und „alles einklappen".
+- **R4 (2026-10-09)**: Opt-in-**Tiefenfilter** (Chip `**`) und
+  **Ordnerbereich** („In diesem Ordner filtern"). Anlass: Eine Datei ist
+  nach Namensteil bekannt, aber nicht ihr Unterordner; R3 findet nur, was
+  schon aufgeklappt ist. R4 holt den Backend-Walk zurück, aber **ohne die
+  R1/R2-Fehler**: Deckel auf **Treffer** statt auf besuchte Einträge,
+  Zeitbudget, kein separater Render-Modus — Aufklappen und Ausblenden
+  laufen über den echten Lazy-Baum wie beim Git-Filter. Gitignore wird
+  bewusst NICHT angewandt (siehe R4-Abschnitt).
 
 ## Modell (R3)
 
@@ -131,6 +139,163 @@ Query flüchtig. Expand-Zustand wie bisher im `Vault`-State.
   Dateien weg, Ordner sichtbar, Highlight da; Ebene-tiefer-Button
   erweitert den Suchraum (neuer Treffer erscheint); Alles-einklappen;
   Zeilen-X räumt auf. Baselines erneuert der Orchestrator.
+
+## R4: Tiefenfilter und Ordnerbereich
+
+### Anwendungsfall
+
+„Ich kenne einen Teil des Dateinamens, nicht den Unterordner" — optional
+mit „…aber ich weiß, in welchem Projekt". Referenzfall aus dem
+User-Report: `~/dev/sgk/.herd/matrix-call-korr1-astra-prompt.md`, Pin
+`~/dev`. `.herd/` ist **versteckt UND per globaler Git-Ignore-Datei
+ignoriert** — ein gitignore-respektierender Walk fände die Datei nie.
+
+### Bedienung
+
+- **Chip `**`** (`#vault-filter-deep`, zwischen `git` und Zeilen-X;
+  Tooltip „Auch in Unterordnern suchen"). Toggle, **persistiert**
+  (`vault_filter_deep`, Default aus). An = Tiefenmodus für den
+  Namensfilter über **alle Pins**.
+- **Kontextmenü „In diesem Ordner filtern"** (`filter-folder`) auf jedem
+  Ordner im Vault-Baum (direkt unter „In diesem Ordner suchen"). Öffnet
+  die Filterzeile, setzt den **Ordnerbereich** und fokussiert das Input.
+  Ein Ordnerbereich impliziert den Tiefenmodus, **unabhängig vom
+  Chip-Zustand** (der persistierte Chip-Wert wird nicht verändert).
+- **Bereichs-Chip** `#vault-filter-scope` links im Bar vor dem Input,
+  nur sichtbar bei gesetztem Bereich: `📁 <Ordnername> ✕`, Tooltip =
+  voller Pfad. ✕ entfernt den Bereich (zurück zu „alle Pins"; ob dann
+  tief gefiltert wird, entscheidet wieder der Chip). Der Bereich ist
+  **flüchtig**: Zeilen-X, Funnel-Toggle und Escape bei leerem Input
+  (Schließen) entfernen ihn; Escape bei Text leert nur den Text.
+- Ein erneutes „In diesem Ordner filtern" ersetzt den Bereich, behält
+  aber die eingegebene Query.
+
+### Semantik im Tiefenmodus
+
+Aktiv, wenn `(chip an ODER Bereich gesetzt) UND Query ≥ 2 Zeichen`
+(nach `trim`). Darunter gilt das R3-Verhalten unverändert.
+
+1. Das Backend liefert die **Trefferliste** (Dateien, deren **Name**
+   case-insensitive die Query enthält) und die Menge der
+   **Vorfahren-Ordner** jedes Treffers bis einschließlich der Pin-Wurzel
+   (bzw. bei Bereich: von der Pin-Wurzel über den Bereichsordner bis zum
+   Treffer — der Pfad Pin-Wurzel → Bereich gehört dazu).
+2. Das Frontend klappt diese Ordner über den bestehenden
+   `vault_expand_paths` auf (Soft-Cap 1 000, Pin-Grenze,
+   Hidden-/md-Regeln, `treeMutatedDuringExpand`-Muster wie beim
+   Git-Filter) und merkt sich die **vom Filter neu aufgeklappten** Pfade.
+3. Sichtbarkeit in der Pinned-Section: Datei sichtbar ⇔ in der
+   Trefferliste (und ggf. git-geändert, wenn der Git-Chip an ist).
+   Ordner sichtbar ⇔ Vorfahre einer sichtbaren Datei oder auf dem Pfad
+   Pin-Wurzel → Bereich. **Alle anderen Knoten erhalten `vf-hidden`**,
+   auch Pin-Wurzeln ohne Treffer. Highlight wie R3.
+4. Recent-Section: R3-Regel (Namensmatch); bei gesetztem Bereich
+   zusätzlich nur Einträge unterhalb des Bereichs.
+5. **Leere Trefferliste** → Hinweis im `#vault-tree-notice`
+   („Keine Treffer"), Baum zeigt in der Pinned-Section nichts außer dem
+   Bereichspfad.
+6. **Deckel**: max. **500 Treffer** oder **3 s Zeitbudget** → Antwort
+   `truncated: true`, `reason: "cap" | "time"`. Hinweis „Viele Treffer –
+   Suchbegriff eingrenzen" (cap) bzw. „Suche abgebrochen – Ordner zu
+   groß, Bereich eingrenzen" (time). Die bis dahin gefundenen Treffer
+   werden angezeigt. Kein stilles Teilergebnis.
+7. **Aufräumen**: Sobald der Tiefenmodus endet (Query < 2 Zeichen,
+   Chip aus, Bereich entfernt, Schließen, Reset), werden die vom Filter
+   neu aufgeklappten Ordner wieder zugeklappt (neuer Command
+   `vault_collapse_paths`, deregistriert Watches wie
+   `vault_collapse_all`). Was der Nutzer vorher offen hatte, bleibt offen.
+   Bekannte Grenze: Ein Ordner, den der Nutzer **während** des Filters
+   unterhalb eines vom Filter geöffneten Ordners aufklappt, geht mit zu
+   (`on_collapse` entfernt den Teilbaum). Bei Query-Änderung im
+   Tiefenmodus wird NICHT zwischendurch zugeklappt; die gemerkte Menge
+   wächst, Nicht-Treffer-Ordner sind ohnehin `vf-hidden`.
+8. **Nebenläufigkeit**: Generation-Token pro Anfrage; ältere Antworten
+   werden verworfen. Single-Flight: Während eine Anfrage läuft, wird nur
+   die **letzte** neue Query vorgemerkt und danach ausgeführt (Muster
+   `expandGitPending`). Debounce bleibt 150 ms.
+
+### Walk-Regeln (Backend)
+
+- Wurzeln: ohne Bereich alle Pins über `search::resolve_scope(...,
+  SearchScope::Vault)` (Ordner-Pins rekursiv, Datei-Pins direkt,
+  Overlap-Dedup) — dieselbe Auflösung wie Palette und Volltextsuche.
+  Mit Bereich: nur der Bereichsordner.
+- **Gitignore wird NICHT angewandt** (`standard_filters(false)`): Der
+  Vault-Baum zeigt ignorierte Dateien (gedimmt) — ein Filter darf nichts
+  verschweigen, was der Baum zeigt. Der Schutz vor `node_modules` & Co.
+  ist der Treffer-Deckel plus Zeitbudget, nicht ein Visit-Deckel (das war
+  der R2-Fehler: Deckel griff vor dem ersten Treffer).
+- Versteckte Einträge folgen `settings.vaultShowHidden` (gleiche Regel
+  wie der Baum, `child_is_filtered`). `.git` bleibt **immer** draußen.
+  Symlink-Verzeichnisse werden **nicht** betreten (wie Palette).
+- „Nur Markdown" an → nur `FileKind::Markdown`-Treffer (endungsbasiert,
+  `classify`), konsistent mit dem Lazy-Typ-Filter.
+- Match: `file_name.to_lowercase().contains(query.to_lowercase())`
+  (entspricht `toLowerCase` im Frontend; kein Unicode-Case-Folding).
+- Parallel über `ignore::WalkBuilder::build_parallel` (Muster
+  `search.rs::run_search_parallel`), Treffer sortiert zurückgeben
+  (deterministisch). Zeitbudget und Deckel brechen den Walk ab
+  (`WalkState::Quit`).
+- Bereich-Validierung: absolut, existiert, ist Verzeichnis — sonst
+  Fehler (`errors.vault.filterScopeNotFound` / `…filterScopeInvalid`
+  mit `{detail}`); das Frontend entfernt dann den Bereich, zeigt den
+  Fehler transient und fällt auf den Chip-Zustand zurück.
+
+### Schnittstellen
+
+- `vault_filter_find { query: String, scope: Option<String> }` →
+  `{ files: string[], dirs: string[], truncated: bool, reason: "cap"|"time"|null }`.
+  Pfade mit Forward-Slashes. `dirs` = Vorfahren (s. o.), dedupliziert,
+  flach nach Tiefe sortiert. Hidden/md-Flags liest der Command selbst
+  (`read_vault_list_options`). Lock-Regel wie `palette_files`: Pins
+  klonen, Locks VOR dem Walk freigeben; Walk in `spawn_blocking`.
+- `vault_expand_paths` liefert additiv `paths: string[]` (die neu
+  expandierten Pfade aus `ExpandPathsResult.paths`).
+- `vault_collapse_paths { paths: string[] }` → `{ html }` wie
+  `vault_collapse_all`, nur für die übergebenen Pfade.
+- `vault_filter_options_get/set`: additives Feld `deep: bool`
+  (`panel_state.vault_filter_deep`, serde-default `false`).
+- Automation/E2E: `window.__folioVaultFilterInFolder(path)` (Hook wie
+  `__folioVaultFilterReset`, ruft denselben Pfad wie das Kontextmenü);
+  der Reset-Hook setzt auch Chip und Bereich zurück und räumt auf.
+
+### Badge
+
+`filter-active` wie bisher (Query, md, git); zusätzlich bei gesetztem
+Bereich.
+
+### Tests (R4)
+
+- **Rust** (`vault_filter.rs` o. ä., Tempdir-Fixtures, kein Netz):
+  Treffer case-insensitive · nur Dateinamen (Ordnername matcht nicht als
+  Treffer) · versteckte Dateien je nach Flag · `.git` nie · Symlink-Dir
+  nicht betreten · Datei in gitignoriertem Ordner (mit `.gitignore` in
+  einem `git init`-Repo) **wird gefunden** · md-only · Deckel →
+  `truncated`+`cap` · Zeitbudget (Test-Variante mit injizierbarem
+  Budget 0) → `time` · Datei-Pins · Bereich: nur darunter, Vorfahren
+  inkl. Pfad Pin-Wurzel → Bereich · Bereich nicht existent / relativ /
+  Datei → Fehler · `expand_paths` liefert `paths` ·
+  `collapse_paths` entfernt nur die angegebenen Teilbäume.
+- **vitest** (`tests/vault/filter.test.ts`): Chip togglet + persistiert
+  `deep` · unter 2 Zeichen kein `vault_filter_find` · Antwort → genau
+  Treffer + Vorfahren sichtbar, Rest `vf-hidden` · veraltete Antwort
+  (alte Generation) wird verworfen · Single-Flight (nur letzte Query
+  nachgeholt) · Aufräumen ruft `vault_collapse_paths` mit genau den
+  vom Filter geöffneten Pfaden (nicht mit vorher offenen) · Bereich-Chip
+  sichtbar/✕/flüchtig beim Schließen · Bereich impliziert Tiefe bei
+  Chip aus · Bereich-Fehler entfernt Bereich · Badge bei Bereich ·
+  Truncation-/Leer-Hinweis.
+- **E2E `66_vault_filter_deep`**: feste Fixture
+  `/tmp/folio-e2e-deepfilter` (Grund wie 56/57/59: Pfad steht in der
+  Baseline), per `git init` mit `.gitignore` (`ignoriert/`), repo-lokale
+  `core.excludesFile`. Gepinnt: `projekt/` mit
+  `a/b/c/ziel-tief.md`, `.versteckt/ziel-versteckt.md`,
+  `ignoriert/ziel-ignoriert.md`, `andere/ziel-anders.md`,
+  `leer/nichts.md`. Prüft: Chip an + `ziel` → alle vier Treffer
+  sichtbar und ihre Ordner aufgeklappt, `leer/` versteckt; Bereich
+  `projekt/a` per Hook → nur `ziel-tief.md`; Schließen → vom Filter
+  geöffnete Ordner wieder zu; `vaultShowHidden=false` →
+  `ziel-versteckt.md` fehlt. Ein Screenshot (Chip an, Bereich gesetzt).
 
 ## Abnahme-Gates
 
