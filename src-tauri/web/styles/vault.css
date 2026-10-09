@@ -11,6 +11,15 @@
   -webkit-user-select: none;
 }
 body.vault-hidden .vault-region { display: none; }
+/* Kopf, Suche, Filterzeile und Hinweis bleiben beim Scrollen der Rail
+   stehen. Gescrollt wird weiter `.vault-region` selbst — Scroll-Restore
+   und Reveal-Logik bleiben unberührt. */
+.vault-top {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--rail-bg);
+}
 .vault-header {
   display: flex;
   align-items: center;
