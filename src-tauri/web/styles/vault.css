@@ -796,6 +796,52 @@ html.theme-dark .vault-header .vault-cmd.filter-active {
 }
 .vault-tree-notice[hidden] { display: none; }
 
+/* R4-Bereichs-Zeile: eigene Zeile ueber der Filterzeile, volle Breite.
+   📁 + Ordnername (Ellipsis) + ✕ rechts; dezent (Rail-Hintergrund,
+   gedaempftes Icon), damit der Name auch in schmalen Rails lesbar bleibt. */
+.vault-filter-scope {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  width: 100%;
+  height: 24px;
+  margin: 0 0 4px;
+  padding: 0 2px;
+  color: var(--rail-fg-muted);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+}
+.vault-filter-scope[hidden] { display: none; }
+.vault-filter-scope-icon { flex: 0 0 auto; }
+.vault-filter-scope-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--rail-fg);
+}
+.vault-filter-scope-remove {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--rail-fg-muted);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+.vault-filter-scope-remove:hover {
+  background: var(--rail-hover-bg);
+  color: var(--rail-fg);
+}
+
 .vault-filter-chip,
 .vault-filter-md {
   flex: 0 0 auto;

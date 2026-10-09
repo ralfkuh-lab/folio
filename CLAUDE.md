@@ -448,11 +448,39 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   `tests/vault/filter.test.ts`). „Schließen = Aufräumen": Zeilen-X
   (`#vault-filter-close`, immer sichtbar) / Funnel / Escape leeren die
   Query; Text-Lösch-✕ ist ins Input eingebettet; Funnel-Badge bei jedem
-  aktiven Filter (Query, md-only, git). **Baum-Operationen im `vault-header`** (filter-unabhängig):
-  `#vault-expand-level` (⊞, Command `vault_expand_level` — expandiert
-  alle sichtbaren zugeklappten Ordner eine Ebene über den
-  `on_expand`-Pfad inkl. Watcher, Soft-Cap 1 000 neue Ordner/Klick →
-  `capped` + transienter Hinweis `#vault-tree-notice`) und
+  aktiven Filter (Query, md-only, git, Bereich).
+  **R4-Tiefenfilter** (Chip `#vault-filter-deep` `**`, Spec-Vertrag):
+  aktiv bei `(Chip ODER Ordnerbereich) UND Query ≥ 2 Zeichen`. Backend
+  `vault_filter_find` läuft parallel (`ignore::WalkBuilder::build_parallel`)
+  über die Pins (`search::resolve_scope`) bzw. den Bereich, **ohne
+  Gitignore** (`standard_filters(false)`; der Baum zeigt ignorierte Dateien
+  gedimmt — der Filter darf nichts verschweigen), `.git` immer raus,
+  Symlink-Dirs nicht betreten, `vaultShowHidden`/md-only respektiert.
+  Deckel **500 Treffer** bzw. **3 s** → `truncated` + `reason
+  ("cap"|"time")`; `truncated` erst bei einem WEITEREN Treffer, kein
+  Visit-Deckel (der R2-Fehler). Antwort `{files, dirs, truncated, reason}`;
+  `dirs` = Vorfahren der Treffer inkl. Pin-Wurzel (bzw. Kette
+  Pin-Wurzel → Bereich). Frontend klappt `dirs` über `vault_expand_paths`
+  auf (additives `paths` = neu expandierte Ordner, gemerkt zum Aufräumen),
+  Sicht kommt aus der Trefferliste. **Alle Baum-Operationen des
+  Tiefenfilters laufen in EINER serialisierten Sync-Schleife**
+  (`runDeepSync`, nie doppelt; `deepSyncDirty` koalesziert Aktionen, der
+  Wunschzustand wird erst beim Ausführen gelesen); Schlüssel = Query +
+  Bereich + md-only + `vaultShowHidden`, veraltetes Voll-HTML wird nie
+  angewandt (`refreshVault()` stattdessen), die tatsächlich neu geöffneten
+  `paths` werden IMMER eingesammelt. Aufräumen (Query < 2, Chip aus,
+  Bereich weg, Schließen, Reset) ruft `vault_collapse_paths` mit **genau
+  den vom Filter geöffneten** Ordnern — vorher offene bleiben offen. Der
+  Expand-Soft-Cap zeigt den bestehenden `vault.tree.expandCapped`-Hinweis
+  (Vorrang vor „Keine Treffer"). Bereich als **eigene Zeile**
+  `#vault-filter-scope` über der Filterzeile (📁 Name mit Ellipsis ✕,
+  Tooltip = Pfad, flüchtig); Bereich-Fehler
+  (`errors.vault.filterScopeNotFound`/`…Invalid`) entfernen den Bereich
+  und zeigen den Fehler transient; Hinweise „Keine Treffer"/cap/time in
+  `#vault-tree-notice`. Persistenz `vault_filter_deep`. **Baum-Operationen im `vault-header`** (filter-unabhängig):
+  `#vault-expand-roots` (Chevron, Command `vault_expand_roots` —
+  expandiert die zugeklappten Pin-Wurzel-Ordner über den
+  `on_expand`-Pfad inkl. Watcher) und
   `#vault-collapse-all` (⊟, Command `vault_collapse_all`).
   **„Nur Markdown"-Toggle** bleibt Backend-Lazy:
   `build_dir_children_html` filtert pro Expand (inkl. Pin-Wurzeln);
@@ -1203,7 +1231,7 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
 
 ## E2E-Test-Suite
 
-Vollständige UI-Coverage in `tests/e2e/` (65 Szenarien, Python +
+Vollständige UI-Coverage in `tests/e2e/` (66 Szenarien, Python +
 Pillow): Boot, View-/Edit-/Split-Mode, Theme, Vault, Find (inkl.
 Code-View), Workspace, Save-Roundtrip durch alle BOM/EOL-Kombis,
 Undo/Redo, Toolbar-Commands (Bold/Italic/Heading), Menü-Coverage
@@ -1212,7 +1240,8 @@ History-Back/Forward, Rechtsklick-Kontextmenüs, echter TOC-DOM-Klick,
 HTML-View, Tabs (API/UI/Restore/Reorder), View-/Custom-Themes,
 Theme-CRUD/-Browser/-Import-Export, Export-Highlighting, Mermaid
 (View + Export), Link-in-neuem-Tab, Vault-Volltextsuche (API + UI),
-Vault-Filter, Tab-Kontextmenü, Command Palette, Statusleiste,
+Vault-Filter (R3 + Tiefenfilter/Ordnerbereich R4), Tab-Kontextmenü,
+Command Palette, Statusleiste,
 Wikilinks/Tags, Task-Checkboxen, Git-Status/-Diff/-Filter,
 versteckte Vault-Einträge, Find-Bar-Regex/-Ersetzen,
 Vault-Dateioperationen (Ordner anlegen/umbenennen/löschen),

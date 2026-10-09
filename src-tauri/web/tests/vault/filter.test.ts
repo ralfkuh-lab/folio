@@ -28,6 +28,11 @@ function buildDom(opts?: { pinRootOpen?: boolean }): void {
                     aria-pressed="false"></button>
             </header>
             <div class="vault-filter" id="vault-filter" hidden>
+                <div class="vault-filter-scope" id="vault-filter-scope" hidden>
+                    <span class="vault-filter-scope-icon" aria-hidden="true">📁</span>
+                    <span class="vault-filter-scope-name" id="vault-filter-scope-name"></span>
+                    <button type="button" id="vault-filter-scope-remove"></button>
+                </div>
                 <div class="vault-filter-bar">
                     <div class="vault-filter-input-wrap">
                         <input type="search" id="vault-filter-input" />
@@ -35,6 +40,7 @@ function buildDom(opts?: { pinRootOpen?: boolean }): void {
                     </div>
                     <button type="button" id="vault-filter-md" aria-pressed="false">.md</button>
                     <button type="button" id="vault-filter-git" aria-pressed="false">git</button>
+                    <button type="button" id="vault-filter-deep" aria-pressed="false">**</button>
                     <button type="button" id="vault-filter-close"></button>
                 </div>
             </div>
@@ -119,6 +125,7 @@ function configureInvoke(opts?: {
     barVisible?: boolean;
     markdownOnly?: boolean;
     gitChangedOnly?: boolean;
+    deep?: boolean;
 }): void {
     tauri.invoke.mockImplementation((cmd: string) => {
         if (cmd === 'vault_filter_options_get') {
@@ -126,6 +133,7 @@ function configureInvoke(opts?: {
                 markdownOnly: !!opts?.markdownOnly,
                 barVisible: !!opts?.barVisible,
                 gitChangedOnly: !!opts?.gitChangedOnly,
+                deep: !!opts?.deep,
             });
         }
         if (cmd === 'vault_filter_options_set') {
@@ -809,5 +817,561 @@ describe('vault/filter — automation reset', () => {
         expect($('vault-filter-git').getAttribute('aria-pressed')).toBe('false');
         expect($('vault-filter-toggle').classList.contains('filter-active')).toBe(false);
         expect(isVisible('/vault/Beta.md')).toBe(true);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// R4 — Tiefenfilter und Ordnerbereich
+// ---------------------------------------------------------------------------
+
+describe('vault/filter — deep filter (R4)', () => {
+    function deepInvoke(
+        handlers: Record<string, (args?: any) => unknown>,
+    ): void {
+        tauri.invoke.mockImplementation((cmd: string, args?: any) => {
+            const handler = handlers[cmd];
+            if (handler) return Promise.resolve(handler(args));
+            if (cmd === 'vault_filter_options_get') {
+                return Promise.resolve({
+                    markdownOnly: false,
+                    barVisible: false,
+                    gitChangedOnly: false,
+                    deep: false,
+                });
+            }
+            if (cmd === 'vault_filter_options_set') return Promise.resolve(undefined);
+            if (cmd === 'vault_build_tree') {
+                return Promise.resolve($('vault-tree').innerHTML);
+            }
+            if (cmd === 'vault_expand_paths') {
+                return Promise.resolve({
+                    html: $('vault-tree').innerHTML,
+                    capped: false,
+                    expanded: 0,
+                    paths: [],
+                });
+            }
+            if (cmd === 'vault_collapse_paths') {
+                return Promise.resolve({ html: $('vault-tree').innerHTML });
+            }
+            if (cmd === 'file_icons_batch') return Promise.resolve({});
+            return Promise.resolve(undefined);
+        });
+    }
+
+    function clickDeep(): void {
+        $('vault-filter-deep').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    }
+
+    async function typeAndSettle(q: string): Promise<void> {
+        await typeQuery(q);
+        vi.advanceTimersByTime(150);
+        await flushMicro();
+    }
+
+    it('chip toggles and persists deep', async () => {
+        configureInvoke();
+        await initModules();
+        clickDeep();
+        await flushMicro();
+        expect($('vault-filter-deep').getAttribute('aria-pressed')).toBe('true');
+        const setCalls = tauri.invoke.mock.calls.filter(
+            (c) => c[0] === 'vault_filter_options_set',
+        );
+        const last = setCalls[setCalls.length - 1][1] as { deep: boolean };
+        expect(last.deep).toBe(true);
+        clickDeep();
+        await flushMicro();
+        expect($('vault-filter-deep').getAttribute('aria-pressed')).toBe('false');
+        const last2 = tauri.invoke.mock.calls
+            .filter((c) => c[0] === 'vault_filter_options_set')
+            .pop()![1] as { deep: boolean };
+        expect(last2.deep).toBe(false);
+    });
+
+    it('below two characters no vault_filter_find is issued', async () => {
+        deepInvoke({ vault_filter_find: () => ({ files: [], dirs: [] }) });
+        await initModules();
+        clickDeep();
+        await flushMicro();
+        await typeAndSettle('a');
+        expect(
+            tauri.invoke.mock.calls.some((c) => c[0] === 'vault_filter_find'),
+        ).toBe(false);
+        await typeAndSettle('ab');
+        expect(
+            tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_filter_find').length,
+        ).toBe(1);
+    });
+
+    it('answer makes exactly hits + ancestors visible, everything else hidden', async () => {
+        deepInvoke({
+            vault_filter_find: () => ({
+                files: ['/vault/Alpha.md'],
+                dirs: ['/vault'],
+                truncated: false,
+                reason: null,
+            }),
+            vault_expand_paths: () => ({
+                html: $('vault-tree').innerHTML,
+                capped: false,
+                expanded: 1,
+                paths: ['/vault'],
+            }),
+        });
+        await initModules();
+        clickDeep();
+        await flushMicro();
+        await typeAndSettle('alp');
+
+        expect(isVisible('/vault/Alpha.md')).toBe(true);
+        expect(isHidden('/vault/Beta.md')).toBe(true);
+        expect(isHidden('/vault/notes.txt')).toBe(true);
+        // Vorfahre der sichtbaren Datei bleibt sichtbar, andere Ordner nicht.
+        expect(isVisible('/vault')).toBe(true);
+        expect(isHidden('/vault/Notes')).toBe(true);
+        // Recent bleibt Namensmatch (R3-Regel).
+        expect(isHidden('/vault/old.md')).toBe(true);
+    });
+
+    it('discards a stale generation answer', async () => {
+        const resolvers: Array<(value: unknown) => void> = [];
+        deepInvoke({
+            vault_filter_find: () =>
+                new Promise((resolve) => {
+                    resolvers.push(resolve);
+                }),
+        });
+        await initModules();
+        clickDeep();
+        await flushMicro();
+        await typeAndSettle('alp');
+        expect(resolvers.length).toBe(1);
+
+        // Neue Query waehrend des Laufs: Generation steigt, Single-Flight
+        // startet noch keine zweite Anfrage.
+        await typeAndSettle('alph');
+        expect(resolvers.length).toBe(1);
+
+        // Alte (leere) Antwort darf den Baum NICHT leeren.
+        resolvers[0]({ files: [], dirs: [], truncated: false, reason: null });
+        await flushMicro();
+        expect(isVisible('/vault/Alpha.md')).toBe(true);
+        expect(isVisible('/vault')).toBe(true);
+
+        // Nachhol-Lauf mit der letzten Query.
+        expect(resolvers.length).toBe(2);
+        resolvers[1]({ files: ['/vault/Alpha.md'], dirs: ['/vault'], truncated: false, reason: null });
+        await flushMicro();
+        expect(isVisible('/vault/Alpha.md')).toBe(true);
+        expect(isHidden('/vault/Beta.md')).toBe(true);
+        expect(isHidden('/vault/Notes')).toBe(true);
+    });
+
+    it('single-flight keeps only the last query', async () => {
+        const sent: string[] = [];
+        const resolvers: Array<(value: unknown) => void> = [];
+        deepInvoke({
+            vault_filter_find: (args?: any) => {
+                sent.push(args.query);
+                return new Promise((resolve) => {
+                    resolvers.push(resolve);
+                });
+            },
+        });
+        await initModules();
+        clickDeep();
+        await flushMicro();
+        await typeAndSettle('aa');
+        expect(sent).toEqual(['aa']);
+        await typeAndSettle('ab');
+        await typeAndSettle('abc');
+        expect(sent).toEqual(['aa']);
+        resolvers[0]({ files: [], dirs: [], truncated: false, reason: null });
+        await flushMicro();
+        expect(sent).toEqual(['aa', 'abc']);
+    });
+
+    it('cleanup collapses only the folders the filter opened', async () => {
+        const collapseArgs: string[][] = [];
+        deepInvoke({
+            vault_filter_find: () => ({
+                files: ['/vault/Alpha.md'],
+                dirs: ['/vault', '/vault/Notes'],
+                truncated: false,
+                reason: null,
+            }),
+            // `/vault` war vorher schon offen → Backend meldet nur Notes neu.
+            vault_expand_paths: () => ({
+                html: $('vault-tree').innerHTML,
+                capped: false,
+                expanded: 1,
+                paths: ['/vault/Notes'],
+            }),
+            vault_collapse_paths: (args?: any) => {
+                collapseArgs.push(args.paths);
+                return { html: $('vault-tree').innerHTML };
+            },
+        });
+        await initModules();
+        clickDeep();
+        await flushMicro();
+        await typeAndSettle('alp');
+        expect(collapseArgs.length).toBe(0);
+
+        $('vault-filter-close').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+        expect(collapseArgs.length).toBe(1);
+        expect(collapseArgs[0]).toEqual(['/vault/Notes']);
+        expect(collapseArgs[0]).not.toContain('/vault');
+    });
+
+    it('scope implies deep with chip off; chip is removable and transient', async () => {
+        const findArgs: any[] = [];
+        deepInvoke({
+            vault_filter_find: (args?: any) => {
+                findArgs.push(args);
+                return {
+                    files: ['/vault/Alpha.md'],
+                    dirs: ['/vault'],
+                    truncated: false,
+                    reason: null,
+                };
+            },
+        });
+        const { filter } = await initModules();
+        filter.filterInFolder('/vault');
+        await flushMicro();
+        expect($('vault-filter-scope').hidden).toBe(false);
+        expect($('vault-filter-scope-name').textContent).toBe('vault');
+        expect($('vault-filter-scope').getAttribute('title')).toBe('/vault');
+        expect($('vault-filter-deep').getAttribute('aria-pressed')).toBe('false');
+        expect($('vault-filter-toggle').classList.contains('filter-active')).toBe(true);
+
+        await typeAndSettle('alp');
+        expect(findArgs.length).toBe(1);
+        expect(findArgs[0].scope).toBe('/vault');
+
+        $('vault-filter-scope-remove').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+        expect($('vault-filter-scope').hidden).toBe(true);
+
+        filter.filterInFolder('/vault');
+        await flushMicro();
+        expect($('vault-filter-scope').hidden).toBe(false);
+        $('vault-filter-close').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+        expect($('vault-filter-scope').hidden).toBe(true);
+    });
+
+    it('scope error clears the scope and shows the error transiently', async () => {
+        deepInvoke({
+            vault_filter_find: () =>
+                Promise.reject('errors.vault.filterScopeNotFound: /x'),
+        });
+        const { filter } = await initModules();
+        filter.filterInFolder('/vault');
+        await flushMicro();
+        expect($('vault-filter-scope').hidden).toBe(false);
+
+        await typeAndSettle('alp');
+        expect($('vault-filter-scope').hidden).toBe(true);
+        expect($('vault-tree-notice').hidden).toBe(false);
+        expect($('vault-tree-notice').textContent).toContain('filterScopeNotFound');
+        // Ohne Bereich/Chip faellt die Sicht auf R3 zurueck.
+        expect(isVisible('/vault/Alpha.md')).toBe(true);
+    });
+
+    it('shows empty and truncation notices', async () => {
+        let response: Record<string, unknown> = {
+            files: [],
+            dirs: [],
+            truncated: false,
+            reason: null,
+        };
+        deepInvoke({ vault_filter_find: () => response });
+        await initModules();
+        clickDeep();
+        await flushMicro();
+
+        await typeAndSettle('aa');
+        expect($('vault-tree-notice').hidden).toBe(false);
+        expect($('vault-tree-notice').textContent).toContain('Keine Treffer');
+
+        response = { files: [], dirs: [], truncated: true, reason: 'cap' };
+        await typeAndSettle('ab');
+        expect($('vault-tree-notice').textContent).toContain('Viele Treffer');
+
+        response = { files: [], dirs: [], truncated: true, reason: 'time' };
+        await typeAndSettle('abc');
+        expect($('vault-tree-notice').textContent).toContain('Suche abgebrochen');
+    });
+
+    // --- Korrekturrunde 1 (aus den Review-Repros uebernommen) ----------------
+
+    it('close during expand collapses late-opened paths and rejects late HTML', async () => {
+        let finish!: (value: unknown) => void;
+        const collapsed: string[][] = [];
+        deepInvoke({
+            vault_filter_find: () => ({ files: ['/vault/Alpha.md'], dirs: ['/vault', '/vault/Notes'] }),
+            vault_expand_paths: () => new Promise(resolve => { finish = resolve; }),
+            vault_collapse_paths: (args: any) => {
+                collapsed.push(args.paths);
+                return { html: $('vault-tree').innerHTML };
+            },
+        });
+        await initModules(); clickDeep(); await flushMicro(); await typeAndSettle('alp');
+        const lateHtml = $('vault-tree').innerHTML.replace('class="caret"', 'class="caret open"');
+        $('vault-filter-close').click(); await flushMicro();
+        finish({ html: lateHtml, paths: ['/vault/Notes'] }); await flushMicro();
+        expect(collapsed.flat(), 'late opened paths must be collapsed after close').toContain('/vault/Notes');
+        expect(
+            document.querySelector('li[data-path="/vault/Notes"] > .row > .caret')!.classList.contains('open'),
+        ).toBe(false);
+    });
+
+    it('expand IPC is single-flight across query generations', async () => {
+        const finishes: Array<(value: unknown) => void> = [];
+        deepInvoke({
+            vault_filter_find: () => ({ files: ['/vault/Alpha.md'], dirs: ['/vault'] }),
+            vault_expand_paths: () => new Promise(resolve => { finishes.push(resolve); }),
+        });
+        await initModules(); clickDeep(); await flushMicro(); await typeAndSettle('alp');
+        expect(finishes.length).toBe(1);
+        await typeAndSettle('alph');
+        expect(finishes.length, 'second expand must wait for first IPC').toBe(1);
+    });
+
+    it('old collapse HTML cannot replace a new deep generation', async () => {
+        let finish!: (value: unknown) => void;
+        deepInvoke({
+            vault_filter_find: () => ({ files: ['/vault/Alpha.md'], dirs: ['/vault', '/vault/Notes'] }),
+            vault_expand_paths: () => ({ html: $('vault-tree').innerHTML, paths: ['/vault/Notes'] }),
+            vault_collapse_paths: () => new Promise(resolve => { finish = resolve; }),
+        });
+        await initModules(); clickDeep(); await flushMicro(); await typeAndSettle('alp');
+        $('vault-filter-close').click(); await flushMicro();
+        await typeAndSettle('alph');
+        finish({ html: '<li data-stale-collapse="1"></li>' }); await flushMicro();
+        expect($('vault-tree').querySelector('[data-stale-collapse]')).toBeNull();
+    });
+
+    it('toggling markdown-only re-runs the deep filter', async () => {
+        let md = false;
+        deepInvoke({
+            vault_filter_options_set: (args: any) => { md = args.markdownOnly; },
+            vault_filter_find: () => ({ files: md ? [] : ['/vault/notes.txt'], dirs: md ? [] : ['/vault'] }),
+        });
+        await initModules();
+        $('vault-filter-md').click(); await flushMicro();
+        clickDeep(); await flushMicro(); await typeAndSettle('notes');
+        expect(isHidden('/vault/notes.txt')).toBe(true);
+        $('vault-filter-md').click(); await flushMicro();
+        expect(
+            isVisible('/vault/notes.txt'),
+            'matching .txt must return after disabling md-only',
+        ).toBe(true);
+    });
+
+    it('vaultShowHidden change invalidates the deep key (K2)', async () => {
+        let finds = 0;
+        deepInvoke({
+            vault_filter_find: () => {
+                finds += 1;
+                return { files: ['/vault/Alpha.md'], dirs: ['/vault'] };
+            },
+        });
+        await initModules();
+        clickDeep();
+        await flushMicro();
+        await typeAndSettle('alp');
+        expect(finds).toBe(1);
+        tauri.emitEvent('settings:changed', {
+            settings: { vaultShowHidden: false },
+            changed: ['vaultShowHidden'],
+        });
+        await flushMicro();
+        expect(finds, 'hidden change must re-issue the deep find').toBe(2);
+    });
+
+    it('recent matches cannot keep a no-hit pinned root visible', async () => {
+        deepInvoke({ vault_filter_find: () => ({ files: [], dirs: [], truncated: false, reason: null }) });
+        await initModules(); clickDeep(); await flushMicro(); await typeAndSettle('alp');
+        expect(
+            document
+                .querySelector('li.section[data-section="recent"] li[data-path="/vault/Alpha.md"]')!
+                .classList.contains('vf-hidden'),
+        ).toBe(false);
+        expect(isHidden('/vault'), 'pinned roots with no deep hit must be hidden').toBe(true);
+    });
+
+    it('expand cap shows a notice instead of a silent partial result', async () => {
+        deepInvoke({
+            vault_filter_find: () => ({
+                files: ['/vault/Notes/Alpha.md'],
+                dirs: ['/vault', '/vault/Notes'],
+                truncated: false,
+                reason: null,
+            }),
+            vault_expand_paths: () => ({
+                html: $('vault-tree').innerHTML,
+                capped: true,
+                expanded: 1000,
+                paths: [],
+            }),
+        });
+        await initModules(); clickDeep(); await flushMicro(); await typeAndSettle('alp');
+        expect($('vault-tree-notice').hidden, 'expand cap hides hits and needs a notice').toBe(false);
+    });
+
+    // --- Korrekturrunde 2 (aus der Nachpruefung uebernommen) -----------------
+
+    it('refresh from stale expand cannot reopen collapsed folders', async () => {
+        let finishExpand!: (value: unknown) => void;
+        const refreshes: Array<(value: unknown) => void> = [];
+        let holdRefresh = false;
+        let collapses = 0;
+        let closed = '';
+        deepInvoke({
+            vault_filter_find: () => ({
+                files: ['/vault/Alpha.md'],
+                dirs: ['/vault', '/vault/Notes'],
+            }),
+            vault_expand_paths: () => new Promise(resolve => { finishExpand = resolve; }),
+            vault_build_tree: () =>
+                holdRefresh ? new Promise(resolve => refreshes.push(resolve)) : $('vault-tree').innerHTML,
+            vault_collapse_paths: () => { collapses++; return { html: closed }; },
+        });
+        await initModules();
+        closed = $('vault-tree').innerHTML;
+        const opened = closed.replace('class="caret"', 'class="caret open"');
+        clickDeep(); await flushMicro(); await typeAndSettle('alp');
+        $('vault-filter-close').click(); await flushMicro();
+        holdRefresh = true;
+        finishExpand({ html: opened, paths: ['/vault/Notes'] }); await flushMicro();
+        expect(refreshes.length).toBe(1);
+        refreshes[0](opened); await flushMicro();
+        expect(collapses).toBe(1);
+        expect(
+            document.querySelector('li[data-path="/vault/Notes"] > .row > .caret')!.classList.contains('open'),
+            'late refresh must not reopen the collapsed tree',
+        ).toBe(false);
+    });
+
+    it('refresh from stale collapse cannot overwrite subsequent expand', async () => {
+        let finishCollapse!: (value: unknown) => void;
+        const refreshes: Array<(value: unknown) => void> = [];
+        let holdRefresh = false;
+        let expands = 0;
+        let closed = '';
+        let opened = '';
+        deepInvoke({
+            vault_filter_find: () => ({
+                files: ['/vault/Alpha.md'],
+                dirs: ['/vault', '/vault/Notes'],
+            }),
+            vault_expand_paths: () => { expands++; return { html: opened, paths: ['/vault/Notes'] }; },
+            vault_build_tree: () =>
+                holdRefresh ? new Promise(resolve => refreshes.push(resolve)) : $('vault-tree').innerHTML,
+            vault_collapse_paths: () => new Promise(resolve => { finishCollapse = resolve; }),
+        });
+        await initModules();
+        closed = $('vault-tree').innerHTML;
+        opened = closed.replace('class="caret"', 'class="caret open"');
+        clickDeep(); await flushMicro(); await typeAndSettle('alp');
+        $('vault-filter-close').click(); await flushMicro();
+        await typeAndSettle('alph');
+        holdRefresh = true;
+        finishCollapse({ html: closed }); await flushMicro();
+        expect(refreshes.length).toBe(1);
+        refreshes[0](closed); await flushMicro();
+        expect(expands).toBe(2);
+        expect(
+            document.querySelector('li[data-path="/vault/Notes"] > .row > .caret')!.classList.contains('open'),
+            'late refresh must preserve the new expanded tree',
+        ).toBe(true);
+    });
+
+    it('stale find rejection preserves the latest scope', async () => {
+        let rejectFirst!: (value: unknown) => void;
+        let finds = 0;
+        deepInvoke({
+            vault_filter_find: () => {
+                finds++;
+                return new Promise((_resolve, reject) => { if (finds === 1) rejectFirst = reject; });
+            },
+        });
+        const { filter } = await initModules();
+        filter.filterInFolder('/vault/old'); await typeAndSettle('alp');
+        filter.filterInFolder('/vault/new'); await flushMicro();
+        rejectFirst('old scope missing'); await flushMicro();
+        expect($('vault-filter-scope').getAttribute('title')).toBe('/vault/new');
+    });
+
+    it('error without scope does not retry indefinitely', async () => {
+        let finds = 0;
+        deepInvoke({
+            vault_filter_find: () => {
+                finds++;
+                return finds === 1 ? Promise.reject('backend error') : new Promise(() => {});
+            },
+        });
+        await initModules(); clickDeep(); await flushMicro(); await typeAndSettle('alp');
+        expect(finds, 'without scope the same failed request must not restart').toBe(1);
+    });
+
+    it('markdown rebuild cannot overwrite the following deep expand', async () => {
+        let md = false;
+        let holdRefresh = false;
+        let closed = '';
+        let opened = '';
+        const refreshes: Array<(value: unknown) => void> = [];
+        deepInvoke({
+            vault_filter_options_set: (args: any) => { md = args.markdownOnly; },
+            vault_filter_find: () => ({
+                files: md ? [] : ['/vault/Notes/notes.txt'],
+                dirs: md ? [] : ['/vault', '/vault/Notes'],
+            }),
+            vault_expand_paths: () => ({ html: md ? closed : opened, paths: md ? [] : ['/vault/Notes'] }),
+            vault_build_tree: () =>
+                holdRefresh ? new Promise(resolve => refreshes.push(resolve)) : $('vault-tree').innerHTML,
+        });
+        await initModules();
+        closed = $('vault-tree').innerHTML;
+        opened = closed.replace('class="caret"', 'class="caret open"');
+        $('vault-filter-md').click(); await flushMicro();
+        clickDeep(); await flushMicro(); await typeAndSettle('notes');
+        holdRefresh = true;
+        $('vault-filter-md').click(); await flushMicro();
+        expect(refreshes.length).toBe(1);
+        refreshes[0](closed); await flushMicro();
+        expect(
+            document.querySelector('li[data-path="/vault/Notes"] > .row > .caret')!.classList.contains('open'),
+            'old md rebuild must not collapse the new matching branch',
+        ).toBe(true);
+    });
+
+    it('error cleanup leaves the DOM collapsed when close races its response', async () => {
+        let finds = 0;
+        let finishCleanup!: (value: unknown) => void;
+        let closed = '';
+        let opened = '';
+        deepInvoke({
+            vault_filter_find: () => ++finds === 1
+                ? { files: ['/vault/Alpha.md'], dirs: ['/vault', '/vault/Notes'] }
+                : Promise.reject('backend error'),
+            vault_expand_paths: () => ({ html: opened, paths: ['/vault/Notes'] }),
+            vault_collapse_paths: () => new Promise(resolve => { finishCleanup = resolve; }),
+            vault_build_tree: () => closed || $('vault-tree').innerHTML,
+        });
+        await initModules();
+        closed = $('vault-tree').innerHTML;
+        opened = closed.replace('class="caret"', 'class="caret open"');
+        clickDeep(); await flushMicro(); await typeAndSettle('alp');
+        await typeAndSettle('alph');
+        expect(typeof finishCleanup).toBe('function');
+        $('vault-filter-close').click(); await flushMicro();
+        finishCleanup({ html: closed }); await flushMicro();
+        expect(document.querySelector('li[data-path="/vault/Notes"] > .row > .caret')!.classList.contains('open'), 'after error cleanup and close, the DOM must reflect collapsed backend folders').toBe(false);
     });
 });

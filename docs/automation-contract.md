@@ -15,6 +15,11 @@ Arbeitsdoku.
   Shortcuts auch auf diese Surface; Treffer werden über denselben
   `folio-find-state`-Pfad wie Editor/View-Suche gemeldet.
 - `window.__TAURI__` kommt von der Tauri-Runtime.
+- `window.__folioVaultFilterReset()` räumt den Vault-Tree-Filter auf
+  (Query, Zeile, Chips, Ordnerbereich; klappt die vom Tiefenfilter
+  geöffneten Ordner wieder zu) — der kanonische E2E-Reset nutzt ihn.
+  `window.__folioVaultFilterInFolder(path)` setzt den Ordnerbereich des
+  Tiefenfilters (R4), genau wie der Kontextmenü-Eintrag `filter-folder`.
 - `window.__folioInvoke` und `window.openDocument` bleiben als bewusste
   DevTools-Debug-Surface erhalten.
 
@@ -177,6 +182,11 @@ Wichtige stabile Selektor-Gruppen:
   `#export-more-toggle` und `#export-more-cards`.
 - Vault: `.section`, `.node`, `.row`, `.caret`, `ul.children`,
   `data-path="<normalized-absolute-path>"`.
+- Vault-Tree-Filter: `#vault-filter`, `#vault-filter-input`,
+  `#vault-filter-toggle`, `#vault-filter-md`, `#vault-filter-git`,
+  `#vault-filter-deep` (R4-Tiefenfilter), `#vault-filter-scope` mit
+  `#vault-filter-scope-name`/`#vault-filter-scope-remove` (R4-Ordnerbereich),
+  `#vault-filter-close`, `#vault-tree-notice`.
 
 ## Automation-API
 
