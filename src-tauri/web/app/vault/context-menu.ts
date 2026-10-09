@@ -42,6 +42,7 @@ const ICONS: Record<string, string> = {
     paste: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="9" height="11" rx="1"/><path d="M6 3.5V3a2 2 0 0 1 4 0v.5"/><path d="M6.5 8.5h3M8 7v3"/></svg>',
     delete: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5h10M6.5 4.5V3a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1.5M5 4.5l.5 8a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1l.5-8"/></svg>',
     'search-folder': '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>',
+    'filter-folder': '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3h11l-4.25 5v4.5l-2.5 1.25V8z"/></svg>',
     'show-changes': '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3.5h4.5M3 8h3M3 12.5h4.5"/><path d="M10 3.5h3v9h-3z"/></svg>',
     'wikilink-root-on': '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 9.5l3-3"/><path d="M8.5 4.5l1-1a2.5 2.5 0 0 1 3.5 3.5l-1 1"/><path d="M7.5 11.5l-1 1a2.5 2.5 0 0 1-3.5-3.5l1-1"/></svg>',
     'wikilink-root-off': '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 4.5l1-1a2.5 2.5 0 0 1 3.5 3.5l-1 1"/><path d="M7.5 11.5l-1 1a2.5 2.5 0 0 1-3.5-3.5l1-1"/><path d="M2 2l12 12"/></svg>',
@@ -145,6 +146,7 @@ export function openContextMenu(
     if (isDir) mid.push(['new-file', t('vault.contextMenu.newFile')]);
     if (isDir) mid.push(['new-folder', t('vault.contextMenu.newFolder')]);
     if (isDir) mid.push(['search-folder', t('vault.contextMenu.searchInFolder')]);
+    if (isDir) mid.push(['filter-folder', t('vault.contextMenu.filterInFolder')]);
     mid.push(['rename', t('vault.contextMenu.rename')]);
     if (!isDir && options?.gitModified && options?.isText) {
         mid.push(['show-changes', t('vault.contextMenu.showChanges')]);
@@ -350,6 +352,12 @@ export function initContextMenu(d: Deps): void {
             safeInvoke('workspace_remove_recent', { path }, 'workspace_remove_recent');
         } else if (act === 'search-folder' && isDir) {
             searchInFolder(path);
+        } else if (act === 'filter-folder' && isDir) {
+            // Kein Direkt-Import von vault/filter.ts: der zoege den Zyklus
+            // context-menu → filter → tree → context-menu. Der Frontend-Hook
+            // ist ohnehin der von Spec/E2E verlangte Einstieg.
+            const hook = (window as any).__folioVaultFilterInFolder;
+            if (typeof hook === 'function') hook(path);
         } else if (act === 'show-changes' && !isDir) {
             void openGitDiff(path, deps.showStatus);
         } else if (act === 'rename') {

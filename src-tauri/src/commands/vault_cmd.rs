@@ -214,6 +214,8 @@ pub struct VaultExpandPathsResponse {
     pub html: String,
     pub capped: bool,
     pub expanded: usize,
+    /// Die tatsaechlich neu expandierten Pfade (R4).
+    pub paths: Vec<String>,
 }
 
 /// Expandiert eine explizite Verzeichnisliste ueber den bestehenden
@@ -270,6 +272,7 @@ pub async fn vault_expand_paths(
         html,
         capped,
         expanded: expanded.len(),
+        paths: expanded,
     })
 }
 
@@ -313,6 +316,46 @@ pub async fn vault_collapse_all(
     Ok(VaultCollapseAllResponse { html })
 }
 
+/// Klappt genau die uebergebenen Pfade samt Teilbaum zu (R4, Aufraeumen des
+/// Tiefenfilters) und deregistriert deren Watches. Anders als
+/// `vault_collapse_all` bleiben vorher offene, nicht uebergebene Ordner offen.
+#[tauri::command]
+pub async fn vault_collapse_paths(
+    paths: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<VaultCollapseAllResponse, String> {
+    let (removed, html) = {
+        let workspace = state
+            .workspace
+            .lock()
+            .map_err(|_| "workspace lock poisoned".to_string())?;
+        let panel = state
+            .panel_state
+            .lock()
+            .map_err(|_| "panel state lock poisoned".to_string())?
+            .data();
+        let opts = read_vault_list_options(state.inner())?;
+        let mut vault = state
+            .vault
+            .lock()
+            .map_err(|_| "vault lock poisoned".to_string())?;
+        vault.set_list_options(opts);
+        let removed = vault.collapse_paths(&paths);
+        let html = vault.build_initial_tree_html_with(
+            &workspace,
+            panel.pinned_expanded,
+            panel.recent_expanded,
+        );
+        (removed, html)
+    };
+    if let Ok(mut watcher) = state.vault_watcher.lock() {
+        for path in &removed {
+            watcher.unwatch(path);
+        }
+    }
+    Ok(VaultCollapseAllResponse { html })
+}
+
 #[tauri::command]
 pub async fn vault_filter_options_get(
     state: State<'_, AppState>,
@@ -326,6 +369,7 @@ pub async fn vault_filter_options_get(
         "markdownOnly": data.vault_filter_markdown_only,
         "barVisible": data.vault_filter_bar_visible,
         "gitChangedOnly": data.vault_filter_git_changed_only,
+        "deep": data.vault_filter_deep,
     }))
 }
 
@@ -347,13 +391,14 @@ pub async fn vault_filter_options_set(
     markdown_only: bool,
     bar_visible: bool,
     git_changed_only: bool,
+    deep: bool,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     state
         .panel_state
         .lock()
         .map_err(|_| "panel state lock poisoned".to_string())?
-        .set_vault_filter_options(markdown_only, bar_visible, git_changed_only)
+        .set_vault_filter_options(markdown_only, bar_visible, git_changed_only, deep)
         .map_err(|error| error.to_string())?;
     // Lazy-Tree-Spiegel: poisoned Vault-Lock ist Fehler (FX4), nicht still.
     // Nach dem Panel-Write beide Spiegel aus den Quellen lesen — sonst
@@ -402,6 +447,38 @@ pub async fn palette_files(
     let pinned = workspace.pinned().to_vec();
     drop(workspace);
     Ok(crate::palette::collect_palette_files(&pinned))
+}
+
+/// R4-Tiefenfilter: Namens-Walk ueber Pins bzw. einen Ordnerbereich.
+/// Pins werden geklont und der Workspace-Lock VOR dem Walk freigegeben; der
+/// Walk laeuft in `spawn_blocking` (Muster `palette_files`/`vault_search`).
+#[tauri::command]
+pub async fn vault_filter_find(
+    query: String,
+    scope: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<crate::vault_filter::FilterFindResponse, String> {
+    let opts = read_vault_list_options(state.inner())?;
+    let pinned = {
+        let workspace = state
+            .workspace
+            .lock()
+            .map_err(|_| "workspace lock poisoned".to_string())?;
+        workspace.pinned().to_vec()
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::vault_filter::find_by_name(
+            &pinned,
+            scope.as_deref(),
+            &query,
+            opts,
+            crate::vault_filter::FILTER_MAX_HITS,
+            crate::vault_filter::FILTER_TIME_BUDGET,
+        )
+        .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[cfg(test)]

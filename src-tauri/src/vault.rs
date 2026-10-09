@@ -570,6 +570,32 @@ impl Vault {
         self.expanded_dirs.clear();
     }
 
+    /// Klappt nur die uebergebenen Pfade samt Teilbaum zu und liefert die
+    /// tatsaechlich entfernten `expanded_dirs`-Eintraege zurueck (der Caller
+    /// deregistriert deren Watches). Praefix-Match auf Segmentgrenze wie
+    /// `remove_under`, aber ohne `active_path` anzufassen: der Tiefenfilter
+    /// raeumt nur seine eigenen, frisch geoeffneten Ordner auf — vorher offene
+    /// bleiben offen (R4, Spec Punkt 7).
+    pub fn collapse_paths(&mut self, paths: &[String]) -> Vec<String> {
+        let targets: Vec<String> = paths.iter().map(|p| p.replace('\\', "/")).collect();
+        if targets.is_empty() {
+            return Vec::new();
+        }
+        let mut removed = Vec::new();
+        self.expanded_dirs.retain(|entry| {
+            if targets
+                .iter()
+                .any(|t| crate::path_migration::is_under(entry, t))
+            {
+                removed.push(entry.clone());
+                false
+            } else {
+                true
+            }
+        });
+        removed
+    }
+
     pub fn set_active(&mut self, path: Option<String>) {
         // Auf Forward-Slashes normalisieren, damit der Vergleich gegen
         // das normalisierte data-path-Attribut im `item_html`-Render
@@ -1310,6 +1336,44 @@ mod tests {
         );
         assert!(!vault.is_expanded(&root_s));
         assert!(!vault.is_expanded(&a));
+    }
+
+    #[test]
+    fn collapse_paths_removes_only_the_given_subtrees() {
+        // R4-Aufraeumen: `collapse_paths([R/a])` wirft R/a und R/a/b raus,
+        // laesst einen vorher separat geoeffneten Ordner (R/andere) stehen.
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        write_vf(root, "a/b/c.md", "#\n");
+        write_vf(root, "andere/x.md", "#\n");
+        let root_s = norm_vf(root);
+        let a = norm_vf(&root.join("a"));
+        let ab = norm_vf(&root.join("a/b"));
+        let andere = norm_vf(&root.join("andere"));
+
+        let mut vault = Vault::new();
+        vault.expand_paths(
+            &[root_s.clone(), a.clone(), ab.clone(), andere.clone()],
+            VaultListOptions::default(),
+            1000,
+            &[],
+        );
+        let removed = vault.collapse_paths(std::slice::from_ref(&a));
+        let mut removed_sorted = removed.clone();
+        removed_sorted.sort();
+        let mut expected = vec![a.clone(), ab.clone()];
+        expected.sort();
+        assert_eq!(expected, removed_sorted, "nur der Teilbaum unter R/a");
+        assert!(!vault.is_expanded(&a));
+        assert!(!vault.is_expanded(&ab));
+        assert!(
+            vault.is_expanded(&andere),
+            "vorher offener Fremdordner bleibt offen"
+        );
+        assert!(vault.is_expanded(&root_s));
+
+        // Segmentgrenze: /a darf /andere nicht mitziehen.
+        assert!(!removed.contains(&andere));
     }
 
     #[test]

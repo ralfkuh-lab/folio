@@ -104,6 +104,11 @@
     <div class="vault-search-scope" id="vault-search-scope" hidden></div>
   </div>
   <div class="vault-filter" id="vault-filter" hidden>
+    <div class="vault-filter-scope" id="vault-filter-scope" hidden>
+      <span class="vault-filter-scope-icon" aria-hidden="true">&#x1F4C1;</span>
+      <span class="vault-filter-scope-name" id="vault-filter-scope-name"></span>
+      <button type="button" id="vault-filter-scope-remove" class="vault-filter-scope-remove" title="Ordnerbereich entfernen" data-i18n-title="vault.filter.scope.remove.tooltip" aria-label="Ordnerbereich entfernen" data-i18n-aria-label="vault.filter.scope.remove.ariaLabel">&#x2715;</button>
+    </div>
     <div class="vault-filter-bar">
       <div class="vault-filter-input-wrap">
         <input type="search" id="vault-filter-input" class="vault-filter-input" placeholder="Nach Name filtern…" data-i18n-placeholder="vault.filter.input.placeholder" autocomplete="off" spellcheck="false" />
@@ -111,6 +116,7 @@
       </div>
       <button type="button" id="vault-filter-md" class="vault-filter-chip vault-filter-md" aria-pressed="false" title="Nur Markdown" data-i18n-title="vault.filter.md.tooltip" aria-label="Nur Markdown-Dateien anzeigen" data-i18n-aria-label="vault.filter.md.ariaLabel">.md</button>
       <button type="button" id="vault-filter-git" class="vault-filter-chip vault-filter-git" aria-pressed="false" title="Nur geänderte Dateien" data-i18n-title="vault.filter.git.tooltip" aria-label="Nur geänderte Dateien anzeigen" data-i18n-aria-label="vault.filter.git.ariaLabel">git</button>
+      <button type="button" id="vault-filter-deep" class="vault-filter-chip vault-filter-deep" aria-pressed="false" title="Auch in Unterordnern suchen" data-i18n-title="vault.filter.deep.tooltip" aria-label="Auch in Unterordnern suchen" data-i18n-aria-label="vault.filter.deep.ariaLabel">**</button>
       <button type="button" id="vault-filter-close" class="vault-filter-close" title="Filterzeile schließen" data-i18n-title="vault.filter.close.tooltip" aria-label="Filterzeile schließen" data-i18n-aria-label="vault.filter.close.ariaLabel">&#x2715;</button>
     </div>
   </div>
