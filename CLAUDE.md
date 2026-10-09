@@ -708,6 +708,41 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   expand (`panel_state.tags_expanded`), Search-Präfill `#tag`.
   E2E: `53_wikilinks`, `54_tags` — beide schalten ihre Wurzeln im Setup
   über `api.workspace_wikilink_root(...)` frei, sonst bleibt der Index leer.
+- **Callouts** (GitHub-Alerts `> [!NOTE|TIP|IMPORTANT|WARNING|CAUTION]`,
+  case-insensitive): comrak `extension.alerts` in `markdown_options()`. Titel
+  bleiben comraks englische Defaults (keine i18n, wie GitHub); ein eigener
+  Titel (`> [!WARNING] Achtung`) ist **Klartext** — comrak hält ihn als String
+  ohne Inline-Knoten, `[[…]]`/`` `…` ``/`**…**` darin werden nicht gerendert
+  (Backlink-/Tag-Scan zählen sie zeilenbasiert trotzdem mit; bewusst so
+  gelassen). Obsidian-Faltmarker `[!x]-`/`[!x]+` entfernt
+  `renderer.rs::strip_alert_fold_markers` (kein Einklappen); unbekannte Typen
+  (`[!todo]`) bleiben `blockquote`. **`ai/mask.rs` parst bewusst mit
+  `alerts = false`**: genau wegen des Titel-Strings ginge Code/HTML auf der
+  Markerzeile sonst unmaskiert ans LLM (Review-Befund 2026-10-09, Regression
+  `alert_title_code_and_html_are_masked`). Optik: App in `content.css` über
+  Tokens `--alert-<typ>[-bg]` aus `styles/base.css` (hell/dunkel); `classic`
+  setzt die hellen Tokens selbst, weil sein Blatt im Dark-Mode weiß bleibt
+  (gilt analog für Custom-Themes ohne Dark-Variante, siehe
+  `docs/spec-theme-system.md`). Export fest hell in `layouts/base.css` inkl.
+  `print-color-adjust`/`break-inside: avoid`. Icons sind CSS-Masken
+  (`data:`-SVG). **Kontrastvertrag**: Titel ≥ 4,5:1, Boxtext ≥ 7:1 gegen den
+  **komponierten** Boxhintergrund (Tönung ist halbtransparent) — E2E
+  `64_callouts` misst das über alle 12 Themes hell/dunkel.
+- **Smart-List im Markdown-Editor** (`editor/list-continue.ts` +
+  `editor/events.ts::installSmartList`): Enter setzt Bullet-, Nummern-, Task-
+  (`[x]` → `[ ]`) und Zitatzeilen fort, ein leeres Item beendet die Liste;
+  Tab/Shift+Tab rücken Listenzeilen über `editor.action.indentLines`/
+  `outdentLines` ein bzw. aus. Logik rein und vitest-getestet; Monaco-seitig
+  drei `addAction`s nur am Haupteditor (nicht Code-View/Diff/Theme-Editor).
+  Die `precondition` (`!editorReadonly && editorLangId == 'markdown'`) gilt
+  auch für `editor.trigger` (so testet E2E `65_smart_list`, synthetische
+  Tasten erreichen Monaco nicht); Fokus, Suggest-Widget (Wikilink-
+  Autocomplete!), Snippet, Selektion und Mehrfach-Cursor stehen im
+  `keybindingContext`, damit Monacos natives Verhalten dort unberührt bleibt.
+  Jede Änderung ist **ein** `executeEdits` zwischen zwei `pushUndoStop`.
+  Fences über `wikilink-complete.ts::isInsideCodeFence` (geteilt mit dem
+  Autocomplete; CommonMark-Schließer, Zitat-Tiefe, Container-Ende). Keine
+  Neunummerierung, kein Settings-Schalter. Bekannte Grenze siehe `TODO.md`.
 - **Klickbare Task-Checkboxen** (`view/task-toggle.ts` + `prepareMarkdownView`
   in `view/markdown.ts`): Ein Klick auf `- [ ]`/`- [x]` in View, Split und
   Live-Preview toggelt die **Quelle** über `FolioEditor.applyReplace` — kein
@@ -1168,7 +1203,7 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
 
 ## E2E-Test-Suite
 
-Vollständige UI-Coverage in `tests/e2e/` (63 Szenarien, Python +
+Vollständige UI-Coverage in `tests/e2e/` (65 Szenarien, Python +
 Pillow): Boot, View-/Edit-/Split-Mode, Theme, Vault, Find (inkl.
 Code-View), Workspace, Save-Roundtrip durch alle BOM/EOL-Kombis,
 Undo/Redo, Toolbar-Commands (Bold/Italic/Heading), Menü-Coverage
@@ -1182,7 +1217,7 @@ Wikilinks/Tags, Task-Checkboxen, Git-Status/-Diff/-Filter,
 versteckte Vault-Einträge, Find-Bar-Regex/-Ersetzen,
 Vault-Dateioperationen (Ordner anlegen/umbenennen/löschen),
 Zen-Modus, Hex-Ansicht, Pfad-Identität (Symlink-Verzeichnis → ein Tab),
-Breiten-Toggle
+Breiten-Toggle, Callouts (inkl. Kontrast über alle Themes), Smart-List
 sowie
 KI-Settings, KI-Übersetzung, KI-Theme-Autor, Export-KI-Draft und
 KI-Aktionen (Mock-Provider). Der englische Boot ist über

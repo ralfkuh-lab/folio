@@ -786,6 +786,34 @@ mod tests {
     }
 
     #[test]
+    fn export_styles_callouts_and_keeps_them_together_in_print() {
+        let html = render_document(
+            "github",
+            "Callouts",
+            None,
+            "> [!WARNING] Achtung\n> Text\n",
+            None,
+        )
+        .unwrap();
+        assert!(
+            html.contains(r#"<div class="markdown-alert markdown-alert-warning">"#),
+            "{html}"
+        );
+        assert!(
+            html.contains(r#"<p class="markdown-alert-title">Achtung</p>"#),
+            "{html}"
+        );
+        assert!(
+            html.contains(".markdown-body .markdown-alert-warning"),
+            "{html}"
+        );
+        let (_, print) = BASE_CSS.split_once("@media print").unwrap();
+        let (print, _) = print.split_once("\n}\n").unwrap();
+        assert!(print.contains(".markdown-alert"), "{print}");
+        assert!(print.contains("break-inside: avoid"), "{print}");
+    }
+
+    #[test]
     fn render_document_highlights_builtin_code_and_strips_scroll_sync_attributes() {
         let html = render_document(
             "github",

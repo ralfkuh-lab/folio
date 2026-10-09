@@ -547,6 +547,15 @@ nicht aussagekräftig. Zu testen: Kaltstart, laufende Instanz, beide Werte von
   KI-Funktionen erst nach konkretem Bedarf. (Chunking sehr großer Dokumente
   bewusst verworfen, 2026-07-05 — kein erwarteter Bedarf.)
 
+- **Smart-List — bekannte Grenze der Fence-Erkennung** (Review 2026-10-09,
+  bewusst nicht behoben): `isInsideCodeFence` modelliert Zitat-Tiefe, aber
+  keine Einrückung relativ zum Container. Zwei seltene Fälle liegen daneben:
+  `> ```` / `>     ```` / `> - x` (die eingerückte Zeile ist Codeinhalt, gilt
+  aber als Schließer → Enter fügt `> - ` in den Code ein) und `>     ```` /
+  `> - x` (eingerückter Codeblock gilt als offene Fence → keine
+  Fortsetzung). Folge ist höchstens ein überflüssiges `- ` (ein Strg+Z).
+  Korrekt ginge es nur mit Container-relativer Einrückung inkl. Listen —
+  erst angehen, wenn es im Alltag auffällt.
 - **Live-Preview Rest** (Hauptfeature 2026-05-22; Code-View-Live + adaptive
   Debounce 2026-07-18):
   - **Heading-Anchor-Restore**: bewusst verworfen 2026-07-18 — zeilenbasierter

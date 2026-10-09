@@ -731,6 +731,19 @@ Close), E2E `39_export_ai_draft.py` mit Mock-Provider (SSE-Muster aus
 in Xvfb unerreichbar; View-Mode explizit setzen; finally-Cleanup für
 Temp-Dateien und ggf. gespeicherte Themes).
 
+## Callouts in eigenen Themes
+
+Die Farben der Callouts (`> [!NOTE]` usw., seit 2026-10-09) kommen aus den
+Tokens `--alert-<typ>` (Titel, Balken, Symbol) und `--alert-<typ>-bg`
+(halbtransparente Tönung); Typen sind `note`, `tip`, `important`, `warning`
+und `caution`. Folio liefert sie in einer hellen und einer dunklen Fassung,
+abhängig vom App-Theme. Ein Theme **ohne** `<id>.dark.css`, das auch im
+dunklen App-Theme ein helles Blatt zeigt (wie `classic`), muss die hellen
+Werte selbst auf `.markdown-body` setzen, sonst stehen helle Titelfarben auf
+hellem Grund. Ziel: Titel ≥ 4,5:1 und Text ≥ 7:1 gegen die getönte Box. Der
+Export ist immer hell und verwendet eine feste Palette aus
+`layouts/base.css`, die ein Theme über dieselben Tokens überschreiben kann.
+
 ## Bewusst nicht gebaut
 
 - **Live-Seitenzahlen im PDF** (User-Entscheid 2026-07-06, bestätigt

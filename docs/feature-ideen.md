@@ -159,8 +159,9 @@ Diese Ideen kamen von 2–4 Quellen unabhängig. Das ist der beste Startpunkt.
   zwischen Workspaces wechseln. `[M]` (grok)
 - **Inline-Mathematik (KaTeX)** — `$…$`/`$$…$$` in Vorschau + Export. `[M]`,
   Bundle-Größe beachten (grok)
-- **Admonitions/Callouts** — `> [!NOTE]`/`> [!WARNING]` mit Icon + farbiger Box in
-  allen Themes + Export. `[S]` (grok)
+- **Admonitions/Callouts** — ✅ **umgesetzt (2026-10-09)**: GitHub-Alerts (5 Typen)
+  mit Icon + farbiger Box in allen Themes + Export; Obsidian-Zusatztypen und
+  Einklappen bewusst offen. `[S]` (grok)
 - **Auto-Export-Watcher** — bei jedem Save optional PDF/HTML im selben Verzeichnis
   regenerieren. `[S]` (agy)
 
@@ -212,7 +213,7 @@ Dinge, die in den drei Sets fehlten oder die ich für besonders wirkungsvoll hal
 - **Inline-Autovervollständigung für Links/Wikilinks** — ✅ **teilweise umgesetzt
   (W4, 2026-07-25)**: `[[`/`![[` + `[[Name#` Headings im Monaco-Provider;
   `](`-Markdown-Links bleiben Folgepunkt. `[M]`
-- **Smart-List-Fortsetzung** — Enter in Listen setzt automatisch `- `/`1.`/`- [ ]`
+- **Smart-List-Fortsetzung** — ✅ **umgesetzt (2026-10-09)**, ohne Neunummerierung. Enter in Listen setzt automatisch `- `/`1.`/`- [ ]`
   fort, leere Zeile bricht ab; Tab/Shift-Tab rückt ein/aus. Reine Editor-QoL. `[S–M]`
 - **Tabellen-Auto-Format** — Command/On-Save richtet MD-Tabellen sauber aus
   (Spalten-Padding). Kombiniert gut mit dem CSV-Konverter. `[S]`

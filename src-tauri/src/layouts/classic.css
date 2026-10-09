@@ -7,6 +7,19 @@
   --accent: #6e3a1f;
   --code-bg: #f5f1e8;
   --quote-bg: #faf6ec;
+  /* Callout-Farben fest hell: classic hat bewusst keine Dark-Variante und
+     bleibt auch im dunklen App-Theme ein weisses Blatt — die dunklen
+     App-Tokens (web/styles/base.css) haetten darauf zu wenig Kontrast. */
+  --alert-note: #0964cf;
+  --alert-note-bg: rgba(9, 105, 218, 0.05);
+  --alert-tip: #187734;
+  --alert-tip-bg: rgba(26, 127, 55, 0.05);
+  --alert-important: #7a4bd2;
+  --alert-important-bg: rgba(130, 80, 223, 0.05);
+  --alert-warning: #8e5f00;
+  --alert-warning-bg: rgba(191, 135, 0, 0.06);
+  --alert-caution: #c9232d;
+  --alert-caution-bg: rgba(209, 36, 47, 0.05);
   max-width: 720px;
   margin: 48px auto;
   padding: 0 32px 64px;
