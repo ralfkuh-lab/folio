@@ -109,6 +109,9 @@ let regex = false;
 let fileFilter: FileFilter = 'allText';
 let customExtensions = '';
 let includeHidden = false;
+// Getrennt von `includeHidden`: gitignorierte Dateien (ignore/gitignore-Filter)
+// unabhängig von Dot-Einträgen durchsuchen. Beide Default aus, beide persistiert.
+let includeIgnored = false;
 // S5-Ergebnis-Header-Optionen: Verzeichnispfad-Anzeige + Sortiermodus. Persistiert
 // über set_search_options/search_options_get (Muster der S4-Felder). Anders als
 // die Dialog-Optionen leben diese Toggles im Ergebnis-Header und wirken sofort.
@@ -160,6 +163,11 @@ const FOLDER_SEARCH_SVG =
 let dialogOpen = false;
 let dialogPrevFocus: HTMLElement | null = null;
 let dialogUnwire: (() => void) | null = null;
+// Submit-/Dialog-Generation: Jeder Submit und jedes Schließen/Abbrechen erhöht
+// sie. Nach jedem `await` vor Seiteneffekten (Commit, Persist, Start) prüfen —
+// sonst überschreibt eine späte Validate-Antwort neuere Checkboxen oder startet
+// nach Abbrechen (K-A3.3).
+let dialogSubmitGen = 0;
 
 function $(id: string): HTMLElement | null {
     return document.getElementById(id);
@@ -453,6 +461,7 @@ function runSearch(): void {
         fileFilter,
         customExtensions,
         includeHidden,
+        includeIgnored,
     }).then(
         (runId: any) => {
             if (typeof runId !== 'number') {
@@ -662,6 +671,7 @@ function persistSearchOptions(): void {
             fileFilter,
             customExtensions,
             includeHidden,
+            includeIgnored,
             showPaths,
             sort: searchSort,
         },
@@ -949,6 +959,9 @@ function renderSummary(): void {
         if (regex) glyphs.push({ text: '.*' });
         if (includeHidden) {
             glyphs.push({ text: '·', title: t('search.dialog.includeHidden.label') });
+        }
+        if (includeIgnored) {
+            glyphs.push({ text: '⊘', title: t('search.dialog.includeIgnored.label') });
         }
         if (fileFilter === 'markdown') glyphs.push({ text: 'md' });
         else if (fileFilter === 'custom') glyphs.push({ text: '*.…' });
@@ -1329,6 +1342,7 @@ function populateDialog(preselectScope?: ScopeMode): void {
     const wordEl = $('vsd-word') as HTMLInputElement | null;
     const regexEl = $('vsd-regex') as HTMLInputElement | null;
     const hiddenEl = $('vsd-include-hidden') as HTMLInputElement | null;
+    const ignoredEl = $('vsd-include-ignored') as HTMLInputElement | null;
     const ext = $('vsd-custom-ext') as HTMLInputElement | null;
     const folderRow = $('vsd-scope-folder-row');
     const folderLabel = $('vsd-scope-folder-label');
@@ -1338,6 +1352,7 @@ function populateDialog(preselectScope?: ScopeMode): void {
     if (wordEl) wordEl.checked = wholeWord;
     if (regexEl) regexEl.checked = regex;
     if (hiddenEl) hiddenEl.checked = includeHidden;
+    if (ignoredEl) ignoredEl.checked = includeIgnored;
     setRadio('vsd-filter', fileFilter);
     if (ext) ext.value = customExtensions;
 
@@ -1366,6 +1381,8 @@ function focusDialogQuery(): void {
 }
 
 function closeDialog(restoreFocus: boolean): void {
+    // Ausstehende Submits invalidieren (nach jedem Await verwerfen).
+    dialogSubmitGen++;
     const dlg = $('vault-search-dialog');
     if (dlg) dlg.hidden = true;
     if (dialogUnwire) {
@@ -1379,12 +1396,14 @@ function closeDialog(restoreFocus: boolean): void {
 }
 
 async function submitDialog(): Promise<void> {
+    const mySubmit = ++dialogSubmitGen;
     const query = ($('vsd-query') as HTMLInputElement | null)?.value ?? '';
     const dCase = !!($('vsd-case') as HTMLInputElement | null)?.checked;
     const dRegex = !!($('vsd-regex') as HTMLInputElement | null)?.checked;
     // Whole-Word ist bei aktivem Regex disabled → als false werten.
     const dWord = !dRegex && !!($('vsd-word') as HTMLInputElement | null)?.checked;
     const dHidden = !!($('vsd-include-hidden') as HTMLInputElement | null)?.checked;
+    const dIgnored = !!($('vsd-include-ignored') as HTMLInputElement | null)?.checked;
     const dFilter = normalizeFilter(radioValue('vsd-filter'));
     const dExt = ($('vsd-custom-ext') as HTMLInputElement | null)?.value ?? '';
     const dScope = (radioValue('vsd-scope') as ScopeMode | null) || 'vault';
@@ -1399,11 +1418,15 @@ async function submitDialog(): Promise<void> {
             fileFilter: dFilter,
             customExtensions: dExt,
             includeHidden: dHidden,
+            includeIgnored: dIgnored,
         });
     } catch (err) {
+        if (mySubmit !== dialogSubmitGen) return; // neuerer Submit/Cancel gewinnt
         showDialogError(String(err));
         return; // Dialog bleibt offen, laufender Lauf unangetastet.
     }
+
+    if (mySubmit !== dialogSubmitGen) return;
 
     // 2. OpenTabs-Scope: der Editor-Puffer muss VOR dem Snapshot im Backend
     //    liegen, sonst durchsucht das Backend veralteten DocumentStore-Text.
@@ -1411,12 +1434,14 @@ async function submitDialog(): Promise<void> {
         try {
             await syncEditorTextToStoreRequired();
         } catch (err) {
+            if (mySubmit !== dialogSubmitGen) return;
             folioLog.warn('search', 'editor sync before open-tabs search failed', {
                 error: String(err),
             });
             showDialogError(t('errors.search.startFailed'));
             return;
         }
+        if (mySubmit !== dialogSubmitGen) return;
     }
 
     // 3. Alten Lauf canceln, committed State setzen.
@@ -1428,6 +1453,7 @@ async function submitDialog(): Promise<void> {
     wholeWord = dWord;
     regex = dRegex;
     includeHidden = dHidden;
+    includeIgnored = dIgnored;
     fileFilter = dFilter;
     customExtensions = dExt;
     optionsTouched = true;
@@ -1617,6 +1643,7 @@ export function initVaultSearch(d: Deps): () => void {
         fileFilter?: string;
         customExtensions?: string;
         includeHidden?: boolean;
+        includeIgnored?: boolean;
         showPaths?: boolean;
         sort?: string;
     }>('search_options_get', undefined, 'search_options_get', 'debug').then((opts) => {
@@ -1628,6 +1655,7 @@ export function initVaultSearch(d: Deps): () => void {
             fileFilter = normalizeFilter(opts.fileFilter);
             customExtensions = typeof opts.customExtensions === 'string' ? opts.customExtensions : '';
             includeHidden = !!opts.includeHidden;
+            includeIgnored = !!opts.includeIgnored;
             showPaths = !!opts.showPaths;
             searchSort = normalizeSort(opts.sort);
             renderSortButton();

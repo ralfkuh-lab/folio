@@ -303,6 +303,7 @@ class AutomationApi:
         custom_extensions: Optional[str] = None,
         open_tabs: bool = False,
         include_hidden: bool = False,
+        include_ignored: Optional[bool] = None,
         timeout_ms: Optional[int] = None,
     ) -> dict:
         body: dict = {
@@ -322,6 +323,10 @@ class AutomationApi:
             body["openTabs"] = open_tabs
         if include_hidden:
             body["includeHidden"] = include_hidden
+        # None = Feld weglassen (Kompatibilitätstest: ohne includeIgnored gilt
+        # includeHidden); ein explizites False wird mitgesendet.
+        if include_ignored is not None:
+            body["includeIgnored"] = include_ignored
         transport_timeout = None
         if timeout_ms is not None:
             body["timeoutMs"] = timeout_ms

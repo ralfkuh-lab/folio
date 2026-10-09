@@ -31,6 +31,11 @@ weiter, R4 ergänzt den Tiefenfilter und den Ordnerbereich). Ursprung: `docs/fea
 - **R4.2 (2026-10-09)**: Bereich wirkt sofort (ohne Query/Chip); Ordner-
   Sichtbarkeit im Tiefenmodus aus der Trefferliste statt aus dem DOM
   (User-Report: nach Zu-/Aufklappen waren Treffer unerreichbar).
+- **R4.3 (dieses Dokument)**: vierter Chip „versteckte" (`.*`,
+  `#vault-filter-hidden`, persistiert `vault_filter_hidden`, Default
+  aus). Getrennt vom Baum-Setting `vaultShowHidden`: der Chip steuert
+  nur die Filtertreffer und aktiviert keinen Filter allein. Tiefenmodus:
+  wirksames `show_hidden` = Chip **UND** `vaultShowHidden`.
 
 ## Modell (R3)
 
@@ -222,17 +227,35 @@ Aktiv, wenn `(chip an ODER Bereich gesetzt) UND Query ≥ 2 Zeichen`
 
 ### Walk-Regeln (Backend)
 
-- Wurzeln: ohne Bereich alle Pins über `search::resolve_scope(...,
-  SearchScope::Vault)` (Ordner-Pins rekursiv, Datei-Pins direkt,
-  Overlap-Dedup) — dieselbe Auflösung wie Palette und Volltextsuche.
-  Mit Bereich: nur der Bereichsordner.
+- Wurzeln: ohne Bereich alle Pins über `search::resolve_search_scope(...,
+  SearchScope::Vault)` + `search::plan_walk_roots` — dieselbe
+  Wurzelplanung wie die Volltextsuche: **jeder Ordner-Pin ist eigene
+  Walk-Wurzel** (nur exakte Duplikate entfallen), Datei-Pins direkt, und
+  derselbe Grenzfilter `search::is_foreign_root` läuft im `filter_entry`
+  jedes Walks — ein verschachtelter Pin gehört nur seinem eigenen Walk.
+  Damit ist ein Pin hinter einem versteckten oder gitignorierten
+  Zwischensegment bzw. einem Verzeichnis-Symlink ohne
+  Erreichbarkeitsvorhersage erreichbar (K-A2/K-A3, N1). Der Anker der
+  Vorfahrenkette (`dirs`) ist die jeweilige Walk-Wurzel selbst: Treffer
+  unter einem verschachtelten Pin `R/sub` liefern die Kette ab `R/sub`,
+  nicht mehr ab `R`.
+  Mit Bereich (`scope = Some`): nur der Bereichsordner als Einzel-Walk
+  ohne Grenzen (mit der `pin_roots`-Ausnahme unten).
 - **Gitignore wird NICHT angewandt** (`standard_filters(false)`): Der
   Vault-Baum zeigt ignorierte Dateien (gedimmt) — ein Filter darf nichts
   verschweigen, was der Baum zeigt. Der Schutz vor `node_modules` & Co.
   ist der Treffer-Deckel plus Zeitbudget, nicht ein Visit-Deckel (das war
   der R2-Fehler: Deckel griff vor dem ersten Treffer).
-- Versteckte Einträge folgen `settings.vaultShowHidden` (gleiche Regel
-  wie der Baum, `child_is_filtered`). `.git` bleibt **immer** draußen.
+- Versteckte Einträge: im Tiefenmodus **Chip `.*` UND
+  `settings.vaultShowHidden`** (`vault_filter.rs::filter_show_hidden`).
+  `.git` bleibt **immer** draußen. Eine Pfadkomponente, die selbst eine
+  Pin-Wurzel ist, zählt nicht als versteckt (ein Pin direkt auf
+  `.name` zeigt seinen Inhalt — auch wenn er als verschachtelter Pin
+  unter einer sichtbaren Wurzel mitgewandert wird, oder im Ordnerbereich
+  als eigene Pin-Wurzel). Die `pin_roots`-Ausnahme ist deshalb nicht
+  redundant: bei `scope = Some(R)` ist der Dot-Pin keine eigene
+  Walk-Wurzel, und nur die Ausnahme lässt `.pinned` durch den
+  Hidden-Filter.
   Symlink-Verzeichnisse werden **nicht** betreten (wie Palette).
 - „Nur Markdown" an → nur `FileKind::Markdown`-Treffer (endungsbasiert,
   `classify`), konsistent mit dem Lazy-Typ-Filter.
@@ -249,18 +272,26 @@ Aktiv, wenn `(chip an ODER Bereich gesetzt) UND Query ≥ 2 Zeichen`
 
 ### Schnittstellen
 
-- `vault_filter_find { query: String, scope: Option<String> }` →
+- `vault_filter_find { query: String, scope: Option<String>,
+  hidden: Option<bool> }` →
   `{ files: string[], dirs: string[], truncated: bool, reason: "cap"|"time"|null }`.
   Pfade mit Forward-Slashes. `dirs` = Vorfahren (s. o.), dedupliziert,
-  flach nach Tiefe sortiert. Hidden/md-Flags liest der Command selbst
+  flach nach Tiefe sortiert. `hidden` ist der wirksame Chip-Wert des
+  Frontends; ist er gesetzt, gilt er statt des persistierten
+  `panel_state.vault_filter_hidden` (UND `vaultShowHidden` bleibt) — so
+  gehoert jede Antwort eindeutig zu ihrem Anforderungsschluessel und
+  haengt nicht am noch ausstehenden Options-Write. `markdownOnly`/
+  `vaultShowHidden` liest der Command weiter selbst
   (`read_vault_list_options`). Lock-Regel wie `palette_files`: Pins
   klonen, Locks VOR dem Walk freigeben; Walk in `spawn_blocking`.
 - `vault_expand_paths` liefert additiv `paths: string[]` (die neu
   expandierten Pfade aus `ExpandPathsResult.paths`).
 - `vault_collapse_paths { paths: string[] }` → `{ html }` wie
   `vault_collapse_all`, nur für die übergebenen Pfade.
-- `vault_filter_options_get/set`: additives Feld `deep: bool`
-  (`panel_state.vault_filter_deep`, serde-default `false`).
+- `vault_filter_options_get/set`: additive Felder `deep: bool`
+  (`panel_state.vault_filter_deep`) und `hidden: bool`
+  (`panel_state.vault_filter_hidden`, serde-default `false`). Beim Set
+  ist `hidden` optional: fehlt es, bleibt der bisherige Wert stehen.
 - Automation/E2E: `window.__folioVaultFilterInFolder(path)` (Hook wie
   `__folioVaultFilterReset`, ruft denselben Pfad wie das Kontextmenü);
   der Reset-Hook setzt auch Chip und Bereich zurück und räumt auf.
@@ -353,6 +384,59 @@ nichts Sichtbares, weil der Tiefenmodus erst ab 2 Zeichen greift.
    respektiert (kein automatisches Wiederaufklappen).
 3. Wurzel-Pins `/` und `C:/` werden als Vorfahren korrekt erkannt
    (`pathIsUnder` mit Wurzeln, die auf `/` enden).
+
+## R4.3: Chip „versteckte" (`.*`)
+
+Anlass: Suchen lieferten massenhaft Treffer aus Agenten-Arbeitsordnern
+wie `.herd/` (versteckt **und** global gitignoriert). Der Baum-Schalter
+`vaultShowHidden` ist dafuer zu grob: er steuert die Anzeige, nicht die
+Treffermenge des Filters.
+
+1. **Chip** `#vault-filter-hidden` (vierter Chip nach `**`, Text `.*`,
+   Tooltip/aria über `vault.filter.hidden.tooltip`/`…ariaLabel`).
+   Persistiert als `panel_state.vault_filter_hidden`, **Default aus**,
+   unabhaengig von `vaultShowHidden`. Der Reset-Hook
+   (`__folioVaultFilterReset`) setzt ihn wie md/git/deep zurück.
+2. **Wirkung nur auf Filterergebnisse**, nie auf den ungefilterten Baum
+   (der folgt weiter `vaultShowHidden`). Ist der Chip aus, liefert der
+   Filter keine Treffer, deren Pfad **unterhalb der Pin-Wurzel** ein
+   Dot-Segment enthält. Im flachen Modus entscheidet das Frontend
+   (`isHiddenBelowPin`) über die **längste sichtbare Pin-Wurzel**; im
+   Tiefenmodus das Backend (`find_by_name`/`visit_entry`). Die Pin-Wurzel
+   selbst zählt nicht: ein Pin direkt auf `.name` zeigt seinen Inhalt.
+   Das gilt auch, wenn der Pin hinter einem versteckten/gitignorierten
+   Zwischensegment oder einem Verzeichnis-Symlink
+   liegt (Pin-Wurzel wird eigene Walk-Wurzel, K-A2/K-A3); ein **nicht**
+   gepinnter Nachbar hinter demselben Segment bleibt ausgeblendet.
+   Es gilt weiter „Ordner bleiben sichtbar" (R3) — der Chip blendet nur
+   Datei-Zeilen aus. Die Pin-Zuordnung vergleicht **Windows-Schreibvarianten
+   case-insensitiv** (Laufwerksbuchstabe `X:` oder UNC `\\`, `pathIsUnder` in
+   `vault/git-status.ts`); Unix-Pfade bleiben case-sensitiv. Rein
+   lexikalisch, ohne Dateisystem-IO.
+3. **Kein Filter allein**: der Chip aktiviert den Filter nicht und zählt
+   nicht fürs Funnel-Badge (anders als `.md`). Ohne Query/Chip/Bereich
+   ändert er am Baum nichts.
+4. **Tiefenmodus**: wirksames `show_hidden` =
+   `filter_show_hidden(chip, vaultShowHidden)` = Chip **UND**
+   `vaultShowHidden` (was der Baum nicht anzeigt, kann der Filter nicht
+   zeigen). Der wirksame Chip-Wert geht **explizit** als `hidden` mit dem
+   Find (siehe Schnittstellen); Chip **und** `vaultShowHidden` stehen im
+   Tiefen-Schlüssel, damit ein Umschalten neu sucht. Eine Find-Antwort
+   wird nur angewandt, wenn ihr Anforderungsschlüssel noch dem aktuellen
+   `deepKey()` entspricht (sonst verwerfen und neu anfordern) — eine
+   veraltete Treffermenge bleibt so nie stehen, unabhängig davon, ob der
+   Panel-Write schon durch ist.
+5. **Referenzfall** (Tests): Pin `R` mit `notes/spec-x.md`,
+   `.herd/spec.md`, `.herd/sub/spec-z.md`, `a.md`; zweiter Pin direkt auf
+   `R/.pinned-hidden` mit `spec-y.md`; Query `spec`:
+   - Chip aus, `vaultShowHidden` an → `notes/spec-x.md`,
+     `.pinned-hidden/spec-y.md` (Pin-Wurzel selbst nicht versteckt);
+   - Chip an, `vaultShowHidden` an → zusätzlich `.herd/spec.md`,
+     `.herd/sub/spec-z.md`;
+   - Chip an, `vaultShowHidden` aus → wie Chip aus;
+   - flach, `.herd` aufgeklappt, Chip aus → `.herd/spec.md` ausgeblendet;
+     Chip an → sichtbar;
+   - kein Filtertext/Chip → Baum unverändert.
 
 ## Abnahme-Gates
 

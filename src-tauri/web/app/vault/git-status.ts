@@ -36,11 +36,24 @@ export function normalizeGitPath(path: string): string {
     return (path || '').replace(/\\/g, '/');
 }
 
-/** Segmentgrenze: `/repo/neu` matcht `/repo/neu/a.md`, nicht `/repo/neues.md`. */
+/** Windows-Schreibvariante? Laufwerksbuchstabe (`X:`) oder UNC-Pfad
+ *  (`\\server` — von `normalizeGitPath` zu `//server` gemacht). */
+function isWindowsStylePath(path: string): boolean {
+    return /^[A-Za-z]:/.test(path) || path.startsWith('//');
+}
+
+/** Segmentgrenze: `/repo/neu` matcht `/repo/neu/a.md`, nicht `/repo/neues.md`.
+ *  Windows-Schreibvarianten (Laufwerk/UNC) werden case-insensitiv verglichen —
+ *  auf solchen Volumes sind Pfade nicht case-sensitiv; Unix bleibt
+ *  case-sensitiv. Rein lexikalisch, kein Dateisystem-IO. */
 export function pathIsUnder(path: string, parent: string): boolean {
-    const child = normalizeGitPath(path);
-    const root = normalizeGitPath(parent);
+    let child = normalizeGitPath(path);
+    let root = normalizeGitPath(parent);
     if (!child || !root) return false;
+    if (isWindowsStylePath(child) || isWindowsStylePath(root)) {
+        child = child.toLowerCase();
+        root = root.toLowerCase();
+    }
     // Wurzeln wie `/` oder `C:/` enden bereits auf `/` — kein zweiter Slash.
     const prefix = root.endsWith('/') ? root : root + '/';
     return child === root || child.startsWith(prefix);

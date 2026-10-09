@@ -751,14 +751,19 @@ html.theme-dark .vault-header .vault-cmd.filter-active {
   border-bottom: 1px solid var(--border);
   background: var(--rail-bg);
 }
+/* Zwei Zeilen: Namensfeld + Schliessen-✕ oben, Chips darunter. Das Feld
+   nimmt die volle Zeile abzueglich ✕ (26 px) und Gap (4 px), damit die
+   Chips immer umbrechen — so bleibt der Platzhalter auch bei der
+   schmalsten Rail (150 px) lesbar, und die Chip-Zeile passt dort noch. */
 .vault-filter-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
 }
 .vault-filter-input-wrap {
   position: relative;
-  flex: 1 1 auto;
+  flex: 1 1 calc(100% - 30px);
   min-width: 0;
 }
 .vault-filter-input {
@@ -779,6 +784,10 @@ html.theme-dark .vault-header .vault-cmd.filter-active {
 }
 .vault-filter-input::placeholder {
   color: var(--rail-fg-muted);
+}
+/* Leeres Feld = kein Lösch-✕ — dessen Reserve dem Platzhalter geben. */
+.vault-filter-input:placeholder-shown {
+  padding-right: 8px;
 }
 /* Eigenen Clear-Button nutzen — Browser-X am type=search ausblenden. */
 .vault-filter-input::-webkit-search-cancel-button {

@@ -301,45 +301,89 @@ def run(ctx):
                 except ApiError as err:
                     ctx.expect(err.status == 400, f"status={err.status}")
 
-            # --- includeHidden: versteckte + gitignorierte Dateien ----------
-            # Eigenes Temp-Verzeichnis (nicht fixtures/), Fake-Repo wie Rust-
-            # Helper, damit .gitignore greift. Kein Screenshot.
-            with ctx.step("includeHidden finds hidden + gitignored files"):
+            # --- includeHidden / includeIgnored: getrennte Opt-ins -----------
+            # Referenz-Fixture: .gitignore = secret.md + .herd/; Dateien
+            # visible.md, secret.md (ignoriert), .hidden.md, .herd/spec.md
+            # (versteckt UND ignoriert) sowie eine .git/-Datei, die nie
+            # auftauchen darf. Eigenes Temp-Verzeichnis (kein fixtures/).
+            with ctx.step("includeHidden/includeIgnored matrix (hidden vs ignored)"):
                 hidden_td = tempfile.mkdtemp(prefix="folio-e2e-search-hidden-")
                 try:
                     _write(
                         os.path.join(hidden_td, ".git", "HEAD"),
                         "ref: refs/heads/main\n",
                     )
-                    _write(os.path.join(hidden_td, ".gitignore"), "secret.md\n")
+                    _write(
+                        os.path.join(hidden_td, ".git", "hooks", "pre-commit.md"),
+                        "hidtok in git dir\n",
+                    )
+                    _write(os.path.join(hidden_td, ".gitignore"), "secret.md\n.herd/\n")
                     _write(os.path.join(hidden_td, "visible.md"), "hidtok visible\n")
                     _write(os.path.join(hidden_td, "secret.md"), "hidtok secret\n")
                     _write(os.path.join(hidden_td, ".hidden.md"), "hidtok dotfile\n")
                     _write(
-                        os.path.join(hidden_td, "sub", ".hiddendir", "x.md"),
-                        "hidtok nested\n",
+                        os.path.join(hidden_td, ".herd", "spec.md"),
+                        "hidtok hidden dir\n",
                     )
                     ctx.api.workspace_pin(hidden_td, is_directory=True)
                     try:
-                        off = ctx.api.search("hidtok", scope=hidden_td)
-                        off_names = sorted(
-                            f["fileName"] for f in off.get("files") or []
+                        def names(resp):
+                            return sorted(f["fileName"] for f in resp.get("files") or [])
+
+                        both_off = ctx.api.search("hidtok", scope=hidden_td)
+                        ctx.expect(
+                            names(both_off) == ["visible.md"],
+                            f"both off: {names(both_off)}",
+                        )
+                        only_hidden = ctx.api.search(
+                            "hidtok", scope=hidden_td, include_hidden=True,
+                            include_ignored=False,
                         )
                         ctx.expect(
-                            off_names == ["visible.md"],
-                            f"default must skip hidden/gitignored: {off_names}",
+                            names(only_hidden) == [".hidden.md", "visible.md"],
+                            f"only hidden: {names(only_hidden)}",
                         )
-                        on = ctx.api.search(
+                        only_ignored = ctx.api.search(
+                            "hidtok", scope=hidden_td, include_ignored=True
+                        )
+                        ctx.expect(
+                            names(only_ignored) == ["secret.md", "visible.md"],
+                            f"only ignored: {names(only_ignored)}",
+                        )
+                        both_on = ctx.api.search(
+                            "hidtok", scope=hidden_td, include_hidden=True,
+                            include_ignored=True,
+                        )
+                        ctx.expect(
+                            names(both_on)
+                            == [".hidden.md", "secret.md", "spec.md", "visible.md"],
+                            f"both on: {names(both_on)}",
+                        )
+                        # Kompatibilität: ohne includeIgnored gilt includeHidden
+                        # (alter Vertrag: ein Flag für beides).
+                        compat = ctx.api.search(
                             "hidtok", scope=hidden_td, include_hidden=True
                         )
-                        on_names = sorted(
-                            f["fileName"] for f in on.get("files") or []
-                        )
                         ctx.expect(
-                            on_names
-                            == [".hidden.md", "secret.md", "visible.md", "x.md"],
-                            f"includeHidden must find all: {on_names}",
+                            names(compat)
+                            == [".hidden.md", "secret.md", "spec.md", "visible.md"],
+                            f"compat includeHidden alone: {names(compat)}",
                         )
+                        # .git/-Datei in keinem Fall.
+                        for label, resp in (
+                            ("both off", both_off),
+                            ("only hidden", only_hidden),
+                            ("only ignored", only_ignored),
+                            ("both on", both_on),
+                            ("compat", compat),
+                        ):
+                            ctx.expect(
+                                all(
+                                    ".git" not in (f.get("path") or "")
+                                    for f in resp.get("files") or []
+                                ),
+                                f".git leaked into results ({label})",
+                            )
                     finally:
                         ctx.api.workspace_unpin(hidden_td)
                 finally:

@@ -326,6 +326,7 @@ Request:
   "customExtensions": "md, txt, log",
   "openTabs": false,
   "includeHidden": false,
+  "includeIgnored": false,
   "timeoutMs": 5000
 }
 ```
@@ -364,12 +365,16 @@ Request:
   zurück), `pending`/opaque Tabs von Platte. `openTabs=true` **und** ein
   gesetzter `scope` → **HTTP 400** (Konflikt). Virtuelle Frontend-Tabs
   (Settings/Theme-Editor/Diff) sind nicht Teil des Backend-Snapshots.
-- `includeHidden` (optional, Default `false`): deaktiviert im Verzeichnis-Walk
-  die Standard-Filter per `WalkBuilder::standard_filters(false)` (hidden,
-  parents, ignore, git_ignore, git_global, git_exclude als Gruppe;
-  `require_git` unangetastet). **Bewusste Ausnahme:** Verzeichnisse namens
-  `.git` bleiben per `filter_entry` draußen (Object-Store/hooks/logs). Ein
-  kombinierter Schalter — wer „alles" will, will beides. Explizit gepinnte
+- `includeHidden` (optional, Default `false`): schaltet im Verzeichnis-Walk
+  den hidden-Filter ab (Dot-Einträge). `includeIgnored` (optional): schaltet
+  die ignore/gitignore-Gruppe ab (parents, ignore, git_ignore, git_global,
+  git_exclude; `require_git` unangetastet). Beide getrennt schaltbar, damit
+  z. B. ignorierte Build-Notizen durchsuchbar sind, Agenten-Arbeitsordner wie
+  `.herd/` aber nicht. **Abwärtskompatibilität:** Fehlt `includeIgnored`,
+  gilt der Wert von `includeHidden` (alter Vertrag: ein Flag für beides).
+  **Bewusste Ausnahme:** Verzeichnisse namens
+  `.git` bleiben per `filter_entry` auch dann draußen (Object-Store/hooks/logs).
+  Explizit gepinnte
   Einzeldateien umgehen die Filter ohnehin (und bleiben auch bei Overlap mit
   einem gepinnten Elternordner in den Roots); OpenTabs-Puffer sind nicht
   betroffen. Cap/NUL-Sniff/FileFilter bleiben unverändert.
@@ -438,12 +443,13 @@ Feldsemantik:
 
 Die WebView nutzt für die Live-Suche stattdessen die Tauri-Commands
 `vault_search_start { query, scope?, openTabs?, caseSensitive, wholeWord,
-regex?, fileFilter?, customExtensions?, includeHidden? } → runId` und
+regex?, fileFilter?, customExtensions?, includeHidden?, includeIgnored? } → runId` und
 `vault_search_cancel { runId }` mit den Events `search:hits { runId, files }`
 und `search:done { runId, stats }` (bzw. `{ runId, error }`); die S4-Parameter
-sind optional (Weglassen = altes Verhalten). Der Dialog prüft Felder vorab über
+sind optional (Weglassen = altes Verhalten). Fehlt `includeIgnored`, gilt der
+Wert von `includeHidden`. Der Dialog prüft Felder vorab über
 `vault_search_validate { query, caseSensitive, wholeWord, regex?, fileFilter?,
-customExtensions?, includeHidden? }`. `POST /search` bündelt den Ablauf synchron für die Tests.
+customExtensions?, includeHidden?, includeIgnored? }`. `POST /search` bündelt den Ablauf synchron für die Tests.
 
 ### Security-Gates (Middleware `security_guard`)
 

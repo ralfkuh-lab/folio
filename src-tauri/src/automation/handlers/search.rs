@@ -15,7 +15,9 @@ use tauri::Manager;
 
 use crate::automation::context::AutomationContext;
 use crate::automation::error::{json_payload, ApiError, ApiResult};
-use crate::commands::search_cmd::{build_scope_and_options, snapshot_open_tab_docs};
+use crate::commands::search_cmd::{
+    build_scope_and_options, resolve_include_ignored, snapshot_open_tab_docs,
+};
 use crate::search::{self, FileResult, SearchScopeEx, SearchStats};
 use crate::state::AppState;
 
@@ -43,9 +45,13 @@ pub(in crate::automation) struct SearchRequest {
     /// OpenTabs-Scope (S4): durchsucht die offenen Tab-Puffer statt des Vaults.
     #[serde(default)]
     open_tabs: bool,
-    /// Auch versteckte und gitignorierte Dateien (Default aus).
+    /// Auch versteckte Einträge (Dot-Namen) durchsuchen (Default aus).
     #[serde(default)]
     include_hidden: bool,
+    /// Auch gitignorierte Dateien durchsuchen. Fehlt das Feld, gilt der Wert
+    /// von `include_hidden` (früheres Verhalten: ein Flag für beides).
+    #[serde(default)]
+    include_ignored: Option<bool>,
     /// Optionales Zeitlimit; danach wird der Lauf abgebrochen und 500 geliefert.
     #[serde(default)]
     timeout_ms: Option<u64>,
@@ -75,6 +81,7 @@ pub(in crate::automation) async fn post_search(
         request.file_filter.as_deref().unwrap_or("allText"),
         &request.custom_extensions,
         request.include_hidden,
+        resolve_include_ignored(request.include_hidden, request.include_ignored),
     )
     .map_err(|error| ApiError::bad_request(error.to_string()))?;
 
@@ -101,7 +108,7 @@ pub(in crate::automation) async fn post_search(
                 Some(path) => crate::search::SearchScope::Folder(path),
                 None => crate::search::SearchScope::Vault,
             };
-            Work::Roots(search::resolve_scope(workspace.pinned(), &scope))
+            Work::Roots(search::resolve_search_scope(workspace.pinned(), &scope))
         }
     };
 

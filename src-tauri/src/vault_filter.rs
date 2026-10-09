@@ -12,13 +12,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ignore::{WalkBuilder, WalkState};
 use serde::Serialize;
 
 use crate::file_kind::{classify, FileKind};
-use crate::search::{resolve_scope, SearchScope};
+use crate::search::{is_foreign_root, plan_walk_roots, resolve_search_scope, SearchScope};
 use crate::vault::{classify_entry, VaultListOptions};
 use crate::workspace::PinnedItem;
 
@@ -104,15 +105,25 @@ fn is_symlink(path: &Path) -> bool {
 /// bewusst NICHT ueber `.hidden()` verworfen, sondern im Visitor (K5): nur
 /// so sieht die Zeitpruefung jeden Eintrag. Symlink-Verzeichnisse werden
 /// nicht betreten (`follow_links` bleibt der Crate-Default `false`).
-fn configure_filter_builder(builder: &mut WalkBuilder) {
-    builder
-        .standard_filters(false)
-        .filter_entry(|entry| entry.file_name() != OsStr::new(".git"));
+/// Einträge, die selbst eine andere aktive Walk-Wurzel sind, gehören deren
+/// eigenem Walk und werden nicht betreten (gleiche Grenzprüfung wie die
+/// Volltextsuche, [`is_foreign_root`]).
+fn configure_filter_builder(builder: &mut WalkBuilder, active_roots: Arc<HashSet<String>>) {
+    builder.standard_filters(false).filter_entry(move |entry| {
+        entry.file_name() != OsStr::new(".git") && !is_foreign_root(entry, &active_roots)
+    });
 }
 
 enum FindEvent {
     Hit(PathBuf, PathBuf),
     TimedOut,
+}
+
+/// Wirksamer Hidden-Filter des Tiefenmodus (Paket B): der Chip „versteckte"
+/// muss an sein UND der Baum muss versteckte Eintraege zeigen. Was der Baum
+/// nicht anzeigt (`vaultShowHidden` aus), kann der Filter nicht zeigen.
+pub fn filter_show_hidden(chip_hidden: bool, vault_show_hidden: bool) -> bool {
+    chip_hidden && vault_show_hidden
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -121,6 +132,7 @@ fn visit_entry(
     query_lower: &str,
     markdown_only: bool,
     show_hidden: bool,
+    pin_roots: &HashSet<String>,
     stop: &AtomicBool,
     tx: &mpsc::Sender<FindEvent>,
     anchor: &Path,
@@ -145,10 +157,14 @@ fn visit_entry(
     };
     // Hidden-Filter erst hier: die Deadline oben muss jeden Eintrag sehen.
     // Die Walk-Wurzel (depth 0) bleibt ausgenommen, damit versteckte Pin-/
-    // Bereichs-Wurzeln wie im Baum sichtbar bleiben.
+    // Bereichs-Wurzeln wie im Baum sichtbar bleiben. Zusaetzlich bleibt jeder
+    // Pfad ausgenommen, der selbst eine Pin-Wurzel ist: ein Pin direkt auf
+    // `.name` zeigt seinen Inhalt weiter — auch wenn er als verschachtelter
+    // Pin unter einer sichtbaren Pin-Wurzel mitgewandert wird.
     if !show_hidden
         && entry.depth() > 0
         && crate::vault::is_vault_hidden_name(&entry.file_name().to_string_lossy())
+        && !pin_roots.contains(&normalize_path(entry.path()))
     {
         return if file_type.is_dir() {
             WalkState::Skip
@@ -183,11 +199,14 @@ fn visit_entry(
 /// Consumer-Thread (dieser) fuehrt Trefferliste und Deckel exakt — nur so
 /// ist `truncated` deterministisch (erst bei einem echten Extra-Treffer).
 /// Rueckgabe: (Treffer inkl. Anker, truncated, reason).
+#[allow(clippy::too_many_arguments)]
 fn collect_hits(
     walk_roots: &[(PathBuf, PathBuf)],
+    active_roots: &Arc<HashSet<String>>,
     query_lower: &str,
     markdown_only: bool,
     show_hidden: bool,
+    pin_roots: &HashSet<String>,
     cap: usize,
     time_budget: Duration,
     start: Instant,
@@ -211,7 +230,7 @@ fn collect_hits(
                     break;
                 }
                 let mut builder = WalkBuilder::new(root);
-                configure_filter_builder(&mut builder);
+                configure_filter_builder(&mut builder, active_roots.clone());
                 let root_tx = tx.clone();
                 let anchor = anchor.clone();
                 builder.build_parallel().run(|| {
@@ -223,6 +242,7 @@ fn collect_hits(
                             query_lower,
                             markdown_only,
                             show_hidden,
+                            pin_roots,
                             stop_ref,
                             &wtx,
                             &wanchor,
@@ -278,9 +298,10 @@ fn add_ancestor_chain(from: &Path, to: &str, out: &mut HashSet<String>) {
 /// R4-Tiefenfilter: findet Dateien, deren **Name** case-insensitive die
 /// Query enthaelt, und liefert dazu deren Vorfahren-Ordner.
 ///
-/// - `scope = None`: alle Pins ueber [`resolve_scope`] (Ordner rekursiv,
-///   Datei-Pins direkt, Overlap-Dedup) — dieselbe Aufloesung wie Palette und
-///   Volltextsuche.
+/// - `scope = None`: alle Pins ueber [`resolve_search_scope`] und
+///   [`plan_walk_roots`] — dieselbe Wurzelplanung wie die Volltextsuche:
+///   jeder Ordner-Pin ist eigene Walk-Wurzel (Anker = die Wurzel selbst),
+///   verschachtelte Pins sind Grenzen der umgebenden Walks; Datei-Pins direkt.
 /// - `scope = Some(dir)`: nur dieser Ordner; die Kette Pin-Wurzel → Bereich
 ///   kommt in `dirs` auch ohne Treffer dazu.
 ///
@@ -310,8 +331,16 @@ pub fn find_by_name(
 
     let start = Instant::now();
     let mut dirs: HashSet<String> = HashSet::new();
+    // Alle gepinnten Ordnerpfade: im Ordnerbereich (`scope = Some`) ist ein
+    // verschachtelter Pin keine eigene Walk-Wurzel; nur so bleibt dort der
+    // Inhalt eines Pins direkt auf `.name` sichtbar (Referenzfall Paket B).
+    let pin_roots: HashSet<String> = pinned
+        .iter()
+        .filter(|item| item.is_directory)
+        .map(|item| item.path.replace('\\', "/"))
+        .collect();
 
-    let (walk_roots, file_pins): (Vec<(PathBuf, PathBuf)>, Vec<PathBuf>) = match scope {
+    let (walk_roots, active_roots, file_pins) = match scope {
         Some(raw_scope) => {
             let scope_norm = raw_scope.replace('\\', "/");
             let scope_path = Path::new(&scope_norm);
@@ -364,40 +393,39 @@ pub fn find_by_name(
                 }
             }
             add_ancestor_chain(scope_path, &anchor, &mut dirs);
+            // Einzel-Walk: keine weiteren aktiven Wurzeln, also keine Grenzen.
             (
                 vec![(scope_path.to_path_buf(), PathBuf::from(anchor))],
+                Arc::new(HashSet::new()),
                 Vec::new(),
             )
         }
         None => {
-            let roots = resolve_scope(pinned, &SearchScope::Vault);
+            let roots = resolve_search_scope(pinned, &SearchScope::Vault);
             // W3-Rest: `.git`-Wurzeln (und Wurzeln unterhalb einer
-            // `.git`-Komponente) werden auch ohne Bereich entfernt — der
-            // Entry-Filter schuetzt nur Kind-Eintraege, nicht die Wurzel.
-            // Der Symlink-Pin-Bypass (explizit gepinnte Wurzel) bleibt.
-            let has_git_component =
-                |p: &Path| p.components().any(|c| c.as_os_str() == OsStr::new(".git"));
-            let walk_roots = roots
-                .dirs
-                .iter()
-                .filter(|d| !has_git_component(d))
-                .map(|d| (d.clone(), d.clone()))
-                .collect();
-            let file_pins = roots
+            // `.git`-Komponente) entfernt `plan_walk_roots` auch ohne Bereich
+            // — der Entry-Filter schuetzt nur Kind-Eintraege, nicht die
+            // Wurzel. Der Symlink-Pin-Bypass (explizit gepinnte Wurzel) bleibt.
+            let (planned, active_roots) = plan_walk_roots(&roots.dirs);
+            let walk_roots: Vec<(PathBuf, PathBuf)> =
+                planned.into_iter().map(|d| (d.clone(), d)).collect();
+            let file_pins: Vec<PathBuf> = roots
                 .files
                 .iter()
-                .filter(|f| !has_git_component(f))
+                .filter(|f| !f.components().any(|c| c.as_os_str() == OsStr::new(".git")))
                 .cloned()
                 .collect();
-            (walk_roots, file_pins)
+            (walk_roots, active_roots, file_pins)
         }
     };
 
     let (hits, mut truncated, mut reason) = collect_hits(
         &walk_roots,
+        &active_roots,
         &query_lower,
         opts.markdown_only,
         opts.show_hidden,
+        &pin_roots,
         cap,
         time_budget,
         start,
@@ -723,6 +751,256 @@ mod tests {
         assert_eq!(expected_dirs, res.dirs, "Vorfahren-Ordner");
         assert!(!res.truncated);
         assert_eq!(None, res.reason);
+    }
+
+    /// Referenzfall Paket B: zweiter Pin direkt auf einen Dot-Ordner unter
+    /// der sichtbaren Pin-Wurzel. `filter_show_hidden` bildet den Chip ab.
+    #[test]
+    fn deep_filter_hidden_chip_reference_cases() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        write(root, "notes/spec-x.md", "# x\n");
+        write(root, ".herd/spec.md", "# h\n");
+        write(root, ".herd/sub/spec-z.md", "# z\n");
+        write(root, "a.md", "# a\n");
+        write(root, ".pinned-hidden/spec-y.md", "# y\n");
+        let hidden_pin = root.join(".pinned-hidden");
+        let pins = vec![pin_dir(root), pin_dir(&hidden_pin)];
+
+        let cases = |chip: bool, tree: bool| {
+            find(
+                &pins,
+                None,
+                "spec",
+                VaultListOptions {
+                    markdown_only: false,
+                    show_hidden: filter_show_hidden(chip, tree),
+                },
+            )
+        };
+
+        let chip_off = cases(false, true);
+        assert_eq!(
+            vec![
+                norm(&hidden_pin.join("spec-y.md")),
+                norm(&root.join("notes/spec-x.md")),
+            ],
+            chip_off.files,
+            "Chip aus: nur sichtbare Treffer; die Pin-Wurzel selbst zaehlt nicht"
+        );
+
+        let chip_on = cases(true, true);
+        assert_eq!(
+            vec![
+                norm(&root.join(".herd/spec.md")),
+                norm(&root.join(".herd/sub/spec-z.md")),
+                norm(&hidden_pin.join("spec-y.md")),
+                norm(&root.join("notes/spec-x.md")),
+            ],
+            chip_on.files,
+            "Chip an + Baum versteckt an: .herd kommt dazu"
+        );
+
+        assert_eq!(
+            chip_off.files,
+            cases(true, false).files,
+            "Chip an + Baum aus verhaelt sich wie Chip aus"
+        );
+        assert_eq!(chip_off.files, cases(false, false).files);
+    }
+
+    /// K-A2: verschachtelte Pins hinter versteckten Zwischensegmenten im
+    /// Tiefenfilter (Query `spec`). Die gepinnte Wurzel bleibt erreichbar,
+    /// ein nicht gepinnter Nachbar hinter demselben Dot-Segment nicht.
+    #[test]
+    fn deep_filter_nested_pins_behind_hidden_segments() {
+        for child_rel in [".pinned", ".outer/.pinned", ".outer/pinned"] {
+            let tmp = TempDir::new().unwrap();
+            let root = tmp.path();
+            write(root, &format!("{child_rel}/spec.md"), "# s\n");
+            write(root, ".outer/sonst.md", "# o\n");
+            let hidden_pin = root.join(child_rel);
+            let pins = vec![pin_dir(root), pin_dir(&hidden_pin)];
+
+            let off = find(
+                &pins,
+                None,
+                "spec",
+                VaultListOptions {
+                    markdown_only: false,
+                    show_hidden: false,
+                },
+            );
+            assert!(
+                off.files.iter().any(|f| f.ends_with("/spec.md")),
+                "{child_rel}: gepinntes spec.md fehlt: {:?}",
+                off.files
+            );
+            assert!(
+                !off.files.iter().any(|f| f.ends_with("sonst.md")),
+                "{child_rel}: nicht gepinntes sonst.md darf nicht kommen: {:?}",
+                off.files
+            );
+
+            let on = find(
+                &pins,
+                None,
+                "spec",
+                VaultListOptions {
+                    markdown_only: false,
+                    show_hidden: true,
+                },
+            );
+            assert_eq!(
+                1,
+                on.files.iter().filter(|f| f.ends_with("/spec.md")).count(),
+                "{child_rel}: hidden an muss weiterhin genau einmal treffen"
+            );
+        }
+    }
+
+    /// Begründet das Fortbestehen der `pin_roots`-Ausnahme: In einem
+    /// Ordnerbereich (`scope = Some(R)`) ist der Dot-Pin keine eigene
+    /// Walk-Wurzel; ohne die Ausnahme würde `.pinned` dem Hidden-Filter zum
+    /// Opfer fallen, obwohl der Baum diese Pin-Wurzel sichtbar zeigt.
+    #[test]
+    fn deep_filter_scope_keeps_direct_hidden_pin_visible() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        write(root, ".pinned/spec.md", "# s\n");
+        let hidden_pin = root.join(".pinned");
+        let pins = vec![pin_dir(root), pin_dir(&hidden_pin)];
+        let res = find(
+            &pins,
+            Some(&norm(root)),
+            "spec",
+            VaultListOptions {
+                markdown_only: false,
+                show_hidden: false,
+            },
+        );
+        assert!(
+            res.files.iter().any(|f| f.ends_with("/spec.md")),
+            "direkter Dot-Pin muss im Ordnerbereich sichtbar bleiben: {:?}",
+            res.files
+        );
+    }
+
+    /// K-A3.2: Alias-Symlink-Pin unter dem Eltern-Pin. Der Tiefen-Walk folgt
+    /// Verzeichnis-Symlinks nicht; der Alias muss als eigene Wurzel erreichbar
+    /// bleiben und genau einen Treffer liefern.
+    #[cfg(unix)]
+    #[test]
+    fn deep_filter_nested_symlink_pin_found_once() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        write(root, ".target/spec.md", "# s\n");
+        std::os::unix::fs::symlink(root.join(".target"), root.join("alias")).unwrap();
+        let alias = root.join("alias");
+        let pins = vec![pin_dir(root), pin_dir(&alias)];
+        let res = find(
+            &pins,
+            None,
+            "spec",
+            VaultListOptions {
+                markdown_only: false,
+                show_hidden: false,
+            },
+        );
+        assert_eq!(1, res.files.len(), "deep symlink pin: {:?}", res.files);
+    }
+
+    /// N1-Konstellation im Tiefenfilter (`scope = None`): Pins R, K, S; jede
+    /// Datei genau einmal, kein `truncated` bei Deckel = exakte Trefferzahl.
+    #[test]
+    fn deep_filter_n1_constellations_each_file_once() {
+        for case in ["exclude_precedence", "nested_anchor"] {
+            let tmp = TempDir::new().unwrap();
+            let root = tmp.path().join("r");
+            let other = tmp.path().join("s");
+            init_git(&root);
+            let child = if case == "exclude_precedence" {
+                write(&root, ".gitignore", "!.pin/\n");
+                write(&root, ".git/info/exclude", ".pin/\n");
+                root.join(".pin")
+            } else {
+                write(&root, "sub/.gitignore", "/sub/\n");
+                root.join("sub")
+            };
+            for i in 0..12 {
+                write(&child, &format!("n1-f{i:02}.md"), "# n\n");
+            }
+            write(&other, "n1-s.md", "# s\n");
+            let pins = vec![pin_dir(&root), pin_dir(&child), pin_dir(&other)];
+
+            for show_hidden in [false, true] {
+                let res = find_by_name(
+                    &pins,
+                    None,
+                    "n1-",
+                    VaultListOptions {
+                        markdown_only: false,
+                        show_hidden,
+                    },
+                    13,
+                    FILTER_TIME_BUDGET,
+                )
+                .unwrap();
+                assert_eq!(
+                    13,
+                    res.files.len(),
+                    "{case} hidden={show_hidden}: {:?}",
+                    res.files
+                );
+                let unique: HashSet<&String> = res.files.iter().collect();
+                assert_eq!(13, unique.len(), "{case}: Duplikate {:?}", res.files);
+                assert!(!res.truncated, "{case} hidden={show_hidden}");
+                assert_eq!(None, res.reason);
+            }
+        }
+    }
+
+    /// Schlichter verschachtelter Pin (`R/sub`, kein Dot/Ignore/Symlink): eigene
+    /// Walk-Wurzel, Treffer genau einmal; Anker der Vorfahrenkette ist die
+    /// Kind-Wurzel selbst.
+    #[test]
+    fn deep_filter_nested_plain_pin_is_own_root() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("r");
+        write(&root, "sub/spec.md", "# s\n");
+        let sub = root.join("sub");
+        let pins = vec![pin_dir(&root), pin_dir(&sub)];
+        let res = find(&pins, None, "spec", VaultListOptions::default());
+        assert_eq!(vec![norm(&sub.join("spec.md"))], res.files);
+        assert_eq!(vec![norm(&sub)], res.dirs);
+    }
+
+    /// N2 im Tiefenfilter (`scope = None`): `B/left/link -> B/right/sub`,
+    /// Pins `B/left` und `B/left/link/..` (physisch `B/right`) — beide
+    /// Wurzeln, beide Treffer.
+    #[cfg(unix)]
+    #[test]
+    fn deep_filter_symlink_dotdot_pin_is_its_own_root() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path().join("b");
+        write(&base, "left/spec-left.md", "# l\n");
+        write(&base, "right/spec-right.md", "# r\n");
+        fs::create_dir_all(base.join("right/sub")).unwrap();
+        std::os::unix::fs::symlink(base.join("right/sub"), base.join("left/link")).unwrap();
+        let left = base.join("left");
+        let dotdot = PinnedItem {
+            path: format!("{}/link/..", norm(&left)),
+            is_directory: true,
+        };
+        let res = find(
+            &[pin_dir(&left), dotdot],
+            None,
+            "spec",
+            VaultListOptions::default(),
+        );
+        assert_eq!(2, res.files.len(), "{:?}", res.files);
+        assert!(res.files.iter().any(|f| f.ends_with("/spec-left.md")));
+        assert!(res.files.iter().any(|f| f.ends_with("/spec-right.md")));
     }
 
     #[test]

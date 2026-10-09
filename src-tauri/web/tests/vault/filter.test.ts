@@ -41,6 +41,7 @@ function buildDom(opts?: { pinRootOpen?: boolean }): void {
                     <button type="button" id="vault-filter-md" aria-pressed="false">.md</button>
                     <button type="button" id="vault-filter-git" aria-pressed="false">git</button>
                     <button type="button" id="vault-filter-deep" aria-pressed="false">**</button>
+                    <button type="button" id="vault-filter-hidden" aria-pressed="false">.*</button>
                     <button type="button" id="vault-filter-close"></button>
                 </div>
             </div>
@@ -126,6 +127,7 @@ function configureInvoke(opts?: {
     markdownOnly?: boolean;
     gitChangedOnly?: boolean;
     deep?: boolean;
+    hidden?: boolean;
 }): void {
     tauri.invoke.mockImplementation((cmd: string) => {
         if (cmd === 'vault_filter_options_get') {
@@ -134,6 +136,7 @@ function configureInvoke(opts?: {
                 barVisible: !!opts?.barVisible,
                 gitChangedOnly: !!opts?.gitChangedOnly,
                 deep: !!opts?.deep,
+                hidden: !!opts?.hidden,
             });
         }
         if (cmd === 'vault_filter_options_set') {
@@ -1525,7 +1528,7 @@ describe('vault/filter — deep filter (R4)', () => {
         await flushMicro();
         await flushMicro();
         expect(findCalls.length).toBe(1);
-        expect(findCalls[0]).toEqual({ query: '', scope: '/vault/Notes' });
+        expect(findCalls[0]).toEqual({ query: '', scope: '/vault/Notes', hidden: false });
         expect(
             tauri.invoke.mock.calls.some((c) => c[0] === 'vault_expand_paths'),
         ).toBe(true);
@@ -1705,5 +1708,240 @@ describe('vault/filter — deep filter (R4)', () => {
         $('vault-filter-md').click();
         await flushMicro(); await flushMicro();
         expect(isVisible('/vault/Notes/deep.md'), 'markdown off must leave the changed file reachable and open in the restored scoped Git view').toBe(true);
+    });
+
+    it('REVIEW rejects a stale find while hidden persistence is pending', async () => {
+        let resolveFind!: (v: unknown) => void;
+        let resolveSet!: () => void;
+        let delayWrites = false;
+        const expands: string[][] = [];
+        const findArgs: Array<{ query: string; scope: string | null; hidden: boolean }> = [];
+        deepInvoke({
+            vault_filter_find: (args?: any) => {
+                findArgs.push(args);
+                return new Promise(resolve => { resolveFind = resolve; });
+            },
+            vault_filter_options_set: () => delayWrites ? new Promise<void>(resolve => { resolveSet = resolve; }) : undefined,
+            vault_expand_paths: (args: any) => {
+                expands.push(args.paths);
+                return {html: $('vault-tree').innerHTML, paths: []};
+            },
+        });
+        await initModules(); clickDeep(); await flushMicro();
+        await typeAndSettle('alp');
+        expect(findArgs.length).toBe(1);
+        delayWrites = true;
+        $('vault-filter-hidden').click(); await flushMicro();
+        resolveFind({files: [], dirs: ['/vault/.herd'], truncated: false, reason: null});
+        await flushMicro();
+        expect(expands, 'the obsolete response must not expand folders').toEqual([]);
+        expect(isVisible('/vault/Alpha.md'), 'obsolete empty result must not hide the current tree').toBe(true);
+        // Genau ein neuer Find, und der traegt den neuen Chip-Wert explizit.
+        expect(findArgs.length).toBe(2);
+        expect(findArgs[1].hidden, 'the new find must carry the new hidden value').toBe(true);
+        resolveSet(); await flushMicro();
+    });
+
+    it('REVIEW find carries the new hidden value across a concurrent query change', async () => {
+        let resolveSet!: () => void;
+        let delayWrites = false;
+        let finds = 0;
+        const findArgs: Array<{ query: string; hidden: boolean }> = [];
+        deepInvoke({
+            vault_filter_find: (args?: any) => {
+                finds++;
+                findArgs.push(args);
+                return {files: [], dirs: []};
+            },
+            vault_filter_options_set: () => delayWrites ? new Promise<void>(resolve => { resolveSet = resolve; }) : undefined,
+        });
+        await initModules(); clickDeep(); await flushMicro();
+        await typeAndSettle('spec'); expect(finds).toBe(1);
+        delayWrites = true;
+        $('vault-filter-hidden').click(); await flushMicro();
+        await typeAndSettle('spec2'); expect(finds).toBe(2);
+        // Der Find nach dem Query-Wechsel traegt den neuen Chip-Wert bereits —
+        // der ausstehende Panel-Write ist keine Voraussetzung fuer korrekte
+        // Treffer mehr. Deshalb braucht der Write danach KEINEN dritten Lauf:
+        // der Schluessel der zweiten Antwort entspricht dem aktuellen Wunsch.
+        expect(findArgs[1].hidden, 'find after the query change must use the new hidden value').toBe(true);
+        resolveSet(); await flushMicro();
+        expect(finds, 'the key-correct find already satisfies the new hidden key').toBe(2);
+    });
+
+    it('hidden chip change invalidates the deep key and re-searches', async () => {
+        let finds = 0;
+        deepInvoke({
+            vault_filter_find: () => {
+                finds += 1;
+                return { files: ['/vault/Alpha.md'], dirs: ['/vault'] };
+            },
+        });
+        await initModules();
+        clickDeep();
+        await flushMicro();
+        await typeAndSettle('alp');
+        expect(finds).toBe(1);
+        $('vault-filter-hidden').click();
+        await flushMicro();
+        expect(finds, 'hidden chip must re-issue the deep find').toBe(2);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Paket B — Chip „versteckte" (flacher Modus + Persistenz/Reset)
+// ---------------------------------------------------------------------------
+
+describe('vault/filter — hidden chip (Paket B)', () => {
+    function addHiddenNodes(): void {
+        const children = document.querySelector(
+            'li.node[data-path="/vault"] > ul.children',
+        )!;
+        children.insertAdjacentHTML(
+            'beforeend',
+            '<li class="node" data-kind="dir" data-path="/vault/.herd">' +
+                '<div class="row"><span class="caret open"></span>' +
+                '<span class="label">.herd</span></div>' +
+                '<ul class="children">' +
+                '<li class="node" data-kind="file" data-path="/vault/.herd/spec.md">' +
+                '<div class="row"><span class="label">spec.md</span></div></li>' +
+                '</ul></li>',
+        );
+        const pinnedUl = document.querySelector(
+            'li.section[data-section="pinned"] > ul.children',
+        )!;
+        pinnedUl.insertAdjacentHTML(
+            'beforeend',
+            '<li class="node" data-kind="dir" data-path="/vault/.pinned-hidden">' +
+                '<div class="row"><span class="caret open"></span>' +
+                '<span class="label">.pinned-hidden</span></div>' +
+                '<ul class="children">' +
+                '<li class="node" data-kind="file" data-path="/vault/.pinned-hidden/spec-y.md">' +
+                '<div class="row"><span class="label">spec-y.md</span></div></li>' +
+                '</ul></li>',
+        );
+    }
+
+    it('chip off hides dot files below the pin; a pin on the dot folder stays exempt', async () => {
+        configureInvoke();
+        await initModules();
+        addHiddenNodes();
+        await flushMicro();
+        await typeQuery('spec');
+        vi.advanceTimersByTime(150);
+        await flushMicro();
+
+        expect(isHidden('/vault/.herd/spec.md'), 'hidden file below pin must hide').toBe(
+            true,
+        );
+        expect(
+            isVisible('/vault/.pinned-hidden/spec-y.md'),
+            'a pin directly on the dot folder keeps its content visible',
+        ).toBe(true);
+
+        $('vault-filter-hidden').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+        expect($('vault-filter-hidden').getAttribute('aria-pressed')).toBe('true');
+        expect(isVisible('/vault/.herd/spec.md'), 'chip on shows the hidden hit').toBe(
+            true,
+        );
+    });
+
+    it('chip alone does not change the tree and does not set the badge', async () => {
+        configureInvoke();
+        await initModules();
+        addHiddenNodes();
+        await flushMicro();
+        $('vault-filter-hidden').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+        expect(isVisible('/vault/Beta.md')).toBe(true);
+        expect(isVisible('/vault/.herd/spec.md')).toBe(true);
+        expect($('vault-filter-toggle').classList.contains('filter-active')).toBe(false);
+    });
+
+    it('restores from options_get and resets via the automation hook', async () => {
+        configureInvoke({ hidden: true });
+        const { filter } = await initModules();
+        await flushMicro();
+        expect($('vault-filter-hidden').getAttribute('aria-pressed')).toBe('true');
+
+        filter.resetVaultFilterForAutomation();
+        await flushMicro();
+        expect($('vault-filter-hidden').getAttribute('aria-pressed')).toBe('false');
+        const setCalls = tauri.invoke.mock.calls.filter(
+            (c) => c[0] === 'vault_filter_options_set',
+        );
+        const last = setCalls[setCalls.length - 1][1] as { hidden: boolean };
+        expect(last.hidden).toBe(false);
+    });
+
+    it('toggle persists hidden in vault_filter_options_set', async () => {
+        configureInvoke();
+        await initModules();
+        $('vault-filter-hidden').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+        const setCalls = tauri.invoke.mock.calls.filter(
+            (c) => c[0] === 'vault_filter_options_set',
+        );
+        const last = setCalls[setCalls.length - 1][1] as { hidden: boolean };
+        expect(last.hidden).toBe(true);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// K-B3.1 — Pin-Zuordnung des flachen Hidden-Filters auf Windows-Pfaden
+// ---------------------------------------------------------------------------
+
+describe('vault/filter — Pin-Zuordnung case-aware (K-B3.1)', () => {
+    function setPinAndRecent(root: string, file: string): void {
+        const pin = document.querySelector(
+            'li.section[data-section="pinned"] > ul.children > li.node',
+        ) as HTMLElement;
+        pin.setAttribute('data-path', root);
+        const node = document.querySelector(
+            'li.section[data-section="recent"] li.node[data-kind="file"]',
+        ) as HTMLElement;
+        node.setAttribute('data-path', file);
+        const label = node.querySelector(':scope > .row > .label');
+        if (label) label.textContent = 'spec.md';
+    }
+
+    function recentFile(): HTMLElement {
+        return document.querySelector(
+            'li.section[data-section="recent"] li.node[data-kind="file"]',
+        ) as HTMLElement;
+    }
+
+    async function search(q: string): Promise<void> {
+        await typeQuery(q);
+        vi.advanceTimersByTime(150);
+        await flushMicro();
+    }
+
+    it.each([
+        ['gleiche Schreibweise', 'C:/.vault', 'C:/.vault/spec.md'],
+        ['Backslashes', 'C:\\.vault', 'C:\\.vault\\spec.md'],
+        ['Laufwerks-Case', 'C:/.vault', 'c:/.vault/spec.md'],
+        ['Segment-Case', 'C:/.Vault', 'C:/.vault/spec.md'],
+    ])('Windows-Pin-Zuordnung: %s', async (_label, root, file) => {
+        configureInvoke();
+        await initModules();
+        setPinAndRecent(root, file);
+        await search('spec');
+        expect(
+            recentFile().classList.contains('vf-hidden'),
+            'Datei unter dem Pin darf trotz Schreibvarianten nicht ausgeblendet werden',
+        ).toBe(false);
+    });
+
+    it('Unix bleibt case-sensitiv: anderer Ordner ist kein Pin', async () => {
+        configureInvoke();
+        await initModules();
+        setPinAndRecent('/home/u/.Vault', '/home/u/.vault/spec.md');
+        await search('spec');
+        expect(
+            recentFile().classList.contains('vf-hidden'),
+            'Dot-Segment unterhalb keines passenden Pins',
+        ).toBe(true);
     });
 });

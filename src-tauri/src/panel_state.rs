@@ -56,9 +56,12 @@ pub struct PanelStateData {
     pub search_file_filter: String,
     #[serde(default)]
     pub search_custom_extensions: String,
-    // Vault-Suche: auch versteckte und gitignorierte Dateien (Default aus).
+    // Vault-Suche: auch versteckte Einträge (Dot-Namen) bzw. gitignorierte
+    // Dateien durchsuchen (beide Default aus, getrennt schaltbar).
     #[serde(default)]
     pub search_include_hidden: bool,
+    #[serde(default)]
+    pub search_include_ignored: bool,
     // Vault-Suche S5: Verzeichnispfad-Anzeige neben dem Dateinamen (Default aus)
     // und Sortiermodus der Ergebnisgruppen als roher UI-Wert
     // (`none` | `name` | `path`, Default `none` via serde-default-Funktion, weil
@@ -82,6 +85,11 @@ pub struct PanelStateData {
     // Unterordnern. Default aus; der fluechtige Ordnerbereich liegt nicht hier.
     #[serde(default)]
     pub vault_filter_deep: bool,
+    // Chip „versteckte" (`.*`): Namens-/Tiefenfilter liefert auch Treffer mit
+    // Dot-Segment unterhalb der Pin-Wurzel. Default aus, unabhaengig von
+    // `settings.vault_show_hidden` (der Baum folgt weiter dem Setting).
+    #[serde(default)]
+    pub vault_filter_hidden: bool,
     // Volle Breite fuer die gerenderte Markdown-View (View- und
     // Split-Mode). Default aus: die Lesebreite aus dem aktiven View-Theme
     // bleibt der Normalfall, der Schalter ist die bewusste Ausnahme fuer
@@ -133,12 +141,14 @@ impl Default for PanelStateData {
             search_file_filter: default_search_file_filter(),
             search_custom_extensions: String::new(),
             search_include_hidden: false,
+            search_include_ignored: false,
             search_show_paths: false,
             search_sort: default_search_sort(),
             vault_filter_markdown_only: false,
             vault_filter_bar_visible: false,
             vault_filter_git_changed_only: false,
             vault_filter_deep: false,
+            vault_filter_hidden: false,
             content_wide: false,
             zen_hint_seen: false,
         }
@@ -218,6 +228,7 @@ impl PanelState {
         file_filter: String,
         custom_extensions: String,
         include_hidden: bool,
+        include_ignored: bool,
         show_paths: bool,
         sort: String,
     ) -> io::Result<()> {
@@ -227,6 +238,7 @@ impl PanelState {
         self.data.search_file_filter = file_filter;
         self.data.search_custom_extensions = custom_extensions;
         self.data.search_include_hidden = include_hidden;
+        self.data.search_include_ignored = include_ignored;
         self.data.search_show_paths = show_paths;
         self.data.search_sort = sort;
         self.save()
@@ -248,11 +260,16 @@ impl PanelState {
         bar_visible: bool,
         git_changed_only: bool,
         deep: bool,
+        hidden: Option<bool>,
     ) -> io::Result<()> {
         self.data.vault_filter_markdown_only = markdown_only;
         self.data.vault_filter_bar_visible = bar_visible;
         self.data.vault_filter_git_changed_only = git_changed_only;
         self.data.vault_filter_deep = deep;
+        // Fehlendes Feld beim Set = bisherigen Wert behalten (Alt-Caller).
+        if let Some(hidden) = hidden {
+            self.data.vault_filter_hidden = hidden;
+        }
         self.save()
     }
 
@@ -495,18 +512,25 @@ mod tests {
     fn vault_filter_git_changed_only_defaults_off_and_persists() {
         let default = PanelStateData::default();
         assert!(!default.vault_filter_git_changed_only);
+        assert!(!default.vault_filter_hidden);
         let temp = TempDir::new().unwrap();
         let path = temp.path().join("panel.json");
         let mut state = PanelState::load_from(path.clone());
         assert!(!default.vault_filter_deep);
         state
-            .set_vault_filter_options(false, true, true, true)
+            .set_vault_filter_options(false, true, true, true, Some(true))
             .unwrap();
-        let reloaded = PanelState::load_from(path).data();
+        let reloaded = PanelState::load_from(path.clone()).data();
         assert!(reloaded.vault_filter_git_changed_only);
         assert!(reloaded.vault_filter_bar_visible);
         assert!(reloaded.vault_filter_deep);
+        assert!(reloaded.vault_filter_hidden);
         assert!(!reloaded.vault_filter_markdown_only);
+        // Fehlendes `hidden` beim Set behaelt den bisherigen Wert.
+        state
+            .set_vault_filter_options(false, true, false, false, None)
+            .unwrap();
+        assert!(PanelState::load_from(path).data().vault_filter_hidden);
     }
 
     #[test]
@@ -594,6 +618,7 @@ mod tests {
         assert_eq!("allText", default.search_file_filter);
         assert_eq!("", default.search_custom_extensions);
         assert!(!default.search_include_hidden);
+        assert!(!default.search_include_ignored);
         // S5-Defaults.
         assert!(!default.search_show_paths);
         assert_eq!("none", default.search_sort);
@@ -610,6 +635,7 @@ mod tests {
                 "foobar,md".to_string(),
                 true,
                 true,
+                true,
                 "path".to_string(),
             )
             .unwrap();
@@ -620,6 +646,7 @@ mod tests {
         assert_eq!("custom", reloaded.search_file_filter);
         assert_eq!("foobar,md", reloaded.search_custom_extensions);
         assert!(reloaded.search_include_hidden);
+        assert!(reloaded.search_include_ignored);
         assert!(reloaded.search_show_paths);
         assert_eq!("path", reloaded.search_sort);
     }
@@ -656,6 +683,7 @@ mod tests {
         assert_eq!("allText", data.search_file_filter);
         assert_eq!("", data.search_custom_extensions);
         assert!(!data.search_include_hidden);
+        assert!(!data.search_include_ignored);
         // S5-Felder fehlen im Alt-Stand → serde-Defaults.
         assert!(!data.search_show_paths);
         assert_eq!("none", data.search_sort);

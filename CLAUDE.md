@@ -278,6 +278,9 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   gepinntes `.git` wäre abwegig und folgt derselben Pin-Regel).
   Live-Toggle ohne Neustart; unsichtbar gewordene aufgeklappte Ordner
   werden aus `expanded_dirs` und ihren NonRecursive-Watches entfernt.
+  **Davon unabhaengig** steuert der Filter-Chip „versteckte"
+  (`#vault-filter-hidden`) nur die Such-/Filtertreffer; der Baum folgt
+  weiter ausschliesslich `vaultShowHidden` (siehe Vault-Tree-Filter).
 - **Pin-Reordering** (`vault/tree.ts`): das Umsortieren der angepinnten
   Top-Level-Einträge läuft **Pointer-basiert** (`pointerdown`/`move`/`up`,
   delegiert auf `#vault-tree`), **bewusst NICHT über HTML5-Drag&Drop**.
@@ -388,9 +391,27 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   `ignore::WalkBuilder`, Verzeichnis-Scopes (Vault/Folder) seit S6 parallel
   über `run_search_parallel` (`build_parallel` + `mpsc`-Consumer, nur der
   Consumer ruft `on_file`, Completion-Order; OpenTabs-Puffer bleiben
-  sequenziell) (hidden/gitignore-Filter; Opt-in `includeHidden` →
-  `standard_filters(false)`, `.git`-Dirs bleiben per `filter_entry`
-  draußen), Filter über `FileFilter`
+  sequenziell) (hidden/gitignore-Filter; **zwei getrennte Opt-ins**
+  `includeHidden` (Dot-Einträge) und `includeIgnored`
+  (ignore/gitignore-Gruppe)). `.git` ist in **jeder** Flag-Kombination
+  draußen (Name exakt per `filter_entry`; Walk-Wurzeln/Scopes mit
+  `.git`-Komponente werden vor dem Walk verworfen — `Folder(R/.git)` →
+  keine Treffer). Bei `includeHidden=false` verwirft der `filter_entry`
+  Dot-Einträge **ausdrücklich** (der Crate-`hidden`-Filter unterliegt
+  Whitelist-Negationen wie `!.hidden.md`); die Walk-Wurzel (depth 0)
+  bleibt ausgenommen, damit ein Pin direkt auf einen Dot-Ordner zeigt.
+  **Jeder Ordner-Pin ist eigene Walk-Wurzel** (Vault-Scope über
+  `resolve_search_scope`, nur exakte Duplikate per lexikalischem `root_key`
+  entfallen; Windows-Pfade case-insensitiv; `resolve_scope` klappt für
+  Palette/Tags/Wikilink weiter präfixweise ein); statt Erreichbarkeit vorherzusagen, betritt kein Walk
+  einen Eintrag, der selbst aktive Wurzel **dieses Aufrufs** ist
+  (`plan_walk_roots` + `is_foreign_root` im `filter_entry`, gilt auch für
+  den Tiefenfilter ohne Bereich) — jede Datei lexikalisch genau ein Walk,
+  kein Doppelzählen im parallelen Näherungszähler (Befund N1). Im
+  Ordner-Scope ist nur der Ordner aktiv, darunterliegende Pins bekommen
+  keinen Bypass;
+  fehlt `includeIgnored` an der Grenze, gilt der Wert von
+  `includeHidden` = alter Vertrag), Filter über `FileFilter`
   (`markdown` = nur `FileKind::Markdown` | `allText` = Markdown+Text |
   `custom` = Endungsliste mit bewusstem `classify`-Bypass) + 2-MiB-Cap
   (`skipped_large`) + NUL-Sniff (8 KiB); Literalsuche escaped `(?i)`/`\b…\b`
@@ -424,11 +445,11 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   Edit/Split via `FolioEditor.revealMatch`, View-Mode via Find-Bar nach
   Finder-Settle (Regex: `Jump.term` = konkret gematchter Text). `tab_open`
   überspringt `consumeNavRestoreSkip(path)` einmalig. Optionen (Aa/W/Regex/
-  fileFilter/customExtensions roh/`includeHidden`) persistieren in
+  fileFilter/customExtensions roh/`includeHidden`/`includeIgnored`) persistieren in
   `panel_state.rs` (`search_file_filter` default `allText`,
-  `search_include_hidden` default aus); Scope + Query flüchtig.
+  `search_include_hidden`/`search_include_ignored` default aus); Scope + Query flüchtig.
   Automation: `POST /search` (synchron, additive Felder `regex`/`fileFilter`/
-  `customExtensions`/`openTabs`/`includeHidden`; alle Client-Fehler → 400).
+  `customExtensions`/`openTabs`/`includeHidden`/`includeIgnored`; alle Client-Fehler → 400).
 - **Vault-Tree-Filter (R3, Sicht-Filter)** (Frontend `vault/filter.ts`,
   Funnel-Button + Filterzeile `#vault-filter`; Spec
   [`docs/spec-vault-filter.md`](docs/spec-vault-filter.md) inkl.
@@ -452,10 +473,13 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   **R4-Tiefenfilter** (Chip `#vault-filter-deep` `**`, Spec-Vertrag):
   aktiv bei `(Chip ODER Ordnerbereich) UND Query ≥ 2 Zeichen`. Backend
   `vault_filter_find` läuft parallel (`ignore::WalkBuilder::build_parallel`)
-  über die Pins (`search::resolve_scope`) bzw. den Bereich, **ohne
+  über die Pins (`search::resolve_search_scope`) bzw. den Bereich, **ohne
   Gitignore** (`standard_filters(false)`; der Baum zeigt ignorierte Dateien
   gedimmt — der Filter darf nichts verschweigen), `.git` immer raus,
   Symlink-Dirs nicht betreten, `vaultShowHidden`/md-only respektiert.
+  Ohne Bereich ist jeder Ordner-Pin eigene Walk-Wurzel mit derselben
+  Grenzprüfung wie die Suche (`plan_walk_roots`/`is_foreign_root`), auch
+  hinter versteckten/gitignorierten Segmenten oder Symlinks erreichbar.
   Deckel **500 Treffer** bzw. **3 s** → `truncated` + `reason
   ("cap"|"time")`; `truncated` erst bei einem WEITEREN Treffer, kein
   Visit-Deckel (der R2-Fehler). Antwort `{files, dirs, truncated, reason}`;
@@ -466,18 +490,32 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   Tiefenfilters laufen in EINER serialisierten Sync-Schleife**
   (`runDeepSync`, nie doppelt; `deepSyncDirty` koalesziert Aktionen, der
   Wunschzustand wird erst beim Ausführen gelesen); Schlüssel = Query +
-  Bereich + md-only + `vaultShowHidden`, veraltetes Voll-HTML wird nie
-  angewandt (`refreshVault()` stattdessen), die tatsächlich neu geöffneten
-  `paths` werden IMMER eingesammelt. Aufräumen (Query < 2, Chip aus,
-  Bereich weg, Schließen, Reset) ruft `vault_collapse_paths` mit **genau
-  den vom Filter geöffneten** Ordnern — vorher offene bleiben offen. Der
-  Expand-Soft-Cap zeigt den bestehenden `vault.tree.expandCapped`-Hinweis
-  (Vorrang vor „Keine Treffer"). Bereich als **eigene Zeile**
-  `#vault-filter-scope` über der Filterzeile (📁 Name mit Ellipsis ✕,
-  Tooltip = Pfad, flüchtig); Bereich-Fehler
-  (`errors.vault.filterScopeNotFound`/`…Invalid`) entfernen den Bereich
-  und zeigen den Fehler transient; Hinweise „Keine Treffer"/cap/time in
-  `#vault-tree-notice`. Persistenz `vault_filter_deep`.
+  Bereich + md-only + `vaultShowHidden` + Hidden-Chip, veraltetes
+  Voll-HTML wird nie angewandt (`refreshVault()` stattdessen), die
+  tatsächlich neu geöffneten `paths` werden IMMER eingesammelt. Aufräumen
+  (Query < 2, Chip aus, Bereich weg, Schließen, Reset) ruft
+  `vault_collapse_paths` mit **genau den vom Filter geöffneten** Ordnern
+  — vorher offene bleiben offen. Der Expand-Soft-Cap zeigt den
+  bestehenden `vault.tree.expandCapped`-Hinweis (Vorrang vor „Keine
+  Treffer"). Bereich als **eigene Zeile** `#vault-filter-scope` über der
+  Filterzeile (📁 Name mit Ellipsis ✕, Tooltip = Pfad, flüchtig);
+  Bereich-Fehler (`errors.vault.filterScopeNotFound`/`…Invalid`)
+  entfernen den Bereich und zeigen den Fehler transient; Hinweise „Keine
+  Treffer"/cap/time in `#vault-tree-notice`. Persistenz
+  `vault_filter_deep`.
+  **Hidden-Chip** (`#vault-filter-hidden` `.*`, vierter Chip nach `**`,
+  persistiert `vault_filter_hidden`, Default aus): wirkt **nur auf
+  Filterergebnisse**, nie auf den ungefilterten Baum (der folgt weiter
+  `vaultShowHidden`), und aktiviert **keinen** Filter (anders als `.md`).
+  Ist er aus, blendet der Filter alle Treffer aus, deren Pfad ein
+  Dot-Segment **unterhalb der Pin-Wurzel** enthält (flacher Modus
+  clientseitig über die längste sichtbare Pin-Wurzel, Tiefenmodus im
+  Backend); die Pin-Wurzel selbst zählt nicht (auch ein Pin direkt auf
+  `.name` zeigt seinen Inhalt). Tiefenmodus: wirksames `show_hidden` =
+  Chip **UND** `vaultShowHidden` — was der Baum nicht anzeigt, kann der
+  Filter nicht zeigen. Beide Werte stehen im Tiefen-Schlüssel, damit ein
+  Umschalten neu sucht; der Chip-Toggle persistiert erst und ruft dann
+  `vault_filter_find` (gleiche Race wie beim md-Toggle).
   **R4.1**: Bereich + md-only ist auch **ohne (oder mit zu kurzer) Query**
   aktiv — das Backend liefert dann alle Markdown-Dateien unterhalb des
   Bereichs (Guard: leere Query nur mit Bereich UND md-only). Ohne Bereich

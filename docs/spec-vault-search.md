@@ -26,11 +26,61 @@ angepinnten Einträge. Daraus folgt:
   (verstreute Einzeldateien → Überraschungstreffer außerhalb dessen,
   was der User als „seinen Vault“ versteht).
 - **Scope „Ordner“**: ein beliebiger Ordner aus dem Baum (auch nicht
-  selbst gepinnte Unterordner eines Pins), rekursiv.
-- **Overlap-Dedup**: gepinnter Ordner + gepinnter Unterordner →
-  verschachtelte Ordner eingeklappt; jede Datei wird genau einmal
-  durchsucht (Dedup über `seen` + normalisierte absolute Pfade,
-  Forward-Slashes wie überall). Explizit gepinnte Einzeldateien unter
+  selbst gepinnte Unterordner eines Pins), rekursiv. **Anders als im
+  Vault-Scope ist hier nur der Ordner aktive Walk-Wurzel**: darunter
+  liegende Pins sind keine Grenzen und bekommen keinen Wurzel-Bypass —
+  Hidden/Ignore gelten relativ zum Ordner (ein Pin `R/.pin` unter
+  `Folder(R)` wird bei `includeHidden=false` nicht durchsucht).
+- **Wurzelplanung (Vault-Scope)**: **Jeder existierende Ordner-Pin ist
+  eigene Walk-Wurzel**, auch ein verschachtelter; nur exakte Duplikate
+  (gleicher lexikalischer Schlüssel `root_key`) entfallen
+  (`resolve_search_scope`, `plan_walk_roots`; Command- und HTTP-Pfad
+  lösen darüber auf). `resolve_scope` behält dagegen die einfache
+  Präfix-Einklappung (Kind-Ordner unter einem anderen Pin entfällt) für
+  Palette, Tags und Wikilink-Index, die keine Grenzprüfung haben. Statt vorherzusagen, ob ein
+  Eltern-Walk einen Kind-Pin erreicht (das bildete die Walk-Semantik nie
+  exakt nach — `info/exclude`-Priorität, verschachtelte
+  `.gitignore`-Anker, Befund N1), grenzen sich die Walks gegenseitig ab:
+  Ein Eintrag mit `depth() > 0`, dessen Schlüssel eine **aktive Wurzel
+  dieses Aufrufs** ist, wird nicht betreten (`is_foreign_root` im
+  `filter_entry`, eine gemeinsame `HashSet` pro Aufruf, O(1) je
+  Verzeichnis-Eintrag). Damit besucht jede Datei — lexikalisch — genau
+  einen Walk, sequenziell wie parallel, und die Grenze greift vor
+  Dateiscan und Worker-Zählung. Die Kind-Wurzel bekommt dabei
+  zuverlässig ihren Wurzel-Bypass (depth 0: Dot-Name, gitignorierter
+  Pfad, Verzeichnis-Symlink), auch wenn der Eltern-Walk sie ausgefiltert
+  hätte; Ignore-Regeln **unterhalb** gelten unverändert, die
+  Eltern-Regeln wertet nur der echte Walk aus. Die Grenzprüfung schließt
+  nur aus und kann den `.git`- oder Hidden-Ausschluss nie aufheben.
+  **Schlüssel** (`root_key`, eigene kleine Normalisierung in `search.rs`):
+  Trenner vereinheitlicht (`\` → `/`, mehrfache Trenner zu einem,
+  führendes `//` der UNC-Wurzel bleibt), abschließende Trenner entfernt,
+  Präfix `//?/` bzw. `//?/UNC/` abgelegt, `C:/` bleibt `C:/`;
+  Windows-Pfade (Laufwerksbuchstabe/UNC) case-insensitiv, alle anderen
+  case-sensitiv — an der Pfadform entschieden, ohne Datei-IO.
+  **`.`/`..` werden bewusst nicht aufgelöst** (Befund N2): Der Walk öffnet
+  die Wurzel unverändert mit Symlink-Semantik, `B/left/link/..` kann bei
+  `link -> B/right/sub` also `B/right` sein. Eine lexikalische Kürzung im
+  Schlüssel hätte diesen zweiten, physisch anderen Pin als Duplikat von
+  `B/left` still verworfen. Ein Pin mit `.`/`..`-Komponente bleibt daher
+  eigene Wurzel, sobald sein Schlüssel von allen anderen abweicht. Grenze
+  eines anderen Walks ist er nur, wenn dessen Einträge dieselbe Schreibweise
+  tragen (z. B. Pins `B/./p` und `B/./p/kind`); ein anders geschriebener Pfad
+  auf dasselbe Ziel wird nicht als Grenze erkannt. Dann greift die
+  Alias-Grenze unten (Doppelbesuch möglich, kein Ordner geht verloren).
+  **Bekannte Grenze**: Ein Symlink-Alias auf ein erreichbares Ziel sind
+  zwei lexikalische Pfade; dieselbe physische Datei kann dann auch
+  sequenziell und in `stats.hits` zweimal zählen. Dasselbe gilt für Pins
+  mit `.`/`..`-Komponente, die lexikalisch anders geschrieben sind als ein
+  anderer Pin auf denselben Ordner (bzw. dessen Eltern). Ebenso bleiben auf
+  case-insensitiven Unix-Volumes (macOS) abweichende Schreibweisen zwei
+  Wurzeln. Die Zusage „jede Datei höchstens ein Walk" gilt lexikalisch.
+  **Reihenfolge**: sequenziell deterministisch (feste Wurzelreihenfolge,
+  `sort_by_file_name` je Walk), aber ein ausgegliederter Unterbaum
+  erscheint beim Walk seiner eigenen Wurzel — bei Pins `[R, R/a]` kommt
+  `R/z.md` vor `R/a/x.md`; auch die bei 500 Hits gewählte Teilmenge folgt
+  dieser Reihenfolge. Keine zusätzliche globale Sortierung.
+  Explizit gepinnte Einzeldateien unter
   einem gepinnten Elternordner werden in den Roots **behalten** (nur
   exakte Duplikat-Pins fallen weg), damit der Pin-Bypass greift, wenn
   der Walk sie wegen hidden/gitignore überspringt.
@@ -52,14 +102,26 @@ angepinnten Einträge. Daraus folgt:
    „kein WalkBuilder“-Notiz in CLAUDE.md betraf nur das Dimming-
    Feature). Standard-Filter des Walkers: **gitignorierte und hidden
    Einträge werden übersprungen** (konsistent mit dem Dimming; `.git`
-   & Co. fallen damit automatisch raus). Opt-in-Toggle
-   `includeHidden` (Default aus, persistiert in `panel_state` als
-   `search_include_hidden`, Dialog-Checkbox `#vsd-include-hidden`)
-   schaltet per `WalkBuilder::standard_filters(false)` hidden/parents/
-   ignore/git_ignore/git_global/git_exclude als Gruppe ab (ein Schalter,
-   nicht zwei; `require_git` unangetastet). **Bewusste Ausnahme:**
-   Verzeichnisse namens `.git` bleiben per `filter_entry` draußen
-   (Object-Store/hooks/logs wären Kosten + Rausch-Treffer). Beide
+   & Co. fallen damit automatisch raus). Zwei getrennte Opt-in-Toggles
+   (Default beide aus, persistiert in `panel_state` als
+   `search_include_hidden`/`search_include_ignored`, Dialog-Checkboxen
+   `#vsd-include-hidden`/`#vsd-include-ignored`): `includeHidden`
+   schaltet nur den hidden-Filter ab (`WalkBuilder::hidden(false)`),
+   `includeIgnored` nur die Gruppe parents/ignore/git_ignore/git_global/
+   git_exclude (`require_git` unangetastet). Getrennt, damit z. B.
+   ignorierte Build-Notizen durchsuchbar sind, Agenten-Arbeitsordner wie
+   `.herd/` aber nicht. **`.git` ist in jeder Flag-Kombination draußen:**
+   Name exakt per `filter_entry`, und Walk-Wurzeln/Scopes mit
+   `.git`-Komponente werden vor dem Walk verworfen (`Folder(R/.git)` und
+   alles darunter → keine Treffer; der Entry-Filter schützt die Wurzel
+   nicht). Bei `includeHidden=false` werden Dot-Einträge **ausdrücklich**
+   im `filter_entry` verworfen — `WalkBuilder::hidden(true)` allein
+   unterliegt Whitelist-Negationen wie `!.hidden.md`. Walk-Wurzel
+   (depth 0) bleibt ausgenommen: ein Pin direkt auf einen Dot-Ordner
+   zeigt seinen Inhalt (K-A2).
+   **Abwärtskompatibilität:** Fehlt an der Command-/
+   HTTP-Grenze `includeIgnored`, gilt der Wert von `includeHidden` (alter
+   Vertrag: ein Flag für beides). Beide
    Walk-Pfade (sequenziell + parallel) teilen dieselbe
    Filterkonfiguration. `sort_by_file_name` für deterministische
    Reihenfolge (E2E-Baselines). Seit S6 (2026-07-16) laufen
@@ -136,7 +198,8 @@ angepinnten Einträge. Daraus folgt:
    (Ordnername, Tooltip = voller Pfad, „ד entfernt ihn → zurück auf
    Gesamt-Vault), fokussiert das Suchfeld und re-triggert eine
    laufende Suche. Scope wird **nicht** persistiert.
-9. **Persistenz**: die Options-Toggles (Aa/W/`includeHidden`) wandern nach
+9. **Persistenz**: die Options-Toggles (Aa/W/`includeHidden`/
+   `includeIgnored`) wandern nach
    Projekt-Konvention in `panel_state.rs`/`panel-state.json`
    (UI-Toggle-Persistenz-Regel). Suchbegriff, Scope und Ergebnisse
    sind flüchtig. **Keine neuen `settings.json`-Keys** in V1.
@@ -489,7 +552,7 @@ der Kern lief strikt single-threaded.
   31 additiv-only `mod tests` behalten ihre deterministische Reihenfolge.
 - **Architektur**: pro Root-Ordner ein `WalkBuilder::build_parallel()` (gleiche
   Filterkonfiguration wie sequenziell — hidden/gitignore-Defaults bzw.
-  `includeHidden`-Opt-in, ignore-Default-Threadzahl). Ein Producer-Thread
+  die getrennten `includeHidden`/`includeIgnored`-Opt-ins, ignore-Default-Threadzahl). Ein Producer-Thread
   (`std::thread::scope`) treibt die Walks; die Worker-Visitoren machen Filter +
   `worker_read_disk` (Content-Gate) + `build_file_hits` selbst und senden
   fertige `WalkEvent`s (`NoHit`/`Matched`/`SkippedLarge`/`ProbeHit`) über
@@ -502,12 +565,15 @@ der Kern lief strikt single-threaded.
   geteilt via `gate_bytes` (statistikfrei) unter `inspect_content` (sequenziell)
   und `worker_read_disk` (parallel); die Einzeldatei-Phase (`scan_pinned_files`)
   ist aus `run_over_roots` ausgelagert und wird von beiden Läufen geteilt.
-- **Overlap-Collapse vor dem Walk** (Sol-Rev S6#2): `walk_dirs_parallel` klappt
-  überlappende Dir-Roots über `collapse_overlapping_dirs` ein (Kind-Root entfällt
-  unter einem Eltern-Root; separator-grenzen-sicher via `PathBuf::starts_with`,
-  gemeinsam mit `resolve_scope`). Damit trifft jede Datei höchstens einen Walk und
-  der worker-seitige Näherungszähler zählt sie nie doppelt gegen den Deckel — der
-  Consumer-`seen` bleibt nur noch Netz für die geteilte Pinned-Phase.
+- **Disjunkte Walks statt Overlap-Collapse** (Sol-Rev S6#2, N1):
+  `walk_dirs_parallel` und `run_over_roots` planen die Wurzeln über
+  `plan_walk_roots` und installieren die Grenzprüfung `is_foreign_root` im
+  `filter_entry` (siehe Wurzelplanung oben). Damit trifft jede Datei
+  (lexikalisch) höchstens einen Walk, und der worker-seitige
+  Näherungszähler zählt sie nie doppelt gegen den Deckel — ein doppelt
+  gezählter Kind-Pin konnte sonst den Probe-Modus auslösen, bevor ein
+  unabhängiger Pin besucht war (stiller Trefferverlust ohne `truncated`,
+  N1). Der Consumer-`seen` bleibt Netz für die geteilte Pinned-Phase.
 - **Early-Stop/Probe**: globaler `AtomicUsize`-Hit-Zähler als Näherung — Worker
   addieren ihre (gekappten) Treffer und schalten ab Erreichen des Deckels in den
   Probe-Modus (`probe_str`, Zero-Width zählt nie); die exakte Buchführung bleibt
@@ -599,10 +665,17 @@ Rein Frontend + ein neues App-Setting (Suchkern `search.rs` unverändert).
   Problem (externe Änderungen). Paralleler Walk (`build_parallel`) ist
   seit S6 umgesetzt (`run_search_parallel`).
 - **Hidden/gitignorierte Files werden standardmäßig übersprungen**,
-  obwohl der Vault-Baum Dotfiles anzeigt. Opt-in-Toggle `includeHidden`
-  (Dialog + Persistenz + Automation) schaltet `standard_filters` ab;
+  obwohl der Vault-Baum Dotfiles anzeigt. Zwei getrennte Opt-in-Toggles
+  `includeHidden`/`includeIgnored` (Dialog + Persistenz + Automation)
+  schalten den hidden-Filter bzw. die gitignore-Gruppe ab;
   **`.git`-Verzeichnisse bleiben auch dann ausgeschlossen** (bewusst,
-  kein Object-Store-Rauschen).
+  kein Object-Store-Rauschen), auch als Walk-Wurzel/Scope. Ohne
+  `includeIgnored` gilt der Wert von
+  `includeHidden` (alter Vertrag: ein Flag für beides).
+  Ein verschachtelter Ordner-Pin ist im Vault-Scope immer eigene
+  Walk-Wurzel und damit unabhängig von Dot-Segment, Gitignore oder
+  Symlink auf dem Weg dorthin erreichbar (der Walk folgt
+  Verzeichnis-Symlinks nicht; der Alias ist selbst Wurzel).
 - **Dateien ohne Endung** (LICENSE, Makefile) klassifiziert
   `file_kind` als Binary → nicht durchsucht. Konsistent mit dem
   restlichen App-Verhalten; kein Sonderfall in V1.

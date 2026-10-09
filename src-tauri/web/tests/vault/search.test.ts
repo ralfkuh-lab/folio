@@ -81,6 +81,7 @@ function buildDom(): void {
                 <label><input type="checkbox" id="vsd-word" /></label>
                 <label><input type="checkbox" id="vsd-regex" /></label>
                 <label><input type="checkbox" id="vsd-include-hidden" /></label>
+                <label><input type="checkbox" id="vsd-include-ignored" /></label>
                 <input type="radio" name="vsd-filter" value="markdown" />
                 <input type="radio" name="vsd-filter" value="allText" checked />
                 <input type="radio" name="vsd-filter" value="custom" />
@@ -140,6 +141,7 @@ interface SearchOpts {
     word?: boolean;
     regex?: boolean;
     includeHidden?: boolean;
+    includeIgnored?: boolean;
     filter?: string;
     ext?: string;
     scope?: string;
@@ -155,6 +157,7 @@ async function runSearch(query: string, opts: SearchOpts = {}): Promise<void> {
     ($('vsd-regex') as HTMLInputElement).checked = !!opts.regex;
     ($('vsd-word') as HTMLInputElement).checked = !!opts.word;
     ($('vsd-include-hidden') as HTMLInputElement).checked = !!opts.includeHidden;
+    ($('vsd-include-ignored') as HTMLInputElement).checked = !!opts.includeIgnored;
     if (opts.filter) setRadio('vsd-filter', opts.filter);
     if (opts.ext !== undefined) ($('vsd-custom-ext') as HTMLInputElement).value = opts.ext;
     if (opts.scope) setRadio('vsd-scope', opts.scope);
@@ -373,6 +376,110 @@ describe('vault/search — Dialog', () => {
         const search = await import('../../app/vault/search');
         search.openVaultSearchDialog();
         expect(($('vsd-include-hidden') as HTMLInputElement).checked).toBe(false);
+    });
+
+    it('includeHidden und includeIgnored sind unabhaengig + eigene Glyphen', async () => {
+        await importAndInit();
+        // Nur gitignoriert: Validate/Start/Persist tragen beide Flags getrennt.
+        await runSearch('needle', { includeHidden: false, includeIgnored: true });
+        const validates = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_search_validate');
+        expect(validates[validates.length - 1][1]).toMatchObject({
+            includeHidden: false,
+            includeIgnored: true,
+        });
+        const starts = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_search_start');
+        expect(starts[starts.length - 1][1]).toMatchObject({
+            includeHidden: false,
+            includeIgnored: true,
+        });
+        expect(tauri.invoke).toHaveBeenCalledWith(
+            'set_search_options',
+            expect.objectContaining({ includeHidden: false, includeIgnored: true }),
+        );
+        const glyphs = Array.from(
+            document.querySelectorAll('#vault-search-summary-opts .vs-summary-opt'),
+        );
+        expect(glyphs.map((el) => el.textContent)).toEqual(['⊘']);
+        expect(glyphs[0].getAttribute('title')).toBeTruthy();
+
+        // Reopen + Cancel verwirft den Draft: committed bleibt erhalt.
+        const search = await import('../../app/vault/search');
+        search.openVaultSearchDialog();
+        expect(($('vsd-include-hidden') as HTMLInputElement).checked).toBe(false);
+        expect(($('vsd-include-ignored') as HTMLInputElement).checked).toBe(true);
+        ($('vsd-include-ignored') as HTMLInputElement).checked = false;
+        $('vsd-cancel').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+        search.openVaultSearchDialog();
+        expect(($('vsd-include-ignored') as HTMLInputElement).checked).toBe(true);
+    });
+
+    it('SearchOpts includeHidden + includeIgnored gemeinsam gesetzt', async () => {
+        await importAndInit();
+        await runSearch('needle', { includeHidden: true, includeIgnored: true });
+        const starts = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_search_start');
+        expect(starts[starts.length - 1][1]).toMatchObject({
+            includeHidden: true,
+            includeIgnored: true,
+        });
+        const glyphs = Array.from(
+            document.querySelectorAll('#vault-search-summary-opts .vs-summary-opt'),
+        ).map((el) => el.textContent);
+        expect(glyphs).toContain('·');
+        expect(glyphs).toContain('⊘');
+    });
+
+    it('spaeterer Submit gewinnt gegen aelteren ausstehenden Validate (K-A3.3)', async () => {
+        const { search } = await importAndInit();
+        await flushMicro();
+        const resolvers: Array<() => void> = [];
+        tauri.invoke.mockImplementation((cmd: string) => {
+            if (cmd === 'vault_search_validate') return new Promise<void>((r) => resolvers.push(r));
+            if (cmd === 'vault_search_start') return Promise.resolve(nextRunId++);
+            return Promise.resolve(undefined);
+        });
+        search.openVaultSearchDialog();
+        ($('vsd-query') as HTMLInputElement).value = 'needle';
+        ($('vsd-include-hidden') as HTMLInputElement).checked = true;
+        ($('vsd-include-ignored') as HTMLInputElement).checked = true;
+        $('vsd-submit').click();
+        await flushMicro();
+        // Zweiter Submit mit beiden aus, waehrend Validate A noch aussteht.
+        ($('vsd-include-hidden') as HTMLInputElement).checked = false;
+        ($('vsd-include-ignored') as HTMLInputElement).checked = false;
+        $('vsd-submit').click();
+        await flushMicro();
+        // B zuerst aufloesen, dann die veraltete A.
+        resolvers[1]();
+        await flushMicro();
+        resolvers[0]();
+        await flushMicro();
+        const starts = tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_search_start');
+        expect(starts.at(-1)?.[1]).toMatchObject({ includeHidden: false, includeIgnored: false });
+        const persists = tauri.invoke.mock.calls.filter((c) => c[0] === 'set_search_options');
+        expect(persists.at(-1)?.[1]).toMatchObject({ includeHidden: false, includeIgnored: false });
+    });
+
+    it('Abbrechen waehrend ausstehendem Validate startet/persistiert nicht (K-A3.3)', async () => {
+        const { search } = await importAndInit();
+        await flushMicro();
+        let resolve!: () => void;
+        tauri.invoke.mockImplementation((cmd: string) => {
+            if (cmd === 'vault_search_validate') return new Promise<void>((r) => (resolve = r));
+            if (cmd === 'vault_search_start') return Promise.resolve(nextRunId++);
+            return Promise.resolve(undefined);
+        });
+        search.openVaultSearchDialog();
+        ($('vsd-query') as HTMLInputElement).value = 'needle';
+        ($('vsd-include-ignored') as HTMLInputElement).checked = true;
+        $('vsd-submit').click();
+        await flushMicro();
+        $('vsd-cancel').click();
+        await flushMicro();
+        resolve();
+        await flushMicro();
+        expect(tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_search_start')).toHaveLength(0);
+        expect(tauri.invoke.mock.calls.filter((c) => c[0] === 'set_search_options')).toHaveLength(0);
     });
 
     it('Strg+Shift+F oeffnet den Dialog', async () => {

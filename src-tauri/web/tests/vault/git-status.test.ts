@@ -296,6 +296,15 @@ describe('vault/git-status', () => {
         expect(git.isPathGitChanged('/repo/neues.md')).toBe(false);
         expect(git.pathIsUnder('/repo/neu/a.md', '/repo/neu')).toBe(true);
         expect(git.pathIsUnder('/repo/neues.md', '/repo/neu')).toBe(false);
+        // Windows-Schreibvarianten case-insensitiv (Laufwerk/UNC), Unix bleibt
+        // case-sensitiv; Segmentgrenze gilt in beiden Faellen.
+        expect(git.pathIsUnder('c:/.vault/spec.md', 'C:/.vault')).toBe(true);
+        expect(git.pathIsUnder('C:\\.vault\\spec.md', 'C:/.vault')).toBe(true);
+        expect(
+            git.pathIsUnder('\\\\server\\Share\\a.md', '\\\\SERVER\\share'),
+        ).toBe(true);
+        expect(git.pathIsUnder('/home/u/.vault/a.md', '/home/u/.Vault')).toBe(false);
+        expect(git.pathIsUnder('C:/.vault-other/a.md', 'C:/.vault')).toBe(false);
     });
 
     it('keeps backend extras such as gitignored and clears only the git line', async () => {

@@ -33,7 +33,7 @@ fn resolve_roots(state: &AppState, scope: Option<String>) -> Result<SearchRoots,
         Some(path) => SearchScope::Folder(path),
         None => SearchScope::Vault,
     };
-    Ok(search::resolve_scope(workspace.pinned(), &scope))
+    Ok(search::resolve_search_scope(workspace.pinned(), &scope))
 }
 
 /// Snapshot der offenen Tabs für den OpenTabs-Scope. Lockt **nur** `state.tabs`,
@@ -89,6 +89,14 @@ fn buffer_doc_for_tab(tab: &Tab) -> Option<BufferDoc> {
     })
 }
 
+/// Abwärtskompatibilität der beiden Such-Opt-ins: Ältere Aufrufer (Tauri-Command,
+/// HTTP) kannten nur `includeHidden` — damals schaltete EIN Flag versteckte UND
+/// ignorierte Dateien frei. Fehlt `includeIgnored`, erbt es daher dessen Wert;
+/// ist es explizit gesetzt, gilt es unabhängig. Einzige Quelle für diese Regel.
+pub(crate) fn resolve_include_ignored(include_hidden: bool, include_ignored: Option<bool>) -> bool {
+    include_ignored.unwrap_or(include_hidden)
+}
+
 /// Baut aus den flachen Grenz-Argumenten das erweiterte Scope-Modell + die
 /// erweiterten Optionen. Geteilt zwischen Tauri-Command und HTTP-Handler
 /// (dort mit der eigenen Fehler-in-400-Abbildung). Fehler sind lokalisierte
@@ -104,6 +112,7 @@ pub(crate) fn build_scope_and_options(
     file_filter: &str,
     custom_extensions: &str,
     include_hidden: bool,
+    include_ignored: bool,
 ) -> Result<(SearchScopeEx, ExtendedSearchOptions), SearchError> {
     let scope_ex = search::to_scope_ex(scope, open_tabs)?;
     let filter = FileFilter::from_raw(file_filter, custom_extensions)?;
@@ -112,6 +121,7 @@ pub(crate) fn build_scope_and_options(
             case_sensitive,
             whole_word,
             include_hidden,
+            include_ignored,
         },
         regex,
         filter,
@@ -144,6 +154,7 @@ pub async fn vault_search_start(
     file_filter: Option<String>,
     custom_extensions: Option<String>,
     include_hidden: Option<bool>,
+    include_ignored: Option<bool>,
     state: State<'_, AppState>,
     handle: AppHandle,
 ) -> Result<u64, String> {
@@ -152,6 +163,7 @@ pub async fn vault_search_start(
     let file_filter = file_filter.unwrap_or_else(|| "allText".to_string());
     let custom_extensions = custom_extensions.unwrap_or_default();
     let include_hidden = include_hidden.unwrap_or(false);
+    let include_ignored = resolve_include_ignored(include_hidden, include_ignored);
 
     let (scope_ex, options) = build_scope_and_options(
         scope,
@@ -162,6 +174,7 @@ pub async fn vault_search_start(
         &file_filter,
         &custom_extensions,
         include_hidden,
+        include_ignored,
     )
     .map_err(|error| error.to_string())?;
 
@@ -256,6 +269,7 @@ pub async fn vault_search_start(
 /// Synchron; liefert `Err(String)` mit lokalisiertem Fehler für die Fehlerzeile
 /// im Dialog. Die neuen Parameter sind optional (alte Aufrufer-Kompatibilität).
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn vault_search_validate(
     query: String,
     case_sensitive: bool,
@@ -264,12 +278,15 @@ pub async fn vault_search_validate(
     file_filter: Option<String>,
     custom_extensions: Option<String>,
     include_hidden: Option<bool>,
+    include_ignored: Option<bool>,
 ) -> Result<(), String> {
     let regex = regex.unwrap_or(false);
     let file_filter = file_filter.unwrap_or_else(|| "allText".to_string());
     let custom_extensions = custom_extensions.unwrap_or_default();
-    // include_hidden steuert nur den Walk-Filter, nicht die Query-Validierung.
+    // include_hidden/include_ignored steuern nur den Walk-Filter, nicht die
+    // Query-Validierung.
     let include_hidden = include_hidden.unwrap_or(false);
+    let include_ignored = resolve_include_ignored(include_hidden, include_ignored);
     let filter = FileFilter::from_raw(&file_filter, &custom_extensions)
         .map_err(|error| error.to_string())?;
     let options = ExtendedSearchOptions {
@@ -277,6 +294,7 @@ pub async fn vault_search_validate(
             case_sensitive,
             whole_word,
             include_hidden,
+            include_ignored,
         },
         regex,
         filter,
@@ -442,6 +460,26 @@ mod tests {
         assert!(FileFilter::from_raw("bogus", "").is_err());
         // Aktiver custom-Filter mit leerer Liste → Err.
         assert!(FileFilter::from_raw("custom", "   ").is_err());
+    }
+
+    #[test]
+    fn include_ignored_inherits_include_hidden_when_absent() {
+        // Alter Vertrag: nur `includeHidden: true` → versteckt UND ignoriert.
+        assert!(resolve_include_ignored(true, None));
+        // Neuer Vertrag: explizit gesetzter Wert gewinnt.
+        assert!(!resolve_include_ignored(true, Some(false)));
+        assert!(resolve_include_ignored(false, Some(true)));
+        // Default (beide fehlen) → beide aus.
+        assert!(!resolve_include_ignored(false, None));
+    }
+
+    #[test]
+    fn build_scope_and_options_forwards_both_flags() {
+        let (_, options) =
+            build_scope_and_options(None, false, false, false, false, "allText", "", true, false)
+                .unwrap();
+        assert!(options.base.include_hidden);
+        assert!(!options.base.include_ignored);
     }
 
     #[test]

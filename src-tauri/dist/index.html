@@ -115,10 +115,11 @@
         <input type="search" id="vault-filter-input" class="vault-filter-input" placeholder="Nach Name filtern…" data-i18n-placeholder="vault.filter.input.placeholder" autocomplete="off" spellcheck="false" />
         <button type="button" id="vault-filter-clear" class="vault-filter-clear" hidden title="Filter löschen" data-i18n-title="vault.filter.clear.tooltip" aria-label="Filter löschen" data-i18n-aria-label="vault.filter.clear.ariaLabel">&#x2715;</button>
       </div>
+      <button type="button" id="vault-filter-close" class="vault-filter-close" title="Filterzeile schließen" data-i18n-title="vault.filter.close.tooltip" aria-label="Filterzeile schließen" data-i18n-aria-label="vault.filter.close.ariaLabel">&#x2715;</button>
       <button type="button" id="vault-filter-md" class="vault-filter-chip vault-filter-md" aria-pressed="false" title="Nur Markdown" data-i18n-title="vault.filter.md.tooltip" aria-label="Nur Markdown-Dateien anzeigen" data-i18n-aria-label="vault.filter.md.ariaLabel">.md</button>
       <button type="button" id="vault-filter-git" class="vault-filter-chip vault-filter-git" aria-pressed="false" title="Nur geänderte Dateien" data-i18n-title="vault.filter.git.tooltip" aria-label="Nur geänderte Dateien anzeigen" data-i18n-aria-label="vault.filter.git.ariaLabel">git</button>
       <button type="button" id="vault-filter-deep" class="vault-filter-chip vault-filter-deep" aria-pressed="false" title="Auch in Unterordnern suchen" data-i18n-title="vault.filter.deep.tooltip" aria-label="Auch in Unterordnern suchen" data-i18n-aria-label="vault.filter.deep.ariaLabel">**</button>
-      <button type="button" id="vault-filter-close" class="vault-filter-close" title="Filterzeile schließen" data-i18n-title="vault.filter.close.tooltip" aria-label="Filterzeile schließen" data-i18n-aria-label="vault.filter.close.ariaLabel">&#x2715;</button>
+      <button type="button" id="vault-filter-hidden" class="vault-filter-chip vault-filter-hidden" aria-pressed="false" title="Auch versteckte Ordner (.name) durchsuchen" data-i18n-title="vault.filter.hidden.tooltip" aria-label="Auch versteckte Dateien und Ordner durchsuchen" data-i18n-aria-label="vault.filter.hidden.ariaLabel">.*</button>
     </div>
   </div>
   <div id="vault-tree-notice" class="vault-tree-notice" hidden></div>
@@ -681,7 +682,8 @@
       <label class="vsd-check"><input type="checkbox" id="vsd-case" /><span data-i18n="search.dialog.caseSensitive.label">Groß-/Kleinschreibung beachten</span></label>
       <label class="vsd-check"><input type="checkbox" id="vsd-word" /><span data-i18n="search.dialog.wholeWord.label">Ganzes Wort</span></label>
       <label class="vsd-check"><input type="checkbox" id="vsd-regex" /><span data-i18n="search.dialog.regex.label">Regulärer Ausdruck</span></label>
-      <label class="vsd-check"><input type="checkbox" id="vsd-include-hidden" /><span data-i18n="search.dialog.includeHidden.label">Auch versteckte und ignorierte Dateien</span></label>
+      <label class="vsd-check"><input type="checkbox" id="vsd-include-hidden" /><span data-i18n="search.dialog.includeHidden.label">Versteckte Dateien und Ordner</span></label>
+      <label class="vsd-check"><input type="checkbox" id="vsd-include-ignored" /><span data-i18n="search.dialog.includeIgnored.label">Gitignorierte Dateien</span></label>
     </div>
     <fieldset class="vsd-group">
       <legend class="vsd-legend" data-i18n="search.dialog.fileType.label">Dateityp</legend>

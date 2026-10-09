@@ -19,10 +19,12 @@
 //! Grundlage: [`docs/spec-vault-search.md`], Architektur-Entscheidungen 1–5.
 
 use std::collections::HashSet;
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc;
+use std::sync::Arc;
 use std::time::Instant;
 
 use ignore::{WalkBuilder, WalkState};
@@ -77,10 +79,16 @@ pub struct SearchOptions {
     pub case_sensitive: bool,
     /// Nur ganze Wörter (an Unicode-Wortgrenzen, regex `\b…\b`).
     pub whole_word: bool,
-    /// Auch versteckte und gitignorierte Dateien durchsuchen (Default aus).
-    /// Deaktiviert im Walk den hidden-Filter und alle ignore/gitignore-Filter.
+    /// Auch versteckte Einträge (Dot-Namen) durchsuchen (Default aus).
+    /// Deaktiviert im Walk den hidden-Filter; `.git` bleibt draußen.
     #[serde(default)]
     pub include_hidden: bool,
+    /// Auch gitignorierte Dateien durchsuchen (Default aus). Deaktiviert im
+    /// Walk alle ignore/gitignore-Filter. Getrennt von `include_hidden`, damit
+    /// z. B. ignorierte Build-Notizen durchsuchbar sind, Arbeitsordner wie
+    /// `.herd/` aber nicht.
+    #[serde(default)]
+    pub include_ignored: bool,
 }
 
 /// Erweitertes Scope-Modell (S4). Wird an der Command-/HTTP-Grenze aus den
@@ -217,10 +225,12 @@ pub fn to_scope_ex(scope: Option<String>, open_tabs: bool) -> Result<SearchScope
     }
 }
 
-/// Aufgelöster, deduplizierter Such-Umfang. Verschachtelte Ordner sind
-/// eingeklappt (ein Kind-Ordner unter einem enthaltenen Eltern-Ordner
-/// entfällt) und Einzeldateien, die schon von einem Ordner abgedeckt sind,
-/// werden verworfen — so wird jede Datei genau einmal durchsucht.
+/// Aufgelöster, deduplizierter Such-Umfang. Aus [`resolve_scope`] sind
+/// verschachtelte Ordner eingeklappt; aus [`resolve_search_scope`] ist jeder
+/// Ordner eigene Walk-Wurzel und die Such-Walks grenzen sich gegenseitig ab.
+/// In beiden Fällen wird jede Datei (lexikalisch) genau einmal durchsucht.
+/// Einzeldateien bleiben auch unter einem Ordner erhalten (Pin-Bypass, Dedup
+/// über `seen`).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SearchRoots {
     /// Rekursiv zu durchsuchende Ordner.
@@ -376,7 +386,8 @@ impl std::error::Error for SearchError {}
 
 /// Löst einen [`SearchScope`] gegen die angepinnten Einträge in einen
 /// deduplizierten [`SearchRoots`] auf (Overlap-Dedup, Forward-Slash-
-/// Normalisierung).
+/// Normalisierung). Grundlage von Palette, Tags und Wikilink-Index; die
+/// Volltextsuche und der Tiefenfilter nutzen [`resolve_search_scope`].
 ///
 /// - [`SearchScope::Vault`]: Union aller angepinnten Ordner + Einzeldateien,
 ///   verschachtelte Ordner eingeklappt. Explizit gepinnte Einzeldateien
@@ -386,6 +397,33 @@ impl std::error::Error for SearchError {}
 ///   Nur exakte Duplikat-Pins werden entfernt.
 /// - [`SearchScope::Folder`]: genau dieser Ordner (Pins irrelevant).
 pub fn resolve_scope(pinned: &[PinnedItem], scope: &SearchScope) -> SearchRoots {
+    let roots = pinned_roots(pinned, scope);
+    SearchRoots {
+        // Overlap-Dedup Ordner: verschachtelte + doppelte Ordner entfernen.
+        dirs: collapse_overlapping_dirs(&roots.dirs),
+        files: roots.files,
+    }
+}
+
+/// Scope-Auflösung der Volltextsuche und des Tiefenfilters ohne Bereich:
+/// wie [`resolve_scope`], aber **ohne Einklappen** — jeder existierende
+/// Ordner-Pin ist eigene Walk-Wurzel, auch ein verschachtelter; nur exakte
+/// Duplikate (gleicher [`root_key`]) entfallen. Dass jede Datei trotzdem nur
+/// von einem Walk besucht wird, regelt die Grenzprüfung im Walk
+/// ([`plan_walk_roots`], [`is_foreign_root`]). [`SearchScope::Folder`]:
+/// genau dieser Ordner.
+pub fn resolve_search_scope(pinned: &[PinnedItem], scope: &SearchScope) -> SearchRoots {
+    let roots = pinned_roots(pinned, scope);
+    SearchRoots {
+        dirs: dedup_by_root_key(&roots.dirs),
+        files: roots.files,
+    }
+}
+
+/// Gemeinsame Sammlung für [`resolve_scope`]/[`resolve_search_scope`]:
+/// Ordner-Scope = genau dieser Ordner; Vault-Scope = alle noch existierenden
+/// Pins in Pin-Reihenfolge, Ordner noch unverdichtet.
+fn pinned_roots(pinned: &[PinnedItem], scope: &SearchScope) -> SearchRoots {
     if let SearchScope::Folder(path) = scope {
         // Ordner-Scope: genau dieser Ordner (Existenz prüft `run_search`).
         return SearchRoots {
@@ -409,9 +447,6 @@ pub fn resolve_scope(pinned: &[PinnedItem], scope: &SearchScope) -> SearchRoots 
         }
     }
 
-    // Overlap-Dedup Ordner: verschachtelte + doppelte Ordner entfernen.
-    let kept_dirs = collapse_overlapping_dirs(&dirs);
-
     // Einzeldatei-Pins: nur exakte Duplikate entfernen. Abdeckung durch einen
     // Elternordner-Pin verwirft den Datei-Pin NICHT — sonst bricht der
     // dokumentierte Pin-Bypass für hidden/gitignorierte Dateien, wenn der
@@ -425,7 +460,7 @@ pub fn resolve_scope(pinned: &[PinnedItem], scope: &SearchScope) -> SearchRoots 
     }
 
     SearchRoots {
-        dirs: kept_dirs,
+        dirs,
         files: kept_files,
     }
 }
@@ -435,8 +470,8 @@ pub fn resolve_scope(pinned: &[PinnedItem], scope: &SearchScope) -> SearchRoots 
 /// Nutzt `PathBuf::starts_with` (komponentenweise, also separator-grenzen-sicher —
 /// `/a/b` deckt `/a/bc` NICHT ab). Ergebnis: jede Datei liegt unter höchstens
 /// einem Root, sodass ein rekursiver Walk pro Root jede Datei genau einmal
-/// besucht. Gemeinsame Grundlage von [`resolve_scope`] und
-/// [`walk_dirs_parallel`].
+/// besucht. Nur für [`resolve_scope`] (Palette, Tags, Wikilink-Index) — die
+/// Such-Walks grenzen sich stattdessen über [`is_foreign_root`] ab.
 fn collapse_overlapping_dirs(dirs: &[PathBuf]) -> Vec<PathBuf> {
     let mut kept: Vec<PathBuf> = Vec::new();
     for d in dirs {
@@ -447,6 +482,103 @@ fn collapse_overlapping_dirs(dirs: &[PathBuf]) -> Vec<PathBuf> {
         kept.push(d.clone());
     }
     kept
+}
+
+/// Lexikalischer Schlüssel einer Walk-Wurzel — gemeinsam für das
+/// Duplikat-Dedup und die Grenzprüfung im Walk, damit beide dieselben
+/// Pfade für gleich halten. Ohne Datei-IO: Trenner vereinheitlicht
+/// (`\\` → `/`, mehrfache Trenner zu einem, führendes `//` einer UNC-Wurzel
+/// bleibt), abschließende Trenner entfernt, Windows-Präfix `//?/` (bzw.
+/// `//?/UNC/`) abgelegt; `C:/` bleibt `C:/`. Windows-Pfade (Laufwerksbuchstabe
+/// oder UNC) sind case-insensitiv, alle anderen case-sensitiv — entschieden
+/// an der Form des Pfads, nicht an der Plattform.
+///
+/// `.`/`..` werden bewusst **nicht** aufgelöst (anders als
+/// [`crate::path_identity::lexical_normalize`]): der Walk öffnet die Wurzel
+/// unverändert mit Symlink-Semantik, `B/left/link/..` kann also ein ganz
+/// anderer Ordner als `B/left` sein (Befund N2). Ein solcher Pin bleibt eigene
+/// Wurzel; trifft er doch denselben Ordner, gilt die lexikalische
+/// Alias-Grenze (möglicher Doppelbesuch, kein Verlust).
+pub(crate) fn root_key(path: &Path) -> String {
+    let slashed = path.to_string_lossy().replace('\\', "/");
+    let unprefixed = if let Some(rest) = slashed.strip_prefix("//?/UNC/") {
+        format!("//{rest}")
+    } else if let Some(rest) = slashed.strip_prefix("//?/") {
+        rest.to_string()
+    } else {
+        slashed
+    };
+    let (lead, rest) = if let Some(rest) = unprefixed.strip_prefix("//") {
+        ("//", rest)
+    } else if let Some(rest) = unprefixed.strip_prefix('/') {
+        ("/", rest)
+    } else {
+        ("", unprefixed.as_str())
+    };
+    let segments: Vec<&str> = rest.split('/').filter(|seg| !seg.is_empty()).collect();
+    let mut key = format!("{lead}{}", segments.join("/"));
+    let bytes = key.as_bytes();
+    let drive = bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':';
+    // Laufwerkswurzel `C:/` nicht zum laufwerksrelativen `C:` kürzen.
+    if drive && key.len() == 2 && rest.len() > 2 {
+        key.push('/');
+    }
+    if drive || lead == "//" {
+        key.to_lowercase()
+    } else {
+        key
+    }
+}
+
+/// Entfernt exakte Duplikate (gleicher [`root_key`]); die erste Schreibweise
+/// und die Reihenfolge bleiben erhalten.
+fn dedup_by_root_key(dirs: &[PathBuf]) -> Vec<PathBuf> {
+    let mut keys: HashSet<String> = HashSet::new();
+    dirs.iter()
+        .filter(|d| keys.insert(root_key(d)))
+        .cloned()
+        .collect()
+}
+
+/// Wurzelplanung eines Walk-Aufrufs: `.git`-Wurzeln (und alles unterhalb
+/// einer `.git`-Komponente) fallen weg, exakte Duplikate ebenfalls. Liefert
+/// die Wurzeln in fester Eingabereihenfolge und die Schlüsselmenge **genau
+/// dieser aktiven Wurzeln** als Grenzen für [`is_foreign_root`] — nicht
+/// sämtliche Workspace-Pins: im Ordner-Scope ist nur der Ordner aktiv,
+/// darunterliegende Pins sind dort keine Grenzen.
+pub(crate) fn plan_walk_roots(dirs: &[PathBuf]) -> (Vec<PathBuf>, Arc<HashSet<String>>) {
+    let roots: Vec<PathBuf> = dedup_by_root_key(dirs)
+        .into_iter()
+        .filter(|d| !has_git_component(d))
+        .collect();
+    let keys = roots.iter().map(|d| root_key(d)).collect();
+    (roots, Arc::new(keys))
+}
+
+/// Ob ein Walk-Eintrag unterhalb der eigenen Wurzel selbst eine andere aktive
+/// Walk-Wurzel ist. Solche Einträge betritt der Walk nicht — sie gehören dem
+/// eigenen Walk dieser Wurzel. So besucht jede Datei (lexikalisch) genau
+/// einen Walk, und die Grenze greift vor Dateiscan und Worker-Zählung. Die
+/// Prüfung schließt nur aus; sie kann den `.git`- oder Hidden-Ausschluss nie
+/// aufheben. Dateien sind keine Wurzeln und werden nicht geprüft.
+pub(crate) fn is_foreign_root(entry: &ignore::DirEntry, roots: &HashSet<String>) -> bool {
+    roots.len() > 1
+        && entry.depth() > 0
+        && entry.file_type().is_some_and(|t| !t.is_file())
+        && roots.contains(&root_key(entry.path()))
+}
+
+/// Verzeichnisname `.git` (exakt) — in jeder Flag-Kombination ausgeschlossen,
+/// unabhängig von gitignore-Negationen wie `!.git/`.
+fn is_git_dir_name(name: &OsStr) -> bool {
+    name == OsStr::new(".git")
+}
+
+/// Ob ein Pfad eine `.git`-Komponente enthält. Schützt Walk-Wurzeln/Scopes
+/// (`Folder(R/.git)`), die der Entry-Filter nicht abdeckt.
+fn has_git_component(path: &Path) -> bool {
+    path.components()
+        .any(|c| c.as_os_str() == OsStr::new(".git"))
 }
 
 /// Backslashes → Forward-Slashes (Pfad-Normalisierung wie überall in folio).
@@ -878,21 +1010,46 @@ fn probe_has_match(path: &Path, re: &Regex, cancel: &AtomicBool) -> bool {
     }
 }
 
-/// Konfiguriert den `WalkBuilder` für den Opt-in-Toggle „auch versteckte und
-/// ignorierte Dateien". Default (`include_hidden = false`): Crate-Defaults
-/// (`standard_filters` an). An: `standard_filters(false)` schaltet hidden/
-/// parents/ignore/git_ignore/git_global/git_exclude als Gruppe ab
-/// (`require_git` unangetastet). Zusätzlich bleiben `.git`-Verzeichnisse per
-/// `filter_entry` draußen (Object-Store/hooks/logs wären sonst Kosten + Rausch-
-/// Treffer).
-fn apply_include_hidden(builder: &mut WalkBuilder, include_hidden: bool) {
-    if include_hidden {
-        builder.standard_filters(false).filter_entry(|entry| {
-            // Verzeichnisname ".git" (nicht Pfad-Substring) — weder eintragen
-            // noch absteigen.
-            entry.file_name() != std::ffi::OsStr::new(".git")
-        });
+/// Konfiguriert den `WalkBuilder` für die beiden Opt-in-Toggles „versteckte"
+/// und „gitignorierte Dateien". Default (beide aus): Crate-Defaults
+/// (`standard_filters` an). `include_hidden` schaltet nur den hidden-Filter
+/// ab, `include_ignored` die Gruppe parents/ignore/git_ignore/git_global/
+/// git_exclude (`require_git` unangetastet).
+///
+/// Zusätzlich wird IMMER ein `filter_entry` installiert: `.git` (Name exakt)
+/// ist in jeder Kombination draußen — auch wenn eine `.gitignore`-Negation
+/// (`!.git/`) den Crate-Filter aushebelt. Bei ausgeschaltetem Hidden-Filter
+/// werden Dot-Einträge **ausdrücklich** verworfen (der Crate-`hidden`-Filter
+/// unterliegt Whitelist-Regeln wie `!.hidden.md`). Die Walk-Wurzel selbst
+/// (depth 0) bleibt ausgenommen, damit ein Pin direkt auf einen Dot-Ordner
+/// seinen Inhalt zeigt (K-A2). Einträge, die selbst eine andere aktive
+/// Walk-Wurzel sind (`active_roots`, siehe [`is_foreign_root`]), werden nicht
+/// betreten.
+fn apply_walk_filters(
+    builder: &mut WalkBuilder,
+    include_hidden: bool,
+    include_ignored: bool,
+    active_roots: Arc<HashSet<String>>,
+) {
+    builder.hidden(!include_hidden);
+    if include_ignored {
+        builder
+            .parents(false)
+            .ignore(false)
+            .git_ignore(false)
+            .git_global(false)
+            .git_exclude(false);
     }
+    builder.filter_entry(move |entry| {
+        let name = entry.file_name();
+        if is_git_dir_name(name) {
+            return false;
+        }
+        if !include_hidden && entry.depth() > 0 && name.to_string_lossy().starts_with('.') {
+            return false;
+        }
+        !is_foreign_root(entry, &active_roots)
+    });
 }
 
 /// Läuft über [`SearchRoots`] (Verzeichnis-Walk + explizit gepinnte Dateien)
@@ -904,6 +1061,7 @@ fn run_over_roots(
     re: &Regex,
     filter: &FileFilter,
     include_hidden: bool,
+    include_ignored: bool,
     cancel: &AtomicBool,
     on_file: &mut dyn FnMut(FileResult),
 ) -> SearchStats {
@@ -914,11 +1072,25 @@ fn run_over_roots(
     let mut probing = false;
     let mut stopped = false;
 
-    'walk: for dir in &roots.dirs {
-        // Single-threaded Walk; Filter (hidden + gitignore) an, sofern nicht
-        // `include_hidden`; deterministische Reihenfolge via sort_by_file_name.
+    // Jede aktive Wurzel läuft als eigener Walk; verschachtelte Wurzeln sind
+    // Grenzen der umgebenden Walks. `.git`-Wurzeln (auch über einen Pin) und
+    // alles darunter fallen schon in der Planung weg — der Entry-Filter
+    // schützt nur Kind-Einträge.
+    let (dirs, active_roots) = plan_walk_roots(&roots.dirs);
+
+    'walk: for dir in &dirs {
+        // Single-threaded Walk; Filter (hidden, gitignore) an, sofern nicht
+        // per Opt-in abgeschaltet; deterministische Reihenfolge via
+        // sort_by_file_name innerhalb einer Wurzel, Wurzeln in fester
+        // Reihenfolge (ein ausgegliederter Unterbaum erscheint beim Walk
+        // seiner eigenen Wurzel).
         let mut builder = WalkBuilder::new(dir);
-        apply_include_hidden(&mut builder, include_hidden);
+        apply_walk_filters(
+            &mut builder,
+            include_hidden,
+            include_ignored,
+            active_roots.clone(),
+        );
         let walker = builder.sort_by_file_name(|a, b| a.cmp(b)).build();
         for result in walker {
             if cancel.load(Ordering::Relaxed) {
@@ -999,6 +1171,11 @@ fn scan_pinned_files(
         if cancel.load(Ordering::Relaxed) {
             break;
         }
+        // `.git`-Dateien bleiben auch über einen expliziten Datei-Pin draußen
+        // (der Pin-Bypass gilt hidden/gitignore, nicht dem `.git`-Vertrag).
+        if has_git_component(f) {
+            continue;
+        }
         if !filter.accepts(f) {
             continue;
         }
@@ -1066,6 +1243,7 @@ pub fn run_search_ex(
         &re,
         &options.filter,
         options.base.include_hidden,
+        options.base.include_ignored,
         cancel,
         on_file,
     );
@@ -1189,6 +1367,7 @@ pub fn run_search_parallel(
         &re,
         &options.filter,
         options.base.include_hidden,
+        options.base.include_ignored,
         cancel,
         &mut stats,
         &mut seen,
@@ -1394,7 +1573,7 @@ fn consume_walk_events(
 
 /// Parallele Verzeichnis-Phase: pro Root-Ordner ein `build_parallel()`-Walk
 /// (gleiche Filterkonfiguration wie sequenziell — hidden/gitignore-Defaults
-/// bzw. `include_hidden`-Opt-in).
+/// bzw. die Opt-ins `include_hidden`/`include_ignored`).
 /// Ein Producer-Thread treibt die Walks und speist einen `mpsc`-Kanal; dieser
 /// Thread (Consumer) liest ihn über [`consume_walk_events`]. `on_file`/`stats`/
 /// `seen`/`probing` gehören exklusiv dem Consumer-Thread (der `&mut dyn FnMut`-
@@ -1405,6 +1584,7 @@ fn walk_dirs_parallel(
     re: &Regex,
     filter: &FileFilter,
     include_hidden: bool,
+    include_ignored: bool,
     cancel: &AtomicBool,
     stats: &mut SearchStats,
     seen: &mut HashSet<String>,
@@ -1415,14 +1595,15 @@ fn walk_dirs_parallel(
         return false;
     }
 
-    // [Sol-Rev S6#2] Überlappende Dir-Roots VOR dem Parallel-Walk kollabieren.
-    // Sonst besuchen zwei Walks (Kind + Eltern) dieselbe Datei; der worker-
-    // seitige Näherungs-Hit-Zähler zählt sie doppelt gegen `MAX_HITS_TOTAL` und
-    // könnte den Walk in den Probe-Modus zwingen, bevor nicht-redundante Dateien
-    // besucht sind — Ergebnis wäre unvollständig, ohne dass `truncated` gesetzt
-    // wird. Nach dem Kollabieren trifft jede Datei höchstens ein Walk, der
-    // Consumer-`seen` bleibt nur noch Netz für die geteilte Pinned-Phase.
-    let dirs = collapse_overlapping_dirs(dirs);
+    // [Sol-Rev S6#2/N1] Überlappende Walks dürfen dieselbe Datei nie zweimal
+    // besuchen: der worker-seitige Näherungs-Hit-Zähler zählte sie doppelt
+    // gegen `MAX_HITS_TOTAL` und könnte den Walk in den Probe-Modus zwingen,
+    // bevor nicht-redundante Dateien besucht sind — Ergebnis unvollständig,
+    // ohne dass `truncated` gesetzt wird. Deshalb ist jede aktive Wurzel eine
+    // Grenze der übrigen Walks (`is_foreign_root` im `filter_entry`, also vor
+    // Dateiscan und Zählung). Der Consumer-`seen` bleibt Netz für die geteilte
+    // Pinned-Phase.
+    let (dirs, active_roots) = plan_walk_roots(dirs);
 
     let hit_counter = AtomicUsize::new(0);
     let stop_flag = AtomicBool::new(false);
@@ -1443,7 +1624,12 @@ fn walk_dirs_parallel(
                 }
                 let dir_tx = tx.clone();
                 let mut builder = WalkBuilder::new(dir);
-                apply_include_hidden(&mut builder, include_hidden);
+                apply_walk_filters(
+                    &mut builder,
+                    include_hidden,
+                    include_ignored,
+                    active_roots.clone(),
+                );
                 builder.build_parallel().run(|| {
                     let wtx = dir_tx.clone();
                     Box::new(move |result| {
@@ -1668,6 +1854,29 @@ mod tests {
     }
 
     #[test]
+    fn resolve_search_scope_keeps_nested_dir_pins_and_file_pins() {
+        // Suche: jeder Ordner-Pin bleibt eigene Wurzel (Grenzprüfung im Walk
+        // statt Einklappen); nur exakte Duplikate (gleicher `root_key`, hier
+        // mit abschließendem Trenner) entfallen. Datei-Pin bleibt.
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        let sub = root.join("sub");
+        fs::create_dir_all(&sub).unwrap();
+        let file = sub.join("a.md");
+        fs::write(&file, "needle\n").unwrap();
+
+        let dup = PinnedItem {
+            path: format!("{}/", sub.to_string_lossy()),
+            is_directory: true,
+        };
+        let pinned = vec![pin_dir(root), pin_dir(&sub), dup, pin_file(&file)];
+        let roots = resolve_search_scope(&pinned, &SearchScope::Vault);
+
+        assert_eq!(vec![root.to_path_buf(), sub], roots.dirs);
+        assert_eq!(vec![file], roots.files);
+    }
+
+    #[test]
     fn overlap_dedup_each_file_searched_once() {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path();
@@ -1703,7 +1912,686 @@ mod tests {
     }
 
     #[test]
-    fn include_hidden_finds_hidden_and_gitignored() {
+    fn include_hidden_alone_skips_gitignored() {
+        // Referenz-Fixture: `.gitignore` schließt `secret.md` UND `.herd/` aus.
+        // Nur versteckte an: Dot-Datei ja, der gitignorierte Dot-Ordner
+        // `.herd/spec.md` bleibt draußen (gitignore-Filter weiter aktiv).
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        init_git(root);
+        write(root, ".gitignore", "secret.md\n.herd/\n");
+        write(root, "visible.md", "needle\n");
+        write(root, "secret.md", "needle gitignored\n");
+        write(root, ".hidden.md", "needle hidden file\n");
+        write(root, ".herd/spec.md", "needle hidden dir\n");
+
+        let opts = SearchOptions {
+            include_hidden: true,
+            ..SearchOptions::default()
+        };
+        let (files, _) = collect(&dir_roots(root), "needle", &opts);
+        let mut found = names(&files);
+        found.sort();
+        assert_eq!(
+            vec![".hidden.md".to_string(), "visible.md".to_string()],
+            found
+        );
+    }
+
+    #[test]
+    fn reference_hidden_ignored_matrix_matches_expected() {
+        // Vorgegebene Referenzfälle: beide aus / nur hidden / nur ignored /
+        // beide an. Fixture: .gitignore = secret.md + .herd/; Dateien
+        // visible.md, secret.md (ignoriert), .hidden.md, .herd/spec.md
+        // (versteckt UND ignoriert).
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        init_git(root);
+        write(root, ".gitignore", "secret.md\n.herd/\n");
+        write(root, "visible.md", "needle\n");
+        write(root, "secret.md", "needle secret\n");
+        write(root, ".hidden.md", "needle dotfile\n");
+        write(root, ".herd/spec.md", "needle hidden dir\n");
+        let roots = dir_roots(root);
+
+        let cases = [
+            (false, false, vec!["visible.md"]),
+            (true, false, vec![".hidden.md", "visible.md"]),
+            (false, true, vec!["secret.md", "visible.md"]),
+            (
+                true,
+                true,
+                vec![".hidden.md", "secret.md", "visible.md", "spec.md"],
+            ),
+        ];
+        for (hidden, ignored, expected) in cases {
+            let opts = SearchOptions {
+                include_hidden: hidden,
+                include_ignored: ignored,
+                ..SearchOptions::default()
+            };
+            let (files, _) = collect(&roots, "needle", &opts);
+            let mut found = names(&files);
+            found.sort();
+            let mut expected: Vec<String> = expected.into_iter().map(str::to_string).collect();
+            expected.sort();
+            assert_eq!(expected, found, "hidden={hidden} ignored={ignored}");
+
+            // Paralleler Walk muss identisch liefern.
+            let o = ExtendedSearchOptions {
+                base: opts,
+                regex: false,
+                filter: FileFilter::AllText,
+            };
+            let (par_files, _) = collect_parallel(&roots, "needle", &o);
+            assert_eq!(
+                as_map(&files),
+                as_map(&par_files),
+                "parallel hidden={hidden} ignored={ignored}"
+            );
+        }
+    }
+
+    #[test]
+    fn git_and_dot_excluded_even_under_gitignore_negation() {
+        // K-A1: `.gitignore`-Negationen `!.hidden.md` und `!.git/` hebeln die
+        // Crate-Heuristik aus; der explizite `filter_entry` muss trotzdem
+        // Dot-Einträge (bei hidden aus) und `.git` (immer) fernhalten.
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        init_git(root);
+        write(root, ".gitignore", "!.hidden.md\n!.git/\n");
+        write(root, "visible.md", "needle\n");
+        write(root, ".hidden.md", "needle dotfile\n");
+        write(root, ".git/private.md", "needle inside git\n");
+        let roots = dir_roots(root);
+
+        let opts = SearchOptions::default();
+        let (files, _) = collect(&roots, "needle", &opts);
+        assert_eq!(vec!["visible.md".to_string()], names(&files));
+        let o = ExtendedSearchOptions {
+            base: opts,
+            regex: false,
+            filter: FileFilter::AllText,
+        };
+        let (par_files, _) = collect_parallel(&roots, "needle", &o);
+        assert_eq!(as_map(&files), as_map(&par_files));
+
+        // Nur hidden an: Dot-Datei ja, `.git` weiter nein (Negation).
+        let opts_hidden = SearchOptions {
+            include_hidden: true,
+            ..SearchOptions::default()
+        };
+        let (files, _) = collect(&roots, "needle", &opts_hidden);
+        let mut found = names(&files);
+        found.sort();
+        assert_eq!(
+            vec![".hidden.md".to_string(), "visible.md".to_string()],
+            found
+        );
+        let o = ExtendedSearchOptions {
+            base: opts_hidden,
+            regex: false,
+            filter: FileFilter::AllText,
+        };
+        let (par_files, _) = collect_parallel(&roots, "needle", &o);
+        assert_eq!(as_map(&files), as_map(&par_files));
+    }
+
+    #[test]
+    fn git_scope_yields_no_hits_in_any_flag_combination() {
+        // K-A1: `.git` und alles darunter sind als Walk-Wurzel/Scope in jeder
+        // Flag-Kombination gesperrt (Entry-Filter schützt die Wurzel nicht).
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        init_git(root);
+        write(root, ".gitignore", "!.git/\n");
+        write(root, ".git/spec.md", "needle git\n");
+        write(root, ".git/hooks/pre-commit.md", "needle hook\n");
+        write(root, "visible.md", "needle\n");
+        let roots = [root.join(".git"), root.join(".git/hooks")];
+
+        for (hidden, ignored) in [(false, false), (true, false), (false, true), (true, true)] {
+            for dir in &roots {
+                let scope = SearchRoots {
+                    dirs: vec![dir.clone()],
+                    files: vec![],
+                };
+                let opts = SearchOptions {
+                    include_hidden: hidden,
+                    include_ignored: ignored,
+                    ..SearchOptions::default()
+                };
+                let (files, _) = collect(&scope, "needle", &opts);
+                assert!(
+                    files.is_empty(),
+                    "seq root={dir:?} hidden={hidden} ignored={ignored}: {:?}",
+                    names(&files)
+                );
+                let o = ExtendedSearchOptions {
+                    base: opts,
+                    regex: false,
+                    filter: FileFilter::AllText,
+                };
+                let (par_files, _) = collect_parallel(&scope, "needle", &o);
+                assert!(
+                    par_files.is_empty(),
+                    "par root={dir:?} hidden={hidden} ignored={ignored}: {:?}",
+                    names(&par_files)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn git_file_pin_excluded_in_any_flag_combination() {
+        // `.git`-Vertrag schlägt auch den expliziten Datei-Pin-Bypass.
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        init_git(root);
+        write(root, ".git/spec.md", "needle git\n");
+        let scope = SearchRoots {
+            dirs: vec![],
+            files: vec![root.join(".git/spec.md")],
+        };
+        for (hidden, ignored) in [(false, false), (true, true)] {
+            let opts = SearchOptions {
+                include_hidden: hidden,
+                include_ignored: ignored,
+                ..SearchOptions::default()
+            };
+            let (files, _) = collect(&scope, "needle", &opts);
+            assert!(files.is_empty(), "seq hidden={hidden}: {:?}", names(&files));
+            let o = ExtendedSearchOptions {
+                base: opts,
+                regex: false,
+                filter: FileFilter::AllText,
+            };
+            let (par_files, _) = collect_parallel(&scope, "needle", &o);
+            assert!(
+                par_files.is_empty(),
+                "par hidden={hidden}: {:?}",
+                names(&par_files)
+            );
+        }
+    }
+
+    #[test]
+    fn nested_pins_behind_hidden_segments_found_once() {
+        // K-A2: Ein Kind-Pin hinter einem Dot-Segment bleibt eigene Walk-Wurzel,
+        // wenn der Eltern-Walk ihn mit ausgeschaltetem Hidden-Filter nicht
+        // erreicht. Genau ein Treffer, sequenziell und parallel; mit hidden an
+        // weiterhin genau einmal (kein Doppel-Walk).
+        for child_rel in [".pinned", ".outer/.pinned", ".outer/pinned"] {
+            let tmp = TempDir::new().unwrap();
+            let root = tmp.path();
+            init_git(root);
+            write(root, "other.md", "nothing\n");
+            write(root, &format!("{child_rel}/spec.md"), "needle spec\n");
+            let hidden_pin = root.join(child_rel);
+            let pinned = vec![pin_dir(root), pin_dir(&hidden_pin)];
+            let roots = resolve_search_scope(&pinned, &SearchScope::Vault);
+            assert!(
+                roots.dirs.iter().any(|d| d == &hidden_pin),
+                "{child_rel}: Kind-Pin muss eigene Wurzel bleiben"
+            );
+
+            let opts = SearchOptions::default();
+            let (files, _) = collect(&roots, "needle", &opts);
+            assert_eq!(
+                1,
+                files.iter().filter(|f| f.file_name == "spec.md").count(),
+                "seq {child_rel}: {:?}",
+                names(&files)
+            );
+            let o = ExtendedSearchOptions {
+                base: opts,
+                regex: false,
+                filter: FileFilter::AllText,
+            };
+            let (par_files, _) = collect_parallel(&roots, "needle", &o);
+            assert_eq!(
+                1,
+                par_files
+                    .iter()
+                    .filter(|f| f.file_name == "spec.md")
+                    .count(),
+                "par {child_rel}: {:?}",
+                names(&par_files)
+            );
+
+            let opts_hidden = SearchOptions {
+                include_hidden: true,
+                ..SearchOptions::default()
+            };
+            let o_hidden = ExtendedSearchOptions {
+                base: opts_hidden,
+                regex: false,
+                filter: FileFilter::AllText,
+            };
+            let (par_hidden, _) = collect_parallel(&roots, "needle", &o_hidden);
+            assert_eq!(
+                1,
+                par_hidden
+                    .iter()
+                    .filter(|f| f.file_name == "spec.md")
+                    .count(),
+                "par hidden {child_rel}: {:?}",
+                names(&par_hidden)
+            );
+        }
+    }
+
+    #[test]
+    fn ignored_pins_stay_reachable_in_all_flag_combinations() {
+        // K-A3.1: Der Kind-Pin selbst ist gitignoriert (Dot bzw. normaler
+        // Zwischenordner). Über alle vier Flagkombinationen muss er genau
+        // einmal erreichbar bleiben — Hidden an darf ihn nicht wegoptimieren.
+        for (child_rel, pattern) in [(".pin", ".pin/"), ("build/notes", "build/")] {
+            let tmp = TempDir::new().unwrap();
+            let root = tmp.path();
+            init_git(root);
+            write(root, ".gitignore", &format!("{pattern}\n"));
+            write(root, &format!("{child_rel}/spec.md"), "needle spec\n");
+            let child = root.join(child_rel);
+            let pinned = vec![pin_dir(root), pin_dir(&child)];
+            let roots = resolve_search_scope(&pinned, &SearchScope::Vault);
+            assert!(
+                roots.dirs.iter().any(|d| d == &child),
+                "{child_rel}: Kind-Pin muss eigene Wurzel sein"
+            );
+
+            for (hidden, ignored) in [(false, false), (true, false), (false, true), (true, true)] {
+                let opts = SearchOptions {
+                    include_hidden: hidden,
+                    include_ignored: ignored,
+                    ..SearchOptions::default()
+                };
+                let (files, stats) = collect(&roots, "needle", &opts);
+                assert_eq!(
+                    1,
+                    files.len(),
+                    "seq {child_rel} hidden={hidden} ignored={ignored}: {:?}",
+                    names(&files)
+                );
+                assert_eq!(1, stats.hits, "seq hits {child_rel} hidden={hidden}");
+
+                let o = ExtendedSearchOptions {
+                    base: opts,
+                    regex: false,
+                    filter: FileFilter::AllText,
+                };
+                let (par_files, par_stats) = collect_parallel(&roots, "needle", &o);
+                assert_eq!(
+                    1,
+                    par_files.len(),
+                    "par {child_rel} hidden={hidden} ignored={ignored}: {:?}",
+                    names(&par_files)
+                );
+                assert_eq!(
+                    1, par_stats.hits,
+                    "par hits {child_rel} hidden={hidden} ignored={ignored}"
+                );
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn nested_symlink_pin_stays_reachable() {
+        // K-A3.2: Alias-Symlink-Pin unter dem Eltern-Pin; der Eltern-Walk folgt
+        // dem Verzeichnis-Symlink nicht und überspringt `.target` (hidden aus),
+        // der Alias bleibt eigene Wurzel → genau ein Treffer seq und par.
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        init_git(root);
+        write(root, ".target/spec.md", "needle spec\n");
+        std::os::unix::fs::symlink(root.join(".target"), root.join("alias")).unwrap();
+        let child = root.join("alias");
+        let pinned = vec![pin_dir(root), pin_dir(&child)];
+        let roots = resolve_search_scope(&pinned, &SearchScope::Vault);
+        assert!(
+            roots.dirs.iter().any(|d| d == &child),
+            "Alias-Pin muss eigene Wurzel bleiben"
+        );
+
+        let opts = SearchOptions::default();
+        let (files, stats) = collect(&roots, "needle", &opts);
+        assert_eq!(1, files.len(), "seq: {:?}", names(&files));
+        assert_eq!(1, stats.hits, "seq hits");
+
+        let o = ExtendedSearchOptions {
+            base: opts,
+            regex: false,
+            filter: FileFilter::AllText,
+        };
+        let (par_files, par_stats) = collect_parallel(&roots, "needle", &o);
+        assert_eq!(1, par_files.len(), "par: {:?}", names(&par_files));
+        assert_eq!(1, par_stats.hits, "par hits");
+    }
+
+    #[test]
+    fn ignored_dot_pin_parallel_hits_not_double_counted() {
+        // K-A3.1/Cap: 12 Dateien × 40 Treffer = 480 (< 500). Kein Doppelbesuch
+        // durch zwei Roots darf den worker-seitigen Näherungszähler doppelt
+        // füllen und fälschlich `truncated` setzen.
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        init_git(root);
+        write(root, ".gitignore", ".pin/\n");
+        for i in 0..12 {
+            write(root, &format!(".pin/f{i:02}.md"), &"needle\n".repeat(40));
+        }
+        let child = root.join(".pin");
+        let pinned = vec![pin_dir(root), pin_dir(&child)];
+        let roots = resolve_search_scope(&pinned, &SearchScope::Vault);
+
+        for (hidden, ignored) in [(false, false), (true, false), (false, true), (true, true)] {
+            let o = ExtendedSearchOptions {
+                base: SearchOptions {
+                    include_hidden: hidden,
+                    include_ignored: ignored,
+                    ..SearchOptions::default()
+                },
+                regex: false,
+                filter: FileFilter::AllText,
+            };
+            let (seq_files, seq_stats) = collect_ex(&roots, "needle", &o);
+            let (par_files, par_stats) = collect_parallel(&roots, "needle", &o);
+            assert_eq!(
+                12,
+                seq_files.len(),
+                "seq files hidden={hidden} ignored={ignored}"
+            );
+            assert_eq!(
+                480, seq_stats.hits,
+                "seq hits hidden={hidden} ignored={ignored}"
+            );
+            assert!(
+                !seq_stats.truncated,
+                "seq truncated hidden={hidden} ignored={ignored}"
+            );
+            assert_eq!(as_map(&seq_files), as_map(&par_files));
+            assert_eq!(
+                480, par_stats.hits,
+                "par hits hidden={hidden} ignored={ignored}"
+            );
+            assert!(
+                !par_stats.truncated,
+                "par truncated hidden={hidden} ignored={ignored}"
+            );
+        }
+    }
+
+    /// N1-Konstellation (Nachprüfung Astra): Repo `R`, Kind-Pin `K`, davon
+    /// unabhängiger Pin `S`; Pins in Reihenfolge R, K, S. Unter K zwölf
+    /// Dateien × 40 `needle`-Zeilen, unter S eine Datei mit einer. Soll bei
+    /// `includeHidden=true, includeIgnored=false`: 13 Dateien, 481 Hits, nicht
+    /// truncated — sequenziell und parallel (mehrfach, Completion-Order).
+    fn assert_n1_case(case: &str, tmp: &TempDir, child: &Path) {
+        let root = tmp.path().join("r");
+        let other = tmp.path().join("s");
+        for i in 0..12 {
+            write(child, &format!("f{i:02}.md"), &"needle\n".repeat(40));
+        }
+        write(&other, "one.md", "needle\n");
+        let pinned = vec![pin_dir(&root), pin_dir(child), pin_dir(&other)];
+        let roots = resolve_search_scope(&pinned, &SearchScope::Vault);
+        let o = ExtendedSearchOptions {
+            base: SearchOptions {
+                include_hidden: true,
+                include_ignored: false,
+                ..SearchOptions::default()
+            },
+            regex: false,
+            filter: FileFilter::AllText,
+        };
+
+        let (seq_files, seq_stats) = collect_ex(&roots, "needle", &o);
+        assert_eq!(
+            13,
+            seq_files.len(),
+            "{case} seq files: {:?}",
+            names(&seq_files)
+        );
+        assert_eq!(481, seq_stats.hits, "{case} seq hits");
+        assert!(!seq_stats.truncated, "{case} seq truncated");
+
+        for run in 0..5 {
+            let (par_files, par_stats) = collect_parallel(&roots, "needle", &o);
+            assert_eq!(
+                13,
+                par_files.len(),
+                "{case} par#{run} files: {:?}",
+                names(&par_files)
+            );
+            assert_eq!(481, par_stats.hits, "{case} par#{run} hits");
+            assert!(!par_stats.truncated, "{case} par#{run} truncated");
+            assert_eq!(as_map(&seq_files), as_map(&par_files), "{case} par#{run}");
+        }
+    }
+
+    #[test]
+    fn n1_exclude_precedence_child_pin_walked_once() {
+        // `.gitignore` gibt `.pin/` frei, `info/exclude` schließt es aus: der
+        // echte Walk respektiert die Freigabe, der Dimming-Matcher nicht. Die
+        // Wurzelplanung darf davon nicht abhängen.
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("r");
+        init_git(&root);
+        write(&root, ".gitignore", "!.pin/\n");
+        write(&root, ".git/info/exclude", ".pin/\n");
+        let child = root.join(".pin");
+        assert_n1_case("exclude_precedence", &tmp, &child);
+    }
+
+    #[test]
+    fn n1_nested_anchor_child_pin_walked_once() {
+        // `R/sub/.gitignore` = `/sub/` ist relativ zu `R/sub` verankert
+        // (trifft `R/sub/sub`, nicht `R/sub`).
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("r");
+        init_git(&root);
+        write(&root, "sub/.gitignore", "/sub/\n");
+        let child = root.join("sub");
+        assert_n1_case("nested_anchor", &tmp, &child);
+    }
+
+    #[test]
+    fn root_key_windows_paths_case_insensitive_unix_case_sensitive() {
+        // Trenner + abschließender Trenner: Duplikat.
+        assert_eq!(
+            root_key(Path::new("C:\\Vault\\")),
+            root_key(Path::new("C:/Vault"))
+        );
+        // Laufwerkspfad: case-insensitiv — `C:/Vault/sub` aus dem Walk von
+        // `C:/Vault` ist die Kind-Wurzel `c:/vault/sub`.
+        assert_eq!(
+            root_key(&Path::new("C:/Vault").join("sub")),
+            root_key(Path::new("c:/vault/sub"))
+        );
+        // UNC: case-insensitiv, Trenner vereinheitlicht.
+        assert_eq!(
+            root_key(Path::new("\\\\Server\\Share\\A\\")),
+            root_key(Path::new("//server/share/a"))
+        );
+        // Unix: case-sensitiv.
+        assert_ne!(
+            root_key(&Path::new("/home/u/Vault").join("sub")),
+            root_key(Path::new("/home/u/vault/sub"))
+        );
+        // Wurzeln bleiben unteilbar.
+        assert_eq!("c:/", root_key(Path::new("C:\\")));
+        assert_eq!("/", root_key(Path::new("/")));
+        assert_ne!(
+            root_key(Path::new("/home/u/Vault")),
+            root_key(Path::new("/home/u/vault"))
+        );
+        // N2: `.`/`..` bleiben stehen — `left/link/..` kann über einen
+        // Symlink ein anderer Ordner sein als `left`.
+        assert_ne!(
+            root_key(Path::new("/b/left/link/..")),
+            root_key(Path::new("/b/left"))
+        );
+        assert_eq!("/b/left/link/..", root_key(Path::new("/b/left/link/../")));
+        assert_ne!(root_key(Path::new("/a/./b")), root_key(Path::new("/a/b")));
+        // Mehrfache Trenner und Extended-Length-Präfix.
+        assert_eq!("/a/b", root_key(Path::new("/a//b/")));
+        assert_eq!(
+            root_key(Path::new("\\\\?\\C:\\Vault")),
+            root_key(Path::new("c:/vault"))
+        );
+    }
+
+    /// N2 (Nachprüfung Astra): `B/left/link -> B/right/sub`; Pins `B/left`
+    /// und `B/left/link/..` zeigen physisch auf verschiedene Ordner
+    /// (`B/left` bzw. `B/right`). Beide bleiben Wurzel: 2 Dateien, 2 Hits —
+    /// sequenziell und parallel.
+    #[cfg(unix)]
+    #[test]
+    fn n2_symlink_dotdot_pin_is_its_own_root() {
+        let tmp = TempDir::new().unwrap();
+        let base = tmp.path().join("b");
+        write(&base, "left/spec-left.md", "needle\n");
+        write(&base, "right/spec-right.md", "needle\n");
+        fs::create_dir_all(base.join("right/sub")).unwrap();
+        std::os::unix::fs::symlink(base.join("right/sub"), base.join("left/link")).unwrap();
+        let left = base.join("left");
+        let dotdot = PinnedItem {
+            path: format!("{}/link/..", left.to_string_lossy()),
+            is_directory: true,
+        };
+        let roots = resolve_search_scope(&[pin_dir(&left), dotdot], &SearchScope::Vault);
+        assert_eq!(2, roots.dirs.len(), "Wurzeln: {:?}", roots.dirs);
+
+        let o = ext_opts(false, FileFilter::AllText);
+        let (seq_files, seq_stats) = collect_ex(&roots, "needle", &o);
+        let mut seq = names(&seq_files);
+        seq.sort();
+        assert_eq!(vec!["spec-left.md", "spec-right.md"], seq, "seq");
+        assert_eq!(2, seq_stats.hits, "seq hits");
+
+        let (par_files, par_stats) = collect_parallel(&roots, "needle", &o);
+        let mut par = names(&par_files);
+        par.sort();
+        assert_eq!(vec!["spec-left.md", "spec-right.md"], par, "par");
+        assert_eq!(2, par_stats.hits, "par hits");
+    }
+
+    #[test]
+    fn plan_walk_roots_dedups_by_key_and_marks_child_boundaries() {
+        let dirs = vec![
+            PathBuf::from("C:/Vault"),
+            PathBuf::from("c:/vault/sub"),
+            PathBuf::from("C:\\Vault\\"),
+            PathBuf::from("/home/u/Vault"),
+            PathBuf::from("/home/u/vault/sub"),
+            PathBuf::from("/home/u/Vault/.git/x"),
+        ];
+        let (roots, keys) = plan_walk_roots(&dirs);
+        assert_eq!(
+            vec![
+                PathBuf::from("C:/Vault"),
+                PathBuf::from("c:/vault/sub"),
+                PathBuf::from("/home/u/Vault"),
+                PathBuf::from("/home/u/vault/sub"),
+            ],
+            roots,
+            "Duplikat und .git-Wurzel fallen weg, Reihenfolge bleibt"
+        );
+        // Der Eintrag `sub` im Walk von `C:/Vault` ist Grenze.
+        assert!(keys.contains(&root_key(&Path::new("C:/Vault").join("sub"))));
+        // Unix case-sensitiv: `Vault/sub` ist keine Grenze.
+        assert!(!keys.contains(&root_key(&Path::new("/home/u/Vault").join("sub"))));
+        assert_eq!(roots.len(), keys.len());
+    }
+
+    #[test]
+    fn folder_scope_gives_nested_hidden_pin_no_bypass() {
+        // Im Ordner-Scope ist nur der Ordner aktive Wurzel: ein darunter
+        // liegender Dot-Pin ist keine Grenze und bekommt keinen Bypass.
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("r");
+        write(&root, "visible.md", "needle\n");
+        write(&root, ".pin/spec.md", "needle\n");
+        let pinned = vec![pin_dir(&root), pin_dir(&root.join(".pin"))];
+        let folder =
+            resolve_search_scope(&pinned, &SearchScope::Folder(root.to_string_lossy().into()));
+
+        for (hidden, expected) in [
+            (false, vec!["visible.md".to_string()]),
+            (true, vec!["spec.md".to_string(), "visible.md".to_string()]),
+        ] {
+            let o = ExtendedSearchOptions {
+                base: SearchOptions {
+                    include_hidden: hidden,
+                    ..SearchOptions::default()
+                },
+                regex: false,
+                filter: FileFilter::AllText,
+            };
+            let (seq_files, _) = collect_ex(&folder, "needle", &o);
+            let mut seq = names(&seq_files);
+            seq.sort();
+            assert_eq!(expected, seq, "seq hidden={hidden}");
+            let (par_files, _) = collect_parallel(&folder, "needle", &o);
+            let mut par = names(&par_files);
+            par.sort();
+            assert_eq!(expected, par, "par hidden={hidden}");
+        }
+    }
+
+    #[test]
+    fn sequential_order_follows_root_order() {
+        // Pins [R, R/a]: der Unterbaum `a` gehört dem Walk seiner eigenen
+        // Wurzel und erscheint daher nach `R/z.md` (deterministisch, aber
+        // nicht mehr in Baum-Reihenfolge).
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("r");
+        write(&root, "a/x.md", "needle\n");
+        write(&root, "z.md", "needle\n");
+        let pinned = vec![pin_dir(&root), pin_dir(&root.join("a"))];
+        let roots = resolve_search_scope(&pinned, &SearchScope::Vault);
+        let (files, _) = collect(&roots, "needle", &SearchOptions::default());
+        assert_eq!(vec!["z.md".to_string(), "x.md".to_string()], names(&files));
+    }
+
+    #[test]
+    fn include_ignored_alone_skips_hidden() {
+        // Nur gitignorierte an: ignorierte Dateien ja, Dot-Ordner weiter nein —
+        // auch wenn der Dot-Ordner selbst gitignoriert ist (.herd/-Fall).
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        init_git(root);
+        write(root, ".gitignore", "secret.md\n.herd/\n");
+        write(root, "visible.md", "needle\n");
+        write(root, "secret.md", "needle gitignored\n");
+        write(root, ".herd/spec.md", "needle hidden dir\n");
+
+        let opts = SearchOptions {
+            include_ignored: true,
+            ..SearchOptions::default()
+        };
+        let roots = dir_roots(root);
+        let (files, _) = collect(&roots, "needle", &opts);
+        let mut found = names(&files);
+        found.sort();
+        assert_eq!(
+            vec!["secret.md".to_string(), "visible.md".to_string()],
+            found
+        );
+
+        let o = ExtendedSearchOptions {
+            base: opts,
+            regex: false,
+            filter: FileFilter::AllText,
+        };
+        let (par_files, _) = collect_parallel(&roots, "needle", &o);
+        assert_eq!(as_map(&files), as_map(&par_files));
+    }
+
+    #[test]
+    fn include_hidden_and_ignored_find_both() {
         // Opt-in: hidden Datei, Datei in hidden Dir und gitignorierte Datei.
         let tmp = TempDir::new().unwrap();
         let root = tmp.path();
@@ -1716,6 +2604,7 @@ mod tests {
 
         let opts = SearchOptions {
             include_hidden: true,
+            include_ignored: true,
             ..SearchOptions::default()
         };
         let (files, stats) = collect(&dir_roots(root), "needle", &opts);
@@ -1750,6 +2639,7 @@ mod tests {
 
         let opts = SearchOptions {
             include_hidden: true,
+            include_ignored: true,
             ..SearchOptions::default()
         };
         let (files, stats) = collect(&dir_roots(root), "needle", &opts);
@@ -1782,6 +2672,7 @@ mod tests {
         let o = ExtendedSearchOptions {
             base: SearchOptions {
                 include_hidden: true,
+                include_ignored: true,
                 ..SearchOptions::default()
             },
             regex: false,
@@ -1954,6 +2845,7 @@ mod tests {
             case_sensitive: false,
             whole_word: false,
             include_hidden: false,
+            include_ignored: false,
         };
         let (files, _) = collect(&dir_roots(tmp.path()), "hallo", &opts);
         assert_eq!(1, files.len());
@@ -1969,6 +2861,7 @@ mod tests {
             case_sensitive: true,
             whole_word: false,
             include_hidden: false,
+            include_ignored: false,
         };
         let (files, _) = collect(&dir_roots(tmp.path()), "hallo", &opts);
         assert_eq!(1, files.len());
@@ -2004,6 +2897,7 @@ mod tests {
             case_sensitive: false,
             whole_word: true,
             include_hidden: false,
+            include_ignored: false,
         };
         let (files, _) = collect(&dir_roots(tmp.path()), "foo", &ww);
         assert_eq!(1, files.len());
@@ -2015,6 +2909,7 @@ mod tests {
             case_sensitive: false,
             whole_word: false,
             include_hidden: false,
+            include_ignored: false,
         };
         let (files2, _) = collect(&dir_roots(tmp.path()), "foo", &off);
         assert_eq!(vec![[0u32, 3], [7u32, 3]], files2[0].hits[0].ranges);
@@ -2028,6 +2923,7 @@ mod tests {
             case_sensitive: false,
             whole_word: true,
             include_hidden: false,
+            include_ignored: false,
         };
 
         // "caf" ist kein ganzes Wort (é ist Wortzeichen) → kein Treffer.
@@ -2516,6 +3412,7 @@ mod tests {
                 case_sensitive: false,
                 whole_word: true,
                 include_hidden: false,
+                include_ignored: false,
             },
             regex: true,
             filter: FileFilter::AllText,
@@ -2830,9 +3727,9 @@ mod tests {
 
     #[test]
     fn parallel_dedups_overlapping_dirs() {
-        // Verschachtelte Roots (Parent + Kind) direkt gebaut (umgeht das
-        // resolve_scope-Dedup) → jede Datei wird von beiden Walks besucht und
-        // muss vom Consumer-`seen` auf genau einmal dedupliziert werden.
+        // Verschachtelte Roots (Parent + Kind) direkt gebaut → der Eltern-Walk
+        // betritt die Kind-Wurzel nicht (Grenzprüfung), jede Datei erscheint
+        // genau einmal.
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().join("root");
         let sub = root.join("sub");
@@ -2956,8 +3853,8 @@ mod tests {
     #[test]
     fn parallel_overlap_child_then_parent_matches_sequential() {
         // [Sol-Rev S6#2] Roots in Reihenfolge Kind→Eltern, viele doppelte Treffer
-        // und eine NUR im Eltern-Root liegende Trefferdatei. Ohne das Kollabieren
-        // überlappender Roots würde der Kind-Walk die Sub-Dateien doppelt gegen
+        // und eine NUR im Eltern-Root liegende Trefferdatei. Ohne die Grenzprüfung
+        // überlappender Roots würde der Eltern-Walk die Sub-Dateien doppelt gegen
         // den Deckel zählen und den Walk in den Probe-Modus zwingen, bevor die
         // Eltern-only-Datei besucht ist → unvollständiges Ergebnis, teils ohne
         // `truncated`. Ergebnismenge + `truncated` müssen dem sequenziellen
