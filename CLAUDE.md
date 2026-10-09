@@ -447,8 +447,8 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   Orchestrator-Review 2026-07-21, Churn-Test in
   `tests/vault/filter.test.ts`). „Schließen = Aufräumen": Zeilen-X
   (`#vault-filter-close`, immer sichtbar) / Funnel / Escape leeren die
-  Query; Text-Lösch-✕ ist ins Input eingebettet; Funnel-Badge nur bei
-  md-only. **Baum-Operationen im `vault-header`** (filter-unabhängig):
+  Query; Text-Lösch-✕ ist ins Input eingebettet; Funnel-Badge bei jedem
+  aktiven Filter (Query, md-only, git). **Baum-Operationen im `vault-header`** (filter-unabhängig):
   `#vault-expand-level` (⊞, Command `vault_expand_level` — expandiert
   alle sichtbaren zugeklappten Ordner eine Ebene über den
   `on_expand`-Pfad inkl. Watcher, Soft-Cap 1 000 neue Ordner/Klick →

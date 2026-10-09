@@ -74,8 +74,10 @@ Watcher-Fehler bleiben non-fatal (`watch_non_fatal`-Verhalten).
 ## UI (R3)
 
 - **Funnel-Button** togglet die Filterzeile (persistiert
-  `vault_filter_bar_visible`). Badge `filter-active` NUR noch für den
-  `.md`-Toggle (einzige verbleibende persistente Präferenz).
+  `vault_filter_bar_visible`). Badge `filter-active` bei jedem aktiven
+  Filter: nichtleere Query, `.md`- oder Git-Toggle (seit 2026-10-09 zählt
+  die Query wieder mit, damit der Button allein den aktiven Filter zeigt).
+  Icon: SVG-Trichter (statt des früheren `▽`).
 - **Filterzeile**: Input (mit **eingebettetem** Text-Lösch-✕ rechts im
   Feld, nur bei Text sichtbar) + `.md`-Chip + **ein** Zeilen-X
   (`#vault-filter-close`, immer sichtbar). Schließen (X, Funnel,

@@ -392,7 +392,7 @@ describe('vault/filter — Escape / Close / Badge / embedded clear', () => {
         expect(isVisible('/vault/Beta.md')).toBe(true);
     });
 
-    it('badge filter-active only for markdownOnly, not query', async () => {
+    it('badge filter-active for query and markdownOnly', async () => {
         configureInvoke();
         await initModules();
         const funnel = $('vault-filter-toggle');
@@ -401,7 +401,12 @@ describe('vault/filter — Escape / Close / Badge / embedded clear', () => {
         await typeQuery('alp');
         vi.advanceTimersByTime(150);
         await flushMicro();
-        // Query zählt nicht für Badge
+        // Aktiver Namensfilter zählt für Badge
+        expect(funnel.classList.contains('filter-active')).toBe(true);
+
+        await typeQuery('');
+        vi.advanceTimersByTime(150);
+        await flushMicro();
         expect(funnel.classList.contains('filter-active')).toBe(false);
 
         $('vault-filter-md').dispatchEvent(new MouseEvent('click', { bubbles: true }));

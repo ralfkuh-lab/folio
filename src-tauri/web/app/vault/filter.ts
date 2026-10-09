@@ -61,9 +61,9 @@ function invoke(cmd: string, args?: Record<string, unknown>): Promise<unknown> {
     return window.__TAURI__.core.invoke(cmd, args);
 }
 
-/** Funnel-Badge: persistente Praeferenzen (md-only und/oder git-only). */
+/** Funnel-Badge: Namensfilter, md-only und/oder git-only. */
 export function isVaultFilterActive(): boolean {
-    return markdownOnly || gitChangedOnly;
+    return committedQuery.length > 0 || markdownOnly || gitChangedOnly;
 }
 
 function persistOptions(): Promise<void> {
@@ -350,6 +350,7 @@ function scheduleFromInput(): void {
 function applyQuery(q: string): void {
     committedQuery = q;
     applyClientFilter();
+    syncFunnelBadge();
 }
 
 function clearQueryAndLeave(): void {
