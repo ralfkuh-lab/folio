@@ -5,9 +5,9 @@ eigener Titel und beide Obsidian-Faltmarker (`+` ohne Titel → Default,
 `-` mit Titel → Marker entfernt) — sowie ein `[!todo]`, das als normales
 Zitat stehen bleiben muss.
 
-Geprüft wird funktional (Klassen, Titel, Symbol-Maske, Titelkontrast
-gegen den Seitenhintergrund) und per Screenshot. Die Kontrastprüfung
-läuft zusätzlich über alle eingebauten View-Themes, jeweils hell und
+Geprüft wird funktional (Klassen, Titel, Symbol-Maske, Kontrast von
+Titel ≥ 4.5:1 und Boxtext ≥ 7:1 gegen den komponierten Boxhintergrund)
+und per Screenshot. Die Kontrastprüfung läuft zusätzlich über alle eingebauten View-Themes, jeweils hell und
 dunkel: View-Themes werden NACH content.css injiziert und setzen
 eigene Hintergründe — `classic` hat keine Dark-Variante und bleibt im
 dunklen App-Theme ein weißes Blatt.
@@ -40,8 +40,17 @@ EXPECTED = [
 ]
 
 # Liest pro Callout Klasse, Titel, Symbol-Maske und den Kontrast von Titel
-# und Fließtext gegen den effektiven Seitenhintergrund (erste nicht
-# transparente Hintergrundfarbe ab .markdown-body aufwärts).
+# und Boxtext gegen den Hintergrund, auf dem sie tatsächlich stehen.
+#
+# Herleitung des effektiven Hintergrunds (unabhängig vom CSS der Box):
+# Was hinter einem Element sichtbar ist, ergibt sich aus den
+# Hintergrundfarben des Elements selbst und aller Vorfahren. Gesammelt wird
+# vom Textelement nach oben bis einschließlich der ersten opaken Farbe
+# (Alpha 1; darunter Liegendes ist verdeckt). Fehlt eine, ist die
+# Canvas-Farbe Weiß die Basis. Dann wird von außen nach innen „source over"
+# komponiert: C = a·Schicht + (1−a)·C. Eine halbtransparente Textfarbe wird
+# ebenso über diesen Hintergrund gelegt. Kontrast nach WCAG 2.x (relative
+# Luminanz, (L1+0.05)/(L2+0.05)).
 PROBE_JS = """
 (() => {
     const parse = (c) => {
@@ -49,6 +58,23 @@ PROBE_JS = """
         if (!m) return null;
         const p = m[1].split(',').map(s => parseFloat(s));
         return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+    };
+    const over = (top, base) => ({
+        r: top.a * top.r + (1 - top.a) * base.r,
+        g: top.a * top.g + (1 - top.a) * base.g,
+        b: top.a * top.b + (1 - top.a) * base.b,
+        a: 1,
+    });
+    const backdrop = (el) => {
+        const layers = [];
+        for (let n = el; n; n = n.parentElement) {
+            const c = parse(getComputedStyle(n).backgroundColor);
+            if (c && c.a > 0) layers.push(c);
+            if (c && c.a >= 1) break;
+        }
+        let acc = { r: 255, g: 255, b: 255, a: 1 };
+        for (let i = layers.length - 1; i >= 0; i--) acc = over(layers[i], acc);
+        return acc;
     };
     const lum = (c) => {
         const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
@@ -58,14 +84,14 @@ PROBE_JS = """
         const x = lum(a), y = lum(b);
         return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
     };
+    const hex = (c) => '#' + [c.r, c.g, c.b].map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+    const contrast = (el) => {
+        const bg = backdrop(el);
+        const fg = over(parse(getComputedStyle(el).color), bg);
+        return { ratio: ratio(fg, bg), fg: hex(fg), bg: hex(bg) };
+    };
     const body = document.querySelector('#view-region .markdown-body');
     if (!body) return null;
-    let bg = null;
-    for (let el = body; el; el = el.parentElement) {
-        const c = parse(getComputedStyle(el).backgroundColor);
-        if (c && c.a > 0) { bg = c; break; }
-    }
-    bg = bg || { r: 255, g: 255, b: 255, a: 1 };
     const alerts = [...body.querySelectorAll('.markdown-alert')].map((el) => {
         const title = el.querySelector('.markdown-alert-title');
         const icon = getComputedStyle(title, '::before');
@@ -76,9 +102,8 @@ PROBE_JS = """
             title: title.textContent,
             icon: mask.includes('data:image/svg+xml') && icon.width === '16px',
             border: getComputedStyle(el).borderLeftWidth,
-            titleContrast: ratio(parse(getComputedStyle(title).color), bg),
-            textContrast: ratio(parse(getComputedStyle(text).color), bg),
-            bodyContrast: ratio(parse(getComputedStyle(body).color), bg),
+            titleC: contrast(title),
+            textC: contrast(text),
         };
     });
     return {
@@ -88,6 +113,11 @@ PROBE_JS = """
     };
 })()
 """
+
+# Vertrag: Titel ≥ 4.5:1 (WCAG AA), Boxtext ≥ 7:1 (AAA), jeweils gegen den
+# komponierten Boxhintergrund.
+MIN_TITLE = 4.5
+MIN_TEXT = 7.0
 
 
 def _evalv(ctx, js: str, timeout_ms: int = 5000):
@@ -107,7 +137,9 @@ def _poll(fn, timeout: float = 3.0, interval: float = 0.05):
     return last
 
 
-def _check(ctx, label: str) -> None:
+def _check(ctx, label: str) -> list[str]:
+    """Strukturfehler brechen sofort ab; Kontrastverstöße werden gesammelt
+    zurückgegeben, damit ein Lauf die ganze Matrix zeigt."""
     probe = _evalv(ctx, PROBE_JS) or {}
     alerts = probe.get("alerts") or []
     got = [(a.get("cls"), a.get("title")) for a in alerts]
@@ -116,20 +148,25 @@ def _check(ctx, label: str) -> None:
         probe.get("quotes") == 1 and probe.get("todoQuote") is True,
         f"[{label}] [!todo] sollte das einzige Zitat sein: {probe!r}",
     )
+    failures = []
     for alert in alerts:
-        name = alert.get("title")
+        name = alert["cls"].rsplit("-", 1)[-1]
         ctx.expect(alert.get("icon") is True, f"[{label}] {name}: Symbol fehlt: {alert!r}")
         ctx.expect(alert.get("border") not in (None, "0px"), f"[{label}] {name}: kein Farbbalken: {alert!r}")
-        # Farbiger Titel: lesbar wie Fließtext (WCAG AA 4.5:1), Text in der
-        # Box nicht gedimmt wie beim Zitat, sondern so kräftig wie außen.
-        ctx.expect(
-            alert.get("titleContrast", 0) >= 4.5,
-            f"[{label}] {name}: Titelkontrast {alert.get('titleContrast')!r} < 4.5",
+        title, text = alert["titleC"], alert["textC"]
+        print(
+            f"[contrast] {label:18} {name:9} titel {title['ratio']:5.2f} "
+            f"({title['fg']} auf {title['bg']})  text {text['ratio']:5.2f} ({text['fg']})"
         )
-        ctx.expect(
-            alert.get("textContrast", 0) >= alert.get("bodyContrast", 99) - 0.01,
-            f"[{label}] {name}: Text schwächer als Umgebung: {alert!r}",
-        )
+        if title["ratio"] < MIN_TITLE:
+            failures.append(f"[{label}] {name}: Titel {title['ratio']:.2f} < {MIN_TITLE} {title!r}")
+        if text["ratio"] < MIN_TEXT:
+            failures.append(f"[{label}] {name}: Text {text['ratio']:.2f} < {MIN_TEXT} {text!r}")
+    return failures
+
+
+def _expect_contrast(ctx, failures: list[str]) -> None:
+    ctx.expect(not failures, f"{len(failures)} Kontrastverstöße:\n" + "\n".join(failures))
 
 
 def _view_theme(ctx, theme_id: str, dark: bool) -> None:
@@ -171,7 +208,7 @@ def run(ctx):
             ctx.api.sync_render()
 
         with ctx.step("Hell: Klassen, Titel, Symbol, Kontrast"):
-            _check(ctx, "standard/hell")
+            _expect_contrast(ctx, _check(ctx, "standard/hell"))
 
         with ctx.step("Screenshot-Baseline callouts_view_light"):
             ctx.screenshot("callouts_view_light")
@@ -179,7 +216,7 @@ def run(ctx):
         with ctx.step("Dunkel: Klassen, Titel, Symbol, Kontrast"):
             ctx.api.theme("dark")
             ctx.api.sync_render()
-            _check(ctx, "standard/dunkel")
+            _expect_contrast(ctx, _check(ctx, "standard/dunkel"))
 
         with ctx.step("Screenshot-Baseline callouts_view_dark"):
             ctx.screenshot("callouts_view_dark")
@@ -188,15 +225,17 @@ def run(ctx):
             ctx.api.theme("light")
             ctx.api.mode("split")
             ctx.api.sync_render()
-            _check(ctx, "split/hell")
+            _expect_contrast(ctx, _check(ctx, "split/hell"))
             ctx.screenshot("callouts_split_light")
 
         with ctx.step("Alle eingebauten View-Themes (hell/dunkel): Box intakt, Kontrast"):
             ctx.api.mode("view")
+            failures = []
             for theme_id in BUILTIN_THEMES:
                 for dark in (False, True):
                     _view_theme(ctx, theme_id, dark)
-                    _check(ctx, f"{theme_id}/{'dunkel' if dark else 'hell'}")
+                    failures += _check(ctx, f"{theme_id}/{'dunkel' if dark else 'hell'}")
+            _expect_contrast(ctx, failures)
 
         with ctx.step("Screenshot-Baseline callouts_classic_dark"):
             # classic hat keine Dark-Variante: weißes Blatt im dunklen App-Theme.

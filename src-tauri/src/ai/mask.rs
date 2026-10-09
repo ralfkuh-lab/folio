@@ -129,6 +129,11 @@ pub fn mask_selection(source: &str, selection: Range<usize>) -> Result<Masked, S
 fn protected_ranges(source: &str) -> Vec<Range<usize>> {
     let line_starts = line_starts(source);
     let mut options = renderer::markdown_options();
+    // GitHub-Alerts aus: comrak haelt den Rest der Markerzeile
+    // (`> [!NOTE] `code` <b>`) als reinen String in `NodeAlert.title`, ohne
+    // Code-/HTML-Kindknoten — dort laege geschuetzter Inhalt unmaskiert.
+    // Als normales Zitat geparst bleiben die Knoten erhalten.
+    options.extension.alerts = false;
     options.extension.front_matter_delimiter = Some("---".into());
 
     let arena = Arena::new();
@@ -360,6 +365,20 @@ fn main() {
         assert!(!masked.text.contains("indented_code"));
         assert!(!masked.text.contains("inside_html_block"));
         assert!(masked.text.contains("Inhalt"));
+    }
+
+    #[test]
+    fn alert_title_code_and_html_are_masked() {
+        let source = "> [!NOTE] `secret()` <b>x</b>\n> body `inner()`\n";
+        let full = mask_selection(source, 0..source.len()).unwrap();
+        for masked in [roundtrip(source), full] {
+            assert_eq!(source, unmask(&masked.text, &masked).unwrap());
+            let fragments = masked.fragments.join("\n");
+            for protected in ["secret()", "<b>", "</b>", "inner()"] {
+                assert!(fragments.contains(protected), "{protected}: {fragments:?}");
+                assert!(!masked.text.contains(protected), "{}", masked.text);
+            }
+        }
     }
 
     #[test]
