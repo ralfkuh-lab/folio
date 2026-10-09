@@ -29,7 +29,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Version aus Cargo.toml lesen
         id: version
@@ -101,7 +101,7 @@ jobs:
     name: build (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Linux-Abhaengigkeiten
         if: runner.os == 'Linux'
@@ -120,9 +120,9 @@ jobs:
           workspaces: src-tauri -> target
           key: ${{ matrix.target }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
 
       # Die Frontend-Bundles in dist/ sind eingecheckt; ein npm-Build ist
       # hier nicht noetig (Drift prueft scripts/check-bundles.sh lokal).
@@ -151,7 +151,7 @@ jobs:
 
       - name: Als Workflow-Artefakt ablegen
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: folio-${{ needs.prepare.outputs.version }}-${{ matrix.name }}
           path: out/*
