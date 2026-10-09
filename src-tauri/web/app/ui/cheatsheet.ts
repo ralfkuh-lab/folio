@@ -26,7 +26,7 @@ export function getCheatSheetRows(): Array<[string, string]> {
         [t('cheatsheet.bulletList.label'),    '- Item   * Item'],
         [t('cheatsheet.orderedList.label'),   '1. Item'],
         [t('cheatsheet.blockquote.label'),    '> Text'],
-        [t('cheatsheet.callout.label'),       '> [!NOTE] Titel\n> Text\nNOTE TIP IMPORTANT WARNING CAUTION'],
+        [t('cheatsheet.callout.label'),       '> [!NOTE] Titel\n> Text\n[!NOTE] [!TIP] [!IMPORTANT]\n[!WARNING] [!CAUTION]'],
         [t('cheatsheet.horizontalRule.label'),'---'],
         [t('cheatsheet.table.label'),         '| col | col |\n|---|---|'],
         [t('cheatsheet.taskList.label'),      '- [ ] offen   - [x] erledigt'],
