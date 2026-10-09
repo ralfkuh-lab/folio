@@ -150,7 +150,7 @@ const SMART_LIST_PRECONDITION = "!editorReadonly && editorLangId == 'markdown'";
 const SMART_LIST_KEY_CONTEXT = 'editorTextFocus && !suggestWidgetVisible && !inSnippetMode'
     + ' && !editorHasSelection && !editorHasMultipleSelections';
 
-function installSmartList(editor: any, monaco: any): void {
+export function installSmartList(editor: any, monaco: any): void {
     if (typeof editor.addAction !== 'function') return;
     // Liefert Zeile + Fence-Status, wenn genau ein leerer Cursor steht.
     const singleCursorLine = () => {
@@ -200,10 +200,12 @@ function installSmartList(editor: any, monaco: any): void {
         },
     });
 
-    const indentAction = (id: string, key: number, lineAction: string, fallback: string) => {
+    const indentAction = (
+        id: string, label: string, key: number, lineAction: string, fallback: string,
+    ) => {
         editor.addAction({
             id,
-            label: id,
+            label,
             keybindings: [key],
             precondition: SMART_LIST_PRECONDITION,
             keybindingContext: SMART_LIST_KEY_CONTEXT + ' && !editorTabMovesFocus',
@@ -214,8 +216,9 @@ function installSmartList(editor: any, monaco: any): void {
             },
         });
     };
-    indentAction('folio.markdown.indentListItem', monaco.KeyCode.Tab,
+    indentAction('folio.markdown.indentListItem', 'Indent Markdown List Item', monaco.KeyCode.Tab,
         'editor.action.indentLines', 'tab');
-    indentAction('folio.markdown.outdentListItem', monaco.KeyMod.Shift | monaco.KeyCode.Tab,
+    indentAction('folio.markdown.outdentListItem', 'Outdent Markdown List Item',
+        monaco.KeyMod.Shift | monaco.KeyCode.Tab,
         'editor.action.outdentLines', 'outdent');
 }
