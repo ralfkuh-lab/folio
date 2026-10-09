@@ -485,7 +485,12 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   bestehenden Git-Filter auf den Bereich: Auto-Expand nur für geänderte
   Pfade darunter plus Kette Pin-Wurzel → Bereich, Knoten außerhalb
   `vf-hidden` (außer den Vorfahren des Bereichs); ohne Bereich verhält sich
-  `git` wie bisher. **Baum-Operationen im `vault-header`** (filter-unabhängig):
+  `git` wie bisher. **R4.2**: Ein Bereich blendet **sofort** alles außerhalb
+  aus (auch ohne Query/Chip, auch in Recent), ohne zu suchen oder
+  aufzuklappen. Ordner-Sichtbarkeit im Tiefenmodus kommt aus der
+  Backend-**Trefferliste**, nie aus den gerade gerenderten Dateien — der
+  Lazy-Baum rendert nach Zu-/Aufklappen nur eine Ebene, trefferhaltige
+  Unterordner wären sonst unerreichbar. **Baum-Operationen im `vault-header`** (filter-unabhängig):
   `#vault-expand-roots` (Chevron, Command `vault_expand_roots` —
   expandiert die zugeklappten Pin-Wurzel-Ordner über den
   `on_expand`-Pfad inkl. Watcher) und

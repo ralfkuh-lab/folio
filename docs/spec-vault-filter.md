@@ -28,6 +28,9 @@ weiter, R4 ergänzt den Tiefenfilter und den Ordnerbereich). Ursprung: `docs/fea
 - **R4.1 (2026-10-09)**: Bereich + `.md` klappt auch **ohne Suchbegriff**
   auf; Bereich + `git` begrenzt den Git-Filter auf den Ordner
   (User-Feedback nach dem ersten Test).
+- **R4.2 (2026-10-09)**: Bereich wirkt sofort (ohne Query/Chip); Ordner-
+  Sichtbarkeit im Tiefenmodus aus der Trefferliste statt aus dem DOM
+  (User-Report: nach Zu-/Aufklappen waren Treffer unerreichbar).
 
 ## Modell (R3)
 
@@ -332,6 +335,24 @@ nichts Sichtbares, weil der Tiefenmodus erst ab 2 Zeichen greift.
    `query: ''` und klappt auf; `.md` aus → Aufräumen; ohne Bereich kein
    Aufruf; Bereich + `git` expandiert nur Pfade unter dem Bereich und
    blendet Pin-Knoten außerhalb aus. E2E 66 um beide Fälle ergänzen.
+
+### R4.2: Bereich wirkt sofort; Sichtbarkeit aus der Trefferliste
+
+1. **Bereich sofort**: Sobald ein Bereich gesetzt ist, sind — auch ohne
+   Query, `.md` oder `git` — in der Pinned-Section nur die Kette
+   Pin-Wurzel → Bereich und alles darunter sichtbar; Dateien außerhalb
+   des Bereichs sind in beiden Sektionen `vf-hidden`. Es wird dabei
+   nichts gesucht und nichts aufgeklappt. Unterhalb des Bereichs gilt R3
+   (Ordner immer sichtbar), mit `git` nur geänderte Ordner (R4.1).
+2. **Ordner im Tiefenmodus**: sichtbar ⇔ Kette zum Bereich ODER Vorfahre
+   eines Treffers aus der Backend-Trefferliste (mit `git` nur
+   git-geänderter Treffer) — unabhängig davon, ob der Treffer gerade
+   gerendert ist. Grund: Klappt der Nutzer einen Ordner zu und wieder
+   auf, rendert der Lazy-Baum nur eine Ebene; trefferhaltige Unterordner
+   blieben sonst unsichtbar und unerreichbar. Manuelles Zuklappen wird
+   respektiert (kein automatisches Wiederaufklappen).
+3. Wurzel-Pins `/` und `C:/` werden als Vorfahren korrekt erkannt
+   (`pathIsUnder` mit Wurzeln, die auf `/` enden).
 
 ## Abnahme-Gates
 

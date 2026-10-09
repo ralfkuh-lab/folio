@@ -542,7 +542,8 @@ function collectScopeAncestorChain(scope: string): string[] {
         const parts = rel.split('/');
         for (let i = 0; i < parts.length; i++) {
             if (!parts[i]) continue;
-            acc = `${acc}/${parts[i]}`;
+            // Wurzel-Anker (`/`, `C:/`) enden schon auf `/` — genau ein Trenner.
+            acc = acc.endsWith('/') ? `${acc}${parts[i]}` : `${acc}/${parts[i]}`;
             chain.push(acc);
         }
     }
@@ -709,21 +710,37 @@ function isInRecentSection(node: HTMLElement): boolean {
     return !!node.closest('li.section[data-section="recent"]');
 }
 
-/** Ordner sichtbar im Tiefenmodus: Teil des Bereichspfads ODER Vorfahre einer
- *  sichtbaren **Pinned**-Datei (Recent-Treffer zaehlen bewusst nicht, K3). */
-function isDeepDirVisible(path: string, visiblePinnedFiles: string[]): boolean {
-    if (scopePath !== null && pathIsUnder(scopePath, path)) return true;
-    for (let i = 0; i < visiblePinnedFiles.length; i++) {
-        if (pathIsUnder(visiblePinnedFiles[i], path)) return true;
-    }
-    return false;
+/** Vorfahren-Ordner aller Treffer des Tiefenmodus (bei aktivem Git-Chip nur
+ *  der git-geaenderten). Bewusst aus der **Trefferliste** abgeleitet, nicht aus
+ *  den gerade gerenderten Dateien: klappt der Nutzer einen Ordner zu und wieder
+ *  auf, laedt der Lazy-Baum nur eine Ebene — trefferhaltige Unterordner muessen
+ *  trotzdem sichtbar (und aufklappbar) bleiben. Recent-Treffer zaehlen nicht
+ *  (K3), die Trefferliste kommt ausschliesslich aus dem Pin-Walk. */
+function collectDeepHitAncestors(): Set<string> {
+    const out = new Set<string>();
+    if (!deepState) return out;
+    deepState.files.forEach((hit) => {
+        if (gitChangedOnly && !isPathGitChanged(hit)) return;
+        let cut = hit.lastIndexOf('/');
+        while (cut >= 0) {
+            // Wurzeln behalten ihren Slash: `/` bzw. `C:/` (Pin auf Laufwerk).
+            const head = hit.slice(0, cut);
+            const isRoot = cut === 0 || /^[A-Za-z]:$/.test(head);
+            const dir = isRoot ? hit.slice(0, cut + 1) : head;
+            if (out.has(dir)) break;
+            out.add(dir);
+            if (isRoot) break;
+            cut = hit.lastIndexOf('/', cut - 1);
+        }
+    });
+    return out;
 }
 
 /** Client-Filter:
  *  - R3: Dateien ohne Namensmatch verstecken; Ordner immer da.
  *  - R4 (Tiefenmodus mit Antwort): Pinned-Datei sichtbar ⇔ in der
- *    Trefferliste, Pinned-Ordner ⇔ Vorfahre einer sichtbaren Pinned-Datei
- *    oder im Bereichspfad; Recent bleibt Namensmatch (+ Bereich). */
+ *    Trefferliste, Pinned-Ordner ⇔ Vorfahre eines Treffers (auch wenn der
+ *    Treffer gerade nicht gerendert ist) oder im Bereichspfad; Recent bleibt Namensmatch (+ Bereich). */
 function applyClientFilter(): void {
     if (!treeEl) return;
     applyingFilter = true;
@@ -737,13 +754,9 @@ function applyClientFilter(): void {
         const q = committedQuery;
         const qLower = q.toLowerCase();
         const deepActive = isDeepActive() && deepState !== null;
-        // R4.1 Punkt 4: Bereich + git ohne Tiefenmodus → Git-Sicht auf den
-        // Bereich begrenzen. Im Tiefenmodus uebernimmt das die Trefferliste.
-        const gitScoped = gitChangedOnly && scopePath !== null && !deepActive;
         const scope = scopePath;
 
         const files = treeEl.querySelectorAll('li.node[data-kind="file"]');
-        const visiblePinnedFiles: string[] = [];
         for (let i = 0; i < files.length; i++) {
             const file = files[i] as HTMLElement;
             const path = normalizePath(file.getAttribute('data-path') || '');
@@ -754,11 +767,10 @@ function applyClientFilter(): void {
                 visible = path !== '' && deepState!.files.has(path);
             } else {
                 visible = !q || name.toLowerCase().includes(qLower);
-                if (deepActive && scope !== null && !pathIsUnder(path, scope)) {
-                    visible = false;
-                }
             }
-            if (visible && gitScoped && scope !== null && !pathIsUnder(path, scope)) {
+            // Ein gesetzter Bereich wirkt sofort, in jedem Modus und auch in
+            // Recent: Dateien ausserhalb des Bereichs sind nie sichtbar.
+            if (visible && scope !== null && !pathIsUnder(path, scope)) {
                 visible = false;
             }
             if (visible && gitChangedOnly && !isPathGitChanged(path)) {
@@ -766,32 +778,37 @@ function applyClientFilter(): void {
             }
             if (!visible) {
                 file.classList.add('vf-hidden');
-            } else if (!inRecent && path) {
-                visiblePinnedFiles.push(path);
             }
         }
 
         if (deepActive) {
+            const hitDirs = collectDeepHitAncestors();
             const dirs = treeEl.querySelectorAll('li.node[data-kind="dir"]');
             for (let i = 0; i < dirs.length; i++) {
                 const dir = dirs[i] as HTMLElement;
                 if (isInRecentSection(dir)) continue;
                 const path = normalizePath(dir.getAttribute('data-path') || '');
-                if (!isDeepDirVisible(path, visiblePinnedFiles)) {
+                const onScopeChain = scope !== null && pathIsUnder(scope, path);
+                // Alte Treffer einer noch laufenden Suche duerfen nach einem
+                // Bereichswechsel keine Ordner ausserhalb sichtbar halten.
+                const hitInScope =
+                    hitDirs.has(path) && (scope === null || pathIsUnder(path, scope));
+                if (!onScopeChain && !hitInScope) {
                     dir.classList.add('vf-hidden');
                 }
             }
-        } else if (gitScoped && scope !== null) {
+        } else if (scope !== null) {
             const dirs = treeEl.querySelectorAll('li.node[data-kind="dir"]');
             for (let i = 0; i < dirs.length; i++) {
                 const dir = dirs[i] as HTMLElement;
                 if (isInRecentSection(dir)) continue;
                 const path = normalizePath(dir.getAttribute('data-path') || '');
-                // Vorfahren des Bereichs (inkl. Bereich) bleiben sichtbar,
-                // Pfade darunter gelten als sichtbar wenn git-geaendert.
+                // Kette Pin-Wurzel → Bereich bleibt sichtbar, alles daneben
+                // verschwindet sofort. Darunter: R3 (Ordner immer sichtbar),
+                // mit Git-Chip nur geaenderte Ordner (R4.1 Punkt 4).
                 const visible = pathIsUnder(scope, path)
                     ? true
-                    : pathIsUnder(path, scope) && isPathGitChanged(path);
+                    : pathIsUnder(path, scope) && (!gitChangedOnly || isPathGitChanged(path));
                 if (!visible) {
                     dir.classList.add('vf-hidden');
                 }
@@ -935,6 +952,7 @@ function onScopeRemove(e?: Event): void {
     scopePath = null;
     syncScopeChip();
     syncFunnelBadge();
+    applyClientFilter();
     requestDeepSync();
     inputEl?.focus();
 }
@@ -951,6 +969,9 @@ export function filterInFolder(path: string): void {
     setBarVisible(true);
     syncScopeChip();
     syncFunnelBadge();
+    // R4.2: Bereich sofort anwenden, nicht erst nach der (ggf. laufenden)
+    // Tiefensuche — sonst bleiben alte Treffer ausserhalb bis zur Antwort stehen.
+    applyClientFilter();
     requestDeepSync();
 }
 
@@ -1172,7 +1193,7 @@ export function initVaultFilter(): () => void {
             // Auch bei leerer Query kann der Tiefenmodus aktiv sein (R4.1:
             // Bereich + md-only) — dann muss die Sicht nach jedem Rebuild
             // erneut angewandt werden.
-            if (committedQuery.length > 0 || gitChangedOnly || deepState !== null) {
+            if (committedQuery.length > 0 || gitChangedOnly || deepState !== null || scopePath !== null) {
                 applyClientFilter();
             }
             // Expand-Roots-Disabled immer (nicht nur bei aktiver Query).

@@ -1205,6 +1205,117 @@ describe('vault/filter — deep filter (R4)', () => {
         expect(isHidden('/vault'), 'pinned roots with no deep hit must be hidden').toBe(true);
     });
 
+    it.each([
+        ['posix-root', '/', '/Notes/Deep.md', '/Notes'],
+        ['drive-root', 'C:/', 'C:/Notes/Deep.md', 'C:/Notes'],
+        ['unc-root', '//server/share', '//server/share/Notes/Deep.md', '//server/share/Notes'],
+        ['backslash', 'C:\\vault', 'C:\\vault\\Notes\\Deep.md', 'C:\\vault\\Notes'],
+    ])('root pin %s with an unrendered hit stays visible', async (_name, root, hit, sub) => {
+        const nodes = document.querySelectorAll('li.section[data-section="pinned"] li.node');
+        nodes[0].setAttribute('data-path', root);
+        nodes[4].setAttribute('data-path', sub);
+        deepInvoke({ vault_filter_find: () => ({ files: [hit], dirs: [root, sub] }) });
+        await initModules(); clickDeep(); await flushMicro(); await typeAndSettle('deep');
+        expect(document.querySelector('li.section[data-section="pinned"] li.node')!.classList.contains('vf-hidden'), 'root with unrendered hit').toBe(false);
+    });
+
+    it.each([false, true])('unrendered hit keeps its folder only if git-changed (git=%s)', async (changed) => {
+        deepInvoke({ vault_filter_find: () => ({ files: ['/vault/Notes/Sub/Deep.md'], dirs: ['/vault', '/vault/Notes'] }) });
+        await initModules();
+        const git = await import('../../app/vault/git-status');
+        git.__setGitStatusSnapshotForTests(changed ? [{path: '/vault/Notes/Sub/Deep.md', status: 'modified'}] : []);
+        $('vault-filter-git').click(); clickDeep(); await flushMicro(); await typeAndSettle('deep');
+        expect(isVisible('/vault/Notes')).toBe(changed);
+    });
+
+    it('scope + markdown keeps a lazily re-inserted folder visible and closed', async () => {
+        deepInvoke({ vault_filter_find: () => ({ files: ['/vault/Notes/Sub/Deep.md'], dirs: ['/vault', '/vault/Notes', '/vault/Notes/Sub'] }) });
+        const {filter} = await initModules();
+        filter.filterInFolder('/vault'); $('vault-filter-md').click(); await flushMicro();
+        expect(isVisible('/vault/Notes')).toBe(true);
+        const node = document.querySelector('li[data-path="/vault/Notes"]')!;
+        node.remove(); document.querySelector('li[data-path="/vault"] > ul')!.appendChild(node);
+        await flushMicro(); expect(isVisible('/vault/Notes')).toBe(true);
+        expect(node.querySelector('.caret')!.classList.contains('open')).toBe(false);
+    });
+
+    it.each([['/', '/Notes'], ['C:/', 'C:/Notes']])('scope + git sends a valid root chain for pin %s', async (root, scope) => {
+        document.querySelector('li.section[data-section="pinned"] li.node')!.setAttribute('data-path', root);
+        document.querySelector('li[data-path="/vault/Notes"]')!.setAttribute('data-path', scope);
+        const sent: string[][] = [];
+        deepInvoke({ vault_expand_paths: (args) => { sent.push(args.paths); return {html: $('vault-tree').innerHTML, paths: []}; } });
+        const {filter} = await initModules();
+        filter.filterInFolder(scope); await flushMicro(); $('vault-filter-git').click(); await flushMicro();
+        expect(sent.flat(), 'scope chain must contain the valid scope path').toContain(scope);
+    });
+
+    it('plain scope re-applies to inserts and restores Recent on removal', async () => {
+        deepInvoke({}); const {filter} = await initModules();
+        filter.filterInFolder('/vault/Notes'); await flushMicro();
+        const host = document.querySelector('li[data-path="/vault"] > ul')!;
+        host.insertAdjacentHTML('beforeend', '<li class="node" data-kind="dir" data-path="/vault/Other"><div class="row"><span class="label">Other</span></div></li>');
+        document.querySelector('li[data-path="/vault/Notes"] > ul')!.insertAdjacentHTML('beforeend', '<li class="node" data-kind="file" data-path="/vault/Notes/In.md"><div class="row"><span class="label">In.md</span></div></li>');
+        await flushMicro(); expect(isHidden('/vault/Other')).toBe(true); expect(isVisible('/vault/Notes/In.md')).toBe(true);
+        $('vault-filter-scope-remove').click(); await flushMicro();
+        expect(isVisible('/vault/Other')).toBe(true);
+        expect(document.querySelector('li.section[data-section="recent"] li[data-path="/vault/old.md"]')!.classList.contains('vf-hidden')).toBe(false);
+    });
+
+    it('scope clips old deep results immediately while find is pending', async () => {
+        let calls = 0;
+        deepInvoke({ vault_filter_find: () => ++calls === 1 ? {files: ['/vault/Alpha.md'], dirs: ['/vault']} : new Promise(() => {}) });
+        const {filter} = await initModules(); clickDeep(); await flushMicro(); await typeAndSettle('alp');
+        expect(isVisible('/vault/Alpha.md')).toBe(true);
+        filter.filterInFolder('/vault/Notes'); await flushMicro();
+        expect(isHidden('/vault/Alpha.md'), 'outside file must hide before new find resolves').toBe(true);
+    });
+
+    it('setting a scope hides everything outside it right away', async () => {
+        // Ohne Query, ohne .md, ohne git: der Bereich allein blendet sofort
+        // alles neben dem Pfad Pin-Wurzel -> Bereich aus (auch in Recent),
+        // ohne zu suchen oder aufzuklappen.
+        const calls: string[] = [];
+        deepInvoke({
+            vault_filter_find: () => { calls.push('find'); return { files: [], dirs: [] }; },
+            vault_expand_paths: () => { calls.push('expand'); return { html: $('vault-tree').innerHTML, paths: [] }; },
+        });
+        const { filter } = await initModules();
+        filter.filterInFolder('/vault/Notes'); await flushMicro();
+        expect(calls, 'no search, no expand').toEqual([]);
+        expect(isVisible('/vault'), 'pin root on the scope chain').toBe(true);
+        expect(isVisible('/vault/Notes'), 'scope itself').toBe(true);
+        expect(isHidden('/vault/Alpha.md'), 'sibling file outside the scope').toBe(true);
+        expect(
+            document.querySelector('li.section[data-section="recent"] li[data-path="/vault/old.md"]')!
+                .classList.contains('vf-hidden'),
+            'recent entry outside the scope',
+        ).toBe(true);
+        $('vault-filter-scope-remove').click(); await flushMicro();
+        expect(isHidden('/vault/Alpha.md'), 'removing the scope shows it again').toBe(false);
+    });
+
+    it('folders above unrendered hits stay visible (collapse/re-expand case)', async () => {
+        // Nutzer klappt einen vom Filter geoeffneten Ordner zu und wieder auf:
+        // der Lazy-Baum rendert nur eine Ebene, der Treffer selbst liegt tiefer
+        // und ist NICHT im DOM. Der Ordner mit dem Treffer darunter muss
+        // trotzdem sichtbar bleiben, sonst kommt man nie wieder an den Treffer.
+        deepInvoke({
+            vault_filter_find: () => ({
+                files: ['/vault/Notes/Sub/Deep.md'],
+                dirs: ['/vault', '/vault/Notes', '/vault/Notes/Sub'],
+                truncated: false,
+                reason: null,
+            }),
+            vault_expand_paths: () => ({ html: $('vault-tree').innerHTML, paths: [] }),
+        });
+        await initModules(); clickDeep(); await flushMicro(); await typeAndSettle('deep');
+        expect(document.querySelector('li[data-path="/vault/Notes/Sub/Deep.md"]')).toBeNull();
+        expect(document.querySelector('li[data-path="/vault/Notes"]'), 'folder rendered').not.toBeNull();
+        expect(isHidden('/vault/Notes'), 'ancestor of an unrendered hit').toBe(false);
+        expect(isHidden('/vault'), 'pin root above the hit').toBe(false);
+        expect(isHidden('/vault/Alpha.md'), 'non-hit file').toBe(true);
+    });
+
     it('expand cap shows a notice instead of a silent partial result', async () => {
         deepInvoke({
             vault_filter_find: () => ({

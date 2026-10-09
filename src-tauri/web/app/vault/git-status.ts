@@ -41,7 +41,9 @@ export function pathIsUnder(path: string, parent: string): boolean {
     const child = normalizeGitPath(path);
     const root = normalizeGitPath(parent);
     if (!child || !root) return false;
-    return child === root || child.startsWith(root + '/');
+    // Wurzeln wie `/` oder `C:/` enden bereits auf `/` — kein zweiter Slash.
+    const prefix = root.endsWith('/') ? root : root + '/';
+    return child === root || child.startsWith(prefix);
 }
 
 type PayloadEntry = { path?: unknown; status?: unknown };
