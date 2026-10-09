@@ -296,7 +296,10 @@ pub fn find_by_name(
     time_budget: Duration,
 ) -> Result<FilterFindResponse, FilterScopeError> {
     let query_lower = query.to_lowercase();
-    if query_lower.is_empty() {
+    // R4.1: eine leere Query liefert nur mit Bereich + md-only Treffer (dann
+    // passt jeder Markdown-Dateiname unterhalb des Bereichs). Sonst bleibt die
+    // leere Antwort — Schutz auch gegen fremde Aufrufer ohne Bereich.
+    if query_lower.is_empty() && !(scope.is_some() && opts.markdown_only) {
         return Ok(FilterFindResponse {
             files: Vec::new(),
             dirs: Vec::new(),
@@ -975,6 +978,58 @@ mod tests {
             VaultListOptions::default(),
         );
         assert!(res.files.is_empty() && res.dirs.is_empty());
+    }
+
+    #[test]
+    fn deep_filter_empty_query_requires_scope_and_markdown() {
+        // R4.1: leere Query + Bereich + md-only liefert alle Markdown-Dateien
+        // unterhalb des Bereichs (inkl. Bereichskette). Ohne Bereich oder
+        // ohne md-only bleibt die Antwort leer.
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        reference_fixture(root);
+        let pin = pin_dir(root);
+        let scope = norm(&root.join("a"));
+        let md = VaultListOptions {
+            markdown_only: true,
+            show_hidden: true,
+        };
+
+        let scoped = find(std::slice::from_ref(&pin), Some(&scope), "", md);
+        assert_eq!(
+            vec![norm(&root.join("a/b/c/Ziel-Tief.md"))],
+            scoped.files,
+            "nur Markdown unterhalb des Bereichs"
+        );
+        assert_eq!(
+            vec![
+                norm(root),
+                norm(&root.join("a")),
+                norm(&root.join("a/b")),
+                norm(&root.join("a/b/c")),
+            ],
+            scoped.dirs,
+            "Bereichskette Pin-Wurzel → Bereich"
+        );
+
+        let no_scope = find(std::slice::from_ref(&pin), None, "", md);
+        assert!(
+            no_scope.files.is_empty() && no_scope.dirs.is_empty(),
+            "leere Query ohne Bereich bleibt leer: {:?}",
+            no_scope.files
+        );
+
+        let no_md = find(
+            std::slice::from_ref(&pin),
+            Some(&scope),
+            "",
+            VaultListOptions::default(),
+        );
+        assert!(
+            no_md.files.is_empty() && no_md.dirs.is_empty(),
+            "leere Query ohne md-only bleibt leer: {:?}",
+            no_md.files
+        );
     }
 
     // --- Korrekturrunde 1: aus den Review-Repros abgeleitete Faelle --------

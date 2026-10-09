@@ -1,4 +1,4 @@
-/* Vault-Tree-Filter (R3/R3.1/R4) — Sicht über dem Lazy-Baum.
+/* Vault-Tree-Filter (R3/R3.1/R4/R4.1) — Sicht über dem Lazy-Baum.
    Spec: docs/spec-vault-filter.md
 
    R3: Namensfilter blendet Datei-Zeilen ohne Match aus (Ordner immer
@@ -23,6 +23,13 @@
 
    „Nur Markdown" bleibt Backend-Lazy (options_set + refreshVault); md-only
    und `vaultShowHidden` sind Teil des Tiefen-Schluessels (K2).
+
+   R4.1: Bereich + md-only ist auch ohne (oder mit zu kurzer) Query aktiv und
+   liefert alle Markdown-Dateien unterhalb des Bereichs (Backend-Guard: leere
+   Query nur mit Bereich + md-only). Bereich + git ohne Tiefenmodus begrenzt
+   den bestehenden Git-Filter auf den Bereich (Auto-Expand nur unterhalb, dazu
+   die Kette Pin-Wurzel → Bereich; Knoten ausserhalb `vf-hidden`). Ohne
+   Bereich bleibt die 2-Zeichen-Regel.
 
    Baum-Ops: #vault-expand-roots / #vault-collapse-all. */
 
@@ -85,7 +92,9 @@ let deepTreeMutated = false;
 /** W2/W1-Rest: ein faelliger Baum-Rebuild wird im Sync-Lauf abgewartet. */
 let deepRebuildWanted = false;
 /** Verhindert parallele Expand-Laeufe beim Git-Filter. */
-let expandGitInFlight = false;
+/** Laufender Git-Expand (Promise) — Single-Flight; der inaktive Zweig meldet
+ *  nur einen Pending-Wunsch und wartet auf dasselbe Promise. */
+let expandGitInFlight: Promise<void> | null = null;
 /** Snapshot/Mutation waehrend eines Laufs → einen Durchlauf nachholen. */
 let expandGitPending = false;
 /** Kind-Inserts (manuelles Aufklappen) waehrend des IPC — HTML nicht clobbern. */
@@ -123,8 +132,11 @@ export function isVaultFilterActive(): boolean {
 }
 
 /** Tiefenmodus aktiv, wenn Chip ODER Bereich gesetzt ist und die Query lang
- *  genug ist (nach `trim`; `committedQuery` ist bereits getrimmt). */
+ *  genug ist (nach `trim`; `committedQuery` ist bereits getrimmt). R4.1:
+ *  Bereich + md-only ist auch ohne (oder mit zu kurzer) Query aktiv; ohne
+ *  Bereich bleibt die 2-Zeichen-Regel. */
 function isDeepActive(): boolean {
+    if (scopePath !== null && markdownOnly) return true;
     return (deepMode || scopePath !== null) && committedQuery.length >= DEEP_MIN_QUERY;
 }
 
@@ -316,6 +328,13 @@ async function runDeepSync(): Promise<void> {
             } else {
                 await deepStepInactive();
             }
+            // R4.1-Korrektur: die Git-Sicht gehoert ans Ende des serialisierten
+            // Schritts — nach Bereichswechsel/Bereich-✕/Deep-Cleanup. Ohne
+            // Tiefenmodus und bei aktivem git-Chip den bestehenden Expand-Pfad
+            // (inkl. Single-Flight/Pending) abwarten.
+            if (gitChangedOnly && !isDeepActive()) {
+                await expandGitChangedDirs();
+            }
         } while (deepSyncDirty || deepRebuildWanted);
     } finally {
         deepSyncRunning = false;
@@ -504,17 +523,61 @@ function collectPinScopedGitDirs(): string[] {
     });
 }
 
+/** Kette Pin-Wurzel → Bereich (inklusive beider Enden). Ohne passende
+ *  sichtbare Pin-Wurzel nur der Bereich selbst. */
+function collectScopeAncestorChain(scope: string): string[] {
+    const pins = collectVisiblePinRootPaths();
+    let anchor: string | null = null;
+    for (let i = 0; i < pins.length; i++) {
+        const pin = pins[i];
+        if (pathIsUnder(scope, pin) && (anchor === null || pin.length > anchor.length)) {
+            anchor = pin;
+        }
+    }
+    if (anchor === null) return [scope];
+    const chain: string[] = [anchor];
+    let acc = anchor;
+    const rel = scope.slice(anchor.length).replace(/^\//, '');
+    if (rel) {
+        const parts = rel.split('/');
+        for (let i = 0; i < parts.length; i++) {
+            if (!parts[i]) continue;
+            acc = `${acc}/${parts[i]}`;
+            chain.push(acc);
+        }
+    }
+    return chain;
+}
+
+/** Kandidaten fuer den Git-Auto-Expand: ohne Bereich alle sichtbaren
+ *  Pin-Wurzeln, mit Bereich nur geaenderte Pfade darunter plus die Kette
+ *  Pin-Wurzel → Bereich (R4.1 Punkt 4). */
+function collectGitExpandDirs(): string[] {
+    if (scopePath === null) return collectPinScopedGitDirs();
+    const out = collectScopeAncestorChain(scopePath);
+    const changed = collectGitChangedDirPaths();
+    for (let i = 0; i < changed.length; i++) {
+        const path = changed[i];
+        if (pathIsUnder(path, scopePath) && out.indexOf(path) === -1) {
+            out.push(path);
+        }
+    }
+    return out;
+}
+
 function expandGitChangedDirs(): Promise<void> {
     if (!gitChangedOnly) return Promise.resolve();
     if (expandGitInFlight) {
+        // Single-Flight: der laufende Lauf holt den Wunsch nach. Der Aufrufer
+        // wartet auf dessen Ende (inkl. Pending-Nachlauf) — sonst koennte der
+        // serielle Deep-Sync-Git-Schritt auf einem unvollstaendigen Baum enden.
         expandGitPending = true;
-        return Promise.resolve();
+        return expandGitInFlight;
     }
-    const dirs = collectPinScopedGitDirs();
+    const dirs = collectGitExpandDirs();
     if (dirs.length === 0) return Promise.resolve();
-    expandGitInFlight = true;
     treeMutatedDuringExpand = false;
-    return invoke('vault_expand_paths', { paths: dirs })
+    const run = invoke('vault_expand_paths', { paths: dirs })
         .then((raw) => {
             const result = (raw || {}) as {
                 html?: string;
@@ -542,12 +605,14 @@ function expandGitChangedDirs(): Promise<void> {
             });
         })
         .then(() => {
-            expandGitInFlight = false;
+            expandGitInFlight = null;
             if (expandGitPending) {
                 expandGitPending = false;
                 if (gitChangedOnly) return expandGitChangedDirs();
             }
         });
+    expandGitInFlight = run;
+    return run;
 }
 
 function syncFunnelBadge(): void {
@@ -672,6 +737,10 @@ function applyClientFilter(): void {
         const q = committedQuery;
         const qLower = q.toLowerCase();
         const deepActive = isDeepActive() && deepState !== null;
+        // R4.1 Punkt 4: Bereich + git ohne Tiefenmodus → Git-Sicht auf den
+        // Bereich begrenzen. Im Tiefenmodus uebernimmt das die Trefferliste.
+        const gitScoped = gitChangedOnly && scopePath !== null && !deepActive;
+        const scope = scopePath;
 
         const files = treeEl.querySelectorAll('li.node[data-kind="file"]');
         const visiblePinnedFiles: string[] = [];
@@ -685,9 +754,12 @@ function applyClientFilter(): void {
                 visible = path !== '' && deepState!.files.has(path);
             } else {
                 visible = !q || name.toLowerCase().includes(qLower);
-                if (deepActive && scopePath !== null && !pathIsUnder(path, scopePath)) {
+                if (deepActive && scope !== null && !pathIsUnder(path, scope)) {
                     visible = false;
                 }
+            }
+            if (visible && gitScoped && scope !== null && !pathIsUnder(path, scope)) {
+                visible = false;
             }
             if (visible && gitChangedOnly && !isPathGitChanged(path)) {
                 visible = false;
@@ -706,6 +778,21 @@ function applyClientFilter(): void {
                 if (isInRecentSection(dir)) continue;
                 const path = normalizePath(dir.getAttribute('data-path') || '');
                 if (!isDeepDirVisible(path, visiblePinnedFiles)) {
+                    dir.classList.add('vf-hidden');
+                }
+            }
+        } else if (gitScoped && scope !== null) {
+            const dirs = treeEl.querySelectorAll('li.node[data-kind="dir"]');
+            for (let i = 0; i < dirs.length; i++) {
+                const dir = dirs[i] as HTMLElement;
+                if (isInRecentSection(dir)) continue;
+                const path = normalizePath(dir.getAttribute('data-path') || '');
+                // Vorfahren des Bereichs (inkl. Bereich) bleiben sichtbar,
+                // Pfade darunter gelten als sichtbar wenn git-geaendert.
+                const visible = pathIsUnder(scope, path)
+                    ? true
+                    : pathIsUnder(path, scope) && isPathGitChanged(path);
+                if (!visible) {
                     dir.classList.add('vf-hidden');
                 }
             }
@@ -1082,7 +1169,10 @@ export function initVaultFilter(): () => void {
             if (expandGitInFlight) treeMutatedDuringExpand = true;
             if (deepIpcInFlight) deepTreeMutated = true;
             if (applyingFilter) return;
-            if (committedQuery.length > 0 || gitChangedOnly) {
+            // Auch bei leerer Query kann der Tiefenmodus aktiv sein (R4.1:
+            // Bereich + md-only) — dann muss die Sicht nach jedem Rebuild
+            // erneut angewandt werden.
+            if (committedQuery.length > 0 || gitChangedOnly || deepState !== null) {
                 applyClientFilter();
             }
             // Expand-Roots-Disabled immer (nicht nur bei aktiver Query).
@@ -1175,7 +1265,7 @@ export function initVaultFilter(): () => void {
         deepState = null;
         expandedByFilter.clear();
         barVisible = false;
-        expandGitInFlight = false;
+        expandGitInFlight = null;
         expandGitPending = false;
         treeMutatedDuringExpand = false;
         deepSyncRunning = false;
