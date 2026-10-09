@@ -25,6 +25,9 @@ weiter, R4 ergänzt den Tiefenfilter und den Ordnerbereich). Ursprung: `docs/fea
   Zeitbudget, kein separater Render-Modus — Aufklappen und Ausblenden
   laufen über den echten Lazy-Baum wie beim Git-Filter. Gitignore wird
   bewusst NICHT angewandt (siehe R4-Abschnitt).
+- **R4.1 (2026-10-09)**: Bereich + `.md` klappt auch **ohne Suchbegriff**
+  auf; Bereich + `git` begrenzt den Git-Filter auf den Ordner
+  (User-Feedback nach dem ersten Test).
 
 ## Modell (R3)
 
@@ -296,6 +299,39 @@ Bereich.
   `projekt/a` per Hook → nur `ziel-tief.md`; Schließen → vom Filter
   geöffnete Ordner wieder zu; `vaultShowHidden=false` →
   `ziel-versteckt.md` fehlt. Ein Screenshot (Chip an, Bereich gesetzt).
+
+### R4.1: Bereich mit `.md` bzw. `git` ohne Suchbegriff
+
+Anlass: „In diesem Ordner filtern“ und dann nur `.md` anklicken zeigte
+nichts Sichtbares, weil der Tiefenmodus erst ab 2 Zeichen greift.
+
+1. **Aktivierung erweitert**: Tiefenmodus aktiv, wenn
+   `(Chip ODER Bereich) UND Query ≥ 2` **oder** `Bereich UND md-only`
+   (Query leer oder kürzer als 2 Zeichen). Ohne Bereich bleibt die
+   2-Zeichen-Regel — `**` + `.md` über alle Pins wäre ein willkürlicher
+   500er-Ausschnitt.
+2. **Backend**: `find_by_name` mit leerer Query liefert nur dann Treffer,
+   wenn `scope` gesetzt UND `markdown_only` an ist — dann passt jeder
+   Dateiname (alle Markdown-Dateien unterhalb des Bereichs, gleiche
+   Walk-Regeln, Deckel und Budget). Sonst bleibt die leere Antwort
+   (Schutz auch gegen fremde Aufrufer ohne Bereich).
+3. Sicht, Aufräumen, Hinweise, Nebenläufigkeit: unverändert R4. Ohne
+   Query kein Highlight. Recent: nur Einträge unterhalb des Bereichs.
+4. **Bereich + `git`** (ohne Tiefenmodus, also ohne Query ≥ 2 und ohne
+   `.md`): Der bestehende Git-Filter wird auf den Bereich begrenzt —
+   Auto-Expand nur für geänderte Ordner **unterhalb des Bereichs** (statt
+   aller sichtbaren Pin-Wurzeln), dazu die Kette Pin-Wurzel → Bereich;
+   in der Pinned-Section sind Knoten außerhalb des Bereichs `vf-hidden`,
+   außer den Vorfahren des Bereichs. Recent wie Punkt 3. Aufräumen beim
+   Git-Filter bleibt wie bisher (kein Zuklappen) — bewusst nicht
+   angefasst. Kombiniert mit Query ≥ 2 oder `.md` gilt der Tiefenmodus
+   (Schnittmenge mit git wie R4).
+5. **Tests**: Rust — leere Query + Bereich + md → alle `.md` darunter;
+   leere Query + md ohne Bereich → leer; leere Query + Bereich ohne md →
+   leer. vitest — Bereich + `.md` ohne Query ruft `vault_filter_find` mit
+   `query: ''` und klappt auf; `.md` aus → Aufräumen; ohne Bereich kein
+   Aufruf; Bereich + `git` expandiert nur Pfade unter dem Bereich und
+   blendet Pin-Knoten außerhalb aus. E2E 66 um beide Fälle ergänzen.
 
 ## Abnahme-Gates
 
