@@ -387,6 +387,81 @@ def run(ctx):
                 lambda: ctx.api.settings_get().get("vaultShowHidden") is True,
             )
 
+        with ctx.step("scope + md-only without query shows Markdown under the scope"):
+            # Query leeren (der hidden-Schritt liess `ziel` stehen), Bereich
+            # projekt/a per Hook setzen und .md anschalten.
+            _click_id(ctx, "vault-filter-clear")
+            ctx.api.eval(
+                "window.__folioVaultFilterInFolder(%s)" % json.dumps(f"{p}/a")
+            )
+            _click_id(ctx, "vault-filter-md")
+            ok = _poll(
+                lambda: _is_visible(ctx, ziel_tief)
+                and _is_hidden(ctx, f"{p}/andere")
+                and _chain_visible_and_open(ctx, p, ziel_tief),
+                timeout=8.0,
+            )
+            ctx.expect(
+                ok,
+                "Bereich + .md ohne Query: "
+                f"tief={_is_visible(ctx, ziel_tief)} "
+                f"andere_hidden={_is_hidden(ctx, f'{p}/andere')} "
+                f"kette={_chain_visible_and_open(ctx, p, ziel_tief)}",
+            )
+            # .md aus → der Filter raeumt die von ihm geoeffneten Ordner weg.
+            _click_id(ctx, "vault-filter-md")
+            ok = _poll(
+                lambda: (not _caret_open(ctx, f"{p}/a"))
+                and (not _exists(ctx, ziel_tief)),
+                timeout=8.0,
+            )
+            ctx.expect(
+                ok,
+                ".md aus raeumt die Filter-Ordner nicht: "
+                f"a_open={_caret_open(ctx, f'{p}/a')} "
+                f"tief_exists={_exists(ctx, ziel_tief)}",
+            )
+            _click_id(ctx, "vault-filter-scope-remove")
+            _poll(
+                lambda: _evalv(
+                    ctx, "document.getElementById('vault-filter-scope')?.hidden"
+                )
+                is True
+            )
+
+        with ctx.step("scope + git shows only the changed branch under the scope"):
+            # Nach dem initialen Commit zwei Dateien aendern: eine im Bereich,
+            # eine ausserhalb. create/delete eines Probe-Files stoesst den
+            # Git-Refresh an, der die externen Aenderungen einsammelt.
+            _write(Path(ziel_tief), "# tief\n\nGEAENDERT\n")
+            _write(Path(f"{p}/andere/ziel-anders.md"), "# anders\n\nGEAENDERT\n")
+            probe = f"{p}/__r41_probe.md"
+            ctx.api.eval(
+                "window.__folioInvoke('create_file',{path:%s})" % json.dumps(probe)
+            )
+            ctx.api.eval(
+                "window.__folioInvoke('trash_path',{path:%s})" % json.dumps(probe)
+            )
+            ctx.api.eval(
+                "window.__folioVaultFilterInFolder(%s)" % json.dumps(f"{p}/a")
+            )
+            _click_id(ctx, "vault-filter-git")
+            ok = _poll(
+                lambda: _is_visible(ctx, ziel_tief)
+                and _is_hidden(ctx, f"{p}/andere")
+                and _is_hidden(ctx, f"{p}/.versteckt")
+                and _chain_visible_and_open(ctx, p, ziel_tief),
+                timeout=10.0,
+            )
+            ctx.expect(
+                ok,
+                "Bereich + git: "
+                f"tief={_is_visible(ctx, ziel_tief)} "
+                f"andere_hidden={_is_hidden(ctx, f'{p}/andere')} "
+                f"kette={_chain_visible_and_open(ctx, p, ziel_tief)}",
+            )
+            _click_id(ctx, "vault-filter-git")
+
     finally:
         try:
             _click_id(ctx, "vault-filter-close")

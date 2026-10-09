@@ -477,7 +477,15 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   Tooltip = Pfad, flüchtig); Bereich-Fehler
   (`errors.vault.filterScopeNotFound`/`…Invalid`) entfernen den Bereich
   und zeigen den Fehler transient; Hinweise „Keine Treffer"/cap/time in
-  `#vault-tree-notice`. Persistenz `vault_filter_deep`. **Baum-Operationen im `vault-header`** (filter-unabhängig):
+  `#vault-tree-notice`. Persistenz `vault_filter_deep`.
+  **R4.1**: Bereich + md-only ist auch **ohne (oder mit zu kurzer) Query**
+  aktiv — das Backend liefert dann alle Markdown-Dateien unterhalb des
+  Bereichs (Guard: leere Query nur mit Bereich UND md-only). Ohne Bereich
+  bleibt die 2-Zeichen-Regel. Bereich + `git` ohne Tiefenmodus begrenzt den
+  bestehenden Git-Filter auf den Bereich: Auto-Expand nur für geänderte
+  Pfade darunter plus Kette Pin-Wurzel → Bereich, Knoten außerhalb
+  `vf-hidden` (außer den Vorfahren des Bereichs); ohne Bereich verhält sich
+  `git` wie bisher. **Baum-Operationen im `vault-header`** (filter-unabhängig):
   `#vault-expand-roots` (Chevron, Command `vault_expand_roots` —
   expandiert die zugeklappten Pin-Wurzel-Ordner über den
   `on_expand`-Pfad inkl. Watcher) und

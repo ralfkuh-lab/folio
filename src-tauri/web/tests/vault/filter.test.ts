@@ -1374,4 +1374,225 @@ describe('vault/filter — deep filter (R4)', () => {
         finishCleanup({ html: closed }); await flushMicro();
         expect(document.querySelector('li[data-path="/vault/Notes"] > .row > .caret')!.classList.contains('open'), 'after error cleanup and close, the DOM must reflect collapsed backend folders').toBe(false);
     });
+
+    // --- R4.1: Bereich mit .md bzw. git ohne Suchbegriff --------------------
+
+    it('scope + markdown-only without query searches and cleans up', async () => {
+        const findCalls: Array<{ query: string; scope: string | null }> = [];
+        const collapseArgs: string[][] = [];
+        let pristine = '';
+        deepInvoke({
+            vault_filter_find: (args?: any) => {
+                findCalls.push(args);
+                return {
+                    files: [],
+                    dirs: ['/vault', '/vault/Notes'],
+                    truncated: false,
+                    reason: null,
+                };
+            },
+            // Der echte Backend-Expand liefert einen frischen, ungefilterten
+            // Baum — die Sicht muss danach erneut angewandt werden.
+            vault_expand_paths: () => ({
+                html: pristine,
+                capped: false,
+                expanded: 1,
+                paths: ['/vault/Notes'],
+            }),
+            vault_collapse_paths: (args?: any) => {
+                collapseArgs.push(args.paths);
+                return { html: $('vault-tree').innerHTML };
+            },
+        });
+        const { filter } = await initModules();
+        pristine = $('vault-tree').innerHTML;
+        filter.filterInFolder('/vault/Notes');
+        await flushMicro();
+        expect(findCalls.length, 'ohne md-only und ohne Query kein find').toBe(0);
+
+        $('vault-filter-md').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+        await flushMicro();
+        expect(findCalls.length).toBe(1);
+        expect(findCalls[0]).toEqual({ query: '', scope: '/vault/Notes' });
+        expect(
+            tauri.invoke.mock.calls.some((c) => c[0] === 'vault_expand_paths'),
+        ).toBe(true);
+        // Nach dem Expand-Render muss die Sicht wieder angewandt sein: Datei
+        // ausserhalb der Trefferliste bleibt versteckt.
+        expect(isHidden('/vault/Beta.md')).toBe(true);
+
+        // .md aus → Deep-Sicht endet, Filter-Ordner werden wieder zugeklappt.
+        $('vault-filter-md').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+        await flushMicro();
+        expect(collapseArgs.length).toBe(1);
+        expect(collapseArgs[0]).toEqual(['/vault/Notes']);
+    });
+
+    it('deep chip + markdown without scope and query does not search', async () => {
+        deepInvoke({ vault_filter_find: () => ({ files: [], dirs: [] }) });
+        await initModules();
+        clickDeep();
+        await flushMicro();
+        $('vault-filter-md').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+        await flushMicro();
+        expect(
+            tauri.invoke.mock.calls.some((c) => c[0] === 'vault_filter_find'),
+            'ohne Bereich darf ** + .md ohne Query nicht suchen',
+        ).toBe(false);
+    });
+
+    it('scope + git restricts expansion and hides nodes outside the scope', async () => {
+        const sent: string[][] = [];
+        deepInvoke({
+            vault_expand_paths: (args?: any) => {
+                sent.push(args.paths.slice());
+                return {
+                    html: $('vault-tree').innerHTML,
+                    capped: false,
+                    expanded: args.paths.length,
+                    paths: [],
+                };
+            },
+        });
+        const { filter } = await initModules();
+        const git = await import('../../app/vault/git-status');
+        git.__setGitStatusSnapshotForTests([
+            { path: '/vault', status: 'modified' },
+            { path: '/vault/Alpha.md', status: 'modified' },
+            { path: '/vault/Notes', status: 'modified' },
+            { path: '/vault/Notes/deep.md', status: 'modified' },
+        ]);
+
+        filter.filterInFolder('/vault/Notes');
+        await flushMicro();
+        $('vault-filter-git').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+
+        expect(sent.length).toBeGreaterThanOrEqual(1);
+        const all = sent.reduce<string[]>((acc, paths) => acc.concat(paths), []);
+        for (let i = 0; i < all.length; i++) {
+            expect(
+                all[i] === '/vault' ||
+                    all[i] === '/vault/Notes' ||
+                    all[i].startsWith('/vault/Notes/'),
+                `unzulaessiger Expand-Pfad ${all[i]}`,
+            ).toBe(true);
+        }
+        // Kette sichtbar, geaenderte Datei ausserhalb des Bereichs versteckt.
+        expect(isVisible('/vault')).toBe(true);
+        expect(isVisible('/vault/Notes')).toBe(true);
+        expect(isHidden('/vault/Alpha.md')).toBe(true);
+    });
+
+    // --- Korrekturrunde 1 (Review-Repros, umbenannt) -----------------------
+
+    it('git already on expands the newly selected scope chain', async () => {
+        const sent: string[][] = [];
+        let pristine = '';
+        deepInvoke({ vault_expand_paths: (args?: any) => {
+            sent.push(args.paths.slice());
+            const template = document.createElement('template');
+            template.innerHTML = pristine;
+            template.content.querySelector('li[data-path="/vault/Notes"] .caret')!.classList.add('open');
+            template.content.querySelector('li[data-path="/vault/Notes"] ul')!.classList.remove('collapsed');
+            return { html: template.innerHTML, paths: [], expanded: 0, capped: false };
+        }});
+        const { filter, tree } = await initModules();
+        pristine = $('vault-tree').innerHTML;
+        const git = await import('../../app/vault/git-status');
+        git.__setGitStatusSnapshotForTests([
+            { path: '/vault', status: 'modified' },
+            { path: '/vault/Notes', status: 'modified' },
+            { path: '/vault/Notes/deep.md', status: 'modified' },
+        ]);
+        $('vault-filter-git').click();
+        await flushMicro();
+        // Nutzer klappt den weiterhin sichtbaren geaenderten Ordner zu.
+        tree.renderVaultFromHtml(pristine);
+        await flushMicro();
+        expect(isVisible('/vault/Notes')).toBe(true);
+        sent.length = 0;
+        filter.filterInFolder('/vault/Notes');
+        await flushMicro();
+        expect(sent.flat(), 'selecting the collapsed changed scope must reopen Pin -> scope with git already on').toContain('/vault/Notes');
+    });
+
+    it('removing the scope expands remaining changed branches', async () => {
+        let pristine = '';
+        const open = new Set<string>();
+        deepInvoke({ vault_expand_paths: (args?: any) => {
+            for (const path of args.paths) open.add(path);
+            const template = document.createElement('template');
+            template.innerHTML = pristine;
+            if (open.has('/vault/Notes')) {
+                const notes = template.content.querySelector('li[data-path="/vault/Notes"]')!;
+                notes.querySelector('.caret')!.classList.add('open');
+                notes.querySelector('ul')!.classList.remove('collapsed');
+                notes.querySelector('ul')!.innerHTML = '<li class="node" data-kind="file" data-path="/vault/Notes/deep.md"><div class="row"><span class="label">deep.md</span></div></li>';
+            }
+            return { html: template.innerHTML, paths: [], expanded: 0, capped: false };
+        }});
+        const { filter } = await initModules();
+        document.querySelector('li[data-path="/vault"] > ul')!.insertAdjacentHTML('beforeend', '<li class="node" data-kind="dir" data-path="/vault/Other"><div class="row"><span class="caret"></span><span class="label">Other</span></div><ul class="children collapsed"></ul></li>');
+        await flushMicro();
+        pristine = $('vault-tree').innerHTML;
+        const git = await import('../../app/vault/git-status');
+        git.__setGitStatusSnapshotForTests([
+            { path: '/vault', status: 'modified' },
+            { path: '/vault/Notes', status: 'modified' },
+            { path: '/vault/Notes/deep.md', status: 'modified' },
+        ]);
+        filter.filterInFolder('/vault/Other');
+        await flushMicro();
+        $('vault-filter-git').click();
+        await flushMicro();
+        $('vault-filter-scope-remove').click();
+        await flushMicro();
+        expect(isVisible('/vault/Notes/deep.md'), 'after removing scope the unchanged Git snapshot must again show the changed file outside the former scope').toBe(true);
+    });
+
+    it('markdown off with git on reopens the cleaned-up changed scope', async () => {
+        let pristine = '';
+        let notesWereOpen = false;
+        deepInvoke({
+            vault_build_tree: () => {
+                // vault_build_tree emittiert den frischen Git-Cache erneut.
+                window.dispatchEvent(new CustomEvent('folio-git-status-changed'));
+                return $('vault-tree').innerHTML;
+            },
+            vault_filter_find: () => ({ files: ['/vault/Notes/deep.md'], dirs: ['/vault', '/vault/Notes'] }),
+            vault_expand_paths: () => {
+                const template = document.createElement('template');
+                template.innerHTML = pristine;
+                const notes = template.content.querySelector('li[data-path="/vault/Notes"]')!;
+                notes.querySelector('.caret')!.classList.add('open');
+                notes.querySelector('ul')!.classList.remove('collapsed');
+                notes.querySelector('ul')!.innerHTML = '<li class="node" data-kind="file" data-path="/vault/Notes/deep.md"><div class="row"><span class="label">deep.md</span></div></li>';
+                const newlyOpened = notesWereOpen ? [] : ['/vault/Notes'];
+                notesWereOpen = true;
+                return { html: template.innerHTML, paths: newlyOpened, expanded: newlyOpened.length, capped: false };
+            },
+            vault_collapse_paths: () => { notesWereOpen = false; return { html: pristine }; },
+        });
+        const { filter } = await initModules();
+        pristine = $('vault-tree').innerHTML;
+        const git = await import('../../app/vault/git-status');
+        git.__setGitStatusSnapshotForTests([
+            { path: '/vault', status: 'modified' },
+            { path: '/vault/Notes', status: 'modified' },
+            { path: '/vault/Notes/deep.md', status: 'modified' },
+        ]);
+        filter.filterInFolder('/vault/Notes');
+        $('vault-filter-md').click();
+        await flushMicro(); await flushMicro();
+        $('vault-filter-git').click();
+        await flushMicro();
+        expect(isVisible('/vault/Notes/deep.md')).toBe(true);
+        $('vault-filter-md').click();
+        await flushMicro(); await flushMicro();
+        expect(isVisible('/vault/Notes/deep.md'), 'markdown off must leave the changed file reachable and open in the restored scoped Git view').toBe(true);
+    });
 });
