@@ -4,7 +4,9 @@
 
 import { post } from './bridge';
 import { hasActiveTerm, recomputeMatches } from './find';
+import { continueListEdit, isListItemLine } from './list-continue';
 import { isProgrammaticWrite } from './state';
+import { isInsideCodeFence } from './wikilink-complete';
 
 export function attachEditorListeners(editor: any, monaco: any): void {
     // Find-Shortcuts: Monacos eigenes Find-Widget bleibt deaktiviert,
@@ -35,6 +37,8 @@ export function attachEditorListeners(editor: any, monaco: any): void {
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
         post({ type: 'editorSaveRequested' });
     });
+
+    installSmartList(editor, monaco);
 
     editor.onDidChangeModelContent(() => {
         if (isProgrammaticWrite()) return;
@@ -135,4 +139,83 @@ export function attachEditorListeners(editor: any, monaco: any): void {
             } catch { /* ignored */ }
         });
     });
+}
+
+// Smart-List (Enter/Tab/Shift+Tab) nur im Markdown-Haupteditor. Die
+// Aktionen greifen ueber `precondition` (auch fuer editor.trigger aus E2E);
+// Fokus/Suggest/Snippet/Selektion stehen in `keybindingContext`, damit die
+// Taste in diesen Faellen gar nicht erst gebunden ist und Monacos eigenes
+// Verhalten (Suggest-Accept, Snippet-Tab, Ersetzen der Selektion) bleibt.
+const SMART_LIST_PRECONDITION = "!editorReadonly && editorLangId == 'markdown'";
+const SMART_LIST_KEY_CONTEXT = 'editorTextFocus && !suggestWidgetVisible && !inSnippetMode'
+    + ' && !editorHasSelection && !editorHasMultipleSelections';
+
+function installSmartList(editor: any, monaco: any): void {
+    if (typeof editor.addAction !== 'function') return;
+    // Liefert Zeile + Fence-Status, wenn genau ein leerer Cursor steht.
+    const singleCursorLine = () => {
+        const model = editor.getModel();
+        const selections = editor.getSelections() || [];
+        if (!model || selections.length !== 1 || !selections[0].isEmpty()) return null;
+        const pos = selections[0].getPosition();
+        const lines = model.getLinesContent();
+        return {
+            pos,
+            line: lines[pos.lineNumber - 1] ?? '',
+            inFence: isInsideCodeFence(lines, pos.lineNumber - 1),
+        };
+    };
+
+    editor.addAction({
+        id: 'folio.markdown.continueList',
+        label: 'Continue Markdown List',
+        keybindings: [monaco.KeyCode.Enter],
+        precondition: SMART_LIST_PRECONDITION,
+        keybindingContext: SMART_LIST_KEY_CONTEXT,
+        run: () => {
+            const cur = singleCursorLine();
+            const edit = cur && continueListEdit(cur.line, cur.pos.column - 1, cur.inFence);
+            if (!cur || !edit) {
+                editor.trigger('keyboard', 'type', { text: '\n' });
+                return;
+            }
+            const ln = cur.pos.lineNumber;
+            const nl = edit.text.lastIndexOf('\n');
+            const endLine = nl < 0 ? ln : ln + 1;
+            const endColumn = nl < 0
+                ? edit.from + edit.text.length + 1
+                : edit.text.length - nl;
+            editor.pushUndoStop();
+            editor.executeEdits(
+                'folio.markdown.continueList',
+                [{
+                    range: new monaco.Range(ln, edit.from + 1, ln, edit.to + 1),
+                    text: edit.text,
+                    forceMoveMarkers: true,
+                }],
+                [new monaco.Selection(endLine, endColumn, endLine, endColumn)],
+            );
+            editor.pushUndoStop();
+            editor.revealPosition({ lineNumber: endLine, column: endColumn });
+        },
+    });
+
+    const indentAction = (id: string, key: number, lineAction: string, fallback: string) => {
+        editor.addAction({
+            id,
+            label: id,
+            keybindings: [key],
+            precondition: SMART_LIST_PRECONDITION,
+            keybindingContext: SMART_LIST_KEY_CONTEXT + ' && !editorTabMovesFocus',
+            run: () => {
+                const cur = singleCursorLine();
+                const onList = !!cur && isListItemLine(cur.line, cur.inFence);
+                editor.trigger('keyboard', onList ? lineAction : fallback, null);
+            },
+        });
+    };
+    indentAction('folio.markdown.indentListItem', monaco.KeyCode.Tab,
+        'editor.action.indentLines', 'tab');
+    indentAction('folio.markdown.outdentListItem', monaco.KeyMod.Shift | monaco.KeyCode.Tab,
+        'editor.action.outdentLines', 'outdent');
 }
