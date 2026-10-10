@@ -283,8 +283,9 @@
   "errors.search.queryTooShort": "搜索词必须至少包含 2 个字符",
   "errors.search.regexWholeWord": "正则表达式无法与全字匹配同时使用",
   "errors.search.rootNotFound": "搜索路径不存在：{detail}",
-  "errors.search.scopeConflict": "无法将打开文件的搜索与文件夹范围同时使用",
+  "errors.search.scopeConflict": "搜索范围不能组合使用。",
   "errors.search.startFailed": "启动搜索失败",
+  "errors.search.tooManyFiles": "要搜索的文件过多（最多 {max} 个）",
   "errors.search.unknownFileFilter": "未知的文件筛选器：{detail}",
   "errors.theme.assetDecodeFailed": "无法解码资源字节：{detail}",
   "errors.theme.assetDirectoryRequired": "目录主题“{id}”不存在；资源只能添加到目录主题中",
@@ -441,6 +442,8 @@
   "search.dialog.query.label": "搜索词",
   "search.dialog.query.placeholder": "输入搜索词…",
   "search.dialog.regex.label": "正则表达式",
+  "search.dialog.scope.filtered": "筛选出的文件",
+  "search.dialog.scope.filteredUnavailable": "请先在文件筛选中输入至少 2 个字符的关键词",
   "search.dialog.scope.folder": "此文件夹 ({name})",
   "search.dialog.scope.label": "范围",
   "search.dialog.scope.openTabs": "所有打开的文件",
@@ -470,11 +473,14 @@
   "search.status.filesPart": {
     "other": "{count} 个文件"
   },
+  "search.status.filteredCapped": "——仅搜索了前 {max} 个筛选出的文件",
+  "search.status.filteredTime": "——筛选查找已中止，仅搜索了部分筛选出的文件",
   "search.status.hitStale": "结果已过期",
   "search.status.hitsPart": {
     "other": "{count} 处匹配"
   },
   "search.status.noFiles": "Vault 中没有可搜索的文件——固定一个文件夹或在文件夹上右击以开始搜索",
+  "search.status.noFilteredFiles": "没有筛选出的文件",
   "search.status.noOpenFiles": "没有可搜索的已打开文件",
   "search.status.running": "{hitsPart}，已扫描 {filesPart}…",
   "search.status.runningSimple": "正在搜索…",

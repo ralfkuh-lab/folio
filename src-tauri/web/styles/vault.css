@@ -694,7 +694,8 @@ html.theme-dark .vs-snippet mark {
 .vsd-radio[hidden] {
   display: none;
 }
-.vsd-check input:disabled + span {
+.vsd-check input:disabled + span,
+.vsd-radio input:disabled + span {
   opacity: 0.55;
 }
 .vsd-group {

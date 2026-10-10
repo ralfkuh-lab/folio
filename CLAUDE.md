@@ -449,7 +449,17 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   `panel_state.rs` (`search_file_filter` default `allText`,
   `search_include_hidden`/`search_include_ignored` default aus); Scope + Query flüchtig.
   Automation: `POST /search` (synchron, additive Felder `regex`/`fileFilter`/
-  `customExtensions`/`openTabs`/`includeHidden`/`includeIgnored`; alle Client-Fehler → 400).
+  `customExtensions`/`openTabs`/`files`/`includeHidden`/`includeIgnored`; alle Client-Fehler → 400).
+  **Scope „Gefilterte Dateien“** (S8, `SearchScopeEx::Files`): sucht in der
+  vollen Treffermenge des Vault-Filters (wie Tiefenmodus, unabhängig von `**`
+  und gerendertem Baum). Wählbar nur bei Query ≥ 2 oder Bereich + `.md`
+  (`filter.ts::getFilteredSearchSpec`); die Liste wird beim Submit **einmal**
+  über `vault_filter_find` ermittelt (git-Chip → Schnitt mit
+  `isPathGitChanged`) und als Snapshot committed. Backend: `files` schließt
+  `scope`/`openTabs` aus (`ScopeConflict`), absolute Pfade, max.
+  `FILTER_MAX_HITS` (500); gesucht wird von Platte über `run_search_buffers`
+  (`OnDisk`). Hidden/Ignored sind dabei deaktiviert und wirkungslos; ein
+  Filter-Deckel (`cap`/`time`) wird in der Statuszeile benannt.
 - **Vault-Tree-Filter (R3, Sicht-Filter)** (Frontend `vault/filter.ts`,
   Funnel-Button + Filterzeile `#vault-filter`; Spec
   [`docs/spec-vault-filter.md`](docs/spec-vault-filter.md) inkl.

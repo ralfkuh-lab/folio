@@ -51,6 +51,18 @@ nicht aussagekräftig. Zu testen: Kaltstart, laufende Instanz, beide Werte von
 
 ## Mittlere Priorität
 
+- 🎨 **Such- und Filterbereich zusammenlegen** (beschlossen 2026-10-10,
+  Folgeschritt zum Scope „Gefilterte Dateien“). Der Button „Search in files…“
+  über der Filterzeile entfällt; stattdessen eine gemeinsame Zeile:
+  Namensfilter + Lupe für die Inhaltssuche, immer sichtbar, nur die Chips-Zeile
+  klappt per Funnel weg. Die Lupe öffnet den Suchdialog mit Vorauswahl
+  „Gefilterte Dateien“ bei aktivem Filter, sonst „Gesamter Vault“ (im Dialog
+  umstellbar; Tastenkürzel und Palette gleich). Die Anzeige der letzten Suche
+  (heute im Summary-Button) wird eine kompakte Zeile über den Treffern, nur
+  solange ein Ergebnis existiert (Begriff, Scope, ✕). Vor dem Bau
+  Layout-Varianten als Skizze/Screenshot zur Auswahl vorlegen; Umsetzung durch
+  Opus (Gestaltung).
+
 - 🔍 **Nur beobachten — Fix ist drin, es fehlt der Beleg am nächsten Mac-Lauf.**
   **E2E `61_hex_view` flaky auf macOS: „Zurück findet den direkten
   Nachbar-Treffer"** (1 von 10 Läufen, 2026-08-20, macOS 14.8.4). Der Zähler

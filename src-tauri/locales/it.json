@@ -285,8 +285,9 @@
   "errors.search.queryTooShort": "Il termine di ricerca deve contenere almeno 2 caratteri",
   "errors.search.regexWholeWord": "Impossibile combinare l'espressione regolare con la corrispondenza di parola intera",
   "errors.search.rootNotFound": "Il percorso di ricerca non esiste: {detail}",
-  "errors.search.scopeConflict": "Impossibile combinare la ricerca nei file aperti con un ambito di cartella",
+  "errors.search.scopeConflict": "Gli ambiti di ricerca non possono essere combinati.",
   "errors.search.startFailed": "Impossibile avviare la ricerca",
+  "errors.search.tooManyFiles": "Troppi file per la ricerca (al massimo {max})",
   "errors.search.unknownFileFilter": "Filtro file sconosciuto: {detail}",
   "errors.theme.assetDecodeFailed": "Impossibile decodificare i byte della risorsa: {detail}",
   "errors.theme.assetDirectoryRequired": "Il tema basato su cartella «{id}» non esiste; le risorse possono essere aggiunte solo ai temi basati su cartella",
@@ -445,6 +446,8 @@
   "search.dialog.query.label": "Termine di ricerca",
   "search.dialog.query.placeholder": "Inserisci il termine di ricerca…",
   "search.dialog.regex.label": "Espressione regolare",
+  "search.dialog.scope.filtered": "File filtrati",
+  "search.dialog.scope.filteredUnavailable": "Inserisci prima un termine (almeno 2 caratteri) nel filtro dei file",
   "search.dialog.scope.folder": "Questa cartella ({name})",
   "search.dialog.scope.label": "Ambito",
   "search.dialog.scope.openTabs": "Tutti i file aperti",
@@ -476,6 +479,8 @@
     "one": "{count} file",
     "other": "{count} file"
   },
+  "search.status.filteredCapped": " — cercati solo i primi {max} file filtrati",
+  "search.status.filteredTime": " — ricerca del filtro interrotta; cercata solo una parte dei file filtrati",
   "search.status.hitStale": "Risultato non più aggiornato",
   "search.status.hitsPart": {
     "many": "{count} corrispondenze",
@@ -483,6 +488,7 @@
     "other": "{count} corrispondenze"
   },
   "search.status.noFiles": "Nessun file in cui cercare nel Vault — fissare una cartella o avviare la ricerca con un clic destro su una cartella.",
+  "search.status.noFilteredFiles": "Nessun file filtrato",
   "search.status.noOpenFiles": "Nessun file aperto ricercabile",
   "search.status.running": "{hitsPart} in {filesPart} …",
   "search.status.runningSimple": "Ricerca in corso …",

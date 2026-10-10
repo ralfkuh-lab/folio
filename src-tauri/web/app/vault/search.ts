@@ -34,6 +34,8 @@ import { activateTab, findTabIdByPath, getActiveTabId } from '../state/tabs';
 // whose import side-effect patches listen() and suppresses handlers until uiReady).
 import { t, tPlural } from '../i18n/translate';
 import { fmtNumber, getFormatLocale } from '../i18n/format';
+import { getFilteredSearchSpec, whenFilterOptionsPersisted } from './filter';
+import { isPathGitChanged } from './git-status';
 
 type Deps = {
     openDocument: (path: string) => void;
@@ -42,7 +44,7 @@ type Deps = {
 };
 
 type FileFilter = 'markdown' | 'allText' | 'custom';
-type ScopeMode = 'vault' | 'folder' | 'openTabs';
+type ScopeMode = 'vault' | 'folder' | 'openTabs' | 'filtered';
 type SortMode = 'none' | 'name' | 'path';
 type PathDisplay = 'relative' | 'absolute';
 
@@ -127,9 +129,17 @@ let pathDisplay: PathDisplay = 'relative';
 // Pfad-Darstellung gesetzt hat, darf eine (evtl. langsamere) `settings_get`-
 // Boot-Antwort sie nicht mehr still zurücksetzen.
 let pathDisplaySettingsEventSeen = false;
-// Scope: folder (scopePath gesetzt) | openTabs (openTabs=true) | vault (beides leer).
+// Scope: folder (scopePath gesetzt) | openTabs (openTabs=true) | filtered
+// (filteredFiles gesetzt) | vault (alles leer).
 let scopePath: string | null = null;
 let openTabs = false;
+// Scope „Gefilterte Dateien": beim Submit EINMAL ermittelte Dateiliste aus dem
+// Vault-Filter (Snapshot). Re-Runs aus dem committed State nutzen sie; spätere
+// Filteränderungen wirken erst beim nächsten Submit. Flüchtig wie der Scope.
+let filteredFiles: string[] | null = null;
+// Deckel der Filtersuche (`vault_filter_find`) für die Statuszeile: Grund +
+// Zahl der gelieferten Dateien (vor dem git-Schnitt).
+let filteredTruncation: { reason: 'cap' | 'time'; found: number } | null = null;
 // Zuletzt bekannter Ordner-Kontext (Kontextmenü ODER committed Folder-Scope).
 // Steuert die Sichtbarkeit der Folder-Radio-Option im Dialog.
 let folderDraftPath: string | null = null;
@@ -280,7 +290,7 @@ function pinRoots(): string[] {
 }
 
 /** Ermittelt die Basis, gegen die `path` relativiert wird: Folder-Scope →
- *  scopePath; Vault-Scope → längste passende Pin-Wurzel; OpenTabs bzw. kein
+ *  scopePath; Vault-/Filtered-Scope → längste passende Pin-Wurzel; OpenTabs bzw. kein
  *  Treffer → null (voller Pfad). */
 function scopeRootFor(path: string): string | null {
     if (openTabs) return null;
@@ -358,6 +368,7 @@ function totalHits(): number {
 
 function currentScopeMode(): ScopeMode {
     if (openTabs) return 'openTabs';
+    if (filteredFiles !== null) return 'filtered';
     if (scopePath) return 'folder';
     return 'vault';
 }
@@ -455,6 +466,7 @@ function runSearch(): void {
         query: q,
         scope: scopedAtStart,
         openTabs: openTabsAtStart,
+        ...(filteredFiles !== null ? { files: filteredFiles } : {}),
         caseSensitive,
         wholeWord,
         regex,
@@ -584,7 +596,10 @@ function finalStatus(): void {
         if (openTabs && s.filesScanned === 0) {
             // OpenTabs-Scope ohne durchsuchbare offene Dateien.
             msg = t('search.status.noOpenFiles');
-        } else if (scopePath === null && !openTabs && s.filesScanned === 0) {
+        } else if (filteredFiles !== null && filteredFiles.length === 0) {
+            // Filtered-Scope: der Vault-Filter lieferte keine Dateien.
+            msg = t('search.status.noFilteredFiles');
+        } else if (scopePath === null && !openTabs && filteredFiles === null && s.filesScanned === 0) {
             // Vault-Scope + 0 gescannte Dateien = nichts Durchsuchbares im Vault
             // (leere Pins ODER nur Binärdateien); Ordner-Scope oder Pins mit
             // 0 Treffern liefern filesScanned>0.
@@ -602,6 +617,15 @@ function finalStatus(): void {
         });
     }
     // 2. … DANN die Zusätze anhängen (auch im „alle zu groß"-Fall sichtbar).
+    // Kein stilles Teilergebnis: eine gedeckelte Filtermenge wird benannt.
+    if (filteredFiles !== null && filteredTruncation) {
+        msg +=
+            filteredTruncation.reason === 'time'
+                ? t('search.status.filteredTime')
+                : t('search.status.filteredCapped', {
+                      max: fmtNumber(filteredTruncation.found),
+                  });
+    }
     if (s.truncated) msg += t('search.status.truncated');
     if (s.skippedLarge > 0) {
         msg += t('search.status.skippedSuffix', {
@@ -966,6 +990,12 @@ function renderSummary(): void {
         if (fileFilter === 'markdown') glyphs.push({ text: 'md' });
         else if (fileFilter === 'custom') glyphs.push({ text: '*.…' });
         if (openTabs) glyphs.push({ text: '⧉' });
+        if (filteredFiles !== null) {
+            glyphs.push({
+                text: '▽ ' + fmtNumber(filteredFiles.length),
+                title: t('search.dialog.scope.filtered'),
+            });
+        }
         for (const g of glyphs) {
             const span = document.createElement('span');
             span.className = 'vs-summary-opt';
@@ -1335,6 +1365,33 @@ function syncRegexDependents(): void {
     }
 }
 
+/** Scope „Gefilterte Dateien": versteckt/gitignoriert legt die Filtermenge
+ *  fest — die Checkboxen sind dann wirkungslos und deaktiviert (ihre Werte
+ *  bleiben unverändert stehen). */
+function syncScopeDependents(): void {
+    const filtered = radioValue('vsd-scope') === 'filtered';
+    const hiddenEl = $('vsd-include-hidden') as HTMLInputElement | null;
+    const ignoredEl = $('vsd-include-ignored') as HTMLInputElement | null;
+    if (hiddenEl) hiddenEl.disabled = filtered;
+    if (ignoredEl) ignoredEl.disabled = filtered;
+}
+
+/** Verfügbarkeit der Filtered-Option: nur wählbar, wenn der Vault-Filter eine
+ *  Dateimenge definiert; sonst disabled mit Hinweis-Tooltip. */
+function syncFilteredAvailability(): boolean {
+    const available = getFilteredSearchSpec() !== null;
+    const radio = document.querySelector(
+        'input[name="vsd-scope"][value="filtered"]',
+    ) as HTMLInputElement | null;
+    const row = $('vsd-scope-filtered-row');
+    if (radio) radio.disabled = !available;
+    if (row) {
+        if (available) row.removeAttribute('title');
+        else row.title = t('search.dialog.scope.filteredUnavailable');
+    }
+    return available;
+}
+
 /** Befüllt die Dialog-Felder aus dem committed State (bzw. dem Folder-Draft). */
 function populateDialog(preselectScope?: ScopeMode): void {
     const query = $('vsd-query') as HTMLInputElement | null;
@@ -1364,12 +1421,15 @@ function populateDialog(preselectScope?: ScopeMode): void {
             : '';
     }
 
+    const filteredAvailable = syncFilteredAvailability();
     let scopeMode: ScopeMode = preselectScope || currentScopeMode();
     if (scopeMode === 'folder' && !folderDraftPath) scopeMode = 'vault';
+    if (scopeMode === 'filtered' && !filteredAvailable) scopeMode = 'vault';
     setRadio('vsd-scope', scopeMode);
 
     syncRegexDependents();
     syncFilterDependents();
+    syncScopeDependents();
 }
 
 function focusDialogQuery(): void {
@@ -1402,11 +1462,19 @@ async function submitDialog(): Promise<void> {
     const dRegex = !!($('vsd-regex') as HTMLInputElement | null)?.checked;
     // Whole-Word ist bei aktivem Regex disabled → als false werten.
     const dWord = !dRegex && !!($('vsd-word') as HTMLInputElement | null)?.checked;
-    const dHidden = !!($('vsd-include-hidden') as HTMLInputElement | null)?.checked;
-    const dIgnored = !!($('vsd-include-ignored') as HTMLInputElement | null)?.checked;
     const dFilter = normalizeFilter(radioValue('vsd-filter'));
     const dExt = ($('vsd-custom-ext') as HTMLInputElement | null)?.value ?? '';
     const dScope = (radioValue('vsd-scope') as ScopeMode | null) || 'vault';
+    // Bei „Gefilterte Dateien" sind versteckt/gitignoriert wirkungslos und
+    // deaktiviert — die committed (persistierten) Werte bleiben stehen.
+    const dHidden =
+        dScope === 'filtered'
+            ? includeHidden
+            : !!($('vsd-include-hidden') as HTMLInputElement | null)?.checked;
+    const dIgnored =
+        dScope === 'filtered'
+            ? includeIgnored
+            : !!($('vsd-include-ignored') as HTMLInputElement | null)?.checked;
 
     // 1. Feld-Validierung (Query/Regex/Filter/Custom-Endungen) vor jeder Aktion.
     try {
@@ -1444,6 +1512,53 @@ async function submitDialog(): Promise<void> {
         if (mySubmit !== dialogSubmitGen) return;
     }
 
+    // 2b. Filtered-Scope: Dateiliste EINMAL aus dem Vault-Filter ermitteln
+    //     (Snapshot). Ist der Filter inzwischen unbrauchbar, scheitert der
+    //     Submit mit Feldfehler; der committed State bleibt unverändert.
+    let dFiles: string[] | null = null;
+    let dTruncation: { reason: 'cap' | 'time'; found: number } | null = null;
+    if (dScope === 'filtered') {
+        // `vault_filter_find` liest `.md` aus dem Backend: erst die
+        // eingereihten Filter-Options-Writes abwarten, dann Verfügbarkeit und
+        // Parameter frisch lesen.
+        try {
+            await whenFilterOptionsPersisted();
+        } catch (err) {
+            if (mySubmit !== dialogSubmitGen) return;
+            showDialogError(String(err));
+            return;
+        }
+        if (mySubmit !== dialogSubmitGen) return;
+        const spec = getFilteredSearchSpec();
+        if (!spec) {
+            syncFilteredAvailability();
+            showDialogError(t('search.dialog.scope.filteredUnavailable'));
+            return;
+        }
+        let res: any;
+        try {
+            res = await rawInvoke('vault_filter_find', {
+                query: spec.query,
+                scope: spec.scope,
+                hidden: spec.hidden,
+            });
+        } catch (err) {
+            if (mySubmit !== dialogSubmitGen) return;
+            showDialogError(String(err));
+            return;
+        }
+        if (mySubmit !== dialogSubmitGen) return;
+        const found: string[] = Array.isArray(res && res.files)
+            ? res.files.filter((p: unknown): p is string => typeof p === 'string' && !!p)
+                .map((p: string) => normalizePath(p))
+            : [];
+        // git-Chip an → Schnitt mit den git-geänderten Dateien.
+        dFiles = spec.gitChangedOnly ? found.filter((p) => isPathGitChanged(p)) : found;
+        if (res && res.truncated === true) {
+            dTruncation = { reason: res.reason === 'time' ? 'time' : 'cap', found: found.length };
+        }
+    }
+
     // 3. Alten Lauf canceln, committed State setzen.
     cancelCurrent();
     gen++; // späte Events des alten Laufs verwerfen
@@ -1457,6 +1572,8 @@ async function submitDialog(): Promise<void> {
     fileFilter = dFilter;
     customExtensions = dExt;
     optionsTouched = true;
+    filteredFiles = dFiles;
+    filteredTruncation = dTruncation;
     if (dScope === 'folder' && folderDraftPath) {
         scopePath = folderDraftPath;
         openTabs = false;
@@ -1503,6 +1620,9 @@ function wireDialog(): void {
     const filterRadios = Array.from(
         document.querySelectorAll('input[name="vsd-filter"]'),
     ) as HTMLInputElement[];
+    const scopeRadios = Array.from(
+        document.querySelectorAll('input[name="vsd-scope"]'),
+    ) as HTMLInputElement[];
     if (!dlg) return;
 
     const onCancel = (): void => closeDialog(true);
@@ -1511,11 +1631,13 @@ function wireDialog(): void {
     };
     const onRegexChange = (): void => syncRegexDependents();
     const onFilterChange = (): void => syncFilterDependents();
+    const onScopeChange = (): void => syncScopeDependents();
 
     if (cancel) cancel.addEventListener('click', onCancel);
     if (submit) submit.addEventListener('click', onSubmit);
     if (regexEl) regexEl.addEventListener('change', onRegexChange);
     filterRadios.forEach((r) => r.addEventListener('change', onFilterChange));
+    scopeRadios.forEach((r) => r.addEventListener('change', onScopeChange));
     dlg.addEventListener('keydown', onDialogKeydown as EventListener);
 
     dialogUnwire = (): void => {
@@ -1523,6 +1645,7 @@ function wireDialog(): void {
         if (submit) submit.removeEventListener('click', onSubmit);
         if (regexEl) regexEl.removeEventListener('change', onRegexChange);
         filterRadios.forEach((r) => r.removeEventListener('change', onFilterChange));
+        scopeRadios.forEach((r) => r.removeEventListener('change', onScopeChange));
         dlg.removeEventListener('keydown', onDialogKeydown as EventListener);
     };
 }
@@ -1539,6 +1662,9 @@ export function openVaultSearchDialog(opts?: {
 }): void {
     const dlg = $('vault-search-dialog');
     if (!dlg) return;
+    // Neubefüllen ersetzt den Draft: ausstehende Submits (z. B. eine noch
+    // laufende Filteranfrage) dürfen danach weder committen noch schließen.
+    dialogSubmitGen++;
     let preselect: ScopeMode | undefined;
     if (opts && opts.folder) {
         folderDraftPath = normalizePath(opts.folder);
@@ -1627,6 +1753,8 @@ export function initVaultSearch(d: Deps): () => void {
     optionsTouched = false;
     scopePath = null;
     openTabs = false;
+    filteredFiles = null;
+    filteredTruncation = null;
     activeQuery = '';
     folderDraftPath = null;
     renderScopeChip();

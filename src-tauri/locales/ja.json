@@ -283,8 +283,9 @@
   "errors.search.queryTooShort": "検索語は 2 文字以上必要です",
   "errors.search.regexWholeWord": "正規表現と単語単位の一致は組み合わせられません",
   "errors.search.rootNotFound": "検索パスが存在しません：{detail}",
-  "errors.search.scopeConflict": "開いているファイルの検索とフォルダー範囲は組み合わせられません",
+  "errors.search.scopeConflict": "検索範囲は組み合わせられません。",
   "errors.search.startFailed": "検索を開始できませんでした",
+  "errors.search.tooManyFiles": "検索対象のファイルが多すぎます（最大 {max} 件）",
   "errors.search.unknownFileFilter": "不明なファイルフィルター: {detail}",
   "errors.theme.assetDecodeFailed": "アセットのバイトをデコードできませんでした：{detail}",
   "errors.theme.assetDirectoryRequired": "ディレクトリ形式のテーマ「{id}」が存在しません。アセットはディレクトリ形式のテーマにのみ追加できます",
@@ -441,6 +442,8 @@
   "search.dialog.query.label": "検索語",
   "search.dialog.query.placeholder": "検索語を入力…",
   "search.dialog.regex.label": "正規表現",
+  "search.dialog.scope.filtered": "絞り込まれたファイル",
+  "search.dialog.scope.filteredUnavailable": "先にファイルフィルターに語句（2文字以上）を入力してください",
   "search.dialog.scope.folder": "このフォルダー ({name})",
   "search.dialog.scope.label": "範囲",
   "search.dialog.scope.openTabs": "開いているすべてのファイル",
@@ -470,11 +473,14 @@
   "search.status.filesPart": {
     "other": "{count} 個のファイル"
   },
+  "search.status.filteredCapped": "——絞り込まれたファイルのうち最初の {max} 件のみ検索しました",
+  "search.status.filteredTime": "——フィルター検索が中断されたため、絞り込まれたファイルの一部のみ検索しました",
   "search.status.hitStale": "結果は最新ではありません",
   "search.status.hitsPart": {
     "other": "{count} 件の一致"
   },
   "search.status.noFiles": "Vault に検索可能なファイルがありません。フォルダーをピン留めするか、フォルダーの右クリックから検索を開始してください",
+  "search.status.noFilteredFiles": "絞り込まれたファイルはありません",
   "search.status.noOpenFiles": "検索可能な開いているファイルがありません",
   "search.status.running": "{filesPart}中 {hitsPart}…",
   "search.status.runningSimple": "検索中…",

@@ -108,6 +108,8 @@ let treeMutatedDuringExpand = false;
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 /** Serialisierte Options-Schreibvorgänge. */
 let optionsWriteChain: Promise<void> = Promise.resolve();
+/** Fehler des zuletzt abgeschlossenen Options-Writes (null = erfolgreich). */
+let optionsWriteError: unknown = null;
 /** Reentranz-Guard: eigene DOM-Arbeit darf den Observer nicht retriggern. */
 let applyingFilter = false;
 let treeObserver: MutationObserver | null = null;
@@ -134,6 +136,36 @@ export function isVaultFilterActive(): boolean {
         gitChangedOnly ||
         scopePath !== null
     );
+}
+
+/** Such-Scope „Gefilterte Dateien": Parameter fuer `vault_filter_find`, mit
+ *  denen die VOLLE Treffermenge des Filters entsteht (wie im Tiefenmodus,
+ *  unabhaengig vom `**`-Chip und vom gerenderten Baum), plus der git-Chip
+ *  fuer den Schnitt im Aufrufer. `null`, solange der Filter keine Menge
+ *  definiert — dieselbe Bedingung, unter der `find_by_name` nicht leer
+ *  antwortet (Query ≥ 2 oder Bereich + md-only). */
+export function getFilteredSearchSpec(): {
+    query: string;
+    scope: string | null;
+    hidden: boolean;
+    gitChangedOnly: boolean;
+} | null {
+    const defined =
+        committedQuery.length >= DEEP_MIN_QUERY || (scopePath !== null && markdownOnly);
+    if (!defined) return null;
+    return { query: committedQuery, scope: scopePath, hidden: filterHidden, gitChangedOnly };
+}
+
+/** Wartet, bis alle eingereihten Options-Writes (u. a. `.md`) im Backend
+ *  stehen — `vault_filter_find` liest `markdownOnly` von dort. Rejected mit
+ *  dem Fehler, wenn der letzte Write gescheitert ist. */
+export async function whenFilterOptionsPersisted(): Promise<void> {
+    let chain: Promise<void>;
+    do {
+        chain = optionsWriteChain;
+        await chain;
+    } while (chain !== optionsWriteChain);
+    if (optionsWriteError !== null) throw optionsWriteError;
 }
 
 /** Tiefenmodus aktiv, wenn Chip ODER Bereich gesetzt ist und die Query lang
@@ -174,9 +206,12 @@ function persistOptions(): Promise<void> {
                 gitChangedOnly: git,
                 deep,
                 hidden,
-            }).then(() => undefined),
+            }).then(() => {
+                optionsWriteError = null;
+            }),
         )
         .catch((err) => {
+            optionsWriteError = err;
             folioLog.warn('vault-filter', 'vault_filter_options_set failed', {
                 error: String(err),
             });
@@ -1383,5 +1418,6 @@ export function initVaultFilter(): () => void {
         deepIpcInFlight = false;
         deepTreeMutated = false;
         optionsWriteChain = Promise.resolve();
+        optionsWriteError = null;
     };
 }

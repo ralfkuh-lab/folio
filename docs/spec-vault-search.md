@@ -656,6 +656,48 @@ Rein Frontend + ein neues App-Setting (Suchkern `search.rs` unverändert).
    (`search_path_display`-Roundtrip/Unknown-Fallback/camelCase-Patch). E2E 47
    unberührt (referenziert `.vs-fname`, nicht `.vs-fpath`).
 
+### ✅ Etappe S8 — Scope „Gefilterte Dateien“ (2026-10-10)
+
+Sucht in der **vollen Treffermenge des Vault-Filters**, unabhängig vom
+gerenderten Lazy-Baum und vom `**`-Chip.
+
+1. **Dialog**: Radio `filtered` nach „Alle offenen Dateien“. Wählbar nur, wenn
+   der Filter eine Menge definiert — getrimmte Query ≥ 2 Zeichen **oder**
+   Bereich + `.md` (dieselbe Bedingung, unter der `find_by_name` nicht leer
+   antwortet); sonst `disabled` mit Hinweis `search.dialog.scope.filteredUnavailable`.
+   Quelle der Bedingung: `vault/filter.ts::getFilteredSearchSpec()` (einziger
+   neuer Export, keine Verhaltensänderung am Filter). Bei gewähltem `filtered`
+   sind „Versteckte“/„Gitignorierte“ deaktiviert und wirkungslos; ihre
+   committed/persistierten Werte bleiben stehen.
+2. **Snapshot beim Submit**: `vault_filter_find { query, scope, hidden }` mit
+   den wirksamen Filterwerten (Name, Bereich, `.*`; `.md` und `vaultShowHidden`
+   liest der Command selbst) läuft **einmal**; bei aktivem `git`-Chip schneidet
+   das Frontend mit `isPathGitChanged`. Die Liste liegt im committed State
+   (`filteredFiles`), spätere Filteränderungen wirken erst beim nächsten Submit;
+   Scope bleibt flüchtig. Ist der Filter zwischen Öffnen und Submit unbrauchbar
+   geworden → Feldfehler, committed State unverändert.
+   Vor dem Find wartet der Submit die Options-Schreibqueue des Filters ab
+   (`whenFilterOptionsPersisted`; der Command liest `.md` aus dem Backend) —
+   gescheiterter Write → Feldfehler. (Wieder-)Öffnen des Dialogs erhöht die
+   Submit-Generation, eine noch laufende Filteranfrage verfällt damit.
+3. **Backend**: additives `files: Option<Vec<String>>` an `vault_search_start`
+   und `POST /search` → `SearchScopeEx::Files` (Bau in `to_scope_ex`).
+   `files` + `scope`/`openTabs` → `ScopeConflict`; relativer Pfad →
+   `InvalidScope`; mehr als `vault_filter::FILTER_MAX_HITS` (500) Einträge →
+   `TooManyFiles` (`errors.search.tooManyFiles`); leere Liste gültig. Durchsucht
+   wird über `run_search_buffers` mit `BufferSource::OnDisk` je Pfad
+   (Dateityp-Filter als Schnittmenge, Dedup, Caps, Content-Gate; fehlende
+   Dateien still übersprungen). Bewusst Platte, nicht offene Editor-Puffer
+   (wie der Vault-Scope).
+4. **Anzeige**: Summary-Glyph `▽ <Anzahl>`; Pfadzeile relativiert wie im
+   Vault-Scope (längste Pin-Wurzel). Deckel der Filtersuche wird benannt
+   (`search.status.filteredCapped` bzw. `…filteredTime`), leere Menge →
+   `search.status.noFilteredFiles`.
+5. **Tests**: Rust (Referenzfälle R1–R7 über `find_by_name` → Dateilisten-
+   Grenze → Suche, R10-Grenzvalidierung), vitest (R8 disabled, R9 git-Schnitt,
+   Snapshot, Feldfehler, Checkboxen, Deckel-/Leer-Status), E2E 46 (R10 über
+   `POST /search`) und 47 (R1–R8 über die UI, ohne neuen Screenshot).
+
 ## Risiken / bewusste Entscheidungen
 
 - **Kein Index in V1** — jede Suche ist ein frischer Walk. Für

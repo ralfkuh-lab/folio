@@ -325,6 +325,7 @@ Request:
   "fileFilter": "custom",
   "customExtensions": "md, txt, log",
   "openTabs": false,
+  "files": null,
   "includeHidden": false,
   "includeIgnored": false,
   "timeoutMs": 5000
@@ -341,6 +342,15 @@ Request:
   dem Ordner-Scope-Chip (Kontextmenü „In diesem Ordner suchen" → `vault/search.ts`);
   ein relativer/gelöschter Scope liefert im Command-Pfad `InvalidScope`/`RootNotFound`,
   worauf das Frontend den Chip entfernt und vault-weit weitersucht.
+- `files` (optional): explizite Dateiliste (Scope „Gefilterte Dateien“ der
+  WebView). Jeder Eintrag muss ein **absoluter** Pfad sein (sonst HTTP 400),
+  höchstens **500** Einträge (= Deckel des Vault-Filters
+  `vault_filter::FILTER_MAX_HITS`, sonst HTTP 400); eine leere Liste ist gültig
+  (`stats.filesScanned = 0`). Zusammen mit `scope` oder `openTabs: true` →
+  HTTP 400 (Scope-Konflikt). Gelesen wird von Platte (nicht aus offenen
+  Editor-Puffern); `fileFilter` wirkt als Schnittmenge, nicht existierende oder
+  unlesbare Dateien werden übersprungen. `includeHidden`/`includeIgnored`
+  haben auf eine Dateiliste keine Wirkung.
 - `caseSensitive`/`wholeWord` (optional, Default `false`): Groß-/Kleinschreibung
   bzw. ganze Wörter (Unicode-Wortgrenzen). Case-insensitive nutzt Unicode
   *simple* case folding (`ß` faltet auf sich selbst, nicht auf `ss`).
@@ -442,11 +452,12 @@ Feldsemantik:
 - Pfade sind Forward-Slash-normalisiert.
 
 Die WebView nutzt für die Live-Suche stattdessen die Tauri-Commands
-`vault_search_start { query, scope?, openTabs?, caseSensitive, wholeWord,
+`vault_search_start { query, scope?, openTabs?, files?, caseSensitive, wholeWord,
 regex?, fileFilter?, customExtensions?, includeHidden?, includeIgnored? } → runId` und
 `vault_search_cancel { runId }` mit den Events `search:hits { runId, files }`
 und `search:done { runId, stats }` (bzw. `{ runId, error }`); die S4-Parameter
-sind optional (Weglassen = altes Verhalten). Fehlt `includeIgnored`, gilt der
+sind optional (Weglassen = altes Verhalten); `files` folgt denselben Regeln wie
+in `POST /search`. Fehlt `includeIgnored`, gilt der
 Wert von `includeHidden`. Der Dialog prüft Felder vorab über
 `vault_search_validate { query, caseSensitive, wholeWord, regex?, fileFilter?,
 customExtensions?, includeHidden?, includeIgnored? }`. `POST /search` bündelt den Ablauf synchron für die Tests.

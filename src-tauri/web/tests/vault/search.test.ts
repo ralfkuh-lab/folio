@@ -21,6 +21,17 @@ const mocks = vi.hoisted(() => ({
     activateTab: vi.fn(() => Promise.resolve(true)),
     findTabIdByPath: vi.fn((_p: string) => null as number | null),
     getActiveTabId: vi.fn(() => 7 as number | null),
+    getFilteredSearchSpec: vi.fn(
+        () =>
+            null as {
+                query: string;
+                scope: string | null;
+                hidden: boolean;
+                gitChangedOnly: boolean;
+            } | null,
+    ),
+    isPathGitChanged: vi.fn((_p: string) => false),
+    whenFilterOptionsPersisted: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('../../app/state/document', () => ({
@@ -31,6 +42,21 @@ vi.mock('../../app/state/tabs', () => ({
     activateTab: mocks.activateTab,
     findTabIdByPath: mocks.findTabIdByPath,
     getActiveTabId: mocks.getActiveTabId,
+}));
+vi.mock('../../app/vault/filter', () => ({
+    getFilteredSearchSpec: mocks.getFilteredSearchSpec,
+    whenFilterOptionsPersisted: mocks.whenFilterOptionsPersisted,
+}));
+vi.mock('../../app/vault/git-status', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../app/vault/git-status')>()),
+    isPathGitChanged: mocks.isPathGitChanged,
+}));
+// Nur fuer Tests mit echtem filter.ts (vi.importActual): der Baum ist hier
+// kein Pruefgegenstand.
+vi.mock('../../app/vault/tree', () => ({
+    refreshVault: vi.fn(() => Promise.resolve()),
+    reapplyVaultActive: vi.fn(),
+    renderVaultFromHtml: vi.fn(),
 }));
 vi.mock('../../app/ui/find-bar', () => ({
     setEditorFindTerm: mocks.setEditorFindTerm,
@@ -88,6 +114,9 @@ function buildDom(): void {
                 <input type="text" id="vsd-custom-ext" />
                 <input type="radio" name="vsd-scope" value="vault" checked />
                 <input type="radio" name="vsd-scope" value="openTabs" />
+                <label id="vsd-scope-filtered-row">
+                    <input type="radio" name="vsd-scope" value="filtered" />
+                </label>
                 <label id="vsd-scope-folder-row" hidden>
                     <input type="radio" name="vsd-scope" value="folder" />
                     <span id="vsd-scope-folder-label"></span>
@@ -206,6 +235,9 @@ beforeEach(async () => {
     mocks.findTabIdByPath.mockReturnValue(null);
     mocks.getActiveTabId.mockReturnValue(7);
     mocks.syncEditorTextToStoreRequired.mockResolvedValue(undefined);
+    mocks.getFilteredSearchSpec.mockReturnValue(null);
+    mocks.isPathGitChanged.mockReturnValue(false);
+    mocks.whenFilterOptionsPersisted.mockImplementation(() => Promise.resolve());
     tauri = installTauriMock();
     configureInvoke();
     buildDom();
@@ -1418,5 +1450,371 @@ describe('vault/search — S7 Pfad-Darstellung (zweizeilig)', () => {
         });
         await flushMicro();
         expect(fpaths()).toEqual(['alpha/sub']);
+    });
+});
+
+// ----- Scope „Gefilterte Dateien" (volle Treffermenge des Vault-Filters) -----
+
+describe('vault/search — Scope Gefilterte Dateien', () => {
+    const R = '/vault/R';
+    const SPEC_A = `${R}/notes/spec-a.md`;
+    const SPEC_C = `${R}/deep/x/spec-c.txt`;
+
+    function filteredRadio(): HTMLInputElement {
+        return document.querySelector(
+            'input[name="vsd-scope"][value="filtered"]',
+        ) as HTMLInputElement;
+    }
+
+    function startCalls(): any[] {
+        return tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_search_start');
+    }
+
+    function findCalls(): any[] {
+        return tauri.invoke.mock.calls.filter((c) => c[0] === 'vault_filter_find');
+    }
+
+    /** Backend-Antwort von `vault_filter_find` setzen. */
+    function mockFind(res: { files: string[]; truncated?: boolean; reason?: string | null }): void {
+        tauri.invoke.mockImplementation((cmd: string) => {
+            if (cmd === 'vault_search_start') return Promise.resolve(nextRunId++);
+            if (cmd === 'vault_search_validate') return Promise.resolve(undefined);
+            if (cmd === 'vault_filter_find') {
+                return Promise.resolve({
+                    files: res.files,
+                    dirs: [],
+                    truncated: !!res.truncated,
+                    reason: res.reason ?? null,
+                });
+            }
+            return Promise.resolve(undefined);
+        });
+    }
+
+    function spec(over: Partial<{ query: string; scope: string | null; hidden: boolean; gitChangedOnly: boolean }> = {}) {
+        return { query: 'spec', scope: null, hidden: false, gitChangedOnly: false, ...over };
+    }
+
+    async function done(stats: Partial<Stats> = {}): Promise<void> {
+        tauri.emitEvent('search:done', {
+            runId: 1,
+            stats: {
+                filesScanned: 2,
+                filesMatched: 0,
+                hits: 0,
+                skippedLarge: 0,
+                truncated: false,
+                elapsedMs: 1,
+                ...stats,
+            },
+        });
+        await flushMicro();
+    }
+
+    interface Stats {
+        filesScanned: number;
+        filesMatched: number;
+        hits: number;
+        skippedLarge: number;
+        truncated: boolean;
+        elapsedMs: number;
+    }
+
+    it('R8: ohne Filtermenge ist die Option disabled (mit Hinweis); mit Menge waehlbar', async () => {
+        const { search } = await importAndInit();
+        search.openVaultSearchDialog();
+        expect(filteredRadio().disabled).toBe(true);
+        expect($('vsd-scope-filtered-row').title).toContain('ab 2 Zeichen');
+
+        $('vsd-cancel').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        mocks.getFilteredSearchSpec.mockReturnValue(spec());
+        search.openVaultSearchDialog();
+        expect(filteredRadio().disabled).toBe(false);
+        expect($('vsd-scope-filtered-row').hasAttribute('title')).toBe(false);
+    });
+
+    it('Submit ermittelt die Filtermenge einmal und sucht genau darin (wirksame Chip-Werte)', async () => {
+        await importAndInit();
+        mocks.getFilteredSearchSpec.mockReturnValue(spec({ hidden: true, scope: `${R}/deep` }));
+        mockFind({ files: [SPEC_A, SPEC_C] });
+        await runSearch('TODO', { scope: 'filtered' });
+
+        expect(findCalls()).toHaveLength(1);
+        expect(findCalls()[0][1]).toEqual({ query: 'spec', scope: `${R}/deep`, hidden: true });
+        const starts = startCalls();
+        expect(starts).toHaveLength(1);
+        expect(starts[0][1].files).toEqual([SPEC_A, SPEC_C]);
+        expect(starts[0][1].scope).toBeNull();
+        expect(starts[0][1].openTabs).toBe(false);
+        // Summary: Funnel-Glyph mit Dateianzahl.
+        expect($('vault-search-summary-opts').textContent).toContain('▽ 2');
+    });
+
+    it('R9: git-Chip an → Schnitt mit den git-geaenderten Dateien', async () => {
+        await importAndInit();
+        mocks.getFilteredSearchSpec.mockReturnValue(spec({ gitChangedOnly: true }));
+        mocks.isPathGitChanged.mockImplementation((p: string) => p === SPEC_C);
+        mockFind({ files: [SPEC_A, SPEC_C] });
+        await runSearch('TODO', { scope: 'filtered' });
+
+        expect(startCalls()[0][1].files).toEqual([SPEC_C]);
+    });
+
+    it('git-Chip aus → kein Schnitt', async () => {
+        await importAndInit();
+        mocks.getFilteredSearchSpec.mockReturnValue(spec());
+        mocks.isPathGitChanged.mockImplementation((p: string) => p === SPEC_C);
+        mockFind({ files: [SPEC_A, SPEC_C] });
+        await runSearch('TODO', { scope: 'filtered' });
+
+        expect(startCalls()[0][1].files).toEqual([SPEC_A, SPEC_C]);
+    });
+
+    it('andere Scopes senden kein files-Feld', async () => {
+        await importAndInit();
+        await runSearch('needle');
+        expect('files' in startCalls()[0][1]).toBe(false);
+    });
+
+    it('Filter zwischen Oeffnen und Submit unbrauchbar → Feldfehler, committed State unveraendert', async () => {
+        const { search } = await importAndInit();
+        mockFind({ files: [SPEC_A] });
+        await runSearch('needle');
+        mocks.getFilteredSearchSpec.mockReturnValue(spec());
+        search.openVaultSearchDialog();
+        ($('vsd-query') as HTMLInputElement).value = 'TODO';
+        setRadio('vsd-scope', 'filtered');
+        mocks.getFilteredSearchSpec.mockReturnValue(null);
+        $('vsd-submit').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+
+        expect($('vsd-error').hidden).toBe(false);
+        expect($('vsd-error').textContent).toContain('ab 2 Zeichen');
+        expect($('vault-search-dialog').hidden).toBe(false);
+        expect(findCalls()).toHaveLength(0);
+        expect(startCalls()).toHaveLength(1);
+        expect($('vault-search-summary-text').textContent).toBe('needle');
+        expect($('vault-search-summary-opts').textContent).not.toContain('▽');
+    });
+
+    it('Snapshot: Filteraenderung wirkt erst beim naechsten Submit', async () => {
+        const { search } = await importAndInit();
+        mocks.getFilteredSearchSpec.mockReturnValue(spec());
+        mockFind({ files: [SPEC_A] });
+        await runSearch('TODO', { scope: 'filtered' });
+        expect(startCalls()[0][1].files).toEqual([SPEC_A]);
+
+        // Filter aendert sich; Wiedereroeffnen waehlt den committed Scope vor,
+        // ohne neu zu ermitteln.
+        mockFind({ files: [SPEC_C] });
+        search.openVaultSearchDialog();
+        expect(filteredRadio().checked).toBe(true);
+        expect(findCalls()).toHaveLength(1);
+
+        $('vsd-submit').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+        expect(findCalls()).toHaveLength(2);
+        expect(startCalls()[1][1].files).toEqual([SPEC_C]);
+    });
+
+    it('versteckt/gitignoriert sind bei filtered deaktiviert; persistierte Werte bleiben', async () => {
+        const { search } = await importAndInit();
+        await runSearch('needle', { includeHidden: true, includeIgnored: false });
+        mocks.getFilteredSearchSpec.mockReturnValue(spec());
+        mockFind({ files: [SPEC_A] });
+
+        search.openVaultSearchDialog();
+        const hiddenEl = $('vsd-include-hidden') as HTMLInputElement;
+        const ignoredEl = $('vsd-include-ignored') as HTMLInputElement;
+        expect(hiddenEl.disabled).toBe(false);
+        filteredRadio().checked = true;
+        filteredRadio().dispatchEvent(new Event('change', { bubbles: true }));
+        expect(hiddenEl.disabled).toBe(true);
+        expect(ignoredEl.disabled).toBe(true);
+        expect(hiddenEl.checked).toBe(true);
+
+        // Draft-Wert der deaktivierten Checkbox wird nicht committed.
+        hiddenEl.checked = false;
+        ignoredEl.checked = true;
+        $('vsd-submit').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await flushMicro();
+
+        const persist = tauri.invoke.mock.calls.filter((c) => c[0] === 'set_search_options');
+        const last = persist[persist.length - 1][1];
+        expect(last.includeHidden).toBe(true);
+        expect(last.includeIgnored).toBe(false);
+        const start = startCalls()[1][1];
+        expect(start.includeHidden).toBe(true);
+        expect(start.includeIgnored).toBe(false);
+
+        // Zurueck auf Vault → Checkboxen wieder aktiv.
+        search.openVaultSearchDialog();
+        setRadio('vsd-scope', 'vault');
+        (document.querySelector('input[name="vsd-scope"][value="vault"]') as HTMLInputElement)
+            .dispatchEvent(new Event('change', { bubbles: true }));
+        expect(hiddenEl.disabled).toBe(false);
+    });
+
+    it('Deckel cap → Statuszusatz mit Dateizahl', async () => {
+        await importAndInit();
+        mocks.getFilteredSearchSpec.mockReturnValue(spec());
+        mockFind({ files: [SPEC_A, SPEC_C], truncated: true, reason: 'cap' });
+        await runSearch('TODO', { scope: 'filtered' });
+        await done({ hits: 1, filesMatched: 1 });
+        expect($('vault-search-status').textContent).toContain(
+            'nur die ersten 2 gefilterten Dateien durchsucht',
+        );
+    });
+
+    it('Deckel time → Statuszusatz „Filtersuche abgebrochen"', async () => {
+        await importAndInit();
+        mocks.getFilteredSearchSpec.mockReturnValue(spec());
+        mockFind({ files: [SPEC_A], truncated: true, reason: 'time' });
+        await runSearch('TODO', { scope: 'filtered' });
+        await done();
+        expect($('vault-search-status').textContent).toContain('Filtersuche abgebrochen');
+    });
+
+    it('leere Filtermenge → Lauf mit 0 Dateien und eigener Status', async () => {
+        await importAndInit();
+        mocks.getFilteredSearchSpec.mockReturnValue(spec());
+        mockFind({ files: [] });
+        await runSearch('TODO', { scope: 'filtered' });
+        expect(startCalls()[0][1].files).toEqual([]);
+        await done({ filesScanned: 0 });
+        expect($('vault-search-status').textContent).toBe('Keine gefilterten Dateien');
+    });
+
+    it('Pfadzeile relativiert wie im Vault-Scope (Pin-Wurzel)', async () => {
+        await importAndInit();
+        mocks.getFilteredSearchSpec.mockReturnValue(spec());
+        mockFind({ files: ['/vault/sub/a.md'] });
+        await runSearch('TODO', { scope: 'filtered' });
+        ($('vault-search-paths') as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        tauri.emitEvent('search:hits', {
+            runId: 1,
+            files: [fileFixture({ path: '/vault/sub/a.md', fileName: 'a.md' })],
+        });
+        await flushMicro();
+        expect(document.querySelector('.vs-fpath')?.textContent).toBe('vault/sub');
+    });
+    // ----- Korrekturrunde 1: echtes filter.ts, ausstehende Antworten -------
+
+    /** Echtes filter.ts initialisieren; search.ts sieht es ueber die Mocks. */
+    async function realFilter() {
+        document.body.insertAdjacentHTML(
+            'beforeend',
+            '<button id="vault-filter-toggle"></button><div id="vault-filter" hidden>' +
+                '<input id="vault-filter-input"><button id="vault-filter-md"></button></div>',
+        );
+        const filter = await vi.importActual<typeof import('../../app/vault/filter')>(
+            '../../app/vault/filter',
+        );
+        mocks.getFilteredSearchSpec.mockImplementation(filter.getFilteredSearchSpec);
+        mocks.whenFilterOptionsPersisted.mockImplementation(filter.whenFilterOptionsPersisted);
+        const disposeFilter = filter.initVaultFilter();
+        await flushMicro();
+        return { filter, disposeFilter };
+    }
+
+    async function typeFilter(value: string): Promise<void> {
+        const input = $('vault-filter-input') as HTMLInputElement;
+        input.value = value;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        await new Promise((resolve) => setTimeout(resolve, 180)); // Entprellung 150 ms
+    }
+
+    it('Korrektur 1 (R4): Snapshot wartet auf ausstehenden .md-Write → nur spec-a.md', async () => {
+        await importAndInit();
+        let backendMd = false;
+        let writes = 0;
+        let releaseFirstWrite!: () => void;
+        tauri.invoke.mockImplementation((cmd: string, args: any) => {
+            if (cmd === 'vault_filter_options_get') return Promise.resolve({ markdownOnly: false });
+            if (cmd === 'vault_filter_options_set') {
+                backendMd = !!args.markdownOnly;
+                if (++writes === 1) {
+                    // Frueherer Write: serverseitig schon angewandt, Antwort steht aus.
+                    return new Promise<void>((resolve) => {
+                        releaseFirstWrite = resolve;
+                    });
+                }
+                return Promise.resolve(undefined);
+            }
+            if (cmd === 'vault_filter_find') {
+                // Backend liest .md aus dem persistierten Panel-State.
+                return Promise.resolve({ files: backendMd ? [SPEC_A] : [SPEC_A, SPEC_C] });
+            }
+            if (cmd === 'vault_search_start') return Promise.resolve(nextRunId++);
+            return Promise.resolve(undefined);
+        });
+        const { disposeFilter } = await realFilter();
+        await typeFilter('spec');
+        $('vault-filter-toggle').click(); // Write 1 (md=false), Antwort haengt
+        await flushMicro();
+        $('vault-filter-md').click(); // Write 2 (md=true) wartet in der Queue
+        await runSearch('TODO', { scope: 'filtered' });
+        releaseFirstWrite();
+        for (let i = 0; i < 5; i++) await flushMicro();
+        const files = startCalls()[0]?.[1].files;
+        disposeFilter();
+        expect(files).toEqual([SPEC_A]);
+    });
+
+    it('Korrektur 1: fehlgeschlagener Options-Write → Feldfehler, kein Snapshot/Start', async () => {
+        await importAndInit();
+        tauri.invoke.mockImplementation((cmd: string) => {
+            if (cmd === 'vault_filter_options_get') return Promise.resolve({ markdownOnly: false });
+            if (cmd === 'vault_filter_options_set') return Promise.reject(new Error('disk full'));
+            if (cmd === 'vault_search_start') return Promise.resolve(nextRunId++);
+            return Promise.resolve({ files: [SPEC_A] });
+        });
+        const { disposeFilter } = await realFilter();
+        await typeFilter('spec');
+        $('vault-filter-md').click();
+        await runSearch('TODO', { scope: 'filtered' });
+        await flushMicro();
+        disposeFilter();
+        expect($('vsd-error').hidden).toBe(false);
+        expect($('vsd-error').textContent).toContain('disk full');
+        expect(findCalls()).toHaveLength(0);
+        expect(startCalls()).toHaveLength(0);
+        expect($('vault-search-dialog').hidden).toBe(false);
+    });
+
+    it('Korrektur 2: Neuoeffnen mit prefillQuery verwirft ausstehende Filterantwort', async () => {
+        const { search } = await importAndInit();
+        mocks.getFilteredSearchSpec.mockReturnValue(spec());
+        let resolveFind!: (x: any) => void;
+        tauri.invoke.mockImplementation((cmd: string) => {
+            if (cmd === 'vault_filter_find') {
+                return new Promise((resolve) => {
+                    resolveFind = resolve;
+                });
+            }
+            if (cmd === 'vault_search_start') return Promise.resolve(nextRunId++);
+            return Promise.resolve(undefined);
+        });
+        await runSearch('TODO', { scope: 'filtered' });
+        search.openVaultSearchDialog({ prefillQuery: 'new draft' });
+        resolveFind({ files: [SPEC_A] });
+        await flushMicro();
+        expect($('vault-search-dialog').hidden).toBe(false);
+        expect(($('vsd-query') as HTMLInputElement).value).toBe('new draft');
+        expect(startCalls()).toHaveLength(0);
+        expect($('vault-search-summary-opts').textContent).not.toContain('▽');
+    });
+
+    it('R8 mit echter Verfuegbarkeit: 1 Zeichen disabled, 2 Zeichen waehlbar', async () => {
+        const { search } = await importAndInit();
+        const { disposeFilter } = await realFilter();
+        await typeFilter('s');
+        search.openVaultSearchDialog();
+        expect(filteredRadio().disabled).toBe(true);
+        $('vsd-cancel').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await typeFilter('sp');
+        search.openVaultSearchDialog();
+        expect(filteredRadio().disabled).toBe(false);
+        disposeFilter();
     });
 });

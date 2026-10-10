@@ -7,6 +7,8 @@ wholeWord, per-Datei-Truncation, QueryTooShort-Fehler und gitignore-Skip.
 Zusätzlich includeHidden: eigenes Fake-Repo (`.git` + `.gitignore`) mit
 `.hidden.md`, Datei unter hidden Dir und gitignorierter Datei — ohne Flag
 übersprungen, mit Flag gefunden (kein Screenshot, kein fixtures/-Pfad).
+Dateilisten-Scope `files` (R10): genau die übergebenen Dateien, leere Liste,
+relative Pfade, Konflikt mit scope/openTabs und mehr als 500 Einträge.
 
 Kein Screenshot-Vergleich (reines API-Szenario). Die Fixtures liegen in einem
 System-Temp-Ordner (auto-cleanup); der einzige persistente Seiteneffekt ist
@@ -388,6 +390,64 @@ def run(ctx):
                         ctx.api.workspace_unpin(hidden_td)
                 finally:
                     shutil.rmtree(hidden_td, ignore_errors=True)
+
+            # --- files: Dateilisten-Scope („Gefilterte Dateien“, R10) -------
+            # Kein Pin nötig: die Liste ist der Scope. Fixture der vorgegebenen
+            # Referenzfälle; die Wrapper-API kennt `files` nicht, daher roh.
+            with ctx.step("files scope: exact list, empty list, boundary errors"):
+                files_td = tempfile.mkdtemp(prefix="folio-e2e-search-files-")
+                try:
+                    r = files_td.replace("\\", "/")
+                    for rel, text in (
+                        ("notes/spec-a.md", "TODO alpha"),
+                        ("notes/other.md", "TODO beta"),
+                        (".herd/spec-b.md", "TODO gamma"),
+                        ("deep/x/spec-c.txt", "TODO delta"),
+                    ):
+                        _write(os.path.join(files_td, *rel.split("/")), text)
+                    other = f"{r}/notes/other.md"
+                    spec_c = f"{r}/deep/x/spec-c.txt"
+
+                    def files_search(files, **extra):
+                        body = {
+                            "query": "TODO",
+                            "fileFilter": "allText",
+                            "files": files,
+                        }
+                        body.update(extra)
+                        return ctx.api._request("POST", "/search", body)
+
+                    resp = files_search([other, spec_c])
+                    got = sorted(f["path"] for f in resp.get("files") or [])
+                    ctx.expect(got == sorted([other, spec_c]), f"files exact: {got}")
+                    ctx.expect(
+                        resp["stats"]["filesScanned"] == 2,
+                        f"files scanned: {resp['stats']}",
+                    )
+
+                    empty = files_search([])
+                    ctx.expect(
+                        empty["stats"]["filesScanned"] == 0 and not empty.get("files"),
+                        f"empty files: {empty}",
+                    )
+
+                    for label, files, extra in (
+                        ("relative path", ["notes/other.md"], {}),
+                        ("files + scope", [other], {"scope": r}),
+                        ("files + openTabs", [other], {"openTabs": True}),
+                        (
+                            "501 entries",
+                            [f"{r}/f{i}.md" for i in range(501)],
+                            {},
+                        ),
+                    ):
+                        try:
+                            files_search(files, **extra)
+                            ctx.expect(False, f"{label} accepted")
+                        except ApiError as err:
+                            ctx.expect(err.status == 400, f"{label}: status={err.status}")
+                finally:
+                    shutil.rmtree(files_td, ignore_errors=True)
 
         finally:
             # Offene (evtl. dirty) Tabs aus den OpenTabs-Schritten aufräumen,

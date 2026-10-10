@@ -100,12 +100,14 @@ pub(crate) fn resolve_include_ignored(include_hidden: bool, include_ignored: Opt
 /// Baut aus den flachen Grenz-Argumenten das erweiterte Scope-Modell + die
 /// erweiterten Optionen. Geteilt zwischen Tauri-Command und HTTP-Handler
 /// (dort mit der eigenen Fehler-in-400-Abbildung). Fehler sind lokalisierte
-/// [`SearchError`] (openTabs+scope-Konflikt, unbekannter Filter, leere
-/// Custom-Liste, verbotene Endungszeichen).
+/// [`SearchError`] (Scope-Konflikt zwischen openTabs/scope/files, ungültige
+/// Dateiliste, unbekannter Filter, leere Custom-Liste, verbotene
+/// Endungszeichen).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_scope_and_options(
     scope: Option<String>,
     open_tabs: bool,
+    files: Option<Vec<String>>,
     case_sensitive: bool,
     whole_word: bool,
     regex: bool,
@@ -114,7 +116,7 @@ pub(crate) fn build_scope_and_options(
     include_hidden: bool,
     include_ignored: bool,
 ) -> Result<(SearchScopeEx, ExtendedSearchOptions), SearchError> {
-    let scope_ex = search::to_scope_ex(scope, open_tabs)?;
+    let scope_ex = search::to_scope_ex(scope, open_tabs, files)?;
     let filter = FileFilter::from_raw(file_filter, custom_extensions)?;
     let options = ExtendedSearchOptions {
         base: SearchOptions {
@@ -135,6 +137,19 @@ enum SearchWork {
     Buffers(Vec<BufferDoc>),
 }
 
+/// Dateilisten-Scope („Gefilterte Dateien“) → Puffer-Dokumente von Platte.
+/// Läuft damit über [`search::run_search_buffers`] (Dateityp-Filter, Dedup,
+/// Caps, Content-Gate); fehlende/unlesbare Dateien werden dort übersprungen.
+pub(crate) fn file_list_docs(files: Vec<String>) -> Vec<BufferDoc> {
+    files
+        .into_iter()
+        .map(|path| BufferDoc {
+            path,
+            source: BufferSource::OnDisk,
+        })
+        .collect()
+}
+
 /// Startet einen Suchlauf. Liefert die `runId`, über die Events und Cancel
 /// korrelieren. Vorab-Fehler (zu kurzer Begriff, ungültiges Regex, unbekannter
 /// Filter, nicht existenter Ordner-Scope, …) kommen synchron als `Err(String)`
@@ -148,6 +163,7 @@ pub async fn vault_search_start(
     query: String,
     scope: Option<String>,
     open_tabs: Option<bool>,
+    files: Option<Vec<String>>,
     case_sensitive: bool,
     whole_word: bool,
     regex: Option<bool>,
@@ -168,6 +184,7 @@ pub async fn vault_search_start(
     let (scope_ex, options) = build_scope_and_options(
         scope,
         open_tabs,
+        files,
         case_sensitive,
         whole_word,
         regex,
@@ -184,6 +201,7 @@ pub async fn vault_search_start(
 
     let work = match scope_ex {
         SearchScopeEx::OpenTabs => SearchWork::Buffers(snapshot_open_tab_docs(&state)?),
+        SearchScopeEx::Files(files) => SearchWork::Buffers(file_list_docs(files)),
         SearchScopeEx::Vault => SearchWork::Roots(resolve_roots(&state, None)?),
         SearchScopeEx::Folder(path) => {
             let roots = resolve_roots(&state, Some(path))?;
@@ -475,11 +493,224 @@ mod tests {
 
     #[test]
     fn build_scope_and_options_forwards_both_flags() {
-        let (_, options) =
-            build_scope_and_options(None, false, false, false, false, "allText", "", true, false)
-                .unwrap();
+        let (_, options) = build_scope_and_options(
+            None, false, None, false, false, false, "allText", "", true, false,
+        )
+        .unwrap();
         assert!(options.base.include_hidden);
         assert!(!options.base.include_ignored);
+    }
+
+    // --- Scope „Gefilterte Dateien“ (Dateiliste) ------------------------------
+
+    /// Fixture der vorgegebenen Referenzfälle: Pin-Ordner `R`.
+    fn filtered_fixture() -> (tempfile::TempDir, String) {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().to_str().unwrap().replace('\\', "/");
+        for (rel, text) in [
+            ("notes/spec-a.md", "TODO alpha"),
+            ("notes/other.md", "TODO beta"),
+            (".herd/spec-b.md", "TODO gamma"),
+            ("deep/x/spec-c.txt", "TODO delta"),
+        ] {
+            let path = tmp.path().join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        }
+        (tmp, root)
+    }
+
+    /// Volle Kette wie im Frontend: Filtermenge über `find_by_name` (wirksames
+    /// `show_hidden` wie im Command), dann Suche über die Dateilisten-Grenze.
+    #[allow(clippy::too_many_arguments)]
+    fn search_filtered(
+        root: &str,
+        query: &str,
+        scope: Option<&str>,
+        markdown_only: bool,
+        chip_hidden: bool,
+        vault_show_hidden: bool,
+        file_filter: &str,
+    ) -> Vec<String> {
+        let pinned = vec![crate::workspace::PinnedItem {
+            path: root.to_string(),
+            is_directory: true,
+        }];
+        let opts = crate::vault::VaultListOptions {
+            markdown_only,
+            show_hidden: crate::vault_filter::filter_show_hidden(chip_hidden, vault_show_hidden),
+        };
+        let found = crate::vault_filter::find_by_name(
+            &pinned,
+            scope,
+            query,
+            opts,
+            crate::vault_filter::FILTER_MAX_HITS,
+            crate::vault_filter::FILTER_TIME_BUDGET,
+        )
+        .unwrap();
+        run_files(found.files, file_filter).unwrap()
+    }
+
+    fn run_files(files: Vec<String>, file_filter: &str) -> Result<Vec<String>, SearchError> {
+        let (scope_ex, options) = build_scope_and_options(
+            None,
+            false,
+            Some(files),
+            false,
+            false,
+            false,
+            file_filter,
+            "",
+            false,
+            false,
+        )?;
+        let SearchScopeEx::Files(files) = scope_ex else {
+            panic!("Dateilisten-Scope erwartet");
+        };
+        let cancel = AtomicBool::new(false);
+        let mut out: Vec<String> = Vec::new();
+        search::run_search_buffers(
+            &file_list_docs(files),
+            "TODO",
+            &options,
+            &cancel,
+            &mut |f| out.push(f.path),
+        )?;
+        out.sort();
+        Ok(out)
+    }
+
+    #[test]
+    fn filtered_scope_reference_cases() {
+        let (_tmp, r) = filtered_fixture();
+        let a = format!("{r}/notes/spec-a.md");
+        let b = format!("{r}/.herd/spec-b.md");
+        let c = format!("{r}/deep/x/spec-c.txt");
+        let other = format!("{r}/notes/other.md");
+        let mut ab_c = vec![a.clone(), c.clone()];
+        ab_c.sort();
+
+        // R1: Query `spec`, `.*` aus, `.md` aus.
+        assert_eq!(
+            ab_c,
+            search_filtered(&r, "spec", None, false, false, true, "allText")
+        );
+        // R2: `.*` an → zusätzlich `.herd/spec-b.md`.
+        let mut r2 = vec![a.clone(), b.clone(), c.clone()];
+        r2.sort();
+        assert_eq!(
+            r2,
+            search_filtered(&r, "spec", None, false, true, true, "allText")
+        );
+        // R3: `.*` an, `vaultShowHidden` aus → wie R1.
+        assert_eq!(
+            ab_c,
+            search_filtered(&r, "spec", None, false, true, false, "allText")
+        );
+        // R4: `.md` an → nur spec-a.md.
+        assert_eq!(
+            vec![a.clone()],
+            search_filtered(&r, "spec", None, true, false, true, "allText")
+        );
+        // R5: Dialog-Dateityp „Nur Markdown“ → nur spec-a.md.
+        assert_eq!(
+            vec![a.clone()],
+            search_filtered(&r, "spec", None, false, false, true, "markdown")
+        );
+        // R6: Bereich `R/deep` + Query `spec` → nur spec-c.txt.
+        let deep = format!("{r}/deep");
+        assert_eq!(
+            vec![c.clone()],
+            search_filtered(&r, "spec", Some(&deep), false, false, true, "allText")
+        );
+        // R7: Bereich `R/notes` + `.md` an, Query leer → spec-a.md + other.md.
+        let notes = format!("{r}/notes");
+        let mut r7 = vec![other.clone(), a.clone()];
+        r7.sort();
+        assert_eq!(
+            r7,
+            search_filtered(&r, "", Some(&notes), true, false, true, "allText")
+        );
+    }
+
+    #[test]
+    fn filtered_scope_boundary_validation() {
+        let (_tmp, r) = filtered_fixture();
+        let other = format!("{r}/notes/other.md");
+        let c = format!("{r}/deep/x/spec-c.txt");
+
+        // R10: genau die übergebenen Dateien.
+        let mut expected = vec![other.clone(), c.clone()];
+        expected.sort();
+        assert_eq!(
+            expected,
+            run_files(vec![other.clone(), c.clone()], "allText").unwrap()
+        );
+
+        // Leere Liste: gültig, 0 Dateien.
+        let (scope_ex, options) = build_scope_and_options(
+            None,
+            false,
+            Some(Vec::new()),
+            false,
+            false,
+            false,
+            "allText",
+            "",
+            false,
+            false,
+        )
+        .unwrap();
+        assert_eq!(SearchScopeEx::Files(Vec::new()), scope_ex);
+        let cancel = AtomicBool::new(false);
+        let stats =
+            search::run_search_buffers(&[], "TODO", &options, &cancel, &mut |_| {}).unwrap();
+        assert_eq!(0, stats.files_scanned);
+
+        // Relativer Pfad → InvalidScope.
+        assert!(matches!(
+            run_files(vec!["notes/other.md".to_string()], "allText"),
+            Err(SearchError::InvalidScope(_))
+        ));
+
+        // files + scope / files + openTabs → ScopeConflict.
+        let build = |scope: Option<String>, open_tabs: bool, files: Vec<String>| {
+            build_scope_and_options(
+                scope,
+                open_tabs,
+                Some(files),
+                false,
+                false,
+                false,
+                "allText",
+                "",
+                false,
+                false,
+            )
+        };
+        assert!(matches!(
+            build(Some(r.clone()), false, vec![other.clone()]),
+            Err(SearchError::ScopeConflict)
+        ));
+        assert!(matches!(
+            build(None, true, vec![other.clone()]),
+            Err(SearchError::ScopeConflict)
+        ));
+
+        // Deckel des Vault-Filters: 500 ok, 501 → Fehler.
+        let many = |n: usize| (0..n).map(|i| format!("{r}/f{i}.md")).collect::<Vec<_>>();
+        assert!(build(None, false, many(crate::vault_filter::FILTER_MAX_HITS)).is_ok());
+        assert!(matches!(
+            build(None, false, many(crate::vault_filter::FILTER_MAX_HITS + 1)),
+            Err(SearchError::TooManyFiles)
+        ));
+
+        // Nicht existierende Datei wird übersprungen, kein Abbruch.
+        assert_eq!(
+            vec![other.clone()],
+            run_files(vec![format!("{r}/fehlt.md"), other.clone()], "allText").unwrap()
+        );
     }
 
     #[test]

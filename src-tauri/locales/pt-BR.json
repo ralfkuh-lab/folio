@@ -285,8 +285,9 @@
   "errors.search.queryTooShort": "O termo de busca deve ter pelo menos 2 caracteres",
   "errors.search.regexWholeWord": "Não é possível combinar expressão regular com correspondência de palavra inteira",
   "errors.search.rootNotFound": "O caminho de busca não existe: {detail}",
-  "errors.search.scopeConflict": "Não é possível combinar a busca em arquivos abertos com um escopo de pasta",
+  "errors.search.scopeConflict": "Os escopos de busca não podem ser combinados.",
   "errors.search.startFailed": "Falha ao iniciar a busca",
+  "errors.search.tooManyFiles": "Arquivos demais para a busca (no máximo {max})",
   "errors.search.unknownFileFilter": "Filtro de arquivo desconhecido: {detail}",
   "errors.theme.assetDecodeFailed": "Não foi possível decodificar os bytes do recurso: {detail}",
   "errors.theme.assetDirectoryRequired": "O tema de diretório '{id}' não existe; recursos só podem ser adicionados a temas de diretório",
@@ -445,6 +446,8 @@
   "search.dialog.query.label": "Termo de pesquisa",
   "search.dialog.query.placeholder": "Digite o termo de pesquisa…",
   "search.dialog.regex.label": "Expressão regular",
+  "search.dialog.scope.filtered": "Arquivos filtrados",
+  "search.dialog.scope.filteredUnavailable": "Primeiro informe um termo (pelo menos 2 caracteres) no filtro de arquivos",
   "search.dialog.scope.folder": "Esta pasta ({name})",
   "search.dialog.scope.label": "Escopo",
   "search.dialog.scope.openTabs": "Todos os arquivos abertos",
@@ -476,6 +479,8 @@
     "one": "{count} arquivo",
     "other": "{count} arquivos"
   },
+  "search.status.filteredCapped": " — pesquisados apenas os primeiros {max} arquivos filtrados",
+  "search.status.filteredTime": " — busca do filtro interrompida, pesquisada só parte dos arquivos filtrados",
   "search.status.hitStale": "Resultado desatualizado",
   "search.status.hitsPart": {
     "many": "{count} resultados",
@@ -483,6 +488,7 @@
     "other": "{count} resultados"
   },
   "search.status.noFiles": "Nenhum arquivo pesquisável no Vault — fixe uma pasta ou inicie a busca clicando com o botão direito em uma pasta",
+  "search.status.noFilteredFiles": "Nenhum arquivo filtrado",
   "search.status.noOpenFiles": "Nenhum arquivo aberto pesquisável",
   "search.status.running": "{hitsPart} em {filesPart} …",
   "search.status.runningSimple": "Buscando…",

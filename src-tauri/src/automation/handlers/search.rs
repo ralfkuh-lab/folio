@@ -16,7 +16,7 @@ use tauri::Manager;
 use crate::automation::context::AutomationContext;
 use crate::automation::error::{json_payload, ApiError, ApiResult};
 use crate::commands::search_cmd::{
-    build_scope_and_options, resolve_include_ignored, snapshot_open_tab_docs,
+    build_scope_and_options, file_list_docs, resolve_include_ignored, snapshot_open_tab_docs,
 };
 use crate::search::{self, FileResult, SearchScopeEx, SearchStats};
 use crate::state::AppState;
@@ -45,6 +45,10 @@ pub(in crate::automation) struct SearchRequest {
     /// OpenTabs-Scope (S4): durchsucht die offenen Tab-Puffer statt des Vaults.
     #[serde(default)]
     open_tabs: bool,
+    /// Dateilisten-Scope („Gefilterte Dateien“): absolute Pfade, höchstens
+    /// so viele wie der Vault-Filter-Deckel; schließt `scope`/`openTabs` aus.
+    #[serde(default)]
+    files: Option<Vec<String>>,
     /// Auch versteckte Einträge (Dot-Namen) durchsuchen (Default aus).
     #[serde(default)]
     include_hidden: bool,
@@ -70,11 +74,12 @@ pub(in crate::automation) async fn post_search(
     let Json(request) = json_payload(payload)?;
     let state = context.app_handle.state::<AppState>();
 
-    // Grenz-Validierung synchron → 400 (openTabs+scope-Konflikt, unbekannter
-    // Filter, leere Custom-Liste, verbotene Endungszeichen).
+    // Grenz-Validierung synchron → 400 (Scope-Konflikt, ungültige Dateiliste,
+    // unbekannter Filter, leere Custom-Liste, verbotene Endungszeichen).
     let (scope_ex, options) = build_scope_and_options(
         request.scope,
         request.open_tabs,
+        request.files,
         request.case_sensitive,
         request.whole_word,
         request.regex,
@@ -95,6 +100,7 @@ pub(in crate::automation) async fn post_search(
         SearchScopeEx::OpenTabs => {
             Work::Buffers(snapshot_open_tab_docs(state.inner()).map_err(ApiError::internal)?)
         }
+        SearchScopeEx::Files(files) => Work::Buffers(file_list_docs(files)),
         SearchScopeEx::Vault | SearchScopeEx::Folder(_) => {
             let scope = match scope_ex {
                 SearchScopeEx::Folder(path) => Some(path),

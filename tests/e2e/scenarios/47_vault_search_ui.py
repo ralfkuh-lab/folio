@@ -18,6 +18,9 @@ Deckt ab:
   (MutationObserver-Beleg + End-Zustands-Check).
 - Sprung ohne Save-Prompt bei dirty Tab (OpenTabs-Scope): dirty bleibt dirty,
   kein `#unsaved-dialog`.
+- Scope „Gefilterte Dateien" (Referenzfaelle R1–R8): Filtermenge aus dem
+  Vault-Filter (Query, Bereich, `.md`, `.*`, `vaultShowHidden`), Dialog-
+  Dateityp als Schnittmenge, Option deaktiviert bei 1-Zeichen-Query.
 
 Statt fester Sleeps wird auf DOM-/State-Bedingungen gepollt; vor Screenshots
 laeuft /sync/render.
@@ -25,6 +28,7 @@ laeuft /sync/render.
 
 import json
 import os
+import shutil
 import sys
 import tempfile
 import time
@@ -137,6 +141,86 @@ def _summary_text(ctx):
     )
 
 
+def _click_id(ctx, el_id):
+    ctx.api.eval(
+        "document.getElementById(%s)"
+        ".dispatchEvent(new MouseEvent('click',{bubbles:true}))" % json.dumps(el_id)
+    )
+
+
+def _set_filter_query(ctx, query):
+    js = (
+        "(function(){var el=document.getElementById('vault-filter-input');"
+        "if(!el)return false;el.value=%s;"
+        "el.dispatchEvent(new Event('input',{bubbles:true}));return true;})()"
+        % json.dumps(query)
+    )
+    ctx.expect(_evalv(ctx, js) is True, "Filter-Input nicht gesetzt")
+    # Filter-Input ist 150 ms entprellt; der Suchscope liest die committed
+    # Query. Kein DOM-Signal dafuer (Bereich + .md ist auch mit alter Query
+    # waehlbar) → Entprellung sicher abwarten.
+    time.sleep(0.4)
+
+
+def _chip_pressed(ctx, el_id):
+    return _evalv(
+        ctx,
+        "document.getElementById(%s).getAttribute('aria-pressed')" % json.dumps(el_id),
+    ) == "true"
+
+
+def _toggle_chip(ctx, el_id, on):
+    if _chip_pressed(ctx, el_id) != on:
+        _click_id(ctx, el_id)
+    ctx.expect(
+        _poll(ctx, lambda: _chip_pressed(ctx, el_id) == on) is True,
+        f"Chip {el_id} nicht {'an' if on else 'aus'}",
+    )
+
+
+def _filtered_radio_disabled(ctx):
+    return _evalv(
+        ctx,
+        "document.querySelector('input[name=\"vsd-scope\"][value=\"filtered\"]').disabled",
+    )
+
+
+def _filtered_names(ctx, file_filter="allText"):
+    """Sucht `TODO` im Scope „Gefilterte Dateien" und liefert die Dateinamen
+    der Treffergruppen. Vorher wird der Suchmodus verlassen (Status leer),
+    damit das Ende genau dieses Laufs erkennbar ist."""
+    _click_id(ctx, "vault-search-exit")
+    # Der Filter-Input ist 150 ms entprellt und die Verfuegbarkeit wird beim
+    # Oeffnen bestimmt: Dialog (idempotent) neu befuellen, bis waehlbar.
+    ctx.expect(
+        _poll(
+            ctx,
+            lambda: _open_dialog_via_summary(ctx) is True
+            and _filtered_radio_disabled(ctx) is False,
+        )
+        is True,
+        "Option 'Gefilterte Dateien' bleibt deaktiviert",
+    )
+    _fill_and_submit(ctx, "TODO", file_filter=file_filter, scope="filtered")
+    ctx.expect(_wait_dialog_closed(ctx) is True, "Dialog blieb nach Submit offen")
+
+    def done():
+        st = _evalv(
+            ctx,
+            "(function(){var s=document.getElementById('vault-search-status');"
+            "return {text:s.textContent,running:s.classList.contains('vs-running')};})()",
+        )
+        return bool(st and st.get("text") and not st.get("running"))
+
+    ctx.expect(_poll(ctx, done) is True, "Suchlauf wurde nicht fertig")
+    names = _evalv(
+        ctx,
+        "Array.from(document.querySelectorAll('#vault-search-list .vs-fname'))"
+        ".map(function(e){return e.textContent;})",
+    )
+    return sorted(names or [])
+
+
 def run(ctx):
     initial = ctx.api.state().get("file")
     with tempfile.TemporaryDirectory() as td:
@@ -154,6 +238,8 @@ def run(ctx):
             )
 
         pinned = False
+        r_pinned = False
+        r_td = None
         try:
             with ctx.step("close_all + notes.md im Edit-Mode + pin fixture dir"):
                 ctx.api.tabs_close_all()
@@ -608,6 +694,89 @@ def run(ctx):
                     f"inner.md={_group_hits(ctx, 'inner.md')}",
                 )
 
+            # --- Scope „Gefilterte Dateien" (Referenzfaelle R1–R8) ----------
+            # Eigener Pin `R`; die Filtermenge kommt aus dem Vault-Filter
+            # (volle Treffermenge, unabhaengig vom gerenderten Baum).
+            with ctx.step("Gefilterte Dateien: Fixture R pinnen, Filter setzen"):
+                r_td = tempfile.mkdtemp(prefix="folio-e2e-filtered-")
+                r = r_td.replace("\\", "/")
+                for rel, text in (
+                    ("notes/spec-a.md", "TODO alpha"),
+                    ("notes/other.md", "TODO beta"),
+                    (".herd/spec-b.md", "TODO gamma"),
+                    ("deep/x/spec-c.txt", "TODO delta"),
+                ):
+                    _write(os.path.join(r_td, *rel.split("/")), text)
+                ctx.api.settings_set({"vaultShowHidden": True})
+                ctx.api.workspace_pin(r_td, is_directory=True)
+                r_pinned = True
+                if _evalv(ctx, "document.getElementById('vault-filter').hidden") is True:
+                    _click_id(ctx, "vault-filter-toggle")
+                for chip in ("vault-filter-md", "vault-filter-git",
+                             "vault-filter-deep", "vault-filter-hidden"):
+                    _toggle_chip(ctx, chip, False)
+                _set_filter_query(ctx, "spec")
+
+            with ctx.step("R1: Query spec → spec-a.md + spec-c.txt (deep/ zugeklappt)"):
+                got = _filtered_names(ctx)
+                ctx.expect(got == ["spec-a.md", "spec-c.txt"], f"R1: {got}")
+                deep_open = _evalv(
+                    ctx,
+                    "(function(){var c=document.querySelector("
+                    + json.dumps(f'#vault-tree li.node[data-path="{r}/deep"] > .row > .caret')
+                    + ");return !!c&&c.classList.contains('open');})()",
+                )
+                ctx.expect(deep_open is False, "deep/ wurde aufgeklappt")
+                summary = _evalv(
+                    ctx, "document.getElementById('vault-search-summary-opts').textContent"
+                )
+                ctx.expect("\u25bd 2" in (summary or ""), f"Summary-Glyph: {summary!r}")
+
+            with ctx.step("R2: Chip .* an → zusaetzlich .herd/spec-b.md"):
+                _toggle_chip(ctx, "vault-filter-hidden", True)
+                got = _filtered_names(ctx)
+                ctx.expect(got == ["spec-a.md", "spec-b.md", "spec-c.txt"], f"R2: {got}")
+
+            with ctx.step("R3: Chip .* an, vaultShowHidden aus → wie R1"):
+                ctx.api.settings_set({"vaultShowHidden": False})
+                got = _filtered_names(ctx)
+                ctx.expect(got == ["spec-a.md", "spec-c.txt"], f"R3: {got}")
+                ctx.api.settings_set({"vaultShowHidden": True})
+                _toggle_chip(ctx, "vault-filter-hidden", False)
+
+            with ctx.step("R4: Chip .md an → nur spec-a.md"):
+                _toggle_chip(ctx, "vault-filter-md", True)
+                got = _filtered_names(ctx)
+                ctx.expect(got == ["spec-a.md"], f"R4: {got}")
+                _toggle_chip(ctx, "vault-filter-md", False)
+
+            with ctx.step("R5: Dialog-Dateityp Nur Markdown → nur spec-a.md"):
+                got = _filtered_names(ctx, file_filter="markdown")
+                ctx.expect(got == ["spec-a.md"], f"R5: {got}")
+
+            with ctx.step("R6: Bereich R/deep + Query spec → nur spec-c.txt"):
+                ctx.api.eval("window.__folioVaultFilterInFolder(%s)" % json.dumps(f"{r}/deep"))
+                got = _filtered_names(ctx)
+                ctx.expect(got == ["spec-c.txt"], f"R6: {got}")
+
+            with ctx.step("R7: Bereich R/notes + .md, Query leer → spec-a.md + other.md"):
+                ctx.api.eval("window.__folioVaultFilterInFolder(%s)" % json.dumps(f"{r}/notes"))
+                _set_filter_query(ctx, "")
+                _toggle_chip(ctx, "vault-filter-md", True)
+                got = _filtered_names(ctx)
+                ctx.expect(got == ["other.md", "spec-a.md"], f"R7: {got}")
+                _toggle_chip(ctx, "vault-filter-md", False)
+
+            with ctx.step("R8: Query s ohne Bereich → Option deaktiviert"):
+                ctx.api.eval("window.__folioVaultFilterReset()")
+                _set_filter_query(ctx, "s")
+                ctx.expect(_open_dialog_via_summary(ctx) is True, "Dialog oeffnet nicht")
+                ctx.expect(
+                    _filtered_radio_disabled(ctx) is True,
+                    "Option 'Gefilterte Dateien' bei 1-Zeichen-Query waehlbar",
+                )
+                _click_id(ctx, "vsd-cancel")
+
         finally:
             # Observer + evtl. offenen Dialog aufraeumen.
             try:
@@ -619,6 +788,20 @@ def run(ctx):
                 )
             except Exception:
                 pass
+            try:
+                ctx.api.eval(
+                    "typeof window.__folioVaultFilterReset==='function'"
+                    "&&window.__folioVaultFilterReset()"
+                )
+            except Exception:
+                pass
+            if r_pinned:
+                try:
+                    ctx.api.workspace_unpin(r_td)
+                except Exception:
+                    pass
+            if r_td:
+                shutil.rmtree(r_td, ignore_errors=True)
             if pinned:
                 had_error = sys.exc_info()[0] is not None
                 try:

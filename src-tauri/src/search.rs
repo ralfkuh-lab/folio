@@ -32,6 +32,7 @@ use regex::Regex;
 use serde::Serialize;
 
 use crate::file_kind::{classify, FileKind};
+use crate::vault_filter::FILTER_MAX_HITS;
 use crate::workspace::PinnedItem;
 
 /// Snippet-Fensterung: Zeilen bis zu dieser UTF-16-Länge werden ungekürzt
@@ -102,6 +103,9 @@ pub enum SearchScopeEx {
     Folder(String),
     /// Alle aktuell offenen Tabs (Editor-Puffer bzw. pending-Pfad von Platte).
     OpenTabs,
+    /// Explizite Dateiliste (Scope „Gefilterte Dateien“): absolute,
+    /// forward-slash-normalisierte Pfade, von Platte gelesen.
+    Files(Vec<String>),
 }
 
 /// Dateityp-Filter (S4). `Markdown` = nur echte Markdown-Dateien, `AllText` =
@@ -214,9 +218,32 @@ pub fn parse_custom_extensions(raw: &str) -> Result<Vec<String>, SearchError> {
 }
 
 /// Baut das erweiterte Scope-Modell aus den flachen Grenz-Argumenten.
-/// `open_tabs=true` **und** ein gesetzter `scope` schließen sich aus
-/// (Client-Fehler).
-pub fn to_scope_ex(scope: Option<String>, open_tabs: bool) -> Result<SearchScopeEx, SearchError> {
+/// `open_tabs=true`, ein gesetzter `scope` und eine `files`-Liste schließen
+/// sich paarweise aus (Client-Fehler). `files` muss aus absoluten Pfaden
+/// bestehen und darf höchstens [`FILTER_MAX_HITS`] Einträge haben (der Deckel
+/// des Vault-Filters, aus dem die Liste stammt); eine leere Liste ist gültig.
+pub fn to_scope_ex(
+    scope: Option<String>,
+    open_tabs: bool,
+    files: Option<Vec<String>>,
+) -> Result<SearchScopeEx, SearchError> {
+    if let Some(files) = files {
+        if open_tabs || scope.is_some() {
+            return Err(SearchError::ScopeConflict);
+        }
+        if files.len() > FILTER_MAX_HITS {
+            return Err(SearchError::TooManyFiles);
+        }
+        let mut out = Vec::with_capacity(files.len());
+        for file in files {
+            let norm = file.replace('\\', "/");
+            if !Path::new(&file).is_absolute() {
+                return Err(SearchError::InvalidScope(norm));
+            }
+            out.push(norm);
+        }
+        return Ok(SearchScopeEx::Files(out));
+    }
     match (open_tabs, scope) {
         (true, Some(_)) => Err(SearchError::ScopeConflict),
         (true, None) => Ok(SearchScopeEx::OpenTabs),
@@ -314,8 +341,10 @@ pub enum SearchError {
     EmptyCustomExtensions,
     /// Unbekannter `fileFilter`-Wert an der Grenze (S4).
     UnknownFileFilter(String),
-    /// OpenTabs-Scope mit gesetztem Ordner-Scope kombiniert (S4).
+    /// Mehrere Scopes kombiniert (OpenTabs, Ordner, Dateiliste; S4).
     ScopeConflict,
+    /// Dateiliste länger als der Vault-Filter-Deckel [`FILTER_MAX_HITS`].
+    TooManyFiles,
 }
 
 impl SearchError {
@@ -332,6 +361,7 @@ impl SearchError {
             Self::EmptyCustomExtensions => ("errors.search.emptyCustomExtensions", None),
             Self::UnknownFileFilter(detail) => ("errors.search.unknownFileFilter", Some(detail)),
             Self::ScopeConflict => ("errors.search.scopeConflict", None),
+            Self::TooManyFiles => ("errors.search.tooManyFiles", None),
         }
     }
 
@@ -360,6 +390,10 @@ impl SearchError {
                 tr.t_args("errors.search.unknownFileFilter", &[("detail", detail)])
             }
             Self::ScopeConflict => tr.t("errors.search.scopeConflict"),
+            Self::TooManyFiles => tr.t_args(
+                "errors.search.tooManyFiles",
+                &[("max", &FILTER_MAX_HITS.to_string())],
+            ),
         }
     }
 
@@ -3606,14 +3640,20 @@ mod tests {
     #[test]
     fn to_scope_ex_rejects_open_tabs_with_folder() {
         assert!(matches!(
-            to_scope_ex(Some("/x".to_string()), true),
+            to_scope_ex(Some("/x".to_string()), true, None),
             Err(SearchError::ScopeConflict)
         ));
-        assert_eq!(SearchScopeEx::OpenTabs, to_scope_ex(None, true).unwrap());
-        assert_eq!(SearchScopeEx::Vault, to_scope_ex(None, false).unwrap());
+        assert_eq!(
+            SearchScopeEx::OpenTabs,
+            to_scope_ex(None, true, None).unwrap()
+        );
+        assert_eq!(
+            SearchScopeEx::Vault,
+            to_scope_ex(None, false, None).unwrap()
+        );
         assert_eq!(
             SearchScopeEx::Folder("/x".to_string()),
-            to_scope_ex(Some("/x".to_string()), false).unwrap()
+            to_scope_ex(Some("/x".to_string()), false, None).unwrap()
         );
     }
 

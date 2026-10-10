@@ -286,8 +286,9 @@
   "errors.search.queryTooShort": "Поисковый запрос должен содержать не менее 2 символов",
   "errors.search.regexWholeWord": "Регулярное выражение нельзя сочетать с поиском по целым словам",
   "errors.search.rootNotFound": "Путь поиска не существует: {detail}",
-  "errors.search.scopeConflict": "Поиск по открытым файлам нельзя сочетать с областью папки",
+  "errors.search.scopeConflict": "Области поиска нельзя сочетать.",
   "errors.search.startFailed": "Не удалось запустить поиск",
+  "errors.search.tooManyFiles": "Слишком много файлов для поиска (не более {max})",
   "errors.search.unknownFileFilter": "Неизвестный фильтр файлов: {detail}",
   "errors.theme.assetDecodeFailed": "Не удалось декодировать байты ресурса: {detail}",
   "errors.theme.assetDirectoryRequired": "Тема в формате папки «{id}» не существует; ресурсы можно добавлять только к темам в формате папки",
@@ -447,6 +448,8 @@
   "search.dialog.query.label": "Поисковый запрос",
   "search.dialog.query.placeholder": "Введите поисковый запрос…",
   "search.dialog.regex.label": "Регулярное выражение",
+  "search.dialog.scope.filtered": "Отфильтрованные файлы",
+  "search.dialog.scope.filteredUnavailable": "Сначала введите запрос (не менее 2 символов) в фильтре файлов",
   "search.dialog.scope.folder": "Эта папка ({name})",
   "search.dialog.scope.label": "Область",
   "search.dialog.scope.openTabs": "Все открытые файлы",
@@ -479,6 +482,8 @@
     "one": "{count} файл",
     "other": "{count} файла"
   },
+  "search.status.filteredCapped": " — просмотрены только первые {max} отфильтрованных файлов",
+  "search.status.filteredTime": " — поиск фильтра прерван, просмотрена только часть отфильтрованных файлов",
   "search.status.hitStale": "Результат устарел",
   "search.status.hitsPart": {
     "few": "{count} совпадения",
@@ -487,6 +492,7 @@
     "other": "{count} совпадения"
   },
   "search.status.noFiles": "В Vault нет доступных для поиска файлов — добавьте папку или запустите поиск из контекстного меню папки",
+  "search.status.noFilteredFiles": "Нет отфильтрованных файлов",
   "search.status.noOpenFiles": "Нет открытых файлов для поиска",
   "search.status.running": "{hitsPart} в {filesPart} …",
   "search.status.runningSimple": "Поиск…",

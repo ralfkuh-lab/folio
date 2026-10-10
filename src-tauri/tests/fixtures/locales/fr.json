@@ -285,8 +285,9 @@
   "errors.search.queryTooShort": "Le terme de recherche doit contenir au moins 2 caractères",
   "errors.search.regexWholeWord": "Impossible de combiner expression régulière et correspondance de mot entier",
   "errors.search.rootNotFound": "Le chemin de recherche n’existe pas : {detail}",
-  "errors.search.scopeConflict": "Impossible de combiner la recherche dans les fichiers ouverts avec une portée de dossier",
+  "errors.search.scopeConflict": "Les portées de recherche ne peuvent pas être combinées.",
   "errors.search.startFailed": "Échec du démarrage de la recherche",
+  "errors.search.tooManyFiles": "Trop de fichiers pour la recherche (au maximum {max})",
   "errors.search.unknownFileFilter": "Filtre de fichier inconnu : {detail}",
   "errors.theme.assetDecodeFailed": "Impossible de décoder les octets de l’asset : {detail}",
   "errors.theme.assetDirectoryRequired": "Le thème de dossier « {id} » n’existe pas ; les assets ne peuvent être ajoutés qu’aux thèmes de dossier",
@@ -445,6 +446,8 @@
   "search.dialog.query.label": "Terme de recherche",
   "search.dialog.query.placeholder": "Saisissez un terme de recherche…",
   "search.dialog.regex.label": "Expression régulière",
+  "search.dialog.scope.filtered": "Fichiers filtrés",
+  "search.dialog.scope.filteredUnavailable": "Saisissez d’abord un terme (au moins 2 caractères) dans le filtre de fichiers",
   "search.dialog.scope.folder": "Ce dossier ({name})",
   "search.dialog.scope.label": "Portée",
   "search.dialog.scope.openTabs": "Tous les fichiers ouverts",
@@ -476,6 +479,8 @@
     "one": "{count} fichier",
     "other": "{count} fichiers"
   },
+  "search.status.filteredCapped": " — seuls les {max} premiers fichiers filtrés ont été parcourus",
+  "search.status.filteredTime": " — recherche du filtre interrompue, seule une partie des fichiers filtrés a été parcourue",
   "search.status.hitStale": "Résultat plus à jour",
   "search.status.hitsPart": {
     "many": "{count} résultats",
@@ -483,6 +488,7 @@
     "other": "{count} résultats"
   },
   "search.status.noFiles": "Aucun fichier consultable dans le coffre — épinglez un dossier ou lancez la recherche via clic droit sur un dossier",
+  "search.status.noFilteredFiles": "Aucun fichier filtré",
   "search.status.noOpenFiles": "Aucun fichier ouvert consultable",
   "search.status.running": "{hitsPart} dans {filesPart} …",
   "search.status.runningSimple": "Recherche en cours …",

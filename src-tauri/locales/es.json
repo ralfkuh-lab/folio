@@ -285,8 +285,9 @@
   "errors.search.queryTooShort": "El término de búsqueda debe tener al menos 2 caracteres",
   "errors.search.regexWholeWord": "No se puede combinar la expresión regular con la coincidencia de palabra completa",
   "errors.search.rootNotFound": "La ruta de búsqueda no existe: {detail}",
-  "errors.search.scopeConflict": "No se puede combinar la búsqueda en archivos abiertos con un ámbito de carpeta",
+  "errors.search.scopeConflict": "Los ámbitos de búsqueda no se pueden combinar.",
   "errors.search.startFailed": "Error al iniciar la búsqueda",
+  "errors.search.tooManyFiles": "Demasiados archivos para la búsqueda (máximo {max})",
   "errors.search.unknownFileFilter": "Filtro de archivos desconocido: {detail}",
   "errors.theme.assetDecodeFailed": "No se pudieron decodificar los bytes del recurso: {detail}",
   "errors.theme.assetDirectoryRequired": "El tema de directorio «{id}» no existe; los recursos solo se pueden adjuntar a temas de directorio",
@@ -445,6 +446,8 @@
   "search.dialog.query.label": "Término de búsqueda",
   "search.dialog.query.placeholder": "Introduce el término de búsqueda…",
   "search.dialog.regex.label": "Expresión regular",
+  "search.dialog.scope.filtered": "Archivos filtrados",
+  "search.dialog.scope.filteredUnavailable": "Primero introduce un término (al menos 2 caracteres) en el filtro de archivos",
   "search.dialog.scope.folder": "Esta carpeta ({name})",
   "search.dialog.scope.label": "Ámbito",
   "search.dialog.scope.openTabs": "Todos los archivos abiertos",
@@ -476,6 +479,8 @@
     "one": "1 archivo",
     "other": "{count} archivos"
   },
+  "search.status.filteredCapped": " — solo se buscó en los primeros {max} archivos filtrados",
+  "search.status.filteredTime": " — búsqueda del filtro interrumpida; solo se buscó en parte de los archivos filtrados",
   "search.status.hitStale": "El resultado ya no está actualizado",
   "search.status.hitsPart": {
     "many": "{count} coincidencias",
@@ -483,6 +488,7 @@
     "other": "{count} coincidencias"
   },
   "search.status.noFiles": "No hay archivos en los que buscar en el Vault; fijar una carpeta o iniciar la búsqueda con el botón derecho sobre una carpeta.",
+  "search.status.noFilteredFiles": "No hay archivos filtrados",
   "search.status.noOpenFiles": "No hay archivos abiertos que se puedan buscar",
   "search.status.running": "{hitsPart} en {filesPart} …",
   "search.status.runningSimple": "Buscando …",
