@@ -186,7 +186,14 @@ Wichtige stabile Selektor-Gruppen:
   `#vault-filter-toggle`, `#vault-filter-md`, `#vault-filter-git`,
   `#vault-filter-deep` (R4-Tiefenfilter), `#vault-filter-scope` mit
   `#vault-filter-scope-name`/`#vault-filter-scope-remove` (R4-Ordnerbereich),
-  `#vault-filter-close`, `#vault-tree-notice`.
+  `#vault-filter-hidden` (`.*`), `#vault-tree-notice`.
+- Volltextsuche im selben Bereich (S9): `#vault-search-input`,
+  `#vault-search-clear`, `#vault-search-case`/`#vault-search-word`/
+  `#vault-search-regex` (`aria-pressed`), `#vault-search-error`,
+  `#vault-search-options-toggle` (Zahnrad, `aria-expanded`) mit dem Popover
+  `#vault-search-options` (`#vault-search-include-ignored`, Radios
+  `name="vault-search-filetype"`, `#vault-search-custom-ext`); Ergebnisse
+  `#vault-search-results`, `#vault-search-status`, `#vault-search-list`.
 
 ## Automation-API
 
@@ -324,7 +331,6 @@ Request:
   "regex": true,
   "fileFilter": "custom",
   "customExtensions": "md, txt, log",
-  "openTabs": false,
   "files": null,
   "includeHidden": false,
   "includeIgnored": false,
@@ -339,15 +345,16 @@ Request:
   rekursiv + angepinnter Einzeldateien; „Zuletzt geöffnet" ist nicht Teil des
   Scopes). Ein nicht existenter Ordner-Scope → HTTP 400. Tote Pins im
   Vault-Scope werden still übersprungen. In der WebView entspricht `scope`
-  dem Ordner-Scope-Chip (Kontextmenü „In diesem Ordner suchen" → `vault/search.ts`);
-  ein relativer/gelöschter Scope liefert im Command-Pfad `InvalidScope`/`RootNotFound`,
-  worauf das Frontend den Chip entfernt und vault-weit weitersucht.
-- `files` (optional): explizite Dateiliste (Scope „Gefilterte Dateien“ der
-  WebView). Jeder Eintrag muss ein **absoluter** Pfad sein (sonst HTTP 400),
+  dem Bereich des Vault-Filters, wenn kein Namensbegriff aktiv ist (Kontextmenü
+  „In diesem Ordner suchen" setzt ihn); ein relativer/gelöschter Scope liefert im
+  Command-Pfad `InvalidScope`/`RootNotFound` (Präfix `scope:`), das Frontend
+  zeigt den Fehler in der Statuszeile.
+- `files` (optional): explizite Dateiliste (in der WebView die Trefferliste
+  des Vault-Filters bei aktivem Namensbegriff). Jeder Eintrag muss ein **absoluter** Pfad sein (sonst HTTP 400),
   höchstens **500** Einträge (= Deckel des Vault-Filters
   `vault_filter::FILTER_MAX_HITS`, sonst HTTP 400); eine leere Liste ist gültig
-  (`stats.filesScanned = 0`). Zusammen mit `scope` oder `openTabs: true` →
-  HTTP 400 (Scope-Konflikt). Gelesen wird von Platte (nicht aus offenen
+  (`stats.filesScanned = 0`). Zusammen mit `scope` → HTTP 400
+  (Scope-Konflikt). Gelesen wird von Platte (nicht aus offenen
   Editor-Puffern); `fileFilter` wirkt als Schnittmenge, nicht existierende oder
   unlesbare Dateien werden übersprungen. `includeHidden`/`includeIgnored`
   haben auf eine Dateiliste keine Wirkung.
@@ -369,12 +376,10 @@ Request:
   die letzte `Path::extension()` (keine Globs). Der Filter **umgeht bewusst die
   `classify()`-Kind-Prüfung** (unbekannte Textendungen wie `.foobar` werden
   suchbar); Schutz bleiben das 2-MiB-Cap + NUL-Sniff (Best-Effort).
-- `openTabs` (optional, Default `false`): durchsucht statt des Vaults die
-  **offenen Tab-Puffer** — geladene textuelle Tabs über ihren Editor-Puffer
-  (auch leer; ein geleerter dirty Puffer fällt NICHT auf den Disk-Inhalt
-  zurück), `pending`/opaque Tabs von Platte. `openTabs=true` **und** ein
-  gesetzter `scope` → **HTTP 400** (Konflikt). Virtuelle Frontend-Tabs
-  (Settings/Theme-Editor/Diff) sind nicht Teil des Backend-Snapshots.
+- Unbekannte Felder werden ignoriert (kein `deny_unknown_fields`). Das gilt
+  auch für das Alt-Feld `openTabs`: der Scope „offene Dateien“ ist seit S9
+  (2026-10-10) entfernt, ein Aufrufer, der es noch sendet, bekommt die
+  normale Vault- bzw. Ordner-Suche (kein 400).
 - `includeHidden` (optional, Default `false`): schaltet im Verzeichnis-Walk
   den hidden-Filter ab (Dot-Einträge). `includeIgnored` (optional): schaltet
   die ignore/gitignore-Gruppe ab (parents, ignore, git_ignore, git_global,
@@ -386,14 +391,14 @@ Request:
   `.git` bleiben per `filter_entry` auch dann draußen (Object-Store/hooks/logs).
   Explizit gepinnte
   Einzeldateien umgehen die Filter ohnehin (und bleiben auch bei Overlap mit
-  einem gepinnten Elternordner in den Roots); OpenTabs-Puffer sind nicht
-  betroffen. Cap/NUL-Sniff/FileFilter bleiben unverändert.
+  einem gepinnten Elternordner in den Roots). Cap/NUL-Sniff/FileFilter
+  bleiben unverändert.
 - `timeoutMs` (optional): Zeitlimit; danach wird der Lauf abgebrochen und
   HTTP 500 geliefert.
 
 Alle Validierungsfehler (zu kurzer Begriff, ungültiges Pattern,
 Regex+WholeWord, unbekannter/leerer Filter, verbotene Endungszeichen,
-`openTabs+scope`) liefern **HTTP 400**; nur das `timeoutMs`-Limit bzw. interne
+`files+scope`, ungültige Dateiliste) liefern **HTTP 400**; nur das `timeoutMs`-Limit bzw. interne
 Fehler liefern 500.
 
 Filter (wie die Vault-Engine): standardmäßig nur `FileKind::Markdown`/`Text`, gitignorierte
@@ -452,13 +457,13 @@ Feldsemantik:
 - Pfade sind Forward-Slash-normalisiert.
 
 Die WebView nutzt für die Live-Suche stattdessen die Tauri-Commands
-`vault_search_start { query, scope?, openTabs?, files?, caseSensitive, wholeWord,
+`vault_search_start { query, scope?, files?, caseSensitive, wholeWord,
 regex?, fileFilter?, customExtensions?, includeHidden?, includeIgnored? } → runId` und
 `vault_search_cancel { runId }` mit den Events `search:hits { runId, files }`
 und `search:done { runId, stats }` (bzw. `{ runId, error }`); die S4-Parameter
 sind optional (Weglassen = altes Verhalten); `files` folgt denselben Regeln wie
 in `POST /search`. Fehlt `includeIgnored`, gilt der
-Wert von `includeHidden`. Der Dialog prüft Felder vorab über
+Wert von `includeHidden`. Das Inhaltsfeld prüft die Eingabe vor jedem Lauf über
 `vault_search_validate { query, caseSensitive, wholeWord, regex?, fileFilter?,
 customExtensions?, includeHidden?, includeIgnored? }`. `POST /search` bündelt den Ablauf synchron für die Tests.
 

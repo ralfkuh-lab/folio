@@ -136,7 +136,7 @@ def run(ctx):
             )
             ctx.api.mode("view")
 
-        with ctx.step("Such-Icon → Dialog mit #tag-Praefill, schliessen"):
+        with ctx.step("Such-Icon → #tag im Inhaltsfeld, Suche laeuft, Escape beendet"):
             pref = _evalv(
                 ctx,
                 """(() => {
@@ -145,41 +145,67 @@ def run(ctx):
                     ) || document.querySelector('#vault-tags-list .vault-tag-search');
                     if (!btn) return { ok: false, reason: 'no-btn' };
                     btn.click();
-                    const dlg = document.getElementById('vault-search-dialog');
-                    const q = document.getElementById('vsd-query');
+                    const bar = document.getElementById('vault-filter');
+                    const q = document.getElementById('vault-search-input');
                     return {
-                        ok: !!(dlg && !dlg.hidden),
+                        ok: !!(bar && !bar.hidden),
                         query: q ? (q.value || '') : '',
                     };
                 })()""",
             )
-            ctx.expect(pref and pref.get("ok") is True, f"Suchdialog nicht offen: {pref!r}")
+            ctx.expect(pref and pref.get("ok") is True, f"Suchbereich nicht offen: {pref!r}")
             q = (pref or {}).get("query") or ""
             ctx.expect(
                 q.startswith("#") and "projekt" in q.lower(),
-                f"Praefill unerwartet: {q!r}",
+                f"Inhaltsfeld unerwartet: {q!r}",
             )
-            try:
-                ctx.api.click("#vsd-cancel")
-            except Exception:
-                _evalv(
-                    ctx,
-                    """(() => {
-                        const c = document.getElementById('vsd-cancel');
-                        if (c) c.click();
-                        return true;
-                    })()""",
-                )
-            closed = _poll(
+            searching = _poll(
                 ctx,
                 lambda: _evalv(
                     ctx,
-                    "!!(document.getElementById('vault-search-dialog')||{}).hidden",
+                    "document.getElementById('vault-region').classList.contains('vault-searching')",
                 )
                 is True,
                 timeout=3.0,
             )
-            ctx.expect(closed is True, "Suchdialog blieb offen")
+            ctx.expect(searching is True, "Tag-Suche startete nicht sofort")
+            _evalv(
+                ctx,
+                """(() => {
+                    const i = document.getElementById('vault-search-input');
+                    i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+                    return true;
+                })()""",
+            )
+            closed = _poll(
+                ctx,
+                lambda: _evalv(
+                    ctx,
+                    "!document.getElementById('vault-region').classList.contains('vault-searching')",
+                )
+                is True,
+                timeout=3.0,
+            )
+            ctx.expect(closed is True, "Suche blieb nach Escape aktiv")
+            # Zweites Escape im leeren Feld schliesst den Bereich wieder —
+            # der folgende Screenshot zeigt den Tag-Browser wie vorher.
+            _evalv(
+                ctx,
+                """(() => {
+                    const i = document.getElementById('vault-search-input');
+                    i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+                    return true;
+                })()""",
+            )
+            ctx.expect(
+                _poll(
+                    ctx,
+                    lambda: _evalv(ctx, "document.getElementById('vault-filter').hidden") is True,
+                    timeout=3.0,
+                )
+                is True,
+                "Bereich blieb nach zweitem Escape offen",
+            )
 
         with ctx.step("Screenshot-Baseline tags"):
             ctx.screenshot("tags_browser")

@@ -93,16 +93,14 @@ pub struct SearchOptions {
 }
 
 /// Erweitertes Scope-Modell (S4). Wird an der Command-/HTTP-Grenze aus den
-/// flachen Argumenten (`scope`, `open_tabs`) gebaut und intern in konkrete
-/// Roots bzw. einen OpenTabs-Snapshot übersetzt.
+/// flachen Argumenten (`scope`, `files`) gebaut und intern in konkrete Roots
+/// bzw. eine Dateiliste übersetzt.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SearchScopeEx {
     /// Gesamter Vault (Union der angepinnten Einträge).
     Vault,
     /// Ein einzelner Ordner (absoluter Pfad), rekursiv.
     Folder(String),
-    /// Alle aktuell offenen Tabs (Editor-Puffer bzw. pending-Pfad von Platte).
-    OpenTabs,
     /// Explizite Dateiliste (Scope „Gefilterte Dateien“): absolute,
     /// forward-slash-normalisierte Pfade, von Platte gelesen.
     Files(Vec<String>),
@@ -126,23 +124,6 @@ pub struct ExtendedSearchOptions {
     pub base: SearchOptions,
     pub regex: bool,
     pub filter: FileFilter,
-}
-
-/// Herkunft des zu durchsuchenden Inhalts eines offenen Tabs.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BufferSource {
-    /// Editor-Puffer (geladener textueller Store) — unabhängig von Textleere.
-    InMemory(String),
-    /// Kein Puffer (pending/opaque Tab) — Inhalt von Platte lesen.
-    OnDisk,
-}
-
-/// Ein zu durchsuchender offener Tab (OpenTabs-Scope). `path` ist bereits
-/// forward-slash-normalisiert.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BufferDoc {
-    pub path: String,
-    pub source: BufferSource,
 }
 
 impl FileFilter {
@@ -218,17 +199,16 @@ pub fn parse_custom_extensions(raw: &str) -> Result<Vec<String>, SearchError> {
 }
 
 /// Baut das erweiterte Scope-Modell aus den flachen Grenz-Argumenten.
-/// `open_tabs=true`, ein gesetzter `scope` und eine `files`-Liste schließen
-/// sich paarweise aus (Client-Fehler). `files` muss aus absoluten Pfaden
+/// Ein gesetzter `scope` und eine `files`-Liste schließen sich aus
+/// (Client-Fehler). `files` muss aus absoluten Pfaden
 /// bestehen und darf höchstens [`FILTER_MAX_HITS`] Einträge haben (der Deckel
 /// des Vault-Filters, aus dem die Liste stammt); eine leere Liste ist gültig.
 pub fn to_scope_ex(
     scope: Option<String>,
-    open_tabs: bool,
     files: Option<Vec<String>>,
 ) -> Result<SearchScopeEx, SearchError> {
     if let Some(files) = files {
-        if open_tabs || scope.is_some() {
+        if scope.is_some() {
             return Err(SearchError::ScopeConflict);
         }
         if files.len() > FILTER_MAX_HITS {
@@ -244,11 +224,9 @@ pub fn to_scope_ex(
         }
         return Ok(SearchScopeEx::Files(out));
     }
-    match (open_tabs, scope) {
-        (true, Some(_)) => Err(SearchError::ScopeConflict),
-        (true, None) => Ok(SearchScopeEx::OpenTabs),
-        (false, Some(path)) => Ok(SearchScopeEx::Folder(path)),
-        (false, None) => Ok(SearchScopeEx::Vault),
+    match scope {
+        Some(path) => Ok(SearchScopeEx::Folder(path)),
+        None => Ok(SearchScopeEx::Vault),
     }
 }
 
@@ -341,7 +319,7 @@ pub enum SearchError {
     EmptyCustomExtensions,
     /// Unbekannter `fileFilter`-Wert an der Grenze (S4).
     UnknownFileFilter(String),
-    /// Mehrere Scopes kombiniert (OpenTabs, Ordner, Dateiliste; S4).
+    /// Ordner-Scope und Dateiliste kombiniert.
     ScopeConflict,
     /// Dateiliste länger als der Vault-Filter-Deckel [`FILTER_MAX_HITS`].
     TooManyFiles,
@@ -866,11 +844,10 @@ fn gate_bytes(bytes: &[u8]) -> ContentGate {
     ContentGate::Ok(String::from_utf8_lossy(bytes).into_owned())
 }
 
-/// Gemeinsames Content-Gate für Disk-Reads **und** In-Memory-Puffer (S4):
-/// Größen-Cap ([`MAX_FILE_SIZE`]) + NUL-Sniff (erste [`NUL_SNIFF_BYTES`]).
-/// `None` = überspringen. Übergröße wird nur bei `count_large` in
-/// [`SearchStats::skipped_large`] gezählt (Voll-Scan-Modus; der Probe-Modus
-/// zählt nicht) — das schließt gecappte Puffer ein.
+/// Content-Gate für Disk-Reads: Größen-Cap ([`MAX_FILE_SIZE`]) + NUL-Sniff
+/// (erste [`NUL_SNIFF_BYTES`]). `None` = überspringen. Übergröße wird nur bei
+/// `count_large` in [`SearchStats::skipped_large`] gezählt (Voll-Scan-Modus;
+/// der Probe-Modus zählt nicht).
 fn inspect_content(bytes: &[u8], stats: &mut SearchStats, count_large: bool) -> Option<String> {
     match gate_bytes(bytes) {
         ContentGate::TooLarge => {
@@ -952,7 +929,7 @@ fn scan_disk(
 /// Durchsucht einen bereits gelesenen/gepufferten Inhalt: aktualisiert `stats`,
 /// streamt bei Treffern über `on_file` und meldet über [`ScanOutcome`], wie der
 /// Aufrufer weiterfahren soll (Cap-/Probe-/Cancel-Logik identisch zu S1).
-/// Gemeinsam genutzt von Disk-Scan und OpenTabs-Puffer-Scan.
+/// Gemeinsam genutzt von Root-Walk und Dateilisten-Scan.
 fn process_content(
     content: &str,
     norm: &str,
@@ -1285,14 +1262,12 @@ pub fn run_search_ex(
     Ok(stats)
 }
 
-/// Durchsucht offene Tab-Puffer (OpenTabs-Scope, S4). Nutzt dieselbe Cap-/
-/// Probe-/Dedup-Maschinerie wie der Root-Lauf; der Inhalt je Dokument kommt aus
-/// dem Editor-Puffer ([`BufferSource::InMemory`], unabhängig von Textleere)
-/// oder von Platte ([`BufferSource::OnDisk`], pending/opaque Tabs). Query-
-/// Validierung roots-frei; das gemeinsame Content-Gate ([`inspect_content`])
-/// gilt auch für Puffer, sodass `skippedLarge` gecappte Puffer mitzählt.
-pub fn run_search_buffers(
-    docs: &[BufferDoc],
+/// Durchsucht eine explizite Dateiliste ([`SearchScopeEx::Files`], Scope
+/// „gefiltert“) sequenziell von Platte. Nutzt dieselbe Cap-/Probe-/Dedup-
+/// Maschinerie wie der Root-Lauf; fehlende/unlesbare Dateien werden
+/// übersprungen. Query-Validierung roots-frei.
+pub fn run_search_files(
+    paths: &[String],
     query: &str,
     options: &ExtendedSearchOptions,
     cancel: &AtomicBool,
@@ -1305,25 +1280,21 @@ pub fn run_search_buffers(
     let mut seen: HashSet<String> = HashSet::new();
     let mut probing = false;
 
-    for doc in docs {
+    for norm in paths {
         if cancel.load(Ordering::Relaxed) {
             break;
         }
-        let path = Path::new(&doc.path);
+        let path = Path::new(norm);
         if !options.filter.accepts(path) {
             continue;
         }
-        if !seen.insert(doc.path.clone()) {
+        if !seen.insert(norm.clone()) {
             continue;
         }
 
         if probing {
             let mut sink = SearchStats::default();
-            let content = match &doc.source {
-                BufferSource::InMemory(text) => inspect_content(text.as_bytes(), &mut sink, false),
-                BufferSource::OnDisk => read_searchable(path, &mut sink, false),
-            };
-            if let Some(content) = content {
+            if let Some(content) = read_searchable(path, &mut sink, false) {
                 if probe_str(&content, &re, cancel) {
                     stats.truncated = true;
                     break;
@@ -1332,14 +1303,10 @@ pub fn run_search_buffers(
             continue;
         }
 
-        let content = match &doc.source {
-            BufferSource::InMemory(text) => inspect_content(text.as_bytes(), &mut stats, true),
-            BufferSource::OnDisk => read_searchable(path, &mut stats, true),
-        };
-        let Some(content) = content else {
+        let Some(content) = read_searchable(path, &mut stats, true) else {
             continue;
         };
-        match process_content(&content, &doc.path, &re, cancel, &mut stats, on_file) {
+        match process_content(&content, norm, &re, cancel, &mut stats, on_file) {
             ScanOutcome::Continue => {}
             ScanOutcome::Probe => probing = true,
             ScanOutcome::Stop | ScanOutcome::Cancelled => break,
@@ -3259,7 +3226,7 @@ mod tests {
         assert_eq!(vec![".hidden.md".to_string()], names(&files));
     }
 
-    // --- S4-Additionen: FileFilter / Regex / OpenTabs-Puffer ----------------
+    // --- S4-Additionen: FileFilter / Regex / Dateiliste -----------------------
 
     fn ext_opts(regex: bool, filter: FileFilter) -> ExtendedSearchOptions {
         ExtendedSearchOptions {
@@ -3280,29 +3247,21 @@ mod tests {
         (files, stats)
     }
 
-    fn collect_buffers(
-        docs: &[BufferDoc],
+    fn collect_files(
+        paths: &[String],
         query: &str,
         o: &ExtendedSearchOptions,
     ) -> (Vec<FileResult>, SearchStats) {
         let cancel = AtomicBool::new(false);
         let mut files: Vec<FileResult> = Vec::new();
-        let stats = run_search_buffers(docs, query, o, &cancel, &mut |f| files.push(f)).unwrap();
+        let stats = run_search_files(paths, query, o, &cancel, &mut |f| files.push(f)).unwrap();
         (files, stats)
     }
 
-    fn buffer_in_memory(path: &Path, text: &str) -> BufferDoc {
-        BufferDoc {
-            path: normalize_path(path),
-            source: BufferSource::InMemory(text.to_string()),
-        }
-    }
-
-    fn buffer_on_disk(path: &Path) -> BufferDoc {
-        BufferDoc {
-            path: normalize_path(path),
-            source: BufferSource::OnDisk,
-        }
+    /// Schreibt `text` nach `path` und liefert den normalisierten Pfad.
+    fn disk_file(path: &Path, text: &str) -> String {
+        fs::write(path, text).unwrap();
+        normalize_path(path)
     }
 
     #[test]
@@ -3504,105 +3463,78 @@ mod tests {
     }
 
     #[test]
-    fn buffers_search_in_memory_and_on_disk() {
+    fn files_list_reads_from_disk() {
         let tmp = TempDir::new().unwrap();
-        let disk = tmp.path().join("disk.md");
-        fs::write(&disk, "needle on disk\n").unwrap();
-        let mem_path = tmp.path().join("buf.md");
-        let docs = vec![
-            buffer_in_memory(&mem_path, "needle in buffer\n"),
-            buffer_on_disk(&disk),
+        let paths = vec![
+            disk_file(&tmp.path().join("a.md"), "needle one\n"),
+            disk_file(&tmp.path().join("b.md"), "needle two\n"),
         ];
         let o = ext_opts(false, FileFilter::AllText);
-        let (files, stats) = collect_buffers(&docs, "needle", &o);
+        let (files, stats) = collect_files(&paths, "needle", &o);
         assert_eq!(2, stats.files_matched);
         assert_eq!(2, files.len());
     }
 
     #[test]
-    fn buffers_empty_in_memory_shadows_disk_content() {
-        // Ein geladener, bewusst geleerter Puffer darf NICHT auf den alten
-        // Disk-Inhalt zurückfallen [Sol-Rev2#1].
+    fn files_list_dedup_by_path() {
         let tmp = TempDir::new().unwrap();
-        let path = tmp.path().join("doc.md");
-        fs::write(&path, "needle on disk only\n").unwrap();
-        let docs = vec![buffer_in_memory(&path, "")];
+        let path = disk_file(&tmp.path().join("dup.md"), "needle one\nneedle two\n");
+        let paths = vec![path.clone(), path];
         let o = ext_opts(false, FileFilter::AllText);
-        let (files, stats) = collect_buffers(&docs, "needle", &o);
-        assert!(files.is_empty());
-        assert_eq!(1, stats.files_scanned);
-        assert_eq!(0, stats.hits);
-    }
-
-    #[test]
-    fn buffers_dedup_by_normalized_path() {
-        let tmp = TempDir::new().unwrap();
-        let path = tmp.path().join("dup.md");
-        let docs = vec![
-            buffer_in_memory(&path, "needle one\nneedle two\n"),
-            buffer_in_memory(&path, "needle three\n"),
-        ];
-        let o = ext_opts(false, FileFilter::AllText);
-        let (files, _) = collect_buffers(&docs, "needle", &o);
+        let (files, stats) = collect_files(&paths, "needle", &o);
         assert_eq!(1, files.len());
-        assert_eq!(2, files[0].hits.len()); // erster Doc gewinnt
+        assert_eq!(2, files[0].hits.len());
+        assert_eq!(1, stats.files_scanned);
     }
 
     #[test]
-    fn buffers_missing_on_disk_pending_is_skipped() {
+    fn files_list_missing_file_is_skipped() {
         let tmp = TempDir::new().unwrap();
-        let missing = tmp.path().join("gone.md");
-        let docs = vec![buffer_on_disk(&missing)];
+        let paths = vec![normalize_path(&tmp.path().join("gone.md"))];
         let o = ext_opts(false, FileFilter::AllText);
-        let (files, stats) = collect_buffers(&docs, "needle", &o);
+        let (files, stats) = collect_files(&paths, "needle", &o);
         assert!(files.is_empty());
         assert_eq!(0, stats.files_scanned);
     }
 
     #[test]
-    fn buffers_oversized_in_memory_counts_skipped_large() {
+    fn files_list_oversized_counts_skipped_large() {
         let tmp = TempDir::new().unwrap();
-        let path = tmp.path().join("huge.md");
         let mut big = String::from("needle\n");
         big.push_str(&"a".repeat(MAX_FILE_SIZE as usize + 10));
-        let docs = vec![buffer_in_memory(&path, &big)];
+        let paths = vec![disk_file(&tmp.path().join("huge.md"), &big)];
         let o = ext_opts(false, FileFilter::AllText);
-        let (files, stats) = collect_buffers(&docs, "needle", &o);
+        let (files, stats) = collect_files(&paths, "needle", &o);
         assert!(files.is_empty());
         assert_eq!(1, stats.skipped_large);
     }
 
     #[test]
-    fn buffers_respect_file_filter() {
+    fn files_list_respects_file_filter() {
         let tmp = TempDir::new().unwrap();
-        let md = tmp.path().join("a.md");
-        let txt = tmp.path().join("b.txt");
-        let docs = vec![
-            buffer_in_memory(&md, "needle\n"),
-            buffer_in_memory(&txt, "needle\n"),
+        let paths = vec![
+            disk_file(&tmp.path().join("a.md"), "needle\n"),
+            disk_file(&tmp.path().join("b.txt"), "needle\n"),
         ];
         let o = ext_opts(false, FileFilter::Markdown);
-        let (files, _) = collect_buffers(&docs, "needle", &o);
+        let (files, _) = collect_files(&paths, "needle", &o);
         assert_eq!(vec!["a.md".to_string()], names(&files));
     }
 
     #[test]
-    fn buffers_global_cap_truncates_with_extra_hit() {
-        // Cap-Parität zum Root-Pfad: 10 Puffer × exakt 50 Treffer-Zeilen =
-        // 500 = MAX_HITS_TOTAL. Ein weiterer Puffer mit echtem Treffer läuft
+    fn files_list_global_cap_truncates_with_extra_hit() {
+        // Cap-Parität zum Root-Pfad: 10 Dateien × exakt 50 Treffer-Zeilen =
+        // 500 = MAX_HITS_TOTAL. Eine weitere Datei mit echtem Treffer läuft
         // in den Probe-Modus und muss `truncated` setzen.
         let tmp = TempDir::new().unwrap();
-        let mut docs = Vec::new();
+        let mut paths = Vec::new();
         for f in 0..10 {
             let body = "aaa\n".repeat(50);
-            docs.push(buffer_in_memory(
-                &tmp.path().join(format!("cap_{f:02}.md")),
-                &body,
-            ));
+            paths.push(disk_file(&tmp.path().join(format!("cap_{f:02}.md")), &body));
         }
-        docs.push(buffer_in_memory(&tmp.path().join("zzz_more.md"), "aaa\n"));
+        paths.push(disk_file(&tmp.path().join("zzz_more.md"), "aaa\n"));
         let o = ext_opts(false, FileFilter::AllText);
-        let (_files, stats) = collect_buffers(&docs, "aaa", &o);
+        let (_files, stats) = collect_files(&paths, "aaa", &o);
         assert_eq!(MAX_HITS_TOTAL, stats.hits);
         assert!(
             stats.truncated,
@@ -3611,25 +3543,22 @@ mod tests {
     }
 
     #[test]
-    fn buffers_probe_mode_ignores_zero_width_only_after_cap() {
+    fn files_list_probe_mode_ignores_zero_width_only_after_cap() {
         // Cap-/Probe-Parität zum Root-Pfad [Sol-Rev2#2]: nach exakt
-        // MAX_HITS_TOTAL ein Puffer, dessen einzige "Treffer" unter `a*`
+        // MAX_HITS_TOTAL eine Datei, deren einzige "Treffer" unter `a*`
         // zero-width sind → `truncated` darf NICHT gesetzt werden.
         let tmp = TempDir::new().unwrap();
-        let mut docs = Vec::new();
+        let mut paths = Vec::new();
         for f in 0..10 {
             let body = "aaa\n".repeat(50);
-            docs.push(buffer_in_memory(
-                &tmp.path().join(format!("cap_{f:02}.md")),
-                &body,
-            ));
+            paths.push(disk_file(&tmp.path().join(format!("cap_{f:02}.md")), &body));
         }
-        docs.push(buffer_in_memory(
+        paths.push(disk_file(
             &tmp.path().join("zzz_zero.md"),
             "no such thing here\n",
         ));
         let o = ext_opts(true, FileFilter::AllText);
-        let (_files, stats) = collect_buffers(&docs, "a*", &o);
+        let (_files, stats) = collect_files(&paths, "a*", &o);
         assert_eq!(MAX_HITS_TOTAL, stats.hits);
         assert!(
             !stats.truncated,
@@ -3638,22 +3567,15 @@ mod tests {
     }
 
     #[test]
-    fn to_scope_ex_rejects_open_tabs_with_folder() {
+    fn to_scope_ex_folder_vault_and_conflict() {
         assert!(matches!(
-            to_scope_ex(Some("/x".to_string()), true, None),
+            to_scope_ex(Some("/x".to_string()), Some(vec!["/x/a.md".to_string()])),
             Err(SearchError::ScopeConflict)
         ));
-        assert_eq!(
-            SearchScopeEx::OpenTabs,
-            to_scope_ex(None, true, None).unwrap()
-        );
-        assert_eq!(
-            SearchScopeEx::Vault,
-            to_scope_ex(None, false, None).unwrap()
-        );
+        assert_eq!(SearchScopeEx::Vault, to_scope_ex(None, None).unwrap());
         assert_eq!(
             SearchScopeEx::Folder("/x".to_string()),
-            to_scope_ex(Some("/x".to_string()), false, None).unwrap()
+            to_scope_ex(Some("/x".to_string()), None).unwrap()
         );
     }
 

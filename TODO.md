@@ -51,17 +51,7 @@ nicht aussagekräftig. Zu testen: Kaltstart, laufende Instanz, beide Werte von
 
 ## Mittlere Priorität
 
-- 🎨 **Such- und Filterbereich zusammenlegen** (beschlossen 2026-10-10,
-  Folgeschritt zum Scope „Gefilterte Dateien“). Der Button „Search in files…“
-  über der Filterzeile entfällt; stattdessen eine gemeinsame Zeile:
-  Namensfilter + Lupe für die Inhaltssuche, immer sichtbar, nur die Chips-Zeile
-  klappt per Funnel weg. Die Lupe öffnet den Suchdialog mit Vorauswahl
-  „Gefilterte Dateien“ bei aktivem Filter, sonst „Gesamter Vault“ (im Dialog
-  umstellbar; Tastenkürzel und Palette gleich). Die Anzeige der letzten Suche
-  (heute im Summary-Button) wird eine kompakte Zeile über den Treffern, nur
-  solange ein Ergebnis existiert (Begriff, Scope, ✕). Vor dem Bau
-  Layout-Varianten als Skizze/Screenshot zur Auswahl vorlegen; Umsetzung durch
-  Opus (Gestaltung).
+- **Suche: git-Chip ohne Namensbegriff ohne Deckel** (aus S9, 2026-10-10). Heute läuft „git ohne Namen“ als Walk mit clientseitigem Schnitt; der globale 500-Treffer-Deckel zählt vor dem Schnitt, in großen Vaults können git-Treffer fehlen. Fix: `find_by_name` (`vault_filter.rs`) mit leerer Query bei aktivem `git` zulassen und darüber `Files` nutzen, oder git-Filter im Suchkern.
 
 - 🔍 **Nur beobachten — Fix ist drin, es fehlt der Beleg am nächsten Mac-Lauf.**
   **E2E `61_hex_view` flaky auf macOS: „Zurück findet den direkten
@@ -448,12 +438,9 @@ nicht aussagekräftig. Zu testen: Kaltstart, laufende Instanz, beide Werte von
 
 ## Niedrige Priorität
 
-- **E2E-Isolation: Szenario 47 lässt den Vault-Suchmodus offen** (gefunden
-  2026-10-09). `lib/reset.py` beendet die Volltextsuche nicht; läuft `66`
-  direkt nach `47`, zeigt sein Screenshot die Ergebnisliste aus 47
-  (Mismatch knapp über 1 %). In der Gesamtreihenfolge fällt es nicht auf, weil
-  49/57 dazwischen liegen. Fix: kanonischer Reset beendet die Suche (Klick auf
-  `#vault-search-exit` bzw. eigener Hook) oder 47 räumt am Ende selbst auf.
+- **Panel-State aufräumen: `search_include_hidden`** wird seit S9 nicht mehr geschrieben (der `.*`-Chip ist die Quelle). Bei der nächsten Panel-State-Bereinigung entfernen.
+
+- **E2E: Monaco-Einfärbung als Timing-Rennen** (Befund S9, 2026-10-10). In Edit-/Split-Aufnahmen färbt Monaco den Markdown-Quelltext je nach Timing ein oder nicht (Grammatik lädt asynchron, `/sync/render` wartet nicht darauf); bleibt heute unter 1 %. Fix: vor dem Screenshot auf die Tokenisierung des Modells warten.
 
 - ✅ **Wikilink-Index-TTL + Fokus-Invalidierung — durch W8 erledigt
   2026-08-19.** Die Entscheidung von 2026-08-13 („bleibt bei 30 s") ist

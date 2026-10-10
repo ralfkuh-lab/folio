@@ -30,7 +30,13 @@ body.vault-hidden .vault-region { display: none; }
   border-bottom: 1px solid var(--border);
 }
 .vault-header .title {
+  /* Titel schrumpft mit Ellipse, die Buttons nie (der Funnel ist der einzige
+     sichtbare Einstieg in Filter und Suche — schmale Rails ab 150 px). */
   flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--rail-accent);
   font-weight: 600;
   font-size: 12px;
@@ -297,132 +303,94 @@ html.theme-dark .vault-region .git-branch--detached {
 }
 
 /* ============================================================
-   Vault-Volltextsuche (Such-Panel) — Etappe S2
+   Vault-Volltextsuche — Inhaltsfeld im Such-/Filterbereich (S9)
    ============================================================ */
-.vault-search {
-  box-sizing: border-box;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--border);
-  background: var(--rail-bg);
-}
-/* Summary + × (S5): Summary füllt die Breite, × erscheint nur im Suchmodus. */
-.vault-search-bar {
+/* Führendes Feld-Icon (Trichter bzw. Lupe) — dekorativ, das Label kommt aus
+   aria-label. */
+.vault-field-icon {
+  position: absolute;
+  left: 7px;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.vault-search-exit {
-  display: none;
-  flex: 0 0 auto;
-  box-sizing: border-box;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg);
+  width: 13px;
+  height: 13px;
   color: var(--rail-fg-muted);
-  font-size: 13px;
-  line-height: 1;
-  cursor: pointer;
+  pointer-events: none;
 }
-.vault-search-exit:hover {
-  border-color: var(--rail-accent);
-  color: var(--rail-fg);
-}
-.vault-region.vault-searching .vault-search-exit { display: inline-flex; align-items: center; justify-content: center; }
-/* Summary-Button (S4): öffnet den Such-Dialog, zeigt Begriff + Options-Glyphen. */
-.vault-search-summary {
+.vault-field-icon svg { width: 13px; height: 13px; }
+.vault-filter-input.has-icon,
+.vault-filter-input.has-icon:placeholder-shown { padding-left: 26px; }
+/* Inhaltsfeld: Lösch-✕ + Aa/ab/Rx rechts im Feld (VS-Code-Stil). */
+.vault-filter-input.vault-search-input { padding-right: 100px; }
+.vault-filter-input.vault-search-input:placeholder-shown { padding-right: 76px; }
+.vault-filter-input.vs-invalid { border-color: var(--danger-fg, #c0392b); }
+.vault-field-tools {
+  position: absolute;
+  right: 2px;
+  top: 2px;
   display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  box-sizing: border-box;
-  height: 26px;
-  padding: 2px 8px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg);
-  color: var(--rail-fg-muted);
-  font-size: 12px;
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
+  gap: 1px;
 }
-.vault-search-summary:hover { border-color: var(--rail-accent); }
-.vault-search-summary:focus-visible {
-  outline: none;
-  border-color: var(--rail-accent);
-}
-.vault-search-summary.has-query { color: var(--rail-fg); }
-.vs-summary-icon {
-  flex: 0 0 auto;
-  font-size: 12px;
-  opacity: 0.8;
-  line-height: 1;
-}
-.vs-summary-text {
-  flex: 1 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.vs-summary-opts {
-  flex: 0 0 auto;
-  display: inline-flex;
-  gap: 3px;
-}
-.vs-summary-opt {
+.vault-field-tools .vault-filter-clear { position: static; transform: none; }
+.vault-field-tools .vault-filter-clear[hidden] { display: none; }
+.vault-filter-chip.vs-toggle {
+  height: 22px;
+  min-width: 24px;
   padding: 0 3px;
-  border-radius: 3px;
-  background: var(--rail-accent);
-  color: #fff;
-  font-size: 9px;
-  font-weight: 600;
-  line-height: 14px;
+  font-size: 10px;
 }
-
-/* Ordner-Scope-Chip (S3) */
-.vault-search-scope { margin-top: 5px; }
-.vs-scope-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  max-width: 100%;
+.vault-filter-chip.vs-toggle:disabled { opacity: 0.4; cursor: default; }
+.vault-filter-chip.vs-toggle-word { text-decoration: underline; text-underline-offset: 2px; }
+/* Validierungsfehler direkt unter den Feldern (role=alert). */
+.vault-search-error {
+  margin-top: 4px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: var(--danger-bg, rgba(220, 53, 69, 0.12));
+  color: var(--danger-fg, #c0392b);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.vault-search-error[hidden] { display: none; }
+html.theme-dark .vault-search-error {
+  background: rgba(220, 53, 69, 0.2);
+  color: #ff8b8b;
+}
+.vault-filter-chip.vs-gear { font-size: 13px; font-weight: 400; }
+.vault-filter-chip.vs-gear[aria-expanded="true"] {
+  color: var(--rail-accent);
+  border-color: var(--rail-accent);
+}
+/* Zahnrad-Popover (natives popover → Top-Layer; Position setzt search.ts). */
+.vs-options-pop {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  width: 250px;
   box-sizing: border-box;
-  padding: 2px 4px 2px 6px;
-  border: 1px solid var(--rail-accent);
-  border-radius: 10px;
-  background: var(--rail-selected-bg);
-  color: var(--rail-selected-fg);
+  padding: 12px;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.28);
+  font-size: 12px;
+}
+.vs-options-pop .vsd-check,
+.vs-options-pop .vsd-radio { font-size: 12px; }
+.vs-options-pop .vsd-group { margin: 10px 0 0; }
+.vs-options-pop .vsd-custom-ext { height: 26px; margin-top: 6px; }
+.vs-options-hint {
+  margin-top: 6px;
+  color: var(--rail-fg-muted);
   font-size: 11px;
 }
-.vs-scope-icon {
-  flex: 0 0 auto;
-  display: inline-flex;
-  width: 12px;
-  height: 12px;
-  color: var(--rail-accent);
-}
-.vs-scope-icon svg { width: 12px; height: 12px; }
-.vs-scope-name {
-  flex: 1 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.vs-scope-x {
-  flex: 0 0 auto;
-  border: none;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  font-size: 13px;
-  line-height: 1;
-  padding: 0 2px;
-  border-radius: 3px;
-}
-.vs-scope-x:hover { background: var(--rail-hover-bg); }
+.vs-options-hint[hidden] { display: none; }
+/* Im Suchmodus gehören Baum-Hinweise und der Tag-Browser nicht zwischen
+   Suchfeld und Trefferliste. */
+.vault-region.vault-searching .vault-tree-notice,
+.vault-region.vault-searching .vault-tags-section { display: none; }
 
 /* Umschalten Tree <-> Ergebnisse */
 .vault-region.vault-searching ul#vault-tree { display: none; }
@@ -636,24 +604,8 @@ html.theme-dark .vs-snippet mark {
 }
 
 /* ============================================================
-   Vault-Suche — Dialog (S4). Baut auf .unsaved-dialog__panel auf
-   (dialogs.css); hier nur die Feld-/Gruppen-Layouts.
+   Formularbausteine des Zahnrad-Popovers (früher Such-Dialog, S4)
    ============================================================ */
-.vault-search-dialog__panel {
-  width: min(420px, 92vw);
-  text-align: left;
-}
-.vsd-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 12px;
-}
-.vsd-field-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--fg);
-}
 .vsd-input {
   box-sizing: border-box;
   width: 100%;
@@ -674,12 +626,6 @@ html.theme-dark .vs-snippet mark {
   opacity: 0.55;
   cursor: default;
 }
-.vsd-checks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 16px;
-  margin-bottom: 12px;
-}
 .vsd-check,
 .vsd-radio {
   display: flex;
@@ -688,11 +634,6 @@ html.theme-dark .vs-snippet mark {
   font-size: 13px;
   color: var(--fg);
   cursor: pointer;
-}
-/* display:flex wuerde das hidden-Attribut sonst aushebeln (Ordner-Zeile
-   erschien als leerer Radio-Button, wenn kein Ordner-Draft aktiv ist). */
-.vsd-radio[hidden] {
-  display: none;
 }
 .vsd-check input:disabled + span,
 .vsd-radio input:disabled + span {
@@ -721,18 +662,6 @@ html.theme-dark .vs-snippet mark {
   height: 28px;
   font-size: 12px;
 }
-.vsd-error {
-  margin-bottom: 12px;
-  padding: 6px 8px;
-  border-radius: 4px;
-  background: var(--danger-bg, rgba(220, 53, 69, 0.12));
-  color: var(--danger-fg, #c0392b);
-  font-size: 12px;
-}
-html.theme-dark .vsd-error {
-  background: rgba(220, 53, 69, 0.2);
-  color: #ff8b8b;
-}
 
 /* ============================================================
    Vault-Tree-Filter (Namensfilter + „nur Markdown") — Etappe F2
@@ -752,20 +681,25 @@ html.theme-dark .vault-header .vault-cmd.filter-active {
   border-bottom: 1px solid var(--border);
   background: var(--rail-bg);
 }
-/* Zwei Zeilen: Namensfeld + Schliessen-✕ oben, Chips darunter. Das Feld
-   nimmt die volle Zeile abzueglich ✕ (26 px) und Gap (4 px), damit die
-   Chips immer umbrechen — so bleibt der Platzhalter auch bei der
-   schmalsten Rail (150 px) lesbar, und die Chip-Zeile passt dort noch. */
-.vault-filter-bar {
+/* S9: Namens- und Inhaltsfeld untereinander; ab ~2×200 px Platz rücken sie
+   per flex-wrap nebeneinander (reines CSS, kein Breakpoint). Darunter die
+   Chip-Zeile mit Zahnrad und Bereich (füllt den Rest der Zeile). */
+.vault-filter-fields {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
   gap: 4px;
 }
 .vault-filter-input-wrap {
   position: relative;
-  flex: 1 1 calc(100% - 30px);
+  flex: 1 1 200px;
   min-width: 0;
+}
+.vault-filter-opts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
 }
 .vault-filter-input {
   width: 100%;
@@ -806,18 +740,21 @@ html.theme-dark .vault-header .vault-cmd.filter-active {
 }
 .vault-tree-notice[hidden] { display: none; }
 
-/* R4-Bereichs-Zeile: eigene Zeile ueber der Filterzeile, volle Breite.
-   📁 + Ordnername (Ellipsis) + ✕ rechts; dezent (Rail-Hintergrund,
-   gedaempftes Icon), damit der Name auch in schmalen Rails lesbar bleibt. */
+/* Bereichs-Chip (R4, seit S9 in der Chip-Zeile): 📁 + Ordnername (Ellipsis)
+   + ✕; füllt den Rest der Zeile, bricht bei zu wenig Platz in eine eigene
+   Zeile um. */
 .vault-filter-scope {
   display: flex;
+  flex: 1 1 0;
   align-items: center;
   gap: 6px;
   box-sizing: border-box;
-  width: 100%;
-  height: 24px;
-  margin: 0 0 4px;
-  padding: 0 2px;
+  min-width: 70px;
+  height: 26px;
+  padding: 0 2px 0 6px;
+  border: 1px solid var(--rail-accent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--rail-accent) 12%, transparent);
   color: var(--rail-fg-muted);
   font: inherit;
   font-size: 11px;
@@ -836,8 +773,8 @@ html.theme-dark .vault-header .vault-cmd.filter-active {
 .vault-filter-scope-remove {
   flex: 0 0 auto;
   box-sizing: border-box;
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border: none;
   border-radius: 3px;
@@ -906,22 +843,7 @@ html.theme-dark .vault-filter-md[aria-pressed="true"] {
   line-height: 1;
   cursor: pointer;
 }
-.vault-filter-close {
-  flex: 0 0 auto;
-  box-sizing: border-box;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: transparent;
-  color: var(--rail-fg-muted);
-  font-size: 12px;
-  line-height: 1;
-  cursor: pointer;
-}
-.vault-filter-clear:hover,
-.vault-filter-close:hover {
+.vault-filter-clear:hover {
   background: var(--rail-hover-bg);
   color: var(--rail-fg);
 }

@@ -1,26 +1,25 @@
-"""UI-Test fuer das Vault-Such-Panel (Etappe S4 — Dialog-first-Flow).
+"""UI-Test fuer die Vault-Volltextsuche im Such-/Filterbereich (S9).
 
-S4 verlagert die Bedienung von der Inline-Zeile in einen modalen Dialog
-(`#vault-search-dialog`, `#vsd-*`-Felder). Der linke Rail zeigt nur noch einen
-Summary-Button (`#vault-search-summary`) + die Ergebnisse. Dieses Szenario ist
-gegen DEN neuen Frontend-Stand geschrieben (nicht die alte Inline-Zeile).
+Der Funnel im Vault-Kopf oeffnet EINEN Bereich: Namensfilter oben,
+Inhaltsfeld `#vault-search-input` darunter (Enter sucht sofort, Umschalter
+Aa/ab/Rx, Zahnrad-Popover). Die Suche durchsucht, was der Filter zeigt —
+ohne Filter den ganzen Vault.
 
 Deckt ab:
-- Dialog oeffnen (Strg+Shift+F-Pfad + Summary-Klick), Felder setzen, Submit,
-  Ergebnis-Rendering (<mark>, Gruppen).
-- Cancel/Reopen: Draft verworfen, committed Lauf/Summary unveraendert.
-- Folder-Draft ueber das Kontextmenue („In diesem Ordner suchen" → Dialog mit
-  Folder-Option) → scoped Ergebnis nach Submit.
-- Regex-Lauf inkl. View-Mode-Sprung (Jump.term = gematchter Text, nicht Pattern).
-- Auto-Collapse ab >10 Treffergruppen; Collapse-All/Expand-All; Nutzer-Override
-  (nicht-streaming: Expand-All setzt Modus expanded).
-- Spinner (`vs-running`): waehrend eines Laufs gesetzt, danach entfernt
-  (MutationObserver-Beleg + End-Zustands-Check).
-- Sprung ohne Save-Prompt bei dirty Tab (OpenTabs-Scope): dirty bleibt dirty,
-  kein `#unsaved-dialog`.
-- Scope „Gefilterte Dateien" (Referenzfaelle R1–R8): Filtermenge aus dem
-  Vault-Filter (Query, Bereich, `.md`, `.*`, `vaultShowHidden`), Dialog-
-  Dateityp als Schnittmenge, Option deaktiviert bei 1-Zeichen-Query.
+- Strg+Shift+F oeffnet den Bereich und fokussiert das Inhaltsfeld; Enter
+  sucht, Ergebnis-Rendering (<mark>, Gruppen), Baum + Tags im Suchmodus weg,
+  Statuszusatz „· Vault"/„· gefiltert".
+- Funnel zu beendet die Suche, Wiederoeffnen zeigt den Begriff, Enter
+  wiederholt (F10); Validierungsfehler am Feld ohne Lauf (F9).
+- Regex-Lauf (Rx) inkl. View-Mode-Sprung (Jump.term = gematchter Text).
+- Auto-Collapse ab >10 Treffergruppen; Collapse-All/Expand-All.
+- Spinner (`vs-running`): waehrend eines Laufs gesetzt, danach entfernt.
+- Kontextmenue „In diesem Ordner suchen" → Bereich + Fokus Inhaltsfeld (F11);
+  Bereich-✕ sucht automatisch vault-weit neu.
+- Zahnrad-Popover: Fokus beim Oeffnen, Escape schliesst und gibt den Fokus
+  ans Zahnrad zurueck, ohne die Suche zu beenden.
+- Suchraum-Referenzfaelle F1–F6 und F8 (automatisches Neu-Suchen nach
+  Filteraenderung).
 
 Statt fester Sleeps wird auf DOM-/State-Bedingungen gepollt; vor Screenshots
 laeuft /sync/render.
@@ -35,7 +34,6 @@ import time
 
 TOKEN = "ZQXKN"        # Basis-/Regex-Token
 MANY = "ZZMANY"        # Auto-Collapse-Token (>10 Dateien)
-DIRTY = "ZZDIRTYBUF"   # nur im Editor-Puffer, nicht auf Platte
 MANY_FILES = 12        # > AUTO_COLLAPSE_THRESHOLD (10)
 
 
@@ -74,71 +72,68 @@ def _group_hits(ctx, fname):
     return _evalv(ctx, js)
 
 
-def _dialog_visible(ctx):
+def _field_value(ctx):
+    return _evalv(ctx, "document.getElementById('vault-search-input').value")
+
+
+def _searching(ctx):
     return _evalv(
-        ctx, "!document.getElementById('vault-search-dialog').hidden"
+        ctx, "document.getElementById('vault-region').classList.contains('vault-searching')"
     ) is True
 
 
-def _open_dialog_via_summary(ctx):
+def _open_area(ctx):
+    """Bereich ueber den Funnel oeffnen (falls zu)."""
+    if _evalv(ctx, "document.getElementById('vault-filter').hidden") is True:
+        _click_id(ctx, "vault-filter-toggle")
+    ctx.expect(
+        _poll(ctx, lambda: _evalv(ctx, "document.getElementById('vault-filter').hidden") is False)
+        is True,
+        "Such-/Filterbereich nicht offen",
+    )
+
+
+def _set_toggle(ctx, el_id, on):
+    pressed = _evalv(
+        ctx, "document.getElementById(%s).getAttribute('aria-pressed')" % json.dumps(el_id)
+    ) == "true"
+    if pressed != on:
+        _click_id(ctx, el_id)
+
+
+def _search(ctx, query):
+    """Inhaltsfeld fuellen + Enter (wie der Nutzer). Der Status wird vorher
+    geleert, damit das Ende genau dieses Laufs erkennbar ist."""
     ctx.api.eval(
-        "document.getElementById('vault-search-summary')"
-        ".dispatchEvent(new MouseEvent('click',{bubbles:true}))"
+        "(function(){var s=document.getElementById('vault-search-status');s.textContent='';"
+        "var i=document.getElementById('vault-search-input');i.value=%s;"
+        "i.dispatchEvent(new Event('input',{bubbles:true}));"
+        "i.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));"
+        "return true;})()" % json.dumps(query)
     )
-    return _poll(ctx, lambda: _dialog_visible(ctx))
 
 
-def _fill_and_submit(
-    ctx,
-    query,
-    case=False,
-    word=False,
-    regex=False,
-    file_filter="allText",
-    custom_ext="",
-    scope="vault",
-):
-    """Setzt die Dialog-Felder direkt (submitDialog liest DOM-Werte live) und
-    loest den Submit-Button aus. change-Events treiben nur die Disable-Logik."""
-    js = (
-        "(function(){"
-        "var q=document.getElementById('vsd-query');q.value=%(q)s;"
-        "var c=document.getElementById('vsd-case');c.checked=%(case)s;"
-        "c.dispatchEvent(new Event('change',{bubbles:true}));"
-        "var r=document.getElementById('vsd-regex');r.checked=%(regex)s;"
-        "r.dispatchEvent(new Event('change',{bubbles:true}));"
-        "var w=document.getElementById('vsd-word');w.checked=%(word)s;"
-        "w.dispatchEvent(new Event('change',{bubbles:true}));"
-        "var fr=document.querySelector('input[name=\"vsd-filter\"][value=%(ff)s]');"
-        "if(fr){fr.checked=true;fr.dispatchEvent(new Event('change',{bubbles:true}));}"
-        "var ext=document.getElementById('vsd-custom-ext');ext.value=%(ext)s;"
-        "var sc=document.querySelector('input[name=\"vsd-scope\"][value=%(scope)s]');"
-        "if(sc){sc.checked=true;sc.dispatchEvent(new Event('change',{bubbles:true}));}"
-        "document.getElementById('vsd-submit')"
-        ".dispatchEvent(new MouseEvent('click',{bubbles:true}));"
-        "return true;})()"
-    ) % {
-        "q": json.dumps(query),
-        "case": "true" if case else "false",
-        "regex": "true" if regex else "false",
-        "word": "true" if word else "false",
-        "ff": json.dumps(file_filter),
-        "ext": json.dumps(custom_ext),
-        "scope": json.dumps(scope),
-    }
-    ctx.api.eval(js)
+def _wait_done(ctx):
+    def done():
+        st = _evalv(
+            ctx,
+            "(function(){var s=document.getElementById('vault-search-status');"
+            "return {text:s.textContent,running:s.classList.contains('vs-running')};})()",
+        )
+        return st if (st and st.get("text") and not st.get("running")) else None
+
+    st = _poll(ctx, done)
+    ctx.expect(bool(st), "Suchlauf wurde nicht fertig")
+    return (st or {}).get("text") or ""
 
 
-def _wait_dialog_closed(ctx):
-    return _poll(ctx, lambda: _dialog_visible(ctx) is False)
-
-
-def _summary_text(ctx):
-    return _evalv(
-        ctx,
-        "(function(){var t=document.getElementById('vault-search-summary-text');"
-        "return t?t.textContent:null;})()",
+def _clear_field(ctx):
+    """Escape im Inhaltsfeld mit Text: leeren + Suche beenden."""
+    ctx.api.eval(
+        "document.getElementById('vault-search-input')"
+        ".dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))"
     )
+    ctx.expect(_poll(ctx, lambda: not _searching(ctx)) is True, "Suche nicht beendet")
 
 
 def _click_id(ctx, el_id):
@@ -178,47 +173,22 @@ def _toggle_chip(ctx, el_id, on):
     )
 
 
-def _filtered_radio_disabled(ctx):
-    return _evalv(
+def _names_under(ctx, root):
+    """Dateinamen der Treffergruppen unterhalb `root` (andere Pins des
+    Testlaufs koennen ebenfalls `TODO` enthalten)."""
+    paths = _evalv(
         ctx,
-        "document.querySelector('input[name=\"vsd-scope\"][value=\"filtered\"]').disabled",
-    )
+        "Array.from(document.querySelectorAll('#vault-search-list .vs-group-head'))"
+        ".map(function(e){return e.title;})",
+    ) or []
+    prefix = root.rstrip("/") + "/"
+    return sorted(p[len(prefix):].split("/")[-1] for p in paths if p.startswith(prefix))
 
 
-def _filtered_names(ctx, file_filter="allText"):
-    """Sucht `TODO` im Scope „Gefilterte Dateien" und liefert die Dateinamen
-    der Treffergruppen. Vorher wird der Suchmodus verlassen (Status leer),
-    damit das Ende genau dieses Laufs erkennbar ist."""
-    _click_id(ctx, "vault-search-exit")
-    # Der Filter-Input ist 150 ms entprellt und die Verfuegbarkeit wird beim
-    # Oeffnen bestimmt: Dialog (idempotent) neu befuellen, bis waehlbar.
-    ctx.expect(
-        _poll(
-            ctx,
-            lambda: _open_dialog_via_summary(ctx) is True
-            and _filtered_radio_disabled(ctx) is False,
-        )
-        is True,
-        "Option 'Gefilterte Dateien' bleibt deaktiviert",
-    )
-    _fill_and_submit(ctx, "TODO", file_filter=file_filter, scope="filtered")
-    ctx.expect(_wait_dialog_closed(ctx) is True, "Dialog blieb nach Submit offen")
-
-    def done():
-        st = _evalv(
-            ctx,
-            "(function(){var s=document.getElementById('vault-search-status');"
-            "return {text:s.textContent,running:s.classList.contains('vs-running')};})()",
-        )
-        return bool(st and st.get("text") and not st.get("running"))
-
-    ctx.expect(_poll(ctx, done) is True, "Suchlauf wurde nicht fertig")
-    names = _evalv(
-        ctx,
-        "Array.from(document.querySelectorAll('#vault-search-list .vs-fname'))"
-        ".map(function(e){return e.textContent;})",
-    )
-    return sorted(names or [])
+def _case(ctx, root, query="TODO"):
+    _search(ctx, query)
+    status = _wait_done(ctx)
+    return _names_under(ctx, root), status
 
 
 def run(ctx):
@@ -248,28 +218,20 @@ def run(ctx):
                 ctx.api.workspace_pin(td, is_directory=True)
                 pinned = True
 
-            with ctx.step("Strg+Shift+F oeffnet den Such-Dialog"):
+            with ctx.step("Strg+Shift+F oeffnet den Bereich, Fokus im Inhaltsfeld"):
                 ctx.api.key("F", {"ctrl": True, "shift": True})
-                opened = _poll(ctx, lambda: _dialog_visible(ctx))
-                ctx.expect(opened is True, "dialog not opened by Ctrl+Shift+F")
-                # Query-Feld fokussiert?
+                ctx.expect(
+                    _poll(ctx, lambda: _evalv(ctx, "document.getElementById('vault-filter').hidden") is False)
+                    is True,
+                    "Bereich nicht durch Ctrl+Shift+F geoeffnet",
+                )
                 focused = _evalv(
                     ctx, "document.activeElement && document.activeElement.id"
                 )
-                ctx.expect(focused == "vsd-query", f"query not focused: {focused}")
+                ctx.expect(focused == "vault-search-input", f"Inhaltsfeld nicht fokussiert: {focused}")
 
-            with ctx.step("Dialog: Query setzen (Screenshot des offenen Dialogs)"):
-                # Query vorbefuellen, damit der Dialog-Screenshot deterministisch ist.
-                ctx.api.eval(
-                    "document.getElementById('vsd-query').value=%s" % json.dumps(TOKEN)
-                )
-
-            ctx.screenshot("47_search_dialog")
-
-            with ctx.step("Submit (Vault, allText) → 3 Gruppen mit <mark>"):
-                _fill_and_submit(ctx, TOKEN, scope="vault")
-                closed = _wait_dialog_closed(ctx)
-                ctx.expect(closed is True, "dialog stayed open after valid submit")
+            with ctx.step("Enter (Vault, allText) → 3 Gruppen mit <mark>"):
+                _search(ctx, TOKEN)
                 got = _poll(
                     ctx,
                     lambda: _group_hits(ctx, "notes.md") == 3
@@ -281,8 +243,8 @@ def run(ctx):
                     f"notes={_group_hits(ctx, 'notes.md')} more={_group_hits(ctx, 'more.md')} "
                     f"inner={_group_hits(ctx, 'inner.md')}",
                 )
-                # Summary spiegelt den committed Begriff.
-                ctx.expect(_summary_text(ctx) == TOKEN, f"summary={_summary_text(ctx)}")
+                status = _wait_done(ctx)
+                ctx.expect("· Vault" in status, f"Statuszusatz fehlt: {status!r}")
                 info = _evalv(
                     ctx,
                     "(function(){var gs=document.querySelectorAll('#vault-search-list .vs-group');"
@@ -290,9 +252,11 @@ def run(ctx):
                     "var mark=g.querySelector('.vs-snippet mark');"
                     "var line=g.querySelector('.vs-line');"
                     "var treeHidden=getComputedStyle(document.getElementById('vault-tree')).display==='none';"
-                    "return {mark:mark?mark.textContent:null,line:line?line.textContent:null,treeHidden:treeHidden};})()",
+                    "var tagsHidden=getComputedStyle(document.getElementById('vault-tags-section')).display==='none';"
+                    "return {mark:mark?mark.textContent:null,line:line?line.textContent:null,treeHidden:treeHidden,tagsHidden:tagsHidden};})()",
                 )
                 ctx.expect(info.get("treeHidden") is True, "tree must be hidden while searching")
+                ctx.expect(info.get("tagsHidden") is True, "Tags-Sektion muss im Suchmodus weg sein")
                 ctx.expect(info.get("mark") == TOKEN, f"mark={info.get('mark')}")
                 ctx.expect(info.get("line") == "2", f"line={info.get('line')}")
 
@@ -431,37 +395,42 @@ def run(ctx):
                     f"order={_fname_order()}",
                 )
 
-            with ctx.step("Cancel/Reopen: Draft verworfen, committed Lauf unveraendert"):
+            with ctx.step("Funnel zu beendet die Suche; Wiederoeffnen + Enter wiederholt (F10)"):
                 groups_before = _count(ctx, "#vault-search-list .vs-group")
-                _open_dialog_via_summary(ctx)
-                # Draft veraendern …
-                ctx.api.eval(
-                    "document.getElementById('vsd-query').value='DRAFTONLY'"
+                _click_id(ctx, "vault-filter-toggle")
+                ctx.expect(_poll(ctx, lambda: not _searching(ctx)) is True, "Suche lief nach Funnel-zu weiter")
+                tree_back = _evalv(
+                    ctx, "getComputedStyle(document.getElementById('vault-tree')).display!=='none'"
                 )
-                # … dann Abbrechen.
-                ctx.api.eval(
-                    "document.getElementById('vsd-cancel')"
-                    ".dispatchEvent(new MouseEvent('click',{bubbles:true}))"
-                )
-                ctx.expect(_wait_dialog_closed(ctx) is True, "cancel did not close dialog")
-                # Committed State unangetastet.
-                ctx.expect(_summary_text(ctx) == TOKEN, f"summary changed: {_summary_text(ctx)}")
+                ctx.expect(tree_back is True, "Baum nach Funnel-zu nicht sichtbar")
+                _open_area(ctx)
+                ctx.expect(_field_value(ctx) == TOKEN, f"Begriff verloren: {_field_value(ctx)!r}")
+                _search(ctx, TOKEN)
+                _wait_done(ctx)
                 ctx.expect(
-                    _count(ctx, "#vault-search-list .vs-group") == groups_before,
-                    "committed results changed after cancel",
+                    _poll(ctx, lambda: _count(ctx, "#vault-search-list .vs-group") == groups_before)
+                    is True,
+                    "Wiederholte Suche liefert andere Gruppen",
                 )
-                # Reopen zeigt wieder den committed Begriff (Draft verworfen).
-                _open_dialog_via_summary(ctx)
-                qv = _evalv(ctx, "document.getElementById('vsd-query').value")
-                ctx.expect(qv == TOKEN, f"draft not discarded on reopen: {qv!r}")
-                ctx.api.eval(
-                    "document.getElementById('vsd-cancel')"
-                    ".dispatchEvent(new MouseEvent('click',{bubbles:true}))"
+
+            with ctx.step("Validierung: 1 Zeichen + Enter → Fehler am Feld, kein Lauf (F9)"):
+                _search(ctx, "Z")
+                err = _poll(
+                    ctx,
+                    lambda: _evalv(
+                        ctx,
+                        "(function(){var e=document.getElementById('vault-search-error');"
+                        "return e&&!e.hidden?e.textContent:null;})()",
+                    ),
                 )
-                _wait_dialog_closed(ctx)
+                ctx.expect(bool(err), "Validierungsfehler nicht sichtbar")
+                ctx.expect(
+                    _evalv(ctx, "document.getElementById('vault-search-input').getAttribute('aria-invalid')")
+                    == "true",
+                    "aria-invalid fehlt",
+                )
 
             with ctx.step("Auto-Collapse ab >10 Gruppen + Spinner-Beleg"):
-                _open_dialog_via_summary(ctx)
                 # MutationObserver: haelt fest, ob vs-running je gesetzt war.
                 ctx.api.eval(
                     "(function(){window.__vsRunSeen=false;"
@@ -472,8 +441,7 @@ def run(ctx):
                     "mo.observe(el,{attributes:true,attributeFilter:['class']});"
                     "window.__vsMo=mo;return true;})()"
                 )
-                _fill_and_submit(ctx, MANY, scope="vault")
-                ctx.expect(_wait_dialog_closed(ctx) is True, "dialog stayed open")
+                _search(ctx, MANY)
                 # Alle 12 Gruppen eingetroffen …
                 all_in = _poll(
                     ctx,
@@ -531,22 +499,15 @@ def run(ctx):
                 ctx.api.tabs_close_all()
                 ctx.api.open(os.path.join(td, "notes.md"), discard=True)
                 ctx.api.mode("view")
-                _open_dialog_via_summary(ctx)
+                # Rx am Feld an (bei aktiver Suche sucht der Wechsel sofort neu —
+                # das folgende Enter ueberholt diesen Lauf).
+                _set_toggle(ctx, "vault-search-regex", True)
                 # Pattern matcht das TOKEN literal (ZQXKN), aber ueber Regex.
-                _fill_and_submit(ctx, "ZQ.KN", regex=True, scope="vault")
-                ctx.expect(_wait_dialog_closed(ctx) is True, "regex submit kept dialog open")
+                _search(ctx, "ZQ.KN")
                 got = _poll(ctx, lambda: _group_hits(ctx, "notes.md") == 3)
                 ctx.expect(got is True, f"regex notes hits={_group_hits(ctx, 'notes.md')}")
-                # Summary zeigt das Regex-Glyph.
-                ctx.expect(
-                    _evalv(
-                        ctx,
-                        "(function(){var o=document.getElementById('vault-search-summary-opts');"
-                        "return o?o.textContent.indexOf('.*')>=0:false;})()",
-                    )
-                    is True,
-                    "regex glyph missing in summary",
-                )
+                word_disabled = _evalv(ctx, "document.getElementById('vault-search-word').disabled")
+                ctx.expect(word_disabled is True, "'ab' bei aktivem Rx nicht deaktiviert")
                 # Ersten Treffer klicken → Find-Bar mit dem gematchten Literal (nicht dem Pattern).
                 ctx.api.eval(
                     "(function(){var gs=document.querySelectorAll('#vault-search-list .vs-group');"
@@ -567,75 +528,19 @@ def run(ctx):
                 ctx.expect(bool(fs), f"regex view-jump term not literal: {find_ok()}")
                 # Find-Bar wieder schliessen, bevor der naechste Schritt laeuft.
                 ctx.api.find_close()
+                _set_toggle(ctx, "vault-search-regex", False)
 
-            with ctx.step("OpenTabs: Sprung im dirty Tab ohne Save-Prompt"):
-                ctx.api.tabs_close_all()
-                ctx.api.open(os.path.join(td, "notes.md"), discard=True)
-                ctx.api.mode("edit")
-                # Puffer dirty machen: Treffer existiert NUR im Editor, nicht auf Platte.
-                ctx.api.editor_text_set("# Dirty\n%s here\nmore\n" % DIRTY)
-                dirty_now = _poll(ctx, lambda: ctx.api.state().get("dirty") is True)
-                ctx.expect(dirty_now is True, "editor not dirty after edit")
-                _open_dialog_via_summary(ctx)
-                _fill_and_submit(ctx, DIRTY, scope="openTabs")
-                ctx.expect(_wait_dialog_closed(ctx) is True, "openTabs submit kept dialog open")
-                found = _poll(ctx, lambda: _group_hits(ctx, "notes.md") == 1)
-                ctx.expect(found is True, f"openTabs buffer hits={_group_hits(ctx, 'notes.md')}")
-                # Treffer klicken → Sprung im aktiven Tab, KEIN openDocument/Reload.
-                ctx.api.eval(
-                    "(function(){var gs=document.querySelectorAll('#vault-search-list .vs-group');"
-                    "for(var i=0;i<gs.length;i++){if(gs[i].querySelector('.vs-fname').textContent==='notes.md'){"
-                    "gs[i].querySelector('.vs-hit').dispatchEvent(new MouseEvent('click',{bubbles:true}));return;}}})()"
-                )
-
-                def jumped_ok():
-                    sel = _evalv(
-                        ctx,
-                        "(function(){if(!window.FolioEditor)return null;"
-                        "var s=window.FolioEditor.getSelection();"
-                        "return window.FolioEditor.getText().substr(s.start,s.length);})()",
-                    )
-                    return sel == DIRTY
-
-                jumped = _poll(ctx, jumped_ok, timeout=6.0)
-                ctx.expect(jumped is True, "jump did not select the dirty-buffer match")
-                # Kein Unsaved-Dialog, Puffer bleibt dirty + Inhalt unveraendert.
-                ctx.expect(
-                    _evalv(
-                        ctx,
-                        "(function(){var d=document.getElementById('unsaved-dialog');"
-                        "return d?!d.hidden:false;})()",
-                    )
-                    is False,
-                    "unsaved-dialog appeared on dirty-tab jump",
-                )
-                ctx.expect(ctx.api.state().get("dirty") is True, "tab lost dirty state after jump")
-                txt = (ctx.api.editor_text_get() or {}).get("text") or ""
-                ctx.expect(DIRTY in txt, f"buffer content changed after jump: {txt!r}")
-
-            with ctx.step("Folder-Draft via Kontextmenue → scoped Submit"):
+            with ctx.step("Kontextmenue In-diesem-Ordner-suchen → Bereich + Fokus, Enter (F11)"):
                 td_norm = td.replace("\\", "/")
                 sub_norm = td_norm + "/sub"
                 sub_sel = '#vault-tree li.node[data-path="%s"]' % sub_norm
-                # Pin-Ordner aufklappen, bis der Unterordner sichtbar ist.
-                # (Suche verlassen, damit der Baum sichtbar ist.)
-                ctx.api.eval(
-                    "document.getElementById('vault-search-list')"
-                    ".dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))"
-                )
-                _poll(
-                    ctx,
-                    lambda: _evalv(
-                        ctx,
-                        "getComputedStyle(document.getElementById('vault-tree')).display!=='none'",
-                    ),
-                )
+                # Suche verlassen (Escape im Feld leert es), damit der Baum sichtbar ist.
+                _clear_field(ctx)
                 ctx.api.click('#vault-tree li.node[data-path="%s"] > .row' % td_norm)
                 appeared = _poll(
                     ctx, lambda: _evalv(ctx, "!!document.querySelector(%s)" % json.dumps(sub_sel))
                 )
                 ctx.expect(appeared is True, "sub-Ordner nicht im Baum aufgetaucht")
-                # Rechtsklick → „In diesem Ordner suchen" oeffnet den Dialog mit Folder-Draft.
                 ctx.api.right_click(sub_sel)
                 _poll(
                     ctx,
@@ -645,28 +550,22 @@ def run(ctx):
                     ),
                 )
                 ctx.api.click("#context-menu .ctx-item[data-act=\"search-folder\"]")
-                ctx.expect(_poll(ctx, lambda: _dialog_visible(ctx)) is True, "dialog not opened from context menu")
-                # Folder-Option sichtbar + vorausgewaehlt.
-                folder_state = _evalv(
-                    ctx,
-                    "(function(){var row=document.getElementById('vsd-scope-folder-row');"
-                    "var r=document.querySelector('input[name=\"vsd-scope\"][value=\"folder\"]');"
-                    "return{rowShown:row?!row.hidden:false,checked:r?r.checked:false};})()",
-                ) or {}
-                ctx.expect(folder_state.get("rowShown") is True, "folder scope row hidden")
-                ctx.expect(folder_state.get("checked") is True, "folder scope not preselected")
-                # Query setzen + submitten (Scope bleibt folder).
-                _fill_and_submit(ctx, TOKEN, scope="folder")
-                ctx.expect(_wait_dialog_closed(ctx) is True, "folder submit kept dialog open")
-                scoped = _poll(
+                state = _poll(
                     ctx,
                     lambda: _evalv(
                         ctx,
-                        "(function(){var n=document.querySelector('#vault-search-scope .vs-scope-name');"
-                        "return n?n.textContent:null;})()",
-                    )
-                    == "sub"
-                    and _group_hits(ctx, "inner.md") == 1
+                        "(function(){var sc=document.getElementById('vault-filter-scope');"
+                        "var n=document.getElementById('vault-filter-scope-name');"
+                        "if(!sc||sc.hidden)return null;"
+                        "return {name:n.textContent,focus:document.activeElement&&document.activeElement.id};})()",
+                    ),
+                ) or {}
+                ctx.expect(state.get("name") == "sub", f"Bereich nicht gesetzt: {state}")
+                ctx.expect(state.get("focus") == "vault-search-input", f"Fokus: {state}")
+                _search(ctx, TOKEN)
+                scoped = _poll(
+                    ctx,
+                    lambda: _group_hits(ctx, "inner.md") == 1
                     and _group_hits(ctx, "notes.md") == -1
                     and _group_hits(ctx, "more.md") == -1,
                 )
@@ -675,14 +574,13 @@ def run(ctx):
                     f"scope inner={_group_hits(ctx, 'inner.md')} "
                     f"notes={_group_hits(ctx, 'notes.md')} more={_group_hits(ctx, 'more.md')}",
                 )
+                status = _wait_done(ctx)
+                ctx.expect("· gefiltert" in status, f"Statuszusatz: {status!r}")
 
             ctx.screenshot("47_folder_scope")
 
-            with ctx.step("Chip-× entfernt den Scope → wieder vault-weit"):
-                ctx.api.eval(
-                    "document.querySelector('#vault-search-scope .vs-scope-x')"
-                    ".dispatchEvent(new MouseEvent('click',{bubbles:true}))"
-                )
+            with ctx.step("Bereich-✕ → automatisch wieder vault-weit (ohne Enter)"):
+                _click_id(ctx, "vault-filter-scope-remove")
                 widened = _poll(
                     ctx,
                     lambda: _group_hits(ctx, "notes.md") == 3
@@ -690,14 +588,46 @@ def run(ctx):
                 )
                 ctx.expect(
                     widened is True,
-                    f"nach Chip-× notes.md={_group_hits(ctx, 'notes.md')} "
+                    f"nach Bereich-✕ notes.md={_group_hits(ctx, 'notes.md')} "
                     f"inner.md={_group_hits(ctx, 'inner.md')}",
                 )
 
-            # --- Scope „Gefilterte Dateien" (Referenzfaelle R1–R8) ----------
-            # Eigener Pin `R`; die Filtermenge kommt aus dem Vault-Filter
-            # (volle Treffermenge, unabhaengig vom gerenderten Baum).
-            with ctx.step("Gefilterte Dateien: Fixture R pinnen, Filter setzen"):
+            with ctx.step("Zahnrad-Popover: oeffnen, Fokus, Escape gibt Fokus ans Zahnrad"):
+                ctx.api.eval("document.getElementById('vault-search-options-toggle').click()")
+                st = _poll(
+                    ctx,
+                    lambda: _evalv(
+                        ctx,
+                        "(function(){var p=document.getElementById('vault-search-options');"
+                        "if(!p.matches(':popover-open'))return null;"
+                        "return {exp:document.getElementById('vault-search-options-toggle').getAttribute('aria-expanded'),"
+                        "focus:document.activeElement&&document.activeElement.id};})()",
+                    ),
+                ) or {}
+                ctx.expect(st.get("exp") == "true", f"aria-expanded: {st}")
+                ctx.expect(st.get("focus") == "vault-search-include-ignored", f"Fokus: {st}")
+                ctx.api.eval(
+                    "document.getElementById('vault-search-include-ignored')"
+                    ".dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))"
+                )
+                closed = _poll(
+                    ctx,
+                    lambda: _evalv(
+                        ctx,
+                        "(function(){var p=document.getElementById('vault-search-options');"
+                        "if(p.matches(':popover-open'))return null;"
+                        "return {focus:document.activeElement&&document.activeElement.id,"
+                        "searching:document.getElementById('vault-region').classList.contains('vault-searching')};})()",
+                    ),
+                ) or {}
+                ctx.expect(closed.get("focus") == "vault-search-options-toggle", f"Fokus: {closed}")
+                ctx.expect(closed.get("searching") is True, "Escape im Popover beendete die Suche")
+                _clear_field(ctx)
+
+            # --- Suchraum aus dem Filter (Referenzfaelle F1–F6, F8) ------------
+            # Eigener Pin `R`; andere Pins koennen ebenfalls `TODO` enthalten,
+            # deshalb zaehlen nur Treffer unterhalb von R.
+            with ctx.step("Suchraum: Fixture R pinnen, Filter auf Defaults"):
                 r_td = tempfile.mkdtemp(prefix="folio-e2e-filtered-")
                 r = r_td.replace("\\", "/")
                 for rel, text in (
@@ -710,81 +640,57 @@ def run(ctx):
                 ctx.api.settings_set({"vaultShowHidden": True})
                 ctx.api.workspace_pin(r_td, is_directory=True)
                 r_pinned = True
-                if _evalv(ctx, "document.getElementById('vault-filter').hidden") is True:
-                    _click_id(ctx, "vault-filter-toggle")
+                _open_area(ctx)
                 for chip in ("vault-filter-md", "vault-filter-git",
                              "vault-filter-deep", "vault-filter-hidden"):
                     _toggle_chip(ctx, chip, False)
+                _set_filter_query(ctx, "")
+
+            with ctx.step("F1: kein Filter → Vault-Walk ohne .herd/, Status „· Vault\""):
+                got, status = _case(ctx, r)
+                ctx.expect(got == ["other.md", "spec-a.md", "spec-c.txt"], f"F1: {got}")
+                ctx.expect("· Vault" in status, f"F1 Status: {status!r}")
+
+            with ctx.step("F8: Name spec tippen → automatisch neu gesucht (ohne Enter)"):
+                ctx.api.eval("document.getElementById('vault-search-status').textContent=''")
                 _set_filter_query(ctx, "spec")
+                status = _wait_done(ctx)
+                got = _names_under(ctx, r)
+                ctx.expect(got == ["spec-a.md", "spec-c.txt"], f"F8/F5: {got}")
+                ctx.expect("· gefiltert" in status, f"F8 Status: {status!r}")
 
-            with ctx.step("R1: Query spec → spec-a.md + spec-c.txt (deep/ zugeklappt)"):
-                got = _filtered_names(ctx)
-                ctx.expect(got == ["spec-a.md", "spec-c.txt"], f"R1: {got}")
-                deep_open = _evalv(
-                    ctx,
-                    "(function(){var c=document.querySelector("
-                    + json.dumps(f'#vault-tree li.node[data-path="{r}/deep"] > .row > .caret')
-                    + ");return !!c&&c.classList.contains('open');})()",
-                )
-                ctx.expect(deep_open is False, "deep/ wurde aufgeklappt")
-                summary = _evalv(
-                    ctx, "document.getElementById('vault-search-summary-opts').textContent"
-                )
-                ctx.expect("\u25bd 2" in (summary or ""), f"Summary-Glyph: {summary!r}")
+            with ctx.step("F6: Name spec + .md → nur spec-a.md"):
+                _toggle_chip(ctx, "vault-filter-md", True)
+                got, _ = _case(ctx, r)
+                ctx.expect(got == ["spec-a.md"], f"F6: {got}")
+                _toggle_chip(ctx, "vault-filter-md", False)
+                _set_filter_query(ctx, "")
 
-            with ctx.step("R2: Chip .* an → zusaetzlich .herd/spec-b.md"):
+            with ctx.step("F2: Chip .* an → alle vier"):
                 _toggle_chip(ctx, "vault-filter-hidden", True)
-                got = _filtered_names(ctx)
-                ctx.expect(got == ["spec-a.md", "spec-b.md", "spec-c.txt"], f"R2: {got}")
-
-            with ctx.step("R3: Chip .* an, vaultShowHidden aus → wie R1"):
-                ctx.api.settings_set({"vaultShowHidden": False})
-                got = _filtered_names(ctx)
-                ctx.expect(got == ["spec-a.md", "spec-c.txt"], f"R3: {got}")
-                ctx.api.settings_set({"vaultShowHidden": True})
+                got, _ = _case(ctx, r)
+                ctx.expect(got == ["other.md", "spec-a.md", "spec-b.md", "spec-c.txt"], f"F2: {got}")
                 _toggle_chip(ctx, "vault-filter-hidden", False)
 
-            with ctx.step("R4: Chip .md an → nur spec-a.md"):
+            with ctx.step("F3: Chip .md an → Walk mit markdown"):
                 _toggle_chip(ctx, "vault-filter-md", True)
-                got = _filtered_names(ctx)
-                ctx.expect(got == ["spec-a.md"], f"R4: {got}")
+                got, _ = _case(ctx, r)
+                ctx.expect(got == ["other.md", "spec-a.md"], f"F3: {got}")
                 _toggle_chip(ctx, "vault-filter-md", False)
 
-            with ctx.step("R5: Dialog-Dateityp Nur Markdown → nur spec-a.md"):
-                got = _filtered_names(ctx, file_filter="markdown")
-                ctx.expect(got == ["spec-a.md"], f"R5: {got}")
-
-            with ctx.step("R6: Bereich R/deep + Query spec → nur spec-c.txt"):
+            with ctx.step("F4: Bereich R/deep ohne Name → spec-c.txt, „· gefiltert\""):
                 ctx.api.eval("window.__folioVaultFilterInFolder(%s)" % json.dumps(f"{r}/deep"))
-                got = _filtered_names(ctx)
-                ctx.expect(got == ["spec-c.txt"], f"R6: {got}")
-
-            with ctx.step("R7: Bereich R/notes + .md, Query leer → spec-a.md + other.md"):
-                ctx.api.eval("window.__folioVaultFilterInFolder(%s)" % json.dumps(f"{r}/notes"))
-                _set_filter_query(ctx, "")
-                _toggle_chip(ctx, "vault-filter-md", True)
-                got = _filtered_names(ctx)
-                ctx.expect(got == ["other.md", "spec-a.md"], f"R7: {got}")
-                _toggle_chip(ctx, "vault-filter-md", False)
-
-            with ctx.step("R8: Query s ohne Bereich → Option deaktiviert"):
-                ctx.api.eval("window.__folioVaultFilterReset()")
-                _set_filter_query(ctx, "s")
-                ctx.expect(_open_dialog_via_summary(ctx) is True, "Dialog oeffnet nicht")
-                ctx.expect(
-                    _filtered_radio_disabled(ctx) is True,
-                    "Option 'Gefilterte Dateien' bei 1-Zeichen-Query waehlbar",
-                )
-                _click_id(ctx, "vsd-cancel")
+                got, status = _case(ctx, r)
+                ctx.expect(got == ["spec-c.txt"], f"F4: {got}")
+                ctx.expect("· gefiltert" in status, f"F4 Status: {status!r}")
+                _clear_field(ctx)
 
         finally:
-            # Observer + evtl. offenen Dialog aufraeumen.
+            # Observer aufraeumen.
             try:
                 ctx.api.eval(
                     "(function(){if(window.__vsMo){window.__vsMo.disconnect();window.__vsMo=null;}"
-                    "var d=document.getElementById('vault-search-dialog');"
-                    "if(d&&!d.hidden){var c=document.getElementById('vsd-cancel');"
-                    "if(c)c.dispatchEvent(new MouseEvent('click',{bubbles:true}));}return true;})()"
+                    "return true;})()"
                 )
             except Exception:
                 pass

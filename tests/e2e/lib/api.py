@@ -301,7 +301,6 @@ class AutomationApi:
         regex: bool = False,
         file_filter: Optional[str] = None,
         custom_extensions: Optional[str] = None,
-        open_tabs: bool = False,
         include_hidden: bool = False,
         include_ignored: Optional[bool] = None,
         timeout_ms: Optional[int] = None,
@@ -319,8 +318,6 @@ class AutomationApi:
             body["fileFilter"] = file_filter
         if custom_extensions is not None:
             body["customExtensions"] = custom_extensions
-        if open_tabs:
-            body["openTabs"] = open_tabs
         if include_hidden:
             body["includeHidden"] = include_hidden
         # None = Feld weglassen (Kompatibilitätstest: ohne includeIgnored gilt

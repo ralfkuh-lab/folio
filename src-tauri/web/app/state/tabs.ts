@@ -52,8 +52,8 @@ export function getActiveTabId(): number | null {
 
 /** Pfad → Tab-ID (Forward-Slash-normalisierter Vergleich, weil das Backend
  *  Vault-/Suchpfade normalisiert liefert). null = kein passender Dokument-Tab.
- *  Genutzt vom OpenTabs-Treffer-Sprung der Vault-Suche, um den dirty Puffer
- *  über tab_activate zu erreichen statt über openDocument neu zu laden. */
+ *  Genutzt vom Git-Diff, um den offenen (ggf. dirty) Puffer zu erreichen statt
+ *  über openDocument neu zu laden. */
 export function findTabIdByPath(path: string): number | null {
     const norm = (path || '').replace(/\\/g, '/');
     const hit = current.tabs.find(function (tab) {

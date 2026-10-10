@@ -9,18 +9,16 @@
 //! Die reine Suchlogik bleibt in `search.rs` (ohne Tauri-/State-Bezug); hier
 //! liegt nur die Verdrahtung mit Workspace-Pins, State-Registry und Events.
 
-use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::search::{
-    self, BufferDoc, BufferSource, ExtendedSearchOptions, FileFilter, FileResult, SearchError,
-    SearchOptions, SearchRoots, SearchScope, SearchScopeEx,
+    self, ExtendedSearchOptions, FileFilter, FileResult, SearchError, SearchOptions, SearchRoots,
+    SearchScope, SearchScopeEx,
 };
 use crate::state::AppState;
-use crate::tab_manager::Tab;
 
 /// Löst den Such-Umfang aus den angepinnten Workspace-Einträgen auf.
 /// `scope` = `Some(pfad)` → Ordner-Scope, `None` → gesamter Vault.
@@ -36,59 +34,6 @@ fn resolve_roots(state: &AppState, scope: Option<String>) -> Result<SearchRoots,
     Ok(search::resolve_search_scope(workspace.pinned(), &scope))
 }
 
-/// Snapshot der offenen Tabs für den OpenTabs-Scope. Lockt **nur** `state.tabs`,
-/// klont pro Tab Pfad (+ ggf. Text) und gibt den Lock vor jeglichem IO/
-/// `spawn_blocking` frei (keine zyklische Lock-Reihenfolge; der O(Puffergröße)-
-/// Klon unter Lock ist bewusst akzeptiert). Geladener textueller Store →
-/// [`BufferSource::InMemory`] (unabhängig von Textleere); opaque Stores →
-/// [`BufferSource::OnDisk`] (via `is_opaque()`, kein Datei-Sniff);
-/// `pending_path`-Tabs → [`BufferSource::OnDisk`]. Dedup über normalisierte
-/// Pfade; leere Container-Tabs fallen raus. Wird von Tauri-Command **und**
-/// Automation-Handler genutzt.
-pub(crate) fn snapshot_open_tab_docs(state: &AppState) -> Result<Vec<BufferDoc>, String> {
-    let tabs = state
-        .tabs
-        .lock()
-        .map_err(|_| "tabs lock poisoned".to_string())?;
-    let mut seen: HashSet<String> = HashSet::new();
-    let mut docs: Vec<BufferDoc> = Vec::new();
-    for tab in tabs.tabs() {
-        let Some(doc) = buffer_doc_for_tab(tab) else {
-            continue; // leerer Container-Tab
-        };
-        if seen.insert(doc.path.clone()) {
-            docs.push(doc);
-        }
-    }
-    Ok(docs)
-}
-
-/// Opaque-/pending-/Textleere-Auswahl für einen einzelnen Tab. Aus
-/// [`snapshot_open_tab_docs`] ausgelagert, damit dieser Kern ohne `AppState`
-/// (der im Unit-Test nicht konstruierbar ist) direkt testbar ist; der Helper
-/// delegiert und ergänzt nur Lock + Pfad-Dedup. Geladener textueller Store →
-/// [`BufferSource::InMemory`] **unabhängig von Textleere** (ein geleerter
-/// Markdown-/Text-Puffer bleibt `InMemory("")` und fällt nicht auf den Disk-
-/// Inhalt zurück); opaque Stores → [`BufferSource::OnDisk`] (via
-/// `is_opaque()`, nicht über Disk-Inhalt oder Endung); `pending_path`-Tabs →
-/// [`BufferSource::OnDisk`]; ein leerer Container-Tab liefert `None`.
-fn buffer_doc_for_tab(tab: &Tab) -> Option<BufferDoc> {
-    if let Some(p) = tab.document_store.path.as_deref() {
-        let norm = p.replace('\\', "/");
-        let store = &tab.document_store;
-        let source = if store.is_opaque() {
-            BufferSource::OnDisk
-        } else {
-            BufferSource::InMemory(store.text.clone())
-        };
-        return Some(BufferDoc { path: norm, source });
-    }
-    tab.pending_path().map(|p| BufferDoc {
-        path: p.replace('\\', "/"),
-        source: BufferSource::OnDisk,
-    })
-}
-
 /// Abwärtskompatibilität der beiden Such-Opt-ins: Ältere Aufrufer (Tauri-Command,
 /// HTTP) kannten nur `includeHidden` — damals schaltete EIN Flag versteckte UND
 /// ignorierte Dateien frei. Fehlt `includeIgnored`, erbt es daher dessen Wert;
@@ -100,13 +45,12 @@ pub(crate) fn resolve_include_ignored(include_hidden: bool, include_ignored: Opt
 /// Baut aus den flachen Grenz-Argumenten das erweiterte Scope-Modell + die
 /// erweiterten Optionen. Geteilt zwischen Tauri-Command und HTTP-Handler
 /// (dort mit der eigenen Fehler-in-400-Abbildung). Fehler sind lokalisierte
-/// [`SearchError`] (Scope-Konflikt zwischen openTabs/scope/files, ungültige
+/// [`SearchError`] (Scope-Konflikt zwischen scope/files, ungültige
 /// Dateiliste, unbekannter Filter, leere Custom-Liste, verbotene
 /// Endungszeichen).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_scope_and_options(
     scope: Option<String>,
-    open_tabs: bool,
     files: Option<Vec<String>>,
     case_sensitive: bool,
     whole_word: bool,
@@ -116,7 +60,7 @@ pub(crate) fn build_scope_and_options(
     include_hidden: bool,
     include_ignored: bool,
 ) -> Result<(SearchScopeEx, ExtendedSearchOptions), SearchError> {
-    let scope_ex = search::to_scope_ex(scope, open_tabs, files)?;
+    let scope_ex = search::to_scope_ex(scope, files)?;
     let filter = FileFilter::from_raw(file_filter, custom_extensions)?;
     let options = ExtendedSearchOptions {
         base: SearchOptions {
@@ -134,20 +78,8 @@ pub(crate) fn build_scope_and_options(
 /// Zu durchsuchendes Ziel eines Laufs.
 enum SearchWork {
     Roots(SearchRoots),
-    Buffers(Vec<BufferDoc>),
-}
-
-/// Dateilisten-Scope („Gefilterte Dateien“) → Puffer-Dokumente von Platte.
-/// Läuft damit über [`search::run_search_buffers`] (Dateityp-Filter, Dedup,
-/// Caps, Content-Gate); fehlende/unlesbare Dateien werden dort übersprungen.
-pub(crate) fn file_list_docs(files: Vec<String>) -> Vec<BufferDoc> {
-    files
-        .into_iter()
-        .map(|path| BufferDoc {
-            path,
-            source: BufferSource::OnDisk,
-        })
-        .collect()
+    /// Dateiliste („gefiltert“), läuft über [`search::run_search_files`].
+    Files(Vec<String>),
 }
 
 /// Startet einen Suchlauf. Liefert die `runId`, über die Events und Cancel
@@ -162,7 +94,6 @@ pub(crate) fn file_list_docs(files: Vec<String>) -> Vec<BufferDoc> {
 pub async fn vault_search_start(
     query: String,
     scope: Option<String>,
-    open_tabs: Option<bool>,
     files: Option<Vec<String>>,
     case_sensitive: bool,
     whole_word: bool,
@@ -174,7 +105,6 @@ pub async fn vault_search_start(
     state: State<'_, AppState>,
     handle: AppHandle,
 ) -> Result<u64, String> {
-    let open_tabs = open_tabs.unwrap_or(false);
     let regex = regex.unwrap_or(false);
     let file_filter = file_filter.unwrap_or_else(|| "allText".to_string());
     let custom_extensions = custom_extensions.unwrap_or_default();
@@ -183,7 +113,6 @@ pub async fn vault_search_start(
 
     let (scope_ex, options) = build_scope_and_options(
         scope,
-        open_tabs,
         files,
         case_sensitive,
         whole_word,
@@ -200,8 +129,7 @@ pub async fn vault_search_start(
     search::validate_query_ex(&query, &options).map_err(|error| error.to_string())?;
 
     let work = match scope_ex {
-        SearchScopeEx::OpenTabs => SearchWork::Buffers(snapshot_open_tab_docs(&state)?),
-        SearchScopeEx::Files(files) => SearchWork::Buffers(file_list_docs(files)),
+        SearchScopeEx::Files(files) => SearchWork::Files(files),
         SearchScopeEx::Vault => SearchWork::Roots(resolve_roots(&state, None)?),
         SearchScopeEx::Folder(path) => {
             let roots = resolve_roots(&state, Some(path))?;
@@ -231,7 +159,6 @@ pub async fn vault_search_start(
     tracing::debug!(
         target: "folio::search",
         run_id,
-        open_tabs,
         case_sensitive,
         whole_word,
         regex,
@@ -259,8 +186,8 @@ pub async fn vault_search_start(
                 // S6: Verzeichnis-Scopes (Vault/Folder) laufen parallel.
                 search::run_search_parallel(roots, &query, &options, &cancel, &mut on_file)
             }
-            SearchWork::Buffers(docs) => {
-                search::run_search_buffers(docs, &query, &options, &cancel, &mut on_file)
+            SearchWork::Files(files) => {
+                search::run_search_files(files, &query, &options, &cancel, &mut on_file)
             }
         };
         match result {
@@ -365,103 +292,8 @@ pub async fn vault_search_cancel(run_id: u64, state: State<'_, AppState>) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tab_manager::TabManager;
     use std::sync::{Arc, Mutex};
     use tauri::Listener;
-
-    // Exerciert den echten Auswahlkern von `snapshot_open_tab_docs` (der Helper
-    // delegiert an `buffer_doc_for_tab`). AppState ist im Unit-Test nicht
-    // konstruierbar; die Tabs werden über die öffentliche TabManager-API gebaut.
-    #[test]
-    fn test_buffer_doc_for_tab_selection_by_filekind_and_pending() {
-        let mut tm = TabManager::new();
-        // Der beim Boot vorhandene erste Tab (id 1) ist ein leerer Container.
-        let empty_id = tm.active().id;
-
-        // Geladener, bewusst geleerter Markdown-Puffer → InMemory("") (darf
-        // NICHT auf den alten Disk-Inhalt zurückfallen).
-        let md_id = tm.add_tab();
-        {
-            let tab = tm.tab_mut(md_id).unwrap();
-            tab.document_store.path = Some("/vault/a.md".to_string());
-            tab.document_store.text = String::new();
-        }
-
-        // Geladener Text-Puffer mit Inhalt → InMemory(text).
-        let txt_id = tm.add_tab();
-        {
-            let tab = tm.tab_mut(txt_id).unwrap();
-            tab.document_store.path = Some("/vault/b.txt".to_string());
-            tab.document_store.text = "hello".to_string();
-        }
-
-        // Session-Restore-Tab (nur pending_path, kein geladener Store) → OnDisk.
-        let pending_id = tm.add_tab();
-        tm.tab_mut(pending_id)
-            .unwrap()
-            .set_pending_path("/vault/c.md".to_string());
-
-        // Opaque/Image-Store → OnDisk via is_opaque(), nicht über Textleere.
-        let img_tmp = tempfile::TempDir::new().unwrap();
-        let img_path = img_tmp.path().join("d.png");
-        std::fs::write(&img_path, b"").unwrap();
-        let img_path = img_path.to_str().unwrap().replace('\\', "/");
-        let img_id = tm.add_tab();
-        {
-            let tab = tm.tab_mut(img_id).unwrap();
-            tab.document_store.load_opaque(&img_path).unwrap();
-        }
-
-        assert_eq!(buffer_doc_for_tab(tm.tab(empty_id).unwrap()), None);
-
-        let md = buffer_doc_for_tab(tm.tab(md_id).unwrap()).unwrap();
-        assert_eq!(md.path, "/vault/a.md");
-        assert_eq!(md.source, BufferSource::InMemory(String::new()));
-
-        let txt = buffer_doc_for_tab(tm.tab(txt_id).unwrap()).unwrap();
-        assert_eq!(txt.path, "/vault/b.txt");
-        assert_eq!(txt.source, BufferSource::InMemory("hello".to_string()));
-
-        let pending = buffer_doc_for_tab(tm.tab(pending_id).unwrap()).unwrap();
-        assert_eq!(pending.path, "/vault/c.md");
-        assert_eq!(pending.source, BufferSource::OnDisk);
-
-        let img = buffer_doc_for_tab(tm.tab(img_id).unwrap()).unwrap();
-        assert_eq!(img.path, img_path);
-        assert_eq!(img.source, BufferSource::OnDisk);
-    }
-
-    #[test]
-    fn test_buffer_doc_for_tab_keeps_dirty_inmemory_when_disk_gone_or_binary() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let path = dir.path().join("untitled");
-        std::fs::write(&path, b"original on disk\n").unwrap();
-        let path_str = path.to_str().unwrap().replace('\\', "/");
-
-        let mut tm = TabManager::new();
-        let id = tm.add_tab();
-        {
-            let tab = tm.tab_mut(id).unwrap();
-            tab.document_store.path = Some(path_str.clone());
-            tab.document_store.text = "dirty buffer content".to_string();
-            tab.document_store.is_dirty = true;
-        }
-
-        std::fs::remove_file(&path).unwrap();
-        let gone = buffer_doc_for_tab(tm.tab(id).unwrap()).unwrap();
-        assert_eq!(gone.path, path_str);
-        assert_eq!(
-            gone.source,
-            BufferSource::InMemory("dirty buffer content".to_string())
-        );
-
-        std::fs::write(&path, b"\0\0\0").unwrap();
-        let replaced = buffer_doc_for_tab(tm.tab(id).unwrap()).unwrap();
-        assert_eq!(
-            replaced.source,
-            BufferSource::InMemory("dirty buffer content".to_string())
-        );
-    }
 
     // Der Persistenz-Command (`set_search_options`) prüft denselben Vertrag wie
     // Suchstart/Submit über `FileFilter::from_raw`. Hier der Kern dieses
@@ -493,10 +325,9 @@ mod tests {
 
     #[test]
     fn build_scope_and_options_forwards_both_flags() {
-        let (_, options) = build_scope_and_options(
-            None, false, None, false, false, false, "allText", "", true, false,
-        )
-        .unwrap();
+        let (_, options) =
+            build_scope_and_options(None, None, false, false, false, "allText", "", true, false)
+                .unwrap();
         assert!(options.base.include_hidden);
         assert!(!options.base.include_ignored);
     }
@@ -555,7 +386,6 @@ mod tests {
     fn run_files(files: Vec<String>, file_filter: &str) -> Result<Vec<String>, SearchError> {
         let (scope_ex, options) = build_scope_and_options(
             None,
-            false,
             Some(files),
             false,
             false,
@@ -570,13 +400,7 @@ mod tests {
         };
         let cancel = AtomicBool::new(false);
         let mut out: Vec<String> = Vec::new();
-        search::run_search_buffers(
-            &file_list_docs(files),
-            "TODO",
-            &options,
-            &cancel,
-            &mut |f| out.push(f.path),
-        )?;
+        search::run_search_files(&files, "TODO", &options, &cancel, &mut |f| out.push(f.path))?;
         out.sort();
         Ok(out)
     }
@@ -634,6 +458,88 @@ mod tests {
         );
     }
 
+    /// Walk-Zweig (kein Namensbegriff, kein git): Vault- bzw. Ordner-Scope
+    /// über die Pins, `.md` → `markdown`, `.*` (UND `vaultShowHidden`) →
+    /// `include_hidden`. Spiegelt die Grenz-Argumente des Frontends.
+    /// `include_ignored` ist hier an: geprüft wird die Hidden-Regel, und die
+    /// Ignore-Gruppe würde sonst die Umgebung des Bauenden einlesen (liegt das
+    /// Temp-Verzeichnis in einem Git-Repo, greift dessen bzw. die globale
+    /// Ignore-Datei — dort steht z. B. `.herd/`).
+    fn search_walk(
+        root: &str,
+        scope: Option<String>,
+        file_filter: &str,
+        hidden: bool,
+    ) -> Vec<String> {
+        let pinned = vec![crate::workspace::PinnedItem {
+            path: root.to_string(),
+            is_directory: true,
+        }];
+        let (scope_ex, options) = build_scope_and_options(
+            scope,
+            None,
+            false,
+            false,
+            false,
+            file_filter,
+            "",
+            hidden,
+            true,
+        )
+        .unwrap();
+        let scope = match scope_ex {
+            SearchScopeEx::Vault => SearchScope::Vault,
+            SearchScopeEx::Folder(path) => SearchScope::Folder(path),
+            SearchScopeEx::Files(_) => panic!("Walk-Scope erwartet"),
+        };
+        let roots = search::resolve_search_scope(&pinned, &scope);
+        let cancel = AtomicBool::new(false);
+        let mut out: Vec<String> = Vec::new();
+        search::run_search_parallel(&roots, "TODO", &options, &cancel, &mut |f| out.push(f.path))
+            .unwrap();
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn walk_scope_reference_cases() {
+        let (_tmp, r) = filtered_fixture();
+        let a = format!("{r}/notes/spec-a.md");
+        let b = format!("{r}/.herd/spec-b.md");
+        let c = format!("{r}/deep/x/spec-c.txt");
+        let other = format!("{r}/notes/other.md");
+        let sorted = |mut v: Vec<String>| {
+            v.sort();
+            v
+        };
+
+        // F1: kein Filter, `.*` aus → alles außer `.herd/`.
+        assert_eq!(
+            sorted(vec![a.clone(), other.clone(), c.clone()]),
+            search_walk(&r, None, "allText", false)
+        );
+        // F2: `.*` an (mit vaultShowHidden) → alle vier.
+        assert_eq!(
+            sorted(vec![a.clone(), b.clone(), other.clone(), c.clone()]),
+            search_walk(&r, None, "allText", true)
+        );
+        // F3: `.md` an → Walk mit `markdown`.
+        assert_eq!(
+            sorted(vec![a.clone(), other.clone()]),
+            search_walk(&r, None, "markdown", false)
+        );
+        // F4: Bereich `R/deep`, kein Name → Folder-Walk.
+        assert_eq!(
+            vec![c.clone()],
+            search_walk(&r, Some(format!("{r}/deep")), "allText", false)
+        );
+        // F11: Bereich `R/notes` → spec-a.md + other.md.
+        assert_eq!(
+            sorted(vec![a.clone(), other.clone()]),
+            search_walk(&r, Some(format!("{r}/notes")), "allText", false)
+        );
+    }
+
     #[test]
     fn filtered_scope_boundary_validation() {
         let (_tmp, r) = filtered_fixture();
@@ -651,7 +557,6 @@ mod tests {
         // Leere Liste: gültig, 0 Dateien.
         let (scope_ex, options) = build_scope_and_options(
             None,
-            false,
             Some(Vec::new()),
             false,
             false,
@@ -664,8 +569,7 @@ mod tests {
         .unwrap();
         assert_eq!(SearchScopeEx::Files(Vec::new()), scope_ex);
         let cancel = AtomicBool::new(false);
-        let stats =
-            search::run_search_buffers(&[], "TODO", &options, &cancel, &mut |_| {}).unwrap();
+        let stats = search::run_search_files(&[], "TODO", &options, &cancel, &mut |_| {}).unwrap();
         assert_eq!(0, stats.files_scanned);
 
         // Relativer Pfad → InvalidScope.
@@ -674,11 +578,10 @@ mod tests {
             Err(SearchError::InvalidScope(_))
         ));
 
-        // files + scope / files + openTabs → ScopeConflict.
-        let build = |scope: Option<String>, open_tabs: bool, files: Vec<String>| {
+        // files + scope → ScopeConflict.
+        let build = |scope: Option<String>, files: Vec<String>| {
             build_scope_and_options(
                 scope,
-                open_tabs,
                 Some(files),
                 false,
                 false,
@@ -690,19 +593,15 @@ mod tests {
             )
         };
         assert!(matches!(
-            build(Some(r.clone()), false, vec![other.clone()]),
-            Err(SearchError::ScopeConflict)
-        ));
-        assert!(matches!(
-            build(None, true, vec![other.clone()]),
+            build(Some(r.clone()), vec![other.clone()]),
             Err(SearchError::ScopeConflict)
         ));
 
         // Deckel des Vault-Filters: 500 ok, 501 → Fehler.
         let many = |n: usize| (0..n).map(|i| format!("{r}/f{i}.md")).collect::<Vec<_>>();
-        assert!(build(None, false, many(crate::vault_filter::FILTER_MAX_HITS)).is_ok());
+        assert!(build(None, many(crate::vault_filter::FILTER_MAX_HITS)).is_ok());
         assert!(matches!(
-            build(None, false, many(crate::vault_filter::FILTER_MAX_HITS + 1)),
+            build(None, many(crate::vault_filter::FILTER_MAX_HITS + 1)),
             Err(SearchError::TooManyFiles)
         ));
 

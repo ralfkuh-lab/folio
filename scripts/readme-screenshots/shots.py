@@ -227,31 +227,29 @@ def vault_search() -> None:
     api.mode("view")
     # Zugeklappt, sonst drueckt der Tag-Browser die Trefferliste aus dem Bild.
     set_tags_expanded(False)
+    # Strg+Umschalt+F oeffnet den Such-/Filterbereich mit Fokus im Inhaltsfeld.
     api.key("F", {"ctrl": True, "shift": True})
-    poll(lambda: ev("!document.getElementById('vault-search-dialog').hidden") is True)
+    poll(lambda: ev("!document.getElementById('vault-filter').hidden") is True)
     ev(
-        "(function(){"
-        "document.getElementById('vsd-query').value='export';"
-        "var fr=document.querySelector('input[name=\"vsd-filter\"][value=\"markdown\"]');"
-        "if(fr){fr.checked=true;fr.dispatchEvent(new Event('change',{bubbles:true}));}"
-        "var sc=document.querySelector('input[name=\"vsd-scope\"][value=\"vault\"]');"
-        "if(sc){sc.checked=true;sc.dispatchEvent(new Event('change',{bubbles:true}));}"
-        "document.getElementById('vsd-submit')"
-        ".dispatchEvent(new MouseEvent('click',{bubbles:true}));return true;})()"
+        "(function(){var i=document.getElementById('vault-search-input');"
+        "i.value='export';i.dispatchEvent(new Event('input',{bubbles:true}));"
+        "i.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));"
+        "return true;})()"
     )
-    poll(lambda: ev("document.getElementById('vault-search-dialog').hidden") is True)
     poll(
         lambda: (ev("document.querySelectorAll('#vault-search-list .vs-hit').length") or 0)
         > 2
     )
     time.sleep(0.4)
     shot("vault-search")
-    # Suchmodus verlassen, damit ein Folgelauf im normalen Baum startet.
-    ev(
-        "(function(){var x=document.getElementById('vault-search-exit');"
-        "if(x&&x.offsetParent)x.dispatchEvent(new MouseEvent('click',{bubbles:true}));})()"
-    )
-    time.sleep(0.3)
+    # Escape leert das Feld (Suche endet), ein zweites schliesst den Bereich —
+    # ein Folgelauf startet im normalen Baum.
+    for _ in range(2):
+        ev(
+            "document.getElementById('vault-search-input')"
+            ".dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))"
+        )
+        time.sleep(0.2)
 
 
 SHOTS = {

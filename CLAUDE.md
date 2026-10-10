@@ -385,13 +385,13 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   Import den Zyklus `tree → context-menu → tree` schlösse.
 - **Vault-Volltextsuche** (`search.rs` + `commands/search_cmd.rs` +
   `automation/handlers/search.rs`; Frontend `vault/search.ts` +
-  `#vault-search`; Spec + Etappen in
+  Inhaltsfeld `#vault-search-input` im Bereich `#vault-filter`; Spec + Etappen in
   [`docs/spec-vault-search.md`](docs/spec-vault-search.md)):
   Backend-Suchkern `run_search`/`run_search_ex` läuft sequenziell über
   `ignore::WalkBuilder`, Verzeichnis-Scopes (Vault/Folder) seit S6 parallel
   über `run_search_parallel` (`build_parallel` + `mpsc`-Consumer, nur der
-  Consumer ruft `on_file`, Completion-Order; OpenTabs-Puffer bleiben
-  sequenziell) (hidden/gitignore-Filter; **zwei getrennte Opt-ins**
+  Consumer ruft `on_file`, Completion-Order; Dateilisten laufen
+  sequenziell über `run_search_files`) (hidden/gitignore-Filter; **zwei getrennte Opt-ins**
   `includeHidden` (Dot-Einträge) und `includeIgnored`
   (ignore/gitignore-Gruppe)). `.git` ist in **jeder** Flag-Kombination
   draußen (Name exakt per `filter_entry`; Walk-Wurzeln/Scopes mit
@@ -417,51 +417,74 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   (`skipped_large`) + NUL-Sniff (8 KiB); Literalsuche escaped `(?i)`/`\b…\b`
   ODER **Regex-Modus** (kein Whole-Word — Rust-`regex` hat keine Lookarounds;
   Zero-Width-Matches werden übersprungen, `probe_has_match` auch im
-  Probe-Modus). **Scope-Modell** `SearchScopeEx { Vault, Folder, OpenTabs }`
+  Probe-Modus). **Scope-Modell** `SearchScopeEx { Vault, Folder, Files }`
   (Grenz-Validierung zentral in `build_scope_and_options`/`to_scope_ex`):
   Vault = Union angepinnter Ordner (rekursiv) + Einzeldateien mit Overlap-Dedup
   (**explizit gepinnte Einzeldateien umgehen hidden/gitignore bewusst**);
-  Folder über Kontextmenü „In diesem Ordner suchen"
-  (`RootNotFound`/`InvalidScope` bei totem/relativem Ordner, `scope:`-Präfix →
-  Frontend-Fallback); OpenTabs durchsucht die offenen Tab-Puffer
-  (`snapshot_open_tab_docs`: geladene Text-Tabs `InMemory` **auch leer** —
-  geleerter Puffer schattet Disk —, `pending`/opaque via `FileKind` `OnDisk`;
-  virtuelle Frontend-Tabs außen vor). Tote Vault-Pins werden STILL verworfen.
+  Folder = Bereich des Filters (`RootNotFound`/`InvalidScope` bei
+  totem/relativem Ordner, mit `scope:`-Präfix); Files = Dateiliste aus dem
+  Filter (`files` schließt `scope` aus → `ScopeConflict`, absolute Pfade, max.
+  `FILTER_MAX_HITS` = 500, sequenziell von Platte über `run_search_files`).
+  Der frühere Scope „offene Dateien“ (OpenTabs/Puffer) ist seit S9 entfernt.
+  Tote Vault-Pins werden STILL verworfen.
   **Caps**: 50 Zeilen-Hits/Datei, 500 gesamt (Probe-Modus, `truncated` nur bei
   realem Wegfall). Spalten/Ranges in **UTF-16-Code-Units**, Snippet ~240.
-  **Frontend = Dialog-first** (`#vault-search-dialog`/`#vsd-*`; der linke Rail
-  zeigt nur Summary-Button `#vault-search-summary` + Ergebnisse): Draft vs.
-  committed strikt getrennt (Submit prüft via `vault_search_validate`, bei
-  OpenTabs zwingend `syncEditorTextToStoreRequired`, committed State ändert
-  sich nur bei gültigem Submit; Abbrechen verwirft nur den Draft, laufender
-  Lauf bleibt). `vault_search_start`→`runId`, Events `search:hits`/`search:done`;
-  Stale-Guard per Generation + `maxRunId`. **Spinner** `vs-running` auf
+  **Frontend (S9) = ein Such-/Filterbereich**: Der Funnel öffnet `#vault-filter`
+  ganz oder gar nicht (`aria-expanded`); oben Namensfilter, darunter das
+  Inhaltsfeld mit den Umschaltern `Aa`/`ab`/`Rx` (`aria-pressed`; Rx
+  deaktiviert ab), darunter die Chips + Zahnrad + Bereichs-Chip; ab ~2×200 px
+  Rail rücken die Felder per `flex-wrap` nebeneinander. **Ein Modell: die
+  Suche durchsucht, was der Filter zeigt, ohne Filter den ganzen Vault** —
+  einzige Quelle `filter.ts::getSearchSpace()`: ohne Namensbegriff (< 2) ein
+  Walk (`Vault` bzw. `Folder(Bereich)`, `.md` → `fileFilter=markdown`, `.*` →
+  `includeHidden` nur zusammen mit `vaultShowHidden`, kein Deckel); mit
+  Namensbegriff `Files` aus `vault_filter_find` nach
+  `whenFilterOptionsPersisted()` (git-Chip → Schnitt mit `isPathGitChanged`;
+  Filter-Deckel `cap`/`time` wird im Status benannt). `git` ohne Namensbegriff
+  = Walk mit clientseitigem git-Schnitt der Treffer (`vault_filter_find`
+  liefert bei leerer Query bewusst nichts; bekannte Grenze: der 500er-Deckel
+  zählt vor dem Schnitt). Der Status hängt „· gefiltert“ (Funnel-Badge-
+  Bedingung) bzw. „· Vault“ an. **Enter** im Inhaltsfeld validiert
+  (`vault_search_validate`, Fehler am Feld `#vault-search-error` +
+  `aria-invalid`, kein Lauf) und sucht sofort; Optionswechsel (Aa/ab/Rx,
+  Popover) suchen bei aktiver Suche sofort neu. **Filteränderung bei aktiver
+  Suche** (Name, Bereich, Chips, `vaultShowHidden`) meldet `filter.ts` per
+  In-Window-Event `folio-vault-filter-changed` (kein Import-Zyklus); die Suche
+  zieht 300 ms entprellt nach. Funnel zu/Reset-Hook beendet die Suche, Begriff
+  und Optionen bleiben. Escape im Inhaltsfeld: Text → leeren + Suche beenden,
+  leer → Bereich schließen; ↓ springt in die Liste. Weitere Optionen
+  (gitignorierte, Dateityp Alle Textdateien/eigene Endungen) im
+  **Zahnrad-Popover** `#vault-search-options` (natives `popover`,
+  Light-Dismiss; Escape schließt + Fokus zurück ans Zahnrad, Weitergabe
+  gestoppt); „Nur Markdown“ gibt es nur als `.md`-Chip (Popover-Dateityp dann
+  deaktiviert mit Hinweis; ein persistierter Altwert `markdown` wird als
+  `allText` gelesen). Im Suchmodus sind Baum, Tag-Browser und
+  `#vault-tree-notice` ausgeblendet. Einstiege: Strg+Umschalt+F, Menü,
+  Palette → `openVaultSearch()` (Bereich auf, Fokus Inhaltsfeld, Text
+  selektiert); Kontextmenü „In diesem Ordner suchen“ → `filterInFolder` +
+  Fokus Inhaltsfeld; Tag-Browser → `#tag` ins Feld und sofort suchen.
+  `vault_search_start`→`runId`, Events `search:hits`/`search:done`;
+  Stale-Guard per Generation (auch nach den Awaits von Options-Write und
+  `vault_filter_find`) + `maxRunId`. **Spinner** `vs-running` auf
   `#vault-search-status` (zentrale `setRunning`, alle Endpfade räumen auf).
   **Auto-Collapse** als Modus `auto|collapsed|expanded`: >10 Treffergruppen →
   einmalig alles einklappen; Collapse-/Expand-All im
   `#vault-search-results-head` setzen den Modus. Sprung korreliert über
-  `folio-doc-kind-changed` + `getCurrentPath()`; OpenTabs-Treffer springen über
-  `findTabIdByPath`+`activateTab` (NICHT `openDocument` → dirty Puffer bleibt),
+  `folio-doc-kind-changed` + `getCurrentPath()`,
   Edit/Split via `FolioEditor.revealMatch`, View-Mode via Find-Bar nach
   Finder-Settle (Regex: `Jump.term` = konkret gematchter Text). `tab_open`
   überspringt `consumeNavRestoreSkip(path)` einmalig. Optionen (Aa/W/Regex/
-  fileFilter/customExtensions roh/`includeHidden`/`includeIgnored`) persistieren in
+  fileFilter/customExtensions roh/`includeIgnored`) persistieren in
   `panel_state.rs` (`search_file_filter` default `allText`,
-  `search_include_hidden`/`search_include_ignored` default aus); Scope + Query flüchtig.
+  `search_include_ignored` default aus; `search_include_hidden` wird nicht mehr
+  geschrieben); Query flüchtig.
   Automation: `POST /search` (synchron, additive Felder `regex`/`fileFilter`/
-  `customExtensions`/`openTabs`/`files`/`includeHidden`/`includeIgnored`; alle Client-Fehler → 400).
-  **Scope „Gefilterte Dateien“** (S8, `SearchScopeEx::Files`): sucht in der
-  vollen Treffermenge des Vault-Filters (wie Tiefenmodus, unabhängig von `**`
-  und gerendertem Baum). Wählbar nur bei Query ≥ 2 oder Bereich + `.md`
-  (`filter.ts::getFilteredSearchSpec`); die Liste wird beim Submit **einmal**
-  über `vault_filter_find` ermittelt (git-Chip → Schnitt mit
-  `isPathGitChanged`) und als Snapshot committed. Backend: `files` schließt
-  `scope`/`openTabs` aus (`ScopeConflict`), absolute Pfade, max.
-  `FILTER_MAX_HITS` (500); gesucht wird von Platte über `run_search_buffers`
-  (`OnDisk`). Hidden/Ignored sind dabei deaktiviert und wirkungslos; ein
-  Filter-Deckel (`cap`/`time`) wird in der Statuszeile benannt.
+  `customExtensions`/`files`/`includeHidden`/`includeIgnored`; alle
+  Client-Fehler → 400; unbekannte Felder wie das Alt-Feld `openTabs` werden
+  ignoriert).
 - **Vault-Tree-Filter (R3, Sicht-Filter)** (Frontend `vault/filter.ts`,
-  Funnel-Button + Filterzeile `#vault-filter`; Spec
+  Funnel-Button + Such-/Filterbereich `#vault-filter` (seit S9 mit dem
+  Inhaltsfeld der Volltextsuche, siehe dort); Spec
   [`docs/spec-vault-filter.md`](docs/spec-vault-filter.md) inkl.
   Revisions-Historie R1→R3): Der Namensfilter ist eine **rein
   clientseitige Sicht über dem echten Lazy-Baum** — kein Backend-Walk,
@@ -476,9 +499,9 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   childList-Mutationen, der Observer-Callback feuert erst als Microtask
   nach dem Guard-Reset; ohne Drain entsteht ein Endlos-Loop (Befund
   Orchestrator-Review 2026-07-21, Churn-Test in
-  `tests/vault/filter.test.ts`). „Schließen = Aufräumen": Zeilen-X
-  (`#vault-filter-close`, immer sichtbar) / Funnel / Escape leeren die
-  Query; Text-Lösch-✕ ist ins Input eingebettet; Funnel-Badge bei jedem
+  `tests/vault/filter.test.ts`). „Schließen = Aufräumen": Funnel / Escape
+  im leeren Feld leeren die Query und schließen den Bereich (das frühere
+  Zeilen-✕ `#vault-filter-close` entfällt seit S9); Text-Lösch-✕ ist ins Input eingebettet; Funnel-Badge bei jedem
   aktiven Filter (Query, md-only, git, Bereich).
   **R4-Tiefenfilter** (Chip `#vault-filter-deep` `**`, Spec-Vertrag):
   aktiv bei `(Chip ODER Ordnerbereich) UND Query ≥ 2 Zeichen`. Backend
@@ -507,8 +530,8 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   `vault_collapse_paths` mit **genau den vom Filter geöffneten** Ordnern
   — vorher offene bleiben offen. Der Expand-Soft-Cap zeigt den
   bestehenden `vault.tree.expandCapped`-Hinweis (Vorrang vor „Keine
-  Treffer"). Bereich als **eigene Zeile** `#vault-filter-scope` über der
-  Filterzeile (📁 Name mit Ellipsis ✕, Tooltip = Pfad, flüchtig);
+  Treffer"). Bereich als Chip `#vault-filter-scope` in der
+  Chip-Zeile (seit S9; 📁 Name mit Ellipsis ✕, Tooltip = Pfad, flüchtig);
   Bereich-Fehler (`errors.vault.filterScopeNotFound`/`…Invalid`)
   entfernen den Bereich und zeigen den Fehler transient; Hinweise „Keine
   Treffer"/cap/time in `#vault-tree-notice`. Persistenz
@@ -1292,7 +1315,7 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
 
 ## E2E-Test-Suite
 
-Vollständige UI-Coverage in `tests/e2e/` (66 Szenarien, Python +
+Vollständige UI-Coverage in `tests/e2e/` (67 Szenarien, Python +
 Pillow): Boot, View-/Edit-/Split-Mode, Theme, Vault, Find (inkl.
 Code-View), Workspace, Save-Roundtrip durch alle BOM/EOL-Kombis,
 Undo/Redo, Toolbar-Commands (Bold/Italic/Heading), Menü-Coverage
@@ -1300,7 +1323,7 @@ Undo/Redo, Toolbar-Commands (Bold/Italic/Heading), Menü-Coverage
 History-Back/Forward, Rechtsklick-Kontextmenüs, echter TOC-DOM-Klick,
 HTML-View, Tabs (API/UI/Restore/Reorder), View-/Custom-Themes,
 Theme-CRUD/-Browser/-Import-Export, Export-Highlighting, Mermaid
-(View + Export), Link-in-neuem-Tab, Vault-Volltextsuche (API + UI),
+(View + Export), Link-in-neuem-Tab, Vault-Volltextsuche (API + UI + Such-/Filterbereich),
 Vault-Filter (R3 + Tiefenfilter/Ordnerbereich R4), Tab-Kontextmenü,
 Command Palette, Statusleiste,
 Wikilinks/Tags, Task-Checkboxen, Git-Status/-Diff/-Filter,
@@ -1336,6 +1359,13 @@ ein `unterordner/` mit `notiz.md`; das Szenario öffnet einen Tab auf die
 Notiz und prüft nach dem Ordner-Rename, dass der **Tab-Pfad präfixweise
 mitgewandert** ist (der eigentliche V1-Vertrag) und beim Löschen wieder
 verschwindet.
+
+**Szenario mit fester Such-/Filter-Fixture** (`67_search_area.py`):
+`/tmp/folio-e2e-searcharea` — gleicher Grund wie 56/57/59 (Pin-Name im
+Baum = Baseline). Nimmt die sechs Zustände des Such-/Filterbereichs (S9)
+hell und dunkel auf; vor den Treffer-Aufnahmen wird auf „Dateiname“
+sortiert (Ankunftsreihenfolge ist nicht deterministisch) und die
+Laufzeitangabe aus dem Status entfernt.
 
 **Szenario mit Symlink-Fixture** (`62_path_identity.py`):
 `/tmp/folio-e2e-symlink` mit `real/notiz.md` und dem Symlink-Verzeichnis

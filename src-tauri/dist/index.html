@@ -91,36 +91,49 @@
     <button class="vault-cmd ti-emoji" data-cmd="addFolder" title="Ordner hinzufügen…" data-i18n-title="vault.header.addFolder.tooltip" aria-label="Ordner hinzufügen" data-i18n-aria-label="vault.header.addFolder.ariaLabel">&#x1F4C1;</button>
     <button type="button" class="vault-cmd" id="vault-expand-roots" data-cmd="expandRoots" title="Oberste Ebene aufklappen" data-i18n-title="vault.tree.expandRoots.tooltip" aria-label="Oberste Ebene aufklappen" data-i18n-aria-label="vault.tree.expandRoots.ariaLabel"><span class="vault-cmd-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></span></button>
     <button type="button" class="vault-cmd" id="vault-collapse-all" data-cmd="collapseAll" title="Alles einklappen" data-i18n-title="vault.tree.collapseAll.tooltip" aria-label="Alles einklappen" data-i18n-aria-label="vault.tree.collapseAll.ariaLabel"><span class="vault-cmd-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7l4-4 4 4"/><path d="M4 12l4-4 4 4"/></svg></span></button>
-    <button type="button" class="vault-cmd" id="vault-filter-toggle" data-cmd="filter" title="Dateien filtern" data-i18n-title="vault.filter.toggle.tooltip" aria-label="Dateifilter" data-i18n-aria-label="vault.filter.toggle.ariaLabel" aria-pressed="false"><span class="vault-cmd-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3h11l-4.25 5v4.5l-2.5 1.25V8z"/></svg></span></button>
+    <button type="button" class="vault-cmd" id="vault-filter-toggle" data-cmd="filter" title="Filtern und suchen" data-i18n-title="vault.filter.toggle.tooltip" aria-label="Filtern und suchen" data-i18n-aria-label="vault.filter.toggle.ariaLabel" aria-expanded="false" aria-controls="vault-filter"><span class="vault-cmd-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3h11l-4.25 5v4.5l-2.5 1.25V8z"/></svg></span></button>
   </header>
-  <div class="vault-search" id="vault-search">
-    <div class="vault-search-bar">
-      <button type="button" id="vault-search-summary" class="vault-search-summary" title="In Dateien suchen…" data-i18n-title="search.summary.edit.tooltip" aria-label="In Dateien suchen…" data-i18n-aria-label="search.summary.edit.tooltip">
-        <span class="vs-summary-icon" aria-hidden="true">&#x1F50D;</span>
-        <span class="vs-summary-text" id="vault-search-summary-text">In Dateien suchen…</span>
-        <span class="vs-summary-opts" id="vault-search-summary-opts" aria-hidden="true"></span>
-      </button>
-      <button type="button" id="vault-search-exit" class="vault-search-exit" title="Suche beenden" data-i18n-title="search.exit.tooltip" aria-label="Suche beenden" data-i18n-aria-label="search.exit.ariaLabel">&#x2715;</button>
-    </div>
-    <div class="vault-search-scope" id="vault-search-scope" hidden></div>
-  </div>
-  <div class="vault-filter" id="vault-filter" hidden>
-    <div class="vault-filter-scope" id="vault-filter-scope" hidden>
-      <span class="vault-filter-scope-icon" aria-hidden="true">&#x1F4C1;</span>
-      <span class="vault-filter-scope-name" id="vault-filter-scope-name"></span>
-      <button type="button" id="vault-filter-scope-remove" class="vault-filter-scope-remove" title="Ordnerbereich entfernen" data-i18n-title="vault.filter.scope.remove.tooltip" aria-label="Ordnerbereich entfernen" data-i18n-aria-label="vault.filter.scope.remove.ariaLabel">&#x2715;</button>
-    </div>
-    <div class="vault-filter-bar">
+  <div class="vault-filter" id="vault-filter" role="search" aria-label="Dateien filtern und durchsuchen" data-i18n-aria-label="vault.filter.region.ariaLabel" hidden>
+    <div class="vault-filter-fields">
       <div class="vault-filter-input-wrap">
-        <input type="search" id="vault-filter-input" class="vault-filter-input" placeholder="Nach Name filtern…" data-i18n-placeholder="vault.filter.input.placeholder" autocomplete="off" spellcheck="false" />
+        <span class="vault-field-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3h11l-4.25 5v4.5l-2.5 1.25V8z"/></svg></span>
+        <input type="search" id="vault-filter-input" class="vault-filter-input has-icon" placeholder="Nach Name filtern…" data-i18n-placeholder="vault.filter.input.placeholder" aria-label="Nach Name filtern" data-i18n-aria-label="vault.filter.input.ariaLabel" autocomplete="off" spellcheck="false" />
         <button type="button" id="vault-filter-clear" class="vault-filter-clear" hidden title="Filter löschen" data-i18n-title="vault.filter.clear.tooltip" aria-label="Filter löschen" data-i18n-aria-label="vault.filter.clear.ariaLabel">&#x2715;</button>
       </div>
-      <button type="button" id="vault-filter-close" class="vault-filter-close" title="Filterzeile schließen" data-i18n-title="vault.filter.close.tooltip" aria-label="Filterzeile schließen" data-i18n-aria-label="vault.filter.close.ariaLabel">&#x2715;</button>
+      <div class="vault-filter-input-wrap">
+        <span class="vault-field-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.25"/><path d="M10.2 10.2L13.5 13.5"/></svg></span>
+        <input type="search" id="vault-search-input" class="vault-filter-input has-icon vault-search-input" placeholder="Inhalt suchen…" data-i18n-placeholder="search.field.input.placeholder" title="Inhalt durchsuchen — Enter startet die Suche" data-i18n-title="search.field.input.tooltip" aria-label="In Dateien suchen" data-i18n-aria-label="search.field.input.ariaLabel" aria-describedby="vault-search-error" autocomplete="off" spellcheck="false" />
+        <span class="vault-field-tools">
+          <button type="button" id="vault-search-clear" class="vault-filter-clear" hidden title="Suche beenden (Esc)" data-i18n-title="search.field.clear.tooltip" aria-label="Suche beenden" data-i18n-aria-label="search.field.clear.ariaLabel">&#x2715;</button>
+          <button type="button" id="vault-search-case" class="vault-filter-chip vs-toggle" aria-pressed="false" title="Groß-/Kleinschreibung beachten" data-i18n-title="search.field.caseSensitive.label" aria-label="Groß-/Kleinschreibung beachten" data-i18n-aria-label="search.field.caseSensitive.label">Aa</button>
+          <button type="button" id="vault-search-word" class="vault-filter-chip vs-toggle vs-toggle-word" aria-pressed="false" title="Ganzes Wort" data-i18n-title="search.field.wholeWord.label" aria-label="Ganzes Wort" data-i18n-aria-label="search.field.wholeWord.label">ab</button>
+          <button type="button" id="vault-search-regex" class="vault-filter-chip vs-toggle" aria-pressed="false" title="Regulärer Ausdruck" data-i18n-title="search.field.regex.label" aria-label="Regulärer Ausdruck" data-i18n-aria-label="search.field.regex.label">Rx</button>
+        </span>
+      </div>
+    </div>
+    <div class="vault-search-error" id="vault-search-error" role="alert" hidden></div>
+    <div class="vault-filter-opts">
       <button type="button" id="vault-filter-md" class="vault-filter-chip vault-filter-md" aria-pressed="false" title="Nur Markdown" data-i18n-title="vault.filter.md.tooltip" aria-label="Nur Markdown-Dateien anzeigen" data-i18n-aria-label="vault.filter.md.ariaLabel">.md</button>
       <button type="button" id="vault-filter-git" class="vault-filter-chip vault-filter-git" aria-pressed="false" title="Nur geänderte Dateien" data-i18n-title="vault.filter.git.tooltip" aria-label="Nur geänderte Dateien anzeigen" data-i18n-aria-label="vault.filter.git.ariaLabel">git</button>
       <button type="button" id="vault-filter-deep" class="vault-filter-chip vault-filter-deep" aria-pressed="false" title="Auch in Unterordnern suchen" data-i18n-title="vault.filter.deep.tooltip" aria-label="Auch in Unterordnern suchen" data-i18n-aria-label="vault.filter.deep.ariaLabel">**</button>
       <button type="button" id="vault-filter-hidden" class="vault-filter-chip vault-filter-hidden" aria-pressed="false" title="Auch versteckte Ordner (.name) durchsuchen" data-i18n-title="vault.filter.hidden.tooltip" aria-label="Auch versteckte Dateien und Ordner durchsuchen" data-i18n-aria-label="vault.filter.hidden.ariaLabel">.*</button>
+      <button type="button" id="vault-search-options-toggle" class="vault-filter-chip vs-gear" popovertarget="vault-search-options" aria-haspopup="dialog" aria-expanded="false" aria-controls="vault-search-options" title="Weitere Suchoptionen" data-i18n-title="search.options.title" aria-label="Weitere Suchoptionen" data-i18n-aria-label="search.options.title">&#x2699;</button>
+      <div class="vault-filter-scope" id="vault-filter-scope" hidden>
+        <span class="vault-filter-scope-icon" aria-hidden="true">&#x1F4C1;</span>
+        <span class="vault-filter-scope-name" id="vault-filter-scope-name"></span>
+        <button type="button" id="vault-filter-scope-remove" class="vault-filter-scope-remove" title="Ordnerbereich entfernen" data-i18n-title="vault.filter.scope.remove.tooltip" aria-label="Ordnerbereich entfernen" data-i18n-aria-label="vault.filter.scope.remove.ariaLabel">&#x2715;</button>
+      </div>
     </div>
+  </div>
+  <div id="vault-search-options" class="vs-options-pop" popover role="dialog" aria-label="Weitere Suchoptionen" data-i18n-aria-label="search.options.title">
+    <label class="vsd-check"><input type="checkbox" id="vault-search-include-ignored" /><span data-i18n="search.options.includeIgnored.label">Zusätzlich gitignorierte Dateien durchsuchen</span></label>
+    <fieldset class="vsd-group">
+      <legend class="vsd-legend" data-i18n="search.options.fileType.label">Dateityp</legend>
+      <label class="vsd-radio"><input type="radio" name="vault-search-filetype" value="allText" checked /><span data-i18n="search.options.fileType.allText">Alle Textdateien</span></label>
+      <label class="vsd-radio"><input type="radio" name="vault-search-filetype" value="custom" /><span data-i18n="search.options.fileType.custom">Benutzerdefinierte Endungen</span></label>
+      <input type="text" id="vault-search-custom-ext" class="vsd-input vsd-custom-ext" placeholder="z. B. md, txt, log" data-i18n-placeholder="search.options.customExt.placeholder" aria-label="Endungen" data-i18n-aria-label="search.options.customExt.label" spellcheck="false" autocomplete="off" disabled />
+      <div class="vs-options-hint" id="vault-search-filetype-hint" data-i18n="search.options.fileType.mdHint" hidden>Durch den .md-Chip festgelegt</div>
+    </fieldset>
   </div>
   <div id="vault-tree-notice" class="vault-tree-notice" hidden></div>
   </div>
@@ -667,42 +680,6 @@
     <div class="unsaved-dialog__actions">
       <button type="button" id="run-confirm-cancel" data-i18n="dialogs.common.cancel">Abbrechen</button>
       <button type="button" id="run-confirm-ok" class="primary" data-i18n="dialogs.run.submit.action">Ausführen</button>
-    </div>
-  </div>
-</div>
-
-<div id="vault-search-dialog" hidden>
-  <div class="unsaved-dialog__panel vault-search-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="vsd-title">
-    <div class="unsaved-dialog__title" id="vsd-title" data-i18n="search.dialog.title">In Dateien suchen</div>
-    <div class="vsd-field">
-      <label class="vsd-field-label" for="vsd-query" data-i18n="search.dialog.query.label">Suchbegriff</label>
-      <input type="search" id="vsd-query" class="vsd-input" placeholder="Suchbegriff eingeben…" data-i18n-placeholder="search.dialog.query.placeholder" spellcheck="false" autocomplete="off" />
-    </div>
-    <div class="vsd-checks">
-      <label class="vsd-check"><input type="checkbox" id="vsd-case" /><span data-i18n="search.dialog.caseSensitive.label">Groß-/Kleinschreibung beachten</span></label>
-      <label class="vsd-check"><input type="checkbox" id="vsd-word" /><span data-i18n="search.dialog.wholeWord.label">Ganzes Wort</span></label>
-      <label class="vsd-check"><input type="checkbox" id="vsd-regex" /><span data-i18n="search.dialog.regex.label">Regulärer Ausdruck</span></label>
-      <label class="vsd-check"><input type="checkbox" id="vsd-include-hidden" /><span data-i18n="search.dialog.includeHidden.label">Versteckte Dateien und Ordner</span></label>
-      <label class="vsd-check"><input type="checkbox" id="vsd-include-ignored" /><span data-i18n="search.dialog.includeIgnored.label">Gitignorierte Dateien</span></label>
-    </div>
-    <fieldset class="vsd-group">
-      <legend class="vsd-legend" data-i18n="search.dialog.fileType.label">Dateityp</legend>
-      <label class="vsd-radio"><input type="radio" name="vsd-filter" value="markdown" /><span data-i18n="search.dialog.fileType.markdown">Nur Markdown</span></label>
-      <label class="vsd-radio"><input type="radio" name="vsd-filter" value="allText" /><span data-i18n="search.dialog.fileType.allText">Alle Textdateien</span></label>
-      <label class="vsd-radio"><input type="radio" name="vsd-filter" value="custom" /><span data-i18n="search.dialog.fileType.custom">Benutzerdefinierte Endungen</span></label>
-      <input type="text" id="vsd-custom-ext" class="vsd-input vsd-custom-ext" placeholder="z. B. md, txt, log" data-i18n-placeholder="search.dialog.customExt.placeholder" aria-label="Endungen" data-i18n-aria-label="search.dialog.customExt.label" spellcheck="false" autocomplete="off" />
-    </fieldset>
-    <fieldset class="vsd-group" id="vsd-scope-group">
-      <legend class="vsd-legend" data-i18n="search.dialog.scope.label">Bereich</legend>
-      <label class="vsd-radio"><input type="radio" name="vsd-scope" value="vault" /><span data-i18n="search.dialog.scope.vault">Gesamter Vault</span></label>
-      <label class="vsd-radio"><input type="radio" name="vsd-scope" value="openTabs" /><span data-i18n="search.dialog.scope.openTabs">Alle offenen Dateien</span></label>
-      <label class="vsd-radio" id="vsd-scope-filtered-row"><input type="radio" name="vsd-scope" value="filtered" /><span data-i18n="search.dialog.scope.filtered">Gefilterte Dateien</span></label>
-      <label class="vsd-radio" id="vsd-scope-folder-row" hidden><input type="radio" name="vsd-scope" value="folder" /><span id="vsd-scope-folder-label"></span></label>
-    </fieldset>
-    <div class="vsd-error" id="vsd-error" role="alert" hidden></div>
-    <div class="unsaved-dialog__actions">
-      <button type="button" id="vsd-cancel" data-i18n="dialogs.common.cancel">Abbrechen</button>
-      <button type="button" id="vsd-submit" class="primary" data-i18n="search.dialog.submit.action">Suchen</button>
     </div>
   </div>
 </div>

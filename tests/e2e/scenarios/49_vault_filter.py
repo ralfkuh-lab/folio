@@ -136,12 +136,6 @@ def run(ctx):
 
     try:
         with ctx.step("pin fixture folder"):
-            # Vorzustand-Leak abwehren: Vault-Suche aus 47 leckt sonst in die Rail.
-            ctx.api.eval(
-                "(function(){var x=document.getElementById('vault-search-exit');"
-                "if(x&&x.offsetParent)x.dispatchEvent("
-                "new MouseEvent('click',{bubbles:true}));})()"
-            )
             ctx.api.workspace_pin(root, is_directory=True)
             sample = os.path.join(root, "Alpha.md")
             ctx.api.open(sample)
@@ -334,7 +328,8 @@ def run(ctx):
                 timeout=4.0,
             )
             ctx.expect(ok, f"Vor Close: Filter nicht aktiv: {_tree_html(ctx)[:400]}")
-            _click_id(ctx, "vault-filter-close")
+            # Schließen über den Funnel (S9: kein eigenes Zeilen-✕ mehr).
+            _click_id(ctx, "vault-filter-toggle")
             ok = _poll(
                 ctx,
                 lambda: (not _filter_bar_open(ctx))

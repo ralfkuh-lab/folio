@@ -36,6 +36,18 @@ weiter, R4 ergänzt den Tiefenfilter und den Ordnerbereich). Ursprung: `docs/fea
   aus). Getrennt vom Baum-Setting `vaultShowHidden`: der Chip steuert
   nur die Filtertreffer und aktiviert keinen Filter allein. Tiefenmodus:
   wirksames `show_hidden` = Chip **UND** `vaultShowHidden`.
+- **R5 (2026-10-10, Volltextsuche S9)**: Such- und Filterbereich
+  zusammengelegt. Der Funnel öffnet `#vault-filter` ganz oder gar nicht
+  (`aria-expanded`); unter dem Namensfeld liegt das Inhaltsfeld der
+  Volltextsuche, die Chip-Zeile trägt zusätzlich Zahnrad und Bereichs-Chip
+  (vorher eigene Zeile über dem Feld). Das Zeilen-✕ `#vault-filter-close`
+  entfällt — Schließen per Funnel oder Escape im leeren Feld. Neue Exporte:
+  `getSearchSpace()` (einzige Quelle des Suchraums: ohne Namensbegriff Walk
+  über Vault/Bereich mit `.md`/`.*`, mit Namensbegriff die Trefferliste von
+  `vault_filter_find`), `isVaultFilterBarVisible`, `openVaultFilterBar`,
+  `closeVaultFilterBar` und das In-Window-Event `folio-vault-filter-changed`
+  bei jeder Änderung von Name, Bereich, Chips, `vaultShowHidden`, Schließen
+  und Reset. Details: [`spec-vault-search.md`](spec-vault-search.md), Etappe S9.
 
 ## Modell (R3)
 
@@ -102,6 +114,9 @@ Watcher-Fehler bleiben non-fatal (`watch_non_fatal`-Verhalten).
   (`#vault-filter-close`, immer sichtbar). Schließen (X, Funnel,
   Escape bei leerem Input) leert die Query — „Schließen = Aufräumen"
   aus R2 bleibt. Escape bei Text leert erst den Text.
+  *Historisch (R3–R4.3):* Seit **R5** gibt es kein Zeilen-X mehr —
+  geschlossen wird über den Funnel oder Escape im leeren Feld; die Zeile
+  ist Teil des gemeinsamen Such-/Filterbereichs (siehe R5 oben).
 - **Match-Art-Chips 📄/📁 sind ENTFERNT** (R3: Ordner sind immer
   sichtbar, Match-Art-Semantik gegenstandslos). Panel-State-Felder
   `vault_filter_match_files`/`vault_filter_match_dirs` werden entfernt

@@ -5,7 +5,7 @@
 import { t } from '../i18n/translate';
 import { openDocument } from '../state/document';
 import { folioLog, safeInvoke } from '../util/log';
-import { openVaultSearchDialog } from './search';
+import { openVaultSearch } from './search';
 
 export type VaultTagFile = { path: string; name: string };
 export type VaultTagEntry = {
@@ -251,7 +251,7 @@ function onListClick(e: MouseEvent): void {
         e.preventDefault();
         e.stopPropagation();
         const tag = searchBtn.dataset.tag || '';
-        openVaultSearchDialog({ prefillQuery: tag ? '#' + tag : '#' });
+        openVaultSearch({ query: tag ? '#' + tag : '#', run: true });
         return;
     }
 

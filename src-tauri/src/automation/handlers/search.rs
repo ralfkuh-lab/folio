@@ -15,9 +15,7 @@ use tauri::Manager;
 
 use crate::automation::context::AutomationContext;
 use crate::automation::error::{json_payload, ApiError, ApiResult};
-use crate::commands::search_cmd::{
-    build_scope_and_options, file_list_docs, resolve_include_ignored, snapshot_open_tab_docs,
-};
+use crate::commands::search_cmd::{build_scope_and_options, resolve_include_ignored};
 use crate::search::{self, FileResult, SearchScopeEx, SearchStats};
 use crate::state::AppState;
 
@@ -42,11 +40,8 @@ pub(in crate::automation) struct SearchRequest {
     /// UI/Tauri).
     #[serde(default)]
     custom_extensions: String,
-    /// OpenTabs-Scope (S4): durchsucht die offenen Tab-Puffer statt des Vaults.
-    #[serde(default)]
-    open_tabs: bool,
     /// Dateilisten-Scope („Gefilterte Dateien“): absolute Pfade, höchstens
-    /// so viele wie der Vault-Filter-Deckel; schließt `scope`/`openTabs` aus.
+    /// so viele wie der Vault-Filter-Deckel; schließt `scope` aus.
     #[serde(default)]
     files: Option<Vec<String>>,
     /// Auch versteckte Einträge (Dot-Namen) durchsuchen (Default aus).
@@ -78,7 +73,6 @@ pub(in crate::automation) async fn post_search(
     // unbekannter Filter, leere Custom-Liste, verbotene Endungszeichen).
     let (scope_ex, options) = build_scope_and_options(
         request.scope,
-        request.open_tabs,
         request.files,
         request.case_sensitive,
         request.whole_word,
@@ -90,17 +84,14 @@ pub(in crate::automation) async fn post_search(
     )
     .map_err(|error| ApiError::bad_request(error.to_string()))?;
 
-    // Ziel auflösen (Roots vs. OpenTabs-Snapshot) — beides vor dem Blocking-Task
-    // und ohne die tabs/workspace-Locks über den Task zu halten.
+    // Ziel auflösen (Roots vs. Dateiliste) — vor dem Blocking-Task und ohne
+    // den workspace-Lock über den Task zu halten.
     enum Work {
         Roots(search::SearchRoots),
-        Buffers(Vec<search::BufferDoc>),
+        Files(Vec<String>),
     }
     let work = match scope_ex {
-        SearchScopeEx::OpenTabs => {
-            Work::Buffers(snapshot_open_tab_docs(state.inner()).map_err(ApiError::internal)?)
-        }
-        SearchScopeEx::Files(files) => Work::Buffers(file_list_docs(files)),
+        SearchScopeEx::Files(files) => Work::Files(files),
         SearchScopeEx::Vault | SearchScopeEx::Folder(_) => {
             let scope = match scope_ex {
                 SearchScopeEx::Folder(path) => Some(path),
@@ -131,8 +122,8 @@ pub(in crate::automation) async fn post_search(
                     files.push(file)
                 })
             }
-            Work::Buffers(docs) => {
-                search::run_search_buffers(docs, &query, &options, &cancel_task, &mut |file| {
+            Work::Files(paths) => {
+                search::run_search_files(paths, &query, &options, &cancel_task, &mut |file| {
                     files.push(file)
                 })
             }

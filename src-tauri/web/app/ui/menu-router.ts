@@ -14,7 +14,7 @@ import { closeActiveTab, confirmAllDirtyTabs } from '../state/tabs';
 import { confirmAiReviewForQuit } from './ai-diff-review';
 import { setMode } from '../editor/shell';
 import { openEditorFind } from './find-bar';
-import { openVaultSearchDialog } from '../vault/search';
+import { openVaultSearch } from '../vault/search';
 import { folioLog, safeInvoke } from '../util/log';
 import { openGitDiffForActiveDoc } from './git-diff';
 import { toggleZenMode } from './zen-mode';
@@ -77,7 +77,7 @@ export function initMenuRouter(deps: Deps): void {
         openEditorFind('');
     });
     ev.listen('menu:edit_search_vault', function () {
-        openVaultSearchDialog();
+        openVaultSearch();
     });
     ev.listen('menu:help_cheatsheet', function () {
         var b = $('tb-cheatsheet'); if (b) b.click();

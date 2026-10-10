@@ -396,7 +396,8 @@ def run(ctx):
             ctx.expect(ok, "Hook-Bereich zeigt nicht wieder alle Treffer")
 
         with ctx.step("closing the bar keeps user-opened branches, collapses filter ones"):
-            _click_id(ctx, "vault-filter-close")
+            # Schließen über den Funnel (S9: kein eigenes Zeilen-✕ mehr).
+            _click_id(ctx, "vault-filter-toggle")
             ok = _poll(
                 lambda: (not _filter_bar_open(ctx))
                 and (not _caret_open(ctx, f"{p}/a"))
@@ -522,7 +523,10 @@ def run(ctx):
 
     finally:
         try:
-            _click_id(ctx, "vault-filter-close")
+            ctx.api.eval(
+                "typeof window.__folioVaultFilterReset==='function'"
+                "&&window.__folioVaultFilterReset()"
+            )
         except Exception:
             pass
         try:

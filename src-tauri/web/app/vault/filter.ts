@@ -31,6 +31,12 @@
    die Kette Pin-Wurzel → Bereich; Knoten ausserhalb `vf-hidden`). Ohne
    Bereich bleibt die 2-Zeichen-Regel.
 
+   R5 (S9): Der Bereich `#vault-filter` traegt Namens- UND Inhaltsfeld
+   (vault/search.ts) und erscheint nur bei aktivem Funnel — ganz oder gar
+   nicht. `getSearchSpace()` ist die einzige Quelle fuer den Suchraum der
+   Volltextsuche; jede Aenderung daran meldet `VAULT_FILTER_CHANGED_EVENT`
+   (in-window, wie GIT_STATUS_CHANGED_EVENT — kein Import-Zyklus).
+
    Baum-Ops: #vault-expand-roots / #vault-collapse-all. */
 
 import { folioLog } from '../util/log';
@@ -44,6 +50,8 @@ import {
 import { refreshVault, reapplyVaultActive, renderVaultFromHtml } from './tree';
 
 const DEBOUNCE_MS = 150;
+/** In-window-Event: Suchraum oder Sichtbarkeit des Bereichs hat sich geaendert. */
+export const VAULT_FILTER_CHANGED_EVENT = 'folio-vault-filter-changed';
 /** Mindestlaenge der Query, ab der der Tiefenmodus greift (R4). */
 const DEEP_MIN_QUERY = 2;
 
@@ -57,7 +65,6 @@ let scopeEl: HTMLElement | null = null;
 let scopeNameEl: HTMLElement | null = null;
 let scopeRemoveBtn: HTMLElement | null = null;
 let clearBtn: HTMLElement | null = null;
-let closeBtn: HTMLElement | null = null;
 let toggleBtn: HTMLElement | null = null;
 let treeEl: HTMLElement | null = null;
 let expandRootsBtn: HTMLButtonElement | null = null;
@@ -138,22 +145,64 @@ export function isVaultFilterActive(): boolean {
     );
 }
 
-/** Such-Scope „Gefilterte Dateien": Parameter fuer `vault_filter_find`, mit
- *  denen die VOLLE Treffermenge des Filters entsteht (wie im Tiefenmodus,
- *  unabhaengig vom `**`-Chip und vom gerenderten Baum), plus der git-Chip
- *  fuer den Schnitt im Aufrufer. `null`, solange der Filter keine Menge
- *  definiert — dieselbe Bedingung, unter der `find_by_name` nicht leer
- *  antwortet (Query ≥ 2 oder Bereich + md-only). */
-export function getFilteredSearchSpec(): {
-    query: string;
-    scope: string | null;
-    hidden: boolean;
-    gitChangedOnly: boolean;
-} | null {
-    const defined =
-        committedQuery.length >= DEEP_MIN_QUERY || (scopePath !== null && markdownOnly);
-    if (!defined) return null;
-    return { query: committedQuery, scope: scopePath, hidden: filterHidden, gitChangedOnly };
+/** Suchraum der Volltextsuche (S9): die Suche durchsucht, was der Filter
+ *  zeigt — ohne Filter den ganzen Vault.
+ *  - `walk`: kein Namensbegriff (< 2 Zeichen). Walk ueber `Vault` bzw. den
+ *    Bereich (`Folder`), `.md` → `markdown`, `.*` wirkt nur zusammen mit
+ *    `vaultShowHidden` (wie beim Filter). Kein Deckel.
+ *  - `files`: Namensbegriff ≥ 2. Parameter fuer `vault_filter_find` (volle
+ *    Treffermenge wie im Tiefenmodus, unabhaengig von `**` und vom gerenderten
+ *    Baum); der git-Chip schneidet im Aufrufer.
+ *  `filtered` = Funnel-Badge-Bedingung (Statuszusatz „gefiltert“/„Vault“). */
+export type SearchSpace =
+    | {
+          kind: 'walk';
+          scope: string | null;
+          markdown: boolean;
+          includeHidden: boolean;
+          gitChangedOnly: boolean;
+          filtered: boolean;
+      }
+    | {
+          kind: 'files';
+          query: string;
+          scope: string | null;
+          hidden: boolean;
+          markdown: boolean;
+          gitChangedOnly: boolean;
+          filtered: boolean;
+      };
+
+export function getSearchSpace(): SearchSpace {
+    const filtered = isVaultFilterActive();
+    if (committedQuery.length >= DEEP_MIN_QUERY) {
+        return {
+            kind: 'files',
+            query: committedQuery,
+            scope: scopePath,
+            hidden: filterHidden,
+            markdown: markdownOnly,
+            gitChangedOnly,
+            filtered,
+        };
+    }
+    return {
+        kind: 'walk',
+        scope: scopePath,
+        markdown: markdownOnly,
+        includeHidden: filterHidden && showHidden,
+        gitChangedOnly,
+        filtered,
+    };
+}
+
+/** Ob der Such-/Filterbereich offen ist (Funnel an). */
+export function isVaultFilterBarVisible(): boolean {
+    return barVisible;
+}
+
+function notifyFilterChanged(): void {
+    window.dispatchEvent(new CustomEvent(VAULT_FILTER_CHANGED_EVENT));
 }
 
 /** Wartet, bis alle eingereihten Options-Writes (u. a. `.md`) im Backend
@@ -222,7 +271,7 @@ function persistOptions(): Promise<void> {
 function syncBarVisibility(): void {
     if (barEl) barEl.hidden = !barVisible;
     if (toggleBtn) {
-        toggleBtn.setAttribute('aria-pressed', barVisible ? 'true' : 'false');
+        toggleBtn.setAttribute('aria-expanded', barVisible ? 'true' : 'false');
     }
 }
 
@@ -546,6 +595,7 @@ async function onDeepError(err: unknown): Promise<void> {
         scopePath = null;
         syncScopeChip();
         syncFunnelBadge();
+        notifyFilterChanged();
     }
     deepState = null;
     applyClientFilter();
@@ -942,10 +992,12 @@ function scheduleFromInput(): void {
 }
 
 function applyQuery(q: string): void {
+    const changed = q !== committedQuery;
     committedQuery = q;
     applyClientFilter();
     syncFunnelBadge();
     requestDeepSync();
+    if (changed) notifyFilterChanged();
 }
 
 function clearQueryAndLeave(): void {
@@ -959,8 +1011,9 @@ function clearQueryAndLeave(): void {
 }
 
 /**
- * Zeile schließen UND Query leeren: Funnel-Toggle zu, Zeilen-X,
- * Escape bei leerem Input. Der Bereich ist flüchtig und wird mit entfernt.
+ * Bereich schließen UND Query leeren: Funnel-Toggle zu, Escape bei leerem
+ * Feld. Der Bereich ist flüchtig und wird mit entfernt; eine laufende Suche
+ * endet (über VAULT_FILTER_CHANGED_EVENT), ihr Begriff bleibt im Inhaltsfeld.
  */
 function closeBar(): void {
     if (inputEl) inputEl.value = '';
@@ -977,20 +1030,36 @@ function closeBar(): void {
     syncFunnelBadge();
     void persistOptions();
     requestDeepSync();
+    notifyFilterChanged();
 }
 
-function setBarVisible(visible: boolean): void {
+/** Bereich öffnen; `focusName` fokussiert das Namensfeld (Funnel-Klick,
+ *  „In diesem Ordner filtern"), sonst bleibt der Fokus beim Aufrufer. */
+function setBarVisible(visible: boolean, focusName = true): void {
     if (!visible) {
         closeBar();
         return;
     }
-    barVisible = true;
-    syncBarVisibility();
-    void persistOptions();
-    if (inputEl) {
+    if (!barVisible) {
+        barVisible = true;
+        syncBarVisibility();
+        void persistOptions();
+    }
+    if (focusName && inputEl) {
         inputEl.focus();
         inputEl.select();
     }
+}
+
+/** Einstieg der Volltextsuche (Strg+Umschalt+F, Menü, Palette): Bereich
+ *  öffnen, den Fokus setzt der Aufrufer ins Inhaltsfeld. */
+export function openVaultFilterBar(focusName: boolean): void {
+    setBarVisible(true, focusName);
+}
+
+/** Escape im leeren Inhaltsfeld: wie der Funnel. */
+export function closeVaultFilterBar(): void {
+    if (barVisible) closeBar();
 }
 
 function toggleBar(): void {
@@ -1015,6 +1084,7 @@ function onMdToggle(): void {
     void persistOptions().then(() => {
         requestDeepRebuild();
     });
+    notifyFilterChanged();
 }
 
 function onGitToggle(): void {
@@ -1023,6 +1093,7 @@ function onGitToggle(): void {
     syncFunnelBadge();
     applyClientFilter();
     void persistOptions();
+    notifyFilterChanged();
     if (gitChangedOnly) {
         // Aufklappen nur beim Aktivieren. Deaktivieren laesst den Baum.
         void expandGitChangedDirs();
@@ -1050,6 +1121,7 @@ function onHiddenToggle(): void {
     void persistOptions().then(() => {
         requestDeepSync();
     });
+    notifyFilterChanged();
 }
 
 /** Bereich-✕: zurück zu „alle Pins"; ob tief gefiltert wird, entscheidet der
@@ -1063,6 +1135,7 @@ function onScopeRemove(e?: Event): void {
     syncFunnelBadge();
     applyClientFilter();
     requestDeepSync();
+    notifyFilterChanged();
     inputEl?.focus();
 }
 
@@ -1082,6 +1155,7 @@ export function filterInFolder(path: string): void {
     // Tiefensuche — sonst bleiben alte Treffer ausserhalb bis zur Antwort stehen.
     applyClientFilter();
     requestDeepSync();
+    notifyFilterChanged();
 }
 
 function onEscapeInInput(e: KeyboardEvent): void {
@@ -1111,6 +1185,7 @@ function onSettingsChanged(payload: unknown): void {
         showHidden = next;
         // Wie der md-Toggle: Rebuild im Sync-Schritt abwarten, dann suchen.
         requestDeepRebuild();
+        notifyFilterChanged();
     }
 }
 
@@ -1154,8 +1229,9 @@ function onCollapseAll(): void {
         });
 }
 
-/** Test-/Automation-Reset: Query leeren, Zeile zu, alle Chips aus, Bereich
- *  weg, vom Filter geoeffnete Ordner zuklappen. */
+/** Test-/Automation-Reset: Query leeren, Bereich zu, alle Chips aus, Bereich
+ *  weg, vom Filter geoeffnete Ordner zuklappen. Eine laufende Suche endet
+ *  ueber VAULT_FILTER_CHANGED_EVENT. */
 export function resetVaultFilterForAutomation(): void {
     if (debounceTimer !== null) {
         clearTimeout(debounceTimer);
@@ -1183,6 +1259,7 @@ export function resetVaultFilterForAutomation(): void {
     syncExpandRootsDisabled();
     void persistOptions();
     requestDeepSync();
+    notifyFilterChanged();
 }
 
 export function initVaultFilter(): () => void {
@@ -1196,7 +1273,6 @@ export function initVaultFilter(): () => void {
     scopeNameEl = document.getElementById('vault-filter-scope-name');
     scopeRemoveBtn = document.getElementById('vault-filter-scope-remove');
     clearBtn = document.getElementById('vault-filter-clear');
-    closeBtn = document.getElementById('vault-filter-close');
     toggleBtn = document.getElementById('vault-filter-toggle');
     treeEl = document.getElementById('vault-tree');
     expandRootsBtn = document.getElementById(
@@ -1222,10 +1298,6 @@ export function initVaultFilter(): () => void {
         e.preventDefault();
         clearQueryAndLeave();
         inputEl?.focus();
-    };
-    const onCloseClick = (e: MouseEvent) => {
-        e.preventDefault();
-        closeBar();
     };
     const onMdClick = (e: MouseEvent) => {
         e.preventDefault();
@@ -1271,7 +1343,6 @@ export function initVaultFilter(): () => void {
     inputEl.addEventListener('input', onInput);
     inputEl.addEventListener('keydown', onKeydown);
     clearBtn?.addEventListener('click', onClearClick);
-    closeBtn?.addEventListener('click', onCloseClick);
     mdChip?.addEventListener('click', onMdClick);
     gitChip?.addEventListener('click', onGitClick);
     deepChip?.addEventListener('click', onDeepClick);
@@ -1344,6 +1415,7 @@ export function initVaultFilter(): () => void {
             syncScopeChip();
             syncBarVisibility();
             syncFunnelBadge();
+            notifyFilterChanged();
             if (gitChangedOnly) {
                 applyClientFilter();
                 void expandGitChangedDirs();
@@ -1372,7 +1444,6 @@ export function initVaultFilter(): () => void {
         inputEl?.removeEventListener('input', onInput);
         inputEl?.removeEventListener('keydown', onKeydown);
         clearBtn?.removeEventListener('click', onClearClick);
-        closeBtn?.removeEventListener('click', onCloseClick);
         mdChip?.removeEventListener('click', onMdClick);
         gitChip?.removeEventListener('click', onGitClick);
         deepChip?.removeEventListener('click', onDeepClick);

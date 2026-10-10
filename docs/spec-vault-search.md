@@ -13,7 +13,10 @@ Treffer-Snippets; Klick auf einen Treffer öffnet die Datei an der
 Fundstelle. Suchbar ist wahlweise der **gesamte Vault** oder ein
 **einzelner Ordner** (Kontextmenü „In diesem Ordner suchen“). UI als
 Such-Panel im linken Vault-Rail (Obsidian-/VS-Code-Muster), Shortcut
-**Strg+Shift+F**.
+**Strg+Shift+F**. Seit **S9** ist die Suche ein Inhaltsfeld im gemeinsamen
+Such-/Filterbereich und durchsucht immer, was der Vault-Filter zeigt (ohne
+Filter den ganzen Vault) — siehe Etappe S9; die Dialog- und OpenTabs-
+Abschnitte von S4/S8 sind Historie.
 
 ## Begriffs-/Scope-Modell
 
@@ -308,6 +311,10 @@ API-first → testbar wie bei den Tabs (T2). **TDD-Zusatz (vereinbart
 **Status: Feature komplett — S1–S3 abgeschlossen (2026-07-13).**
 
 ### ✅ Etappe S4 — Dialog-first + Regex/Filter/OpenTabs (2026-07-15)
+
+> **Historie.** Dialog und OpenTabs-Scope (samt `BufferSource`/`BufferDoc`,
+> `snapshot_open_tab_docs`, `run_search_buffers`) sind seit S9 entfernt;
+> Regex, Dateityp-Filter und Persistenz gelten weiter.
 
 Sechs Erweiterungen aus User-Feedback (Rev. 2 nach Sol-Review). Harte
 Randbedingung: `search.rs::mod tests` bleibt **additiv-only** — `run_search`/
@@ -658,6 +665,10 @@ Rein Frontend + ein neues App-Setting (Suchkern `search.rs` unverändert).
 
 ### ✅ Etappe S8 — Scope „Gefilterte Dateien“ (2026-10-10)
 
+> **Historie.** Radio und Snapshot sind seit S9 durch das automatische
+> Suchraum-Modell ersetzt; Backend `files` gilt weiter (jetzt über
+> `run_search_files`).
+
 Sucht in der **vollen Treffermenge des Vault-Filters**, unabhängig vom
 gerenderten Lazy-Baum und vom `**`-Chip.
 
@@ -697,6 +708,58 @@ gerenderten Lazy-Baum und vom `**`-Chip.
    Grenze → Suche, R10-Grenzvalidierung), vitest (R8 disabled, R9 git-Schnitt,
    Snapshot, Feldfehler, Checkboxen, Deckel-/Leer-Status), E2E 46 (R10 über
    `POST /search`) und 47 (R1–R8 über die UI, ohne neuen Screenshot).
+
+### ✅ Etappe S9 — Such- und Filterbereich zusammengelegt (2026-10-10)
+
+Layout-Entscheidung über Mockups (`Variante D`): **ein** Bereich unter dem
+Funnel statt Summary-Button + Dialog + Filterzeile.
+
+1. **Bereich** `#vault-filter` (`role="search"`): nur bei aktivem Funnel
+   sichtbar, dann ganz (Funnel `aria-expanded`). Oben Namensfilter, darunter
+   Inhaltsfeld `#vault-search-input` mit ✕ und den Umschaltern `Aa`/`ab`/`Rx`
+   (`aria-pressed`; Rx deaktiviert ab), Fehlerzeile `#vault-search-error`
+   (`role=alert`, `aria-invalid`), Chip-Zeile `.md git ** .*` + Zahnrad +
+   Bereichs-Chip. Ab ~2×200 px Rail nebeneinander (`flex-wrap`). Kein
+   eigenes Zeilen-✕ (Funnel + Escape). Header-Titel kürzt mit Ellipse, die
+   Buttons schrumpfen nie (der Funnel ist der einzige sichtbare Einstieg).
+2. **Suchraum** = `filter.ts::getSearchSpace()`:
+   - kein Namensbegriff (< 2): Walk `Vault` bzw. `Folder(Bereich)`; `.md` →
+     `fileFilter=markdown`; `.*` → `includeHidden` nur mit `vaultShowHidden`;
+     kein Deckel;
+   - Namensbegriff ≥ 2: `files` aus `vault_filter_find` nach
+     `whenFilterOptionsPersisted()`, git-Chip → Schnitt;
+   - `git` ohne Namensbegriff: Walk + clientseitiger git-Schnitt der Treffer
+     (bekannte Grenze: der 500er-Deckel zählt vor dem Schnitt; Ausbaupfad:
+     leere Query mit git in `find_by_name` zulassen).
+   Status-Zusatz „· gefiltert“ (Funnel-Badge-Bedingung) bzw. „· Vault“.
+3. **Bedienung**: Enter validiert und sucht sofort (Fehler am Feld, kein
+   Lauf); Enter im leeren Feld beendet. Escape im Feld: Text → leeren +
+   beenden, leer → Bereich schließen. ↓ → Trefferliste. Optionswechsel bei
+   aktiver Suche sucht sofort neu. Funnel zu / Reset beendet die Suche,
+   Begriff und Optionen bleiben. Im Suchmodus sind Baum, Tag-Browser und
+   Baum-Hinweis ausgeblendet.
+4. **Neu-Suchen bei Filteränderung**: `filter.ts` meldet Name/Bereich/Chips/
+   `vaultShowHidden`/Schließen per In-Window-Event `folio-vault-filter-changed`;
+   bei aktiver Suche 300 ms entprellt `runSearch()`. Stale-Guard: Generation
+   nach jedem Await (Options-Write, `vault_filter_find`) + `maxRunId`.
+5. **Zahnrad-Popover** `#vault-search-options` (natives `popover`):
+   „Zusätzlich gitignorierte Dateien durchsuchen“, Dateityp „Alle
+   Textdateien“/„Benutzerdefinierte Endungen“. „Nur Markdown“ ist der
+   `.md`-Chip (Radios dann deaktiviert + Hinweis); Altwert
+   `search_file_filter = "markdown"` wird als `allText` gelesen. Escape
+   schließt und gibt den Fokus ans Zahnrad (Weitergabe gestoppt).
+6. **Einstiege**: Strg+Umschalt+F, Menü, Palette → `openVaultSearch()`;
+   Kontextmenü „In diesem Ordner suchen“ → Bereich setzen + Fokus Inhaltsfeld;
+   Tag-Browser → `#tag` ins Feld, sofort suchen.
+7. **Entfernt**: Suchdialog, Summary-Button, Ordner-Scope-Chip,
+   Exit-Button, OpenTabs-Scope komplett (`SearchScopeEx::OpenTabs`,
+   `BufferSource`/`BufferDoc`, `snapshot_open_tab_docs`, `open_tabs`-Argument,
+   `openTabs` in `POST /search` — ein Alt-Feld wird wie jedes unbekannte Feld
+   ignoriert). `run_search_buffers` → `run_search_files(paths)`.
+8. **Tests**: Rust `walk_scope_reference_cases` (F1–F4, F11) +
+   `filtered_scope_reference_cases`; vitest S9-Block (F1–F11, Stale-Guard mit
+   verzögerten Antworten, Popover-Tastatur, Altwert); E2E 46 (F12), 47
+   (Ablauf, F1–F6, F8–F11), 67 (Zustände des Mockups hell/dunkel).
 
 ## Risiken / bewusste Entscheidungen
 

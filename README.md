@@ -77,8 +77,9 @@ You only have to do this the first time.
   reorder), and jump back to recent files
 - Manage files without leaving the app: new folder, rename, duplicate, move by
   cut & paste, delete to the system trash — open tabs follow renamed folders
-- **Full-text search** across your pinned folders, a single folder or just your
-  open tabs, with regex, file-type filters and jump-to-match
+- **Full-text search** right below the name filter: it searches what the
+  filter shows (a folder, a name pattern, Markdown only, changed files) or the
+  whole vault, with regex, file-type options and jump-to-match
 - A **command palette** on `Ctrl+P`: files, `>` for commands, `#` for headings
 - **Wikilinks** — `[[note]]`, `[[note|alias]]`, `[[note#heading]]` and
   `![[image.png]]` — with autocomplete, a backlinks panel and a tag browser
@@ -180,7 +181,7 @@ On macOS use **Cmd** instead of **Ctrl**.
 | Ctrl+Tab / Ctrl+Shift+Tab | Next / previous tab |
 | Ctrl+Z / Ctrl+Shift+Z | Undo / Redo |
 | Ctrl+F / F3 | Find in document / find next |
-| Ctrl+Shift+F | Search the whole vault |
+| Ctrl+Shift+F | Open filter & search, focus the content field |
 | Ctrl+V | Paste an image into the document |
 | F11 / Shift+F11 | Fullscreen / Zen mode |
 

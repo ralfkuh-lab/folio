@@ -2,9 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { installTauriMock } from '../helpers';
 import { seedDeCatalog } from '../helpers-i18n';
 
-const openVaultSearchDialog = vi.fn();
+const openVaultSearch = vi.fn();
 vi.mock('../../app/vault/search', () => ({
-    openVaultSearchDialog: (...args: unknown[]) => openVaultSearchDialog(...args),
+    openVaultSearch: (...args: unknown[]) => openVaultSearch(...args),
 }));
 
 vi.mock('../../app/state/document', () => ({
@@ -107,12 +107,12 @@ describe('vault/tags', () => {
         expect(li.classList.contains('open')).toBe(false);
     });
 
-    it('search icon calls openVaultSearchDialog with #tag prefill', () => {
+    it('search icon searches #tag right away in the content field', () => {
         renderVaultTags(sample);
         initVaultTags();
         const btn = document.querySelector('.vault-tag-search') as HTMLButtonElement;
         btn.click();
-        expect(openVaultSearchDialog).toHaveBeenCalledWith({ prefillQuery: '#work' });
+        expect(openVaultSearch).toHaveBeenCalledWith({ query: '#work', run: true });
     });
 
     it('file click calls openDocument', () => {

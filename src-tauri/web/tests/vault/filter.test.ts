@@ -25,7 +25,7 @@ function buildDom(opts?: { pinRootOpen?: boolean }): void {
                 <button type="button" class="vault-cmd" id="vault-expand-roots"></button>
                 <button type="button" class="vault-cmd" id="vault-collapse-all"></button>
                 <button type="button" class="vault-cmd" id="vault-filter-toggle"
-                    aria-pressed="false"></button>
+                    aria-expanded="false"></button>
             </header>
             <div class="vault-filter" id="vault-filter" hidden>
                 <div class="vault-filter-scope" id="vault-filter-scope" hidden>
@@ -42,7 +42,6 @@ function buildDom(opts?: { pinRootOpen?: boolean }): void {
                     <button type="button" id="vault-filter-git" aria-pressed="false">git</button>
                     <button type="button" id="vault-filter-deep" aria-pressed="false">**</button>
                     <button type="button" id="vault-filter-hidden" aria-pressed="false">.*</button>
-                    <button type="button" id="vault-filter-close"></button>
                 </div>
             </div>
             <div id="vault-tree-notice" hidden></div>
@@ -390,15 +389,17 @@ describe('vault/filter — Escape / Close / Badge / embedded clear', () => {
         expect($('vault-filter').hidden).toBe(true);
     });
 
-    it('close button clears query and closes bar', async () => {
+    it('funnel click clears query and closes the area (aria-expanded)', async () => {
         configureInvoke({ barVisible: true });
         await initModules();
+        expect($('vault-filter-toggle').getAttribute('aria-expanded')).toBe('true');
         await typeQuery('alp');
         vi.advanceTimersByTime(150);
         await flushMicro();
-        $('vault-filter-close').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        $('vault-filter-toggle').dispatchEvent(new MouseEvent('click', { bubbles: true }));
         await flushMicro();
         expect($('vault-filter').hidden).toBe(true);
+        expect($('vault-filter-toggle').getAttribute('aria-expanded')).toBe('false');
         expect(input().value).toBe('');
         expect(isVisible('/vault/Beta.md')).toBe(true);
     });
@@ -835,9 +836,11 @@ describe('vault/filter — deep filter (R4)', () => {
             const handler = handlers[cmd];
             if (handler) return Promise.resolve(handler(args));
             if (cmd === 'vault_filter_options_get') {
+                // Bereich offen: geschlossen wird ueber den Funnel (S9, kein
+                // eigenes Zeilen-✕ mehr) — der schliesst nur einen offenen Bereich.
                 return Promise.resolve({
                     markdownOnly: false,
-                    barVisible: false,
+                    barVisible: true,
                     gitChangedOnly: false,
                     deep: false,
                 });
@@ -1022,7 +1025,7 @@ describe('vault/filter — deep filter (R4)', () => {
         await typeAndSettle('alp');
         expect(collapseArgs.length).toBe(0);
 
-        $('vault-filter-close').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        $('vault-filter-toggle').dispatchEvent(new MouseEvent('click', { bubbles: true }));
         await flushMicro();
         expect(collapseArgs.length).toBe(1);
         expect(collapseArgs[0]).toEqual(['/vault/Notes']);
@@ -1062,7 +1065,7 @@ describe('vault/filter — deep filter (R4)', () => {
         filter.filterInFolder('/vault');
         await flushMicro();
         expect($('vault-filter-scope').hidden).toBe(false);
-        $('vault-filter-close').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        $('vault-filter-toggle').dispatchEvent(new MouseEvent('click', { bubbles: true }));
         await flushMicro();
         expect($('vault-filter-scope').hidden).toBe(true);
     });
@@ -1125,7 +1128,7 @@ describe('vault/filter — deep filter (R4)', () => {
         });
         await initModules(); clickDeep(); await flushMicro(); await typeAndSettle('alp');
         const lateHtml = $('vault-tree').innerHTML.replace('class="caret"', 'class="caret open"');
-        $('vault-filter-close').click(); await flushMicro();
+        $('vault-filter-toggle').click(); await flushMicro();
         finish({ html: lateHtml, paths: ['/vault/Notes'] }); await flushMicro();
         expect(collapsed.flat(), 'late opened paths must be collapsed after close').toContain('/vault/Notes');
         expect(
@@ -1153,7 +1156,7 @@ describe('vault/filter — deep filter (R4)', () => {
             vault_collapse_paths: () => new Promise(resolve => { finish = resolve; }),
         });
         await initModules(); clickDeep(); await flushMicro(); await typeAndSettle('alp');
-        $('vault-filter-close').click(); await flushMicro();
+        $('vault-filter-toggle').click(); await flushMicro();
         await typeAndSettle('alph');
         finish({ html: '<li data-stale-collapse="1"></li>' }); await flushMicro();
         expect($('vault-tree').querySelector('[data-stale-collapse]')).toBeNull();
@@ -1360,7 +1363,7 @@ describe('vault/filter — deep filter (R4)', () => {
         closed = $('vault-tree').innerHTML;
         const opened = closed.replace('class="caret"', 'class="caret open"');
         clickDeep(); await flushMicro(); await typeAndSettle('alp');
-        $('vault-filter-close').click(); await flushMicro();
+        $('vault-filter-toggle').click(); await flushMicro();
         holdRefresh = true;
         finishExpand({ html: opened, paths: ['/vault/Notes'] }); await flushMicro();
         expect(refreshes.length).toBe(1);
@@ -1393,7 +1396,7 @@ describe('vault/filter — deep filter (R4)', () => {
         closed = $('vault-tree').innerHTML;
         opened = closed.replace('class="caret"', 'class="caret open"');
         clickDeep(); await flushMicro(); await typeAndSettle('alp');
-        $('vault-filter-close').click(); await flushMicro();
+        $('vault-filter-toggle').click(); await flushMicro();
         await typeAndSettle('alph');
         holdRefresh = true;
         finishCollapse({ html: closed }); await flushMicro();
@@ -1484,7 +1487,7 @@ describe('vault/filter — deep filter (R4)', () => {
         clickDeep(); await flushMicro(); await typeAndSettle('alp');
         await typeAndSettle('alph');
         expect(typeof finishCleanup).toBe('function');
-        $('vault-filter-close').click(); await flushMicro();
+        $('vault-filter-toggle').click(); await flushMicro();
         finishCleanup({ html: closed }); await flushMicro();
         expect(document.querySelector('li[data-path="/vault/Notes"] > .row > .caret')!.classList.contains('open'), 'after error cleanup and close, the DOM must reflect collapsed backend folders').toBe(false);
     });

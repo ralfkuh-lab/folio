@@ -126,24 +126,42 @@ def reset_canonical_state(api: AutomationApi, settings_snapshot: dict[str, Any])
     # 8) Recent-Liste leeren (sonst waechst die Rail-Sektion "Zuletzt
     #    geoeffnet" ueber den Lauf in spaetere Baselines hinein).
     _expect_acked("workspace_clear_recents", api.workspace_clear_recents())
-    # 9) Vault-Tree-Filter auf Defaults (Query leer, Zeile zu, md-only aus).
-    #    Hook leert Input, schließt Zeile, persistiert Options (R3).
+    # 9) Such-/Filterbereich auf Defaults (S9): Hook leert den Namensfilter,
+    #    schließt den Bereich, persistiert die Chips und beendet eine laufende
+    #    Suche. Danach Inhaltsfeld leeren, Aa/ab/Rx aus (persistiert, sonst
+    #    wandern sie in spätere Baselines mit offenem Bereich) und ein offenes
+    #    Zahnrad-Popover schließen — ohne aktive Suche löst das keinen Lauf aus.
     api.eval(
         "typeof window.__folioVaultFilterReset==='function'"
         "&&window.__folioVaultFilterReset()"
+    )
+    api.eval(
+        "(function(){var i=document.getElementById('vault-search-input');"
+        "if(i&&i.value){i.value='';i.dispatchEvent(new Event('input',{bubbles:true}));}"
+        "['vault-search-regex','vault-search-case','vault-search-word'].forEach(function(id){"
+        "var b=document.getElementById(id);"
+        "if(b&&b.getAttribute('aria-pressed')==='true'&&!b.disabled)b.click();});"
+        "var p=document.getElementById('vault-search-options');"
+        "if(p&&p.matches&&p.matches(':popover-open'))p.hidePopover();return true;})()"
     )
     deadline = time.monotonic() + 2.0
     while True:
         ev = api.eval(
             "({h:!!document.getElementById('vault-filter')?.hidden,"
-            "q:(document.getElementById('vault-filter-input')?.value||'')})"
+            "q:(document.getElementById('vault-filter-input')?.value||''),"
+            "c:(document.getElementById('vault-search-input')?.value||''),"
+            "s:!!document.getElementById('vault-region')?.classList.contains('vault-searching'),"
+            "t:document.querySelectorAll('.vs-toggle[aria-pressed=\"true\"]').length})"
         ).get("value") or {}
-        if bool(ev.get("h")) and ev.get("q") == "":
+        if (bool(ev.get("h")) and ev.get("q") == "" and ev.get("c") == ""
+                and not ev.get("s") and ev.get("t") == 0):
             break
         if time.monotonic() > deadline:
             raise RuntimeError(
-                "Reset: Vault-Filter nicht geräumt "
-                f"(filterHidden={ev.get('h')!r}, query={ev.get('q')!r})"
+                "Reset: Such-/Filterbereich nicht geräumt "
+                f"(filterHidden={ev.get('h')!r}, query={ev.get('q')!r}, "
+                f"content={ev.get('c')!r}, searching={ev.get('s')!r}, "
+                f"toggles={ev.get('t')!r})"
             )
         time.sleep(0.05)
     # 9b) Command Palette schließen (falls offen) — Hook, Verifikations-Poll.

@@ -8,7 +8,8 @@ Zusätzlich includeHidden: eigenes Fake-Repo (`.git` + `.gitignore`) mit
 `.hidden.md`, Datei unter hidden Dir und gitignorierter Datei — ohne Flag
 übersprungen, mit Flag gefunden (kein Screenshot, kein fixtures/-Pfad).
 Dateilisten-Scope `files` (R10): genau die übergebenen Dateien, leere Liste,
-relative Pfade, Konflikt mit scope/openTabs und mehr als 500 Einträge.
+relative Pfade, Konflikt mit scope und mehr als 500 Einträge. Ein Alt-Feld
+`openTabs` (Scope entfernt in S9) wird wie jedes unbekannte Feld ignoriert (F12).
 
 Kein Screenshot-Vergleich (reines API-Szenario). Die Fixtures liegen in einem
 System-Temp-Ordner (auto-cleanup); der einzige persistente Seiteneffekt ist
@@ -265,43 +266,18 @@ def run(ctx):
                 except ApiError as err:
                     ctx.expect(err.status == 400, f"status={err.status}")
 
-            # --- S4: OpenTabs-Scope ----------------------------------------
+            # --- S9: OpenTabs-Scope entfernt (F12) ---------------------------
 
-            with ctx.step("openTabs searches dirty editor buffer, not disk"):
-                # Isolierter Tab-Zustand, dann eine Datei öffnen und den Puffer
-                # überschreiben (Treffer existiert NUR im Puffer, nicht auf Platte).
-                ctx.api.tabs_close_all()
-                ctx.api.tab_open(os.path.join(td, "ff", "note.md"))
-                ctx.api.editor_text_set("buffer holds zzuniquebuf now\n")
-                # Explizites Sync-Await: POST /editor/text schreibt den Store
-                # synchron; wir bestätigen den Puffer-Stand, bevor /search folgt.
-                txt = (ctx.api.editor_text_get() or {}).get("text") or ""
-                ctx.expect("zzuniquebuf" in txt, f"store not synced: {txt!r}")
-                resp = ctx.api.search("zzuniquebuf", open_tabs=True)
-                found = sorted(f["fileName"] for f in resp.get("files") or [])
-                ctx.expect(found == ["note.md"], f"openTabs dirty buffer: {found}")
-
-            with ctx.step("openTabs: emptied buffer yields no disk hits"):
-                ctx.api.tabs_close_all()
-                # data.txt hat "zzcustom" auf Platte; der Puffer wird geleert.
-                ctx.api.tab_open(os.path.join(td, "ff", "data.txt"))
-                ctx.api.editor_text_set("")
-                txt = (ctx.api.editor_text_get() or {}).get("text")
-                ctx.expect(txt == "", f"buffer not emptied: {txt!r}")
-                resp = ctx.api.search("zzcustom", open_tabs=True)
-                ctx.expect(
-                    _by_name(resp, "data.txt") is None,
-                    "emptied buffer must not fall back to disk content",
+            with ctx.step("F12: unbekanntes Feld openTabs wird ignoriert → Vault-Suche"):
+                # Die Request-Structs haben kein deny_unknown_fields: ein
+                # Alt-Aufrufer mit `openTabs` bekommt die normale Vault-Suche.
+                resp = ctx.api._request(
+                    "POST", "/search", {"query": "zzcustom", "openTabs": True}
                 )
-
-            with ctx.step("openTabs + scope conflict → 400"):
-                try:
-                    ctx.api.search(
-                        "zzcustom", scope=os.path.join(td, "ff"), open_tabs=True
-                    )
-                    ctx.expect(False, "openTabs+scope accepted")
-                except ApiError as err:
-                    ctx.expect(err.status == 400, f"status={err.status}")
+                ctx.expect(
+                    _by_name(resp, "data.txt") is not None,
+                    f"openTabs nicht ignoriert: {resp.get('files')}",
+                )
 
             # --- includeHidden / includeIgnored: getrennte Opt-ins -----------
             # Referenz-Fixture: .gitignore = secret.md + .herd/; Dateien
@@ -434,7 +410,6 @@ def run(ctx):
                     for label, files, extra in (
                         ("relative path", ["notes/other.md"], {}),
                         ("files + scope", [other], {"scope": r}),
-                        ("files + openTabs", [other], {"openTabs": True}),
                         (
                             "501 entries",
                             [f"{r}/f{i}.md" for i in range(501)],
@@ -450,8 +425,7 @@ def run(ctx):
                     shutil.rmtree(files_td, ignore_errors=True)
 
         finally:
-            # Offene (evtl. dirty) Tabs aus den OpenTabs-Schritten aufräumen,
-            # bevor der Fixture-Tempordner verschwindet.
+            # Offene Tabs aufräumen, bevor der Fixture-Tempordner verschwindet.
             try:
                 ctx.api.tabs_close_all()
             except Exception:
