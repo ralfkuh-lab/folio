@@ -1,4 +1,4 @@
-"""E2E: Vault-Tree-Filter R4 — Tiefenfilter (`**`) und Ordnerbereich.
+"""E2E: Vault-Tree-Filter R4/R5.2 — Tiefenfilter (immer aktiv) und Ordnerbereich.
 
 Fixture auf festem Temp-Pfad (Grund wie 56/57/59: der Pfad steht im
 Vault-Baum und in der Visual-Baseline). `git init` + `.gitignore`
@@ -6,7 +6,7 @@ Vault-Baum und in der Visual-Baseline). `git init` + `.gitignore`
 anwendet; eine repo-lokale `core.excludesFile` isoliert gegen die globale
 Ignore-Datei des Bauenden.
 
-Geprüft: Chip an + `ziel` → alle vier Treffer samt ganzer Vorfahrenkette
+Geprüft: `ziel` (ab 2 Zeichen immer tief) → alle vier Treffer samt ganzer Vorfahrenkette
 sichtbar und aufgeklappt, `leer/` versteckt; Ordnerbereich (echtes
 Kontextmenü `filter-folder` und Hook) → nur der Treffer im Bereich;
 Schließen klappt die vom Filter geoeffneten Ordner wieder zu, ein vorher
@@ -244,14 +244,15 @@ def run(ctx):
                 "leer/ wurde nicht aufgeklappt",
             )
 
-        with ctx.step("hidden chip switches vaultShowHidden (tree + filter)"):
-            # Der Chip `.*` IST das Setting `vaultShowHidden` (Default an):
-            # ein Klick wirkt sofort auf den Baum, auch ohne Namensbegriff.
+        with ctx.step("hidden chip hides hidden entries (tree + filter)"):
+            # `.*` gedrückt = versteckte AUSBLENDEN (vaultShowHidden=false), wie
+            # `.md`/`git`: aktiv heißt „es wird gefiltert". Wirkt sofort auf den
+            # Baum, auch ohne Namensbegriff.
             _click_id(ctx, "vault-filter-toggle")
             ctx.expect(_poll(lambda: _filter_bar_open(ctx)), "Filterzeile öffnet nicht")
             ctx.expect(
-                _chip_pressed(ctx, "vault-filter-hidden"),
-                "Hidden-Chip spiegelt vaultShowHidden=true nicht",
+                not _chip_pressed(ctx, "vault-filter-hidden"),
+                "Hidden-Chip bei vaultShowHidden=true gedrückt",
             )
             ctx.expect(_click_row(ctx, f"{p}/.versteckt"), ".versteckt-Row nicht klickbar")
             ctx.expect(
@@ -261,46 +262,38 @@ def run(ctx):
             _set_query(ctx, "ziel")
             ctx.expect(
                 _poll(lambda: _is_visible(ctx, ziel_versteckt), timeout=6.0),
-                "flach/Chip an: versteckter Treffer fehlt",
+                "Chip aus: versteckter Treffer fehlt",
             )
-            _click_id(ctx, "vault-filter-hidden")
-            ok = _poll(
-                lambda: (not _chip_pressed(ctx, "vault-filter-hidden"))
-                and ctx.api.settings_get().get("vaultShowHidden") is False
-                and not _exists(ctx, f"{p}/.versteckt"),
-                timeout=6.0,
-            )
-            ctx.expect(
-                ok,
-                "Chip aus: "
-                f"pressed={_chip_pressed(ctx, 'vault-filter-hidden')} "
-                f"versteckt_exists={_exists(ctx, f'{p}/.versteckt')}",
-            )
-            # Ohne Namensbegriff wirkt der Chip genauso (eigentlicher Befund).
-            _click_id(ctx, "vault-filter-clear")
             _click_id(ctx, "vault-filter-hidden")
             ok = _poll(
                 lambda: _chip_pressed(ctx, "vault-filter-hidden")
+                and ctx.api.settings_get().get("vaultShowHidden") is False
+                and not _exists(ctx, f"{p}/.versteckt")
+                and _is_visible(ctx, ziel_tief),
+                timeout=8.0,
+            )
+            ctx.expect(
+                ok,
+                "Chip an: "
+                f"pressed={_chip_pressed(ctx, 'vault-filter-hidden')} "
+                f"versteckt_exists={_exists(ctx, f'{p}/.versteckt')} "
+                f"tief={_is_visible(ctx, ziel_tief)}",
+            )
+            # Ohne Namensbegriff wirkt der Chip genauso.
+            _click_id(ctx, "vault-filter-clear")
+            _click_id(ctx, "vault-filter-hidden")
+            ok = _poll(
+                lambda: (not _chip_pressed(ctx, "vault-filter-hidden"))
                 and _exists(ctx, f"{p}/.versteckt"),
                 timeout=6.0,
             )
-            ctx.expect(ok, "Chip an ohne Filter: .versteckt kommt nicht zurück")
+            ctx.expect(ok, "Chip aus ohne Filter: .versteckt kommt nicht zurück")
 
-        with ctx.step("deep chip + ziel: hidden only with the hidden chip"):
-            if not _filter_bar_open(ctx):
-                _click_id(ctx, "vault-filter-toggle")
-                ctx.expect(
-                    _poll(lambda: _filter_bar_open(ctx)), "Filterzeile öffnet nicht"
-                )
+        with ctx.step("name filter always searches deep; hidden chip limits it"):
             _click_id(ctx, "vault-filter-hidden")
             ctx.expect(
-                _poll(lambda: not _chip_pressed(ctx, "vault-filter-hidden")),
-                "Hidden-Chip ließ sich nicht ausschalten",
-            )
-            _click_id(ctx, "vault-filter-deep")
-            ctx.expect(
-                _poll(lambda: _chip_pressed(ctx, "vault-filter-deep")),
-                "Tiefen-Chip nicht aktiv",
+                _poll(lambda: _chip_pressed(ctx, "vault-filter-hidden")),
+                "Hidden-Chip ließ sich nicht einschalten",
             )
             _set_query(ctx, "ziel")
             ok = _poll(
@@ -314,7 +307,7 @@ def run(ctx):
             )
             ctx.expect(
                 ok,
-                "Tiefen/Chip aus: "
+                "Tiefen/versteckte aus: "
                 f"tief={_is_visible(ctx, ziel_tief)} "
                 f"versteckt_visible={_is_visible(ctx, ziel_versteckt)} "
                 f"ignoriert={_is_visible(ctx, ziel_ignoriert)} "
@@ -324,8 +317,8 @@ def run(ctx):
             )
             _click_id(ctx, "vault-filter-hidden")
             ctx.expect(
-                _poll(lambda: _chip_pressed(ctx, "vault-filter-hidden")),
-                "Hidden-Chip nicht aktiv",
+                _poll(lambda: not _chip_pressed(ctx, "vault-filter-hidden")),
+                "Hidden-Chip ließ sich nicht ausschalten",
             )
             ok = _poll(
                 lambda: _is_visible(ctx, ziel_versteckt)
@@ -334,7 +327,7 @@ def run(ctx):
             )
             ctx.expect(
                 ok,
-                "Tiefen/Chip an: "
+                "Tiefen/versteckte an: "
                 f"versteckt_visible={_is_visible(ctx, ziel_versteckt)} "
                 f"kette={_chain_visible_and_open(ctx, p, ziel_versteckt)}",
             )

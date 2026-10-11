@@ -109,7 +109,6 @@ function buildDom(): void {
                 <div id="vault-search-error" hidden></div>
                 <button id="vault-filter-md"></button>
                 <button id="vault-filter-git"></button>
-                <button id="vault-filter-deep"></button>
                 <button id="vault-filter-hidden"></button>
                 <button id="vault-search-options-toggle" aria-expanded="false"></button>
                 <div id="vault-filter-scope" hidden>

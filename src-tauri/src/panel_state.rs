@@ -81,10 +81,6 @@ pub struct PanelStateData {
     // Nur Git-geaenderte Dateien (modified/untracked). Default aus.
     #[serde(default)]
     pub vault_filter_git_changed_only: bool,
-    // R4-Tiefenfilter (Chip `**`): Namensfilter sucht auch in zugeklappten
-    // Unterordnern. Default aus; der fluechtige Ordnerbereich liegt nicht hier.
-    #[serde(default)]
-    pub vault_filter_deep: bool,
     // Volle Breite fuer die gerenderte Markdown-View (View- und
     // Split-Mode). Default aus: die Lesebreite aus dem aktiven View-Theme
     // bleibt der Normalfall, der Schalter ist die bewusste Ausnahme fuer
@@ -142,7 +138,6 @@ impl Default for PanelStateData {
             vault_filter_markdown_only: false,
             vault_filter_bar_visible: false,
             vault_filter_git_changed_only: false,
-            vault_filter_deep: false,
             content_wide: false,
             zen_hint_seen: false,
         }
@@ -253,12 +248,10 @@ impl PanelState {
         markdown_only: bool,
         bar_visible: bool,
         git_changed_only: bool,
-        deep: bool,
     ) -> io::Result<()> {
         self.data.vault_filter_markdown_only = markdown_only;
         self.data.vault_filter_bar_visible = bar_visible;
         self.data.vault_filter_git_changed_only = git_changed_only;
-        self.data.vault_filter_deep = deep;
         self.save()
     }
 
@@ -504,14 +497,10 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let path = temp.path().join("panel.json");
         let mut state = PanelState::load_from(path.clone());
-        assert!(!default.vault_filter_deep);
-        state
-            .set_vault_filter_options(false, true, true, true)
-            .unwrap();
+        state.set_vault_filter_options(false, true, true).unwrap();
         let reloaded = PanelState::load_from(path.clone()).data();
         assert!(reloaded.vault_filter_git_changed_only);
         assert!(reloaded.vault_filter_bar_visible);
-        assert!(reloaded.vault_filter_deep);
         assert!(!reloaded.vault_filter_markdown_only);
     }
 

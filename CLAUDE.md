@@ -501,9 +501,9 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   `tests/vault/filter.test.ts`). „Schließen = Aufräumen": Funnel / Escape
   im leeren Feld leeren die Query und schließen den Bereich (das frühere
   Zeilen-✕ `#vault-filter-close` entfällt seit S9); Text-Lösch-✕ ist ins Input eingebettet; Funnel-Badge bei jedem
-  aktiven Filter (Query, md-only, git, Bereich).
-  **R4-Tiefenfilter** (Chip `#vault-filter-deep` `**`, Spec-Vertrag):
-  aktiv bei `(Chip ODER Ordnerbereich) UND Query ≥ 2 Zeichen`. Backend
+  aktiven Filter (Query, md-only, git, Bereich, `.*` gedrückt).
+  **R4-Tiefenfilter** (Spec-Vertrag; seit R5.2 **ohne** eigenen Chip):
+  aktiv ab Query ≥ 2 Zeichen. Backend
   `vault_filter_find` läuft parallel (`ignore::WalkBuilder::build_parallel`)
   über die Pins (`search::resolve_search_scope`) bzw. den Bereich, **ohne
   Gitignore** (`standard_filters(false)`; der Baum zeigt ignorierte Dateien
@@ -533,12 +533,14 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   Chip-Zeile (seit S9; 📁 Name mit Ellipsis ✕, Tooltip = Pfad, flüchtig);
   Bereich-Fehler (`errors.vault.filterScopeNotFound`/`…Invalid`)
   entfernen den Bereich und zeigen den Fehler transient; Hinweise „Keine
-  Treffer"/cap/time in `#vault-tree-notice`. Persistenz
-  `vault_filter_deep`.
-  **Hidden-Chip** (`#vault-filter-hidden` `.*`, R5.1) zeigt und schaltet
+  Treffer"/cap/time in `#vault-tree-notice`.
+  **Hidden-Chip** (`#vault-filter-hidden` `.*`, R5.1/R5.2) schaltet
   `settings.vaultShowHidden` (`settings_update`; Chip/Tiefen-Sync/Suche
-  ziehen über `settings:changed` nach). Kein eigener Panel-State, kein
-  Filter fürs Badge. Ein Pin direkt auf `.name` zeigt seinen Inhalt weiter.
+  ziehen über `settings:changed` nach). **Gedrückt = versteckte
+  ausblenden** (`vaultShowHidden=false`), damit „aktiv = es wird
+  gefiltert" für alle Chips gilt; zählt fürs Funnel-Badge, aber nicht für
+  `isVaultFilterActive` (den Baum filtert schon das Backend). Kein eigener
+  Panel-State. Ein Pin direkt auf `.name` zeigt seinen Inhalt weiter.
   **Trefferzahl** `#vault-filter-status` (ab Namensbegriff ≥ 2 bzw. im
   Tiefenmodus, im Suchmodus aus): volle Treffermenge aus
   `vault_filter_find`, nicht der gerenderte Lazy-Baum; im Tiefenmodus aus

@@ -369,7 +369,6 @@ pub async fn vault_filter_options_get(
         "markdownOnly": data.vault_filter_markdown_only,
         "barVisible": data.vault_filter_bar_visible,
         "gitChangedOnly": data.vault_filter_git_changed_only,
-        "deep": data.vault_filter_deep,
     }))
 }
 
@@ -391,14 +390,13 @@ pub async fn vault_filter_options_set(
     markdown_only: bool,
     bar_visible: bool,
     git_changed_only: bool,
-    deep: bool,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     state
         .panel_state
         .lock()
         .map_err(|_| "panel state lock poisoned".to_string())?
-        .set_vault_filter_options(markdown_only, bar_visible, git_changed_only, deep)
+        .set_vault_filter_options(markdown_only, bar_visible, git_changed_only)
         .map_err(|error| error.to_string())?;
     // Lazy-Tree-Spiegel: poisoned Vault-Lock ist Fehler (FX4), nicht still.
     // Nach dem Panel-Write beide Spiegel aus den Quellen lesen — sonst

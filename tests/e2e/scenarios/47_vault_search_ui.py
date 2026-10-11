@@ -641,9 +641,10 @@ def run(ctx):
                 ctx.api.workspace_pin(r_td, is_directory=True)
                 r_pinned = True
                 _open_area(ctx)
-                for chip in ("vault-filter-md", "vault-filter-git",
-                             "vault-filter-deep", "vault-filter-hidden"):
+                for chip in ("vault-filter-md", "vault-filter-git"):
                     _toggle_chip(ctx, chip, False)
+                # `.*` gedrückt = versteckte ausblenden (vaultShowHidden=false).
+                _toggle_chip(ctx, "vault-filter-hidden", True)
                 _set_filter_query(ctx, "")
 
             with ctx.step("F1: kein Filter → Vault-Walk ohne .herd/, Status „· Vault\""):
@@ -666,11 +667,11 @@ def run(ctx):
                 _toggle_chip(ctx, "vault-filter-md", False)
                 _set_filter_query(ctx, "")
 
-            with ctx.step("F2: Chip .* an → alle vier"):
-                _toggle_chip(ctx, "vault-filter-hidden", True)
+            with ctx.step("F2: Chip .* aus (versteckte zeigen) → alle vier"):
+                _toggle_chip(ctx, "vault-filter-hidden", False)
                 got, _ = _case(ctx, r)
                 ctx.expect(got == ["other.md", "spec-a.md", "spec-b.md", "spec-c.txt"], f"F2: {got}")
-                _toggle_chip(ctx, "vault-filter-hidden", False)
+                _toggle_chip(ctx, "vault-filter-hidden", True)
 
             with ctx.step("F3: Chip .md an → Walk mit markdown"):
                 _toggle_chip(ctx, "vault-filter-md", True)

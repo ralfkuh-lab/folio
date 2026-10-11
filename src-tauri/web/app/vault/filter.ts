@@ -5,8 +5,8 @@
    sichtbar), Highlight span.vf-hit auf Datei- und Ordner-Labels. Re-Apply via
    MutationObserver auf #vault-tree (Reentranz-Guard).
 
-   R4: Opt-in-Tiefenfilter (Chip `**`) und Ordnerbereich („In diesem Ordner
-   filtern"). Aktiv bei (Chip ODER Bereich) UND Query ≥ 2 Zeichen. Das Backend
+   R4: Tiefenfilter und Ordnerbereich („In diesem Ordner filtern"). Seit
+   R5.2 ohne eigenen Chip: aktiv ab Query ≥ 2 Zeichen. Das Backend
    (`vault_filter_find`) liefert die Trefferliste + Vorfahren-Ordner; die
    Ordner werden ueber `vault_expand_paths` geoeffnet (neu geoeffnete Pfade
    merken wir uns zum Aufraeumen), die Sichtbarkeit kommt aus der
@@ -59,7 +59,6 @@ let barEl: HTMLElement | null = null;
 let inputEl: HTMLInputElement | null = null;
 let mdChip: HTMLElement | null = null;
 let gitChip: HTMLElement | null = null;
-let deepChip: HTMLElement | null = null;
 let hiddenChip: HTMLElement | null = null;
 let scopeEl: HTMLElement | null = null;
 let scopeNameEl: HTMLElement | null = null;
@@ -79,8 +78,6 @@ let barVisible = false;
 let markdownOnly = false;
 /** Persistierter Git-Sichtfilter (nur geaenderte Dateien). */
 let gitChangedOnly = false;
-/** Persistierter Tiefenfilter-Chip (R4). */
-let deepMode = false;
 /** Fluechtiger Ordnerbereich (R4): absoluter Pfad oder null. */
 let scopePath: string | null = null;
 /** Committed Namensfilter (nach Debounce angewandt). */
@@ -92,12 +89,9 @@ let showHidden = true;
 /** Letzte angewandte Tiefen-Antwort samt Schluessel (Query+Bereich+Flags). */
 let deepState: { key: string; files: Set<string> } | null = null;
 /** Trefferzahl des Namensfilters (`#vault-filter-status`): letzte
- *  `vault_filter_find`-Antwort zum Schluessel `deepKey()`. Im Tiefenmodus
- *  liefert sie der Sync-Schritt mit, sonst `refreshFilterCount`. */
+ *  `vault_filter_find`-Antwort des Tiefen-Sync-Schritts samt Schluessel. */
 let countState: { key: string; files: string[]; truncated: boolean; reason: string | null } | null =
     null;
-/** Generation des flachen Zaehl-Laufs: ein neuerer Wunsch verwirft Antworten. */
-let countGen = 0;
 /** Vom Tiefenfilter NEU geoeffnete Ordner (Aufraeumen, R4 Punkt 7). */
 const expandedByFilter = new Set<string>();
 /** K1: serialisierte Sync-Schleife — laeuft nie doppelt, koalesziert Wünsche. */
@@ -211,44 +205,11 @@ function notifyFilterChanged(): void {
 }
 
 /** Die Trefferzahl gilt der vollen Treffermenge (`vault_filter_find`), nicht
- *  dem gerenderten Lazy-Baum — sonst haenge sie davon ab, was gerade
- *  aufgeklappt ist. Sichtbar ab Namensbegriff ≥ 2 bzw. im Tiefenmodus. */
-function isFilterCountWanted(): boolean {
-    return barVisible && (committedQuery.length >= DEEP_MIN_QUERY || isDeepActive());
-}
-
+ *  dem gerenderten Lazy-Baum. Sie kommt aus dem Tiefen-Sync-Schritt (der
+ *  Tiefenmodus ist ab 2 Zeichen immer aktiv) — kein zweiter Walk. */
 function refreshFilterCount(): void {
-    const myGen = ++countGen;
-    if (!isFilterCountWanted()) {
-        countState = null;
-        renderFilterStatus();
-        return;
-    }
-    const key = deepKey();
-    // Im Tiefenmodus liefert der Sync-Schritt die Antwort (kein zweiter Walk).
-    if (isDeepActive() || (countState && countState.key === key)) {
-        renderFilterStatus();
-        return;
-    }
-    const query = committedQuery;
-    const scope = scopePath;
-    void (async () => {
-        let raw: unknown;
-        try {
-            // `.md` liest das Backend aus dem Panel-State.
-            await whenFilterOptionsPersisted();
-            if (myGen !== countGen) return;
-            raw = await invoke('vault_filter_find', { query, scope });
-        } catch (err) {
-            if (myGen !== countGen) return;
-            folioLog.debug('vault-filter', 'filter count failed', { error: String(err) });
-            countState = null;
-            renderFilterStatus();
-            return;
-        }
-        if (myGen !== countGen || deepKey() !== key) return;
-        setCountState(key, parseFind(raw));
-    })();
+    if (!barVisible || !isDeepActive()) countState = null;
+    renderFilterStatus();
 }
 
 function setCountState(key: string, res: FindResult): void {
@@ -265,7 +226,7 @@ function setCountState(key: string, res: FindResult): void {
  *  (kein Flackern beim Tippen). Der git-Chip schneidet wie in der Suche. */
 function renderFilterStatus(): void {
     if (!filterStatusEl) return;
-    if (!isFilterCountWanted() || !countState) {
+    if (!barVisible || !isDeepActive() || !countState) {
         filterStatusEl.hidden = true;
         filterStatusEl.textContent = '';
         return;
@@ -298,13 +259,12 @@ export async function whenFilterOptionsPersisted(): Promise<void> {
     if (optionsWriteError !== null) throw optionsWriteError;
 }
 
-/** Tiefenmodus aktiv, wenn Chip ODER Bereich gesetzt ist und die Query lang
- *  genug ist (nach `trim`; `committedQuery` ist bereits getrimmt). R4.1:
- *  Bereich + md-only ist auch ohne (oder mit zu kurzer) Query aktiv; ohne
- *  Bereich bleibt die 2-Zeichen-Regel. */
+/** Tiefenmodus (R5.2: immer, kein eigener Chip mehr) ab einer Query von 2
+ *  Zeichen (nach `trim`; `committedQuery` ist bereits getrimmt). R4.1:
+ *  Bereich + md-only ist auch ohne (oder mit zu kurzer) Query aktiv. */
 function isDeepActive(): boolean {
     if (scopePath !== null && markdownOnly) return true;
-    return (deepMode || scopePath !== null) && committedQuery.length >= DEEP_MIN_QUERY;
+    return committedQuery.length >= DEEP_MIN_QUERY;
 }
 
 /** K1/K2: Schluessel der Tiefen-Sicht — aendert sich Query, Bereich, md-only
@@ -322,14 +282,12 @@ function persistOptions(): Promise<void> {
     const md = markdownOnly;
     const bar = barVisible;
     const git = gitChangedOnly;
-    const deep = deepMode;
     optionsWriteChain = optionsWriteChain
         .then(() =>
             invoke('vault_filter_options_set', {
                 markdownOnly: md,
                 barVisible: bar,
                 gitChangedOnly: git,
-                deep,
             }).then(() => {
                 optionsWriteError = null;
             }),
@@ -367,16 +325,13 @@ function syncGitChip(): void {
     gitChip.classList.toggle('active', gitChangedOnly);
 }
 
-function syncDeepChip(): void {
-    if (!deepChip) return;
-    deepChip.setAttribute('aria-pressed', deepMode ? 'true' : 'false');
-    deepChip.classList.toggle('active', deepMode);
-}
 
 function syncHiddenChip(): void {
     if (!hiddenChip) return;
-    hiddenChip.setAttribute('aria-pressed', showHidden ? 'true' : 'false');
-    hiddenChip.classList.toggle('active', showHidden);
+    // Gedrueckt = versteckte Eintraege AUSGEBLENDET: wie bei `.md`/`git`
+    // heisst ein aktiver Chip „es wird weggefiltert".
+    hiddenChip.setAttribute('aria-pressed', showHidden ? 'false' : 'true');
+    hiddenChip.classList.toggle('active', !showHidden);
 }
 
 function syncScopeChip(): void {
@@ -807,7 +762,9 @@ function expandGitChangedDirs(): Promise<void> {
 
 function syncFunnelBadge(): void {
     if (!toggleBtn) return;
-    toggleBtn.classList.toggle('filter-active', isVaultFilterActive());
+    // `.*` (versteckte ausblenden) zaehlt fuers Badge wie ein Filter, aber
+    // nicht fuer `isVaultFilterActive` — den Baum filtert schon das Backend.
+    toggleBtn.classList.toggle('filter-active', isVaultFilterActive() || !showHidden);
 }
 
 /**
@@ -1146,14 +1103,6 @@ function onGitToggle(): void {
     }
 }
 
-function onDeepToggle(): void {
-    deepMode = !deepMode;
-    syncDeepChip();
-    syncFunnelBadge();
-    void persistOptions();
-    requestDeepSync();
-    refreshFilterCount();
-}
 
 /** Chip „versteckte" (`.*`) = Setting `vaultShowHidden`. Der Backend-Side-
  *  Effect baut den Baum neu; Chip, Tiefen-Sync und Suche ziehen ueber
@@ -1227,6 +1176,7 @@ function onSettingsChanged(payload: unknown): void {
     if (changed.includes('vaultShowHidden') && next !== showHidden) {
         showHidden = next;
         syncHiddenChip();
+        syncFunnelBadge();
         // Wie der md-Toggle: Rebuild im Sync-Schritt abwarten, dann suchen.
         requestDeepRebuild();
         notifyFilterChanged();
@@ -1285,7 +1235,6 @@ export function resetVaultFilterForAutomation(): void {
     committedQuery = '';
     markdownOnly = false;
     gitChangedOnly = false;
-    deepMode = false;
     scopePath = null;
     barVisible = false;
     deepState = null;
@@ -1293,7 +1242,6 @@ export function resetVaultFilterForAutomation(): void {
     syncClearVisibility();
     syncMdChip();
     syncGitChip();
-    syncDeepChip();
     syncHiddenChip();
     syncScopeChip();
     syncBarVisibility();
@@ -1310,7 +1258,6 @@ export function initVaultFilter(): () => void {
     inputEl = document.getElementById('vault-filter-input') as HTMLInputElement | null;
     mdChip = document.getElementById('vault-filter-md');
     gitChip = document.getElementById('vault-filter-git');
-    deepChip = document.getElementById('vault-filter-deep');
     hiddenChip = document.getElementById('vault-filter-hidden');
     scopeEl = document.getElementById('vault-filter-scope');
     scopeNameEl = document.getElementById('vault-filter-scope-name');
@@ -1351,10 +1298,6 @@ export function initVaultFilter(): () => void {
         e.preventDefault();
         onGitToggle();
     };
-    const onDeepClick = (e: MouseEvent) => {
-        e.preventDefault();
-        onDeepToggle();
-    };
     const onHiddenClick = (e: MouseEvent) => {
         e.preventDefault();
         onHiddenToggle();
@@ -1390,7 +1333,6 @@ export function initVaultFilter(): () => void {
     clearBtn?.addEventListener('click', onClearClick);
     mdChip?.addEventListener('click', onMdClick);
     gitChip?.addEventListener('click', onGitClick);
-    deepChip?.addEventListener('click', onDeepClick);
     hiddenChip?.addEventListener('click', onHiddenClick);
     scopeRemoveBtn?.addEventListener('click', onScopeRemoveClick);
     window.addEventListener(GIT_STATUS_CHANGED_EVENT, onGitStatus);
@@ -1415,6 +1357,7 @@ export function initVaultFilter(): () => void {
             if (typeof data.vaultShowHidden === 'boolean') {
                 showHidden = data.vaultShowHidden;
                 syncHiddenChip();
+                syncFunnelBadge();
             }
         })
         .catch(() => {});
@@ -1446,16 +1389,13 @@ export function initVaultFilter(): () => void {
                 markdownOnly?: boolean;
                 barVisible?: boolean;
                 gitChangedOnly?: boolean;
-                deep?: boolean;
             };
             markdownOnly = !!opts.markdownOnly;
             barVisible = !!opts.barVisible;
             gitChangedOnly = !!opts.gitChangedOnly;
-            deepMode = !!opts.deep;
             syncMdChip();
             syncGitChip();
-            syncDeepChip();
-            syncHiddenChip();
+                    syncHiddenChip();
             syncScopeChip();
             syncBarVisibility();
             syncFunnelBadge();
@@ -1475,7 +1415,6 @@ export function initVaultFilter(): () => void {
     syncClearVisibility();
     syncMdChip();
     syncGitChip();
-    syncDeepChip();
     syncHiddenChip();
     syncScopeChip();
     syncFunnelBadge();
@@ -1490,7 +1429,6 @@ export function initVaultFilter(): () => void {
         clearBtn?.removeEventListener('click', onClearClick);
         mdChip?.removeEventListener('click', onMdClick);
         gitChip?.removeEventListener('click', onGitClick);
-        deepChip?.removeEventListener('click', onDeepClick);
         hiddenChip?.removeEventListener('click', onHiddenClick);
         scopeRemoveBtn?.removeEventListener('click', onScopeRemoveClick);
         window.removeEventListener(GIT_STATUS_CHANGED_EVENT, onGitStatus);
@@ -1517,12 +1455,10 @@ export function initVaultFilter(): () => void {
         committedQuery = '';
         markdownOnly = false;
         gitChangedOnly = false;
-        deepMode = false;
-        scopePath = null;
+            scopePath = null;
         showHidden = true;
         deepState = null;
         countState = null;
-        countGen = 0;
         expandedByFilter.clear();
         barVisible = false;
         expandGitInFlight = null;

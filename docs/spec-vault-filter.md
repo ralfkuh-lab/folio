@@ -45,6 +45,8 @@ weiter, R4 ergänzt den Tiefenfilter und den Ordnerbereich). Ursprung: `docs/fea
   `closeVaultFilterBar` und das In-Window-Event `folio-vault-filter-changed`
   bei jeder Änderung von Name, Bereich, Chips, `vaultShowHidden`, Schließen
   und Reset. Details: [`spec-vault-search.md`](spec-vault-search.md), Etappe S9.
+- **R5.2 (2026-10-11)**: Chip `**` entfällt (Tiefenmodus ab 2 Zeichen
+  immer), `.*` invertiert („Versteckte ausblenden"). Siehe unten.
 - **R5.1 (2026-10-11)**: Chip `.*` **ist** das Setting `vaultShowHidden`
   (wirkt sofort auf Baum, Filter und Suche, wie `.md`/`git`); Trefferzahl
   des Namensfilters in `#vault-filter-status`. Grund (User-Feedback): der
@@ -180,10 +182,8 @@ ignoriert** — ein gitignore-respektierender Walk fände die Datei nie.
 
 ### Bedienung
 
-- **Chip `**`** (`#vault-filter-deep`, zwischen `git` und Zeilen-X;
-  Tooltip „Auch in Unterordnern suchen"). Toggle, **persistiert**
-  (`vault_filter_deep`, Default aus). An = Tiefenmodus für den
-  Namensfilter über **alle Pins**.
+- ~~**Chip `**`**~~ (`#vault-filter-deep`): seit R5.2 entfernt, der
+  Tiefenmodus ist ab 2 Zeichen immer aktiv.
 - **Kontextmenü „In diesem Ordner filtern"** (`filter-folder`) auf jedem
   Ordner im Vault-Baum (direkt unter „In diesem Ordner suchen"). Öffnet
   die Filterzeile, setzt den **Ordnerbereich** und fokussiert das Input.
@@ -300,9 +300,9 @@ Aktiv, wenn `(chip an ODER Bereich gesetzt) UND Query ≥ 2 Zeichen`
   expandierten Pfade aus `ExpandPathsResult.paths`).
 - `vault_collapse_paths { paths: string[] }` → `{ html }` wie
   `vault_collapse_all`, nur für die übergebenen Pfade.
-- `vault_filter_options_get/set`: additives Feld `deep: bool`
-  (`panel_state.vault_filter_deep`). Das R4.3-Feld `hidden` ist seit R5.1
-  entfallen (Alt-Werte in `panel-state.json` werden beim Laden ignoriert).
+- `vault_filter_options_get/set`: die R4-Felder `deep` (R5.2) und
+  `hidden` (R5.1) sind entfallen; Alt-Werte in `panel-state.json` werden
+  beim Laden ignoriert.
 - Automation/E2E: `window.__folioVaultFilterInFolder(path)` (Hook wie
   `__folioVaultFilterReset`, ruft denselben Pfad wie das Kontextmenü);
   der Reset-Hook setzt auch Chip und Bereich zurück und räumt auf.
@@ -405,7 +405,7 @@ nicht, mit `vaultShowHidden` aus nie, und „an = mehr" stand neben
 „an = weniger" bei `.md`/`git`.
 
 1. **Ein Schalter**: `#vault-filter-hidden` zeigt und schaltet
-   `settings.vaultShowHidden` (Default an → Chip gedrückt). Klick =
+   `settings.vaultShowHidden` (seit R5.2 invertiert angezeigt, s. u.). Klick =
    `settings_update { vaultShowHidden }`; der bestehende Side-Effect baut
    den Baum neu (Prune der versteckten `expanded_dirs` + Watches), Chip,
    Tiefen-Sync und Suche ziehen über `settings:changed` nach — derselbe Weg
@@ -418,8 +418,7 @@ nicht, mit `vaultShowHidden` aus nie, und „an = mehr" stand neben
 3. Kein eigener Panel-State mehr (`vault_filter_hidden` entfernt), kein
    clientseitiges `isHiddenBelowPin`. Ein Pin direkt auf `.name` zeigt
    seinen Inhalt weiter (Walk-Wurzel, `pin_roots`-Ausnahme).
-4. Der Chip ist eine Ansichtseinstellung, **kein Filter**: er zählt nicht
-   fürs Funnel-Badge und nicht für „· gefiltert".
+4. Der Chip zählt nicht für „· gefiltert" (Badge: seit R5.2 ja, s. u.).
 
 **Trefferzahl** (`#vault-filter-status`, unter dem Such-/Filterbereich,
 im Suchmodus ausgeblendet): sichtbar ab Namensbegriff ≥ 2 bzw. im
@@ -431,6 +430,29 @@ mit Generation-Token nach `whenFilterOptionsPersisted()`. Der `git`-Chip
 schneidet clientseitig wie die Suche. Deckel/Zeitbudget werden benannt
 (`vault.filter.status.capped`/`…time`). Bis zur Antwort auf einen neuen
 Schlüssel bleibt die alte Zahl stehen (kein Flackern beim Tippen).
+
+## R5.2: `**` entfällt, `.*` heißt „Versteckte ausblenden"
+
+User-Feedback nach R5.1:
+
+1. **`**` war unverständlich**: Mit gesetztem Bereich war der Tiefenmodus
+   ohnehin immer an, der Chip wirkte also nur ohne Bereich — und dort
+   widersprach der flache Modus der Trefferzahl (sie zählt die volle
+   Treffermenge, der flache Baum zeigt nur geladene Zeilen). Der Chip ist
+   ersatzlos gestrichen: **der Tiefenmodus ist ab 2 Zeichen immer aktiv**
+   (R4.1 Bereich + `.md` unverändert). Folge: Ordner ohne Treffer werden
+   auch ohne Bereich ausgeblendet (vorher R3 „Ordner bleiben sichtbar").
+   Die Trefferzahl kommt damit immer aus dem Tiefen-Sync-Schritt; der
+   eigene Zähl-Walk aus R5.1 entfällt. Persistenz `vault_filter_deep`
+   entfernt. Schutz gegen sehr allgemeine Begriffe bleiben Treffer-Deckel
+   (500), Zeitbudget (3 s) und der Expand-Soft-Cap; beim Verlassen klappt
+   der Filter genau die selbst geöffneten Ordner wieder zu.
+2. **`.*` invertiert**: gedrückt = versteckte **ausblenden**
+   (`vaultShowHidden=false`), damit „aktiv = es wird gefiltert" für alle
+   Chips gilt. Default nicht gedrückt. Der Chip zählt fürs Funnel-Badge,
+   aber nicht für `isVaultFilterActive`/„· gefiltert" — den Baum filtert
+   bereits das Backend, eine clientseitige Sicht wäre wirkungslos.
+3. Chip-Zeile: `.md` `git` `.*` `⚙` `📁 Bereich ✕`.
 
 ## Abnahme-Gates
 

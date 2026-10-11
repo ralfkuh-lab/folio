@@ -184,9 +184,9 @@ Wichtige stabile Selektor-Gruppen:
   `data-path="<normalized-absolute-path>"`.
 - Vault-Tree-Filter: `#vault-filter`, `#vault-filter-input`,
   `#vault-filter-toggle`, `#vault-filter-md`, `#vault-filter-git`,
-  `#vault-filter-deep` (R4-Tiefenfilter), `#vault-filter-scope` mit
+  `#vault-filter-scope` mit
   `#vault-filter-scope-name`/`#vault-filter-scope-remove` (R4-Ordnerbereich),
-  `#vault-filter-hidden` (`.*`, `aria-pressed` = `vaultShowHidden`),
+  `#vault-filter-hidden` (`.*`, `aria-pressed` = NICHT `vaultShowHidden`),
   `#vault-filter-status` (Trefferzahl des Namensfilters), `#vault-tree-notice`.
 - Volltextsuche im selben Bereich (S9): `#vault-search-input`,
   `#vault-search-clear`, `#vault-search-case`/`#vault-search-word`/

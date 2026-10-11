@@ -169,15 +169,17 @@ def run(ctx):
             ctx.api.sync_render()
             ctx.screenshot("49_filter_bar_open")
 
-        with ctx.step("name filter: Alpha match, Beta/notes hidden; folders stay"):
+        with ctx.step("name filter: Alpha match, Beta/notes hidden; empty folders hidden"):
+            # R5.2: der Tiefenmodus ist ab 2 Zeichen immer aktiv — Ordner ohne
+            # Treffer verschwinden (vorher R3 „Ordner bleiben sichtbar").
             _set_query(ctx, "alp")
             ok = _poll(
                 ctx,
                 lambda: _file_visible(ctx, "Alpha.md")
                 and _file_hidden(ctx, "Beta.md")
                 and _file_hidden(ctx, "notes.txt")
-                and _dir_visible(ctx, "Notes")
-                and _dir_visible(ctx, "empty_branch")
+                and not _dir_visible(ctx, "Notes")
+                and not _dir_visible(ctx, "empty_branch")
                 and _has_vf_hit(ctx),
                 timeout=4.0,
             )
@@ -202,7 +204,9 @@ def run(ctx):
             ctx.screenshot("49_filter_name_match")
 
         with ctx.step("expand roots opens only first level; button disables"):
-            # Pin ist aus vorherigem Step offen → erst collapse, dann expand-roots.
+            # Baum-Operationen sind filterunabhängig: Begriff leeren (R5.2 blendet
+            # trefferlose Ordner sonst aus). Pin ist offen → collapse, expand-roots.
+            _set_query(ctx, "")
             _click_id(ctx, "vault-collapse-all")
             ok = _poll(
                 ctx,
