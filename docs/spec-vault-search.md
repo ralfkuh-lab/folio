@@ -724,7 +724,7 @@ Funnel statt Summary-Button + Dialog + Filterzeile.
    Buttons schrumpfen nie (der Funnel ist der einzige sichtbare Einstieg).
 2. **Suchraum** = `filter.ts::getSearchSpace()`:
    - kein Namensbegriff (< 2): Walk `Vault` bzw. `Folder(Bereich)`; `.md` →
-     `fileFilter=markdown`; `.*` → `includeHidden` nur mit `vaultShowHidden`;
+     `fileFilter=markdown`; `.*` (= `vaultShowHidden`, R5.1) → `includeHidden`;
      kein Deckel;
    - Namensbegriff ≥ 2: `files` aus `vault_filter_find` nach
      `whenFilterOptionsPersisted()`, git-Chip → Schnitt;

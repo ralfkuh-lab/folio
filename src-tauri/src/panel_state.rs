@@ -85,11 +85,6 @@ pub struct PanelStateData {
     // Unterordnern. Default aus; der fluechtige Ordnerbereich liegt nicht hier.
     #[serde(default)]
     pub vault_filter_deep: bool,
-    // Chip „versteckte" (`.*`): Namens-/Tiefenfilter liefert auch Treffer mit
-    // Dot-Segment unterhalb der Pin-Wurzel. Default aus, unabhaengig von
-    // `settings.vault_show_hidden` (der Baum folgt weiter dem Setting).
-    #[serde(default)]
-    pub vault_filter_hidden: bool,
     // Volle Breite fuer die gerenderte Markdown-View (View- und
     // Split-Mode). Default aus: die Lesebreite aus dem aktiven View-Theme
     // bleibt der Normalfall, der Schalter ist die bewusste Ausnahme fuer
@@ -148,7 +143,6 @@ impl Default for PanelStateData {
             vault_filter_bar_visible: false,
             vault_filter_git_changed_only: false,
             vault_filter_deep: false,
-            vault_filter_hidden: false,
             content_wide: false,
             zen_hint_seen: false,
         }
@@ -260,16 +254,11 @@ impl PanelState {
         bar_visible: bool,
         git_changed_only: bool,
         deep: bool,
-        hidden: Option<bool>,
     ) -> io::Result<()> {
         self.data.vault_filter_markdown_only = markdown_only;
         self.data.vault_filter_bar_visible = bar_visible;
         self.data.vault_filter_git_changed_only = git_changed_only;
         self.data.vault_filter_deep = deep;
-        // Fehlendes Feld beim Set = bisherigen Wert behalten (Alt-Caller).
-        if let Some(hidden) = hidden {
-            self.data.vault_filter_hidden = hidden;
-        }
         self.save()
     }
 
@@ -512,25 +501,18 @@ mod tests {
     fn vault_filter_git_changed_only_defaults_off_and_persists() {
         let default = PanelStateData::default();
         assert!(!default.vault_filter_git_changed_only);
-        assert!(!default.vault_filter_hidden);
         let temp = TempDir::new().unwrap();
         let path = temp.path().join("panel.json");
         let mut state = PanelState::load_from(path.clone());
         assert!(!default.vault_filter_deep);
         state
-            .set_vault_filter_options(false, true, true, true, Some(true))
+            .set_vault_filter_options(false, true, true, true)
             .unwrap();
         let reloaded = PanelState::load_from(path.clone()).data();
         assert!(reloaded.vault_filter_git_changed_only);
         assert!(reloaded.vault_filter_bar_visible);
         assert!(reloaded.vault_filter_deep);
-        assert!(reloaded.vault_filter_hidden);
         assert!(!reloaded.vault_filter_markdown_only);
-        // Fehlendes `hidden` beim Set behaelt den bisherigen Wert.
-        state
-            .set_vault_filter_options(false, true, false, false, None)
-            .unwrap();
-        assert!(PanelState::load_from(path).data().vault_filter_hidden);
     }
 
     #[test]

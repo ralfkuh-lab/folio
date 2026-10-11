@@ -474,7 +474,6 @@ async function runSearch(): Promise<void> {
             res = await rawInvoke('vault_filter_find', {
                 query: space.query,
                 scope: space.scope,
-                hidden: space.hidden,
             });
         } catch (err) {
             if (myGen !== gen) return;
@@ -1608,6 +1607,13 @@ export function initVaultSearch(d: Deps): () => void {
 
     const localInput = inputEl;
     const onInput = (): void => {
+        // Von Hand geleert (Backspace, Ausschneiden) heißt dasselbe wie ✕:
+        // sonst bliebe der alte Begriff aktiv und jede Filteränderung suchte
+        // ihn unsichtbar weiter.
+        if (localInput.value.length === 0) {
+            clearField();
+            return;
+        }
         syncClear();
         clearFieldError();
     };

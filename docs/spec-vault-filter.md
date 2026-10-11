@@ -31,11 +31,8 @@ weiter, R4 ergänzt den Tiefenfilter und den Ordnerbereich). Ursprung: `docs/fea
 - **R4.2 (2026-10-09)**: Bereich wirkt sofort (ohne Query/Chip); Ordner-
   Sichtbarkeit im Tiefenmodus aus der Trefferliste statt aus dem DOM
   (User-Report: nach Zu-/Aufklappen waren Treffer unerreichbar).
-- **R4.3 (dieses Dokument)**: vierter Chip „versteckte" (`.*`,
-  `#vault-filter-hidden`, persistiert `vault_filter_hidden`, Default
-  aus). Getrennt vom Baum-Setting `vaultShowHidden`: der Chip steuert
-  nur die Filtertreffer und aktiviert keinen Filter allein. Tiefenmodus:
-  wirksames `show_hidden` = Chip **UND** `vaultShowHidden`.
+- **R4.3 (2026-10-09)**: vierter Chip „versteckte" (`.*`) als eigener,
+  vom Baum-Setting getrennter Filterzustand. **Durch R5.1 ersetzt.**
 - **R5 (2026-10-10, Volltextsuche S9)**: Such- und Filterbereich
   zusammengelegt. Der Funnel öffnet `#vault-filter` ganz oder gar nicht
   (`aria-expanded`); unter dem Namensfeld liegt das Inhaltsfeld der
@@ -48,6 +45,11 @@ weiter, R4 ergänzt den Tiefenfilter und den Ordnerbereich). Ursprung: `docs/fea
   `closeVaultFilterBar` und das In-Window-Event `folio-vault-filter-changed`
   bei jeder Änderung von Name, Bereich, Chips, `vaultShowHidden`, Schließen
   und Reset. Details: [`spec-vault-search.md`](spec-vault-search.md), Etappe S9.
+- **R5.1 (2026-10-11)**: Chip `.*` **ist** das Setting `vaultShowHidden`
+  (wirkt sofort auf Baum, Filter und Suche, wie `.md`/`git`); Trefferzahl
+  des Namensfilters in `#vault-filter-status`. Grund (User-Feedback): der
+  Chip wirkte ohne weiteren Filter gar nicht, und „an = mehr" neben
+  „an = weniger" bei `.md`/`git` war nicht zu durchschauen. Siehe unten.
 
 ## Modell (R3)
 
@@ -261,8 +263,8 @@ Aktiv, wenn `(chip an ODER Bereich gesetzt) UND Query ≥ 2 Zeichen`
   verschweigen, was der Baum zeigt. Der Schutz vor `node_modules` & Co.
   ist der Treffer-Deckel plus Zeitbudget, nicht ein Visit-Deckel (das war
   der R2-Fehler: Deckel griff vor dem ersten Treffer).
-- Versteckte Einträge: im Tiefenmodus **Chip `.*` UND
-  `settings.vaultShowHidden`** (`vault_filter.rs::filter_show_hidden`).
+- Versteckte Einträge: folgen `settings.vaultShowHidden` (= Chip `.*`,
+  R5.1), wie der Baum.
   `.git` bleibt **immer** draußen. Eine Pfadkomponente, die selbst eine
   Pin-Wurzel ist, zählt nicht als versteckt (ein Pin direkt auf
   `.name` zeigt seinen Inhalt — auch wenn er als verschachtelter Pin
@@ -287,26 +289,20 @@ Aktiv, wenn `(chip an ODER Bereich gesetzt) UND Query ≥ 2 Zeichen`
 
 ### Schnittstellen
 
-- `vault_filter_find { query: String, scope: Option<String>,
-  hidden: Option<bool> }` →
+- `vault_filter_find { query: String, scope: Option<String> }` →
   `{ files: string[], dirs: string[], truncated: bool, reason: "cap"|"time"|null }`.
   Pfade mit Forward-Slashes. `dirs` = Vorfahren (s. o.), dedupliziert,
-  flach nach Tiefe sortiert. `hidden` ist der wirksame Chip-Wert des
-  Frontends; ist er gesetzt, gilt er statt des persistierten
-  `panel_state.vault_filter_hidden` (UND `vaultShowHidden` bleibt) — so
-  gehoert jede Antwort eindeutig zu ihrem Anforderungsschluessel und
-  haengt nicht am noch ausstehenden Options-Write. `markdownOnly`/
-  `vaultShowHidden` liest der Command weiter selbst
+  flach nach Tiefe sortiert. `markdownOnly`/`vaultShowHidden` liest der
+  Command selbst
   (`read_vault_list_options`). Lock-Regel wie `palette_files`: Pins
   klonen, Locks VOR dem Walk freigeben; Walk in `spawn_blocking`.
 - `vault_expand_paths` liefert additiv `paths: string[]` (die neu
   expandierten Pfade aus `ExpandPathsResult.paths`).
 - `vault_collapse_paths { paths: string[] }` → `{ html }` wie
   `vault_collapse_all`, nur für die übergebenen Pfade.
-- `vault_filter_options_get/set`: additive Felder `deep: bool`
-  (`panel_state.vault_filter_deep`) und `hidden: bool`
-  (`panel_state.vault_filter_hidden`, serde-default `false`). Beim Set
-  ist `hidden` optional: fehlt es, bleibt der bisherige Wert stehen.
+- `vault_filter_options_get/set`: additives Feld `deep: bool`
+  (`panel_state.vault_filter_deep`). Das R4.3-Feld `hidden` ist seit R5.1
+  entfallen (Alt-Werte in `panel-state.json` werden beim Laden ignoriert).
 - Automation/E2E: `window.__folioVaultFilterInFolder(path)` (Hook wie
   `__folioVaultFilterReset`, ruft denselben Pfad wie das Kontextmenü);
   der Reset-Hook setzt auch Chip und Bereich zurück und räumt auf.
@@ -400,58 +396,41 @@ nichts Sichtbares, weil der Tiefenmodus erst ab 2 Zeichen greift.
 3. Wurzel-Pins `/` und `C:/` werden als Vorfahren korrekt erkannt
    (`pathIsUnder` mit Wurzeln, die auf `/` enden).
 
-## R4.3: Chip „versteckte" (`.*`)
+## R5.1: Chip „versteckte" (`.*`) = `vaultShowHidden`, Trefferzahl
 
-Anlass: Suchen lieferten massenhaft Treffer aus Agenten-Arbeitsordnern
-wie `.herd/` (versteckt **und** global gitignoriert). Der Baum-Schalter
-`vaultShowHidden` ist dafuer zu grob: er steuert die Anzeige, nicht die
-Treffermenge des Filters.
+R4.3 hatte den Chip als eigenen Filterzustand neben dem Baum-Setting
+`vaultShowHidden` eingeführt (Anlass: Treffer aus `.herd/`). In der Praxis
+war das nicht zu durchschauen: ohne weiteren Filter wirkte der Chip gar
+nicht, mit `vaultShowHidden` aus nie, und „an = mehr" stand neben
+„an = weniger" bei `.md`/`git`.
 
-1. **Chip** `#vault-filter-hidden` (vierter Chip nach `**`, Text `.*`,
-   Tooltip/aria über `vault.filter.hidden.tooltip`/`…ariaLabel`).
-   Persistiert als `panel_state.vault_filter_hidden`, **Default aus**,
-   unabhaengig von `vaultShowHidden`. Der Reset-Hook
-   (`__folioVaultFilterReset`) setzt ihn wie md/git/deep zurück.
-2. **Wirkung nur auf Filterergebnisse**, nie auf den ungefilterten Baum
-   (der folgt weiter `vaultShowHidden`). Ist der Chip aus, liefert der
-   Filter keine Treffer, deren Pfad **unterhalb der Pin-Wurzel** ein
-   Dot-Segment enthält. Im flachen Modus entscheidet das Frontend
-   (`isHiddenBelowPin`) über die **längste sichtbare Pin-Wurzel**; im
-   Tiefenmodus das Backend (`find_by_name`/`visit_entry`). Die Pin-Wurzel
-   selbst zählt nicht: ein Pin direkt auf `.name` zeigt seinen Inhalt.
-   Das gilt auch, wenn der Pin hinter einem versteckten/gitignorierten
-   Zwischensegment oder einem Verzeichnis-Symlink
-   liegt (Pin-Wurzel wird eigene Walk-Wurzel, K-A2/K-A3); ein **nicht**
-   gepinnter Nachbar hinter demselben Segment bleibt ausgeblendet.
-   Es gilt weiter „Ordner bleiben sichtbar" (R3) — der Chip blendet nur
-   Datei-Zeilen aus. Die Pin-Zuordnung vergleicht **Windows-Schreibvarianten
-   case-insensitiv** (Laufwerksbuchstabe `X:` oder UNC `\\`, `pathIsUnder` in
-   `vault/git-status.ts`); Unix-Pfade bleiben case-sensitiv. Rein
-   lexikalisch, ohne Dateisystem-IO.
-3. **Kein Filter allein**: der Chip aktiviert den Filter nicht und zählt
-   nicht fürs Funnel-Badge (anders als `.md`). Ohne Query/Chip/Bereich
-   ändert er am Baum nichts.
-4. **Tiefenmodus**: wirksames `show_hidden` =
-   `filter_show_hidden(chip, vaultShowHidden)` = Chip **UND**
-   `vaultShowHidden` (was der Baum nicht anzeigt, kann der Filter nicht
-   zeigen). Der wirksame Chip-Wert geht **explizit** als `hidden` mit dem
-   Find (siehe Schnittstellen); Chip **und** `vaultShowHidden` stehen im
-   Tiefen-Schlüssel, damit ein Umschalten neu sucht. Eine Find-Antwort
-   wird nur angewandt, wenn ihr Anforderungsschlüssel noch dem aktuellen
-   `deepKey()` entspricht (sonst verwerfen und neu anfordern) — eine
-   veraltete Treffermenge bleibt so nie stehen, unabhängig davon, ob der
-   Panel-Write schon durch ist.
-5. **Referenzfall** (Tests): Pin `R` mit `notes/spec-x.md`,
-   `.herd/spec.md`, `.herd/sub/spec-z.md`, `a.md`; zweiter Pin direkt auf
-   `R/.pinned-hidden` mit `spec-y.md`; Query `spec`:
-   - Chip aus, `vaultShowHidden` an → `notes/spec-x.md`,
-     `.pinned-hidden/spec-y.md` (Pin-Wurzel selbst nicht versteckt);
-   - Chip an, `vaultShowHidden` an → zusätzlich `.herd/spec.md`,
-     `.herd/sub/spec-z.md`;
-   - Chip an, `vaultShowHidden` aus → wie Chip aus;
-   - flach, `.herd` aufgeklappt, Chip aus → `.herd/spec.md` ausgeblendet;
-     Chip an → sichtbar;
-   - kein Filtertext/Chip → Baum unverändert.
+1. **Ein Schalter**: `#vault-filter-hidden` zeigt und schaltet
+   `settings.vaultShowHidden` (Default an → Chip gedrückt). Klick =
+   `settings_update { vaultShowHidden }`; der bestehende Side-Effect baut
+   den Baum neu (Prune der versteckten `expanded_dirs` + Watches), Chip,
+   Tiefen-Sync und Suche ziehen über `settings:changed` nach — derselbe Weg
+   wie aus dem Settings-Dialog. Wirkt **sofort**, auch ohne Namensbegriff.
+2. Filter und Suche folgen dem Baum: was er nicht zeigt, liefert weder
+   `vault_filter_find` noch der Such-Walk (`includeHidden = vaultShowHidden`).
+   Der frühere Zustand „Baum mit, Filtertreffer ohne versteckte Einträge"
+   entfällt bewusst; gegen Arbeitsordner wie `.venv`/`node_modules` hilft
+   `.gitignore` (Such-Option „gitignorierte"), nicht der Punkt im Namen.
+3. Kein eigener Panel-State mehr (`vault_filter_hidden` entfernt), kein
+   clientseitiges `isHiddenBelowPin`. Ein Pin direkt auf `.name` zeigt
+   seinen Inhalt weiter (Walk-Wurzel, `pin_roots`-Ausnahme).
+4. Der Chip ist eine Ansichtseinstellung, **kein Filter**: er zählt nicht
+   fürs Funnel-Badge und nicht für „· gefiltert".
+
+**Trefferzahl** (`#vault-filter-status`, unter dem Such-/Filterbereich,
+im Suchmodus ausgeblendet): sichtbar ab Namensbegriff ≥ 2 bzw. im
+Tiefenmodus (R4.1: Bereich + `.md`). Quelle ist die **volle Treffermenge**
+von `vault_filter_find`, nicht der gerenderte Lazy-Baum (dessen Zeilen
+hingen davon ab, was gerade aufgeklappt ist). Im Tiefenmodus liefert der
+Sync-Schritt die Antwort mit (kein zweiter Walk), sonst ein eigener Lauf
+mit Generation-Token nach `whenFilterOptionsPersisted()`. Der `git`-Chip
+schneidet clientseitig wie die Suche. Deckel/Zeitbudget werden benannt
+(`vault.filter.status.capped`/`…time`). Bis zur Antwort auf einen neuen
+Schlüssel bleibt die alte Zahl stehen (kein Flackern beim Tippen).
 
 ## Abnahme-Gates
 

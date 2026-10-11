@@ -353,14 +353,12 @@ mod tests {
 
     /// Volle Kette wie im Frontend: Filtermenge über `find_by_name` (wirksames
     /// `show_hidden` wie im Command), dann Suche über die Dateilisten-Grenze.
-    #[allow(clippy::too_many_arguments)]
     fn search_filtered(
         root: &str,
         query: &str,
         scope: Option<&str>,
         markdown_only: bool,
-        chip_hidden: bool,
-        vault_show_hidden: bool,
+        show_hidden: bool,
         file_filter: &str,
     ) -> Vec<String> {
         let pinned = vec![crate::workspace::PinnedItem {
@@ -369,7 +367,7 @@ mod tests {
         }];
         let opts = crate::vault::VaultListOptions {
             markdown_only,
-            show_hidden: crate::vault_filter::filter_show_hidden(chip_hidden, vault_show_hidden),
+            show_hidden,
         };
         let found = crate::vault_filter::find_by_name(
             &pinned,
@@ -418,35 +416,30 @@ mod tests {
         // R1: Query `spec`, `.*` aus, `.md` aus.
         assert_eq!(
             ab_c,
-            search_filtered(&r, "spec", None, false, false, true, "allText")
+            search_filtered(&r, "spec", None, false, false, "allText")
         );
         // R2: `.*` an → zusätzlich `.herd/spec-b.md`.
         let mut r2 = vec![a.clone(), b.clone(), c.clone()];
         r2.sort();
         assert_eq!(
             r2,
-            search_filtered(&r, "spec", None, false, true, true, "allText")
-        );
-        // R3: `.*` an, `vaultShowHidden` aus → wie R1.
-        assert_eq!(
-            ab_c,
-            search_filtered(&r, "spec", None, false, true, false, "allText")
+            search_filtered(&r, "spec", None, false, true, "allText")
         );
         // R4: `.md` an → nur spec-a.md.
         assert_eq!(
             vec![a.clone()],
-            search_filtered(&r, "spec", None, true, false, true, "allText")
+            search_filtered(&r, "spec", None, true, false, "allText")
         );
         // R5: Dialog-Dateityp „Nur Markdown“ → nur spec-a.md.
         assert_eq!(
             vec![a.clone()],
-            search_filtered(&r, "spec", None, false, false, true, "markdown")
+            search_filtered(&r, "spec", None, false, false, "markdown")
         );
         // R6: Bereich `R/deep` + Query `spec` → nur spec-c.txt.
         let deep = format!("{r}/deep");
         assert_eq!(
             vec![c.clone()],
-            search_filtered(&r, "spec", Some(&deep), false, false, true, "allText")
+            search_filtered(&r, "spec", Some(&deep), false, false, "allText")
         );
         // R7: Bereich `R/notes` + `.md` an, Query leer → spec-a.md + other.md.
         let notes = format!("{r}/notes");
@@ -454,12 +447,12 @@ mod tests {
         r7.sort();
         assert_eq!(
             r7,
-            search_filtered(&r, "", Some(&notes), true, false, true, "allText")
+            search_filtered(&r, "", Some(&notes), true, false, "allText")
         );
     }
 
     /// Walk-Zweig (kein Namensbegriff, kein git): Vault- bzw. Ordner-Scope
-    /// über die Pins, `.md` → `markdown`, `.*` (UND `vaultShowHidden`) →
+    /// über die Pins, `.md` → `markdown`, `.*` (= `vaultShowHidden`) →
     /// `include_hidden`. Spiegelt die Grenz-Argumente des Frontends.
     /// `include_ignored` ist hier an: geprüft wird die Hidden-Regel, und die
     /// Ignore-Gruppe würde sonst die Umgebung des Bauenden einlesen (liegt das
@@ -518,7 +511,7 @@ mod tests {
             sorted(vec![a.clone(), other.clone(), c.clone()]),
             search_walk(&r, None, "allText", false)
         );
-        // F2: `.*` an (mit vaultShowHidden) → alle vier.
+        // F2: `.*` an → alle vier.
         assert_eq!(
             sorted(vec![a.clone(), b.clone(), other.clone(), c.clone()]),
             search_walk(&r, None, "allText", true)

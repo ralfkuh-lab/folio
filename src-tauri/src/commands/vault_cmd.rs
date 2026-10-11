@@ -370,7 +370,6 @@ pub async fn vault_filter_options_get(
         "barVisible": data.vault_filter_bar_visible,
         "gitChangedOnly": data.vault_filter_git_changed_only,
         "deep": data.vault_filter_deep,
-        "hidden": data.vault_filter_hidden,
     }))
 }
 
@@ -393,14 +392,13 @@ pub async fn vault_filter_options_set(
     bar_visible: bool,
     git_changed_only: bool,
     deep: bool,
-    hidden: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     state
         .panel_state
         .lock()
         .map_err(|_| "panel state lock poisoned".to_string())?
-        .set_vault_filter_options(markdown_only, bar_visible, git_changed_only, deep, hidden)
+        .set_vault_filter_options(markdown_only, bar_visible, git_changed_only, deep)
         .map_err(|error| error.to_string())?;
     // Lazy-Tree-Spiegel: poisoned Vault-Lock ist Fehler (FX4), nicht still.
     // Nach dem Panel-Write beide Spiegel aus den Quellen lesen — sonst
@@ -458,26 +456,11 @@ pub async fn palette_files(
 pub async fn vault_filter_find(
     query: String,
     scope: Option<String>,
-    hidden: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<crate::vault_filter::FilterFindResponse, String> {
-    let mut opts = read_vault_list_options(state.inner())?;
-    // Chip „versteckte" (Paket B): gesetztes Frontend-Feld gilt (die Antwort
-    // gehoert damit eindeutig zu ihrem Anforderungsschluessel), fehlendes
-    // faellt auf den persistierten Panel-Wert zurueck. Wirksam bleibt in
-    // beiden Faellen Chip UND `vaultShowHidden`.
-    let filter_hidden = match hidden {
-        Some(value) => value,
-        None => {
-            state
-                .panel_state
-                .lock()
-                .map_err(|_| "panel state lock poisoned".to_string())?
-                .data()
-                .vault_filter_hidden
-        }
-    };
-    opts.show_hidden = crate::vault_filter::filter_show_hidden(filter_hidden, opts.show_hidden);
+    // Versteckte Treffer folgen `vaultShowHidden` (= Chip `.*`): was der Baum
+    // nicht anzeigt, liefert auch der Filter nicht.
+    let opts = read_vault_list_options(state.inner())?;
     let pinned = {
         let workspace = state
             .workspace

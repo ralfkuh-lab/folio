@@ -278,9 +278,8 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   gepinntes `.git` wäre abwegig und folgt derselben Pin-Regel).
   Live-Toggle ohne Neustart; unsichtbar gewordene aufgeklappte Ordner
   werden aus `expanded_dirs` und ihren NonRecursive-Watches entfernt.
-  **Davon unabhaengig** steuert der Filter-Chip „versteckte"
-  (`#vault-filter-hidden`) nur die Such-/Filtertreffer; der Baum folgt
-  weiter ausschliesslich `vaultShowHidden` (siehe Vault-Tree-Filter).
+  Der Filter-Chip „versteckte" (`#vault-filter-hidden` `.*`) **ist**
+  dieser Schalter (seit R5.1): Baum, Filter und Suche folgen einem Wert.
 - **Pin-Reordering** (`vault/tree.ts`): das Umsortieren der angepinnten
   Top-Level-Einträge läuft **Pointer-basiert** (`pointerdown`/`move`/`up`,
   delegiert auf `#vault-tree`), **bewusst NICHT über HTML5-Drag&Drop**.
@@ -436,8 +435,8 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   Rail rücken die Felder per `flex-wrap` nebeneinander. **Ein Modell: die
   Suche durchsucht, was der Filter zeigt, ohne Filter den ganzen Vault** —
   einzige Quelle `filter.ts::getSearchSpace()`: ohne Namensbegriff (< 2) ein
-  Walk (`Vault` bzw. `Folder(Bereich)`, `.md` → `fileFilter=markdown`, `.*` →
-  `includeHidden` nur zusammen mit `vaultShowHidden`, kein Deckel); mit
+  Walk (`Vault` bzw. `Folder(Bereich)`, `.md` → `fileFilter=markdown`, `.*` (=
+  `vaultShowHidden`) → `includeHidden`, kein Deckel); mit
   Namensbegriff `Files` aus `vault_filter_find` nach
   `whenFilterOptionsPersisted()` (git-Chip → Schnitt mit `isPathGitChanged`;
   Filter-Deckel `cap`/`time` wird im Status benannt). `git` ohne Namensbegriff
@@ -523,7 +522,7 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   Tiefenfilters laufen in EINER serialisierten Sync-Schleife**
   (`runDeepSync`, nie doppelt; `deepSyncDirty` koalesziert Aktionen, der
   Wunschzustand wird erst beim Ausführen gelesen); Schlüssel = Query +
-  Bereich + md-only + `vaultShowHidden` + Hidden-Chip, veraltetes
+  Bereich + md-only + `vaultShowHidden`, veraltetes
   Voll-HTML wird nie angewandt (`refreshVault()` stattdessen), die
   tatsächlich neu geöffneten `paths` werden IMMER eingesammelt. Aufräumen
   (Query < 2, Chip aus, Bereich weg, Schließen, Reset) ruft
@@ -536,19 +535,14 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   entfernen den Bereich und zeigen den Fehler transient; Hinweise „Keine
   Treffer"/cap/time in `#vault-tree-notice`. Persistenz
   `vault_filter_deep`.
-  **Hidden-Chip** (`#vault-filter-hidden` `.*`, vierter Chip nach `**`,
-  persistiert `vault_filter_hidden`, Default aus): wirkt **nur auf
-  Filterergebnisse**, nie auf den ungefilterten Baum (der folgt weiter
-  `vaultShowHidden`), und aktiviert **keinen** Filter (anders als `.md`).
-  Ist er aus, blendet der Filter alle Treffer aus, deren Pfad ein
-  Dot-Segment **unterhalb der Pin-Wurzel** enthält (flacher Modus
-  clientseitig über die längste sichtbare Pin-Wurzel, Tiefenmodus im
-  Backend); die Pin-Wurzel selbst zählt nicht (auch ein Pin direkt auf
-  `.name` zeigt seinen Inhalt). Tiefenmodus: wirksames `show_hidden` =
-  Chip **UND** `vaultShowHidden` — was der Baum nicht anzeigt, kann der
-  Filter nicht zeigen. Beide Werte stehen im Tiefen-Schlüssel, damit ein
-  Umschalten neu sucht; der Chip-Toggle persistiert erst und ruft dann
-  `vault_filter_find` (gleiche Race wie beim md-Toggle).
+  **Hidden-Chip** (`#vault-filter-hidden` `.*`, R5.1) zeigt und schaltet
+  `settings.vaultShowHidden` (`settings_update`; Chip/Tiefen-Sync/Suche
+  ziehen über `settings:changed` nach). Kein eigener Panel-State, kein
+  Filter fürs Badge. Ein Pin direkt auf `.name` zeigt seinen Inhalt weiter.
+  **Trefferzahl** `#vault-filter-status` (ab Namensbegriff ≥ 2 bzw. im
+  Tiefenmodus, im Suchmodus aus): volle Treffermenge aus
+  `vault_filter_find`, nicht der gerenderte Lazy-Baum; im Tiefenmodus aus
+  dem Sync-Schritt (kein zweiter Walk), `git`-Chip schneidet clientseitig.
   **R4.1**: Bereich + md-only ist auch **ohne (oder mit zu kurzer) Query**
   aktiv — das Backend liefert dann alle Markdown-Dateien unterhalb des
   Bereichs (Guard: leere Query nur mit Bereich UND md-only). Ohne Bereich

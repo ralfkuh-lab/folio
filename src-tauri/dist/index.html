@@ -116,7 +116,7 @@
       <button type="button" id="vault-filter-md" class="vault-filter-chip vault-filter-md" aria-pressed="false" title="Nur Markdown" data-i18n-title="vault.filter.md.tooltip" aria-label="Nur Markdown-Dateien anzeigen" data-i18n-aria-label="vault.filter.md.ariaLabel">.md</button>
       <button type="button" id="vault-filter-git" class="vault-filter-chip vault-filter-git" aria-pressed="false" title="Nur geänderte Dateien" data-i18n-title="vault.filter.git.tooltip" aria-label="Nur geänderte Dateien anzeigen" data-i18n-aria-label="vault.filter.git.ariaLabel">git</button>
       <button type="button" id="vault-filter-deep" class="vault-filter-chip vault-filter-deep" aria-pressed="false" title="Auch in Unterordnern suchen" data-i18n-title="vault.filter.deep.tooltip" aria-label="Auch in Unterordnern suchen" data-i18n-aria-label="vault.filter.deep.ariaLabel">**</button>
-      <button type="button" id="vault-filter-hidden" class="vault-filter-chip vault-filter-hidden" aria-pressed="false" title="Auch versteckte Ordner (.name) durchsuchen" data-i18n-title="vault.filter.hidden.tooltip" aria-label="Auch versteckte Dateien und Ordner durchsuchen" data-i18n-aria-label="vault.filter.hidden.ariaLabel">.*</button>
+      <button type="button" id="vault-filter-hidden" class="vault-filter-chip vault-filter-hidden" aria-pressed="false" title="Versteckte Dateien und Ordner (.name) anzeigen" data-i18n-title="vault.filter.hidden.tooltip" aria-label="Versteckte Dateien und Ordner anzeigen" data-i18n-aria-label="vault.filter.hidden.ariaLabel">.*</button>
       <button type="button" id="vault-search-options-toggle" class="vault-filter-chip vs-gear" popovertarget="vault-search-options" aria-haspopup="dialog" aria-expanded="false" aria-controls="vault-search-options" title="Weitere Suchoptionen" data-i18n-title="search.options.title" aria-label="Weitere Suchoptionen" data-i18n-aria-label="search.options.title">&#x2699;</button>
       <div class="vault-filter-scope" id="vault-filter-scope" hidden>
         <span class="vault-filter-scope-icon" aria-hidden="true">&#x1F4C1;</span>
@@ -125,6 +125,7 @@
       </div>
     </div>
   </div>
+  <div class="vault-filter-status" id="vault-filter-status" role="status" hidden></div>
   <div id="vault-search-options" class="vs-options-pop" popover role="dialog" aria-label="Weitere Suchoptionen" data-i18n-aria-label="search.options.title">
     <label class="vsd-check"><input type="checkbox" id="vault-search-include-ignored" /><span data-i18n="search.options.includeIgnored.label">Zusätzlich gitignorierte Dateien durchsuchen</span></label>
     <fieldset class="vsd-group">

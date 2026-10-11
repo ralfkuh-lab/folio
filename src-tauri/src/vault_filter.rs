@@ -119,13 +119,6 @@ enum FindEvent {
     TimedOut,
 }
 
-/// Wirksamer Hidden-Filter des Tiefenmodus (Paket B): der Chip „versteckte"
-/// muss an sein UND der Baum muss versteckte Eintraege zeigen. Was der Baum
-/// nicht anzeigt (`vaultShowHidden` aus), kann der Filter nicht zeigen.
-pub fn filter_show_hidden(chip_hidden: bool, vault_show_hidden: bool) -> bool {
-    chip_hidden && vault_show_hidden
-}
-
 #[allow(clippy::too_many_arguments)]
 fn visit_entry(
     result: Result<ignore::DirEntry, ignore::Error>,
@@ -753,8 +746,8 @@ mod tests {
         assert_eq!(None, res.reason);
     }
 
-    /// Referenzfall Paket B: zweiter Pin direkt auf einen Dot-Ordner unter
-    /// der sichtbaren Pin-Wurzel. `filter_show_hidden` bildet den Chip ab.
+    /// Referenzfall: zweiter Pin direkt auf einen Dot-Ordner unter der
+    /// sichtbaren Pin-Wurzel. `show_hidden` ist `vaultShowHidden` (= Chip `.*`).
     #[test]
     fn deep_filter_hidden_chip_reference_cases() {
         let tmp = TempDir::new().unwrap();
@@ -767,19 +760,19 @@ mod tests {
         let hidden_pin = root.join(".pinned-hidden");
         let pins = vec![pin_dir(root), pin_dir(&hidden_pin)];
 
-        let cases = |chip: bool, tree: bool| {
+        let cases = |show_hidden: bool| {
             find(
                 &pins,
                 None,
                 "spec",
                 VaultListOptions {
                     markdown_only: false,
-                    show_hidden: filter_show_hidden(chip, tree),
+                    show_hidden,
                 },
             )
         };
 
-        let chip_off = cases(false, true);
+        let chip_off = cases(false);
         assert_eq!(
             vec![
                 norm(&hidden_pin.join("spec-y.md")),
@@ -789,7 +782,7 @@ mod tests {
             "Chip aus: nur sichtbare Treffer; die Pin-Wurzel selbst zaehlt nicht"
         );
 
-        let chip_on = cases(true, true);
+        let chip_on = cases(true);
         assert_eq!(
             vec![
                 norm(&root.join(".herd/spec.md")),
@@ -798,15 +791,8 @@ mod tests {
                 norm(&root.join("notes/spec-x.md")),
             ],
             chip_on.files,
-            "Chip an + Baum versteckt an: .herd kommt dazu"
+            "Chip an: .herd kommt dazu"
         );
-
-        assert_eq!(
-            chip_off.files,
-            cases(true, false).files,
-            "Chip an + Baum aus verhaelt sich wie Chip aus"
-        );
-        assert_eq!(chip_off.files, cases(false, false).files);
     }
 
     /// K-A2: verschachtelte Pins hinter versteckten Zwischensegmenten im

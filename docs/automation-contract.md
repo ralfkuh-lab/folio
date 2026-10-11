@@ -186,7 +186,8 @@ Wichtige stabile Selektor-Gruppen:
   `#vault-filter-toggle`, `#vault-filter-md`, `#vault-filter-git`,
   `#vault-filter-deep` (R4-Tiefenfilter), `#vault-filter-scope` mit
   `#vault-filter-scope-name`/`#vault-filter-scope-remove` (R4-Ordnerbereich),
-  `#vault-filter-hidden` (`.*`), `#vault-tree-notice`.
+  `#vault-filter-hidden` (`.*`, `aria-pressed` = `vaultShowHidden`),
+  `#vault-filter-status` (Trefferzahl des Namensfilters), `#vault-tree-notice`.
 - Volltextsuche im selben Bereich (S9): `#vault-search-input`,
   `#vault-search-clear`, `#vault-search-case`/`#vault-search-word`/
   `#vault-search-regex` (`aria-pressed`), `#vault-search-error`,

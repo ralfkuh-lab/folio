@@ -389,6 +389,7 @@ html.theme-dark .vault-search-error {
 .vs-options-hint[hidden] { display: none; }
 /* Im Suchmodus gehören Baum-Hinweise und der Tag-Browser nicht zwischen
    Suchfeld und Trefferliste. */
+.vault-region.vault-searching .vault-filter-status,
 .vault-region.vault-searching .vault-tree-notice,
 .vault-region.vault-searching .vault-tags-section { display: none; }
 
@@ -694,6 +695,14 @@ html.theme-dark .vault-header .vault-cmd.filter-active {
   flex: 1 1 200px;
   min-width: 0;
 }
+/* Trefferzahl des Namensfilters; gleiche Optik wie die Suchstatuszeile. */
+.vault-filter-status {
+  padding: 5px 10px;
+  color: var(--rail-fg-muted);
+  font-size: 11px;
+  border-bottom: 1px solid var(--border);
+}
+.vault-filter-status[hidden] { display: none; }
 .vault-filter-opts {
   display: flex;
   flex-wrap: wrap;

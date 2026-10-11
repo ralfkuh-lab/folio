@@ -20,7 +20,6 @@ type Space = {
     scope: string | null;
     markdown: boolean;
     includeHidden?: boolean;
-    hidden?: boolean;
     gitChangedOnly: boolean;
     filtered: boolean;
 };
@@ -42,7 +41,6 @@ function filesSpace(over: Partial<Space> = {}): Space {
         kind: 'files',
         query: 'spec',
         scope: null,
-        hidden: false,
         markdown: false,
         gitChangedOnly: false,
         filtered: true,
@@ -1211,7 +1209,7 @@ describe('vault/search — S9 Suchraum aus dem Filter (F1–F7)', () => {
         await importAndInit();
         mockFind({ files: [SPEC_A, SPEC_C] });
         await runSearch('TODO', { space: filesSpace() });
-        expect(findCalls()[0][1]).toEqual({ query: 'spec', scope: null, hidden: false });
+        expect(findCalls()[0][1]).toEqual({ query: 'spec', scope: null });
         const args = startCalls()[0][1];
         expect(args.files).toEqual([SPEC_A, SPEC_C]);
         expect(args).not.toHaveProperty('scope');
@@ -1480,6 +1478,20 @@ describe('vault/search — S9 Tastatur + Einstiege', () => {
         expect(startCalls()).toHaveLength(1);
     });
 
+    it('von Hand geleertes Feld beendet die Suche; Filteränderung sucht nicht weiter', async () => {
+        await importAndInit();
+        await runSearch('needle');
+        const input = $('vault-search-input') as HTMLInputElement;
+        input.value = '';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        expect($('vault-region').classList.contains('vault-searching')).toBe(false);
+        expect($('vault-search-clear').hidden).toBe(true);
+        window.dispatchEvent(new CustomEvent('folio-vault-filter-changed'));
+        await new Promise((r) => setTimeout(r, 400));
+        await flushMicro();
+        expect(startCalls()).toHaveLength(1);
+    });
+
     it('↓ im Inhaltsfeld springt in die Trefferliste (erster Treffer aktiv)', async () => {
         await importAndInit();
         await runSearch('needle');
@@ -1683,7 +1695,7 @@ describe('vault/search — S9 mit echtem Vault-Filter (F8, F10, F11)', () => {
         key(input, 'Enter');
         await flushMicro();
         disposeFilter();
-        expect(startCalls()[0][1]).toMatchObject({ scope: '/vault/R/notes', includeHidden: false });
+        expect(startCalls()[0][1]).toMatchObject({ scope: '/vault/R/notes', includeHidden: true });
         expect(startCalls()[0][1]).not.toHaveProperty('files');
     });
 
