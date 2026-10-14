@@ -37,6 +37,29 @@ function getService(): TurndownService {
         linkStyle: 'inlined',
     });
     td.use(gfm);
+    // Eigene Code-Block-Regel. turndown waehlt die Fence-Laenge nur anhand
+    // von Backtick-Laeufen am ZEILENANFANG; ein Lauf nach Einrueckung
+    // (`  ``` `) schliesst die aeussere Fence sonst vorzeitig. Ausserdem
+    // verliert die eingebaute Regel `<pre>` ohne `<code>`-Kind.
+    td.addRule('folioFencedCodeBlock', {
+        filter: 'pre',
+        replacement: (_content: any, node: any) => {
+            const codeEl = node.firstChild && node.firstChild.nodeName === 'CODE'
+                ? node.firstChild : null;
+            const code = (codeEl ? codeEl.textContent : node.textContent) || '';
+            const className = (codeEl && codeEl.getAttribute('class')) || '';
+            const language = (className.match(/language-(\S+)/) || [null, ''])[1] || '';
+            // Fence-Laenge = max(3, laengster Backtick-Lauf irgendwo + 1).
+            let fenceSize = 3;
+            const runs = code.match(/`{3,}/g) || [];
+            for (const run of runs) {
+                if (run.length >= fenceSize) fenceSize = run.length + 1;
+            }
+            const fence = '`'.repeat(fenceSize);
+            return '\n\n' + fence + language + '\n'
+                + code.replace(/\n$/, '') + '\n' + fence + '\n\n';
+        },
+    } as any);
     // Eigene listItem-Regel: turndown-Default setzt drei Leerzeichen
     // hinter den Marker (`-   a`) und rueckt den Inhalt um dieselbe
     // Breite ein. Wir wollen `- a` bzw. `1. a` mit EINEM Leerzeichen —
@@ -118,7 +141,7 @@ function normalize(markdown: string): string {
     const out: string[] = [];
     let fenceLen = 0; // 0 = ausserhalb, sonst Laenge der offenen Fence
     for (const line of lines) {
-        const fence = line.match(/^\s*(`{3,})(.*)$/);
+        const fence = line.match(/^[ \t>]*(`{3,})(.*)$/);
         if (fenceLen > 0) {
             out.push(line); // Code-Zeile unveraendert
             if (fence && fence[1].length >= fenceLen && fence[2].trim() === '') {

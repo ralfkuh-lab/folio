@@ -276,6 +276,14 @@ export function pasteText(text: string): boolean {
     const model = editor.getModel();
     if (!model) return false;
     if (model.getLanguageId() !== 'markdown') return false;
+    const monaco = getMonaco();
+    // Read-only vor JEDER Schreiboperation (auch pushUndoStop) pruefen —
+    // executeEdits liefert sonst still false, ohne etwas zu schreiben.
+    if (typeof editor.getOption === 'function' && monaco && monaco.editor
+        && monaco.editor.EditorOption
+        && editor.getOption(monaco.editor.EditorOption.readOnly)) {
+        return false;
+    }
     const selections = typeof editor.getSelections === 'function' ? editor.getSelections() : null;
     if (!selections || selections.length !== 1) return false;
     const sel = selections[0];
@@ -291,12 +299,12 @@ export function pasteText(text: string): boolean {
         return false;
     }
 
-    const monaco = getMonaco();
     const insert = text || '';
     let caret = startPos;
+    let ok = false;
     withProgrammaticWrite(() => {
         editor.pushUndoStop();
-        editor.executeEdits('folio.pasteText', [{
+        ok = editor.executeEdits('folio.pasteText', [{
             range: new monaco.Range(
                 startPos.lineNumber,
                 startPos.column,
@@ -322,10 +330,11 @@ export function pasteText(text: string): boolean {
                 caret.lineNumber,
                 caret.column,
             )];
-        });
+        }) !== false;
         editor.pushUndoStop();
         editor.revealPositionInCenterIfOutsideViewport(caret);
     });
+    if (!ok) return false;
     post({ type: 'editorTextChanged', text: editor.getValue() });
     if (hasActiveTerm()) recomputeMatches(false);
     return true;

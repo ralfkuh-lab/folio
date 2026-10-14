@@ -81,6 +81,7 @@ function isSingleImageOnly(html: string): boolean {
 }
 
 function onKeydown(e: KeyboardEvent): void {
+    if (!isInEditorScope(e.target)) return;
     if (!(e.ctrlKey || e.metaKey) || !e.shiftKey) return;
     if (typeof e.key !== 'string' || e.key.toLowerCase() !== 'v') return;
     plainTextOnce = true;
@@ -102,28 +103,36 @@ function consumePlainTextFlag(): boolean {
 }
 
 function onPaste(e: ClipboardEvent): void {
-    if (!isInEditorScope(e.target)) return;
+    // Jeder Paste verbraucht das Einmal-Flag — auch ausserhalb des Editors,
+    // sonst ueberspringt ein spaeterer Editor-Paste unerwartet das HTML.
     const forcePlainText = consumePlainTextFlag();
+    if (!isInEditorScope(e.target)) return;
     const data = e.clipboardData;
-    const html = !forcePlainText && data && typeof data.getData === 'function'
-        ? data.getData('text/html')
-        : '';
-    if (html) {
-        let md: string | null = null;
-        try {
-            md = htmlToMarkdown(html);
-        } catch (err) {
-            // Nie Inhalt verlieren: Fehler loggen, Monaco-Default greifen lassen.
-            folioLog.warn('paste', 'htmlToMarkdown failed', { error: String(err) });
-        }
-        if (md !== null && !isSingleImageOnly(html)
-            && window.FolioEditor && typeof window.FolioEditor.pasteText === 'function'
-            && window.FolioEditor.pasteText(md)) {
-            e.preventDefault();
-            e.stopPropagation();
+    try {
+        const html = data && typeof data.getData === 'function'
+            ? data.getData('text/html')
+            : '';
+        if (html && !isSingleImageOnly(html)) {
+            // Strg+Umschalt+V: reiner Text — auch dann kein Bild-Dialog, wenn
+            // Word/Excel ein Vorschaubild neben das HTML legen.
+            if (forcePlainText) return;
+            // HTML-Fall: nie in den Bild-Zweig fallen. Jeder Ausgang ausser
+            // einem erfolgreichen pasteText laesst Monaco (text/plain) ran.
+            const md = htmlToMarkdown(html);
+            if (md !== null && window.FolioEditor
+                && typeof window.FolioEditor.pasteText === 'function'
+                && window.FolioEditor.pasteText(md)) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
             return;
         }
+    } catch (err) {
+        // Nie Inhalt verlieren: Fehler loggen, Monaco-Default greifen lassen.
+        folioLog.warn('paste', 'html paste failed', { error: String(err) });
+        return;
     }
+    // Kein HTML oder nur ein einzelnes <img>: Bild-Blob → Bild-Dialog.
     if (!trigger) return;
     const blob = findImageBlob(data);
     if (!blob) return; // Text-Paste oder kein Bild — Monaco macht normal weiter.

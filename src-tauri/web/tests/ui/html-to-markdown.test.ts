@@ -121,4 +121,24 @@ describe('htmlToMarkdown', () => {
             '<p><b>x</b></p><pre><code>1\n\n\n2</code></pre><p></p><p></p><p>y</p>',
         )).toBe('**x**\n\n```\n1\n\n\n2\n```\n\ny');
     });
+
+    it('H19: eingerückte Backticks im Code brauchen eine längere Fence', () => {
+        expect(htmlToMarkdown('<pre><code>a\n  ```\n\n\nb</code></pre>'))
+            .toBe('````\na\n  ```\n\n\nb\n````');
+    });
+
+    it('H20: <pre> ohne <code> bleibt Code, byte-genau', () => {
+        expect(htmlToMarkdown('<pre>a\n\n\nb   \n  \nc</pre>'))
+            .toBe('```\na\n\n\nb   \n  \nc\n```');
+    });
+
+    it('H21: Code in Blockquote bleibt unverändert', () => {
+        expect(htmlToMarkdown('<blockquote><pre><code>- [x]   task</code></pre></blockquote>'))
+            .toBe('> ```\n> - [x]   task\n> ```');
+    });
+
+    it('H22: Backtick-Lauf mitten im Code verlängert die Fence', () => {
+        expect(htmlToMarkdown('<pre><code>x ```` y</code></pre>'))
+            .toBe('`````\nx ```` y\n`````');
+    });
 });

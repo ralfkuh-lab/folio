@@ -29,7 +29,7 @@ const monaco = {
     },
 };
 
-function installEditor(lineNumber: number, selectionsCount = 1): { calls: any[] } {
+function installEditor(lineNumber: number, selectionsCount = 1, overrides: any = {}): { calls: any[] } {
     const calls: any[] = [];
     const model = {
         getLanguageId: () => 'markdown',
@@ -47,10 +47,17 @@ function installEditor(lineNumber: number, selectionsCount = 1): { calls: any[] 
         getModel: () => model,
         getSelections: () => selections,
         pushUndoStop: () => calls.push('pushUndoStop'),
-        executeEdits: (...a: any[]) => calls.push(['executeEdits', ...a]),
+        // Explizit `true`: vorher lieferte `calls.push(...)` zufaellig die
+        // Array-Laenge zurueck. Der Rueckgabewert wird jetzt ausgewertet,
+        // der Mock muss Erfolg/Ablehnung bewusst abbilden.
+        executeEdits: (...a: any[]) => {
+            calls.push(['executeEdits', ...a]);
+            return true;
+        },
         setSelection: () => {},
         revealPositionInCenterIfOutsideViewport: () => {},
         getValue: () => lines.join('\n'),
+        ...overrides,
     });
     return { calls };
 }
@@ -124,5 +131,31 @@ describe('pasteText', () => {
         expect(pasteText('x\ny')).toBe(true);
         expect(typeof endCursor).toBe('function');
         expect(revealed[0]).toEqual({ lineNumber: 2, column: 2 });
+    });
+
+    it('E5: readOnly → false, executeEdits wird nicht aufgerufen', () => {
+        setMonaco({ ...monaco, editor: { EditorOption: { readOnly: 1 } } });
+        const calls: any[] = [];
+        setEditor({
+            getModel: () => ({ getLanguageId: () => 'markdown', getLinesContent: () => lines }),
+            getSelections: () => [{
+                getStartPosition: () => ({ lineNumber: 5, column: 1 }),
+                getEndPosition: () => ({ lineNumber: 5, column: 1 }),
+            }],
+            getOption: (id: any) => id === 1,
+            pushUndoStop: () => calls.push('pushUndoStop'),
+            executeEdits: () => { calls.push('executeEdits'); return true; },
+            revealPositionInCenterIfOutsideViewport: () => {},
+            getValue: () => lines.join('\n'),
+        });
+        expect(pasteText('x')).toBe(false);
+        expect(calls).toEqual([]);
+    });
+
+    it('E6: executeEdits false → false, keine editorTextChanged-Nachricht', () => {
+        const emit = (window as any).__TAURI__.event.emit as ReturnType<typeof vi.fn>;
+        installEditor(5, 1, { executeEdits: () => false });
+        expect(pasteText('x')).toBe(false);
+        expect(emit).not.toHaveBeenCalled();
     });
 });

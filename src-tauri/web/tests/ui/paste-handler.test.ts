@@ -1,6 +1,7 @@
 /** Paste-Handler: HTML→Markdown, Strg+Umschalt+V, Bild-Fallback. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { attachPasteHandler } from '../../app/ui/paste-handler';
+import * as convert from '../../app/ui/html-to-markdown';
 
 const H1_HTML = '<h2>Ziele</h2><ul><li><b>Schnell</b></li><li>Klein</li></ul>';
 const H1_MD = '## Ziele\n\n- **Schnell**\n- Klein';
@@ -34,9 +35,9 @@ function dispatchPaste(target: EventTarget, data: any): Event {
     return ev;
 }
 
-function dispatchPlainTextKeydown(): void {
-    document.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'V', ctrlKey: true, shiftKey: true, cancelable: true,
+function dispatchPlainTextKeydown(target: EventTarget = document): void {
+    target.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'V', ctrlKey: true, shiftKey: true, cancelable: true, bubbles: true,
     }));
 }
 
@@ -46,7 +47,7 @@ let editorTarget: HTMLElement;
 
 beforeEach(() => {
     document.body.className = 'edit-mode kind-markdown';
-    document.body.innerHTML = '<div id="editor-mount"><div id="ed"></div></div>';
+    document.body.innerHTML = '<div id="editor-mount"><div id="ed"></div></div><input id="find-input">';
     editorTarget = document.getElementById('ed') as HTMLElement;
     pasteText = vi.fn(() => true);
     imageTrigger = vi.fn();
@@ -55,6 +56,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    vi.restoreAllMocks();
     vi.useRealTimers();
 });
 
@@ -67,7 +69,7 @@ describe('attachPasteHandler — HTML→Markdown', () => {
     });
 
     it('P2: Strg+Umschalt+V laesst reinen Text durch, Flag verbraucht', () => {
-        dispatchPlainTextKeydown();
+        dispatchPlainTextKeydown(editorTarget);
         const ev = dispatchPaste(editorTarget, clipboardData({ html: H1_HTML, text: 'Ziele Schnell Klein' }));
         expect(pasteText).not.toHaveBeenCalled();
         expect(ev.defaultPrevented).toBe(false);
@@ -77,9 +79,17 @@ describe('attachPasteHandler — HTML→Markdown', () => {
         expect(again.defaultPrevented).toBe(true);
     });
 
+    it('P2c: Strg+Umschalt+V mit HTML plus Vorschaubild (Word) → reiner Text, kein Bild-Dialog', () => {
+        dispatchPlainTextKeydown(editorTarget);
+        const ev = dispatchPaste(editorTarget, clipboardData({ html: H1_HTML, text: 'Ziele', image: imageBlob() }));
+        expect(pasteText).not.toHaveBeenCalled();
+        expect(imageTrigger).not.toHaveBeenCalled();
+        expect(ev.defaultPrevented).toBe(false);
+    });
+
     it('P2b: Flag verfaellt nach 1000 ms', () => {
         vi.useFakeTimers();
-        dispatchPlainTextKeydown();
+        dispatchPlainTextKeydown(editorTarget);
         vi.advanceTimersByTime(1001);
         const ev = dispatchPaste(editorTarget, clipboardData({ html: H1_HTML, text: 'Ziele' }));
         expect(pasteText).toHaveBeenCalledTimes(1);
@@ -134,5 +144,54 @@ describe('attachPasteHandler — HTML→Markdown', () => {
         dispatchPaste(input, clipboardData({ html: H1_HTML, image: imageBlob() }));
         expect(pasteText).not.toHaveBeenCalled();
         expect(imageTrigger).not.toHaveBeenCalled();
+    });
+
+    it('P10: HTML-Fall mit pasteText=false → kein Bild-Dialog, Default bleibt', () => {
+        pasteText.mockReturnValue(false);
+        const ev = dispatchPaste(editorTarget, clipboardData({
+            html: '<b>word</b>', text: 'word', image: imageBlob(),
+        }));
+        expect(pasteText).toHaveBeenCalledTimes(1);
+        expect(imageTrigger).not.toHaveBeenCalled();
+        expect(ev.defaultPrevented).toBe(false);
+    });
+
+    it('P11: Konvertierungs-Exception → kein Bild-Dialog, Default bleibt', () => {
+        vi.spyOn(convert, 'htmlToMarkdown').mockImplementation(() => {
+            throw new Error('converter failure');
+        });
+        const ev = dispatchPaste(editorTarget, clipboardData({
+            html: '<b>word</b>', text: 'word', image: imageBlob(),
+        }));
+        expect(pasteText).not.toHaveBeenCalled();
+        expect(imageTrigger).not.toHaveBeenCalled();
+        expect(ev.defaultPrevented).toBe(false);
+    });
+
+    it('P12: FolioEditor fehlt → kein Bild-Dialog, Default bleibt', () => {
+        delete (window as any).FolioEditor;
+        const ev = dispatchPaste(editorTarget, clipboardData({
+            html: '<b>word</b>', text: 'word', image: imageBlob(),
+        }));
+        expect(imageTrigger).not.toHaveBeenCalled();
+        expect(ev.defaultPrevented).toBe(false);
+    });
+
+    it('P13: strukturfreies HTML plus Bild → kein Bild-Dialog, Default bleibt', () => {
+        const ev = dispatchPaste(editorTarget, clipboardData({
+            html: H5_HTML, text: '**fett**\n# Titel', image: imageBlob(),
+        }));
+        expect(pasteText).not.toHaveBeenCalled();
+        expect(imageTrigger).not.toHaveBeenCalled();
+        expect(ev.defaultPrevented).toBe(false);
+    });
+
+    it('P14: Flag ausserhalb des Editors verbraucht, spaeterer Editor-Paste konvertiert', () => {
+        const findInput = document.getElementById('find-input') as HTMLElement;
+        dispatchPlainTextKeydown(findInput);
+        dispatchPaste(findInput, clipboardData({ html: H1_HTML, text: 'Ziele' }));
+        const ev = dispatchPaste(editorTarget, clipboardData({ html: H1_HTML, text: 'Ziele' }));
+        expect(pasteText).toHaveBeenCalledTimes(1);
+        expect(ev.defaultPrevented).toBe(true);
     });
 });
