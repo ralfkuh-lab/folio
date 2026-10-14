@@ -10,6 +10,7 @@ import { post } from './bridge';
 import { hasActiveTerm, recomputeMatches } from './find';
 import { layout, whenReady } from './mount';
 import { getEditor, getMonaco, withProgrammaticWrite } from './state';
+import { isInsideCodeFence } from './wikilink-complete';
 
 // Pre-Mount-Defer: genau EIN Retry nach dem ersten Mount, und nur wenn
 // der Editor dann wirklich existiert. Niemals unbedingt rekursieren —
@@ -260,6 +261,83 @@ export function applyReplace(args: {
     // aber den eben gesetzten Selektions-Cursor NICHT durch Sprung zur
     // naechsten Fundstelle ueberschreiben.
     if (hasActiveTerm()) recomputeMatches(false);
+}
+
+/**
+ * Fuegt konvertiertes Markdown als EINEN Undo-Schritt an der aktuellen
+ * Selektion ein (Paste-Handler, Strg+V im Markdown-Editor). Bewusst
+ * `executeEdits` statt `trigger('type')`: kein Auto-Closing/Auto-Indent,
+ * der Text landet byte-genau. `false` = nichts eingefuegt und nichts
+ * getan — der Aufrufer laesst dann Monacos Default-Paste greifen.
+ */
+export function pasteText(text: string): boolean {
+    const editor = getEditor();
+    if (!editor) return false; // kein Defer: Pre-Mount darf nichts einhängen
+    const model = editor.getModel();
+    if (!model) return false;
+    if (model.getLanguageId() !== 'markdown') return false;
+    const monaco = getMonaco();
+    // Read-only vor JEDER Schreiboperation (auch pushUndoStop) pruefen —
+    // executeEdits liefert sonst still false, ohne etwas zu schreiben.
+    if (typeof editor.getOption === 'function' && monaco && monaco.editor
+        && monaco.editor.EditorOption
+        && editor.getOption(monaco.editor.EditorOption.readOnly)) {
+        return false;
+    }
+    const selections = typeof editor.getSelections === 'function' ? editor.getSelections() : null;
+    if (!selections || selections.length !== 1) return false;
+    const sel = selections[0];
+    const startPos = sel.getStartPosition();
+    const endPos = sel.getEndPosition();
+    const lines = model.getLinesContent();
+    const lineIndex = startPos.lineNumber - 1;
+    // In der Fence oder auf der Fence-Zeile selbst: nicht einmischen.
+    // Ein Statuswechsel zwischen Zeile und Folgezeile markiert genau eine
+    // Fence-Zeile (Oeffner: false→true, Schliesser: true→false).
+    if (isInsideCodeFence(lines, lineIndex)) return false;
+    if (isInsideCodeFence(lines, lineIndex) !== isInsideCodeFence(lines, lineIndex + 1)) {
+        return false;
+    }
+
+    const insert = text || '';
+    let caret = startPos;
+    let ok = false;
+    withProgrammaticWrite(() => {
+        editor.pushUndoStop();
+        ok = editor.executeEdits('folio.pasteText', [{
+            range: new monaco.Range(
+                startPos.lineNumber,
+                startPos.column,
+                endPos.lineNumber,
+                endPos.column,
+            ),
+            text: insert,
+            forceMoveMarkers: true,
+        }], (inverse: any[]) => {
+            // Monacos inverse Operation liefert den Range des eingefuegten
+            // Texts. Dessen Ende ist die korrekte Caret-Position — auch in
+            // CRLF-Modellen, die `insert` auf `\r\n` normalisieren, wo
+            // `Offset + insert.length` zu kurz greifen wuerde.
+            const range = inverse && inverse[0] && inverse[0].range;
+            if (range) {
+                caret = typeof range.getEndPosition === 'function'
+                    ? range.getEndPosition()
+                    : { lineNumber: range.endLineNumber, column: range.endColumn };
+            }
+            return [new monaco.Selection(
+                caret.lineNumber,
+                caret.column,
+                caret.lineNumber,
+                caret.column,
+            )];
+        }) !== false;
+        editor.pushUndoStop();
+        editor.revealPositionInCenterIfOutsideViewport(caret);
+    });
+    if (!ok) return false;
+    post({ type: 'editorTextChanged', text: editor.getValue() });
+    if (hasActiveTerm()) recomputeMatches(false);
+    return true;
 }
 
 export function focus(): void {
