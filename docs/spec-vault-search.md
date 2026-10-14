@@ -728,9 +728,10 @@ Funnel statt Summary-Button + Dialog + Filterzeile.
      kein Deckel;
    - Namensbegriff ≥ 2: `files` aus `vault_filter_find` nach
      `whenFilterOptionsPersisted()`, git-Chip → Schnitt;
-   - `git` ohne Namensbegriff: Walk + clientseitiger git-Schnitt der Treffer
-     (bekannte Grenze: der 500er-Deckel zählt vor dem Schnitt; Ausbaupfad:
-     leere Query mit git in `find_by_name` zulassen).
+   - `git` ohne Namensbegriff: Walk mit der Allowlist `limitToPaths`
+     (`collectGitChangedLeafPaths()` in git-status.ts), der Suchkern prüft im
+     Walk nur noch Dateien selbst/darunter — der 500er-Deckel zählt damit nur
+     zulässige Dateien; der frühere clientseitige Schnitt entfällt.
    Status-Zusatz „· gefiltert“ (Funnel-Badge-Bedingung) bzw. „· Vault“.
 3. **Bedienung**: Enter validiert und sucht sofort (Fehler am Feld, kein
    Lauf); Enter im leeren Feld beendet. Escape im Feld: Text → leeren +

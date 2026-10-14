@@ -44,6 +44,11 @@ pub(in crate::automation) struct SearchRequest {
     /// so viele wie der Vault-Filter-Deckel; schließt `scope` aus.
     #[serde(default)]
     files: Option<Vec<String>>,
+    /// Optionale Allowlist (git-geänderte Pfade): nur Dateien, die selbst
+    /// darin oder unter einem Eintrag liegen, werden gelesen/gezählt.
+    /// Schließt `files` aus (sonst HTTP 400, Scope-Konflikt).
+    #[serde(default)]
+    limit_to_paths: Option<Vec<String>>,
     /// Auch versteckte Einträge (Dot-Namen) durchsuchen (Default aus).
     #[serde(default)]
     include_hidden: bool,
@@ -74,6 +79,7 @@ pub(in crate::automation) async fn post_search(
     let (scope_ex, options) = build_scope_and_options(
         request.scope,
         request.files,
+        request.limit_to_paths,
         request.case_sensitive,
         request.whole_word,
         request.regex,
@@ -147,4 +153,48 @@ pub(in crate::automation) async fn post_search(
     outcome
         .map(Json)
         .map_err(|error| ApiError::bad_request(error.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// B8: `POST /search` reicht das additive Feld `limitToPaths` über die
+    /// Grenze bis in die Walk-Optionen (Deserialisierung + Options-Bau, die
+    /// genaue Verdrahtung, die `post_search` benutzt).
+    #[test]
+    fn b8_http_request_passes_limit_to_paths() {
+        let request: SearchRequest = serde_json::from_value(serde_json::json!({
+            "query": "TODO",
+            "limitToPaths": ["/repo/a.md", "/repo/sub"],
+        }))
+        .unwrap();
+        assert_eq!(
+            Some(vec!["/repo/a.md".to_string(), "/repo/sub".to_string()]),
+            request.limit_to_paths
+        );
+
+        let (scope_ex, options) = build_scope_and_options(
+            request.scope,
+            request.files,
+            request.limit_to_paths,
+            request.case_sensitive,
+            request.whole_word,
+            request.regex,
+            request.file_filter.as_deref().unwrap_or("allText"),
+            &request.custom_extensions,
+            request.include_hidden,
+            resolve_include_ignored(request.include_hidden, request.include_ignored),
+        )
+        .unwrap();
+        assert_eq!(SearchScopeEx::Vault, scope_ex);
+        assert_eq!(
+            Some(
+                ["/repo/a.md".to_string(), "/repo/sub".to_string()]
+                    .into_iter()
+                    .collect()
+            ),
+            options.limit_to
+        );
+    }
 }

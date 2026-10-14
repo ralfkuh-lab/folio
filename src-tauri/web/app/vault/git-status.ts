@@ -160,6 +160,36 @@ export function collectGitChangedDirPaths(): string[] {
     return out;
 }
 
+/**
+ * Blätter des zusammengeführten Snapshots: alle Einträge, unter denen kein
+ * weiterer Snapshot-Eintrag liegt. Das sind die geänderten/untrackten Dateien
+ * und die neuen untrackten Ordner (`?? neu/` → Blatt `…/neu`); aggregierte
+ * Vorfahren-Ordner fallen raus. Grundlage der git-Allowlist der Volltextsuche
+ * (`limitToPaths`), damit der globale Treffer-Deckel nur zulässige Dateien
+ * zählt. Bewusst über eine Vorfahren-Menge (O(n·Tiefe)) statt über Sortieren +
+ * Nachbarvergleich — `a/b-x.md` sortiert zwischen `a/b` und `a/b/c.md`.
+ * Keine DOM-Abfrage: Datei- vs. Ordner-Eintrag ist hier irrelevant, ein
+ * Verzeichnis-Eintrag ist nur dann Blatt, wenn kein Kind im Snapshot steht.
+ */
+export function collectGitChangedLeafPaths(): string[] {
+    const merged = mergeSnapshots();
+    const paths: string[] = [];
+    merged.forEach((_status, path) => {
+        if (path) paths.push(path);
+    });
+    const ancestors = new Set<string>();
+    for (let i = 0; i < paths.length; i++) {
+        let head = paths[i];
+        let idx = head.lastIndexOf('/');
+        while (idx > 0) {
+            head = head.slice(0, idx);
+            ancestors.add(head);
+            idx = head.lastIndexOf('/');
+        }
+    }
+    return paths.filter((p) => !ancestors.has(p));
+}
+
 function titleLineFor(status: GitStatus): string {
     return status === 'modified'
         ? t('vault.git.tooltip.modified')

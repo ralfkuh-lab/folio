@@ -45,13 +45,14 @@ pub(crate) fn resolve_include_ignored(include_hidden: bool, include_ignored: Opt
 /// Baut aus den flachen Grenz-Argumenten das erweiterte Scope-Modell + die
 /// erweiterten Optionen. Geteilt zwischen Tauri-Command und HTTP-Handler
 /// (dort mit der eigenen Fehler-in-400-Abbildung). Fehler sind lokalisierte
-/// [`SearchError`] (Scope-Konflikt zwischen scope/files, ungültige
-/// Dateiliste, unbekannter Filter, leere Custom-Liste, verbotene
-/// Endungszeichen).
+/// [`SearchError`] (Scope-Konflikt zwischen scope/files/limitToPaths,
+/// ungültige Dateiliste, relative Allowlist, unbekannter Filter, leere
+/// Custom-Liste, verbotene Endungszeichen).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_scope_and_options(
     scope: Option<String>,
     files: Option<Vec<String>>,
+    limit_to_paths: Option<Vec<String>>,
     case_sensitive: bool,
     whole_word: bool,
     regex: bool,
@@ -60,6 +61,12 @@ pub(crate) fn build_scope_and_options(
     include_hidden: bool,
     include_ignored: bool,
 ) -> Result<(SearchScopeEx, ExtendedSearchOptions), SearchError> {
+    // Der Dateilisten-Scope schneidet im Frontend selbst — zusammen mit einer
+    // git-Allowlist wäre die Grenze doppelt; das ist ein Client-Fehler.
+    if limit_to_paths.is_some() && files.is_some() {
+        return Err(SearchError::ScopeConflict);
+    }
+    let limit_to = search::parse_limit_paths(limit_to_paths)?;
     let scope_ex = search::to_scope_ex(scope, files)?;
     let filter = FileFilter::from_raw(file_filter, custom_extensions)?;
     let options = ExtendedSearchOptions {
@@ -71,6 +78,7 @@ pub(crate) fn build_scope_and_options(
         },
         regex,
         filter,
+        limit_to,
     };
     Ok((scope_ex, options))
 }
@@ -95,6 +103,7 @@ pub async fn vault_search_start(
     query: String,
     scope: Option<String>,
     files: Option<Vec<String>>,
+    limit_to_paths: Option<Vec<String>>,
     case_sensitive: bool,
     whole_word: bool,
     regex: Option<bool>,
@@ -114,6 +123,7 @@ pub async fn vault_search_start(
     let (scope_ex, options) = build_scope_and_options(
         scope,
         files,
+        limit_to_paths,
         case_sensitive,
         whole_word,
         regex,
@@ -243,6 +253,7 @@ pub async fn vault_search_validate(
         },
         regex,
         filter,
+        limit_to: None,
     };
     search::validate_query_ex(&query, &options).map_err(|error| error.to_string())
 }
@@ -325,9 +336,10 @@ mod tests {
 
     #[test]
     fn build_scope_and_options_forwards_both_flags() {
-        let (_, options) =
-            build_scope_and_options(None, None, false, false, false, "allText", "", true, false)
-                .unwrap();
+        let (_, options) = build_scope_and_options(
+            None, None, None, false, false, false, "allText", "", true, false,
+        )
+        .unwrap();
         assert!(options.base.include_hidden);
         assert!(!options.base.include_ignored);
     }
@@ -385,6 +397,7 @@ mod tests {
         let (scope_ex, options) = build_scope_and_options(
             None,
             Some(files),
+            None,
             false,
             false,
             false,
@@ -471,6 +484,7 @@ mod tests {
         let (scope_ex, options) = build_scope_and_options(
             scope,
             None,
+            None,
             false,
             false,
             false,
@@ -551,6 +565,7 @@ mod tests {
         let (scope_ex, options) = build_scope_and_options(
             None,
             Some(Vec::new()),
+            None,
             false,
             false,
             false,
@@ -576,6 +591,7 @@ mod tests {
             build_scope_and_options(
                 scope,
                 Some(files),
+                None,
                 false,
                 false,
                 false,
@@ -602,6 +618,193 @@ mod tests {
         assert_eq!(
             vec![other.clone()],
             run_files(vec![format!("{r}/fehlt.md"), other.clone()], "allText").unwrap()
+        );
+    }
+
+    // --- git-Allowlist (`limitToPaths`) — Referenzfälle B1–B7 ---------------
+
+    /// Fixture der Allowlist-Fälle: Pin-/Scope-Wurzel `R`, jede Datei mit `TODO`.
+    fn limit_fixture() -> (tempfile::TempDir, String) {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().to_str().unwrap().replace('\\', "/");
+        for rel in [
+            "a.md",
+            "b.md",
+            "neu/x.md",
+            "neu/y.md",
+            "sub/c.md",
+            "sub-alt/d.md",
+        ] {
+            let path = tmp.path().join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "TODO\n").unwrap();
+        }
+        (tmp, root)
+    }
+
+    fn pin_dir(path: &str) -> crate::workspace::PinnedItem {
+        crate::workspace::PinnedItem {
+            path: path.to_string(),
+            is_directory: true,
+        }
+    }
+
+    fn pin_file(path: &str) -> crate::workspace::PinnedItem {
+        crate::workspace::PinnedItem {
+            path: path.to_string(),
+            is_directory: false,
+        }
+    }
+
+    fn folder_roots(r: &str) -> SearchRoots {
+        search::resolve_search_scope(&[], &SearchScope::Folder(r.to_string()))
+    }
+
+    fn build_limit(limit: Option<Vec<String>>) -> ExtendedSearchOptions {
+        let (_, options) = build_scope_and_options(
+            None, None, limit, false, false, false, "allText", "", false, false,
+        )
+        .unwrap();
+        options
+    }
+
+    fn run_limit(roots: &SearchRoots, opts: &ExtendedSearchOptions, parallel: bool) -> Vec<String> {
+        let cancel = AtomicBool::new(false);
+        let mut out: Vec<String> = Vec::new();
+        if parallel {
+            search::run_search_parallel(roots, "TODO", opts, &cancel, &mut |f| out.push(f.path))
+                .unwrap();
+        } else {
+            search::run_search_ex(roots, "TODO", opts, &cancel, &mut |f| out.push(f.path)).unwrap();
+        }
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn b1_limit_to_paths_walk_sequential_parallel_folder_and_vault() {
+        let (_tmp, r) = limit_fixture();
+        let opts = build_limit(Some(vec![
+            format!("{r}/a.md"),
+            format!("{r}/neu"),
+            format!("{r}/sub"),
+        ]));
+        let mut expected = vec![
+            format!("{r}/a.md"),
+            format!("{r}/neu/x.md"),
+            format!("{r}/neu/y.md"),
+            format!("{r}/sub/c.md"),
+        ];
+        expected.sort();
+
+        // Ordner-Scope: sequenziell + parallel.
+        let folder = folder_roots(&r);
+        assert_eq!(expected, run_limit(&folder, &opts, false));
+        assert_eq!(expected, run_limit(&folder, &opts, true));
+
+        // Vault-Scope mit `R` als Ordner-Pin: sequenziell + parallel.
+        let vault = search::resolve_search_scope(&[pin_dir(&r)], &SearchScope::Vault);
+        assert_eq!(expected, run_limit(&vault, &opts, false));
+        assert_eq!(expected, run_limit(&vault, &opts, true));
+    }
+
+    #[test]
+    fn b2_limit_to_paths_trailing_slash_dir() {
+        let (_tmp, r) = limit_fixture();
+        let opts = build_limit(Some(vec![format!("{r}/neu/")]));
+        let mut expected = vec![format!("{r}/neu/x.md"), format!("{r}/neu/y.md")];
+        expected.sort();
+        assert_eq!(expected, run_limit(&folder_roots(&r), &opts, true));
+    }
+
+    #[test]
+    fn b3_limit_to_paths_empty_is_valid_zero_files() {
+        let (_tmp, r) = limit_fixture();
+        let opts = build_limit(Some(Vec::new()));
+        let cancel = AtomicBool::new(false);
+        let mut files: Vec<FileResult> = Vec::new();
+        let stats =
+            search::run_search_parallel(&folder_roots(&r), "TODO", &opts, &cancel, &mut |f| {
+                files.push(f)
+            })
+            .unwrap();
+        assert!(files.is_empty());
+        assert_eq!(0, stats.files_scanned);
+        assert_eq!(0, stats.hits);
+        assert!(!stats.truncated);
+    }
+
+    #[test]
+    fn b4_limit_to_paths_relative_is_invalid_scope() {
+        let err = build_scope_and_options(
+            None,
+            None,
+            Some(vec!["relativ/a.md".to_string()]),
+            false,
+            false,
+            false,
+            "allText",
+            "",
+            false,
+            false,
+        )
+        .unwrap_err();
+        assert!(matches!(err, SearchError::InvalidScope(_)));
+    }
+
+    #[test]
+    fn b5_limit_to_paths_with_files_conflicts() {
+        let err = build_scope_and_options(
+            None,
+            Some(vec!["/repo/a.md".to_string()]),
+            Some(vec!["/repo/a.md".to_string()]),
+            false,
+            false,
+            false,
+            "allText",
+            "",
+            false,
+            false,
+        )
+        .unwrap_err();
+        assert!(matches!(err, SearchError::ScopeConflict));
+    }
+
+    #[test]
+    fn b6_limit_to_paths_deckels_only_allowed_files() {
+        // Der eigentliche Bug: 600 nicht geänderte Dateien füllten den
+        // globalen Deckel (500), bevor die eine geänderte Datei drankam.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().to_str().unwrap().replace('\\', "/");
+        for i in 0..600 {
+            std::fs::write(tmp.path().join(format!("n{i:03}.md")), "TODO\n").unwrap();
+        }
+        std::fs::write(tmp.path().join("z.md"), "TODO\n").unwrap();
+
+        let opts = build_limit(Some(vec![format!("{root}/z.md")]));
+        let cancel = AtomicBool::new(false);
+        let mut files: Vec<FileResult> = Vec::new();
+        let stats =
+            search::run_search_parallel(&folder_roots(&root), "TODO", &opts, &cancel, &mut |f| {
+                files.push(f)
+            })
+            .unwrap();
+        let names: Vec<String> = files.iter().map(|f| f.file_name.clone()).collect();
+        assert_eq!(vec!["z.md".to_string()], names);
+        assert!(!stats.truncated, "kein stiller Wegfall");
+    }
+
+    #[test]
+    fn b7_limit_to_paths_excludes_file_pin() {
+        let (_tmp, r) = limit_fixture();
+        let opts = build_limit(Some(vec![format!("{r}/sub")]));
+        let vault = search::resolve_search_scope(
+            &[pin_file(&format!("{r}/b.md")), pin_dir(&format!("{r}/sub"))],
+            &SearchScope::Vault,
+        );
+        assert_eq!(
+            vec![format!("{r}/sub/c.md")],
+            run_limit(&vault, &opts, true)
         );
     }
 

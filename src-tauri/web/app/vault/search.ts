@@ -40,7 +40,7 @@ import {
     whenFilterOptionsPersisted,
     type SearchSpace,
 } from './filter';
-import { isPathGitChanged } from './git-status';
+import { collectGitChangedLeafPaths, isPathGitChanged } from './git-status';
 
 type Deps = {
     openDocument: (path: string) => void;
@@ -497,6 +497,13 @@ async function runSearch(): Promise<void> {
     } else {
         args.scope = space.scope;
         args.includeHidden = space.includeHidden;
+        // git-Chip ohne Namensbegriff: die git-geänderten Blätter als
+        // Allowlist mitgeben — der Treffer-Deckel des Backends zählt dann nur
+        // zulässige Dateien (vorher füllten nicht geänderte Dateien den Deckel
+        // und der clientseitige Schnitt warf Treffer weg).
+        if (space.gitChangedOnly) {
+            args.limitToPaths = collectGitChangedLeafPaths();
+        }
     }
     // Raw invoke (nicht safeInvoke): Startfehler (z. B. ein inzwischen
     // gelöschter Bereich) werden in der Statuszeile benannt.
@@ -532,13 +539,6 @@ function failRun(detail: string): void {
 function spaceSuffix(): string {
     if (!runSpace) return '';
     return runSpace.filtered ? t('search.status.spaceFiltered') : t('search.status.spaceVault');
-}
-
-/** Walk mit aktivem git-Chip (ohne Namensbegriff): die Filtermenge ist nicht
- *  als Liste abrufbar — Treffer außerhalb der git-geänderten Dateien werden
- *  wie im Baum clientseitig verworfen. */
-function gitPostFilter(): boolean {
-    return !!runSpace && runSpace.kind === 'walk' && runSpace.gitChangedOnly;
 }
 
 function rawInvoke(cmd: string, args?: any): Promise<any> {
@@ -585,16 +585,13 @@ function onDone(payload: any): void {
 }
 
 function applyHits(incoming: FileResult[]): void {
-    const newFiles = gitPostFilter()
-        ? incoming.filter((f) => isPathGitChanged(normalizePath(f.path)))
-        : incoming;
-    if (newFiles.length === 0) return;
+    if (incoming.length === 0) return;
     const anchor = activeAnchor();
-    for (const f of newFiles) {
+    for (const f of incoming) {
         f.arrival = arrivalCounter++;
         files.push(f);
     }
-    applyCollapsePolicy(newFiles);
+    applyCollapsePolicy(incoming);
     // Beim Streaming die neue Gruppe stabil einsortieren (Modus-abhängig); der
     // aktive Treffer bleibt über (Pfad, Hit-Index) erhalten.
     sortFiles();
@@ -619,10 +616,7 @@ function applyDone(payload: any): void {
 
 function finalStatus(): void {
     if (!doneStats) return;
-    // Walk mit git-Schnitt: Treffer/Dateien zählen nur die übrig gebliebenen.
-    const s: Stats = gitPostFilter()
-        ? { ...doneStats, hits: totalHits(), filesMatched: files.length }
-        : doneStats;
+    const s: Stats = doneStats;
     const space = runSpace;
     // 1. Basissatz wählen …
     let msg: string;

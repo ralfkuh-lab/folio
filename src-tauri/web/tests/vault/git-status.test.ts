@@ -317,4 +317,32 @@ describe('vault/git-status', () => {
         emitStatus('/repo', [], 2);
         expect(node('/repo/a.md').getAttribute('title')).toBe('/repo/a.md\ngitignored');
     });
+
+    it('F1: collectGitChangedLeafPaths liefert nur Blaetter (keine aggregierten Vorfahren)', async () => {
+        const git = await initModule();
+        emitStatus('/r', [
+            { path: '/r/sub', status: 'modified' },
+            { path: '/r/sub/c.md', status: 'modified' },
+            { path: '/r/neu', status: 'untracked' },
+            { path: '/r/a.md', status: 'modified' },
+            { path: '/r/x', status: 'modified' },
+            { path: '/r/x/b', status: 'modified' },
+            { path: '/r/x/b-x.md', status: 'modified' },
+            { path: '/r/x/b/c.md', status: 'modified' },
+        ]);
+        expect(new Set(git.collectGitChangedLeafPaths())).toEqual(
+            new Set([
+                '/r/sub/c.md',
+                '/r/neu',
+                '/r/a.md',
+                '/r/x/b-x.md',
+                '/r/x/b/c.md',
+            ]),
+        );
+    });
+
+    it('F2: collectGitChangedLeafPaths ist bei leerem Snapshot leer', async () => {
+        const git = await initModule();
+        expect(git.collectGitChangedLeafPaths()).toEqual([]);
+    });
 });

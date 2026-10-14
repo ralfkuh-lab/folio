@@ -149,7 +149,9 @@ export function isVaultFilterActive(): boolean {
  *  zeigt — ohne Filter den ganzen Vault.
  *  - `walk`: kein Namensbegriff (< 2 Zeichen). Walk ueber `Vault` bzw. den
  *    Bereich (`Folder`), `.md` → `markdown`, `.*` (= `vaultShowHidden`) →
- *    `includeHidden`. Kein Deckel.
+ *    `includeHidden`. Kein Deckel. Der git-Chip gibt die git-geaenderten
+ *    Blaetter als Allowlist `limitToPaths` mit, damit der 500er-Deckel nur
+ *    zulaessige Dateien zaehlt (kein clientseitiger Schnitt mehr).
  *  - `files`: Namensbegriff ≥ 2. Parameter fuer `vault_filter_find` (volle
  *    Treffermenge wie im Tiefenmodus, unabhaengig von `**` und vom gerenderten
  *    Baum); der git-Chip schneidet im Aufrufer.
