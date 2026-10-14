@@ -120,6 +120,16 @@ function stripDataImages(root: HTMLElement): void {
     });
 }
 
+/** Links ohne sichtbaren Inhalt raus — die Anker-Symbole neben Überschriften
+ *  (Hugging Face, GitHub, Doku-Seiten; leer oder nur ein SVG-Icon) würden
+ *  sonst als `[](…#anker)` vor jeder Überschrift stehen. Links mit Bild
+ *  bleiben. */
+function stripEmptyLinks(root: HTMLElement): void {
+    root.querySelectorAll('a').forEach((a) => {
+        if ((a.textContent || '').trim() === '' && !a.querySelector('img')) a.remove();
+    });
+}
+
 function hasStructure(root: HTMLElement): boolean {
     if (root.querySelector(STRUCTURE_SELECTOR)) return true;
     for (const img of Array.from(root.querySelectorAll('img'))) {
@@ -172,6 +182,7 @@ export function htmlToMarkdown(html: string): string | null {
     const root = inertRoot(html);
     clean(root);
     stripDataImages(root);
+    stripEmptyLinks(root);
     if (!hasStructure(root)) return null;
     const markdown = normalize(getService().turndown(root as any));
     return markdown.trim() ? markdown : null;

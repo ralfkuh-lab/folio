@@ -141,4 +141,16 @@ describe('htmlToMarkdown', () => {
         expect(htmlToMarkdown('<pre><code>x ```` y</code></pre>'))
             .toBe('`````\nx ```` y\n`````');
     });
+
+    it('H23: leere Anker-Links neben Überschriften fallen weg, Bild-Links bleiben', () => {
+        expect(htmlToMarkdown(
+            '<h3><a href="https://x.test/#a"></a>Model Overview</h3>'
+            + '<h2><a href="#b"><svg><path d="M0"></path></svg></a>Benchmark</h2>'
+            + '<p><a href="https://x.test/"><img src="https://x.test/i.png" alt=""></a></p>',
+        )).toBe('### Model Overview\n\n## Benchmark\n\n[![](https://x.test/i.png)](https://x.test/)');
+    });
+
+    it('H24: nur leere Links → keine Struktur, Klartext gewinnt', () => {
+        expect(htmlToMarkdown('<div><a href="#a"></a>Text</div>')).toBeNull();
+    });
 });
