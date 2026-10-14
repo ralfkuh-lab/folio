@@ -206,7 +206,9 @@ Dinge, die in den drei Sets fehlten oder die ich für besonders wirkungsvoll hal
   unterstützt, `aria-label` gesetzt. E2E 55. *(ursprünglich `[S–M]`; die
   Toggle-Logik war klein, die Folgefragen — Export-Vertrag, stale DOM,
   GFM-Varianten, A11y — machten den Großteil der Arbeit aus.)*
-- **⭐ „Als sauberes Markdown einfügen"** — HTML aus der Zwischenablage (Browser/Word/
+- **⭐ „Als sauberes Markdown einfügen"** — ✅ **umgesetzt (2026-10-14)**: Strg+V
+  konvertiert, Strg+Umschalt+V fügt reinen Text ein; Details in `CLAUDE.md`.
+  HTML aus der Zwischenablage (Browser/Word/
   Confluence) beim Einfügen automatisch zu sauberem MD konvertieren (turndown-artig,
   im Frontend). Spart massives Nachputzen. `[M]` (Gegenstück zu codex' „als Rich Text
   kopieren")

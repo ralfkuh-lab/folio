@@ -1116,6 +1116,29 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   über `file_resolver::make_relative` (Wrapper um `pathdiff::diff_paths`,
   POSIX-Slashes für Markdown-Konvention). Clipboard-RGBA → PNG-Encoding
   passiert im Backend mit dem `image`-Crate.
+- **HTML als Markdown einfügen** (`ui/paste-handler.ts` +
+  `ui/html-to-markdown.ts`, Surface `FolioEditor.pasteText`; Abhängigkeiten
+  `turndown` + `@joplin/turndown-plugin-gfm`): Strg+V im Markdown-Editor
+  wandelt `text/html` in Markdown um, Strg+Umschalt+V fügt reinen Text ein
+  (Einmal-Flag aus dem keydown, nur im Editor gesetzt, jeder Paste verbraucht
+  es, 1 s TTL). Vier Regeln, alle aus Review-Befunden: (1) **Ohne
+  Markdown-Struktur** (nur `div`/`span`/`br`/`p` — VS Code, Terminals) liefert
+  `htmlToMarkdown` `null` und Monaco fügt `text/plain` ein; sonst escapt
+  turndown eingefügten Markdown-Quelltext. (2) **Im HTML-Fall nie der
+  Bild-Dialog** — Word/Excel legen ein Vorschaubild daneben; jeder
+  Fehler-/Ablehnungspfad (Exception, Fence, Mehrfach-Cursor, readOnly) lässt
+  Monacos Default greifen, sonst geht der Text verloren. Nur HTML aus genau
+  einem `img` (oder kein HTML) führt zum Bild-Dialog. (3) **Code byte-genau**:
+  eigene `pre`-Regel (Fence-Länge über *alle* Backtick-Läufe, auch `<pre>`
+  ohne `<code>`), Nachbearbeitung fence-bewusst auch hinter `> `-Präfixen.
+  (4) `pasteText` ist **ein** `executeEdits` zwischen zwei `pushUndoStop`,
+  Caret aus der inversen Operation (CRLF-Modelle). Inertes Parsen über
+  `createHTMLDocument`; `javascript:`-Links bleiben im Markdown stehen und
+  werden von comrak beim Rendern entschärft. Bekannte Grenze: Word-
+  Pseudolisten (`MsoListParagraph`) bleiben Absätze. Nativ verifiziert
+  2026-10-14 (WebKitGTK unter Xvfb, echte X-Zwischenablage über einen
+  python-xlib-Selection-Owner, Tasten per xdotool: Strg+V, Strg+Umschalt+V,
+  Undo/Redo, Quelltext-HTML, Fence, Word-HTML+Bild); kein E2E-Szenario.
 - **Pre-Mount-Editor-Calls**: `mountReady` in `editor/mount.ts` ist seit
   2026-07-04 bis zum ERSTEN erfolgreichen `mount()` ein pending Promise
   (vorher `Promise.resolve()` — damals war jeder `mountReady.then(...)`-
