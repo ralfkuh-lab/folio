@@ -58,6 +58,7 @@ const mocks = vi.hoisted(() => ({
     closeVaultFilterBar: vi.fn(() => {}),
     filterInFolder: vi.fn((_p: string) => {}),
     isPathGitChanged: vi.fn((_p: string) => false),
+    collectGitChangedSearchLimit: vi.fn((): { exact: string[]; underDirs: string[] } => ({ exact: [], underDirs: [] })),
     whenFilterOptionsPersisted: vi.fn(() => Promise.resolve()),
 }));
 
@@ -76,6 +77,7 @@ vi.mock('../../app/vault/filter', () => ({
 vi.mock('../../app/vault/git-status', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../../app/vault/git-status')>()),
     isPathGitChanged: mocks.isPathGitChanged,
+    collectGitChangedSearchLimit: mocks.collectGitChangedSearchLimit,
 }));
 // Nur fuer Tests mit echtem filter.ts (vi.importActual): der Baum ist hier
 // kein Pruefgegenstand.
@@ -280,6 +282,7 @@ beforeEach(async () => {
     mocks.getSearchSpace.mockReturnValue(walkSpace());
     mocks.isVaultFilterBarVisible.mockReturnValue(true);
     mocks.isPathGitChanged.mockReturnValue(false);
+    mocks.collectGitChangedSearchLimit.mockReturnValue({ exact: [], underDirs: [] });
     mocks.whenFilterOptionsPersisted.mockImplementation(() => Promise.resolve());
     tauri = installTauriMock();
     configureInvoke();
@@ -1229,19 +1232,30 @@ describe('vault/search — S9 Suchraum aus dem Filter (F1–F7)', () => {
         expect(startCalls()[0][1]).toMatchObject({ files: [SPEC_A], fileFilter: 'markdown' });
     });
 
-    it('F7: Name `spec` + git → Schnitt mit den git-geaenderten Dateien', async () => {
+    it('F7: Name `spec` + git → Schnitt mit den git-geaenderten Dateien, keine Allowlist', async () => {
         await importAndInit();
         mocks.isPathGitChanged.mockImplementation((p: string) => p === SPEC_C);
         mockFind({ files: [SPEC_A, SPEC_C] });
         await runSearch('TODO', { space: filesSpace({ gitChangedOnly: true }) });
         expect(startCalls()[0][1].files).toEqual([SPEC_C]);
+        expect(startCalls()[0][1]).not.toHaveProperty('limitToPaths');
+        expect(startCalls()[0][1]).not.toHaveProperty('limitUnderDirs');
+        expect(mocks.collectGitChangedSearchLimit).not.toHaveBeenCalled();
     });
 
-    it('git ohne Namen → Walk, Treffer ausserhalb git-geaenderter Dateien verworfen', async () => {
+    it('F3a: git ohne Namen → Walk mit exact/underDirs, Treffer werden nicht mehr clientseitig verworfen', async () => {
         await importAndInit();
-        mocks.isPathGitChanged.mockImplementation((p: string) => p === SPEC_C);
+        mocks.collectGitChangedSearchLimit.mockReturnValue({
+            exact: [SPEC_A],
+            underDirs: [`${R}/neu`],
+        });
         await runSearch('TODO', { space: walkSpace({ gitChangedOnly: true, filtered: true }) });
-        expect(startCalls()[0][1]).not.toHaveProperty('files');
+        const args = startCalls()[0][1];
+        expect(args).not.toHaveProperty('files');
+        expect(args.limitToPaths).toEqual([SPEC_A]);
+        expect(args.limitUnderDirs).toEqual([`${R}/neu`]);
+        // Backend liefert beide Dateien (die Allowlist hat den Deckel bereits
+        // auf git-geaenderte Dateien begrenzt) — kein Client-Filter mehr.
         tauri.emitEvent('search:hits', {
             runId: 1,
             files: [
@@ -1251,8 +1265,60 @@ describe('vault/search — S9 Suchraum aus dem Filter (F1–F7)', () => {
         });
         await done({ hits: 2, filesMatched: 2 });
         const names = Array.from(document.querySelectorAll('.vs-fname')).map((e) => e.textContent);
-        expect(names).toEqual(['spec-c.txt']);
-        expect($('vault-search-status').textContent).toContain('1 Treffer in 1 Datei');
+        expect(names).toEqual(['spec-a.md', 'spec-c.txt']);
+        expect($('vault-search-status').textContent).toContain('2 Treffer in 2 Dateien');
+    });
+
+    it('F3b: Walk ohne git → keine Allowlist im Aufruf', async () => {
+        await importAndInit();
+        await runSearch('TODO', { space: walkSpace() });
+        expect(startCalls()[0][1]).not.toHaveProperty('limitToPaths');
+        expect(startCalls()[0][1]).not.toHaveProperty('limitUnderDirs');
+        expect(mocks.collectGitChangedSearchLimit).not.toHaveBeenCalled();
+    });
+
+    it('K2a: spaeter Git-Snapshot → entprellter Neustart mit neuer Allowlist', async () => {
+        vi.useFakeTimers();
+        await importAndInit();
+        mocks.collectGitChangedSearchLimit.mockReturnValue({ exact: [], underDirs: [] });
+        await runSearch('TODO', { space: walkSpace({ gitChangedOnly: true, filtered: true }) });
+        expect(startCalls()).toHaveLength(1);
+        expect(startCalls()[0][1].limitToPaths).toEqual([]);
+
+        mocks.collectGitChangedSearchLimit.mockReturnValue({ exact: [SPEC_A], underDirs: [] });
+        window.dispatchEvent(new CustomEvent('folio-git-status-changed'));
+        await vi.advanceTimersByTimeAsync(400);
+        expect(startCalls()).toHaveLength(2);
+        expect(startCalls()[1][1].limitToPaths).toEqual([SPEC_A]);
+    });
+
+    it('K2b: identischer Snapshot → kein Neustart', async () => {
+        vi.useFakeTimers();
+        await importAndInit();
+        mocks.collectGitChangedSearchLimit.mockReturnValue({ exact: [SPEC_A], underDirs: [] });
+        await runSearch('TODO', { space: walkSpace({ gitChangedOnly: true, filtered: true }) });
+        expect(startCalls()).toHaveLength(1);
+        window.dispatchEvent(new CustomEvent('folio-git-status-changed'));
+        window.dispatchEvent(new CustomEvent('folio-git-status-changed'));
+        await vi.advanceTimersByTimeAsync(400);
+        expect(startCalls()).toHaveLength(1);
+    });
+
+    it('K2c: Files-Zweig und Walk ohne git reagieren nicht auf das Git-Event', async () => {
+        vi.useFakeTimers();
+        await importAndInit();
+        mockFind({ files: [SPEC_A] });
+        await runSearch('TODO', { space: filesSpace({ gitChangedOnly: true }) });
+        expect(startCalls()).toHaveLength(1);
+        window.dispatchEvent(new CustomEvent('folio-git-status-changed'));
+        await vi.advanceTimersByTimeAsync(400);
+        expect(startCalls()).toHaveLength(1);
+
+        await runSearch('TODO2', { space: walkSpace() });
+        expect(startCalls()).toHaveLength(2);
+        window.dispatchEvent(new CustomEvent('folio-git-status-changed'));
+        await vi.advanceTimersByTimeAsync(400);
+        expect(startCalls()).toHaveLength(2);
     });
 
     it('Deckel cap/time und leere Filtermenge werden benannt', async () => {

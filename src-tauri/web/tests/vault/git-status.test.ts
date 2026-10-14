@@ -317,4 +317,83 @@ describe('vault/git-status', () => {
         emitStatus('/repo', [], 2);
         expect(node('/repo/a.md').getAttribute('title')).toBe('/repo/a.md\ngitignored');
     });
+
+    it('F1: collectGitChangedSearchLimit trennt exakte Pfade von untrackten Ordnern', async () => {
+        const git = await initModule();
+        emitStatus('/r', [
+            { path: '/r/sm', status: 'modified' },
+            { path: '/r/a.md', status: 'modified' },
+            { path: '/r/a.md/old.md', status: 'modified' },
+            { path: '/r/neu', status: 'untracked' },
+            { path: '/r/x', status: 'modified' },
+            { path: '/r/x/n2', status: 'untracked' },
+            { path: '/r/x/n2/k.md', status: 'untracked' },
+            { path: '/r/u.md', status: 'untracked' },
+        ]);
+        const limit = git.collectGitChangedSearchLimit();
+        // exact = ALLE Snapshot-Pfade (auch die, unter denen ein anderer liegt).
+        expect(new Set(limit.exact)).toEqual(
+            new Set([
+                '/r/sm',
+                '/r/a.md',
+                '/r/a.md/old.md',
+                '/r/neu',
+                '/r/x',
+                '/r/x/n2',
+                '/r/x/n2/k.md',
+                '/r/u.md',
+            ]),
+        );
+        // underDirs = nur untrackte Eintraege ohne Snapshot-Kind.
+        expect(new Set(limit.underDirs)).toEqual(
+            new Set(['/r/neu', '/r/x/n2/k.md', '/r/u.md']),
+        );
+    });
+
+    it('F2: collectGitChangedSearchLimit ist bei leerem Snapshot leer', async () => {
+        const git = await initModule();
+        expect(git.collectGitChangedSearchLimit()).toEqual({ exact: [], underDirs: [] });
+    });
+
+    it('F2b: neue Allowlist ist aequivalent zu isPathGitChanged (ohne gerenderten Baum)', async () => {
+        const git = await initModule();
+        emitStatus('/r', [
+            { path: '/r/sm', status: 'modified' },
+            { path: '/r/a.md', status: 'modified' },
+            { path: '/r/a.md/old.md', status: 'modified' },
+            { path: '/r/neu', status: 'untracked' },
+            { path: '/r/x', status: 'modified' },
+            { path: '/r/x/n2', status: 'untracked' },
+            { path: '/r/x/n2/k.md', status: 'untracked' },
+            { path: '/r/u.md', status: 'untracked' },
+        ]);
+        const { exact, underDirs } = git.collectGitChangedSearchLimit();
+        const exactSet = new Set(exact);
+        const underSet = new Set(underDirs);
+        const allowed = (p: string): boolean => {
+            if (exactSet.has(p)) return true;
+            let head = p;
+            let idx = head.lastIndexOf('/');
+            while (idx > 0) {
+                head = head.slice(0, idx);
+                if (underSet.has(head)) return true;
+                idx = head.lastIndexOf('/');
+            }
+            return false;
+        };
+        const candidates = [
+            '/r/sm/x.md',
+            '/r/a.md',
+            '/r/a.md/old.md',
+            '/r/neu/y.md',
+            '/r/neu',
+            '/r/x/n2/k.md',
+            '/r/x/other.md',
+            '/r/u.md',
+            '/r/b.md',
+        ];
+        for (const p of candidates) {
+            expect(allowed(p), `Kandidat ${p}`).toBe(git.isPathGitChanged(p));
+        }
+    });
 });

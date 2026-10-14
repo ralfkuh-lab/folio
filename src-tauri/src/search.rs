@@ -18,7 +18,7 @@
 //!
 //! Grundlage: [`docs/spec-vault-search.md`], Architektur-Entscheidungen 1–5.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -124,6 +124,27 @@ pub struct ExtendedSearchOptions {
     pub base: SearchOptions,
     pub regex: bool,
     pub filter: FileFilter,
+    /// Optionale Allowlist (git-geänderte Pfade): nur Dateien, die exakt in
+    /// `exact` stehen oder unter einem Eintrag von `under` liegen, werden
+    /// gelesen und gezählt. `None` = keine Einschränkung; `Some(leer)` = keine
+    /// Datei zulässig. Vergleich lexikalisch/case-sensitiv, Einträge
+    /// forward-slash-normalisiert ohne Trailing-Slash (Wurzel `/`/`C:/` bleibt).
+    pub limit_to: Option<PathLimit>,
+}
+
+/// Allowlist der git-geänderten Pfade. Zwei getrennte Mengen, weil exakter
+/// Treffer und Ordnerpräfix unterschiedliche Semantik haben (Spiegel des
+/// Frontend-Prädikats `isPathGitChanged`): `exact` lässt eine Datei **nur bei
+/// exakter Gleichheit** zu (keine Vorfahren-Wirkung — ein modifizierter
+/// Gitlink/Submodule-Ordner ist selbst kein Freibrief für seinen Inhalt),
+/// `under` lässt alles **unterhalb** eines Ordners zu (Segmentgrenze, nur
+/// echte Nachfahren — ein untrackter Ordner meldet seine Kinder nicht einzeln).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PathLimit {
+    /// Exakt zulässige Pfade.
+    pub exact: BTreeSet<String>,
+    /// Ordner, unter denen alles zulässig ist (nur echte Nachfahren).
+    pub under: BTreeSet<String>,
 }
 
 impl FileFilter {
@@ -227,6 +248,88 @@ pub fn to_scope_ex(
     match scope {
         Some(path) => Ok(SearchScopeEx::Folder(path)),
         None => Ok(SearchScopeEx::Vault),
+    }
+}
+
+/// Normalisiert die optionale git-Allowlist an der Vertrauensgrenze. `exact`
+/// (`limitToPaths`) und `under` (`limitUnderDirs`) sind je optional; die
+/// Begrenzung ist **aktiv**, sobald mindestens eines gesetzt ist — das fehlende
+/// zählt dann als leere Menge. Jeder Eintrag muss absolut sein (`InvalidScope`
+/// sonst), Backslashes werden zu Forward-Slashes, Trailing-Slashes entfallen
+/// (die Wurzel `/` bzw. `C:/` bleibt). Eine leere Liste ist gültig.
+/// `None`/`None` bleibt `None` (keine Einschränkung).
+pub fn parse_limit(
+    exact: Option<Vec<String>>,
+    under: Option<Vec<String>>,
+) -> Result<Option<PathLimit>, SearchError> {
+    if exact.is_none() && under.is_none() {
+        return Ok(None);
+    }
+    Ok(Some(PathLimit {
+        exact: parse_path_set(exact)?,
+        under: parse_path_set(under)?,
+    }))
+}
+
+/// Normalisiert eine optionale Pfadliste zu einer Menge (siehe [`parse_limit`]).
+fn parse_path_set(raw: Option<Vec<String>>) -> Result<BTreeSet<String>, SearchError> {
+    let mut set = BTreeSet::new();
+    let Some(raw) = raw else {
+        return Ok(set);
+    };
+    for entry in raw {
+        let norm = normalize_str(&entry);
+        if !Path::new(&entry).is_absolute() {
+            return Err(SearchError::InvalidScope(norm));
+        }
+        set.insert(trim_trailing_slashes(&norm));
+    }
+    Ok(set)
+}
+
+/// Entfernt abschließende Slashes, erhält aber die Wurzel: `/` bleibt `/`,
+/// die Laufwerkswurzel `C:/` bleibt `C:/` (sonst würde sie zur
+/// laufwerksrelativen Schreibweise `C:`).
+fn trim_trailing_slashes(path: &str) -> String {
+    let trimmed = path.trim_end_matches('/');
+    if trimmed.is_empty() {
+        "/".to_string()
+    } else if trimmed.ends_with(':') {
+        format!("{trimmed}/")
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// Ob `path` (forward-slash-normalisiert, wie der Walk liefert) von der
+/// Allowlist zugelassen ist: exakte Gleichheit in `exact` ODER ein **echter
+/// Vorfahre** auf Segmentgrenze in `under`. O(Tiefe) über `rfind('/')` —
+/// bewusst keine Schleife über alle Einträge (die Liste kann >1000, der Walk
+/// >100000 Dateien groß sein).
+fn is_allowed_by_limit(path: &str, limit: &PathLimit) -> bool {
+    limit.exact.contains(path) || is_under_any(path, &limit.under)
+}
+
+/// Ob ein **echter Vorfahre** von `path` (Segmentgrenze) in `dirs` steht. Der
+/// Pfad selbst zählt nicht (exakte Treffer laufen über [`PathLimit::exact`]).
+fn is_under_any(path: &str, dirs: &BTreeSet<String>) -> bool {
+    let mut candidate = path;
+    loop {
+        let idx = match candidate.rfind('/') {
+            Some(i) => i,
+            None => {
+                // Laufwerkswurzel: beim Kürzen entsteht `C:`, in der Menge
+                // steht die Wurzel aber als `C:/`.
+                return candidate.ends_with(':') && dirs.contains(&format!("{candidate}/"));
+            }
+        };
+        if idx == 0 {
+            return dirs.contains("/");
+        }
+        candidate = &candidate[..idx];
+        if dirs.contains(candidate) {
+            return true;
+        }
     }
 }
 
@@ -661,6 +764,7 @@ fn compile_regex(query: &str, options: &SearchOptions) -> Result<Regex, SearchEr
             base: *options,
             regex: false,
             filter: FileFilter::AllText,
+            limit_to: None,
         },
     )
 }
@@ -1067,10 +1171,12 @@ fn apply_walk_filters(
 /// mit einem bereits kompilierten Regex und einem [`FileFilter`]. Gemeinsamer
 /// Kern von [`run_search`]/[`run_search_ex`] (ohne Query-/Root-Validierung und
 /// ohne `elapsed_ms` — das setzt der Aufrufer).
+#[allow(clippy::too_many_arguments)]
 fn run_over_roots(
     roots: &SearchRoots,
     re: &Regex,
     filter: &FileFilter,
+    limit_to: Option<&PathLimit>,
     include_hidden: bool,
     include_ignored: bool,
     cancel: &AtomicBool,
@@ -1121,6 +1227,13 @@ fn run_over_roots(
                 continue;
             }
             let norm = normalize_path(entry.path());
+            // git-Allowlist VOR Lesen/Zählen: nicht zulässige Dateien werden
+            // weder gelesen noch gezählt.
+            if let Some(limit) = limit_to {
+                if !is_allowed_by_limit(&norm, limit) {
+                    continue;
+                }
+            }
             if !seen.insert(norm.clone()) {
                 continue;
             }
@@ -1149,6 +1262,7 @@ fn run_over_roots(
             &roots.files,
             re,
             filter,
+            limit_to,
             cancel,
             &mut stats,
             &mut seen,
@@ -1172,6 +1286,7 @@ fn scan_pinned_files(
     files: &[PathBuf],
     re: &Regex,
     filter: &FileFilter,
+    limit_to: Option<&PathLimit>,
     cancel: &AtomicBool,
     stats: &mut SearchStats,
     seen: &mut HashSet<String>,
@@ -1191,6 +1306,13 @@ fn scan_pinned_files(
             continue;
         }
         let norm = normalize_path(f);
+        // git-Allowlist (B7): auch ein explizit gepinnter Einzeldatei-Pin
+        // fällt raus, wenn er nicht in der Menge (bzw. darunter) liegt.
+        if let Some(limit) = limit_to {
+            if !is_allowed_by_limit(&norm, limit) {
+                continue;
+            }
+        }
         if !seen.insert(norm.clone()) {
             continue;
         }
@@ -1230,6 +1352,7 @@ pub fn run_search(
         base: *options,
         regex: false,
         filter: FileFilter::AllText,
+        limit_to: None,
     };
     run_search_ex(roots, query, &ext, cancel, on_file)
 }
@@ -1253,6 +1376,7 @@ pub fn run_search_ex(
         roots,
         &re,
         &options.filter,
+        options.limit_to.as_ref(),
         options.base.include_hidden,
         options.base.include_ignored,
         cancel,
@@ -1367,6 +1491,7 @@ pub fn run_search_parallel(
         &roots.dirs,
         &re,
         &options.filter,
+        options.limit_to.as_ref(),
         options.base.include_hidden,
         options.base.include_ignored,
         cancel,
@@ -1380,6 +1505,7 @@ pub fn run_search_parallel(
             &roots.files,
             &re,
             &options.filter,
+            options.limit_to.as_ref(),
             cancel,
             &mut stats,
             &mut seen,
@@ -1402,6 +1528,7 @@ fn walk_worker_visit(
     result: Result<ignore::DirEntry, ignore::Error>,
     re: &Regex,
     filter: &FileFilter,
+    limit_to: Option<&PathLimit>,
     cancel: &AtomicBool,
     hit_counter: &AtomicUsize,
     stop_flag: &AtomicBool,
@@ -1421,6 +1548,13 @@ fn walk_worker_visit(
         return WalkState::Continue;
     }
     let norm = normalize_path(entry.path());
+    // git-Allowlist VOR Probe/Lesen/Zählen (der Näherungszähler darf nur
+    // zulässige Dateien sehen).
+    if let Some(limit) = limit_to {
+        if !is_allowed_by_limit(&norm, limit) {
+            return WalkState::Continue;
+        }
+    }
 
     // Probe-Modus: der globale Deckel ist (näherungsweise) erreicht. Nur noch
     // prüfen, ob es weitere echte Treffer gibt — kein voller Scan, kein
@@ -1584,6 +1718,7 @@ fn walk_dirs_parallel(
     dirs: &[PathBuf],
     re: &Regex,
     filter: &FileFilter,
+    limit_to: Option<&PathLimit>,
     include_hidden: bool,
     include_ignored: bool,
     cancel: &AtomicBool,
@@ -1634,7 +1769,7 @@ fn walk_dirs_parallel(
                 builder.build_parallel().run(|| {
                     let wtx = dir_tx.clone();
                     Box::new(move |result| {
-                        walk_worker_visit(result, re, filter, cancel, hc, sf, &wtx)
+                        walk_worker_visit(result, re, filter, limit_to, cancel, hc, sf, &wtx)
                     })
                 });
             }
@@ -1983,6 +2118,7 @@ mod tests {
                 base: opts,
                 regex: false,
                 filter: FileFilter::AllText,
+                limit_to: None,
             };
             let (par_files, _) = collect_parallel(&roots, "needle", &o);
             assert_eq!(
@@ -2014,6 +2150,7 @@ mod tests {
             base: opts,
             regex: false,
             filter: FileFilter::AllText,
+            limit_to: None,
         };
         let (par_files, _) = collect_parallel(&roots, "needle", &o);
         assert_eq!(as_map(&files), as_map(&par_files));
@@ -2034,6 +2171,7 @@ mod tests {
             base: opts_hidden,
             regex: false,
             filter: FileFilter::AllText,
+            limit_to: None,
         };
         let (par_files, _) = collect_parallel(&roots, "needle", &o);
         assert_eq!(as_map(&files), as_map(&par_files));
@@ -2073,6 +2211,7 @@ mod tests {
                     base: opts,
                     regex: false,
                     filter: FileFilter::AllText,
+                    limit_to: None,
                 };
                 let (par_files, _) = collect_parallel(&scope, "needle", &o);
                 assert!(
@@ -2107,6 +2246,7 @@ mod tests {
                 base: opts,
                 regex: false,
                 filter: FileFilter::AllText,
+                limit_to: None,
             };
             let (par_files, _) = collect_parallel(&scope, "needle", &o);
             assert!(
@@ -2149,6 +2289,7 @@ mod tests {
                 base: opts,
                 regex: false,
                 filter: FileFilter::AllText,
+                limit_to: None,
             };
             let (par_files, _) = collect_parallel(&roots, "needle", &o);
             assert_eq!(
@@ -2169,6 +2310,7 @@ mod tests {
                 base: opts_hidden,
                 regex: false,
                 filter: FileFilter::AllText,
+                limit_to: None,
             };
             let (par_hidden, _) = collect_parallel(&roots, "needle", &o_hidden);
             assert_eq!(
@@ -2221,6 +2363,7 @@ mod tests {
                     base: opts,
                     regex: false,
                     filter: FileFilter::AllText,
+                    limit_to: None,
                 };
                 let (par_files, par_stats) = collect_parallel(&roots, "needle", &o);
                 assert_eq!(
@@ -2265,6 +2408,7 @@ mod tests {
             base: opts,
             regex: false,
             filter: FileFilter::AllText,
+            limit_to: None,
         };
         let (par_files, par_stats) = collect_parallel(&roots, "needle", &o);
         assert_eq!(1, par_files.len(), "par: {:?}", names(&par_files));
@@ -2296,6 +2440,7 @@ mod tests {
                 },
                 regex: false,
                 filter: FileFilter::AllText,
+                limit_to: None,
             };
             let (seq_files, seq_stats) = collect_ex(&roots, "needle", &o);
             let (par_files, par_stats) = collect_parallel(&roots, "needle", &o);
@@ -2346,6 +2491,7 @@ mod tests {
             },
             regex: false,
             filter: FileFilter::AllText,
+            limit_to: None,
         };
 
         let (seq_files, seq_stats) = collect_ex(&roots, "needle", &o);
@@ -2530,6 +2676,7 @@ mod tests {
                 },
                 regex: false,
                 filter: FileFilter::AllText,
+                limit_to: None,
             };
             let (seq_files, _) = collect_ex(&folder, "needle", &o);
             let mut seq = names(&seq_files);
@@ -2586,6 +2733,7 @@ mod tests {
             base: opts,
             regex: false,
             filter: FileFilter::AllText,
+            limit_to: None,
         };
         let (par_files, _) = collect_parallel(&roots, "needle", &o);
         assert_eq!(as_map(&files), as_map(&par_files));
@@ -2678,6 +2826,7 @@ mod tests {
             },
             regex: false,
             filter: FileFilter::AllText,
+            limit_to: None,
         };
         let roots = dir_roots(root);
         let (seq_files, seq_stats) = collect_ex(&roots, "needle", &o);
@@ -2730,6 +2879,7 @@ mod tests {
             base: SearchOptions::default(), // include_hidden: false
             regex: false,
             filter: FileFilter::AllText,
+            limit_to: None,
         };
         let (seq_files, seq_stats) = collect_ex(&roots, "needle", &o);
         let (par_files, par_stats) = collect_parallel(&roots, "needle", &o);
@@ -3233,6 +3383,7 @@ mod tests {
             base: SearchOptions::default(),
             regex,
             filter,
+            limit_to: None,
         }
     }
 
@@ -3409,6 +3560,7 @@ mod tests {
             },
             regex: true,
             filter: FileFilter::AllText,
+            limit_to: None,
         };
         assert!(matches!(
             validate_query_ex("needle", &o),

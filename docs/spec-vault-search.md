@@ -728,9 +728,14 @@ Funnel statt Summary-Button + Dialog + Filterzeile.
      kein Deckel;
    - Namensbegriff ≥ 2: `files` aus `vault_filter_find` nach
      `whenFilterOptionsPersisted()`, git-Chip → Schnitt;
-   - `git` ohne Namensbegriff: Walk + clientseitiger git-Schnitt der Treffer
-     (bekannte Grenze: der 500er-Deckel zählt vor dem Schnitt; Ausbaupfad:
-     leere Query mit git in `find_by_name` zulassen).
+   - `git` ohne Namensbegriff: Walk mit der Allowlist `limitToPaths`/
+     `limitUnderDirs` (`collectGitChangedSearchLimit()` in git-status.ts)
+     — exakte Snapshot-Pfade bzw. untrackte Ordner, exakt wie
+     `isPathGitChanged`; der Suchkern prüft im Walk nur noch zulässige Dateien,
+     der 500er-Deckel zählt damit nur diese; der frühere clientseitige Schnitt
+     entfällt. Kommt der Snapshot erst nach dem Lauf, startet
+     `folio-git-status-changed` die aktive Walk-Suche bei geänderter
+     Begrenzung über den entprellten Rerun-Pfad neu.
    Status-Zusatz „· gefiltert“ (Funnel-Badge-Bedingung) bzw. „· Vault“.
 3. **Bedienung**: Enter validiert und sucht sofort (Fehler am Feld, kein
    Lauf); Enter im leeren Feld beendet. Escape im Feld: Text → leeren +
