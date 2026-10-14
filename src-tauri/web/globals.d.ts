@@ -56,6 +56,8 @@ interface FolioEditorSurface {
     layout(): void;
     focus(): void;
     applyReplace(args: { fullText: string; selectionStart: number; selectionLength: number; noReveal?: boolean }): void;
+    /** Fuegt konvertiertes Markdown ein (Paste-Handler); false = nichts getan. */
+    pasteText(text: string): boolean;
     /** Opens Monaco suggest (used after inserting empty `[[]]` for wikilink autocomplete). */
     triggerSuggest(): void;
     openFind(initialTerm?: string): void;

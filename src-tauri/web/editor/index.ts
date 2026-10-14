@@ -11,7 +11,7 @@
 //     mount, setText, getText, getSelection, setSelection, getScroll,
 //     setScroll, getCursorLine, revealLineNearTop, revealLineFractionNearTop,
 //     applyReplace, focus, layout, setTheme, triggerSuggest,
-//     undo, redo, getLanguage, setLanguage, listLanguages,
+//     undo, redo, getLanguage, setLanguage, listLanguages, pasteText,
 //     openFind, closeFind, setFindOptions, setFindTerm, findNext, findPrev
 //
 // Window-Surface ist zentral in `globals.d.ts` deklariert.
@@ -51,6 +51,7 @@ import {
     getVisibleHeight,
     insertText,
     listLanguages,
+    pasteText,
     redo,
     revealLineFractionNearTop,
     revealLineNearTop,
@@ -84,6 +85,7 @@ window.FolioEditor = {
     revealLineFractionNearTop,
     revealMatch,
     applyReplace,
+    pasteText,
     focus,
     insertText,
     triggerSuggest,
