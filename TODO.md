@@ -51,7 +51,6 @@ nicht aussagekräftig. Zu testen: Kaltstart, laufende Instanz, beide Werte von
 
 ## Mittlere Priorität
 
-- **Suche: git-Chip ohne Namensbegriff ohne Deckel** (aus S9, 2026-10-10). Heute läuft „git ohne Namen“ als Walk mit clientseitigem Schnitt; der globale 500-Treffer-Deckel zählt vor dem Schnitt, in großen Vaults können git-Treffer fehlen. Fix: `find_by_name` (`vault_filter.rs`) mit leerer Query bei aktivem `git` zulassen und darüber `Files` nutzen, oder git-Filter im Suchkern.
 
 - 🔍 **Nur beobachten — Fix ist drin, es fehlt der Beleg am nächsten Mac-Lauf.**
   **E2E `61_hex_view` flaky auf macOS: „Zurück findet den direkten
@@ -317,6 +316,14 @@ nicht aussagekräftig. Zu testen: Kaltstart, laufende Instanz, beide Werte von
   Speicherdruck fehlen). Nächster Schritt: bei Wiederauftreten prüfen, ob ein
   angehobenes `testTimeout` für diesen Test das Fenster schließt — ein
   reiner Timeout unter Last spricht für zu enge Marge, nicht für einen Defekt.
+
+  **Zweiter Kandidat 2026-10-14** (unabhängig von zwei Agenten in zwei
+  Worktrees gemeldet, je 1 von ~4 Voll-Läufen, isoliert grün):
+  `tests/automation/events.test.ts > automation/events — ackHandler > ackt
+  automation:set_editor_text nach loadEditorText` — Assertion
+  `expect(tauri.invoke).toHaveBeenCalledWith('automation_ack', …)` (Zeile
+  ~151). Die geänderten Module (Paste, Suche) berühren das Testsubjekt nicht;
+  beide Läufe hatten parallel cargo-Builds auf der Maschine.
 
 - ✅ **Inline-Rename überlebt einen Vault-Rebuild nicht — behoben 2026-08-23**
   (Produktbefund aus einem E2E-Flake, 2026-08-20): Ein asynchroner

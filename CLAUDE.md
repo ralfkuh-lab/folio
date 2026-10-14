@@ -440,9 +440,16 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   Namensbegriff `Files` aus `vault_filter_find` nach
   `whenFilterOptionsPersisted()` (git-Chip → Schnitt mit `isPathGitChanged`;
   Filter-Deckel `cap`/`time` wird im Status benannt). `git` ohne Namensbegriff
-  = Walk mit clientseitigem git-Schnitt der Treffer (`vault_filter_find`
-  liefert bei leerer Query bewusst nichts; bekannte Grenze: der 500er-Deckel
-  zählt vor dem Schnitt). Der Status hängt „· gefiltert“ (Funnel-Badge-
+  = Walk mit **git-Begrenzung im Suchkern** (`limitToPaths` = alle
+  Snapshot-Pfade exakt, `limitUnderDirs` = untrackte Snapshot-Blätter als
+  Ordnerpräfix, aus `git-status.ts::collectGitChangedSearchLimit`), geprüft vor
+  Lesen und Zählen — der 500er-Deckel zählt nur git-Dateien. Die Trennung ist
+  Pflicht: jeder Eintrag als Präfix ließe unter einem geänderten
+  Gitlink/Submodule (` M sm`, ohne Kinder im Snapshot) alles zu; die Semantik
+  muss exakt `isPathGitChanged` spiegeln (Äquivalenztest in
+  `git-status.test.ts`). Ändert sich die Begrenzung nach einem neuen Snapshot,
+  sucht eine aktive git-Suche über `scheduleRerun()` neu; bei unveränderter
+  Begrenzung (Fokus-Refresh) nicht. Der Status hängt „· gefiltert“ (Funnel-Badge-
   Bedingung) bzw. „· Vault“ an. **Enter** im Inhaltsfeld validiert
   (`vault_search_validate`, Fehler am Feld `#vault-search-error` +
   `aria-invalid`, kein Lauf) und sucht sofort; Optionswechsel (Aa/ab/Rx,
