@@ -333,7 +333,8 @@ Request:
   "fileFilter": "custom",
   "customExtensions": "md, txt, log",
   "files": null,
-  "limitToPaths": ["/abs/pfad/zum/repo/src", "/abs/pfad/zum/repo/README.md"],
+  "limitToPaths": ["/abs/pfad/zum/repo/README.md"],
+  "limitUnderDirs": ["/abs/pfad/zum/repo/src"],
   "includeHidden": false,
   "includeIgnored": false,
   "timeoutMs": 5000
@@ -360,15 +361,21 @@ Request:
   Editor-Puffern); `fileFilter` wirkt als Schnittmenge, nicht existierende oder
   unlesbare Dateien werden übersprungen. `includeHidden`/`includeIgnored`
   haben auf eine Dateiliste keine Wirkung.
-- `limitToPaths` (optional, Default `null`): Allowlist im Walk-Scope
-  (Vault/Ordner). Jeder Eintrag muss ein **absoluter** Pfad sein (sonst HTTP
-  400); Backslashes werden zu Forward-Slashes und Trailing-Slashes entfernt
-  (die Wurzel `/` bzw. `C:/` bleibt). Eine Datei wird nur gelesen und gezählt,
-  wenn sie selbst oder ein **Vorfahre auf Segmentgrenze** in der Liste steht —
-  so zählt der globale 500er-Treffer-Deckel nur zulässige Dateien. Eine leere
-  Liste ist gültig und liefert 0 Treffer. Zusammen mit `files` → HTTP 400
-  (Scope-Konflikt; der Dateilisten-Scope schneidet im Frontend). `null`/fehlend
-  = keine Einschränkung (bitgenau wie bisher).
+- `limitToPaths`/`limitUnderDirs` (optional, Default `null`): Allowlist im
+  Walk-Scope (Vault/Ordner), gespiegelt aus dem Git-Status des Vault-Filters.
+  `limitToPaths` erlaubt eine Datei **nur bei exakter Gleichheit**;
+  `limitUnderDirs` erlaubt alles **unterhalb** dieser Ordner (Segmentgrenze,
+  nur echte Nachfahren — ein untrackter Ordner meldet seine Kinder nicht
+  einzeln). Ein modifizierter Gitlink/Submodule-Ordner in `limitToPaths` gibt
+  seinen Inhalt also **nicht** frei. Jeder Eintrag muss ein **absoluter** Pfad
+  sein (sonst HTTP 400); Backslashes werden zu Forward-Slashes und
+  Trailing-Slashes entfernt (die Wurzel `/` bzw. `C:/` bleibt). Die Begrenzung
+  ist aktiv, sobald mindestens eines der beiden Felder gesetzt ist (das
+  fehlende zählt als leer) — eine leere Liste liefert 0 Treffer. So zählt der
+  globale 500er-Treffer-Deckel nur zulässige Dateien. Eines der beiden Felder
+  zusammen mit `files` → HTTP 400 (Scope-Konflikt, der Dateilisten-Scope
+  schneidet im Frontend). `null`/fehlend = keine Einschränkung (bitgenau wie
+  bisher).
 - `caseSensitive`/`wholeWord` (optional, Default `false`): Groß-/Kleinschreibung
   bzw. ganze Wörter (Unicode-Wortgrenzen). Case-insensitive nutzt Unicode
   *simple* case folding (`ß` faltet auf sich selbst, nicht auf `ss`).

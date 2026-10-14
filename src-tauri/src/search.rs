@@ -124,12 +124,27 @@ pub struct ExtendedSearchOptions {
     pub base: SearchOptions,
     pub regex: bool,
     pub filter: FileFilter,
-    /// Optionale Allowlist (git-geänderte Pfade): nur Dateien, die selbst in
-    /// der Menge stehen oder unter einem Eintrag liegen, werden gelesen und
-    /// gezählt. `None` = keine Einschränkung; `Some(leer)` = keine Datei
-    /// zulässig. Vergleich lexikalisch/case-sensitiv, Einträge
+    /// Optionale Allowlist (git-geänderte Pfade): nur Dateien, die exakt in
+    /// `exact` stehen oder unter einem Eintrag von `under` liegen, werden
+    /// gelesen und gezählt. `None` = keine Einschränkung; `Some(leer)` = keine
+    /// Datei zulässig. Vergleich lexikalisch/case-sensitiv, Einträge
     /// forward-slash-normalisiert ohne Trailing-Slash (Wurzel `/`/`C:/` bleibt).
-    pub limit_to: Option<BTreeSet<String>>,
+    pub limit_to: Option<PathLimit>,
+}
+
+/// Allowlist der git-geänderten Pfade. Zwei getrennte Mengen, weil exakter
+/// Treffer und Ordnerpräfix unterschiedliche Semantik haben (Spiegel des
+/// Frontend-Prädikats `isPathGitChanged`): `exact` lässt eine Datei **nur bei
+/// exakter Gleichheit** zu (keine Vorfahren-Wirkung — ein modifizierter
+/// Gitlink/Submodule-Ordner ist selbst kein Freibrief für seinen Inhalt),
+/// `under` lässt alles **unterhalb** eines Ordners zu (Segmentgrenze, nur
+/// echte Nachfahren — ein untrackter Ordner meldet seine Kinder nicht einzeln).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PathLimit {
+    /// Exakt zulässige Pfade.
+    pub exact: BTreeSet<String>,
+    /// Ordner, unter denen alles zulässig ist (nur echte Nachfahren).
+    pub under: BTreeSet<String>,
 }
 
 impl FileFilter {
@@ -236,18 +251,32 @@ pub fn to_scope_ex(
     }
 }
 
-/// Normalisiert die optionale git-Allowlist (`limitToPaths`) an der
-/// Vertrauensgrenze: jeder Eintrag muss absolut sein (`InvalidScope` sonst),
-/// Backslashes werden zu Forward-Slashes, Trailing-Slashes entfallen (die
-/// Wurzel `/` bzw. `C:/` bleibt). Eine leere Liste ist **gültig** und liefert
-/// eine leere Menge (keine Datei zulässig). `None` bleibt `None`.
-pub fn parse_limit_paths(
-    raw: Option<Vec<String>>,
-) -> Result<Option<BTreeSet<String>>, SearchError> {
-    let Some(raw) = raw else {
+/// Normalisiert die optionale git-Allowlist an der Vertrauensgrenze. `exact`
+/// (`limitToPaths`) und `under` (`limitUnderDirs`) sind je optional; die
+/// Begrenzung ist **aktiv**, sobald mindestens eines gesetzt ist — das fehlende
+/// zählt dann als leere Menge. Jeder Eintrag muss absolut sein (`InvalidScope`
+/// sonst), Backslashes werden zu Forward-Slashes, Trailing-Slashes entfallen
+/// (die Wurzel `/` bzw. `C:/` bleibt). Eine leere Liste ist gültig.
+/// `None`/`None` bleibt `None` (keine Einschränkung).
+pub fn parse_limit(
+    exact: Option<Vec<String>>,
+    under: Option<Vec<String>>,
+) -> Result<Option<PathLimit>, SearchError> {
+    if exact.is_none() && under.is_none() {
         return Ok(None);
-    };
+    }
+    Ok(Some(PathLimit {
+        exact: parse_path_set(exact)?,
+        under: parse_path_set(under)?,
+    }))
+}
+
+/// Normalisiert eine optionale Pfadliste zu einer Menge (siehe [`parse_limit`]).
+fn parse_path_set(raw: Option<Vec<String>>) -> Result<BTreeSet<String>, SearchError> {
     let mut set = BTreeSet::new();
+    let Some(raw) = raw else {
+        return Ok(set);
+    };
     for entry in raw {
         let norm = normalize_str(&entry);
         if !Path::new(&entry).is_absolute() {
@@ -255,7 +284,7 @@ pub fn parse_limit_paths(
         }
         set.insert(trim_trailing_slashes(&norm));
     }
-    Ok(Some(set))
+    Ok(set)
 }
 
 /// Entfernt abschließende Slashes, erhält aber die Wurzel: `/` bleibt `/`,
@@ -273,28 +302,34 @@ fn trim_trailing_slashes(path: &str) -> String {
 }
 
 /// Ob `path` (forward-slash-normalisiert, wie der Walk liefert) von der
-/// Allowlist zugelassen ist: `path` selbst oder ein Vorfahre auf
-/// **Segmentgrenze** steht in `limit`. O(Tiefe) über `rfind('/')` — bewusst
-/// keine Schleife über alle Einträge (die Liste kann >1000, der Walk >100000
-/// Dateien groß sein).
-fn is_allowed_by_limit(path: &str, limit: &BTreeSet<String>) -> bool {
+/// Allowlist zugelassen ist: exakte Gleichheit in `exact` ODER ein **echter
+/// Vorfahre** auf Segmentgrenze in `under`. O(Tiefe) über `rfind('/')` —
+/// bewusst keine Schleife über alle Einträge (die Liste kann >1000, der Walk
+/// >100000 Dateien groß sein).
+fn is_allowed_by_limit(path: &str, limit: &PathLimit) -> bool {
+    limit.exact.contains(path) || is_under_any(path, &limit.under)
+}
+
+/// Ob ein **echter Vorfahre** von `path` (Segmentgrenze) in `dirs` steht. Der
+/// Pfad selbst zählt nicht (exakte Treffer laufen über [`PathLimit::exact`]).
+fn is_under_any(path: &str, dirs: &BTreeSet<String>) -> bool {
     let mut candidate = path;
     loop {
-        if limit.contains(candidate) {
-            return true;
-        }
         let idx = match candidate.rfind('/') {
             Some(i) => i,
             None => {
                 // Laufwerkswurzel: beim Kürzen entsteht `C:`, in der Menge
                 // steht die Wurzel aber als `C:/`.
-                return candidate.ends_with(':') && limit.contains(&format!("{candidate}/"));
+                return candidate.ends_with(':') && dirs.contains(&format!("{candidate}/"));
             }
         };
         if idx == 0 {
-            return limit.contains("/");
+            return dirs.contains("/");
         }
         candidate = &candidate[..idx];
+        if dirs.contains(candidate) {
+            return true;
+        }
     }
 }
 
@@ -1141,7 +1176,7 @@ fn run_over_roots(
     roots: &SearchRoots,
     re: &Regex,
     filter: &FileFilter,
-    limit_to: Option<&BTreeSet<String>>,
+    limit_to: Option<&PathLimit>,
     include_hidden: bool,
     include_ignored: bool,
     cancel: &AtomicBool,
@@ -1251,7 +1286,7 @@ fn scan_pinned_files(
     files: &[PathBuf],
     re: &Regex,
     filter: &FileFilter,
-    limit_to: Option<&BTreeSet<String>>,
+    limit_to: Option<&PathLimit>,
     cancel: &AtomicBool,
     stats: &mut SearchStats,
     seen: &mut HashSet<String>,
@@ -1493,7 +1528,7 @@ fn walk_worker_visit(
     result: Result<ignore::DirEntry, ignore::Error>,
     re: &Regex,
     filter: &FileFilter,
-    limit_to: Option<&BTreeSet<String>>,
+    limit_to: Option<&PathLimit>,
     cancel: &AtomicBool,
     hit_counter: &AtomicUsize,
     stop_flag: &AtomicBool,
@@ -1683,7 +1718,7 @@ fn walk_dirs_parallel(
     dirs: &[PathBuf],
     re: &Regex,
     filter: &FileFilter,
-    limit_to: Option<&BTreeSet<String>>,
+    limit_to: Option<&PathLimit>,
     include_hidden: bool,
     include_ignored: bool,
     cancel: &AtomicBool,

@@ -40,7 +40,7 @@ import {
     whenFilterOptionsPersisted,
     type SearchSpace,
 } from './filter';
-import { collectGitChangedLeafPaths, isPathGitChanged } from './git-status';
+import { collectGitChangedSearchLimit, GIT_STATUS_CHANGED_EVENT, isPathGitChanged } from './git-status';
 
 type Deps = {
     openDocument: (path: string) => void;
@@ -145,6 +145,11 @@ let pathDisplay: PathDisplay = 'relative';
 let pathDisplaySettingsEventSeen = false;
 // Suchraum des laufenden/letzten Laufs (Statuszusatz, Leerfaelle, git-Schnitt).
 let runSpace: SearchSpace | null = null;
+// Begrenzung (exact/underDirs) des laufenden/letzten Walk-Laufs mit git-Chip,
+// als sortierter Schluessel — `onGitStatusChanged` sucht nur bei echter
+// Aenderung neu (Fokuswechsel loest Git-Refresh aus und soll die Trefferliste
+// nicht neu aufbauen).
+let lastGitLimitKey: string | null = null;
 // Zahl der Dateien der Filtermenge des laufenden Laufs (nur `files`).
 let runFileCount = 0;
 // Deckel der Filtersuche (`vault_filter_find`) für die Statuszeile: Grund +
@@ -377,6 +382,22 @@ function isSearching(): boolean {
     return !!region && region.classList.contains('vault-searching');
 }
 
+/** Setzt die Allowlist-Argumente des Walk-Aufrufs und merkt sich den
+ *  sortierten Vergleichsschluessel fuer `onGitStatusChanged`. */
+function setGitLimit(
+    args: Record<string, unknown>,
+    limit: { exact: string[]; underDirs: string[] },
+): void {
+    args.limitToPaths = limit.exact;
+    args.limitUnderDirs = limit.underDirs;
+    lastGitLimitKey = gitLimitKey(limit);
+}
+
+/** Reihenfolge-unabhaengiger Schluessel der Begrenzung (sortierte Listen). */
+function gitLimitKey(limit: { exact: string[]; underDirs: string[] }): string {
+    return JSON.stringify([limit.exact.slice().sort(), limit.underDirs.slice().sort()]);
+}
+
 /** Beendet den Suchmodus (Baum kommt zurück). Der Text im Inhaltsfeld bleibt
  *  stehen — Leeren ist Sache des Aufrufers (✕/Escape); beim Schließen des
  *  Bereichs bleibt der Begriff für ein erneutes Enter erhalten. */
@@ -401,6 +422,7 @@ function exitSearch(): void {
     if (resultsEl) resultsEl.hidden = true;
     activeQuery = '';
     runSpace = null;
+    lastGitLimitKey = null;
     files = [];
     arrivalCounter = 0;
     doneStats = null;
@@ -497,12 +519,15 @@ async function runSearch(): Promise<void> {
     } else {
         args.scope = space.scope;
         args.includeHidden = space.includeHidden;
-        // git-Chip ohne Namensbegriff: die git-geänderten Blätter als
-        // Allowlist mitgeben — der Treffer-Deckel des Backends zählt dann nur
-        // zulässige Dateien (vorher füllten nicht geänderte Dateien den Deckel
-        // und der clientseitige Schnitt warf Treffer weg).
+        // git-Chip ohne Namensbegriff: die git-geaenderten Pfade als Allowlist
+        // mitgeben — der Treffer-Deckel des Backends zaehlt dann nur zulaessige
+        // Dateien (vorher fuellten nicht geaenderte Dateien den Deckel und der
+        // clientseitige Schnitt warf Treffer weg). `exact` = alle Snapshot-
+        // Pfade, `underDirs` = untrackte Ordner (exakt wie `isPathGitChanged`).
         if (space.gitChangedOnly) {
-            args.limitToPaths = collectGitChangedLeafPaths();
+            setGitLimit(args, collectGitChangedSearchLimit());
+        } else {
+            lastGitLimitKey = null;
         }
     }
     // Raw invoke (nicht safeInvoke): Startfehler (z. B. ein inzwischen
@@ -1376,15 +1401,9 @@ function onInputKeydown(e: KeyboardEvent): void {
  *  bisherige Lauf SOFORT ungültig (Generation + Cancel) — alte Options-/Find-/
  *  Start-Antworten und `search:hits`/`search:done` wirken im Entprell-Fenster
  *  nicht mehr; nur der Start des neuen Laufs ist entprellt. */
-function onFilterChanged(): void {
-    syncOptionsPopover();
-    if (!isVaultFilterBarVisible()) {
-        submitGen++;
-        clearFieldError();
-        if (isSearching()) exitSearch();
-        return;
-    }
-    if (!isSearching()) return;
+/** Laufende Suche verwerfen und entprellt neu starten (generationsgesichert):
+ *  geteilter Rerun-Pfad fuer Filter- und git-Snapshot-Aenderungen. */
+function scheduleRerun(): void {
     clearRerun();
     gen++;
     cancelCurrent();
@@ -1397,6 +1416,31 @@ function onFilterChanged(): void {
         rerunTimer = null;
         if (isSearching()) void runSearch();
     }, RERUN_DEBOUNCE_MS);
+}
+
+function onFilterChanged(): void {
+    syncOptionsPopover();
+    if (!isVaultFilterBarVisible()) {
+        submitGen++;
+        clearFieldError();
+        if (isSearching()) exitSearch();
+        return;
+    }
+    if (!isSearching()) return;
+    scheduleRerun();
+}
+
+/** Git-Snapshot (neu) geladen: eine aktive Walk-Suche mit git-Chip hat ihre
+ *  Allowlist aus dem Snapshot gebaut. Unterscheidet sich die neu berechnete
+ *  Begrenzung vom laufenden/letzten Lauf, ueber den entprellten,
+ *  generationsgesicherten Rerun-Pfad neu suchen — sonst bleibt die Trefferliste
+ *  stehen (Fokuswechsel loest ebenfalls einen Git-Refresh aus). Files-Zweig und
+ *  Walk ohne git sind hier no-op. */
+function onGitStatusChanged(): void {
+    const space = runSpace;
+    if (!isSearching() || !space || space.kind !== 'walk' || !space.gitChangedOnly) return;
+    if (gitLimitKey(collectGitChangedSearchLimit()) === lastGitLimitKey) return;
+    scheduleRerun();
 }
 
 // ----- Zahnrad-Popover (natives `popover`) ----------------------------------
@@ -1544,6 +1588,7 @@ export function initVaultSearch(d: Deps): () => void {
     optionsTouched = false;
     activeQuery = '';
     runSpace = null;
+    lastGitLimitKey = null;
     filteredTruncation = null;
     syncToggles();
     syncClear();
@@ -1657,6 +1702,7 @@ export function initVaultSearch(d: Deps): () => void {
     if (region) region.addEventListener('keydown', onEscapeCapture as EventListener, true);
     window.addEventListener('folio-doc-kind-changed', onDocKindChanged);
     window.addEventListener(VAULT_FILTER_CHANGED_EVENT, onFilterChanged);
+    window.addEventListener(GIT_STATUS_CHANGED_EVENT, onGitStatusChanged);
     document.addEventListener('keydown', onGlobalKey, { capture: true });
 
     const unlistenPromises: Array<Promise<() => void>> = [];
@@ -1699,6 +1745,7 @@ export function initVaultSearch(d: Deps): () => void {
         }
         window.removeEventListener('folio-doc-kind-changed', onDocKindChanged);
         window.removeEventListener(VAULT_FILTER_CHANGED_EVENT, onFilterChanged);
+        window.removeEventListener(GIT_STATUS_CHANGED_EVENT, onGitStatusChanged);
         document.removeEventListener('keydown', onGlobalKey, { capture: true } as any);
         unlistenPromises.forEach((p) => p.then((fn) => fn()).catch(() => {}));
     };

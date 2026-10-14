@@ -44,11 +44,14 @@ pub(in crate::automation) struct SearchRequest {
     /// so viele wie der Vault-Filter-Deckel; schließt `scope` aus.
     #[serde(default)]
     files: Option<Vec<String>>,
-    /// Optionale Allowlist (git-geänderte Pfade): nur Dateien, die selbst
-    /// darin oder unter einem Eintrag liegen, werden gelesen/gezählt.
-    /// Schließt `files` aus (sonst HTTP 400, Scope-Konflikt).
+    /// Optionale Allowlist (git-geänderte Pfade): Dateien, die **exakt** darin
+    /// stehen, werden gelesen/gezählt. Schließt `files` aus (sonst HTTP 400).
     #[serde(default)]
     limit_to_paths: Option<Vec<String>>,
+    /// Optionale Allowlist (git-geänderte Pfade): alles **unterhalb** dieser
+    /// Ordner (Segmentgrenze) wird gelesen/gezählt. Schließt `files` aus.
+    #[serde(default)]
+    limit_under_dirs: Option<Vec<String>>,
     /// Auch versteckte Einträge (Dot-Namen) durchsuchen (Default aus).
     #[serde(default)]
     include_hidden: bool,
@@ -80,6 +83,7 @@ pub(in crate::automation) async fn post_search(
         request.scope,
         request.files,
         request.limit_to_paths,
+        request.limit_under_dirs,
         request.case_sensitive,
         request.whole_word,
         request.regex,
@@ -158,26 +162,43 @@ pub(in crate::automation) async fn post_search(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+    use std::sync::atomic::AtomicBool;
 
-    /// B8: `POST /search` reicht das additive Feld `limitToPaths` über die
-    /// Grenze bis in die Walk-Optionen (Deserialisierung + Options-Bau, die
-    /// genaue Verdrahtung, die `post_search` benutzt).
+    /// B8: `POST /search` reicht die additiven Felder `limitToPaths` und
+    /// `limitUnderDirs` über die Grenze bis in die Walk-Optionen und liefert
+    /// damit das B1-Ergebnis über den HTTP-Request-Struct. Tempdir-Pfade, weil
+    /// `Path::is_absolute()` auf Windows Laufwerks-/UNC-Präfixe verlangt.
     #[test]
-    fn b8_http_request_passes_limit_to_paths() {
+    fn b8_http_request_passes_limit_fields_and_searches() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().to_str().unwrap().replace('\\', "/");
+        for rel in ["a.md", "b.md", "sm/x.md", "neu/y.md"] {
+            let path = tmp.path().join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "TODO\n").unwrap();
+        }
         let request: SearchRequest = serde_json::from_value(serde_json::json!({
             "query": "TODO",
-            "limitToPaths": ["/repo/a.md", "/repo/sub"],
+            "limitToPaths": [format!("{root}/a.md"), format!("{root}/sm"), format!("{root}/neu")],
+            "limitUnderDirs": [format!("{root}/neu")],
         }))
         .unwrap();
         assert_eq!(
-            Some(vec!["/repo/a.md".to_string(), "/repo/sub".to_string()]),
+            Some(vec![
+                format!("{root}/a.md"),
+                format!("{root}/sm"),
+                format!("{root}/neu"),
+            ]),
             request.limit_to_paths
         );
+        assert_eq!(Some(vec![format!("{root}/neu")]), request.limit_under_dirs);
 
         let (scope_ex, options) = build_scope_and_options(
             request.scope,
             request.files,
             request.limit_to_paths,
+            request.limit_under_dirs,
             request.case_sensitive,
             request.whole_word,
             request.regex,
@@ -188,13 +209,22 @@ mod tests {
         )
         .unwrap();
         assert_eq!(SearchScopeEx::Vault, scope_ex);
-        assert_eq!(
-            Some(
-                ["/repo/a.md".to_string(), "/repo/sub".to_string()]
-                    .into_iter()
-                    .collect()
-            ),
-            options.limit_to
-        );
+        let limit = options.limit_to.as_ref().expect("Limit aktiv");
+        assert!(limit.exact.contains(&format!("{root}/a.md")));
+        assert!(limit.exact.contains(&format!("{root}/sm")));
+        assert!(limit.under.contains(&format!("{root}/neu")));
+
+        let roots = search::SearchRoots {
+            dirs: vec![PathBuf::from(&root)],
+            files: vec![],
+        };
+        let cancel = AtomicBool::new(false);
+        let mut found: Vec<String> = Vec::new();
+        search::run_search_parallel(&roots, "TODO", &options, &cancel, &mut |f| {
+            found.push(f.file_name)
+        })
+        .unwrap();
+        found.sort();
+        assert_eq!(vec!["a.md".to_string(), "y.md".to_string()], found);
     }
 }

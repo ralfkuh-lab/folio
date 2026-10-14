@@ -161,25 +161,33 @@ export function collectGitChangedDirPaths(): string[] {
 }
 
 /**
- * Blätter des zusammengeführten Snapshots: alle Einträge, unter denen kein
- * weiterer Snapshot-Eintrag liegt. Das sind die geänderten/untrackten Dateien
- * und die neuen untrackten Ordner (`?? neu/` → Blatt `…/neu`); aggregierte
- * Vorfahren-Ordner fallen raus. Grundlage der git-Allowlist der Volltextsuche
- * (`limitToPaths`), damit der globale Treffer-Deckel nur zulässige Dateien
- * zählt. Bewusst über eine Vorfahren-Menge (O(n·Tiefe)) statt über Sortieren +
- * Nachbarvergleich — `a/b-x.md` sortiert zwischen `a/b` und `a/b/c.md`.
- * Keine DOM-Abfrage: Datei- vs. Ordner-Eintrag ist hier irrelevant, ein
- * Verzeichnis-Eintrag ist nur dann Blatt, wenn kein Kind im Snapshot steht.
+ * Allowlist der git-geänderten Pfade für die Volltextsuche — spiegelt exakt
+ * das Prädikat `isPathGitChanged`:
+ *
+ * - `exact` = **alle** Pfade des zusammengeführten Snapshots. Ein exakter
+ *   Treffer zählt auch dann, wenn ein anderer Eintrag unter ihm liegt
+ *   (z. B. ein veralteter verschachtelter Repo-Eintrag `a.md/old.md` neben
+ *   der Datei `a.md`).
+ * - `underDirs` = untrackte Snapshot-Einträge, unter denen **kein** weiterer
+ *   Snapshot-Eintrag liegt (dieselbe Vorfahren-Menge wie zuvor): `?? neu/`
+ *   meldet nur den Ordner, nicht seine Kinder. Ein untrackter Datei-Eintrag
+ *   als Präfix ist unschädlich, weil eine Datei keine Nachfahren hat.
+ *
+ * Bewusst **nicht** jeder Snapshot-Eintrag als Ordnerpräfix: ein modifizierter
+ * Gitlink/Submodule-Ordner (` M sm`) meldet keine Kinder, `isPathGitChanged`
+ * lässt seinen Inhalt aber nicht zu. Vorfahren-Menge statt Sortieren +
+ * Nachbarvergleich (`a/b-x.md` sortiert zwischen `a/b` und `a/b/c.md`). Keine
+ * DOM-Abfrage.
  */
-export function collectGitChangedLeafPaths(): string[] {
+export function collectGitChangedSearchLimit(): { exact: string[]; underDirs: string[] } {
     const merged = mergeSnapshots();
-    const paths: string[] = [];
+    const exact: string[] = [];
     merged.forEach((_status, path) => {
-        if (path) paths.push(path);
+        if (path) exact.push(path);
     });
     const ancestors = new Set<string>();
-    for (let i = 0; i < paths.length; i++) {
-        let head = paths[i];
+    for (let i = 0; i < exact.length; i++) {
+        let head = exact[i];
         let idx = head.lastIndexOf('/');
         while (idx > 0) {
             head = head.slice(0, idx);
@@ -187,7 +195,11 @@ export function collectGitChangedLeafPaths(): string[] {
             idx = head.lastIndexOf('/');
         }
     }
-    return paths.filter((p) => !ancestors.has(p));
+    const underDirs: string[] = [];
+    merged.forEach((status, path) => {
+        if (status === 'untracked' && path && !ancestors.has(path)) underDirs.push(path);
+    });
+    return { exact, underDirs };
 }
 
 function titleLineFor(status: GitStatus): string {
