@@ -70,7 +70,7 @@ function parseDelimiter(body: string): Align[] | null {
 const segmenter: any = typeof Intl !== 'undefined' && (Intl as any).Segmenter
     ? new (Intl as any).Segmenter(undefined, { granularity: 'grapheme' })
     : null;
-const EMOJI_RE = /\p{Emoji_Presentation}|️/u;
+const EMOJI_RE = /\p{Emoji_Presentation}|\uFE0F/u;
 
 // East-Asian-Wide/Fullwidth (Hauptblöcke, best effort).
 const WIDE_RANGES: ReadonlyArray<readonly [number, number]> = [
@@ -141,12 +141,38 @@ function formatTable(prefix: string, header: string[], aligns: Align[], rows: st
 
 // ----- Erkennung -----------------------------------------------------------
 
+type TableHead = { prefix: string; header: string[]; aligns: Align[] };
+
+/** Kopf- + Trennzeile ab `k` (Präfix beider Zeilen egal), sonst null. */
+function tableHeadAt(lines: readonly string[], k: number): TableHead | null {
+    if (k + 1 >= lines.length) return null;
+    const head = splitPrefix(lines[k]);
+    if (!head.body.includes('|') || BLOCK_START_RE.test(head.body)) return null;
+    const aligns = parseDelimiter(splitPrefix(lines[k + 1]).body);
+    if (!aligns) return null;
+    const header = splitCells(head.body);
+    return header.length === aligns.length ? { prefix: head.prefix, header, aligns } : null;
+}
+
+function quoteDepth(prefix: string): number {
+    return prefix.split('>').length - 1;
+}
+
 /**
  * Edits für alle GFM-Tabellen in `lines`, deren formatierte Fassung vom
  * Bestand abweicht (bereits formatierte Tabellen → kein Edit). Mit `range`
  * (0-basierte Zeilen, inklusive) nur Tabellen, die den Bereich berühren.
  * Tabellen in Code-Fences und Tabellen mit abweichendem Zeilenpräfix bleiben
  * unangetastet.
+ *
+ * Präfixwechsel: Beginnt auf der Zeile mit anderer Zitat-Tiefe eine eigene
+ * Tabelle (Kopf + Trennzeile), endet die bisherige davor — comrak schließt
+ * dort den Zitat-Container, beide Tabellen werden einzeln behandelt.
+ * Jede andere Abweichung (fehlendes/zusätzliches `>` an einer einzelnen
+ * Zeile, anderer Einzug bei gleicher Tiefe, den comrak noch als Zeile
+ * derselben Tabelle liest) lässt die Tabelle unverändert: Formatieren hieße
+ * dort, Präfixe umzuschreiben oder eine vermutlich gemeinte Zeile
+ * abzutrennen.
  */
 export function findTableEdits(
     lines: readonly string[],
@@ -155,41 +181,44 @@ export function findTableEdits(
     const edits: TableEdit[] = [];
     let i = 0;
     while (i + 1 < lines.length) {
-        const head = splitPrefix(lines[i]);
-        const delim = splitPrefix(lines[i + 1]);
-        const aligns = head.body.includes('|') && !BLOCK_START_RE.test(head.body)
-            ? parseDelimiter(delim.body) : null;
-        const header = aligns ? splitCells(head.body) : null;
-        if (!aligns || header.length !== aligns.length || isInsideCodeFence(lines, i)) {
+        const table = tableHeadAt(lines, i);
+        if (!table || isInsideCodeFence(lines, i)) {
             i++;
             continue;
         }
+        const { prefix, header, aligns } = table;
+        let deviant = splitPrefix(lines[i + 1]).prefix !== prefix;
         let end = i + 1;
         while (end + 1 < lines.length) {
-            const { body } = splitPrefix(lines[end + 1]);
-            if (trimCell(body) === '' || !body.includes('|') || BLOCK_START_RE.test(body)) break;
+            const next = splitPrefix(lines[end + 1]);
+            if (trimCell(next.body) === '' || !next.body.includes('|') || BLOCK_START_RE.test(next.body)) break;
+            if (next.prefix !== prefix) {
+                const own = quoteDepth(next.prefix) !== quoteDepth(prefix) && tableHeadAt(lines, end + 1);
+                if (own && splitPrefix(lines[end + 2]).prefix === next.prefix) break;
+                deviant = true;
+            }
             end++;
         }
         const start = i;
         i = end + 1;
-        if (range && (start > range.end || end < range.start)) continue;
+        if (deviant || (range && (start > range.end || end < range.start))) continue;
         const original = lines.slice(start, end + 1);
-        if (original.some((l) => splitPrefix(l).prefix !== head.prefix)) continue;
         const rows = original.slice(2).map((l) => splitCells(splitPrefix(l).body));
-        const formatted = formatTable(head.prefix, header, aligns, rows);
+        const formatted = formatTable(prefix, header, aligns, rows);
         if (formatted.every((l, k) => l === original[k])) continue;
         edits.push({ startLine: start, endLine: end, lines: formatted });
     }
     return edits;
 }
 
-/** Formatiert alle Tabellen in `text` (Zeilentrenner `\n`). */
+/** Formatiert alle Tabellen in `text`. Zeilenenden (`\n`/`\r\n`, auch
+ *  gemischt) bleiben je Zeile erhalten; Formatieren ändert die Zeilenzahl
+ *  einer Tabelle nicht. */
 export function formatMarkdownTables(text: string): string {
-    const lines = text.split('\n');
-    const edits = findTableEdits(lines);
-    for (let k = edits.length - 1; k >= 0; k--) {
-        const e = edits[k];
-        lines.splice(e.startLine, e.endLine - e.startLine + 1, ...e.lines);
+    const parts = text.split(/(\r?\n)/);
+    const lines = parts.filter((_, k) => k % 2 === 0);
+    for (const e of findTableEdits(lines)) {
+        e.lines.forEach((l, k) => { parts[(e.startLine + k) * 2] = l; });
     }
-    return lines.join('\n');
+    return parts.join('');
 }

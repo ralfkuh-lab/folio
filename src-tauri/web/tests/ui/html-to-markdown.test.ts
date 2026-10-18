@@ -182,4 +182,9 @@ describe('htmlToMarkdown', () => {
         expect(htmlToMarkdown('<pre><code>| a | b |\n|-|-|\n| 1 | 2 |</code></pre>'))
             .toBe('```\n| a | b |\n|-|-|\n| 1 | 2 |\n```');
     });
+
+    it('J4 (Review R7): Code-Block in einem Listenpunkt bleibt unverändert', () => {
+        const out = htmlToMarkdown('<ul><li><pre><code>| a | b |\n|-|-|\n| x | y |\n</code></pre></li></ul>');
+        expect(out).toContain('  | a | b |\n  |-|-|\n  | x | y |');
+    });
 });
