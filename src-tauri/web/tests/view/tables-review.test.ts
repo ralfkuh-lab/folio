@@ -222,19 +222,47 @@ describe('V6 — numerisch nur bei einer Einheit', () => {
         expect(isNumericColumn(['8.169,25 €', '', '250,25 €'], 'de-DE')).toBe(true);
     });
 
-    it('gemischte Einheiten: je Einheit numerisch gruppiert, Zahlen ohne Einheit zuerst', () => {
-        // Werte mit verschiedenen Einheiten sind nicht vergleichbar (3 Mio.
-        // vs. 500); innerhalb einer Einheit aber schon — „1.250“ ist (de)
-        // 1250, nicht 1 wie im Collator mit `numeric`.
+    it('gemischte Einheiten: Text wie im Dateimanager, keine Einheiten-Gruppierung', () => {
+        // Entweder numerisch oder Text — „3 Mio.“ macht die Spalte zu Text;
+        // der Collator mit `numeric` liest Ziffernfolgen als Zahl.
         expect(pick(['3 Mio.', '1.500'])).toEqual(['1.500', '3 Mio.']);
         const mixed = ['3 Mio.', '500', '2 Mrd.', '12', '7', '1.250'];
-        expect(pick(mixed)).toEqual(['7', '12', '500', '1.250', '3 Mio.', '2 Mrd.']);
         expect(sortOrder(mixed, 'desc', 'de-DE').map((i) => mixed[i]))
-            .toEqual(['2 Mrd.', '3 Mio.', '1.250', '500', '12', '7']);
-        // Zahlen vor Text, Text per Collator; leere Zellen bleiben am Ende.
-        const withText = ['offen', '1.250', '', '20 h', '7', '5 h'];
-        expect(pick(withText)).toEqual(['7', '1.250', '5 h', '20 h', 'offen', '']);
+            .toEqual(['500', '12', '7', '3 Mio.', '2 Mrd.', '1.250']);
         // gleiche (leere) Einheit bleibt numerisch: 20 < 1000.
         expect(pick(['1.000', '20'])).toEqual(['20', '1.000']);
+    });
+
+    it('Zahlenformat aus der Spalte; mehrdeutig entscheidet die uebergebene Locale', () => {
+        const byLocale = (values: string[], locale: string) =>
+            sortOrder(values, 'asc', locale).map((i) => values[i]);
+        // eindeutig deutsch — auch mit englischer Locale
+        expect(byLocale(['8.169,25 €', '250,25 €', '1.000,00 €'], 'en-US'))
+            .toEqual(['250,25 €', '1.000,00 €', '8.169,25 €']);
+        // eindeutig englisch — auch mit deutscher Locale
+        expect(byLocale(['1,234.5', '99.5', '12,000.25'], 'de-DE'))
+            .toEqual(['99.5', '1,234.5', '12,000.25']);
+        // mehrdeutig („1.250“ neben „500“): Locale entscheidet
+        expect(byLocale(['1.250', '500', '12'], 'de-DE')).toEqual(['12', '500', '1.250']);
+        expect(byLocale(['1.250', '500', '12'], 'en-US')).toEqual(['1.250', '12', '500']);
+    });
+});
+
+describe('Sortier-Locale = Systemsprache, nicht Oberflaechensprache', () => {
+    it('englische Oberflaeche, deutsches System: „1.250“ ist 1250', () => {
+        const langs = Object.getOwnPropertyDescriptor(Navigator.prototype, 'languages');
+        Object.defineProperty(window.navigator, 'languages', { configurable: true, get: () => ['de-DE'] });
+        setFormatLocale('en-US');
+        try {
+            body.innerHTML = html(['1.250', '500', '12']);
+            prepareTables(body, '/locale.md');
+            (body.querySelector('.folio-th-sort') as HTMLButtonElement).click();
+            const order = Array.from(body.querySelectorAll('tbody td')).map((td) => td.textContent);
+            expect(order).toEqual(['12', '500', '1.250']);
+        } finally {
+            delete (window.navigator as any).languages;
+            if (langs) Object.defineProperty(Navigator.prototype, 'languages', langs);
+            setFormatLocale('de-DE');
+        }
     });
 });

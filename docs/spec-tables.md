@@ -233,7 +233,8 @@ Pfeil in der Überschrift (▲/▼); `aria-sort` am `th`.
   Tausendertrennzeichen und Einheiten-/Prozentzeichen am Rand eine Zahl
   ergibt; Dezimal- und Tausendertrenner nach der Format-Locale der
   UI-Sprache (`@meta.locale`), zusätzlich immer der Punkt als Dezimaltrenner,
-  wenn eindeutig. Sonst `Intl.Collator(locale, { numeric: true, sensitivity:
+  wenn eindeutig. *(Umgesetzt anders, siehe „Umsetzung“: Zahlenformat aus der
+  Spalte, bei Mehrdeutigkeit die Systemsprache.)* Sonst `Intl.Collator(locale, { numeric: true, sensitivity:
   'base' })` (also „Datei 2“ vor „Datei 10“). ISO-Daten sortieren damit
   ohnehin richtig. **Leere Zellen immer ans Ende**, in beiden Richtungen.
   Sortierung stabil.
@@ -324,9 +325,17 @@ Jede Etappe einzeln lieferbar und per `.deb` testbar.
   Link-/Checkbox-Handler aus `initMarkdownView` hängen auch am Overlay, ein
   Link schließt es vor dem Routing. `document:closed` schließt es ebenfalls.
 - **Sortieren**: Kopfzellen mit interaktivem Inhalt (Link) behalten ihn und
-  bekommen einen eigenen kleinen Sortier-Button. Zahlen (Format-Locale) vor
-  Text, nach Einheit gruppiert (ohne Einheit zuerst), je Einheit nach Wert:
-  „3 Mio.“ und „500“ sind nicht vergleichbar, „1.250“ ist aber 1250.
+  bekommen einen eigenen kleinen Sortier-Button. Entweder numerisch — jede
+  nicht leere Zelle ist eine Zahl mit derselben Einheit (oder ohne) — oder
+  Text per Collator mit `numeric` wie im Dateimanager; keine weitere
+  Sortierart. Das Zahlenformat kommt aus der Spalte selbst („8.169,25“ nur
+  deutsch lesbar, „1,234.5“ nur englisch); passen beide („1.250“ neben
+  „500“), entscheidet die **Systemsprache** (`navigator.languages`), nicht
+  Folios Oberflächensprache — das Format eines Dokuments hat mit der Sprache
+  der Menüs nichts zu tun (Befund 2026-10-18: englische Oberfläche las
+  „1.250“ als 1,25).
+- **Filtern**: mehrere Wörter (Leerraum-getrennt) müssen alle in der Zeile
+  vorkommen, Reihenfolge und Spalte egal.
 - **Suche**: Sortieren/Filtern zählen eine laufende View-Suche neu
   (`ViewFinder.refresh()`, ohne Sprung); Filtern hängt keine Zeilen um.
 - **Farben** der App-UI im Dokument über `--folio-ui-fg`/`--folio-ui-accent`

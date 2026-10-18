@@ -136,52 +136,55 @@ export function parseCellQuantity(raw: string, decimal: string): { value: number
 }
 
 /**
- * Reihenfolge (Indizes in `values`) fuer eine Sortierung. Zahlen (nach der
- * Format-Locale) vor Text; Zahlen gruppiert nach Einheit — ohne Einheit
- * zuerst, sonst Einheit per Collator —, innerhalb einer Einheit nach Wert:
- * „3 Mio.“ und „500“ sind nicht vergleichbar, „1.250“ und „500“ schon.
- * Text per Collator mit `numeric`. Leere Zellen immer ans Ende, in
- * Originalreihenfolge; stabil.
+ * Reihenfolge (Indizes in `values`) fuer eine Sortierung. Entweder numerisch
+ * — jede nicht leere Zelle ist eine Zahl, alle mit derselben Einheit (oder
+ * ohne) — oder Text per Collator mit `numeric` (wie im Dateimanager:
+ * „Datei 2“ vor „Datei 10“). Leere Zellen immer ans Ende, in
+ * Originalreihenfolge; stabil. `locale` entscheidet nur, wenn das
+ * Zahlenformat der Spalte mehrdeutig ist (siehe columnQuantities).
  */
 export function sortOrder(values: string[], dir: SortDir, locale: string): number[] {
     const filled: number[] = [];
     const empty: number[] = [];
     values.forEach((v, i) => { (v.trim() === '' ? empty : filled).push(i); });
-    const decimal = decimalSeparator(locale);
-    const quantity = new Map(filled.map((i) => [i, parseCellQuantity(values[i], decimal)]));
+    const nums = columnQuantities(filled.map((i) => values[i]), locale);
     let collator: Intl.Collator;
     try {
         collator = new Intl.Collator(locale, { numeric: true, sensitivity: 'base' });
     } catch {
         collator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
     }
-    const NO_UNIT = '|';
-    const compare = (a: number, b: number): number => {
-        const qa = quantity.get(a);
-        const qb = quantity.get(b);
-        if (qa && qb) {
-            if (qa.unit === qb.unit) return qa.value - qb.value;
-            if (qa.unit === NO_UNIT) return -1;
-            if (qb.unit === NO_UNIT) return 1;
-            return collator.compare(qa.unit, qb.unit);
-        }
-        if (qa) return -1;
-        if (qb) return 1;
-        return collator.compare(values[a].trim(), values[b].trim());
-    };
+    const num = new Map<number, number>();
+    if (nums) filled.forEach((i, k) => num.set(i, nums[k]));
     const sign = dir === 'asc' ? 1 : -1;
-    filled.sort((a, b) => compare(a, b) * sign || a - b);
+    filled.sort((a, b) => {
+        const c = nums
+            ? (num.get(a) as number) - (num.get(b) as number)
+            : collator.compare(values[a].trim(), values[b].trim());
+        return c * sign || a - b;
+    });
     return filled.concat(empty);
 }
 
 // Werte einer Spalte (nur nicht leere Zellen) als Zahlen — oder null, wenn
-// eine Zelle keine Zahl ist oder die Einheiten verschieden sind.
+// eine Zelle keine Zahl ist oder die Einheiten verschieden sind. Das
+// Zahlenformat kommt aus der Spalte selbst: Lassen sich alle Zellen nur mit
+// Komma bzw. nur mit Punkt als Dezimaltrenner lesen („8.169,25“ bzw.
+// „1,234.5“), gilt dieses; passen beide („1.250“ neben „500“), entscheidet
+// `locale`. Nicht die Oberflaechensprache: Das Zahlenformat eines Dokuments
+// hat mit der Sprache der Menues nichts zu tun.
 function columnQuantities(filled: string[], locale: string): number[] | null {
-    const decimal = decimalSeparator(locale);
-    const quantities = filled.map((v) => parseCellQuantity(v, decimal));
-    const first = quantities[0];
-    if (!first || !quantities.every((q) => q !== null && q.unit === first.unit)) return null;
-    return quantities.map((q) => (q as { value: number }).value);
+    const preferred = decimalSeparator(locale);
+    let fallback: number[] | null = null;
+    for (const decimal of [preferred, preferred === ',' ? '.' : ',']) {
+        const quantities = filled.map((v) => parseCellQuantity(v, decimal));
+        const first = quantities[0];
+        if (!first || !quantities.every((q) => q !== null && q.unit === first.unit)) continue;
+        const values = quantities.map((q) => (q as { value: number }).value);
+        if (decimal === preferred) return values;
+        fallback = values;
+    }
+    return fallback;
 }
 
 /** Wird diese Spalte numerisch sortiert? (leere Zellen zaehlen nicht) */
@@ -189,10 +192,19 @@ export function isNumericColumn(values: string[], locale: string): boolean {
     return columnQuantities(values.filter((v) => v.trim() !== ''), locale) !== null;
 }
 
-/** Case-insensitive Teilstring ueber den ganzen Zeilentext. */
+/** Case-insensitive Teilstrings ueber den ganzen Zeilentext; mehrere
+ *  Woerter (Leerraum-getrennt) muessen alle vorkommen, in beliebiger
+ *  Reihenfolge und Spalte. */
 export function rowMatches(rowText: string, term: string): boolean {
-    const needle = term.trim().toLowerCase();
-    return needle === '' || rowText.toLowerCase().indexOf(needle) >= 0;
+    const text = rowText.toLowerCase();
+    return term.toLowerCase().split(/\s+/).every((word) => word === '' || text.indexOf(word) >= 0);
+}
+
+/** Locale fuer Zahlen und Sortierung: die des Systems (das Format, in dem
+ *  der Nutzer schreibt), nicht die Oberflaechensprache von Folio. */
+function systemLocale(): string {
+    const nav = typeof navigator !== 'undefined' ? navigator : null;
+    return (nav && ((nav.languages && nav.languages[0]) || nav.language)) || getFormatLocale();
 }
 
 // ----- Zustand pro Dokument ---------------------------------------------
@@ -256,7 +268,7 @@ function applySort(table: HTMLTableElement, state: TableState): void {
             const cell = row.cells[state.sortCol];
             return cell ? cell.textContent || '' : '';
         });
-        order = sortOrder(values, state.sortDir, getFormatLocale());
+        order = sortOrder(values, state.sortDir, systemLocale());
     } else {
         order = rows.map((_, i) => i)
             .sort((a, b) => Number(rows[a].getAttribute(ROW_ATTR)) - Number(rows[b].getAttribute(ROW_ATTR)));

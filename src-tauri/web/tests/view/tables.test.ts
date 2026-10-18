@@ -243,6 +243,10 @@ describe('view/tables — Filtern (Referenzfaelle)', () => {
         expect(mod.rowMatches('Beta 1', 'ALP')).toBe(false);
         expect(mod.rowMatches('Beta 1', '')).toBe(true);
         expect(mod.rowMatches('Beta 1', '   ')).toBe(true);
+        // mehrere Woerter: alle muessen vorkommen, Reihenfolge/Spalte egal
+        expect(mod.rowMatches('Vorhaben Beta | blockiert | Norddeutschland', 'nord BLOCK')).toBe(true);
+        expect(mod.rowMatches('Vorhaben Beta | laufend | Norddeutschland', 'nord block')).toBe(false);
+        expect(mod.rowMatches('Vorhaben Beta', '  beta   vorhaben ')).toBe(true);
     });
 });
 
