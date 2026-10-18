@@ -218,7 +218,7 @@ Dinge, die in den drei Sets fehlten oder die ich für besonders wirkungsvoll hal
   `](`-Markdown-Links bleiben Folgepunkt. `[M]`
 - **Smart-List-Fortsetzung** — ✅ **umgesetzt (2026-10-09)**, ohne Neunummerierung. Enter in Listen setzt automatisch `- `/`1.`/`- [ ]`
   fort, leere Zeile bricht ab; Tab/Shift-Tab rückt ein/aus. Reine Editor-QoL. `[S–M]`
-- **Tabellen-Auto-Format** — 📝 **Spec steht (2026-10-18)**:
+- **Tabellen-Auto-Format** — ✅ **umgesetzt (2026-10-18)**:
   [`spec-tables.md`](spec-tables.md) Etappe T1 (ohne On-Save). Dieselbe Spec
   deckt breite Tabellen, Sortieren und Filtern in der View ab (T2–T4).
   Kombiniert gut mit dem CSV-Konverter. `[S]`

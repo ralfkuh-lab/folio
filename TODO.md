@@ -51,12 +51,6 @@ nicht aussagekräftig. Zu testen: Kaltstart, laufende Instanz, beide Werte von
 
 ## Mittlere Priorität
 
-- **Tabellen (beauftragt 2026-10-18)** — Spec
-  [`docs/spec-tables.md`](docs/spec-tables.md): T1 Tabellen im Editor (auch beim HTML-Paste)
-  formatieren, T2 breite Tabellen in der View (Ausbrechen, Scrollen im
-  Rahmen, Vergrößern-Overlay), T3 Sortieren per Kopfzeile, T4 Filtern.
-  Sortieren/Filtern nur Anzeige, nur App-View.
-
 
 - 🔍 **Nur beobachten — Fix ist drin, es fehlt der Beleg am nächsten Mac-Lauf.**
   **E2E `61_hex_view` flaky auf macOS: „Zurück findet den direkten
@@ -389,6 +383,9 @@ nicht aussagekräftig. Zu testen: Kaltstart, laufende Instanz, beide Werte von
   (Sync-Barriere gegen a). Da der Flake nur ~1x pro Dutzend Voll-Läufe
   auftrat, ist der Beweis statistisch: bei erneutem Auftreten trennt
   die neue Frontend-Assertion die beiden Mechanismen sauber.
+  **Erneut 2026-10-18** im Voll-Lauf (Tabellen-Merge `16e5e3d`), diesmal
+  die Frontend-Assertion „Editor-Text ging beim Tab-Wechsel verloren“
+  (Zeile 101, also nicht der Undo-Pfad); drei Einzelläufe danach grün.
 
 - **Menu-Keybindings (Accelerators) greifen oft nicht**: Viele der nativen
   Tauri-Menü-Accelerators (Ctrl+S Speichern, Ctrl+Z Undo, Ctrl+W Schließen,

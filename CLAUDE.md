@@ -885,6 +885,28 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   ab (comrak rendert alle als Checkbox). Tastaturzugang bleibt bewusst
   erhalten (kein `tabindex="-1"`), dafür setzt die View ein `aria-label`
   aus dem Item-Text. E2E `55_task_checkboxes`.
+- **Tabellen** (Spec [`docs/spec-tables.md`](docs/spec-tables.md)):
+  *Formatieren* über den reinen Formatierer `web/shared/markdown-table.ts`
+  (Prettier-Stil, beide Bundles: Monaco-Formatting-Provider für Markdown =
+  Shift+Alt+F/Menü `edit.format_tables`, und HTML-Paste). `web/shared/` ist
+  das einzige Verzeichnis, aus dem app- **und** editor-Bundle importieren;
+  `isInsideCodeFence` liegt deshalb in `shared/code-fence.ts` (Re-Export aus
+  `editor/wikilink-complete.ts`). Kein Format-on-Save. *View*
+  (`view/tables.ts`, Aufruf `prepareTables` an den drei Post-Render-Stellen,
+  `closeTableOverlay()` **vor** jedem `innerHTML`-Ersetzen und bei
+  `document:closed`): Wrapper `div.folio-table`, breite Tabellen brechen per
+  Container-Query (`#view-content` ist `container-type: inline-size`) aus der
+  Lesebreite aus und scrollen im eigenen Rahmen; Vergrößern-Overlay
+  `<dialog id="table-overlay">`; Sortieren per Kopfzeile, Filter ab 6
+  Datenzeilen. Sortieren/Filtern sind **nur Anzeige** (kein Dirty/Undo),
+  Zustand im Speicher pro Dokumentpfad (Schlüssel Tabellennummer +
+  Kopfzeilen-Text). Drei Kopplungen, die man beim Ändern mitdenken muss:
+  (1) Scroll-Sync ignoriert Zeilen in `table[data-folio-arranged]`;
+  (2) die View-Suche überspringt `tr[hidden]` und die Leiste, und
+  Sortieren/Filtern rufen `ViewFinder.refresh()`; (3) die Link-/Checkbox-
+  Handler aus `initMarkdownView` hängen zusätzlich am Overlay, weil es
+  außerhalb von `#view-content` liegt. Export/Theme-Editor bekommen nichts
+  davon (Backend-HTML unverändert).
 - **View-Themes** (`view/theme.ts`, Backend-Commands `view_themes` /
   `view_theme_css`): Theme-CSS ist immer auf `.markdown-body` gescopt
   und wird ueber `#view-theme-style` als letztes Element in `head`
@@ -1344,7 +1366,7 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
 
 ## E2E-Test-Suite
 
-Vollständige UI-Coverage in `tests/e2e/` (67 Szenarien, Python +
+Vollständige UI-Coverage in `tests/e2e/` (69 Szenarien, Python +
 Pillow): Boot, View-/Edit-/Split-Mode, Theme, Vault, Find (inkl.
 Code-View), Workspace, Save-Roundtrip durch alle BOM/EOL-Kombis,
 Undo/Redo, Toolbar-Commands (Bold/Italic/Heading), Menü-Coverage
@@ -1359,7 +1381,8 @@ Wikilinks/Tags, Task-Checkboxen, Git-Status/-Diff/-Filter,
 versteckte Vault-Einträge, Find-Bar-Regex/-Ersetzen,
 Vault-Dateioperationen (Ordner anlegen/umbenennen/löschen),
 Zen-Modus, Hex-Ansicht, Pfad-Identität (Symlink-Verzeichnis → ein Tab),
-Breiten-Toggle, Callouts (inkl. Kontrast über alle Themes), Smart-List
+Breiten-Toggle, Callouts (inkl. Kontrast über alle Themes), Smart-List,
+Tabellen (Formatieren; breite Tabellen, Overlay, Sortieren, Filtern)
 sowie
 KI-Settings, KI-Übersetzung, KI-Theme-Autor, Export-KI-Draft und
 KI-Aktionen (Mock-Provider). Der englische Boot ist über

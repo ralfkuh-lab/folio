@@ -1,6 +1,7 @@
 # Spec: Tabellen — Formatieren im Editor, breite Tabellen, Sortieren und Filtern in der View
 
-Stand: 2026-10-18 (Entwurf). Quelle: `docs/feature-ideen.md` („Tabellen-
+Stand: 2026-10-18 — **umgesetzt** (T1–T4, inkl. Review-Korrekturen; Abweichungen
+im Abschnitt „Umsetzung“ am Ende). Quelle: `docs/feature-ideen.md` („Tabellen-
 Auto-Format“) plus User-Wunsch 2026-10-18: breite Tabellen sind in der View
 schlecht lesbar (die waagerechte Scrollbar sitzt am Tabellenende und ist bei
 langen Tabellen nur mühsam erreichbar), dazu Sortieren per Klick auf die
@@ -33,7 +34,7 @@ T1).
 
 - comrak rendert GFM-Tabellen (`extension.table`) mit `data-sourcepos` und
   `data-line` auf `table`, `tr`, `th`, `td` (`renderer.rs`, Test
-  `test_gfm_table`). Spaltenausrichtung kommt als `style="text-align: …"`.
+  `test_gfm_table`). Spaltenausrichtung kommt als `align="…"`-Attribut (nicht als `style`).
 - Post-Render-Hooks laufen an **drei** Stellen identisch:
   `state/document.ts` (zweimal: `document:loaded`-Pfad und Tab-Pfad) und
   `view/preview.ts::applyToDom` — jeweils `highlightCodeBlocks` →
@@ -71,14 +72,25 @@ T1).
 gleiche Breite gepolstert, Trennzeile passend zur Breite und zur Ausrichtung.
 
 ```markdown
-| Name | Wert | Notiz |            | Name   | Wert | Notiz       |
-|:--|--:|:-:|                ->      |:-------|-----:|:-----------:|
-| Alpha | 1 | erste Zeile |          | Alpha  |    1 | erste Zeile |
-| B | 1000 | x |                     | B      | 1000 |      x      |
+| Name | Wert | Notiz |
+|:--|--:|:-:|
+| Alpha | 1 | erste Zeile |
+| B | 1000 | x |
+```
+
+wird zu (Stil wie Prettier: Trennzeile mit Leerzeichen, Spaltenbreite
+mindestens 3, zentriert bei ungeradem Rest links abgerundet):
+
+```markdown
+| Name  | Wert |    Notiz    |
+| :---- | ---: | :---------: |
+| Alpha |    1 | erste Zeile |
+| B     | 1000 |      x      |
 ```
 
 **Einstiege**:
-- Monaco „Dokument formatieren“ (Shift+Alt+F, auch im Monaco-Kontextmenü)
+- Monaco „Dokument formatieren“ (Shift+Alt+F; Monacos Kontextmenü ist im
+  Haupteditor abgeschaltet)
   über einen `DocumentFormattingEditProvider` für die Sprache `markdown`:
   formatiert **alle** Tabellen des Dokuments.
 - Mit Selektion: `DocumentRangeFormattingEditProvider` („Auswahl
@@ -289,3 +301,33 @@ Jede Etappe einzeln lieferbar und per `.deb` testbar.
 - Filter pro Spalte statt über alle.
 - Sortierung als „in Datei übernehmen“ (würde den Grundsatz 1 bewusst
   durchbrechen, deshalb eigener, expliziter Befehl).
+
+## Umsetzung (2026-10-18) — Abweichungen und Ergänzungen zur Spec
+
+- **Formatierer** liegt in `web/shared/markdown-table.ts` (beide Bundles),
+  `isInsideCodeFence` dafür nach `web/shared/code-fence.ts` verschoben; sie
+  erkennt jetzt auch Fence-Öffner hinter Listenmarkern (`- ```js`) samt
+  Listen-Containerende. Tabellenende zusätzlich an Blockbeginn (Fence, ATX,
+  Listenpunkt) und bei Präfixwechsel, wenn dort eine neue Tabelle beginnt
+  (comrak-geprüft); sonst bleibt eine Tabelle mit abweichendem Präfix
+  unverändert. HTML-Paste übernimmt die Ausrichtung der Kopfzeile, nicht die
+  Mehrheit der Spalte (wie das GFM-Plugin).
+- **Breite Tabellen**: „breit“ = passt auch gestaucht nicht in die Spalte.
+  Im Scroll-Zustand und im Overlay `width: max-content`, kurze Zellen brechen
+  nicht um; Zellen über 48 Zeichen (`folio-cell-long`) bekommen 24em Breite.
+  Verschachtelte Tabellen (Liste/Zitat) scrollen nur, brechen nicht aus.
+  Neumessen nur bei Breitenänderung und Theme-Wechsel.
+- **Leiste**: Tabellen ab 6 Datenzeilen haben einen festen Platz für die
+  Leiste im Fluss (die schwebende Leiste überdeckte sonst Text); kleinere
+  behalten den schwebenden Vergrößern-Button.
+- **Overlay**: Der ganze Rahmen (inkl. Leiste) wandert ins `<dialog>`; die
+  Link-/Checkbox-Handler aus `initMarkdownView` hängen auch am Overlay, ein
+  Link schließt es vor dem Routing. `document:closed` schließt es ebenfalls.
+- **Sortieren**: Kopfzellen mit interaktivem Inhalt (Link) behalten ihn und
+  bekommen einen eigenen kleinen Sortier-Button. Numerisch nur, wenn alle
+  Zellen dieselbe Einheit/Währung tragen.
+- **Suche**: Sortieren/Filtern zählen eine laufende View-Suche neu
+  (`ViewFinder.refresh()`, ohne Sprung); Filtern hängt keine Zeilen um.
+- **Farben** der App-UI im Dokument über `--folio-ui-fg`/`--folio-ui-accent`
+  (an `:root` aufgelöst), weil Themes `--fg`/`--accent` auf `.markdown-body`
+  überschreiben.
