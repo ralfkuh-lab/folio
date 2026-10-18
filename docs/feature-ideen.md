@@ -38,15 +38,16 @@ Diese Ideen kamen von 2–4 Quellen unabhängig. Das ist der beste Startpunkt.
    Zen-Typografie, Persistenz über den Neustart. `[S–M]` (Quelle: **alle 3**)
 6. **Präsentations-/Slide-Modus** — Dokument an `---`/H1 in Folien teilen,
    Vollbild-Navigation, optional HTML-Slides-Export. `[M–L]` (Quelle: **alle 3**)
+   *User-Wunsch 2026-10-18 (vorgemerkt, nicht beauftragt):* Export als
+   **PowerPoint (.pptx) auf Basis bestehender Vorlagen** wäre hilfreich.
 7. **~~Lokale KI via Ollama~~ — GEHT SCHON HEUTE.** agy/grok kannten das Setup nicht:
    der generische Custom-Provider (Settings → KI-Anbieter → „Anbieter hinzufügen" →
    URL `http://localhost:11434/v1` + Name) macht Ollama-Modelle sofort verfügbar
    (`config.rs::custom_upsert` mit freier `base_url`). *Kein neues Feature nötig.*
    Höchstens optional: ein **Ein-Klick-Ollama-Preset** als Bequemlichkeit (Auto-
    Discovery laufender Modelle). `[S]`, aber niedriger Zusatznutzen.
-8. **Lokale Snapshots / Crash-Recovery** — ungespeicherte Stände periodisch in ein
-   lokales Journal, Restore nach Absturz; optional benannte Versionen pro Datei
-   (`.folio/versions/`). `[M–L]` (Quelle: **alle 3**)
+8. **~~Lokale Snapshots / Crash-Recovery~~ — verworfen (User-Entscheid 2026-10-18):**
+   kein Bedarf. Nicht erneut vorschlagen.
 9. **Statusleisten-Ausbau** — ✅ **umgesetzt (2026-07-25)**, siehe
    [`spec-statusbar.md`](spec-statusbar.md): Cursor Ln/Sp, Selektions-Stats,
    EOL-Anzeige mit LF↔CRLF-Klick-Toggle; Encoding-Anzeige kam bereits mit dem
@@ -217,8 +218,10 @@ Dinge, die in den drei Sets fehlten oder die ich für besonders wirkungsvoll hal
   `](`-Markdown-Links bleiben Folgepunkt. `[M]`
 - **Smart-List-Fortsetzung** — ✅ **umgesetzt (2026-10-09)**, ohne Neunummerierung. Enter in Listen setzt automatisch `- `/`1.`/`- [ ]`
   fort, leere Zeile bricht ab; Tab/Shift-Tab rückt ein/aus. Reine Editor-QoL. `[S–M]`
-- **Tabellen-Auto-Format** — Command/On-Save richtet MD-Tabellen sauber aus
-  (Spalten-Padding). Kombiniert gut mit dem CSV-Konverter. `[S]`
+- **Tabellen-Auto-Format** — 📝 **Spec steht (2026-10-18)**:
+  [`spec-tables.md`](spec-tables.md) Etappe T1 (ohne On-Save). Dieselbe Spec
+  deckt breite Tabellen, Sortieren und Filtern in der View ab (T2–T4).
+  Kombiniert gut mit dem CSV-Konverter. `[S]`
 - **Tag-Browser** — ✅ **umgesetzt (W5, 2026-07-25)** in der linken Rail
   (`#vault-tags-section`, lazy Scan, Search-Präfill); Spec
   [`spec-wikilinks.md`](spec-wikilinks.md). Hierarchie-Baum bleibt Folgepunkt. `[M]`
@@ -251,7 +254,7 @@ möglich, siehe Top-Konsens #7.)*
    Kern; macht folio zum vernetzten Vault statt Einzeldatei-Editor.
 
 **Danach nach Lust & Laune:** Zen-Modus, Präsentationsmodus, Templates/Snippets,
-Frontmatter-Formular, Crash-Recovery-Snapshots, Git-Status-Dots.
+Frontmatter-Formular, Git-Status-Dots.
 
 **Bewusst hinten anstellen (hoher Aufwand/Risiko, Nischennutzen):** LAN-P2P-Collab,
 Rechtschreibprüfung mit nativem Wörterbuch, Drei-Wege-Merge, Audio-Diktat,

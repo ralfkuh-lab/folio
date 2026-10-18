@@ -51,6 +51,12 @@ nicht aussagekräftig. Zu testen: Kaltstart, laufende Instanz, beide Werte von
 
 ## Mittlere Priorität
 
+- **Tabellen (beauftragt 2026-10-18)** — Spec
+  [`docs/spec-tables.md`](docs/spec-tables.md): T1 Tabellen im Editor (auch beim HTML-Paste)
+  formatieren, T2 breite Tabellen in der View (Ausbrechen, Scrollen im
+  Rahmen, Vergrößern-Overlay), T3 Sortieren per Kopfzeile, T4 Filtern.
+  Sortieren/Filtern nur Anzeige, nur App-View.
+
 
 - 🔍 **Nur beobachten — Fix ist drin, es fehlt der Beleg am nächsten Mac-Lauf.**
   **E2E `61_hex_view` flaky auf macOS: „Zurück findet den direkten
