@@ -73,6 +73,11 @@ export function initMenuRouter(deps: Deps): void {
             window.FolioEditor.redo();
         }
     });
+    ev.listen('menu:edit_format_tables', function () {
+        if (window.FolioEditor && typeof window.FolioEditor.formatDocument === 'function') {
+            void window.FolioEditor.formatDocument();
+        }
+    });
     ev.listen('menu:edit_find', function () {
         openEditorFind('');
     });

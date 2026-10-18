@@ -150,8 +150,8 @@ export function cheatsheetSyncMode(isEdit: boolean): void {
 // damit der eine Ort, an dem solche Abhaengigkeiten zentral landen.
 //
 // Zwei Bedingungen, bewusst getrennt:
-//   help.cheatsheet / view.minimap → Edit oder Split bei Markdown
-//     (beides Editor-Funktionen).
+//   help.cheatsheet / view.minimap / edit.format_tables → Edit oder Split
+//     bei Markdown (Editor-Funktionen).
 //   view.content_width → Markdown, aber NICHT im reinen Edit-Mode: der
 //     Toggle wirkt auf `.markdown-body`, die es nur in View und Split
 //     gibt. Spiegelt die CSS-Klassen md-only/view-only am Toolbar-Button.
@@ -164,6 +164,7 @@ export function syncCheatsheetMenu(): void {
     const enabled = editorActive && isMarkdown;
     safeInvoke('menu_set_enabled', { id: 'help.cheatsheet', enabled }, 'menu_set_enabled help.cheatsheet', 'debug');
     safeInvoke('menu_set_enabled', { id: 'view.minimap', enabled }, 'menu_set_enabled view.minimap', 'debug');
+    safeInvoke('menu_set_enabled', { id: 'edit.format_tables', enabled }, 'menu_set_enabled edit.format_tables', 'debug');
     safeInvoke('menu_set_enabled', { id: 'view.content_width', enabled: isMarkdown && !editMode }, 'menu_set_enabled view.content_width', 'debug');
 }
 

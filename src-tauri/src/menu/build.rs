@@ -84,6 +84,13 @@ pub fn build(handle: &AppHandle) -> tauri::Result<Menu<Wry>> {
         .accelerator("CmdOrCtrl+Shift+Z")
         .enabled(false)
         .build(handle)?;
+    // edit.format_tables: nur bei Markdown in Edit/Split — Frontend toggelt
+    // via syncCheatsheetMenu. Kein Accelerator: Shift+Alt+F ist Monacos
+    // eigenes „Dokument formatieren", das dieselbe Aktion ausloest.
+    let item_format_tables =
+        MenuItemBuilder::with_id(ids::EDIT_FORMAT_TABLES, l.edit_format_tables.as_str())
+            .enabled(false)
+            .build(handle)?;
     let item_find = MenuItemBuilder::with_id(ids::EDIT_FIND, l.edit_find.as_str())
         .accelerator("CmdOrCtrl+F")
         .build(handle)?;
@@ -108,6 +115,7 @@ pub fn build(handle: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let edit_menu = SubmenuBuilder::new(handle, l.edit.as_str())
         .item(&item_undo)
         .item(&item_redo)
+        .item(&item_format_tables)
         .item(&PredefinedMenuItem::separator(handle)?)
         .item(&item_find)
         .item(&item_search_vault)

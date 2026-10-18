@@ -5,6 +5,7 @@
 import { post } from './bridge';
 import { hasActiveTerm, recomputeMatches } from './find';
 import { continueListEdit, isListItemLine } from './list-continue';
+import { findTableEdits } from '../shared/markdown-table';
 import { isProgrammaticWrite } from './state';
 import { isInsideCodeFence } from './wikilink-complete';
 
@@ -39,6 +40,7 @@ export function attachEditorListeners(editor: any, monaco: any): void {
     });
 
     installSmartList(editor, monaco);
+    installTableFormatting(monaco);
 
     editor.onDidChangeModelContent(() => {
         if (isProgrammaticWrite()) return;
@@ -221,4 +223,32 @@ export function installSmartList(editor: any, monaco: any): void {
     indentAction('folio.markdown.outdentListItem', 'Outdent Markdown List Item',
         monaco.KeyMod.Shift | monaco.KeyCode.Tab,
         'editor.action.outdentLines', 'outdent');
+}
+
+// Tabellen-Formatierung (Spec T1) für alle Markdown-Models: Monacos
+// „Dokument formatieren“ (Shift+Alt+F, Menü edit.format_tables) und
+// „Auswahl formatieren“. Ein TextEdit je abweichender Tabelle, nur über
+// ihren Zeilenbereich; Monaco fasst den Lauf zu einem Undo-Schritt.
+// Provider gelten pro Sprache, nicht pro Editor — daher einmalig.
+let tableFormattingRegistered = false;
+
+export function installTableFormatting(monaco: any): void {
+    if (tableFormattingRegistered || !monaco.languages
+        || typeof monaco.languages.registerDocumentFormattingEditProvider !== 'function') return;
+    tableFormattingRegistered = true;
+    const textEdits = (model: any, range?: { start: number; end: number }) =>
+        findTableEdits(model.getLinesContent(), range).map((e) => ({
+            range: new monaco.Range(
+                e.startLine + 1, 1, e.endLine + 1, model.getLineMaxColumn(e.endLine + 1)),
+            text: e.lines.join(model.getEOL()),
+        }));
+    monaco.languages.registerDocumentFormattingEditProvider('markdown', {
+        provideDocumentFormattingEdits: (model: any) => textEdits(model),
+    });
+    monaco.languages.registerDocumentRangeFormattingEditProvider('markdown', {
+        provideDocumentRangeFormattingEdits: (model: any, range: any) => textEdits(model, {
+            start: range.startLineNumber - 1,
+            end: range.endLineNumber - 1,
+        }),
+    });
 }

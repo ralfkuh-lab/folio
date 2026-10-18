@@ -373,6 +373,7 @@
   "menu.edit.aiActions": "Menu item in the 'Edit' section of the main menu bar that triggers the 'AI Actions' action.",
   "menu.edit.aiTranslate": "Menu item in the 'Edit' section of the main menu bar that triggers the 'Translate with AI' action.",
   "menu.edit.find": "Menu item in the 'Edit' section of the main menu bar that triggers the 'Find' action.",
+  "menu.edit.formatTables": "Menu item in the 'Edit' section of the main menu bar that aligns all Markdown tables in the editor: pads the columns to equal width and rewrites the separator row to match the column alignment.",
   "menu.edit.redo": "Menu item in the 'Edit' section of the main menu bar that triggers the 'Redo' action.",
   "menu.edit.searchVault": "Menu item in the 'Edit' section of the main menu bar that triggers the 'Search Vault' action.",
   "menu.edit.settings": "Menu item in the 'Edit' section of the main menu bar that triggers the 'Settings' action.",

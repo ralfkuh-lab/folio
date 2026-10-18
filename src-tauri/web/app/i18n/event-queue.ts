@@ -58,6 +58,7 @@ export const BOOT_EVENT_NAMES: readonly string[] = [
     'menu:file_export',
     'menu:edit_undo',
     'menu:edit_redo',
+    'menu:edit_format_tables',
     'menu:edit_find',
     'menu:edit_search_vault',
     'menu:edit_settings',

@@ -65,6 +65,7 @@ pub(super) fn expected_menu_keys() -> &'static [&'static str] {
         "menu.edit.aiActions",
         "menu.edit.aiTranslate",
         "menu.edit.find",
+        "menu.edit.formatTables",
         "menu.edit.redo",
         "menu.edit.searchVault",
         "menu.edit.settings",

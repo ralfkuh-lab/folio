@@ -12,6 +12,7 @@
 //     setScroll, getCursorLine, revealLineNearTop, revealLineFractionNearTop,
 //     applyReplace, focus, layout, setTheme, triggerSuggest,
 //     undo, redo, getLanguage, setLanguage, listLanguages, pasteText,
+//     formatDocument,
 //     openFind, closeFind, setFindOptions, setFindTerm, findNext, findPrev
 //
 // Window-Surface ist zentral in `globals.d.ts` deklariert.
@@ -41,6 +42,7 @@ import {
 import {
     applyReplace,
     focus,
+    formatDocument,
     getLanguage,
     getCursorLine,
     getScroll,
@@ -89,6 +91,7 @@ window.FolioEditor = {
     focus,
     insertText,
     triggerSuggest,
+    formatDocument,
     undo,
     redo,
     setTheme,

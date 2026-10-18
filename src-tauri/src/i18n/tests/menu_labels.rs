@@ -34,6 +34,7 @@ fn menu_labels_de_matches_legacy_hardcodes() {
     assert_eq!(built.edit, legacy.edit);
     assert_eq!(built.edit_undo, legacy.edit_undo);
     assert_eq!(built.edit_redo, legacy.edit_redo);
+    assert_eq!(built.edit_format_tables, legacy.edit_format_tables);
     assert_eq!(built.edit_find, legacy.edit_find);
     assert_eq!(built.edit_search_vault, legacy.edit_search_vault);
     assert_eq!(built.edit_ai_translate, legacy.edit_ai_translate);
@@ -83,6 +84,7 @@ fn menu_labels_en_matches_legacy_hardcodes() {
     assert_eq!(built.edit, legacy.edit);
     assert_eq!(built.edit_undo, legacy.edit_undo);
     assert_eq!(built.edit_redo, legacy.edit_redo);
+    assert_eq!(built.edit_format_tables, legacy.edit_format_tables);
     assert_eq!(built.edit_find, legacy.edit_find);
     assert_eq!(built.edit_search_vault, legacy.edit_search_vault);
     assert_eq!(built.edit_ai_translate, legacy.edit_ai_translate);

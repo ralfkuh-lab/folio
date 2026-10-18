@@ -153,4 +153,33 @@ describe('htmlToMarkdown', () => {
     it('H24: nur leere Links → keine Struktur, Klartext gewinnt', () => {
         expect(htmlToMarkdown('<div><a href="#a"></a>Text</div>')).toBeNull();
     });
+
+    it('J: Tabelle gepolstert, Rechtsausrichtung aus der Kopfzelle', () => {
+        expect(htmlToMarkdown(
+            '<table><tr><th>Name</th><th style="text-align:right">Wert</th></tr>'
+            + '<tr><td>Alpha</td><td>1</td></tr><tr><td>B</td><td>1000</td></tr></table>',
+        )).toBe([
+            '| Name  | Wert |',
+            '| ----- | ---: |',
+            '| Alpha |    1 |',
+            '| B     | 1000 |',
+        ].join('\n'));
+    });
+
+    it('J2: align-Attribut; ohne Kopfzellen zählt die erste Zeile', () => {
+        expect(htmlToMarkdown(
+            '<table><tr><td align="center">x</td><td>y</td></tr>'
+            + '<tr><td>1</td><td align="right">22</td></tr></table>',
+        )).toBe([
+            '|     |     |',
+            '| :-: | --- |',
+            '|  x  | y   |',
+            '|  1  | 22  |',
+        ].join('\n'));
+    });
+
+    it('J3: Tabellen-Quelltext in einem Code-Block bleibt unverändert', () => {
+        expect(htmlToMarkdown('<pre><code>| a | b |\n|-|-|\n| 1 | 2 |</code></pre>'))
+            .toBe('```\n| a | b |\n|-|-|\n| 1 | 2 |\n```');
+    });
 });

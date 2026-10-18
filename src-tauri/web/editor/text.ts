@@ -376,6 +376,16 @@ export function redo(): void {
     editor.trigger('menu', 'redo', null);
 }
 
+/** Monacos „Dokument formatieren“ am Haupteditor (Menü edit.format_tables);
+ *  bei Markdown greift der Tabellen-Formatierer aus `events.ts`. */
+export function formatDocument(): Promise<void> {
+    const editor = getEditor();
+    const action = editor && editor.getAction('editor.action.formatDocument');
+    if (!action) return Promise.resolve();
+    editor.focus();
+    return Promise.resolve(action.run());
+}
+
 /** Opens Monaco's suggest widget on the main editor (e.g. after inserting `[[`). */
 export function triggerSuggest(): void {
     const editor = getEditor();
