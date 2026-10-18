@@ -17,5 +17,5 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["app/**/*.ts", "editor/**/*.ts", "globals.d.ts"]
+  "include": ["app/**/*.ts", "editor/**/*.ts", "shared/**/*.ts", "globals.d.ts"]
 }

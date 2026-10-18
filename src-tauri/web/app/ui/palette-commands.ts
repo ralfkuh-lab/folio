@@ -146,6 +146,13 @@ export const PALETTE_COMMANDS: readonly PaletteCommand[] = [
         enabled: () => true,
     },
     {
+        id: 'edit.format_tables',
+        label: () => t('menu.edit.formatTables'),
+        menuAction: 'edit.format_tables',
+        // Spiegelt syncCheatsheetMenu: Markdown im Edit- oder Split-Mode.
+        enabled: () => isMarkdown() && bodyHas('edit-mode', 'split-mode'),
+    },
+    {
         id: 'edit.find',
         label: () => t('menu.edit.find'),
         menuAction: 'edit.find',

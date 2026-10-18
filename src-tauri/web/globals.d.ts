@@ -60,6 +60,8 @@ interface FolioEditorSurface {
     pasteText(text: string): boolean;
     /** Opens Monaco suggest (used after inserting empty `[[]]` for wikilink autocomplete). */
     triggerSuggest(): void;
+    /** Monaco „Dokument formatieren“ (Markdown: Tabellen ausrichten). */
+    formatDocument(): Promise<void>;
     openFind(initialTerm?: string): void;
     closeFind(): void;
     setFindOptions(opts: ResolvedFindOptions): void;

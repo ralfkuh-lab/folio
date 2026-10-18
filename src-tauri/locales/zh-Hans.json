@@ -383,6 +383,7 @@
   "menu.edit.aiActions": "AI 动作…",
   "menu.edit.aiTranslate": "使用 AI 翻译…",
   "menu.edit.find": "查找…",
+  "menu.edit.formatTables": "格式化表格",
   "menu.edit.redo": "重做",
   "menu.edit.searchVault": "搜索 Vault…",
   "menu.edit.settings": "设置…",

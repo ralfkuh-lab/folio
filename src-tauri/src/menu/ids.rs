@@ -15,6 +15,7 @@ pub(super) const FILE_CLOSE: &str = "file.close";
 pub(super) const FILE_QUIT: &str = "file.quit";
 pub(super) const EDIT_UNDO: &str = "edit.undo";
 pub(super) const EDIT_REDO: &str = "edit.redo";
+pub(super) const EDIT_FORMAT_TABLES: &str = "edit.format_tables";
 pub(super) const EDIT_FIND: &str = "edit.find";
 pub(super) const EDIT_SEARCH_VAULT: &str = "edit.search_vault";
 pub(super) const EDIT_AI_TRANSLATE: &str = "edit.ai_translate";

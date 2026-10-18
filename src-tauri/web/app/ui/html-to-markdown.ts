@@ -13,6 +13,7 @@
 
 import TurndownService from 'turndown';
 import { gfm } from '@joplin/turndown-plugin-gfm';
+import { formatMarkdownTables } from '../../shared/markdown-table';
 
 // Elemente, die Markdown-Struktur bedeuten. `p`/`div`/`span`/`br`
 // stehen bewusst nicht drin (Quelltext-Träger, siehe Kopfkommentar).
@@ -130,6 +131,35 @@ function stripEmptyLinks(root: HTMLElement): void {
     });
 }
 
+const ALIGNMENTS = ['left', 'right', 'center'];
+
+function cellAlignment(cell: HTMLTableCellElement): string {
+    const value = (cell.getAttribute('align') || cell.style.textAlign || '').toLowerCase();
+    return ALIGNMENTS.includes(value) ? value : '';
+}
+
+/** Spaltenausrichtung kommt aus der Kopfzeile (Zeile mit `th`, sonst die
+ *  erste). Das GFM-Plugin entscheidet per Mehrheit über ALLE Zellen der
+ *  Spalte — eine rechtsbündige Kopfzelle über linksbündigen Daten ginge
+ *  verloren. Deshalb hier auf jede Zelle der Spalte übertragen; Werte wie
+ *  `justify`/`start` fallen weg (das Plugin schriebe sonst `undefined` in
+ *  die Trennzeile). */
+function alignTableColumns(root: HTMLElement): void {
+    root.querySelectorAll('table').forEach((table) => {
+        const rows = Array.from(table.rows);
+        const head = rows.find((r) => r.querySelector('th')) || rows[0];
+        if (!head) return;
+        const aligns = Array.from(head.cells).map(cellAlignment);
+        for (const row of rows) {
+            Array.from(row.cells).forEach((cell, i) => {
+                cell.style.textAlign = '';
+                if (aligns[i]) cell.setAttribute('align', aligns[i]);
+                else cell.removeAttribute('align');
+            });
+        }
+    });
+}
+
 function hasStructure(root: HTMLElement): boolean {
     if (root.querySelector(STRUCTURE_SELECTOR)) return true;
     for (const img of Array.from(root.querySelectorAll('img'))) {
@@ -184,6 +214,7 @@ export function htmlToMarkdown(html: string): string | null {
     stripDataImages(root);
     stripEmptyLinks(root);
     if (!hasStructure(root)) return null;
-    const markdown = normalize(getService().turndown(root as any));
+    alignTableColumns(root);
+    const markdown = formatMarkdownTables(normalize(getService().turndown(root as any)));
     return markdown.trim() ? markdown : null;
 }
