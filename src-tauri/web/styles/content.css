@@ -275,6 +275,10 @@ body.kind-binary .image-view-region { display: none; }
    verhindert, dass der Margin der ersten Ueberschrift durch das Blatt
    kollabiert und den Balken wieder aufmacht. (0,2,0) schlaegt die
    Theme-Regeln (0,1,0); Export und Theme-Editor-Vorschau bleiben unberuehrt. */
+/* Ohne Dokument (`kind-unknown`, Boot/letzter Tab geschlossen) ist das Blatt
+   leer, traegt aber Theme-Hintergrund und Innenabstand — es bliebe als
+   andersfarbiger Balken stehen. */
+body.kind-unknown .view-content > .markdown-body { display: none; }
 .view-content > .markdown-body {
   display: flow-root;
   margin-top: 0;
