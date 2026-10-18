@@ -894,13 +894,12 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   von `#vault-tree` und laufen über `runVaultAction` — **dieselbe** Funktion
   wie das Kontextmenü, Bedingungen aus `buildMenuEntries` /
   `isVaultActionAvailable`; Key-Repeat löst keine Dateiaktion aus.
-  **Doppelklick auf eine Datei** = Datei ist offen, Fokus ins Dokument
-  (Editor in Edit/Split, sonst `#view-content`); erkannt am **Pfad** (zweiter
-  Klick auf denselben Pfad ≤ 500 ms in `tree.ts`), nicht per `dblclick`, weil
-  der erste Klick den Baum teils neu aufbaut und der zweite dann auf einem
-  neuen Element landet. Extern öffnen/ausführen nur noch über das
-  Kontextmenü (bis 2026-10-18 startete der Doppelklick zufallsabhängig das
-  Standardprogramm).
+  **Doppelklick** hat keine eigene Funktion (zwei gewöhnliche Klicks).
+  Bis 2026-10-18 startete er zufallsabhängig das Standardprogramm (der erste
+  Klick baut den Baum teils neu auf, der Browser meldet dann kein
+  `dblclick`); ein pfadbasierter „Fokus ins Dokument“ griff nicht
+  verlässlich und wurde wieder entfernt. Extern öffnen/ausführen nur über
+  das Kontextmenü.
   Drei Regeln, die das Zusammenspiel tragen: (1) **Ein Mausklick in den
   Baum setzt den Fokus dorthin** wie im Dateimanager (der Browser fokussiert
   die per `tabindex` fokussierbare Zeile selbst), und der **Fokusring ist

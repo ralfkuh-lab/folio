@@ -248,9 +248,6 @@ body.kind-binary .image-view-region { display: none; }
   container-type: inline-size;
   --folio-table-gutter: 24px;
 }
-/* Fokus per Doppelklick im Vault (Pfeiltasten scrollen dann die View) —
-   ohne Rahmen um die ganze Ansicht. */
-.view-content:focus { outline: none; }
 /* Marker-Lane fuer View-Modus. Marker werden vom ViewFinder als
    position:absolute mit top:X% (relativ zur Doc-scrollHeight) eingefuegt;
    .folio-marker bringt das Styling. Im Edit-Modus übernimmt diese Aufgabe

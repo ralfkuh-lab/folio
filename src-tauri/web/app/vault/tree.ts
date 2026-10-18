@@ -323,26 +323,6 @@ function openMenuForItem(item: HTMLElement): void {
     });
 }
 
-// Doppelklick auf eine Datei (siehe Klick-Handler). Externes Öffnen bzw.
-// Ausführen gibt es nur noch über das Kontextmenü.
-const DOUBLE_CLICK_MS = 500;
-let lastFileClick: { path: string; time: number } | null = null;
-
-/** Fokus ins Dokument: Editor in Edit/Split, sonst die View (scrollbar per
- *  Pfeiltasten). */
-function focusDocument(): void {
-    const body = document.body.classList;
-    if ((body.contains('edit-mode') || body.contains('split-mode'))
-        && window.FolioEditor && typeof window.FolioEditor.focus === 'function') {
-        window.FolioEditor.focus();
-        return;
-    }
-    const view = document.getElementById('view-content');
-    if (!view) return;
-    if (!view.hasAttribute('tabindex')) view.setAttribute('tabindex', '-1');
-    view.focus();
-}
-
 export function initVaultTree(d: Deps): void {
     deps = d;
     ROOT = document.getElementById('vault-tree');
@@ -408,19 +388,6 @@ export function initVaultTree(d: Deps): void {
             if (kind === 'file') {
                 const p = node.getAttribute('data-path');
                 if (!p) return;
-                // Doppelklick = zweiter Klick auf DENSELBEN Pfad kurz nach dem
-                // ersten: Die Datei ist schon offen, der Fokus geht ins
-                // Dokument (wie in VS Code). Bewusst am Pfad erkannt, nicht
-                // per `dblclick`: der erste Klick baut den Baum teils neu auf,
-                // dann landet der zweite auf einem neuen Element und der
-                // Browser meldet keinen Doppelklick.
-                const now = Date.now();
-                if (lastFileClick && lastFileClick.path === p && now - lastFileClick.time <= DOUBLE_CLICK_MS) {
-                    lastFileClick = null;
-                    focusDocument();
-                    return;
-                }
-                lastFileClick = { path: p, time: now };
                 // Ctrl/Cmd+Klick: in neuem Tab oeffnen (Browser-Konvention);
                 // normaler Klick ersetzt das Dokument im aktiven Tab.
                 if (e.ctrlKey || e.metaKey) {
@@ -488,12 +455,6 @@ export function initVaultTree(d: Deps): void {
         const m = menuTargetOf(item);
         openContextMenu(e.clientX, e.clientY, m.path, m.isDir, m.inPinned, m.inRecent, m.isExec, m.options);
     });
-
-    // Doppelklick auf eine Datei loest die externe Aktion aus (ausfuehren /
-    // mit Standardprogramm oeffnen) — "fast wie im Explorer". Der Einzelklick
-    // (in Folio oeffnen) bleibt unveraendert und lief beim Doppelklick bereits;
-    // diese Geste kommt bewusst zusaetzlich obendrauf. preventDefault
-    // unterdrueckt die Wort-Selektion im Label. Verzeichnisse werden ignoriert.
 
     // ----- MutationObserver: File-Icons fuer neu hinzugefuegte Tree-Knoten -----
     if (typeof MutationObserver === 'function') {
