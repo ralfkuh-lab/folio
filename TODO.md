@@ -51,6 +51,27 @@ nicht aussagekräftig. Zu testen: Kaltstart, laufende Instanz, beide Werte von
 
 ## Mittlere Priorität
 
+- **KI-API-Keys in den System-Schlüsselbund statt Klartext-Datei.** Die Keys
+  liegen heute im Klartext in `auth.json` (Rechte 0600,
+  `src-tauri/src/ai/auth.rs`). Das war eine bewusste Entscheidung
+  (`docs/spec-ki-tab.md`, „Risiken / bewusste Entscheidungen“: opencode-Parität
+  statt keyring wegen Linux-Reibung und E2E-Headless). Deren Gründe lassen sich
+  mit einem Rückfall auffangen, deshalb neu bewerten:
+  - Keys im Schlüsselbund des Betriebssystems ablegen (macOS Keychain, Windows
+    Credential Manager, Linux Secret Service, z. B. über das `keyring`-Crate);
+    die UI zeigt weiter „Key gespeichert/fehlt“.
+  - **E2E/Headless:** per Umgebungsvariable auf die Datei umschalten, damit die
+    Tests ohne Schlüsselbund laufen.
+  - **Linux ohne Secret Service:** mit klarer Meldung auf die Datei
+    zurückfallen statt zu scheitern.
+  - Vorhandene Keys einmalig migrieren und danach aus `auth.json` entfernen;
+    die Spec-Entscheidung entsprechend aktualisieren.
+  Vorbild: SolidCraft speichert Endpoint-Keys im Schlüsselbund („Stored in the
+  system keychain, never in SolidCraft's settings“).
+  **Gleiches gilt für youtube-summarizer** (`auth.json`, aus folio übernommen)
+  **und wire-bender** (`ai-keys.json`): dort jeweils mitziehen, am besten mit
+  derselben Umsetzung (gemeinsamer Ursprung der KI-Konfiguration).
+
 
 - 🔍 **Nur beobachten — Fix ist drin, es fehlt der Beleg am nächsten Mac-Lauf.**
   **E2E `61_hex_view` flaky auf macOS: „Zurück findet den direkten
