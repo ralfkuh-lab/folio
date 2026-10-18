@@ -19,6 +19,7 @@ import { flushPreviewRender } from '../view/preview';
 import { reapplyCurrentViewTheme } from '../view/theme';
 import { folioLog, safeInvoke } from '../util/log';
 import { t } from '../i18n/translate';
+import { consumeVaultKeyboardOpen } from '../vault/tree-keyboard';
 
 type Deps = {
     getCleanText: () => string;
@@ -88,12 +89,18 @@ export function loadEditorText(
     });
 }
 
-export function focusEditor(): void {
+/** Editor fuer Edit/Split bereitstellen (mount + layout), ohne Fokus. */
+function prepareEditor(): Promise<boolean> {
     const initial = deps && deps.getCleanText ? deps.getCleanText() : '';
-    ensureEditorMounted(initial).then(function (ok) {
-        if (!ok) return;
-        layoutEditor();
-        window.FolioEditor.focus();
+    return ensureEditorMounted(initial).then(function (ok) {
+        if (ok) layoutEditor();
+        return ok;
+    });
+}
+
+export function focusEditor(): void {
+    prepareEditor().then(function (ok) {
+        if (ok) window.FolioEditor.focus();
     });
 }
 
@@ -245,8 +252,15 @@ export function initEditorShell(d: Deps): void {
             // 3. Editor-Fokus + Cheatsheet-Mode (war IIFE #1). Im Split-Mode
             // ist der Editor ebenfalls aktiv und sollte den Fokus bekommen,
             // damit Tippen sofort funktioniert.
+            // Ausnahme: hat ein Tastatur-Enter im Vault-Baum das Dokument
+            // geoeffnet, bleibt der Fokus im Baum (Spec vault-keyboard K1,
+            // ↓ Enter ↓ Enter blaettert durch Dateien). Mausklick unveraendert.
             const editorActive = mode === 'edit' || mode === 'split';
-            if (editorActive) focusEditor();
+            const keepVaultFocus = consumeVaultKeyboardOpen();
+            if (editorActive) {
+                if (keepVaultFocus) void prepareEditor();
+                else focusEditor();
+            }
             syncCheatsheetMenu();
 
             // 4. Undo/Redo nur sinnvoll, wenn der Editor sichtbar ist (war IIFE #1).

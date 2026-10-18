@@ -19,7 +19,7 @@ import { openGitDiff } from '../ui/git-diff';
 import { getTabsSnapshot } from '../state/tabs';
 import { clearClip, clearClipIfUnder, getClip, remapClip, setClip } from './clipboard';
 import { beginVaultRename, endVaultRename } from './rename-guard';
-import { focusVaultItem } from './tree-keyboard';
+import { focusVaultItem, followVaultAction } from './tree-keyboard';
 
 // Monochrome 16x16-Feather-Icons je data-act. Kein width/height im SVG
 // (CSS steuert die Groesse), stroke=currentColor faerbt mit Hover/Theme mit.
@@ -283,17 +283,23 @@ function onMenuKeydown(e: KeyboardEvent): void {
         case 'End': next = items[items.length - 1]; break;
         case 'Enter':
         case ' ': {
-            if (i < 0) return;
+            if (i < 0 || !ctxTarget) return;
             e.preventDefault();
             e.stopPropagation();
+            if (e.repeat) return;
             const back = menuReturnFocus;
-            items[i].click();
+            const act = items[i].getAttribute('data-act') || '';
+            const { path, isDirectory } = ctxTarget;
+            closeContextMenu();
+            const run = runVaultAction(act, path, isDirectory);
             // Hat die Aktion den Fokus nicht selbst genommen (Inline-Rename,
-            // Dialog per setTimeout), zurück an die Zeile.
+            // Dialog per setTimeout), zurück an die Zeile — und für Einfügen/
+            // Duplizieren dieselbe Ergebnisbehandlung wie die Kürzel (K2).
             const active = document.activeElement;
             if (back && (!active || active === document.body || ctxMenu.contains(active))) {
                 focusVaultItem(back);
             }
+            if (back && (act === 'paste' || act === 'duplicate')) followVaultAction(back, run);
             return;
         }
         case 'Escape':
