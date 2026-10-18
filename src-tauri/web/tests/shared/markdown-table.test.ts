@@ -1,4 +1,6 @@
 /** Tabellen-Formatierer (Spec T1) — Referenzfälle A–I aus dem Auftrag. */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { displayWidth, findTableEdits, formatMarkdownTables } from '../../shared/markdown-table';
 
@@ -145,5 +147,70 @@ describe('displayWidth', () => {
         expect(displayWidth('👍🏽')).toBe(2);
         expect(displayWidth('é')).toBe(1);
         expect(displayWidth('ä')).toBe(1);
+    });
+});
+
+describe('Korrekturrunde 1', () => {
+    // K1 (Review Sol R1): Fence direkt am Listenmarker.
+    it('K1: Tabelle in einer Fence am Listenmarker bleibt bytegleich', () => {
+        const text = '- ```text\n  | a | b |\n  |-|-|\n  | x | y |\n  ```';
+        expect(formatMarkdownTables(text)).toBe(text);
+        const ordered = '1. ```js\n   | a | b |\n   |-|-|\n   ```';
+        expect(formatMarkdownTables(ordered)).toBe(ordered);
+        const quoted = '> - ```\n>   | a | b |\n>   |-|-|\n>   ```';
+        expect(formatMarkdownTables(quoted)).toBe(quoted);
+    });
+
+    it('K1: nach dem Ende des Listenpunkts ist die Tabelle wieder Markdown', () => {
+        // comrak: Fence endet mit dem Listenpunkt, danach Tabelle auf oberster Ebene.
+        const lines = ['- ```text', '  code', '| a | b |', '|-|-|'];
+        expect(findTableEdits(lines).map((e) => e.startLine)).toEqual([2]);
+    });
+
+    // K2 (Review Argon W2): Präfixwechsel mit neuer Tabelle trennt beide.
+    it('K2: Zitat-Tabelle, direkt danach Tabelle auf oberster Ebene → beide einzeln', () => {
+        const text = ['> | a | b |', '> |-|-|', '| c | d |', '|-|-|', '| 1 | 2 |'].join('\n');
+        expect(formatMarkdownTables(text)).toBe([
+            '> | a   | b   |',
+            '> | --- | --- |',
+            '| c   | d   |',
+            '| --- | --- |',
+            '| 1   | 2   |',
+        ].join('\n'));
+    });
+
+    it('K2: Tabelle, direkt danach Zitat-Tabelle → beide einzeln', () => {
+        const lines = ['| a |', '|-|', '> | b |', '> |-|', '> | 2 |'];
+        expect(findTableEdits(lines).map((e) => [e.startLine, e.endLine])).toEqual([[0, 1], [2, 4]]);
+    });
+
+    it('K2: Präfixwechsel ohne neue Tabelle → unverändert (wie H)', () => {
+        for (const text of [
+            ['| a | b |', '|---|---|', '> | 1 | 2 |'],
+            ['> | a | b |', '> |---|---|', '| 1 | 2 |', '> | 3 | 4 |'],
+            // gleiche Tiefe, anderer Einzug: comrak liest beides als Zeilen einer Tabelle
+            ['| a |', '|-|', '  | c |', '  |-|'],
+        ].map((l) => l.join('\n'))) {
+            expect(formatMarkdownTables(text)).toBe(text);
+        }
+    });
+
+    // K3 (Review Argon W1): CRLF.
+    it('K3: CRLF bleibt erhalten, kein \\r mitten in der Zeile', () => {
+        const crlf = A_IN.split('\n').join('\r\n') + '\r\n';
+        expect(formatMarkdownTables(crlf)).toBe(A_OUT.split('\n').join('\r\n') + '\r\n');
+        expect(formatMarkdownTables('a | b\r\n---|---')).toBe('| a   | b   |\r\n| --- | --- |');
+    });
+
+    it('K3: gemischte Zeilenenden bleiben je Zeile erhalten', () => {
+        expect(formatMarkdownTables('x\r\n| a |\n|-|\r\n| 1 |\ny'))
+            .toBe('x\r\n| a   |\n| --- |\r\n| 1   |\ny');
+    });
+
+    // K4 (Review Argon H2): kein unsichtbares U+FE0F im Quelltext.
+    it('K4: Quelltext enthält U+FE0F nur als Escape', () => {
+        const src = readFileSync(resolve(__dirname, '../../shared/markdown-table.ts'), 'utf8');
+        expect(src.includes('\uFE0F')).toBe(false);
+        expect(displayWidth('\u2764\uFE0F')).toBe(2);
     });
 });
