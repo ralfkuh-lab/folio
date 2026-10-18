@@ -40,11 +40,10 @@ pub(in crate::automation) async fn post_mode(
         mode
     };
     let (request_id, receiver) = ack::register(state.inner()).map_err(ApiError::internal)?;
-    emit(
-        &context,
-        "app:set_mode",
-        serde_json::json!({ "mode": mode, "requestId": request_id }),
-    )?;
+    let mut payload =
+        crate::commands::app::set_mode_payload(&mode, crate::commands::app::ModeChangeCause::User);
+    payload["requestId"] = serde_json::json!(request_id);
+    emit(&context, "app:set_mode", payload)?;
     let timeout_ms = options.ack_timeout_ms.unwrap_or(DEFAULT_ACK_TIMEOUT_MS);
     let acked = ack::wait_for_ack(state.inner(), request_id, receiver, timeout_ms).await;
     Ok(Json(AckedResponse {

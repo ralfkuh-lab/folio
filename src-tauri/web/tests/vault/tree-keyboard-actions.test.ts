@@ -4,12 +4,22 @@
 // echte Vault-Zwischenablage: genau das ist der Vertrag — die Kuerzel gehen
 // durch dieselbe Aktionsfunktion und dieselben Bedingungen wie das Menue.
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installTauriMock, type TauriMockHandles } from '../helpers';
 import { seedDeCatalog } from '../helpers-i18n';
-import { fileNode, focused, item, press, treeHtml } from './tree-fixture';
+import { dirNode, fileNode, focused, item, press, treeHtml } from './tree-fixture';
+
+/** Ordner B (zu, leer) wie im Referenz-Fixture. */
+function dirNodeB(): string {
+    return dirNode('/v/A/B', 'B', false, '');
+}
 
 vi.mock('../../app/ui/git-diff', () => ({ openGitDiff: vi.fn() }));
+// editor/shell.ts (Fokusregel bei app:set_mode) zieht die Find-Bar nach;
+// deren Nebenwirkung ist hier egal, der Fokuspfad des Shells bleibt echt.
+vi.mock('../../app/ui/find-bar', () => ({
+    afterModeSwitch: vi.fn(), applyFindReplace: vi.fn(), openEditorFind: vi.fn(), setEditorFindTerm: vi.fn(),
+}));
 vi.mock('../../app/state/tabs', () => ({
     getTabsSnapshot: () => ({ tabs: [], activeIndex: 0, recentlyClosedCount: 0 }),
 }));
@@ -26,6 +36,7 @@ let tauri: TauriMockHandles;
 let tree: typeof import('../../app/vault/tree');
 let clipboard: typeof import('../../app/vault/clipboard');
 let ctxMenu: typeof import('../../app/vault/context-menu');
+let openDocumentSpy: ReturnType<typeof vi.fn>;
 
 async function flush(): Promise<void> {
     for (let i = 0; i < 8; i++) await Promise.resolve();
@@ -67,7 +78,8 @@ beforeEach(async () => {
     clipboard = await import('../../app/vault/clipboard');
     ctxMenu = await import('../../app/vault/context-menu');
     tree.initVaultTree({ openDocument: vi.fn() });
-    ctxMenu.initContextMenu({ openDocument: vi.fn(), refreshVault: vi.fn(), showStatus: vi.fn() });
+    openDocumentSpy = vi.fn();
+    ctxMenu.initContextMenu({ openDocument: openDocumentSpy, refreshVault: vi.fn(), showStatus: vi.fn() });
     await flush();
 });
 
@@ -379,22 +391,85 @@ describe('Korrekturrunde 1 (Review Sol)', () => {
         expect(focused()).toBe('a2.md');
     });
 
-    it('Sol 1: ein Fokusziel wartet nicht unbegrenzt (Frist)', async () => {
+    it('R2 (Sol N4): ein Fokusziel hat keine Frist — die Kopie bekommt den Fokus auch nach >3 s', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         try {
             item('a1.md').focus();
             press('d', { ctrlKey: true });
             await flush();
-            // Erster Rebuild ohne die Kopie, dann vergeht die Frist.
-            tree.renderVaultFromHtml(treeHtml());
+            tree.renderVaultFromHtml(treeHtml()); // erster Rebuild noch ohne Kopie
             await flush();
-            vi.setSystemTime(Date.now() + 5000);
+            vi.setSystemTime(Date.now() + 3100);
             tree.insertVaultChildren('/v/A', fileNode('/v/A/a1.md', 'a1.md') + fileNode('/v/A/a1 copy.md', 'a1 copy.md'));
             await flush();
-            expect(focused()).toBe('a1.md');
+            expect(focused()).toBe('a1 copy.md');
         } finally {
             vi.useRealTimers();
         }
+    });
+
+    it('R2: eine neue Eingabe im Baum beendet das Warten (kein unbegrenztes Fokusziel)', async () => {
+        item('a1.md').focus();
+        press('d', { ctrlKey: true });
+        await flush();
+        press('ArrowDown'); // neue Nutzer-Eingabe
+        expect(focused()).toBe('B');
+        tree.insertVaultChildren('/v/A', fileNode('/v/A/a1.md', 'a1.md') + fileNode('/v/A/a1 copy.md', 'a1 copy.md')
+            + dirNodeB() + fileNode('/v/A/a2.md', 'a2.md'));
+        await flush();
+        expect(focused()).toBe('B');
+    });
+
+    it('R2: ein Zeigerdruck im Baum beendet das Warten ebenfalls', async () => {
+        item('a1.md').focus();
+        press('d', { ctrlKey: true });
+        await flush();
+        item('p.md').dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+        tree.insertVaultChildren('/v/A', fileNode('/v/A/a1.md', 'a1.md') + fileNode('/v/A/a1 copy.md', 'a1 copy.md'));
+        await flush();
+        expect(focused()).toBe('a1.md');
+    });
+
+    it('R2 (Sol N3): ignorierter Repeat erhält das Fokusziel des Erstanschlags', async () => {
+        item('a1.md').focus();
+        press('d', { ctrlKey: true });
+        press('d', { ctrlKey: true, repeat: true });
+        await flush();
+        tree.insertVaultChildren('/v/A', fileNode('/v/A/a1.md', 'a1.md') + fileNode('/v/A/a1 copy.md', 'a1 copy.md'));
+        await flush();
+        expect(invoked('duplicate_entry')).toHaveLength(1);
+        expect(focused()).toBe('a1 copy.md');
+    });
+
+    it('R2 (Sol N2): Einfügen über das Tastaturmenü in einen geschlossenen Ordner klappt ihn auf, Fokus auf das Ergebnis', async () => {
+        clipboard.setClip('/w/r.md', 'copy');
+        item('B').focus();
+        press('F10', { shiftKey: true });
+        for (let i = 0; i < 25 && activeAct() !== 'paste'; i++) press('ArrowDown');
+        expect(activeAct()).toBe('paste');
+        press('Enter');
+        await flush();
+        expect(invoked('copy_entry')).toEqual([{ src: '/w/r.md', destDir: '/v/A/B' }]);
+        // Wie bei Strg+V: Aufklappen angefordert (expand-dir) …
+        expect(item('B').querySelector(':scope > ul.children')!.classList.contains('collapsed')).toBe(false);
+        const expands = tauri.emit.mock.calls.filter(
+            (c: any[]) => c[0] === 'shell:event' && c[1]?.type === 'expand-dir').map((c: any[]) => c[1].path);
+        expect(expands).toEqual(['/v/A/B']);
+        // … dessen Antwort die neue Zeile bringt.
+        tree.insertVaultChildren('/v/A/B', fileNode('/v/A/B/r.md', 'r.md'));
+        await flush();
+        expect((document.activeElement as HTMLElement).getAttribute('data-path')).toBe('/v/A/B/r.md');
+    });
+
+    it('R2: Strg+V in einen geschlossenen Ordner: dieselbe Vorbereitung wie das Menü', async () => {
+        clipboard.setClip('/w/r.md', 'copy');
+        item('B').focus();
+        press('v', { ctrlKey: true });
+        await flush();
+        expect(item('B').querySelector(':scope > ul.children')!.classList.contains('collapsed')).toBe(false);
+        tree.insertVaultChildren('/v/A/B', fileNode('/v/A/B/r.md', 'r.md'));
+        await flush();
+        expect((document.activeElement as HTMLElement).getAttribute('data-path')).toBe('/v/A/B/r.md');
     });
 
     it('Sol 3: Duplizieren über das Tastaturmenü setzt den Fokus auf den neuen Eintrag', async () => {
@@ -473,3 +548,32 @@ describe('Korrekturrunde 1 (Review Sol)', () => {
         expect(focused()).toBe('B');
     });
 });
+
+describe('Korrekturrunde 2 — Öffnen über das Tastaturmenü (G)', () => {
+    // Das Editor-Shell-Layout läuft per requestAnimationFrame nach; vor dem
+    // nächsten Fall (setup.ts entfernt window.FolioEditor) ablaufen lassen.
+    afterEach(async () => {
+        await new Promise((r) => setTimeout(r, 40));
+    });
+
+    it('„Öffnen" per Tastaturmenü + app:set_mode{cause:open} → Fokus bleibt auf der Zeile', async () => {
+        const ed = document.getElementById('ed')!;
+        (window as any).FolioEditor = {
+            mount: vi.fn().mockResolvedValue(undefined), layout: vi.fn(), focus: () => ed.focus(),
+        };
+        const shell = await import('../../app/editor/shell');
+        shell.initEditorShell({ getCleanText: () => '', requestSaveIfDirty: async () => true });
+        openDocumentSpy.mockImplementation(() => {
+            tauri.emitEvent('app:set_mode', { mode: 'edit', cause: 'open' });
+        });
+        item('a2.md').focus();
+        press('F10', { shiftKey: true });
+        expect(activeAct()).toBe('open');
+        press('Enter');
+        await flush();
+        await new Promise((r) => setTimeout(r, 10));
+        expect(openDocumentSpy).toHaveBeenCalledWith('/v/A/a2.md');
+        expect(focused()).toBe('a2.md');
+    });
+});
+

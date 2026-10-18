@@ -291,15 +291,14 @@ function onMenuKeydown(e: KeyboardEvent): void {
             const act = items[i].getAttribute('data-act') || '';
             const { path, isDirectory } = ctxTarget;
             closeContextMenu();
+            // Erst zurück an die Zeile, dann ausführen: Aktionen, die den Fokus
+            // selbst brauchen (Inline-Rename, Dialoge), nehmen ihn danach; ein
+            // durch „Öffnen" ausgelöster Moduswechsel findet den Fokus im Baum
+            // (Regel in editor/shell.ts). Einfügen/Duplizieren: dieselbe Vor-
+            // und Nachbereitung wie die Kürzel.
+            if (back) focusVaultItem(back);
             const run = runVaultAction(act, path, isDirectory);
-            // Hat die Aktion den Fokus nicht selbst genommen (Inline-Rename,
-            // Dialog per setTimeout), zurück an die Zeile — und für Einfügen/
-            // Duplizieren dieselbe Ergebnisbehandlung wie die Kürzel (K2).
-            const active = document.activeElement;
-            if (back && (!active || active === document.body || ctxMenu.contains(active))) {
-                focusVaultItem(back);
-            }
-            if (back && (act === 'paste' || act === 'duplicate')) followVaultAction(back, run);
+            if (back) followVaultAction(act, back, back, run);
             return;
         }
         case 'Escape':

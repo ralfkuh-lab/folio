@@ -19,7 +19,7 @@ import { flushPreviewRender } from '../view/preview';
 import { reapplyCurrentViewTheme } from '../view/theme';
 import { folioLog, safeInvoke } from '../util/log';
 import { t } from '../i18n/translate';
-import { consumeVaultKeyboardOpen } from '../vault/tree-keyboard';
+import { isVaultTreeFocused } from '../vault/tree-keyboard';
 
 type Deps = {
     getCleanText: () => string;
@@ -252,11 +252,14 @@ export function initEditorShell(d: Deps): void {
             // 3. Editor-Fokus + Cheatsheet-Mode (war IIFE #1). Im Split-Mode
             // ist der Editor ebenfalls aktiv und sollte den Fokus bekommen,
             // damit Tippen sofort funktioniert.
-            // Ausnahme: hat ein Tastatur-Enter im Vault-Baum das Dokument
-            // geoeffnet, bleibt der Fokus im Baum (Spec vault-keyboard K1,
-            // ↓ Enter ↓ Enter blaettert durch Dateien). Mausklick unveraendert.
+            // Ausnahme: Folgt der Modus aus einem Dokumentwechsel
+            // (cause "open") und liegt der Fokus im Vault-Baum, bleibt er
+            // dort (Spec vault-keyboard K1, ↓ Enter ↓ Enter blaettert durch
+            // Dateien). Per Maus bekommt der Baum keinen Fokus, ein Klick
+            // fokussiert also wie bisher den Editor. Ausdruecklicher
+            // Moduswechsel ("user", auch Altpayload ohne cause): immer.
             const editorActive = mode === 'edit' || mode === 'split';
-            const keepVaultFocus = consumeVaultKeyboardOpen();
+            const keepVaultFocus = data.cause === 'open' && isVaultTreeFocused();
             if (editorActive) {
                 if (keepVaultFocus) void prepareEditor();
                 else focusEditor();

@@ -67,7 +67,10 @@ pub(in crate::automation) async fn post_open(
         emit(
             &context,
             "app:set_mode",
-            serde_json::json!({ "mode": mode }),
+            crate::commands::app::set_mode_payload(
+                mode,
+                crate::commands::app::ModeChangeCause::Open,
+            ),
         )?;
     }
     ok()

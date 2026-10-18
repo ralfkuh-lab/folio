@@ -42,10 +42,6 @@ type Deps = {
 
 const ITEM_SELECTOR = 'li.section, li.node';
 const TYPEAHEAD_MS = 500;
-/** So lange wartet ein Fokusziel höchstens auf den Rebuild, der es zeigt. */
-const PENDING_MS = 3000;
-/** So lange gilt ein per Tastatur ausgelöstes Öffnen für `app:set_mode`. */
-const KEYBOARD_OPEN_MS = 2000;
 
 let deps: Deps | null = null;
 let ROOT: HTMLElement | null = null;
@@ -54,12 +50,9 @@ let focusKey: string | null = null;
 /** Ziel, das erst mit einem späteren Rebuild erscheint (umbenannter,
  *  eingefügter, duplizierter Eintrag). Eine Nutzer-Fokusbewegung verwirft es. */
 let pendingKey: string | null = null;
-let pendingUntil = 0;
 /** Gesetzt, solange wir selbst fokussieren: solche focusin-Ereignisse sind
  *  kein Nutzer-Fokuswechsel (Restore nach Rebuild, Pfeiltasten, Rücksprung). */
 let ownFocus = false;
-/** Bis wann ein Tastatur-Enter den Baumfokus gegen `app:set_mode` hält. */
-let keyboardOpenUntil = 0;
 /** Fokus lag zuletzt im Baum (überlebt das Entfernen der Zeile beim Rebuild). */
 let treeFocused = false;
 /** Wohin Escape zurückgibt: letztes fokussiertes Element außerhalb der Vault-Rail. */
@@ -220,7 +213,6 @@ export function syncVaultTreeA11y(): void {
     for (let i = 0; i < empties.length; i++) setAttr(empties[i], 'role', 'none');
 
     const active = document.activeElement as HTMLElement | null;
-    if (pendingKey !== null && Date.now() > pendingUntil) pendingKey = null;
     if (pendingKey !== null) {
         const arrived = exactItem(pendingKey);
         if (arrived) {
@@ -242,7 +234,8 @@ export function syncVaultTreeA11y(): void {
     if (lost) focusItem(target);
 }
 
-function focusItem(li: HTMLElement): void {
+/** Wandernder tabindex auf diese Zeile, ohne den DOM-Fokus zu bewegen. */
+function setRovingItem(li: HTMLElement): void {
     focusKey = keyOf(li);
     if (ROOT) {
         const prev = ROOT.querySelectorAll('[tabindex="0"]');
@@ -251,6 +244,10 @@ function focusItem(li: HTMLElement): void {
         }
     }
     li.setAttribute('tabindex', '0');
+}
+
+function focusItem(li: HTMLElement): void {
+    setRovingItem(li);
     ownFocus = true;
     try {
         li.focus({ preventScroll: true });
@@ -277,7 +274,6 @@ function focusByKey(key: string | null, pendingPath?: string): void {
     if (key === null) return;
     treeFocused = true;
     pendingKey = pendingPath ? key.slice(0, key.indexOf('\n')) + '\n' + pendingPath : null;
-    pendingUntil = Date.now() + PENDING_MS;
     focusKey = key;
     const target = currentItem();
     if (target) focusItem(target);
@@ -310,22 +306,17 @@ function activate(li: HTMLElement, newTab: boolean): void {
     }
     const path = li.getAttribute('data-path');
     if (!path) return;
-    keyboardOpenUntil = Date.now() + KEYBOARD_OPEN_MS;
     if (newTab) deps.openInNewTab(path);
     else deps.openDocument(path);
 }
 
-/** Für `app:set_mode` (editor/shell.ts): Hat gerade ein Tastatur-Enter im
- *  Baum das Dokument geöffnet und liegt der Fokus noch im Baum, soll der
- *  Moduswechsel ihn nicht in den Editor ziehen. Einmalig — der erste
- *  Moduswechsel verbraucht die Markierung; jede weitere Eingabe auch. */
-export function consumeVaultKeyboardOpen(): boolean {
-    const keep = Date.now() <= keyboardOpenUntil && !!ROOT
-        && ROOT.contains(document.activeElement);
-    keyboardOpenUntil = 0;
-    return keep;
+/** Hat der Vault-Baum gerade den DOM-Fokus? Für `app:set_mode` mit
+ *  `cause: "open"` (editor/shell.ts): dann bleibt der Fokus im Baum. Per Maus
+ *  bekommt der Baum keinen Fokus (siehe onMouseDown) — das gilt also genau
+ *  dann, wenn der Nutzer per Tastatur bzw. Strg+Umschalt+E dort ist. */
+export function isVaultTreeFocused(): boolean {
+    return !!ROOT && ROOT.contains(document.activeElement);
 }
-
 function typeAhead(ch: string, current: HTMLElement): void {
     const now = Date.now();
     typeBuffer = now - typeTime <= TYPEAHEAD_MS ? typeBuffer + ch.toLowerCase() : ch.toLowerCase();
@@ -368,10 +359,19 @@ function onKeydown(e: KeyboardEvent): void {
     if (!isItem(li)) return; // z. B. das Inline-Rename-Input
     if (e.altKey) return;
     const ctrl = e.ctrlKey || e.metaKey;
+    // Datei-Aktionen nur beim Erstanschlag: ein gedrückt gehaltenes Strg+D
+    // soll nicht fortlaufend kopieren. Der ignorierte Repeat zählt auch
+    // nicht als neue Eingabe — er darf das Fokusziel des Erstanschlags
+    // (z. B. die Kopie) nicht verwerfen.
+    if (e.repeat && isFileActionKey(e, ctrl)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+    }
     let handled = true;
     focusGen++;
     pendingKey = null;
-    if (ctrl && !e.shiftKey && handleClipboardKey(e.key.toLowerCase(), li, e.repeat)) {
+    if (ctrl && !e.shiftKey && handleClipboardKey(e.key.toLowerCase(), li)) {
         e.preventDefault();
         e.stopPropagation();
         return;
@@ -415,22 +415,20 @@ function onKeydown(e: KeyboardEvent): void {
         case 'Enter':
             activate(li, ctrl);
             break;
-        // Datei-Aktionen nur beim Erstanschlag: gedrückt gehalten soll
-        // nichts fortlaufend kopiert, gelöscht oder geöffnet werden.
         case 'F2':
             if (ctrl) { handled = false; break; }
-            if (!e.repeat) runOnItem('rename', li);
+            runOnItem('rename', li);
             break;
         case 'Delete':
             if (ctrl || e.shiftKey) { handled = false; break; }
-            if (!e.repeat) deleteItem(li);
+            deleteItem(li);
             break;
         case 'F10':
             if (!e.shiftKey || ctrl) { handled = false; break; }
-            if (!e.repeat) openMenuAt(li);
+            openMenuAt(li);
             break;
         case 'ContextMenu':
-            if (!e.repeat) openMenuAt(li);
+            openMenuAt(li);
             break;
         case 'Escape':
             // Zen und offene Kontextmenüs haben Vorrang (deren Capture-/
@@ -459,6 +457,15 @@ function onKeydown(e: KeyboardEvent): void {
     }
 }
 
+/** Tasten, die eine Datei-Aktion auslösen (K2) — im Gegensatz zur
+ *  Navigation, die beim Gedrückthalten wiederholen darf. */
+function isFileActionKey(e: KeyboardEvent, ctrl: boolean): boolean {
+    if (ctrl && !e.shiftKey) return ['c', 'x', 'v', 'd'].indexOf(e.key.toLowerCase()) >= 0;
+    if (ctrl) return false;
+    return e.key === 'F2' || e.key === 'ContextMenu'
+        || (e.key === 'Delete' && !e.shiftKey) || (e.key === 'F10' && e.shiftKey);
+}
+
 /** Abschnittszeilen haben keine Datei-Aktionen. */
 function runOnItem(act: string, li: HTMLElement): Promise<{ done: boolean; path?: string }> | null {
     if (!deps || isSection(li)) return null;
@@ -483,11 +490,11 @@ export function isKeyboardMenuJustOpened(): boolean {
 /** Strg+C/X/V/D. Einfügen auf einer Datei zielt auf ihren Elternordner —
  *  aber nur, wenn der ein Ordner im Baum ist (nicht bei Pin-Wurzel-Dateien
  *  und Recent-Einträgen, deren Elternordner nicht zum Vault gehört). */
-function handleClipboardKey(key: string, li: HTMLElement, repeat: boolean): boolean {
+function handleClipboardKey(key: string, li: HTMLElement): boolean {
     const act = key === 'c' ? 'clip-copy' : key === 'x' ? 'cut' : key === 'd' ? 'duplicate'
         : key === 'v' ? 'paste' : '';
     if (!act) return false;
-    if (repeat || isSection(li)) return true;
+    if (isSection(li)) return true;
     let target = li;
     if (act === 'paste' && li.getAttribute('data-kind') !== 'dir') {
         const parent = parentItem(li);
@@ -495,10 +502,7 @@ function handleClipboardKey(key: string, li: HTMLElement, repeat: boolean): bool
         target = parent;
     }
     const run = runOnItem(act, target);
-    if (!run) return true;
-    // Ein zugeklappter Zielordner würde den neuen Eintrag verbergen.
-    if (act === 'paste' && !isExpanded(target)) toggle(target);
-    followVaultAction(li, run);
+    if (run) followVaultAction(act, target, li, run);
     return true;
 }
 
@@ -514,16 +518,24 @@ function canAppearInTree(sectionKey: string, path: string): boolean {
     return !!parent && parent.getAttribute('data-kind') === 'dir';
 }
 
-/** Gemeinsame Ergebnisbehandlung für Einfügen/Duplizieren — per Kürzel wie
- *  über das Tastaturmenü: Fokus auf den neuen Eintrag, sobald ein Rebuild ihn
- *  zeigt. Hat der Nutzer den Fokus inzwischen selbst bewegt (Zeile, Editor,
- *  Feld), gewinnt er; liegt das Ergebnis außerhalb des Baums, bleibt der
+/** Gemeinsame Vor- und Nachbereitung einer per Tastatur ausgelösten Aktion —
+ *  Kürzel wie Tastaturmenü. Einfügen klappt einen geschlossenen Zielordner
+ *  auf (sonst bliebe der neue Eintrag verborgen). Für Einfügen/Duplizieren
+ *  geht der Fokus auf den neuen Eintrag, sobald ein Rebuild ihn zeigt. Ein
+ *  Nutzer-Fokuswechsel (Zeile, Editor, Feld) oder eine neue Eingabe im Baum
+ *  beendet das Warten; liegt das Ergebnis außerhalb des Baums, bleibt der
  *  Fokus auf der Quelle und es wartet nichts. */
 export function followVaultAction(
-    li: HTMLElement,
+    act: string,
+    target: HTMLElement,
+    origin: HTMLElement,
     run: Promise<{ done: boolean; path?: string }>,
 ): void {
-    const key = li.isConnected ? keyOf(li) : focusKey;
+    if (act === 'paste' && target.isConnected && isExpandable(target) && !isExpanded(target)) {
+        toggle(target);
+    }
+    if (act !== 'paste' && act !== 'duplicate') return;
+    const key = origin.isConnected ? keyOf(origin) : focusKey;
     const gen = focusGen;
     void run.then(function (res) {
         if (gen !== focusGen || key === null || !res.done || !res.path) return;
@@ -578,11 +590,7 @@ function onDocumentFocusIn(): void {
     pendingKey = null;
 }
 
-/** Jede neue Eingabe beendet die Tastatur-Öffnen-Markierung; ein Enter im
- *  Baum setzt sie danach (Bubble-Phase) neu. */
-function onDocumentInput(): void {
-    keyboardOpenUntil = 0;
-}
+
 
 function onFocusOut(e: FocusEvent): void {
     const to = e.relatedTarget as Node | null;
@@ -608,6 +616,23 @@ function onFocusOut(e: FocusEvent): void {
 function onPointerDown(): void {
     focusGen++;
     pendingKey = null;
+}
+
+/** Ein Mausklick setzt den wandernden tabindex, nimmt dem Rest der App aber
+ *  den Fokus nicht (Verhalten wie vor der Tastaturbedienung: Klick auf eine
+ *  Datei mit Default-Mode edit fokussiert den Editor). Hat der Baum den
+ *  Fokus schon, wandert er mit. Das Inline-Rename bleibt unberührt: Ein
+ *  Klick neben das offene Feld soll es wie bisher per Blur beenden. */
+function onMouseDown(e: MouseEvent): void {
+    const target = e.target as HTMLElement;
+    if (target.closest('input, textarea')) return;
+    const li = target.closest(ITEM_SELECTOR);
+    if (!isItem(li)) return;
+    const active = document.activeElement;
+    if (isRenameInput(active)) return;
+    e.preventDefault();
+    if (isItem(active)) focusItem(li);
+    else setRovingItem(li);
 }
 
 /** Pfad des aktiven Dokuments unterhalb einer Ordner-Pin-Wurzel: die
@@ -703,11 +728,10 @@ export function initVaultTreeKeyboard(root: HTMLElement, d: Deps): void {
     root.addEventListener('focusin', onFocusIn);
     root.addEventListener('focusout', onFocusOut);
     root.addEventListener('pointerdown', onPointerDown);
+    root.addEventListener('mousedown', onMouseDown);
     if (!documentListeners) {
         documentListeners = true;
         document.addEventListener('focusin', onDocumentFocusIn, true);
-        document.addEventListener('keydown', onDocumentInput, true);
-        document.addEventListener('pointerdown', onDocumentInput, true);
     }
     if (observer) observer.disconnect();
     if (typeof MutationObserver === 'function') {
