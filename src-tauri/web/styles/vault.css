@@ -79,6 +79,10 @@ body.vault-hidden .vault-region { display: none; }
 /* Vault-Tree (innerhalb .vault-region) */
 .vault-region ul.tree { list-style: none; margin: 0; padding: 4px 0 24px 0; }
 .vault-region ul { list-style: none; margin: 0; padding: 0; }
+/* `content.css` setzt global `ul:not(.toc) { margin: 0 0 16px }` (gleiche
+   Spezifität, später importiert) — ohne diese Regel stand unter dem letzten
+   Kind jedes aufgeklappten Ordners eine Leerzeile. */
+.vault-region ul.children { margin: 0; }
 .vault-region .section > .row {
   display: flex;
   align-items: center;
