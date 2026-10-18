@@ -1,6 +1,7 @@
 # Spec: Tastaturbedienung im Vault-Baum
 
-Stand: 2026-10-18 (beauftragt). Quelle: `docs/feature-ideen.md` („Tastaturnavigation
+Stand: 2026-10-18 — **umgesetzt** (K1–K3 inkl. zwei Review-Runden; Abweichungen
+im Abschnitt „Umsetzung“ am Ende). Quelle: `docs/feature-ideen.md` („Tastaturnavigation
 im Vault“) plus der Vermerk in `CLAUDE.md` (Vault-Dateioperationen V2): Kürzel
 für Ausschneiden/Einfügen gibt es nicht, „solange es keinen modellierten
 Vault-Fokus gibt“. Diese Spec liefert genau diesen Fokus.
@@ -131,3 +132,27 @@ unverändert.
 
 - Strg+D (Duplizieren) kollidiert nicht mit globalen Kürzeln, ist aber in
   manchen Programmen „Lesezeichen“ — unkritisch, nur im Baum aktiv.
+
+## Umsetzung (2026-10-18) — Abweichungen und Ergänzungen
+
+- `treeitem` ist das `li`, der Fokusring sitzt per CSS auf seiner Zeile.
+- **Mausklick verschiebt den DOM-Fokus nicht** in den Baum (nur der
+  wandernde `tabindex` folgt); hat der Baum den Fokus schon, wandert er mit.
+  Folge: Labels sind nicht per Maus markierbar.
+- **Enter behält den Fokus auch bei Moduswechsel:** `app:set_mode` trägt
+  `cause: "open" | "user"`; bei `open` und fokussiertem Baum stellt
+  `editor/shell.ts` den Editor nur bereit, statt ihn zu fokussieren.
+  History-Restore übergibt `cause: "open"` an `set_view_mode`.
+- Strg+V auf einer Datei fügt in deren Ordner ein, wenn er im Baum steht;
+  auf Pin-Wurzel-Dateien und „Zuletzt geöffnet“ nichts. Ein geschlossener
+  Zielordner wird aufgeklappt (Kürzel und Tastaturmenü gleich).
+- Liegt das Ergebnis von Duplizieren/Einfügen außerhalb des dargestellten
+  Baums (Kopie einer Pin-Wurzel oder eines Recent-Eintrags), bleibt der
+  Fokus auf der Quelle — kein automatisches Anpinnen.
+- Wartende Fokusziele haben keine Frist; sie enden beim Erreichen, bei einem
+  Nutzer-Fokuswechsel oder einer neuen Eingabe im Baum.
+- Key-Repeat löst keine Dateiaktion aus (Navigation wiederholt).
+- Escape ohne vorheriges Fokusziel im View-Mode: Blur. Tab im
+  Tastatur-Kontextmenü schließt es. Shift/Strg+Entf unbelegt.
+- Nebenbei behoben: Leerzeile unter dem letzten Kind eines Ordners
+  (`content.css` `ul:not(.toc)` gewann gegen `.vault-region ul`).

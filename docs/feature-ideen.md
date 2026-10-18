@@ -103,8 +103,9 @@ Diese Ideen kamen von 2–4 Quellen unabhängig. Das ist der beste Startpunkt.
   (Backend-Walk statt clientseitig — greift damit auch in collapsed Nodes),
   erweitert um „nur Markdown"-Toggle inkl. Ausblenden MD-loser Ordner.
   *(ursprünglich `[S]`, durch die Erweiterung `[M]`; Quelle: grok)*
-- **Tastaturnavigation im Vault** — Pfeile navigieren, Enter öffnet, Space klappt
-  auf/zu; Maus minimieren. `[S]` (agy)
+- **Tastaturnavigation im Vault** — ✅ **umgesetzt (2026-10-18)**, siehe
+  [`spec-vault-keyboard.md`](spec-vault-keyboard.md): Pfeile, Enter, Leertaste,
+  Type-ahead, Strg+Umschalt+E, F2/Entf/Strg+C/X/V/D, Kontextmenü per Tastatur. `[S]` (agy)
 - **Tab-Kontextmenü-Ausbau** — ✅ **umgesetzt (2026-07-22)**, siehe
   [`spec-tab-context-menu.md`](spec-tab-context-menu.md): „Alle anderen
   schließen", „Tabs rechts schließen", „Zuletzt geschlossenen Tab

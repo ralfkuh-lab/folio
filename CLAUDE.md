@@ -352,8 +352,8 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   **V2** ergänzt Duplizieren (`transfer.rs::duplicate_entry`, Namen
   `a copy.md` → `a copy 2.md`, Endung bleibt hinten) sowie Verschieben und
   Kopieren über ein Ausschneiden/Einfügen-Modell (`vault/clipboard.ts`,
-  Klasse `vault-cut`; **keine** Tastenkürzel, solange es keinen
-  modellierten Vault-Fokus gibt). `move_entry` **muss** sich
+  Klasse `vault-cut`; Tastenkürzel nur bei fokussiertem Baum, siehe
+  „Vault-Tastatur“). `move_entry` **muss** sich
   `perform_move` teilen — ein zweiter Migrationspfad wäre zwangsläufig
   unvollständig. Drei Fallen aus dem Kreuz-Review: (1) `copy_recursively`
   liefert einen `CopyReport`; ein nichtleeres `skipped_symlinks` ist eine
@@ -885,6 +885,28 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   ab (comrak rendert alle als Checkbox). Tastaturzugang bleibt bewusst
   erhalten (kein `tabindex="-1"`), dafür setzt die View ein `aria-label`
   aus dem Item-Text. E2E `55_task_checkboxes`.
+- **Vault-Tastatur** (Spec [`docs/spec-vault-keyboard.md`](docs/spec-vault-keyboard.md),
+  `vault/tree-keyboard.ts`): ARIA-Tree mit wanderndem `tabindex`; Rollen und
+  Attribute setzt das Frontend nach jedem Rebuild (Backend-HTML unverändert),
+  der Fokus wird danach per Abschnitt + `data-path` wiederhergestellt.
+  Strg+Umschalt+E / `view.focus_vault` springt in den Baum, Escape zurück.
+  Dateikürzel (F2, Entf, Strg+C/X/V/D, Umschalt+F10) hängen am `keydown`
+  von `#vault-tree` und laufen über `runVaultAction` — **dieselbe** Funktion
+  wie das Kontextmenü, Bedingungen aus `buildMenuEntries` /
+  `isVaultActionAvailable`; Key-Repeat löst keine Dateiaktion aus.
+  Drei Regeln, die das Zusammenspiel tragen: (1) **Mausklick setzt nur den
+  wandernden `tabindex`, nicht den DOM-Fokus** (`mousedown`-`preventDefault`
+  auf Zeilen; Rename-Input ausgenommen; Folge: Labels sind nicht per Maus
+  markierbar) — „Fokus im Baum“ heißt damit Tastaturbedienung.
+  (2) `app:set_mode` trägt `cause: "open" | "user"` (Dokumentwechsel vs.
+  ausdrücklicher Wechsel, fehlend = user; Zuordnung aller Emit-Stellen per
+  Rust-Test `set_mode_emit_sites_carry_expected_cause`); `editor/shell.ts`
+  fokussiert bei `open` den Editor **nicht**, wenn der Baum fokussiert ist —
+  so bleibt Enter im Baum, Mausklicks verhalten sich wie früher. Keine
+  Zeitmarken (die erste Fassung damit war fehleranfällig). (3) Wartende
+  Fokusziele (Duplizieren/Einfügen) haben keine Frist; sie enden beim
+  Erreichen, bei einem Nutzer-Fokuswechsel (`focusin` außerhalb) oder einer
+  neuen Eingabe im Baum. E2E `70_vault_keyboard`.
 - **Tabellen** (Spec [`docs/spec-tables.md`](docs/spec-tables.md)):
   *Formatieren* über den reinen Formatierer `web/shared/markdown-table.ts`
   (Prettier-Stil, beide Bundles: Monaco-Formatting-Provider für Markdown =
@@ -1366,7 +1388,7 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
 
 ## E2E-Test-Suite
 
-Vollständige UI-Coverage in `tests/e2e/` (69 Szenarien, Python +
+Vollständige UI-Coverage in `tests/e2e/` (70 Szenarien, Python +
 Pillow): Boot, View-/Edit-/Split-Mode, Theme, Vault, Find (inkl.
 Code-View), Workspace, Save-Roundtrip durch alle BOM/EOL-Kombis,
 Undo/Redo, Toolbar-Commands (Bold/Italic/Heading), Menü-Coverage
@@ -1382,7 +1404,8 @@ versteckte Vault-Einträge, Find-Bar-Regex/-Ersetzen,
 Vault-Dateioperationen (Ordner anlegen/umbenennen/löschen),
 Zen-Modus, Hex-Ansicht, Pfad-Identität (Symlink-Verzeichnis → ein Tab),
 Breiten-Toggle, Callouts (inkl. Kontrast über alle Themes), Smart-List,
-Tabellen (Formatieren; breite Tabellen, Overlay, Sortieren, Filtern)
+Tabellen (Formatieren; breite Tabellen, Overlay, Sortieren, Filtern),
+Vault-Tastaturbedienung
 sowie
 KI-Settings, KI-Übersetzung, KI-Theme-Autor, Export-KI-Draft und
 KI-Aktionen (Mock-Provider). Der englische Boot ist über
