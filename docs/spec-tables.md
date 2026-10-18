@@ -324,8 +324,9 @@ Jede Etappe einzeln lieferbar und per `.deb` testbar.
   Link-/Checkbox-Handler aus `initMarkdownView` hängen auch am Overlay, ein
   Link schließt es vor dem Routing. `document:closed` schließt es ebenfalls.
 - **Sortieren**: Kopfzellen mit interaktivem Inhalt (Link) behalten ihn und
-  bekommen einen eigenen kleinen Sortier-Button. Numerisch nur, wenn alle
-  Zellen dieselbe Einheit/Währung tragen.
+  bekommen einen eigenen kleinen Sortier-Button. Zahlen (Format-Locale) vor
+  Text, nach Einheit gruppiert (ohne Einheit zuerst), je Einheit nach Wert:
+  „3 Mio.“ und „500“ sind nicht vergleichbar, „1.250“ ist aber 1250.
 - **Suche**: Sortieren/Filtern zählen eine laufende View-Suche neu
   (`ViewFinder.refresh()`, ohne Sprung); Filtern hängt keine Zeilen um.
 - **Farben** der App-UI im Dokument über `--folio-ui-fg`/`--folio-ui-accent`
