@@ -12,6 +12,12 @@ import { installTauriMock, type TauriMockHandles } from '../helpers';
 import { seedDeCatalog } from '../helpers-i18n';
 import { fileNode, focused, item, press, treeHtml } from './tree-fixture';
 
+// editor/shell.ts (Punkt 2) zieht die Find-Bar nach; deren Nebenwirkung ist
+// hier egal, der Fokuspfad des Editor-Shells bleibt echt.
+vi.mock('../../app/ui/find-bar', () => ({
+    afterModeSwitch: vi.fn(), applyFindReplace: vi.fn(), openEditorFind: vi.fn(), setEditorFindTerm: vi.fn(),
+}));
+
 vi.mock('../../app/vault/context-menu', () => ({
     openContextMenu: vi.fn(),
     closeContextMenu: vi.fn(),
@@ -329,3 +335,113 @@ describe('K1 — Strg+Umschalt+E (focusVaultTree) und Escape', () => {
         expect(focused()).toBe('p.md');
     });
 });
+
+describe('Korrekturrunde 1 (Review Sol)', () => {
+    it('Sol 5: Escape-Rücksprungziel überlebt einen Rebuild', async () => {
+        tree.setVaultActive('/v/p.md');
+        const ed = document.getElementById('ed')!;
+        ed.focus();
+        await kb.focusVaultTree();
+        tree.renderVaultFromHtml(treeHtml());
+        await flush();
+        expect(focused()).toBe('p.md');
+        press('Escape');
+        expect(document.activeElement).toBe(ed);
+    });
+
+    it('Sol 1: Aufklappen per Strg+Umschalt+E respektiert einen Fokuswechsel nach außen', async () => {
+        let finish!: (p: any) => void;
+        tauri.invoke.mockImplementation((cmd: string) => cmd === 'vault_expand_paths'
+            ? new Promise((r) => { finish = r; }) : Promise.resolve(undefined));
+        tree.setVaultActive('/v/A/B/b1.md');
+        const running = kb.focusVaultTree();
+        const ed = document.getElementById('ed')!;
+        ed.focus();
+        finish({ html: treeHtml(true, fileNode('/v/A/B/b1.md', 'b1.md')) });
+        await running;
+        await flush();
+        expect(document.activeElement).toBe(ed);
+    });
+
+    it('Sol 1: Aufklappen respektiert eine neuere Zeile per Klick', async () => {
+        let finish!: (p: any) => void;
+        tauri.invoke.mockImplementation((cmd: string) => cmd === 'vault_expand_paths'
+            ? new Promise((r) => { finish = r; }) : Promise.resolve(undefined));
+        tree.setVaultActive('/v/A/B/b1.md');
+        const running = kb.focusVaultTree();
+        item('r.md').focus(); // Nutzer klickt eine andere Zeile
+        finish({ html: treeHtml(true, fileNode('/v/A/B/b1.md', 'b1.md')) });
+        await running;
+        await flush();
+        expect(focused()).toBe('r.md');
+    });
+
+    it('Sol 7: ohne aktives Dokument die erste Zeile, auch nach früherer Navigation', async () => {
+        item('a2.md').focus();
+        document.getElementById('ed')!.focus();
+        await kb.focusVaultTree();
+        expect(focused()).toBe('Angepinnt');
+    });
+
+    it('Sol 6: Leertaste direkt nach Type-ahead öffnet die Datei', () => {
+        item('Angepinnt').focus();
+        press('p');
+        expect(focused()).toBe('p.md');
+        press(' ');
+        expect(openDocument).toHaveBeenCalledWith('/v/p.md');
+    });
+
+    /** Der Mount-Pfad des Editor-Shells braucht mehr als ein paar Microtasks. */
+    async function settle(): Promise<void> {
+        await flush();
+        await new Promise((r) => setTimeout(r, 10));
+    }
+
+    async function installShell(ed: HTMLElement) {
+        (window as any).FolioEditor = {
+            mount: vi.fn().mockResolvedValue(undefined),
+            layout: vi.fn(),
+            focus: () => ed.focus(),
+        };
+        const shell = await import('../../app/editor/shell');
+        shell.initEditorShell({ getCleanText: () => '', requestSaveIfDirty: async () => true });
+        return (window as any).FolioEditor;
+    }
+
+    it('Sol 2: Enter behält den Baumfokus, auch wenn der Modus auf Edit wechselt', async () => {
+        const ed = document.getElementById('ed')!;
+        const editor = await installShell(ed);
+        openDocument.mockImplementation(() => { tauri.emitEvent('app:set_mode', { mode: 'edit' }); });
+        item('a1.md').focus();
+        press('Enter');
+        await settle();
+        expect(focused()).toBe('a1.md');
+        // Editor ist trotzdem bereitgestellt (mount), nur ohne Fokus.
+        expect(editor.mount).toHaveBeenCalled();
+    });
+
+    it('Sol 2: Mausklick auf eine Datei fokussiert bei Moduswechsel weiterhin den Editor', async () => {
+        const ed = document.getElementById('ed')!;
+        await installShell(ed);
+        item('a2.md').focus();
+        press('Enter'); // Markierung einer früheren Tastatur-Öffnung …
+        openDocument.mockImplementation(() => { tauri.emitEvent('app:set_mode', { mode: 'edit' }); });
+        const row = item('a1.md').querySelector('.row') as HTMLElement;
+        row.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true })); // … verfällt mit der Maus
+        row.click();
+        await settle();
+        expect(document.activeElement).toBe(ed);
+    });
+
+    it('Sol 2: späterer Moduswechsel per Kürzel fokussiert den Editor', async () => {
+        const ed = document.getElementById('ed')!;
+        await installShell(ed);
+        item('a1.md').focus();
+        press('Enter'); // ohne Moduswechsel
+        press('2', { ctrlKey: true }); // nächste Eingabe
+        tauri.emitEvent('app:set_mode', { mode: 'edit' });
+        await settle();
+        expect(document.activeElement).toBe(ed);
+    });
+});
+

@@ -343,3 +343,133 @@ describe('K3 — Kontextmenü per Tastatur', () => {
         expect(clipboard.getClip()).toEqual({ path: '/v/p.md', mode: 'copy' });
     });
 });
+
+describe('Korrekturrunde 1 (Review Sol)', () => {
+    function holdDuplicate(): (p: string) => void {
+        let finish: (p: string) => void = () => {};
+        const base = tauri.invoke.getMockImplementation()!;
+        tauri.invoke.mockImplementation((cmd: string, args: any) => cmd === 'duplicate_entry'
+            ? new Promise((r) => { finish = r; })
+            : base(cmd, args));
+        return (p: string) => finish(p);
+    }
+
+    it('Sol 1: Duplizieren stiehlt keinen Fokus, der inzwischen außerhalb des Baums liegt', async () => {
+        const finish = holdDuplicate();
+        item('a1.md').focus();
+        press('d', { ctrlKey: true });
+        const ed = document.getElementById('ed')!;
+        ed.focus();
+        finish('/v/A/a1 copy.md');
+        await flush();
+        tree.insertVaultChildren('/v/A', fileNode('/v/A/a1.md', 'a1.md') + fileNode('/v/A/a1 copy.md', 'a1 copy.md'));
+        await flush();
+        expect(document.activeElement).toBe(ed);
+    });
+
+    it('Sol 1: Duplizieren respektiert eine neuere Zeile (direkt fokussiert)', async () => {
+        const finish = holdDuplicate();
+        item('a1.md').focus();
+        press('d', { ctrlKey: true });
+        item('a2.md').focus();
+        finish('/v/A/a1 copy.md');
+        await flush();
+        tree.insertVaultChildren('/v/A', fileNode('/v/A/a1 copy.md', 'a1 copy.md') + fileNode('/v/A/a2.md', 'a2.md'));
+        await flush();
+        expect(focused()).toBe('a2.md');
+    });
+
+    it('Sol 1: ein Fokusziel wartet nicht unbegrenzt (Frist)', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        try {
+            item('a1.md').focus();
+            press('d', { ctrlKey: true });
+            await flush();
+            // Erster Rebuild ohne die Kopie, dann vergeht die Frist.
+            tree.renderVaultFromHtml(treeHtml());
+            await flush();
+            vi.setSystemTime(Date.now() + 5000);
+            tree.insertVaultChildren('/v/A', fileNode('/v/A/a1.md', 'a1.md') + fileNode('/v/A/a1 copy.md', 'a1 copy.md'));
+            await flush();
+            expect(focused()).toBe('a1.md');
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('Sol 3: Duplizieren über das Tastaturmenü setzt den Fokus auf den neuen Eintrag', async () => {
+        item('a1.md').focus();
+        press('F10', { shiftKey: true });
+        for (let i = 0; i < 25 && activeAct() !== 'duplicate'; i++) press('ArrowDown');
+        expect(activeAct()).toBe('duplicate');
+        press('Enter');
+        await flush();
+        expect(invoked('duplicate_entry')).toEqual([{ path: '/v/A/a1.md' }]);
+        tree.insertVaultChildren('/v/A', fileNode('/v/A/a1.md', 'a1.md') + fileNode('/v/A/a1 copy.md', 'a1 copy.md'));
+        await flush();
+        expect(focused()).toBe('a1 copy.md');
+    });
+
+    it('Sol 3: Einfügen über das Tastaturmenü setzt den Fokus auf den neuen Eintrag', async () => {
+        clipboard.setClip('/w/r.md', 'copy');
+        item('A').focus();
+        press('F10', { shiftKey: true });
+        for (let i = 0; i < 25 && activeAct() !== 'paste'; i++) press('ArrowDown');
+        expect(activeAct()).toBe('paste');
+        press('Enter');
+        await flush();
+        expect(invoked('copy_entry')).toEqual([{ src: '/w/r.md', destDir: '/v/A' }]);
+        tree.insertVaultChildren('/v/A', fileNode('/v/A/a1.md', 'a1.md') + fileNode('/v/A/r.md', 'r.md'));
+        await flush();
+        expect((document.activeElement as HTMLElement).getAttribute('data-path')).toBe('/v/A/r.md');
+    });
+
+    it('Sol 4: Kopie einer Pin-Wurzel-Datei: Fokus bleibt auf der Quelle, kein wartendes Ziel', async () => {
+        item('p.md').focus();
+        press('d', { ctrlKey: true });
+        await flush();
+        expect(invoked('duplicate_entry')).toEqual([{ path: '/v/p.md' }]);
+        tree.renderVaultFromHtml(treeHtml());
+        await flush();
+        expect(focused()).toBe('p.md');
+        // Taucht der Pfad später doch auf (z. B. selbst angepinnt), springt nichts.
+        tree.setVaultPinned(fileNode('/v/p.md', 'p.md') + fileNode('/v/p copy.md', 'p copy.md'));
+        await flush();
+        expect(focused()).toBe('p.md');
+    });
+
+    it('Sol 4: Kopie eines Recent-Eintrags: Fokus bleibt auf der Quelle', async () => {
+        item('r.md').focus();
+        press('d', { ctrlKey: true });
+        await flush();
+        tree.setVaultRecent(fileNode('/w/r.md', 'r.md') + fileNode('/w/r copy.md', 'r copy.md'));
+        await flush();
+        expect(focused()).toBe('r.md');
+    });
+
+    it('Sol 8: Datei-Aktionen nur beim Erstanschlag, Navigation wiederholt', async () => {
+        item('a1.md').focus();
+        press('d', { ctrlKey: true });
+        press('d', { ctrlKey: true, repeat: true });
+        press('c', { ctrlKey: true, repeat: true });
+        expect(clipboard.getClip()).toBeNull();
+        press('Delete', { repeat: true });
+        press('F2', { repeat: true });
+        press('F10', { shiftKey: true, repeat: true });
+        await flush();
+        expect(invoked('duplicate_entry')).toHaveLength(1);
+        const dialogs = await import('../../app/ui/dialogs');
+        expect(dialogs.showConfirmDialog).not.toHaveBeenCalled();
+        expect(document.querySelector('input.vault-rename-input')).toBeNull();
+        expect(menuOpen()).toBe(false);
+        clipboard.setClip('/w/r.md', 'copy');
+        item('A').focus();
+        press('v', { ctrlKey: true });
+        press('v', { ctrlKey: true, repeat: true });
+        await flush();
+        expect(invoked('copy_entry')).toHaveLength(1);
+        press('ArrowDown');
+        press('ArrowDown', { repeat: true });
+        expect(focused()).toBe('B');
+    });
+});
