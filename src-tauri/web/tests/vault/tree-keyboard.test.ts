@@ -517,16 +517,6 @@ describe('Korrekturrunde 2 — Mausklick und Fokus', () => {
         expect(down.defaultPrevented).toBe(false);
     });
 
-    it('Fokusring-Markierung kb-nav: Taste im Baum setzt sie, Mausklick entfernt sie', () => {
-        const tree = document.getElementById('vault-tree')!;
-        item('a1.md').focus();
-        item('a1.md').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
-        expect(tree.classList.contains('kb-nav')).toBe(true);
-        (item('p.md').querySelector('.row') as HTMLElement)
-            .dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-        expect(tree.classList.contains('kb-nav')).toBe(false);
-    });
-
     it('mousedown im Rename-Input wird nicht verhindert (Cursor setzen)', () => {
         const input = document.createElement('input');
         input.className = 'vault-rename-input';

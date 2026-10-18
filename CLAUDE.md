@@ -895,15 +895,13 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   wie das Kontextmenü, Bedingungen aus `buildMenuEntries` /
   `isVaultActionAvailable`; Key-Repeat löst keine Dateiaktion aus.
   Drei Regeln, die das Zusammenspiel tragen: (1) **Ein Mausklick in den
-  Baum setzt den Fokus dorthin** wie im Dateimanager — der Browser macht das
-  selbst (Zeilen sind per `tabindex` fokussierbar), bewusst ohne
-  programmatisches `focus()`, sonst zeigte die `:focus-visible`-Heuristik
-  nach Mausbedienung einen Fokusring (Benutzerentscheidung 2026-10-18; die
-  erste Fassung unterdrückte den Mausfokus, das widersprach der Erwartung).
-  Den Ring nach Tastaturbedienung zeigt zusätzlich die Klasse `kb-nav` am
-  `#vault-tree` (bei jeder Taste im Baum und bei Strg+Umschalt+E gesetzt,
-  beim Mausklick entfernt): WebKit lässt `:focus-visible` nach einem
-  Mausklick auch dann aus, wenn der Fokus danach per Pfeiltaste wandert.
+  Baum setzt den Fokus dorthin** wie im Dateimanager (der Browser fokussiert
+  die per `tabindex` fokussierbare Zeile selbst), und der **Fokusring ist
+  sichtbar, solange der Baum den Fokus hat** — bewusst `li:focus`, nicht
+  `:focus-visible`: im Dateibaum zeigt der Ring an, dass Tastatureingaben
+  hier landen (Benutzerentscheidung 2026-10-18; zwei frühere Fassungen —
+  Mausfokus unterdrückt bzw. Ring nur nach Tastatur — widersprachen der
+  Erwartung).
   (2) `app:set_mode` trägt `cause: "open" | "user"` (Dokumentwechsel vs.
   ausdrücklicher Wechsel, fehlend = user; Zuordnung aller Emit-Stellen per
   Rust-Test `set_mode_emit_sites_carry_expected_cause`); `editor/shell.ts`

@@ -136,8 +136,9 @@ unverändert.
 ## Umsetzung (2026-10-18) — Abweichungen und Ergänzungen
 
 - `treeitem` ist das `li`, der Fokusring sitzt per CSS auf seiner Zeile.
-- **Mausklick setzt den Fokus in den Baum** (wie im Dateimanager; der Browser
-  fokussiert die Zeile selbst, ohne Fokusring). Die erste Fassung unterdrückte
+- **Mausklick setzt den Fokus in den Baum** (wie im Dateimanager), und der
+  Fokusring ist sichtbar, solange der Baum den Fokus hat (`:focus` statt
+  `:focus-visible`; Grundsatz 2 der Spec entsprechend angepasst). Die erste Fassung unterdrückte
   das; Benutzerentscheidung 2026-10-18: Klick in den Vault = Fokus im Vault.
 - **Enter und Klick behalten den Fokus auch bei Moduswechsel:** `app:set_mode` trägt
   `cause: "open" | "user"`; bei `open` und fokussiertem Baum stellt

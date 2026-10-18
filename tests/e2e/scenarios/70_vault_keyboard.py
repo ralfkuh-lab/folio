@@ -303,7 +303,7 @@ def run(ctx):
             ctx.expect(bool(_poll(lambda: _focused(ctx).startswith("outside:"))),
                        f"Escape: Fokus noch im Baum ({_focused(ctx)!r})")
 
-        with ctx.step("Mausklick auf eine andere Datei: Fokus im Baum, Ring erst nach Taste (View/Edit/Split)"):
+        with ctx.step("Mausklick auf eine andere Datei: Fokus im Baum, Ring sichtbar (View/Edit/Split)"):
             # Benutzerentscheidung 2026-10-18: Klick in den Vault = Fokus im
             # Vault (wie im Dateimanager). Der Webview beginnt unter der
             # GTK-Menüleiste, daher der Versatz outerHeight − innerHeight.
@@ -326,7 +326,8 @@ def run(ctx):
                 ctx.expect(bool(_poll(lambda: _active_tab_path(ctx) == target)),
                            f"[{mode}] Klick hat {target} nicht geöffnet")
                 _wait_focus(ctx, target, f"Mausklick ({mode})")
-                ctx.expect(_evalv(ctx, ring_js) is False, f"[{mode}] Fokusring nach Mausklick")
+                ctx.expect(bool(_poll(lambda: _evalv(ctx, ring_js) is True)),
+                           f"[{mode}] kein Fokusring nach Mausklick")
                 _key("Down")
                 ctx.expect(bool(_poll(lambda: _focused(ctx) != target)), f"[{mode}] ↓ nach Klick ohne Wirkung")
                 ctx.expect(bool(_poll(lambda: _evalv(ctx, ring_js) is True)),
