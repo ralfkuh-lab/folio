@@ -1219,7 +1219,10 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
 - Backend-Module liegen unter `src-tauri/src/ai/`: `catalog.rs` lädt den
   eingebetteten models.dev-Snapshot bzw. den explizit aktualisierten Cache,
   `config.rs` verwaltet Provider/Whitelists/Defaults, `auth.rs` ausschließlich
-  Schlüssel und `client.rs` den OpenAI-kompatiblen Chat-Call.
+  Schlüssel und `client.rs` den OpenAI-kompatiblen Chat-Call. Jeder Call trägt
+  `User-Agent: folio/<version>` und eine eigene `x-opencode-session`-ID —
+  OpenCode Go lehnt Anfragen ohne Session-Header seit 2026-10 mit HTTP 400
+  (`MissingSessionID`) ab; andere Anbieter ignorieren ihn.
 - Persistenz ist bewusst getrennt und folgt opencode: `ai.json` enthält
   Provider-/Modell-Konfiguration und Übersetzungshistorie, `auth.json`
   ausschließlich API-Keys (0600), `ai-catalog.json` den optionalen

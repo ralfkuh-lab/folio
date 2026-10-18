@@ -1,16 +1,25 @@
 //! OpenAI-kompatibler Chat-Client mit SSE-Streaming und JSON-Fallback.
 
 use futures_util::StreamExt;
-use reqwest::{Client, StatusCode, Url};
+use reqwest::{header, Client, RequestBuilder, StatusCode, Url};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::time::{Duration, Instant};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
 const CHAT_TIMEOUT: Duration = Duration::from_secs(300);
 const STREAM_CHUNK_TIMEOUT: Duration = Duration::from_secs(60);
 const CANCEL_POLL_INTERVAL: Duration = Duration::from_millis(250);
 const MAX_PROVIDER_ERROR_CHARS: usize = 300;
+const USER_AGENT: &str = concat!("folio/", env!("CARGO_PKG_VERSION"));
+// OpenCode Go lehnt Anfragen ohne diesen Header mit HTTP 400 ab
+// (https://opencode.ai/docs/go/#where-can-i-use-it: eigener User-Agent plus
+// stabile Session-ID je Unterhaltung). Jeder Folio-Aufruf ist eine eigene
+// Unterhaltung; andere Anbieter ignorieren den Header.
+const SESSION_HEADER: &str = "x-opencode-session";
+
+static SESSION_SEQ: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChatMessage {
@@ -133,6 +142,21 @@ impl SseDecoder {
     }
 }
 
+/// Eindeutig je Aufruf (Zeit + Prozess + Zähler), ohne Zufallsquelle.
+fn new_session_id() -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let seq = SESSION_SEQ.fetch_add(1, Ordering::Relaxed);
+    format!("folio-{nanos:x}-{:x}-{seq:x}", std::process::id())
+}
+
+fn with_client_headers(request: RequestBuilder) -> RequestBuilder {
+    request
+        .header(header::USER_AGENT, USER_AGENT)
+        .header(SESSION_HEADER, new_session_id())
+}
+
 pub async fn chat(
     http: &Client,
     base_url: &str,
@@ -142,8 +166,7 @@ pub async fn chat(
 ) -> Result<String, ChatError> {
     let endpoint = chat_url(base_url)?;
     let api_key = api_key.map(str::trim).filter(|key| !key.is_empty());
-    let mut request = http
-        .post(endpoint)
+    let mut request = with_client_headers(http.post(endpoint))
         .timeout(CHAT_TIMEOUT)
         .json(&ChatRequest {
             model,
@@ -194,7 +217,7 @@ pub async fn chat_stream_cancellable(
 ) -> Result<String, ChatError> {
     let endpoint = chat_url(base_url)?;
     let api_key = api_key.map(str::trim).filter(|key| !key.is_empty());
-    let mut request = http.post(endpoint).json(&ChatRequest {
+    let mut request = with_client_headers(http.post(endpoint)).json(&ChatRequest {
         model,
         messages,
         stream: true,
@@ -504,6 +527,58 @@ mod tests {
 
         assert_eq!("Fallback", result);
         assert_eq!(vec!["Fallback"], deltas);
+    }
+
+    #[tokio::test]
+    async fn requests_carry_user_agent_and_opencode_session() {
+        use axum::{http::HeaderMap, routing::post, Json, Router};
+        use std::sync::{Arc, Mutex};
+
+        let seen: Arc<Mutex<Vec<(String, String)>>> = Arc::default();
+        let sink = seen.clone();
+        let app = Router::new().route(
+            "/v1/chat/completions",
+            post(move |headers: HeaderMap| {
+                let sink = sink.clone();
+                async move {
+                    let get = |name: &str| {
+                        headers
+                            .get(name)
+                            .and_then(|v| v.to_str().ok())
+                            .unwrap_or_default()
+                            .to_string()
+                    };
+                    sink.lock()
+                        .unwrap()
+                        .push((get("user-agent"), get("x-opencode-session")));
+                    Json(serde_json::json!({
+                        "choices": [{"message": {"content": "ok"}}]
+                    }))
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let base = format!("http://{address}/v1");
+        let messages = [ChatMessage::user("hi")];
+        chat(&Client::new(), &base, None, "m", &messages)
+            .await
+            .unwrap();
+        chat_stream(&Client::new(), &base, None, "m", &messages, |_| {})
+            .await
+            .unwrap();
+        server.abort();
+
+        let seen = seen.lock().unwrap();
+        assert_eq!(2, seen.len());
+        for (agent, session) in seen.iter() {
+            assert_eq!(USER_AGENT, agent);
+            assert!(session.starts_with("folio-"), "{session}");
+        }
+        assert_ne!(seen[0].1, seen[1].1);
     }
 
     #[tokio::test]
