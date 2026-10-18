@@ -459,54 +459,51 @@ describe('Korrekturrunde 1 (Review Sol)', () => {
         expect(document.activeElement).toBe(ed);
     });
 
-    it('R2: Mausklick auf eine Datei bei Fokus im Editor + cause:open → Editor fokussiert', async () => {
+    // Benutzerentscheidung 2026-10-18: Ein Klick in den Baum setzt den Fokus
+    // dorthin (wie im Dateimanager). Der Browser verschiebt ihn beim
+    // mousedown selbst; jsdom tut das nicht, daher hier `focus()` von Hand.
+    function nativeClick(li: HTMLElement): void {
+        const row = li.querySelector('.row') as HTMLElement;
+        row.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }));
+        const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+        row.dispatchEvent(down);
+        if (!down.defaultPrevented) li.focus();
+        row.click();
+    }
+
+    it('Mausklick auf eine Datei bei Fokus im Editor + cause:open → Fokus bleibt im Baum', async () => {
         const ed = document.getElementById('ed')!;
         await installShell(ed);
         ed.focus();
         openDocument.mockImplementation(() => {
             tauri.emitEvent('app:set_mode', { mode: 'edit', cause: 'open' });
         });
-        const row = item('a1.md').querySelector('.row') as HTMLElement;
-        row.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }));
-        row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-        row.click();
+        nativeClick(item('a1.md'));
         await settle();
         expect(openDocument).toHaveBeenCalledWith('/v/A/a1.md');
-        expect(document.activeElement).toBe(ed);
+        expect(focused()).toBe('a1.md');
     });
 
-    it('R2: Mausklick aus der View (body) + cause:open → Editor fokussiert wie vor dem Feature', async () => {
+    it('Mausklick, danach ausdrücklicher Moduswechsel (cause:user) → Editor fokussiert', async () => {
         const ed = document.getElementById('ed')!;
         await installShell(ed);
-        openDocument.mockImplementation(() => {
-            tauri.emitEvent('app:set_mode', { mode: 'edit', cause: 'open' });
-        });
-        const row = item('a1.md').querySelector('.row') as HTMLElement;
-        row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-        row.click();
+        nativeClick(item('a1.md'));
+        tauri.emitEvent('app:set_mode', { mode: 'edit', cause: 'user' });
         await settle();
         expect(document.activeElement).toBe(ed);
     });
 });
 
 describe('Korrekturrunde 2 — Mausklick und Fokus', () => {
-    it('Mausklick setzt den wandernden tabindex, ohne den DOM-Fokus zu bewegen', () => {
+    it('Mausklick lässt den Browser fokussieren (kein preventDefault) und setzt den wandernden tabindex', () => {
         const ed = document.getElementById('ed')!;
         ed.focus();
         const row = item('a2.md').querySelector('.row') as HTMLElement;
         const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
         row.dispatchEvent(down);
-        expect(down.defaultPrevented).toBe(true);
-        expect(document.activeElement).toBe(ed);
+        expect(down.defaultPrevented).toBe(false);
         expect(item('a2.md').getAttribute('tabindex')).toBe('0');
         expect(document.querySelectorAll('#vault-tree [tabindex="0"]').length).toBe(1);
-    });
-
-    it('Klick bei Fokus im Baum: der Fokus wandert mit', () => {
-        item('a1.md').focus();
-        const row = item('p.md').querySelector('.row') as HTMLElement;
-        row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-        expect(focused()).toBe('p.md');
     });
 
     it('Klick neben ein offenes Inline-Rename: mousedown bleibt unverhindert (Blur beendet es)', () => {

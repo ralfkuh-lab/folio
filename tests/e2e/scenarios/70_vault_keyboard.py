@@ -303,6 +303,27 @@ def run(ctx):
             ctx.expect(bool(_poll(lambda: _focused(ctx).startswith("outside:"))),
                        f"Escape: Fokus noch im Baum ({_focused(ctx)!r})")
 
+        with ctx.step("Mausklick in den Baum setzt den Fokus dorthin, ohne Fokusring"):
+            # Benutzerentscheidung 2026-10-18: wie im Dateimanager. Der
+            # Webview beginnt unter der GTK-Menüleiste, daher der Versatz
+            # outerHeight − innerHeight.
+            geo = _evalv(
+                ctx,
+                "(() => { const li = document.querySelector('#vault-tree li.node[data-path=\"%s\"]');"
+                " const r = li.querySelector(':scope > .row').getBoundingClientRect();"
+                " return {x: window.screenX + r.left + 30,"
+                " y: window.screenY + (window.outerHeight - window.innerHeight) + r.top + r.height / 2}; })()"
+                % zeta,
+            )
+            # zeta.md ist das aktive Dokument: der Klick öffnet nichts Neues.
+            _xdotool("mousemove", str(int(geo["x"])), str(int(geo["y"])), "click", "1")
+            _wait_focus(ctx, zeta, "Mausklick")
+            ring = _evalv(ctx, "document.activeElement.matches(':focus-visible')")
+            ctx.expect(ring is False, "Mausklick zeigt einen Fokusring")
+            _key("Escape")
+            ctx.expect(bool(_poll(lambda: _focused(ctx).startswith("outside:"))),
+                       f"Escape nach Mausklick: Fokus noch im Baum ({_focused(ctx)!r})")
+
         with ctx.step("Zen-Modus: Strg+Umschalt+E ohne Wirkung"):
             ctx.api.menu_click("view.zen")
             ctx.expect(bool(_poll(lambda: _evalv(

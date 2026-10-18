@@ -311,9 +311,9 @@ function activate(li: HTMLElement, newTab: boolean): void {
 }
 
 /** Hat der Vault-Baum gerade den DOM-Fokus? Für `app:set_mode` mit
- *  `cause: "open"` (editor/shell.ts): dann bleibt der Fokus im Baum. Per Maus
- *  bekommt der Baum keinen Fokus (siehe onMouseDown) — das gilt also genau
- *  dann, wenn der Nutzer per Tastatur bzw. Strg+Umschalt+E dort ist. */
+ *  `cause: "open"` (editor/shell.ts): dann bleibt der Fokus im Baum — ob
+ *  per Klick, Tastatur oder Strg+Umschalt+E dorthin gelangt (wie im
+ *  Dateimanager; zum Tippen klickt man ins Dokument). */
 export function isVaultTreeFocused(): boolean {
     return !!ROOT && ROOT.contains(document.activeElement);
 }
@@ -628,11 +628,12 @@ function onMouseDown(e: MouseEvent): void {
     if (target.closest('input, textarea')) return;
     const li = target.closest(ITEM_SELECTOR);
     if (!isItem(li)) return;
-    const active = document.activeElement;
-    if (isRenameInput(active)) return;
-    e.preventDefault();
-    if (isItem(active)) focusItem(li);
-    else setRovingItem(li);
+    if (isRenameInput(document.activeElement)) return;
+    // Wie im Dateimanager: Der Klick setzt den Fokus in den Baum. Das macht
+    // der Browser selbst (die Zeile ist per tabindex fokussierbar) — kein
+    // programmatisches focus(), damit nach Mausbedienung kein Fokusring
+    // erscheint (:focus-visible-Heuristik). Hier nur der wandernde tabindex.
+    setRovingItem(li);
 }
 
 /** Pfad des aktiven Dokuments unterhalb einer Ordner-Pin-Wurzel: die

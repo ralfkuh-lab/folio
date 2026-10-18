@@ -136,10 +136,10 @@ unverändert.
 ## Umsetzung (2026-10-18) — Abweichungen und Ergänzungen
 
 - `treeitem` ist das `li`, der Fokusring sitzt per CSS auf seiner Zeile.
-- **Mausklick verschiebt den DOM-Fokus nicht** in den Baum (nur der
-  wandernde `tabindex` folgt); hat der Baum den Fokus schon, wandert er mit.
-  Folge: Labels sind nicht per Maus markierbar.
-- **Enter behält den Fokus auch bei Moduswechsel:** `app:set_mode` trägt
+- **Mausklick setzt den Fokus in den Baum** (wie im Dateimanager; der Browser
+  fokussiert die Zeile selbst, ohne Fokusring). Die erste Fassung unterdrückte
+  das; Benutzerentscheidung 2026-10-18: Klick in den Vault = Fokus im Vault.
+- **Enter und Klick behalten den Fokus auch bei Moduswechsel:** `app:set_mode` trägt
   `cause: "open" | "user"`; bei `open` und fokussiertem Baum stellt
   `editor/shell.ts` den Editor nur bereit, statt ihn zu fokussieren.
   History-Restore übergibt `cause: "open"` an `set_view_mode`.

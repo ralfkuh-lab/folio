@@ -894,15 +894,18 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   von `#vault-tree` und laufen über `runVaultAction` — **dieselbe** Funktion
   wie das Kontextmenü, Bedingungen aus `buildMenuEntries` /
   `isVaultActionAvailable`; Key-Repeat löst keine Dateiaktion aus.
-  Drei Regeln, die das Zusammenspiel tragen: (1) **Mausklick setzt nur den
-  wandernden `tabindex`, nicht den DOM-Fokus** (`mousedown`-`preventDefault`
-  auf Zeilen; Rename-Input ausgenommen; Folge: Labels sind nicht per Maus
-  markierbar) — „Fokus im Baum“ heißt damit Tastaturbedienung.
+  Drei Regeln, die das Zusammenspiel tragen: (1) **Ein Mausklick in den
+  Baum setzt den Fokus dorthin** wie im Dateimanager — der Browser macht das
+  selbst (Zeilen sind per `tabindex` fokussierbar), bewusst ohne
+  programmatisches `focus()`, sonst zeigte die `:focus-visible`-Heuristik
+  nach Mausbedienung einen Fokusring (Benutzerentscheidung 2026-10-18; die
+  erste Fassung unterdrückte den Mausfokus, das widersprach der Erwartung).
   (2) `app:set_mode` trägt `cause: "open" | "user"` (Dokumentwechsel vs.
   ausdrücklicher Wechsel, fehlend = user; Zuordnung aller Emit-Stellen per
   Rust-Test `set_mode_emit_sites_carry_expected_cause`); `editor/shell.ts`
   fokussiert bei `open` den Editor **nicht**, wenn der Baum fokussiert ist —
-  so bleibt Enter im Baum, Mausklicks verhalten sich wie früher. Keine
+  so bleiben Enter und Klick im Baum; zum Tippen klickt man ins Dokument,
+  ein ausdrücklicher Moduswechsel (`user`) fokussiert den Editor. Keine
   Zeitmarken (die erste Fassung damit war fehleranfällig). (3) Wartende
   Fokusziele (Duplizieren/Einfügen) haben keine Frist; sie enden beim
   Erreichen, bei einem Nutzer-Fokuswechsel (`focusin` außerhalb) oder einer
