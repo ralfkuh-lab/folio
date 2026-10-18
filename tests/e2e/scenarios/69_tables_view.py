@@ -507,6 +507,36 @@ def run(ctx):
                 )
             _expect_overlay(ctx, open=False, placeholders=0, viewTables=3)
 
+        with ctx.step("Link im Overlay: App-Routing statt WebView-Navigation"):
+            # Korrekturrunde 1, V1: der Klick laeuft ueber initMarkdownView —
+            # Overlay zu, Seite bleibt index.html, Anker-Sprung in der View.
+            _evalv(ctx, OPEN_OVERLAY_JS)
+            _expect_overlay(ctx, open=True)
+            href_before = _evalv(ctx, "location.href")
+            rect = _evalv(
+                ctx,
+                "(() => { const td = document.querySelector('#table-overlay-body tbody td');"
+                " const a = document.createElement('a'); a.id = 't69-link';"
+                " a.href = '#tabellen-in-der-view'; a.textContent = 'Sprung'; td.prepend(a);"
+                " const r = a.getBoundingClientRect();"
+                " return {x: r.left + r.width / 2, y: r.top + r.height / 2,"
+                # Der Webview beginnt unter der nativen GTK-Menüleiste.
+                " sx: window.screenX, sy: window.screenY + window.outerHeight - window.innerHeight}; })()",
+            )
+            if real_input:
+                _xdotool("mousemove", str(int(rect["sx"] + rect["x"])),
+                         str(int(rect["sy"] + rect["y"])), "click", "1")
+                _xdotool("mousemove", "5", "795")
+            else:
+                ctx.api.eval("document.getElementById('t69-link').click()")
+            _expect_overlay(ctx, open=False, placeholders=0, viewTables=3)
+            ctx.expect(_evalv(ctx, "location.href") == href_before, "WebView ist navigiert")
+            # Der Anker-Sprung laeuft ueber das Backend und rendert die View neu
+            # (der eingefuegte Link verschwindet dabei) — die Tabellen stehen.
+            errors = ctx.api.console_errors().get("errors") or []
+            ctx.expect(not errors, f"Console-Fehler: {errors!r}")
+            ctx.api.eval("(() => { const a = document.getElementById('t69-link'); if (a) a.remove(); })()")
+
         with ctx.step("Split: Live-Preview-Re-Render schliesst ein offenes Overlay"):
             ctx.api.mode("split")
             ctx.expect_event("editor.ready", timeout_ms=10000)

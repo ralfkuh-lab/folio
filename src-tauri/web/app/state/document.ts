@@ -782,6 +782,9 @@ export function initDocumentState(): void {
         invalidatePreview({ resetDebounce: true });
         invalidateHtmlLive();
         invalidateCodeLive();
+        // Vor dem Leeren der View: ein offenes Overlay hielte sonst eine
+        // Tabelle eines geschlossenen Dokuments modal fest.
+        closeTableOverlay();
         forgetTableState(currentPath);
         currentPath = null;
         try { (window as any).__folioCurrentPath = null; } catch { /* ignore */ }
