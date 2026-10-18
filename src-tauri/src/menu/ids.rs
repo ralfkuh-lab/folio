@@ -33,6 +33,7 @@ pub(super) const VIEW_MINIMAP: &str = "view.minimap";
 pub(super) const VIEW_CONTENT_WIDTH: &str = "view.content_width";
 pub(super) const VIEW_FULLSCREEN: &str = "view.fullscreen";
 pub(super) const VIEW_ZEN: &str = "view.zen";
+pub(super) const VIEW_FOCUS_VAULT: &str = "view.focus_vault";
 pub(super) const HELP_CHEATSHEET: &str = "help.cheatsheet";
 /// Linux-only: richtet das Folio-Icon im Datei-Manager fuer `.md` ein
 /// (fuehrt `install-folio-icons.sh` aus). Siehe docs/linux-md-icon.md.

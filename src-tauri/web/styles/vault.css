@@ -103,6 +103,15 @@ body.vault-hidden .vault-region { display: none; }
   font-weight: 600;
   box-shadow: inset 2px 0 0 var(--rail-accent);
 }
+/* Tastaturfokus (Spec vault-keyboard K1): treeitem ist das li, der Ring
+   sitzt nur auf dessen eigener Zeile — am li selbst umschlösse er den
+   ganzen Unterbaum. Bewusst nur ein Umriss: das aktive Dokument ist Fläche
+   + Balken, so bleiben beide Markierungen unterscheidbar und kombinierbar. */
+.vault-region #vault-tree li:focus { outline: none; }
+.vault-region #vault-tree li:focus-visible > .row {
+  outline: 2px solid var(--rail-accent);
+  outline-offset: -2px;
+}
 .vault-region .caret {
   display: inline-block;
   width: 14px;

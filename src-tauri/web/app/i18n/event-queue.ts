@@ -76,6 +76,7 @@ export const BOOT_EVENT_NAMES: readonly string[] = [
     'menu:view_rail_right',
     'menu:view_fullscreen',
     'menu:view_zen',
+    'menu:view_focus_vault',
     'menu:help_cheatsheet',
     'menu:about',
     // AI

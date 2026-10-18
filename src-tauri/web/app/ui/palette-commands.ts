@@ -146,6 +146,14 @@ export const PALETTE_COMMANDS: readonly PaletteCommand[] = [
         enabled: () => true,
     },
     {
+        id: 'view.focus_vault',
+        label: () => t('menu.view.focusVault'),
+        menuAction: 'view.focus_vault',
+        shortcut: 'Ctrl+Shift+E',
+        // Im Zen-Modus ist die Rail ausgeblendet, das Kürzel ohne Wirkung.
+        enabled: () => !bodyHas('zen-mode'),
+    },
+    {
         id: 'edit.format_tables',
         label: () => t('menu.edit.formatTables'),
         menuAction: 'edit.format_tables',

@@ -260,6 +260,16 @@ export function initToolbarActions(): void {
             safeInvoke('menu_dispatch', { id: 'file.save_as' }, 'menu_dispatch file.save_as');
             return;
         }
+        // Strg+Umschalt+E: Vault-Baum fokussieren (wie „Explorer" in VS
+        // Code). Gleicher menu_dispatch-Pfad wie Menü und Palette; kein
+        // Toggle, Wiederholung waere nur ein erneutes Fokussieren.
+        if (shift && k === 'e') {
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.repeat) return;
+            safeInvoke('menu_dispatch', { id: 'view.focus_vault' }, 'menu_dispatch view.focus_vault');
+            return;
+        }
         // Strg+P: Command Palette (Toggle). capture:true, damit Monaco
         // den Chord nicht frisst — gleiches Muster wie Strg+S/W.
         if (!shift && k === 'p') {
