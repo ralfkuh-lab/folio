@@ -332,6 +332,24 @@ def run(ctx):
                 ctx.expect(bool(_poll(lambda: _focused(ctx) != target)), f"[{mode}] ↓ nach Klick ohne Wirkung")
                 ctx.expect(bool(_poll(lambda: _evalv(ctx, ring_js) is True)),
                            f"[{mode}] kein Fokusring nach ↓ (nach Mausklick)")
+            # Doppelklick: Datei offen, Fokus ins Dokument (Editor bzw. View),
+            # nichts wird extern geöffnet.
+            ctx.api.mode("edit")
+            click_row(zeta)
+            _wait_focus(ctx, zeta, "Klick auf zeta (edit)")
+            geo = _evalv(
+                ctx,
+                "(() => { const li = document.querySelector('#vault-tree li.node[data-path=\\\"%s\\\"]');"
+                " const r = li.querySelector(':scope > .row').getBoundingClientRect();"
+                " return {x: window.screenX + r.left + 30,"
+                " y: window.screenY + (window.outerHeight - window.innerHeight) + r.top + r.height / 2}; })()"
+                % alpha,
+            )
+            _xdotool("mousemove", str(int(geo["x"])), str(int(geo["y"])), "click", "--repeat", "2", "--delay", "120", "1")
+            ctx.expect(bool(_poll(lambda: _active_tab_path(ctx) == alpha)), "Doppelklick hat alpha.md nicht geöffnet")
+            ctx.expect(bool(_poll(lambda: _evalv(
+                ctx, "!!document.activeElement && !!document.activeElement.closest('#editor-mount')") is True)),
+                f"Doppelklick (edit): Fokus nicht im Editor ({_focused(ctx)!r})")
             ctx.api.mode("view")
             click_row(zeta)
             _wait_focus(ctx, zeta, "Mausklick zurück auf zeta")

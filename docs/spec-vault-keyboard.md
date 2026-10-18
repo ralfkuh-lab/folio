@@ -157,3 +157,6 @@ unverändert.
   Tastatur-Kontextmenü schließt es. Shift/Strg+Entf unbelegt.
 - Nebenbei behoben: Leerzeile unter dem letzten Kind eines Ordners
   (`content.css` `ul:not(.toc)` gewann gegen `.vault-region ul`).
+- **Doppelklick auf eine Datei** öffnet nicht mehr extern, sondern setzt den
+  Fokus ins Dokument (wie in VS Code); extern öffnen/ausführen nur über das
+  Kontextmenü (Benutzerentscheidung 2026-10-18).

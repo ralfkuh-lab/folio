@@ -120,40 +120,72 @@ describe('vault/tree — toggleDir via click', () => {
     });
 });
 
-describe('vault/tree — Doppelklick → externe Aktion', () => {
-    it('dblclick auf eine nicht-ausführbare Datei ruft runOrOpenFile(path, false)', async () => {
+describe('vault/tree — Doppelklick: Datei offen, Fokus ins Dokument', () => {
+    // Benutzerentscheidung 2026-10-18: Ein Doppelklick öffnet nicht mehr
+    // extern (das passierte nur zufällig, weil der erste Klick den Baum
+    // neu aufbaute), sondern setzt den Fokus ins Dokument. Erkannt am Pfad.
+    function click(path: string): void {
+        const row = document.querySelector(`.node[data-path="${path}"] .row`) as HTMLElement;
+        row.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0 }));
+    }
+
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-10-18T12:00:00Z'));
+        const view = document.createElement('div');
+        view.id = 'view-content';
+        document.body.appendChild(view);
+        document.body.classList.remove('edit-mode', 'split-mode');
+    });
+
+    it('zweiter Klick auf dieselbe Datei: kein zweites Öffnen, Fokus in die View', async () => {
+        const tree = await import('../../app/vault/tree');
+        const openDocument = vi.fn();
+        tree.initVaultTree({ openDocument });
+        click('/foo/bar.md');
+        vi.advanceTimersByTime(200);
+        click('/foo/bar.md');
+        expect(openDocument).toHaveBeenCalledTimes(1);
+        expect(document.activeElement && document.activeElement.id).toBe('view-content');
+        vi.useRealTimers();
+    });
+
+    it('im Edit-Mode geht der Fokus in den Editor', async () => {
+        const tree = await import('../../app/vault/tree');
+        tree.initVaultTree({ openDocument: vi.fn() });
+        const focus = vi.fn();
+        (window as any).FolioEditor = { focus };
+        document.body.classList.add('edit-mode');
+        vi.advanceTimersByTime(5000);
+        click('/foo/bar.md');
+        vi.advanceTimersByTime(200);
+        click('/foo/bar.md');
+        expect(focus).toHaveBeenCalledTimes(1);
+        delete (window as any).FolioEditor;
+        vi.useRealTimers();
+    });
+
+    it('zweiter Klick nach mehr als 500 ms öffnet erneut (kein Doppelklick)', async () => {
+        const tree = await import('../../app/vault/tree');
+        const openDocument = vi.fn();
+        tree.initVaultTree({ openDocument });
+        vi.advanceTimersByTime(5000);
+        click('/foo/bar.md');
+        vi.advanceTimersByTime(600);
+        click('/foo/bar.md');
+        expect(openDocument).toHaveBeenCalledTimes(2);
+        vi.useRealTimers();
+    });
+
+    it('natives dblclick-Event öffnet nichts extern', async () => {
         const ctxMenu = await import('../../app/vault/context-menu');
         const tree = await import('../../app/vault/tree');
         tree.initVaultTree({ openDocument: vi.fn() });
-
         const row = document.querySelector('.node[data-kind="file"] .row') as HTMLElement;
         row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, button: 0 }));
-
-        expect(ctxMenu.runOrOpenFile).toHaveBeenCalledWith('/foo/bar.md', false);
-    });
-
-    it('dblclick auf eine ausführbare Datei (data-exec="1") ruft runOrOpenFile(path, true)', async () => {
-        const ctxMenu = await import('../../app/vault/context-menu');
-        const tree = await import('../../app/vault/tree');
-        tree.initVaultTree({ openDocument: vi.fn() });
-
-        const fileNode = document.querySelector('.node[data-kind="file"]') as HTMLElement;
-        fileNode.setAttribute('data-exec', '1');
-        const row = fileNode.querySelector('.row') as HTMLElement;
-        row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, button: 0 }));
-
-        expect(ctxMenu.runOrOpenFile).toHaveBeenCalledWith('/foo/bar.md', true);
-    });
-
-    it('dblclick auf ein Verzeichnis ruft runOrOpenFile NICHT', async () => {
-        const ctxMenu = await import('../../app/vault/context-menu');
-        const tree = await import('../../app/vault/tree');
-        tree.initVaultTree({ openDocument: vi.fn() });
-
-        const row = document.querySelector('.node[data-kind="dir"] .row') as HTMLElement;
-        row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, button: 0 }));
-
         expect(ctxMenu.runOrOpenFile).not.toHaveBeenCalled();
+        expect(tauri.invoke).not.toHaveBeenCalledWith('open_with_default', expect.anything());
+        vi.useRealTimers();
     });
 });
 
