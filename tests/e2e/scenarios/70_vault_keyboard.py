@@ -303,23 +303,37 @@ def run(ctx):
             ctx.expect(bool(_poll(lambda: _focused(ctx).startswith("outside:"))),
                        f"Escape: Fokus noch im Baum ({_focused(ctx)!r})")
 
-        with ctx.step("Mausklick in den Baum setzt den Fokus dorthin, ohne Fokusring"):
-            # Benutzerentscheidung 2026-10-18: wie im Dateimanager. Der
-            # Webview beginnt unter der GTK-Menüleiste, daher der Versatz
-            # outerHeight − innerHeight.
-            geo = _evalv(
-                ctx,
-                "(() => { const li = document.querySelector('#vault-tree li.node[data-path=\"%s\"]');"
-                " const r = li.querySelector(':scope > .row').getBoundingClientRect();"
-                " return {x: window.screenX + r.left + 30,"
-                " y: window.screenY + (window.outerHeight - window.innerHeight) + r.top + r.height / 2}; })()"
-                % zeta,
-            )
-            # zeta.md ist das aktive Dokument: der Klick öffnet nichts Neues.
-            _xdotool("mousemove", str(int(geo["x"])), str(int(geo["y"])), "click", "1")
-            _wait_focus(ctx, zeta, "Mausklick")
-            ring = _evalv(ctx, "document.activeElement.matches(':focus-visible')")
-            ctx.expect(ring is False, "Mausklick zeigt einen Fokusring")
+        with ctx.step("Mausklick auf eine andere Datei: Fokus im Baum, Ring erst nach Taste (View/Edit/Split)"):
+            # Benutzerentscheidung 2026-10-18: Klick in den Vault = Fokus im
+            # Vault (wie im Dateimanager). Der Webview beginnt unter der
+            # GTK-Menüleiste, daher der Versatz outerHeight − innerHeight.
+            def click_row(path):
+                geo = _evalv(
+                    ctx,
+                    "(() => { const li = document.querySelector('#vault-tree li.node[data-path=\\\"%s\\\"]');"
+                    " const r = li.querySelector(':scope > .row').getBoundingClientRect();"
+                    " return {x: window.screenX + r.left + 30,"
+                    " y: window.screenY + (window.outerHeight - window.innerHeight) + r.top + r.height / 2}; })()"
+                    % path,
+                )
+                _xdotool("mousemove", str(int(geo["x"])), str(int(geo["y"])), "click", "1")
+
+            ring_js = ("(() => { const a = document.activeElement; const row = a && a.querySelector(':scope > .row');"
+                       " return !!row && getComputedStyle(row).outlineStyle !== 'none'; })()")
+            for mode, target in (("view", alpha), ("edit", zeta), ("split", alpha)):
+                ctx.api.mode(mode)
+                click_row(target)
+                ctx.expect(bool(_poll(lambda: _active_tab_path(ctx) == target)),
+                           f"[{mode}] Klick hat {target} nicht geöffnet")
+                _wait_focus(ctx, target, f"Mausklick ({mode})")
+                ctx.expect(_evalv(ctx, ring_js) is False, f"[{mode}] Fokusring nach Mausklick")
+                _key("Down")
+                ctx.expect(bool(_poll(lambda: _focused(ctx) != target)), f"[{mode}] ↓ nach Klick ohne Wirkung")
+                ctx.expect(bool(_poll(lambda: _evalv(ctx, ring_js) is True)),
+                           f"[{mode}] kein Fokusring nach ↓ (nach Mausklick)")
+            ctx.api.mode("view")
+            click_row(zeta)
+            _wait_focus(ctx, zeta, "Mausklick zurück auf zeta")
             _key("Escape")
             ctx.expect(bool(_poll(lambda: _focused(ctx).startswith("outside:"))),
                        f"Escape nach Mausklick: Fokus noch im Baum ({_focused(ctx)!r})")

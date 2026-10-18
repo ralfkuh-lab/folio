@@ -112,7 +112,12 @@ body.vault-hidden .vault-region { display: none; }
    ganzen Unterbaum. Bewusst nur ein Umriss: das aktive Dokument ist Fläche
    + Balken, so bleiben beide Markierungen unterscheidbar und kombinierbar. */
 .vault-region #vault-tree li:focus { outline: none; }
-.vault-region #vault-tree li:focus-visible > .row {
+/* Zusätzlich die eigene Markierung `kb-nav`: WebKit hält den Fokus nach
+   einem Mausklick für Mausfokus, auch wenn er danach per Pfeiltaste wandert
+   (:focus-visible bleibt aus). tree-keyboard.ts setzt `kb-nav` bei jeder
+   Taste im Baum und entfernt sie beim Mausklick. */
+.vault-region #vault-tree li:focus-visible > .row,
+.vault-region #vault-tree.kb-nav li:focus > .row {
   outline: 2px solid var(--rail-accent);
   outline-offset: -2px;
 }

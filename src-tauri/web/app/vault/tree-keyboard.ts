@@ -40,6 +40,7 @@ type Deps = {
     openMenu: (node: HTMLElement) => void;
 };
 
+const KB_NAV_CLASS = 'kb-nav';
 const ITEM_SELECTOR = 'li.section, li.node';
 const TYPEAHEAD_MS = 500;
 
@@ -357,6 +358,8 @@ function onKeydown(e: KeyboardEvent): void {
     if (!ROOT || e.defaultPrevented || e.isComposing) return;
     const li = e.target as HTMLElement;
     if (!isItem(li)) return; // z. B. das Inline-Rename-Input
+    // Tastaturbedienung: Fokusring zeigen (siehe vault.css, `kb-nav`).
+    ROOT.classList.add(KB_NAV_CLASS);
     if (e.altKey) return;
     const ctrl = e.ctrlKey || e.metaKey;
     // Datei-Aktionen nur beim Erstanschlag: ein gedrückt gehaltenes Strg+D
@@ -629,6 +632,7 @@ function onMouseDown(e: MouseEvent): void {
     const li = target.closest(ITEM_SELECTOR);
     if (!isItem(li)) return;
     if (isRenameInput(document.activeElement)) return;
+    ROOT?.classList.remove(KB_NAV_CLASS);
     // Wie im Dateimanager: Der Klick setzt den Fokus in den Baum. Das macht
     // der Browser selbst (die Zeile ist per tabindex fokussierbar) — kein
     // programmatisches focus(), damit nach Mausbedienung kein Fokusring
@@ -675,6 +679,7 @@ export async function focusVaultTree(): Promise<void> {
     if (!ROOT || !deps) return;
     if (document.body.classList.contains('zen-mode')) return;
     if (document.body.classList.contains('vault-hidden')) deps.openLeftRail();
+    ROOT.classList.add(KB_NAV_CLASS);
     const gen = ++focusGen;
     pendingKey = null;
     // Rücksprungziel für Escape: wo der Fokus vor dem Kommando war.
