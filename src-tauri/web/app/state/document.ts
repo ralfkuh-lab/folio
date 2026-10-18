@@ -13,6 +13,7 @@
 import { setTocList, rewriteRelativeAssets, prepareMarkdownView } from '../view/markdown';
 import { highlightCodeBlocks } from '../view/code-highlight';
 import { addCodeCopyButtons } from '../view/code-copy';
+import { closeTableOverlay, forgetTableState, prepareTables } from '../view/tables';
 import { renderMermaidBlocks } from '../view/mermaid';
 import { clearHtmlView, invalidateHtmlLive, isHtmlDocument, mountHtmlView } from '../view/html';
 import { clearImageView, isImageDocument, mountImageView, reloadImageView } from '../view/image';
@@ -521,11 +522,13 @@ function renderDocumentPayload(data: any): void {
     const body = view && view.querySelector('.markdown-body');
     if (body) {
         const isMd = document.body.classList.contains('kind-markdown');
+        closeTableOverlay();
         body.innerHTML = isMd ? (data.content || data.html || '') : '';
         if (isMd) {
             rewriteRelativeAssets(body as HTMLElement, path);
             highlightCodeBlocks(body as HTMLElement);
             addCodeCopyButtons(body as HTMLElement);
+            prepareTables(body as HTMLElement, path);
             renderMermaidBlocks(body as HTMLElement);
             prepareMarkdownView(body as HTMLElement);
         }
@@ -630,11 +633,13 @@ export function initDocumentState(): void {
             // Dateien uebernimmt FolioCodeView die Read-Only-Anzeige in
             // einer eigenen Monaco-Instanz (Container `#code-view-mount`).
             const isMd = data.kind === 'markdown';
+            closeTableOverlay();
             (body as HTMLElement).innerHTML = isMd ? (data.content || data.html || '') : '';
             if (isMd) {
                 rewriteRelativeAssets(body as HTMLElement, data.path || '');
                 highlightCodeBlocks(body as HTMLElement);
                 addCodeCopyButtons(body as HTMLElement);
+                prepareTables(body as HTMLElement, data.path || '');
                 renderMermaidBlocks(body as HTMLElement);
                 prepareMarkdownView(body as HTMLElement);
             }
@@ -777,6 +782,7 @@ export function initDocumentState(): void {
         invalidatePreview({ resetDebounce: true });
         invalidateHtmlLive();
         invalidateCodeLive();
+        forgetTableState(currentPath);
         currentPath = null;
         try { (window as any).__folioCurrentPath = null; } catch { /* ignore */ }
         cleanText = '';

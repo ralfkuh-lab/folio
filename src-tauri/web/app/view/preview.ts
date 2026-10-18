@@ -27,6 +27,7 @@
 import { setTocList, rewriteRelativeAssets, ViewFinder, prepareMarkdownView } from './markdown';
 import { highlightCodeBlocks } from './code-highlight';
 import { addCodeCopyButtons } from './code-copy';
+import { closeTableOverlay, prepareTables } from './tables';
 import { renderMermaidBlocks } from './mermaid';
 import { afterMarkdownPreviewRender, setMarkdownHeadingMap } from './scroll-sync';
 import { folioLog } from '../util/log';
@@ -176,6 +177,7 @@ function applyToDom(
     const body = getMarkdownBody();
     if (!body) return;
 
+    closeTableOverlay();
     body.innerHTML = result.content;
 
     if (deps) {
@@ -187,6 +189,7 @@ function applyToDom(
     // aus alten Render-Passes ignoriert.
     highlightCodeBlocks(body);
     addCodeCopyButtons(body);
+    prepareTables(body, deps ? deps.getCurrentPath() : null);
     renderMermaidBlocks(body);
     prepareMarkdownView(body);
     setTocList(result.tocHtml);

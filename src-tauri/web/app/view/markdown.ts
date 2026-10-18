@@ -328,6 +328,13 @@ function buildWalker(root: Element): TreeWalker {
             while (p && p !== root) {
                 const tn = p.nodeName ? p.nodeName.toLowerCase() : '';
                 if (tn === 'script' || tn === 'style') return NodeFilter.FILTER_REJECT;
+                // Vom Tabellenfilter versteckte Zeilen (view/tables.ts): zu
+                // diesen Treffern koennte die Find-Bar nicht scrollen.
+                if (tn === 'tr' && (p as Element).hasAttribute('hidden')) return NodeFilter.FILTER_REJECT;
+                // Leiste ueber der Tabelle („12 von 40") ist App-UI, kein Dokument.
+                if ((p as Element).classList && (p as Element).classList.contains('folio-table-bar')) {
+                    return NodeFilter.FILTER_REJECT;
+                }
                 p = p.parentNode;
             }
             return NodeFilter.FILTER_ACCEPT;

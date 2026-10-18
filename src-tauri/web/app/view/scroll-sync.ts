@@ -94,7 +94,7 @@ function parseElementLine(element: HTMLElement): number {
     return isFinite(line) && line > 0 ? line : 0;
 }
 
-function invalidateLineElements(): void {
+export function invalidateLineElements(): void {
     lineElementCache = null;
 }
 
@@ -112,7 +112,11 @@ function lineElements(): LineElement[] {
     const nodes = Array.prototype.slice.call(
         root.querySelectorAll('[data-line], [data-sourcepos]'),
     ) as HTMLElement[];
+    // Sortierte/gefilterte Tabellen (view/tables.ts) brechen „Zeilennummer
+    // steigt nach unten": dort zaehlt nur die Tabelle selbst.
     lineElementCache = nodes
+        .filter((element) => element.tagName === 'TABLE'
+            || !element.closest('table[data-folio-arranged]'))
         .map((element) => ({ element, line: parseElementLine(element) }))
         .filter((entry) => entry.line > 0)
         .sort((a, b) => a.line - b.line);

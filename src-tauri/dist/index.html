@@ -623,6 +623,11 @@
 <div id="zoom-indicator" hidden>100 %</div>
 <div id="zen-hint" class="zen-hint" hidden></div>
 <div id="dnd-overlay" data-i18n="view.dropOverlay.message">Datei hier ablegen, um zu öffnen</div>
+<!-- Tabellen-Overlay (view/tables.ts): der Tabellenrahmen wird beim Öffnen hierher verschoben. -->
+<dialog id="table-overlay" class="table-overlay" role="dialog" aria-modal="true" aria-label="Tabelle" data-i18n-aria-label="view.table.overlay.ariaLabel">
+  <button type="button" id="table-overlay-close" class="table-overlay-close" title="Schließen" data-i18n-title="view.table.overlay.close" aria-label="Schließen" data-i18n-aria-label="view.table.overlay.close"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><line x1="3.5" y1="3.5" x2="12.5" y2="12.5"/><line x1="12.5" y1="3.5" x2="3.5" y2="12.5"/></svg></button>
+  <div id="table-overlay-body" class="table-overlay-body markdown-body"></div>
+</dialog>
 <nav id="context-menu" role="menu"></nav>
 <nav id="tab-ctx-menu" role="menu"></nav>
 <div id="cmd-palette" hidden>

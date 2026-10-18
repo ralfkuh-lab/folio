@@ -317,3 +317,96 @@ html.theme-dark #cmd-palette .cp-hit {
   background: rgba(255, 215, 0, 0.45);
   color: #1f2328;
 }
+/* ----- Tabellen-Overlay (view/tables.ts): natives <dialog> per showModal —
+   Escape, Fokusfalle und ::backdrop kommen vom Browser. Der Rahmen der
+   Tabelle wird hierher VERSCHOBEN (Zustand und Listener bleiben dran). Der
+   Inhalt sitzt in einem `.markdown-body`, damit das View-Theme greift; die
+   Lese-Layout-Regeln des Themes (Breite, Rand, Abstand) hebt (1,1,0) auf. */
+#table-overlay {
+  box-sizing: border-box;
+  width: calc(100vw - 48px);
+  height: calc(100vh - 48px);
+  max-width: none;
+  max-height: none;
+  margin: auto;
+  padding: 0;
+  overflow: hidden;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
+}
+#table-overlay[open] { display: flex; flex-direction: column; }
+#table-overlay::backdrop { background: rgba(0, 0, 0, 0.45); }
+#table-overlay .table-overlay-body {
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-width: none;
+  margin: 0;
+  padding: 48px 20px 20px;
+  display: flex;
+  flex-direction: column;
+}
+#table-overlay .table-overlay-close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--fg-muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+#table-overlay .table-overlay-close:hover { color: var(--folio-ui-fg); border-color: var(--fg-muted); }
+#table-overlay .table-overlay-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* Rahmen fuellt das Overlay; gescrollt wird in beide Richtungen in
+   .folio-table-scroll, die Kopfzeile bleibt oben stehen. `position: static`
+   macht den Dialog zum Bezug der Leiste: sie steht oben in der Kopfzeile
+   des Overlays neben dem Schliessen-Button. */
+#table-overlay .folio-table {
+  position: static;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+#table-overlay .folio-table-bar {
+  position: absolute;
+  top: 10px;
+  margin: 0;
+  right: 52px;
+  bottom: auto;
+  padding: 0;
+  opacity: 1;
+  pointer-events: auto;
+}
+#table-overlay .folio-table-expand { display: none; }
+#table-overlay .folio-table-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  outline: none;
+}
+#table-overlay .folio-table-scroll > table {
+  width: max-content;
+  max-width: none;
+  margin: 0;
+}
+#table-overlay .folio-cell-long { width: 24em; }
+#table-overlay thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
