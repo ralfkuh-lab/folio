@@ -521,7 +521,9 @@ tr:nth-child(2n) td { background: rgba(175, 184, 193, 0.08); }
   opacity: 0;
   pointer-events: none;
 }
-/* Rechtsbuendige Spalten: Pfeil links, sonst stuende er im Rand. */
+/* Rechtsbuendige Spalten: Pfeil links, sonst stuende er im Rand. comrak
+   schreibt die Ausrichtung als `align`, eingebettetes HTML ggf. als style. */
+.markdown-body th[align="right"] > .folio-th-sort::after,
 .markdown-body th[style*="right"] > .folio-th-sort::after {
   left: auto;
   right: 100%;
@@ -532,6 +534,20 @@ tr:nth-child(2n) td { background: rgba(175, 184, 193, 0.08); }
 .markdown-body .folio-th-sort:focus-visible::after { opacity: .35; }
 .markdown-body th[aria-sort="ascending"] > .folio-th-sort::after { content: "\25B2"; opacity: .8; }
 .markdown-body th[aria-sort="descending"] > .folio-th-sort::after { content: "\25BC"; opacity: .8; }
+/* Kopfzelle mit Link o. ae.: der Inhalt bleibt frei klickbar, sortiert wird
+   ueber einen eigenen kleinen Button dahinter (tables.ts). Sein Pfeil steht
+   im Fluss und ist immer sichtbar — er ist der ganze Button. */
+.markdown-body .folio-th-sort--icon { margin-left: .35em; }
+.markdown-body .folio-th-sort--icon::after {
+  position: static;
+  margin: 0;
+  transform: none;
+  font-size: .8em;
+  content: "\21C5";
+  opacity: .5;
+}
+.markdown-body .folio-th-sort--icon:hover::after,
+.markdown-body .folio-th-sort--icon:focus-visible::after { opacity: .9; }
 .markdown-body .folio-th-sort:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

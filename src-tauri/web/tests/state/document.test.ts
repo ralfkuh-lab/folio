@@ -871,3 +871,30 @@ describe('state/document — lifecycle seq guards (spec)', () => {
         expect(docMod.getCleanText()).toBe('v7');
     });
 });
+
+// Korrekturrunde 1, V3 (Review Sol R6): document:closed leert die View und
+// muss ein offenes Tabellen-Overlay vorher schliessen.
+describe('state/document — document:closed schliesst das Tabellen-Overlay', () => {
+    it('Overlay offen → document:closed → Dialog zu, Overlay-Host leer', async () => {
+        const tables = await import('../../app/view/tables');
+        tables.initTables();
+        const docMod = await import('../../app/state/document');
+        docMod.initDocumentState();
+        const dialog = document.createElement('dialog');
+        dialog.id = 'table-overlay';
+        dialog.innerHTML = '<div id="table-overlay-body" class="markdown-body"></div>';
+        (dialog as any).showModal = () => dialog.setAttribute('open', '');
+        (dialog as any).close = () => dialog.removeAttribute('open');
+        document.body.append(dialog);
+        tauri.emitEvent('document:loaded', {
+            path: '/tmp/a.md', kind: 'markdown', text: 'x',
+            content: '<table><thead><tr><th>A</th></tr></thead><tbody><tr><td>B</td></tr></tbody></table>',
+        });
+        (document.querySelector('.folio-table-expand') as HTMLElement).click();
+        expect(dialog.hasAttribute('open')).toBe(true);
+        tauri.emitEvent('document:closed', {});
+        expect(dialog.hasAttribute('open')).toBe(false);
+        expect(document.getElementById('table-overlay-body')!.children).toHaveLength(0);
+        dialog.remove();
+    });
+});

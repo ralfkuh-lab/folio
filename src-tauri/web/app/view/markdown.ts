@@ -8,6 +8,7 @@
 import { findRegexFlags, skipZeroWidthMatch } from './find-regex';
 import { handleFolioNewClick, isFolioNewHref } from './wikilink-create';
 import { toggleTaskInDocument } from './task-toggle';
+import { closeTableOverlay } from './tables';
 
 let contentEl: HTMLElement = null;
 let tocEl: HTMLElement = null;
@@ -23,6 +24,13 @@ function linkFromEventTarget(target: EventTarget | null): HTMLAnchorElement | nu
     let el = target as HTMLElement | null;
     while (el && el.tagName !== 'A') el = el.parentElement;
     return el as HTMLAnchorElement | null;
+}
+
+// Ein Link im modalen Tabellen-Overlay: das Overlay zuerst schliessen.
+// Sonst laegen Dirty-Rueckfrage und Wikilink-Anlegen-Dialog hinter dem
+// Modal (inert), und ein Anker-Sprung passierte unsichtbar dahinter.
+function leaveTableOverlay(el: Element): void {
+    if (el.closest('#table-overlay')) closeTableOverlay();
 }
 
 function postLinkClick(href: string, newTab: boolean): void {
@@ -451,7 +459,9 @@ function setActive(idx: number): void {
     dispatchState();
 }
 
-function research(): void {
+// keepPosition: neu zaehlen, ohne an den ersten Treffer zu springen (die
+// View veraendert sich unter einer laufenden Suche, z. B. Tabellenfilter).
+function research(keepPosition = false): void {
     clearMarks();
     setupMarkerResizeObserver();
     const myToken = ++searchToken;
@@ -461,15 +471,22 @@ function research(): void {
     if (!built) { dispatchState(); return; }
     if ('invalid' in built) { dispatchInvalid(); return; }
     ensureHighlights();
+    const settle = function (): void {
+        if (!keepPosition) { setActive(0); return; }
+        activeIdx = -1;
+        if (activeHL) activeHL.clear();
+        updateMarkers();
+        dispatchState();
+    };
     collectRangesAsync(root, built.regex, myToken, function () {
         if (myToken !== searchToken) return;
         if (rangesArr.length > 0) {
             if (rangesArr.length > 500) {
-                computeMarkerPositionsAsync(function () { setActive(0); });
+                computeMarkerPositionsAsync(settle);
                 // lane remains empty until async done + setActive
             } else {
                 computeMarkerPositionsSync();
-                setActive(0);
+                settle();
             }
         } else {
             updateMarkers();
@@ -498,6 +515,10 @@ export const ViewFinder = {
         dispatchState();
     },
     setFindTerm: function (term: string): void { currentTerm = term || ''; research(); },
+    /** Laufende Suche (falls ein Begriff aktiv ist) auf dem aktuellen DOM neu
+     *  zaehlen, ohne zu scrollen — fuer Aenderungen ohne Re-Render
+     *  (Tabellen sortieren/filtern, view/tables.ts). */
+    refresh: function (): void { if (currentTerm) research(true); },
     setFindOptions: function (newOpts: ResolvedFindOptions): void {
         findOpts.caseSensitive = newOpts.caseSensitive;
         findOpts.wholeWord = newOpts.wholeWord;
@@ -716,7 +737,7 @@ export function initMarkdownView(deps?: { requestSaveIfDirty?: () => Promise<boo
     // Klicks (im Content) — gemeinsamer Handler fuer View + Split + Live-Preview:
     // 1. Tasklist-Checkbox-Toggles (auf input[type="checkbox"])
     // 2. Link-Klicks (auf a[href]) — folio-new: wird frontend-seitig abgefangen; sonst Backend-Routing.
-    contentEl.addEventListener('click', function (e: MouseEvent) {
+    const onClick = function (e: MouseEvent): void {
         if (handleCheckboxClick(e)) {
             return;
         }
@@ -726,6 +747,7 @@ export function initMarkdownView(deps?: { requestSaveIfDirty?: () => Promise<boo
         const href = el.getAttribute('href');
         if (href === null) return;
         e.preventDefault();
+        leaveTableOverlay(el);
         const newTab = e.ctrlKey || e.metaKey;
         // Missing-Wikilinks: kein Dirty-Prompt, kein newTab — nur Dialog.
         if (isFolioNewHref(href)) {
@@ -740,22 +762,33 @@ export function initMarkdownView(deps?: { requestSaveIfDirty?: () => Promise<boo
         } else {
             send();
         }
-    }, true);
+    };
 
-    contentEl.addEventListener('auxclick', function (e: MouseEvent) {
+    const onAuxClick = function (e: MouseEvent): void {
         if (e.button !== 1) return;
         const el = linkFromEventTarget(e.target);
         if (!el) return;
         const href = el.getAttribute('href');
         if (href === null) return;
         e.preventDefault();
+        leaveTableOverlay(el);
         // folio-new: Mittelklick = Dialog (kein newTab); sonst newTab.
         if (isFolioNewHref(href)) {
             routeLinkClick(href, false);
             return;
         }
         routeLinkClick(href, true);
-    }, true);
+    };
+
+    contentEl.addEventListener('click', onClick, true);
+    contentEl.addEventListener('auxclick', onAuxClick, true);
+    // Das Tabellen-Overlay (view/tables.ts) haelt einen Teil der View
+    // ausserhalb von #view-content: dasselbe Routing auch dort.
+    const overlayHost = document.getElementById('table-overlay-body');
+    if (overlayHost) {
+        overlayHost.addEventListener('click', onClick, true);
+        overlayHost.addEventListener('auxclick', onAuxClick, true);
+    }
 
     // TOC-Click → Backend-Event (navigation:toc_click → setTocActive).
     tocEl.addEventListener('click', function (e: MouseEvent) {

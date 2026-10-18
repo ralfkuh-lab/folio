@@ -21,12 +21,14 @@ import { folioLog } from '../util/log';
 import { t } from '../i18n/translate';
 import { getFormatLocale } from '../i18n/format';
 import { invalidateLineElements } from './scroll-sync';
+import { ViewFinder } from './markdown';
 
 const WRAP_CLASS = 'folio-table';
 const BAR_CLASS = 'folio-table-bar';
 const SCROLL_CLASS = 'folio-table-scroll';
 const EXPAND_CLASS = 'folio-table-expand';
 const SORT_CLASS = 'folio-th-sort';
+const SORT_ICON_CLASS = 'folio-th-sort--icon';
 const FILTER_CLASS = 'folio-table-filter';
 const COUNT_CLASS = 'folio-table-count';
 // Tabelle passt nicht in ihre Spalte: Rahmen scrollt (Klasse auch bei
@@ -70,7 +72,7 @@ export type SortDir = 'asc' | 'desc';
 // Rand: Vorzeichen, Waehrungszeichen davor; Prozent/Promille/Grad,
 // Waehrungszeichen oder eine kurze Einheit (h, kg, MB) dahinter. Woerter
 // davor zaehlen nicht — sonst waere „Datei 10" eine Zahl.
-const NUMBER_RE = /^([+\-\u2212]?)\s*\p{Sc}?\s*([+\-\u2212]?)\s*(\d(?:[\d.,'\u2019 ]*\d)?)\s*(?:[%\u2030\u00b0]|\p{Sc}|\p{L}{1,3}\.?)?$/u;
+const NUMBER_RE = /^([+\-\u2212]?)\s*(\p{Sc}?)\s*([+\-\u2212]?)\s*(\d(?:[\d.,'\u2019 ]*\d)?)\s*([%\u2030\u00b0]|\p{Sc}|\p{L}{1,3}\.?)?$/u;
 const SPACE_RE = /[\u00a0\u202f\u2009]/g;
 
 /** Dezimaltrenner der Format-Locale ('.' oder ','). */
@@ -100,10 +102,19 @@ function validInteger(text: string, groups: string): boolean {
  * Dreiergruppen bildet, sonst als Dezimaltrenner („3.14"). Kein Treffer: null.
  */
 export function parseCellNumber(raw: string, decimal: string): number | null {
+    const q = parseCellQuantity(raw, decimal);
+    return q ? q.value : null;
+}
+
+/** Wie parseCellNumber, liefert zusaetzlich die Einheit (Waehrung davor
+ *  bzw. Zeichen/Einheit dahinter) — numerisch sortiert wird nur eine Spalte
+ *  mit EINER Einheit, sonst stuende „3 Mio." vor „500". */
+export function parseCellQuantity(raw: string, decimal: string): { value: number; unit: string } | null {
     const m = NUMBER_RE.exec(raw.replace(SPACE_RE, ' ').trim());
-    if (!m || (m[1] && m[2])) return null;
-    const sign = m[1] || m[2];
-    const body = m[3];
+    if (!m || (m[1] && m[3])) return null;
+    const sign = m[1] || m[3];
+    const body = m[4];
+    const unit = (m[2] || '') + '|' + (m[5] || '');
     const groups = (decimal === ',' ? '.' : ',') + " '\u2019";
     let intPart = body;
     let frac = '';
@@ -121,21 +132,22 @@ export function parseCellNumber(raw: string, decimal: string): number | null {
     if (!validInteger(intPart, groups)) return null;
     const value = Number(intPart.replace(/\D/g, '') + (frac ? '.' + frac : ''));
     if (!isFinite(value)) return null;
-    return sign === '-' || sign === '\u2212' ? -value : value;
+    return { value: sign === '-' || sign === '\u2212' ? -value : value, unit };
 }
 
 /**
  * Reihenfolge (Indizes in `values`) fuer eine Sortierung. Numerisch, wenn
- * jede nicht leere Zelle eine Zahl ist, sonst Collator mit `numeric`.
+ * jede nicht leere Zelle eine Zahl mit derselben Einheit (oder keiner) ist,
+ * sonst Collator mit `numeric`.
  * Leere Zellen immer ans Ende, in Originalreihenfolge; stabil.
  */
 export function sortOrder(values: string[], dir: SortDir, locale: string): number[] {
     const filled: number[] = [];
     const empty: number[] = [];
     values.forEach((v, i) => { (v.trim() === '' ? empty : filled).push(i); });
-    const decimal = decimalSeparator(locale);
-    const nums = filled.map((i) => parseCellNumber(values[i], decimal));
-    const numeric = filled.length > 0 && nums.every((n) => n !== null);
+    const quantities = columnQuantities(filled.map((i) => values[i]), locale);
+    const numeric = quantities !== null;
+    const nums = quantities || [];
     let collator: Intl.Collator;
     try {
         collator = new Intl.Collator(locale, { numeric: true, sensitivity: 'base' });
@@ -143,7 +155,7 @@ export function sortOrder(values: string[], dir: SortDir, locale: string): numbe
         collator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
     }
     const num = new Map<number, number>();
-    filled.forEach((i, k) => num.set(i, nums[k] as number));
+    filled.forEach((i, k) => num.set(i, nums[k]));
     const sign = dir === 'asc' ? 1 : -1;
     filled.sort((a, b) => {
         const c = numeric
@@ -152,6 +164,21 @@ export function sortOrder(values: string[], dir: SortDir, locale: string): numbe
         return c * sign || a - b;
     });
     return filled.concat(empty);
+}
+
+// Werte einer Spalte (nur nicht leere Zellen) als Zahlen — oder null, wenn
+// eine Zelle keine Zahl ist oder die Einheiten verschieden sind.
+function columnQuantities(filled: string[], locale: string): number[] | null {
+    const decimal = decimalSeparator(locale);
+    const quantities = filled.map((v) => parseCellQuantity(v, decimal));
+    const first = quantities[0];
+    if (!first || !quantities.every((q) => q !== null && q.unit === first.unit)) return null;
+    return quantities.map((q) => (q as { value: number }).value);
+}
+
+/** Wird diese Spalte numerisch sortiert? (leere Zellen zaehlen nicht) */
+export function isNumericColumn(values: string[], locale: string): boolean {
+    return columnQuantities(values.filter((v) => v.trim() !== ''), locale) !== null;
 }
 
 /** Case-insensitive Teilstring ueber den ganzen Zeilentext. */
@@ -226,9 +253,13 @@ function applySort(table: HTMLTableElement, state: TableState): void {
         order = rows.map((_, i) => i)
             .sort((a, b) => Number(rows[a].getAttribute(ROW_ATTR)) - Number(rows[b].getAttribute(ROW_ATTR)));
     }
-    const fragment = document.createDocumentFragment();
-    order.forEach((i) => fragment.appendChild(rows[i]));
-    tbody.appendChild(fragment);
+    // Nur umhaengen, wenn sich die Reihenfolge aendert: jedes Verschieben
+    // laesst die Ranges einer laufenden Suche kollabieren.
+    if (order.some((i, k) => i !== k)) {
+        const fragment = document.createDocumentFragment();
+        order.forEach((i) => fragment.appendChild(rows[i]));
+        tbody.appendChild(fragment);
+    }
     headerCells(table).forEach((th, col) => {
         if (state.sortDir && col === state.sortCol) {
             th.setAttribute('aria-sort', state.sortDir === 'asc' ? 'ascending' : 'descending');
@@ -268,6 +299,11 @@ function applyState(wrap: HTMLElement, state: TableState): void {
 
 // ----- Vorbereiten -------------------------------------------------------
 
+// Interaktives im th (Link, Wikilink, Checkbox): nicht in den Button
+// stecken — <button><a> ist ungueltig, der Klick waere Navigation UND
+// Sortierung, und Screenreader saehen den Link nicht.
+const INTERACTIVE = 'a[href], button, input, select, textarea, [tabindex]';
+
 function addSortButtons(table: HTMLTableElement): void {
     headerCells(table).forEach((th) => {
         if (th.querySelector(':scope > .' + SORT_CLASS)) return;
@@ -277,6 +313,12 @@ function addSortButtons(table: HTMLTableElement): void {
         btn.setAttribute('aria-label', t('view.table.sort.ariaLabel', {
             column: (th.textContent || '').trim(),
         }));
+        if (th.querySelector(INTERACTIVE)) {
+            // Inhalt bleibt, wie er ist; daneben ein eigener Pfeil-Button.
+            btn.classList.add(SORT_ICON_CLASS);
+            th.appendChild(btn);
+            return;
+        }
         while (th.firstChild) btn.appendChild(th.firstChild);
         th.appendChild(btn);
     });
@@ -322,7 +364,12 @@ export function prepareTables(root: HTMLElement | null, path?: string | null): v
     const seen = new Set<string>();
     let added = 0;
     tables.forEach((table, index) => {
-        if (table.parentElement && table.parentElement.classList.contains(SCROLL_CLASS)) return;
+        if (table.parentElement && table.parentElement.classList.contains(SCROLL_CLASS)) {
+            const known = table.closest('.' + WRAP_CLASS);
+            const knownKey = known && known.getAttribute('data-folio-table-key');
+            if (knownKey !== null && knownKey !== undefined) seen.add(knownKey);
+            return;
+        }
         const rows = bodyRows(table);
         rows.forEach((row, i) => row.setAttribute(ROW_ATTR, String(i)));
         table.querySelectorAll('th, td').forEach((cell) => {
@@ -354,10 +401,11 @@ export function prepareTables(root: HTMLElement | null, path?: string | null): v
         added++;
     });
     // Zustaende ohne passende Tabelle (Kopfzeile geaendert, Tabelle davor
-    // eingefuegt) verfallen, statt spaeter falsch zugeordnet zu werden.
+    // eingefuegt, alle Tabellen weg) verfallen, statt spaeter falsch
+    // zugeordnet zu werden — auch bei einem Render ganz ohne Tabellen.
+    const states = docStates.get(renderedPath);
+    if (states) states.forEach((_, key) => { if (!seen.has(key)) states.delete(key); });
     if (added > 0) {
-        const states = docStates.get(renderedPath);
-        if (states) states.forEach((_, key) => { if (!seen.has(key)) states.delete(key); });
         folioLog.debug('view', 'tables prepared', { added });
         scheduleTableMeasure();
     }
@@ -554,6 +602,7 @@ function onSortClick(btn: HTMLElement): void {
         state.sortDir = null;
     }
     applyState(wrap, state);
+    ViewFinder.refresh();
     folioLog.debug('view', 'table sorted', { col, dir: state.sortDir });
 }
 
@@ -565,6 +614,8 @@ function onInput(e: Event): void {
     if (!wrap || !state) return;
     state.filter = input.value;
     applyState(wrap, state);
+    // Versteckte Zeilen zaehlen in der Find-Bar nicht (buildWalker).
+    ViewFinder.refresh();
 }
 
 // Escape im Filterfeld leert es — und schliesst dabei NICHT das Overlay.
