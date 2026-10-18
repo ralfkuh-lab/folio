@@ -193,7 +193,9 @@ function installCrossModuleListeners(): void {
                 var anchor = data.anchor || data.slug || '';
                 setTocActive(anchor);
                 if (data.viewMode) {
-                    await safeInvoke('set_view_mode', { mode: data.viewMode }, 'set_view_mode', 'warn');
+                    // cause "open": Moduswechsel als Folge der Navigation —
+                    // liegt der Fokus im Vault-Baum, bleibt er dort.
+                    await safeInvoke('set_view_mode', { mode: data.viewMode, cause: 'open' }, 'set_view_mode', 'warn');
                 }
                 var viewScroll = (typeof data.scrollY === 'number') ? data.scrollY : 0;
                 var editorCursor = (typeof data.editorCursor === 'number') ? data.editorCursor : 0;

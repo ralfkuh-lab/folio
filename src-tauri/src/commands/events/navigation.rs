@@ -78,7 +78,13 @@ pub(super) fn link_click(
             )
             .map_err(|error| error.user_message())?;
             if let Some(mode) = outcome.mode_override.as_deref() {
-                let _ = handle.emit("app:set_mode", serde_json::json!({ "mode": mode }));
+                let _ = handle.emit(
+                    "app:set_mode",
+                    crate::commands::app::set_mode_payload(
+                        mode,
+                        crate::commands::app::ModeChangeCause::Open,
+                    ),
+                );
             }
             let kind = state
                 .tabs

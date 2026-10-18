@@ -18,9 +18,50 @@ pub mod shell_opener;
 use crate::state::AppState;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+/// Ursache eines `app:set_mode`-Events (Spec `docs/spec-vault-keyboard.md`).
+/// Das Frontend fokussiert den Editor bei `Open` nicht, wenn gerade der
+/// Vault-Baum den Tastaturfokus hat (Enter oeffnet, Fokus bleibt im Baum);
+/// bei `User` (ausdruecklicher Moduswechsel) immer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ModeChangeCause {
+    /// Modus folgt aus einem Dokumentwechsel (Oeffnen, Tab, History).
+    Open,
+    /// Nutzer wechselt den Modus ausdruecklich (Menue, Toolbar, Kuerzel, `/mode`).
+    User,
+}
+
+impl ModeChangeCause {
+    /// Optionales Argument von `set_view_mode`: nur `"open"` ist ein
+    /// Dokumentwechsel (History-Restore im Frontend); alles andere, auch ein
+    /// fehlendes Argument, ist ein ausdruecklicher Wechsel.
+    pub fn from_arg(cause: Option<&str>) -> Self {
+        if cause == Some("open") {
+            Self::Open
+        } else {
+            Self::User
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::User => "user",
+        }
+    }
+}
+
+/// Payload fuer `app:set_mode`; `cause` ist additiv (Altpayload ohne Feld
+/// gilt im Frontend als `user`).
+pub fn set_mode_payload(mode: &str, cause: ModeChangeCause) -> serde_json::Value {
+    serde_json::json!({ "mode": mode, "cause": cause.as_str() })
+}
+
 #[tauri::command]
 pub async fn set_view_mode(
     mode: String,
+    // Additiv: `"open"` nur fuer den History-Restore (main.ts), sonst fehlt
+    // es — Menue, Toolbar, Strg+1/2/3 sind ausdrueckliche Wechsel.
+    cause: Option<String>,
     handle: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
@@ -38,7 +79,10 @@ pub async fn set_view_mode(
     tab.navigation.update_view_mode(&mode);
     drop(tabs);
     handle
-        .emit("app:set_mode", serde_json::json!({ "mode": mode }))
+        .emit(
+            "app:set_mode",
+            set_mode_payload(&mode, ModeChangeCause::from_arg(cause.as_deref())),
+        )
         .map_err(|error| error.to_string())
 }
 
@@ -470,6 +514,103 @@ pub async fn cli_pending_open(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn set_view_mode_cause_argument() {
+        // Nur der History-Restore schickt "open"; fehlend/unbekannt = User.
+        assert_eq!(
+            ModeChangeCause::from_arg(Some("open")),
+            ModeChangeCause::Open
+        );
+        assert_eq!(ModeChangeCause::from_arg(None), ModeChangeCause::User);
+        assert_eq!(
+            ModeChangeCause::from_arg(Some("user")),
+            ModeChangeCause::User
+        );
+        assert_eq!(ModeChangeCause::from_arg(Some("x")), ModeChangeCause::User);
+    }
+
+    #[test]
+    fn set_mode_payload_carries_cause() {
+        assert_eq!(
+            set_mode_payload("edit", ModeChangeCause::Open),
+            serde_json::json!({ "mode": "edit", "cause": "open" })
+        );
+        assert_eq!(
+            set_mode_payload("view", ModeChangeCause::User),
+            serde_json::json!({ "mode": "view", "cause": "user" })
+        );
+    }
+
+    /// Jede `app:set_mode`-Emit-Stelle traegt die zugeordnete Ursache
+    /// (Spec vault-keyboard, Korrekturrunde 2): Dokumentwechsel = `Open`,
+    /// ausdruecklicher Moduswechsel = `User`. Neue Emit-Stellen muessen hier
+    /// eingetragen werden, sonst schlaegt der Test fehl.
+    #[test]
+    fn set_mode_emit_sites_carry_expected_cause() {
+        // (Datei relativ zu src/, erwartete Ursache, Anzahl Emit-Stellen)
+        let expected: &[(&str, &str, usize)] = &[
+            // set_view_mode: Ursache aus dem Argument (from_arg, eigener Test).
+            ("commands/app/mod.rs", "Arg", 1),
+            ("commands/tabs.rs", "Open", 2),
+            ("commands/events/vault.rs", "Open", 1),
+            ("commands/file/read.rs", "Open", 1),
+            ("commands/events/navigation.rs", "Open", 1),
+            ("automation/handlers/document.rs", "Open", 1),
+            ("automation/handlers/ui.rs", "User", 1),
+        ];
+        let needle = concat!("\"app:", "set_mode\"");
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut found: Vec<(String, usize)> = Vec::new();
+        let mut stack = vec![src.clone()];
+        while let Some(dir) = stack.pop() {
+            for entry in std::fs::read_dir(&dir).expect("read src") {
+                let path = entry.expect("entry").path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else if path.extension().is_some_and(|e| e == "rs") {
+                    let text = std::fs::read_to_string(&path).expect("read file");
+                    // Nur Code vor einem Testmodul zaehlen (dieser Test
+                    // selbst nennt den Eventnamen nicht woertlich).
+                    let code = text.split("#[cfg(test)]").next().unwrap_or("");
+                    let n = code.matches(needle).count();
+                    if n > 0 {
+                        let rel = path
+                            .strip_prefix(&src)
+                            .unwrap()
+                            .to_string_lossy()
+                            .replace('\\', "/");
+                        found.push((rel, n));
+                    }
+                }
+            }
+        }
+        found.sort();
+        let mut want: Vec<(String, usize)> = expected
+            .iter()
+            .map(|(f, _, n)| (f.to_string(), *n))
+            .collect();
+        want.sort();
+        assert_eq!(
+            found, want,
+            "app:set_mode-Emit-Stellen weichen von der Zuordnung ab"
+        );
+        for (file, cause, n) in expected {
+            if *cause == "Arg" {
+                continue;
+            }
+            let text = std::fs::read_to_string(src.join(file)).expect("read file");
+            let code = text.split("#[cfg(test)]").next().unwrap_or("");
+            let with_cause = code.matches(&format!("ModeChangeCause::{cause}")).count();
+            let other = if *cause == "Open" { "User" } else { "Open" };
+            let wrong = code.matches(&format!("ModeChangeCause::{other}")).count();
+            assert_eq!(
+                with_cause, *n,
+                "{file}: erwartet {n}x ModeChangeCause::{cause}"
+            );
+            assert_eq!(wrong, 0, "{file}: ModeChangeCause::{other} unerwartet");
+        }
+    }
 
     // `search_options_get` reicht `normalized_file_filter(&data.search_file_filter)`
     // ans Frontend. Ein unbekannter/leerer gespeicherter Filterwert fällt hier

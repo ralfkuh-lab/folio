@@ -337,6 +337,12 @@ describe('K1 — Strg+Umschalt+E (focusVaultTree) und Escape', () => {
 });
 
 describe('Korrekturrunde 1 (Review Sol)', () => {
+    // Das Editor-Shell-Layout läuft per requestAnimationFrame nach; vor dem
+    // nächsten Fall (setup.ts entfernt window.FolioEditor) ablaufen lassen.
+    afterEach(async () => {
+        await new Promise((r) => setTimeout(r, 40));
+    });
+
     it('Sol 5: Escape-Rücksprungziel überlebt einen Rebuild', async () => {
         tree.setVaultActive('/v/p.md');
         const ed = document.getElementById('ed')!;
@@ -408,10 +414,12 @@ describe('Korrekturrunde 1 (Review Sol)', () => {
         return (window as any).FolioEditor;
     }
 
-    it('Sol 2: Enter behält den Baumfokus, auch wenn der Modus auf Edit wechselt', async () => {
+    it('Sol 2 / R2: Enter behält den Baumfokus, wenn der Modus durch das Öffnen auf Edit wechselt', async () => {
         const ed = document.getElementById('ed')!;
         const editor = await installShell(ed);
-        openDocument.mockImplementation(() => { tauri.emitEvent('app:set_mode', { mode: 'edit' }); });
+        openDocument.mockImplementation(() => {
+            tauri.emitEvent('app:set_mode', { mode: 'edit', cause: 'open' });
+        });
         item('a1.md').focus();
         press('Enter');
         await settle();
@@ -420,28 +428,104 @@ describe('Korrekturrunde 1 (Review Sol)', () => {
         expect(editor.mount).toHaveBeenCalled();
     });
 
-    it('Sol 2: Mausklick auf eine Datei fokussiert bei Moduswechsel weiterhin den Editor', async () => {
+    it('R2 (Sol N1): Enter, ↓, verspätetes app:set_mode{cause:open} → Fokus bleibt auf B', async () => {
         const ed = document.getElementById('ed')!;
         await installShell(ed);
-        item('a2.md').focus();
-        press('Enter'); // Markierung einer früheren Tastatur-Öffnung …
-        openDocument.mockImplementation(() => { tauri.emitEvent('app:set_mode', { mode: 'edit' }); });
-        const row = item('a1.md').querySelector('.row') as HTMLElement;
-        row.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true })); // … verfällt mit der Maus
-        row.click();
+        item('a1.md').focus();
+        press('Enter');
+        press('ArrowDown');
+        expect(focused()).toBe('B');
+        tauri.emitEvent('app:set_mode', { mode: 'edit', cause: 'open' });
         await settle();
-        expect(document.activeElement).toBe(ed);
+        expect(focused()).toBe('B');
     });
 
-    it('Sol 2: späterer Moduswechsel per Kürzel fokussiert den Editor', async () => {
+    it('R2 (Sol N1): app:set_mode{cause:user} nach Enter fokussiert den Editor (auch ohne DOM-Eingabe)', async () => {
         const ed = document.getElementById('ed')!;
         await installShell(ed);
         item('a1.md').focus();
         press('Enter'); // ohne Moduswechsel
-        press('2', { ctrlKey: true }); // nächste Eingabe
+        tauri.emitEvent('app:set_mode', { mode: 'edit', cause: 'user' }); // z. B. natives Menü
+        await settle();
+        expect(document.activeElement).toBe(ed);
+    });
+
+    it('R2: Altpayload ohne cause gilt als ausdrücklicher Wechsel', async () => {
+        const ed = document.getElementById('ed')!;
+        await installShell(ed);
+        item('a1.md').focus();
         tauri.emitEvent('app:set_mode', { mode: 'edit' });
+        await settle();
+        expect(document.activeElement).toBe(ed);
+    });
+
+    it('R2: Mausklick auf eine Datei bei Fokus im Editor + cause:open → Editor fokussiert', async () => {
+        const ed = document.getElementById('ed')!;
+        await installShell(ed);
+        ed.focus();
+        openDocument.mockImplementation(() => {
+            tauri.emitEvent('app:set_mode', { mode: 'edit', cause: 'open' });
+        });
+        const row = item('a1.md').querySelector('.row') as HTMLElement;
+        row.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }));
+        row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+        row.click();
+        await settle();
+        expect(openDocument).toHaveBeenCalledWith('/v/A/a1.md');
+        expect(document.activeElement).toBe(ed);
+    });
+
+    it('R2: Mausklick aus der View (body) + cause:open → Editor fokussiert wie vor dem Feature', async () => {
+        const ed = document.getElementById('ed')!;
+        await installShell(ed);
+        openDocument.mockImplementation(() => {
+            tauri.emitEvent('app:set_mode', { mode: 'edit', cause: 'open' });
+        });
+        const row = item('a1.md').querySelector('.row') as HTMLElement;
+        row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+        row.click();
         await settle();
         expect(document.activeElement).toBe(ed);
     });
 });
 
+describe('Korrekturrunde 2 — Mausklick und Fokus', () => {
+    it('Mausklick setzt den wandernden tabindex, ohne den DOM-Fokus zu bewegen', () => {
+        const ed = document.getElementById('ed')!;
+        ed.focus();
+        const row = item('a2.md').querySelector('.row') as HTMLElement;
+        const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+        row.dispatchEvent(down);
+        expect(down.defaultPrevented).toBe(true);
+        expect(document.activeElement).toBe(ed);
+        expect(item('a2.md').getAttribute('tabindex')).toBe('0');
+        expect(document.querySelectorAll('#vault-tree [tabindex="0"]').length).toBe(1);
+    });
+
+    it('Klick bei Fokus im Baum: der Fokus wandert mit', () => {
+        item('a1.md').focus();
+        const row = item('p.md').querySelector('.row') as HTMLElement;
+        row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+        expect(focused()).toBe('p.md');
+    });
+
+    it('Klick neben ein offenes Inline-Rename: mousedown bleibt unverhindert (Blur beendet es)', () => {
+        item('a1.md').focus();
+        const input = document.createElement('input');
+        input.className = 'vault-rename-input';
+        item('a1.md').querySelector('.label')!.appendChild(input);
+        input.focus();
+        const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+        (item('p.md').querySelector('.row') as HTMLElement).dispatchEvent(down);
+        expect(down.defaultPrevented).toBe(false);
+    });
+
+    it('mousedown im Rename-Input wird nicht verhindert (Cursor setzen)', () => {
+        const input = document.createElement('input');
+        input.className = 'vault-rename-input';
+        item('a1.md').querySelector('.label')!.appendChild(input);
+        const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+        input.dispatchEvent(down);
+        expect(down.defaultPrevented).toBe(false);
+    });
+});

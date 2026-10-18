@@ -219,7 +219,13 @@ pub fn open_with_anchor(
 
     if let Some(mode) = outcome.mode_override.as_deref() {
         handle
-            .emit("app:set_mode", serde_json::json!({ "mode": mode }))
+            .emit(
+                "app:set_mode",
+                crate::commands::app::set_mode_payload(
+                    mode,
+                    crate::commands::app::ModeChangeCause::Open,
+                ),
+            )
             .map_err(|error| TabError::Internal(error.to_string()))?;
     }
     AppState::emit_tabs_changed(handle).map_err(TabError::Internal)?;
@@ -315,7 +321,13 @@ pub fn activate_with_anchor(
         Ok(Some(outcome)) => {
             if let Some(mode) = outcome.mode_override.as_deref() {
                 handle
-                    .emit("app:set_mode", serde_json::json!({ "mode": mode }))
+                    .emit(
+                        "app:set_mode",
+                        crate::commands::app::set_mode_payload(
+                            mode,
+                            crate::commands::app::ModeChangeCause::Open,
+                        ),
+                    )
                     .map_err(|error| TabError::Internal(error.to_string()))?;
             }
             // Der Store-load-Callback hat document:loaded (inkl.
