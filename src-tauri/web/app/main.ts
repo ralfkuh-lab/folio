@@ -49,6 +49,7 @@ import { initHtmlLiveUpdate } from './view/html';
 import { initCodeLiveUpdate } from './view/code-live';
 import { initViewTheme, reapplyCurrentViewTheme } from './view/theme';
 import { initCodeCopy } from './view/code-copy';
+import { initTables } from './view/tables';
 import { initMarkdownScrollSync, syncViewSlugToEditor, tocClickToEditor } from './view/scroll-sync';
 import { scrollHtmlViewToAnchor } from './view/html';
 import { initHtmlScrollSync } from './view/html-scroll-sync';
@@ -159,6 +160,7 @@ function runModuleInits(): void {
     initHtmlLiveUpdate();
     initCodeLiveUpdate({ getCurrentPath });
     initCodeCopy();
+    initTables();
     initMarkdownScrollSync();
     initHtmlScrollSync();
 }

@@ -4,6 +4,7 @@
    gewaehlte Theme die eingebauten View-Regeln ueberstimmt. */
 
 import { safeInvoke } from '../util/log';
+import { scheduleTableMeasure } from './tables';
 
 export type ViewThemeDarkMap = Record<string, boolean>;
 
@@ -46,6 +47,9 @@ export async function applyViewTheme(
     style.textContent = typeof css === 'string' ? css : '';
     document.body.dataset.viewTheme = effective;
     currentThemeId = effective;
+    // Theme-Schrift/-Abstaende aendern die Tabellenbreite, nicht zwingend
+    // die der Textspalte — der ResizeObserver allein saehe das nicht.
+    scheduleTableMeasure();
     return effective;
 }
 

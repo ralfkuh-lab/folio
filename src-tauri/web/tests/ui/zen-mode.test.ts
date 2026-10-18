@@ -159,6 +159,33 @@ describe('ui/zen-mode', () => {
         expect(hint.hidden).toBe(true);
     });
 
+    it('focused table filter with text takes Escape before zen', async () => {
+        const { setZenMode, isZenMode, hasPriorityEscapeTarget } = await import('../../app/ui/zen-mode');
+        const holder = document.createElement('div');
+        holder.innerHTML = '<input class="folio-table-filter"><input class="folio-table-filter">';
+        document.body.appendChild(holder);
+        const [field, other] = Array.from(holder.querySelectorAll('input'));
+        await setZenMode(true);
+
+        // Leer, oder Inhalt ohne Fokus: Zen bleibt der Escape-Kandidat.
+        field.focus();
+        expect(hasPriorityEscapeTarget()).toBe(false);
+        other.value = 'nord';
+        expect(hasPriorityEscapeTarget()).toBe(false);
+        // Inhalt + Fokus: das Feld hat Vorrang, Escape beendet Zen nicht.
+        field.value = 'nord';
+        expect(hasPriorityEscapeTarget()).toBe(true);
+        field.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'Escape', bubbles: true, cancelable: true,
+        }));
+        await Promise.resolve();
+        expect(isZenMode()).toBe(true);
+        // Effektiv unsichtbar (Vorfahre display:none) zaehlt nicht.
+        holder.style.display = 'none';
+        expect(hasPriorityEscapeTarget()).toBe(false);
+        holder.remove();
+    });
+
     it('visible lang-picker blocks Escape', async () => {
         const { setZenMode, isZenMode, hasPriorityEscapeTarget } = await import('../../app/ui/zen-mode');
         await setZenMode(true);

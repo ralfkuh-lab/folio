@@ -244,6 +244,9 @@ body.kind-binary .image-view-region { display: none; }
   flex: 1 1 auto;
   overflow: auto;
   min-width: 0;
+  /* Size-Container fuer breite Tabellen (100cqi = Breite der View). */
+  container-type: inline-size;
+  --folio-table-gutter: 24px;
 }
 /* Marker-Lane fuer View-Modus. Marker werden vom ViewFinder als
    position:absolute mit top:X% (relativ zur Doc-scrollHeight) eingefuegt;
@@ -440,6 +443,177 @@ th, td {
 }
 th { background: var(--code-bg); font-weight: 600; }
 tr:nth-child(2n) td { background: rgba(175, 184, 193, 0.08); }
+/* App-Farben fuer Bedienelemente IM Dokument (Tabellen-Leiste): View-Themes
+   setzen `--fg`/`--accent` auf `.markdown-body` neu (Schrift des Blatts).
+   Hier an :root aufgeloest und vererbt, bleiben es die Farben der App —
+   passend zum App-Hintergrund `--bg` der Felder. */
+:root {
+  --folio-ui-fg: var(--fg);
+  --folio-ui-accent: var(--accent);
+}
+/* Tabellen in der App-View (view/tables.ts, Spec docs/spec-tables.md).
+   Gilt nur fuer den Wrapper, den die App anlegt — Export und Theme-Editor
+   sehen das Backend-HTML ohne ihn. Die Theme-Regeln der Tabelle bleiben;
+   im Wrapper wird nur das Selbst-Scrollen des App-Defaults und von GitHub
+   (`display: block; overflow: auto`) neutralisiert, damit genau EIN Element
+   scrollt. (0,2,1) schlaegt die Theme-Regeln (0,1,1), ohne !important. */
+.view-content .folio-table-scroll > table,
+.table-overlay .folio-table-scroll > table { display: table; }
+.markdown-body .folio-table { position: relative; }
+/* Passt die Tabelle nicht in ihre Spalte, scrollt der Rahmen. Nur dann ist
+   er Scroll-Container: sonst fallen die Theme-Margins der Tabelle wie
+   bisher durch ihn hindurch (tables.ts uebertraegt sie im Scroll-Fall). */
+.view-content .folio-table--scroll > .folio-table-scroll { overflow-x: auto; }
+.view-content .folio-table--scroll > .folio-table-scroll > table,
+.view-content .folio-table--bar > .folio-table-scroll > table { margin-block: 0; }
+/* Ausbrechen: oberste Ebene, so breit wie die View minus Rand, mittig zur
+   (ebenfalls mittigen) Textspalte. Der Hintergrund des Blatts kommt mit,
+   sonst stuende z. B. das immer weisse Classic-Blatt im Dark-Mode mit
+   dunkler Schrift auf dem dunklen App-Hintergrund. */
+.view-content > .markdown-body > .folio-table--wide {
+  width: calc(100cqi - 2 * var(--folio-table-gutter));
+  margin-inline: calc(50% - 50cqi + var(--folio-table-gutter));
+  background-color: inherit;
+}
+.view-content .folio-table--wide > .folio-table-scroll > table { margin-inline: auto; }
+/* Im Scroll-Zustand (und im Overlay, overlays.css) wird die Tabelle nicht
+   mehr auf die Rahmenbreite gestaucht — gescrollt wird ohnehin, also
+   bekommen Zahlen, Betraege, Daten und kurze Bezeichnungen ihre volle
+   Breite statt „5.683,75 / €" auf zwei Zeilen. Nur lange Zellen
+   (tables.ts markiert sie per Zeichenzahl) brechen um, ab 24em: eine
+   gesetzte Zellbreite begrenzt im Auto-Layout die Spalte, `max-width`
+   an Zellen tut das nicht. Passt die Tabelle in die Spalte, greift
+   nichts davon — dann gilt das Theme. */
+.view-content .folio-table--scroll > .folio-table-scroll > table {
+  width: max-content;
+  max-width: none;
+}
+.view-content .folio-table--scroll .folio-cell-long { width: 24em; }
+/* Vom Filter versteckte Zeilen (Themes setzen evtl. ein eigenes display). */
+.markdown-body .folio-table tr[hidden] { display: none; }
+/* Sortieren: der Inhalt jedes th steckt in einem Button (Tastaturzugang
+   ohne eigenes Key-Handling). Alles erbt, damit das Theme die Ueberschrift
+   weiter gestaltet; der Pfeil liegt absolut im Zellenabstand und
+   verschiebt deshalb weder Text noch Spaltenbreite. */
+.markdown-body .folio-th-sort {
+  position: relative;
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+.markdown-body .folio-th-sort::after {
+  position: absolute;
+  top: 50%;
+  left: 100%;
+  margin-left: .3em;
+  transform: translateY(-50%);
+  font-size: .7em;
+  line-height: 1;
+  content: "\25B2";
+  opacity: 0;
+  pointer-events: none;
+}
+/* Rechtsbuendige Spalten: Pfeil links, sonst stuende er im Rand. */
+.markdown-body th[style*="right"] > .folio-th-sort::after {
+  left: auto;
+  right: 100%;
+  margin-left: 0;
+  margin-right: .3em;
+}
+.markdown-body .folio-th-sort:hover::after,
+.markdown-body .folio-th-sort:focus-visible::after { opacity: .35; }
+.markdown-body th[aria-sort="ascending"] > .folio-th-sort::after { content: "\25B2"; opacity: .8; }
+.markdown-body th[aria-sort="descending"] > .folio-th-sort::after { content: "\25BC"; opacity: .8; }
+.markdown-body .folio-th-sort:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+/* Leiste ueber der Tabelle: liegt im Abstand davor, verschiebt also nichts.
+   Sichtbar bei Hover/Fokus (wie der Code-Copy-Button); unsichtbar faengt
+   sie keine Klicks auf den Text darunter ab. */
+.markdown-body .folio-table-bar {
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 3px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s ease;
+}
+/* Tabellen mit Filterfeld: fester Platz im Fluss, Inhalt erscheint wie oben.
+   Der negative Rand zieht die Leiste in den Abstand vor der Tabelle. */
+.markdown-body .folio-table--bar > .folio-table-bar {
+  position: static;
+  justify-content: flex-end;
+  margin-top: -10px;
+  padding-bottom: 4px;
+}
+.markdown-body .folio-table:hover > .folio-table-bar,
+.markdown-body .folio-table:focus-within > .folio-table-bar,
+.markdown-body .folio-table--filtered > .folio-table-bar {
+  opacity: 1;
+  pointer-events: auto;
+}
+.markdown-body .folio-table-expand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--fg-muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color .12s ease, border-color .12s ease;
+}
+.markdown-body .folio-table-expand:hover { color: var(--folio-ui-fg); border-color: var(--fg-muted); }
+/* Filterfeld und Trefferzahl: App-UI, deshalb App-Schrift statt Theme. */
+.markdown-body .folio-table-filter {
+  box-sizing: border-box;
+  width: 13em;
+  height: 28px;
+  margin: 0;
+  padding: 0 8px;
+  font: 13px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--folio-ui-fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.markdown-body .folio-table-filter::placeholder { color: var(--fg-muted); }
+.markdown-body .folio-table-filter:focus {
+  outline: 2px solid var(--folio-ui-accent);
+  outline-offset: -1px;
+}
+.markdown-body .folio-table-count {
+  padding: 3px 7px;
+  font: 12px/1.3 system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--fg-muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.markdown-body .folio-table-count[hidden] { display: none; }
+.markdown-body .folio-table-expand:focus-visible {
+  outline: 2px solid var(--folio-ui-accent);
+  outline-offset: 1px;
+}
 hr {
   border: 0;
   border-top: 1px solid var(--border);

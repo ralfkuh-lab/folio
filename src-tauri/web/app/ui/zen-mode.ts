@@ -86,6 +86,14 @@ export function hasPriorityEscapeTarget(): boolean {
         if (!region || isElementEffectivelyVisible(region)) return true;
     }
     if (visibleById('vault-filter')) return true;
+    // Tabellen-Filterfeld (view/tables.ts) mit Inhalt: Escape leert dort
+    // zuerst das Feld. Nur das fokussierte — dessen Handler greift ohnehin
+    // nur im Feld, ein gefiltertes Feld anderswo sperrte Escape sonst ganz.
+    const active = document.activeElement;
+    if (active instanceof HTMLInputElement && active.classList.contains('folio-table-filter')
+        && active.value !== '' && isElementEffectivelyVisible(active)) {
+        return true;
+    }
     if (visibleById('lang-picker')) return true;
     if (visibleById('ai-actions-fav-menu')) return true;
     return false;
