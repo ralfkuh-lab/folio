@@ -222,9 +222,18 @@ describe('V6 — numerisch nur bei einer Einheit', () => {
         expect(isNumericColumn(['8.169,25 €', '', '250,25 €'], 'de-DE')).toBe(true);
     });
 
-    it('gemischte Einheiten sortieren per Collator, nicht nach Zahlwert', () => {
-        // numerisch (de) waere 3 < 1500; der Collator vergleicht „1" vor „3".
+    it('gemischte Einheiten: je Einheit numerisch gruppiert, Zahlen ohne Einheit zuerst', () => {
+        // Werte mit verschiedenen Einheiten sind nicht vergleichbar (3 Mio.
+        // vs. 500); innerhalb einer Einheit aber schon — „1.250“ ist (de)
+        // 1250, nicht 1 wie im Collator mit `numeric`.
         expect(pick(['3 Mio.', '1.500'])).toEqual(['1.500', '3 Mio.']);
+        const mixed = ['3 Mio.', '500', '2 Mrd.', '12', '7', '1.250'];
+        expect(pick(mixed)).toEqual(['7', '12', '500', '1.250', '3 Mio.', '2 Mrd.']);
+        expect(sortOrder(mixed, 'desc', 'de-DE').map((i) => mixed[i]))
+            .toEqual(['2 Mrd.', '3 Mio.', '1.250', '500', '12', '7']);
+        // Zahlen vor Text, Text per Collator; leere Zellen bleiben am Ende.
+        const withText = ['offen', '1.250', '', '20 h', '7', '5 h'];
+        expect(pick(withText)).toEqual(['7', '1.250', '5 h', '20 h', 'offen', '']);
         // gleiche (leere) Einheit bleibt numerisch: 20 < 1000.
         expect(pick(['1.000', '20'])).toEqual(['20', '1.000']);
     });

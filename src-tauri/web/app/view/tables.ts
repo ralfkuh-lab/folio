@@ -136,33 +136,41 @@ export function parseCellQuantity(raw: string, decimal: string): { value: number
 }
 
 /**
- * Reihenfolge (Indizes in `values`) fuer eine Sortierung. Numerisch, wenn
- * jede nicht leere Zelle eine Zahl mit derselben Einheit (oder keiner) ist,
- * sonst Collator mit `numeric`.
- * Leere Zellen immer ans Ende, in Originalreihenfolge; stabil.
+ * Reihenfolge (Indizes in `values`) fuer eine Sortierung. Zahlen (nach der
+ * Format-Locale) vor Text; Zahlen gruppiert nach Einheit — ohne Einheit
+ * zuerst, sonst Einheit per Collator —, innerhalb einer Einheit nach Wert:
+ * „3 Mio.“ und „500“ sind nicht vergleichbar, „1.250“ und „500“ schon.
+ * Text per Collator mit `numeric`. Leere Zellen immer ans Ende, in
+ * Originalreihenfolge; stabil.
  */
 export function sortOrder(values: string[], dir: SortDir, locale: string): number[] {
     const filled: number[] = [];
     const empty: number[] = [];
     values.forEach((v, i) => { (v.trim() === '' ? empty : filled).push(i); });
-    const quantities = columnQuantities(filled.map((i) => values[i]), locale);
-    const numeric = quantities !== null;
-    const nums = quantities || [];
+    const decimal = decimalSeparator(locale);
+    const quantity = new Map(filled.map((i) => [i, parseCellQuantity(values[i], decimal)]));
     let collator: Intl.Collator;
     try {
         collator = new Intl.Collator(locale, { numeric: true, sensitivity: 'base' });
     } catch {
         collator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
     }
-    const num = new Map<number, number>();
-    filled.forEach((i, k) => num.set(i, nums[k]));
+    const NO_UNIT = '|';
+    const compare = (a: number, b: number): number => {
+        const qa = quantity.get(a);
+        const qb = quantity.get(b);
+        if (qa && qb) {
+            if (qa.unit === qb.unit) return qa.value - qb.value;
+            if (qa.unit === NO_UNIT) return -1;
+            if (qb.unit === NO_UNIT) return 1;
+            return collator.compare(qa.unit, qb.unit);
+        }
+        if (qa) return -1;
+        if (qb) return 1;
+        return collator.compare(values[a].trim(), values[b].trim());
+    };
     const sign = dir === 'asc' ? 1 : -1;
-    filled.sort((a, b) => {
-        const c = numeric
-            ? (num.get(a) as number) - (num.get(b) as number)
-            : collator.compare(values[a].trim(), values[b].trim());
-        return c * sign || a - b;
-    });
+    filled.sort((a, b) => compare(a, b) * sign || a - b);
     return filled.concat(empty);
 }
 
