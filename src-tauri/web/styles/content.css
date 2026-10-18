@@ -264,6 +264,20 @@ body.kind-binary .image-view-region { display: none; }
   padding: 32px 40px 64px;
   box-sizing: border-box;
 }
+/* View-Themes setzen ein vertikales `margin` („Blatt auf dem Tisch") — fuer
+   den HTML-Export gedacht, wo `<id>.page.css` den Tisch malt. In der App
+   ist der Tisch der App-Hintergrund: fuellt das Blatt die View-Breite, bleibt
+   davon nur ein andersfarbiger Balken ueber dem Dokument. Deshalb hier
+   vertikal ohne Margin und mit einheitlichem Kopfabstand; `flow-root`
+   verhindert, dass der Margin der ersten Ueberschrift durch das Blatt
+   kollabiert und den Balken wieder aufmacht. (0,2,0) schlaegt die
+   Theme-Regeln (0,1,0); Export und Theme-Editor-Vorschau bleiben unberuehrt. */
+.view-content > .markdown-body {
+  display: flow-root;
+  margin-top: 0;
+  margin-bottom: 0;
+  padding-top: 32px;
+}
 /* „Volle Breite"-Toggle (tb-content-width, persistiert als `content_wide`
    in panel-state.json). Hebt die Lesebreite auf — die des Defaults oben
    ebenso wie die des aktiven View-Themes: das Theme-CSS wird zwar als
