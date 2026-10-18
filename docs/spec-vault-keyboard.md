@@ -17,7 +17,7 @@ Bereiche), Umbelegen globaler Kürzel.
    kennen es Screenreader und Dateimanager.
 2. **Fokus ≠ aktives Dokument.** Die bestehende Markierung des geöffneten
    Dokuments (`active`) bleibt; der Tastaturfokus ist eine eigene, sichtbare
-   Markierung (`:focus-visible`). Pfeiltasten öffnen nichts.
+   Markierung (Fokusring, solange der Baum den Fokus hat). Pfeiltasten öffnen nichts.
 3. **Kürzel wirken nur, wenn der Baum den Fokus hat.** Strg+C/X/V, Entf, F2
    im Editor oder in der View bleiben unberührt.
 4. **Jede Aktion läuft über denselben Pfad wie das Kontextmenü** — kein
