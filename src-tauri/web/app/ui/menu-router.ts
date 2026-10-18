@@ -18,6 +18,7 @@ import { openVaultSearch } from '../vault/search';
 import { folioLog, safeInvoke } from '../util/log';
 import { openGitDiffForActiveDoc } from './git-diff';
 import { toggleZenMode } from './zen-mode';
+import { focusVaultTree } from '../vault/tree-keyboard';
 
 type Deps = {
     applyRailVisibility: (side: 'left' | 'right', visible: boolean) => void;
@@ -120,6 +121,9 @@ export function initMenuRouter(deps: Deps): void {
     });
     ev.listen('menu:view_zen', function () {
         void toggleZenMode();
+    });
+    ev.listen('menu:view_focus_vault', function () {
+        void focusVaultTree();
     });
     // menu:about wird vom about-dialog-Modul direkt abonniert (eigener
     // Listener mit voller Payload-Anzeige). Kein Eintrag mehr hier, sonst

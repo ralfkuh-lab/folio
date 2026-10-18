@@ -201,6 +201,13 @@ pub fn build(handle: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let item_zen = MenuItemBuilder::with_id(ids::VIEW_ZEN, l.view_zen.as_str())
         .accelerator("Shift+F11")
         .build(handle)?;
+    // view.focus_vault: Tastaturfokus in den Vault-Baum (Spec
+    // docs/spec-vault-keyboard.md). Ausgeloest wie F11 ueber den
+    // DOM-Capture-Block; der Accelerator ist vor allem Anzeige.
+    let item_focus_vault =
+        MenuItemBuilder::with_id(ids::VIEW_FOCUS_VAULT, l.view_focus_vault.as_str())
+            .accelerator("CmdOrCtrl+Shift+E")
+            .build(handle)?;
     let view_menu = SubmenuBuilder::new(handle, l.view.as_str())
         .item(&item_mode_view)
         .item(&item_mode_edit)
@@ -210,6 +217,7 @@ pub fn build(handle: &AppHandle) -> tauri::Result<Menu<Wry>> {
         .item(&theme_submenu)
         .item(&PredefinedMenuItem::separator(handle)?)
         .item(&item_rail_left)
+        .item(&item_focus_vault)
         .item(&item_minimap)
         .item(&item_rail_right)
         .item(&item_content_width)

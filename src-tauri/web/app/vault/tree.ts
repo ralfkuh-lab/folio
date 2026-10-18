@@ -16,13 +16,22 @@
    ein offenes Inline-Rename schiebt sie auf, statt die Eingabe des
    Nutzers wegzuraeumen. */
 
-import { openContextMenu, runOrOpenFile } from './context-menu';
+import {
+    isVaultActionAvailable,
+    openContextMenu,
+    runOrOpenFile,
+    runVaultAction,
+    type ContextMenuOptions,
+} from './context-menu';
 import { deferVaultTreeUpdate, setVaultRenameFlush } from './rename-guard';
+import { initVaultTreeKeyboard, isKeyboardMenuJustOpened } from './tree-keyboard';
 import { folioLog, safeInvoke } from '../util/log';
 import { t } from '../i18n/translate';
 
 type Deps = {
     openDocument: (path: string) => void;
+    /** Blendet die Vault-Rail ein (Strg+Umschalt+E bei zugeklappter Rail). */
+    openLeftRail?: () => void;
 };
 
 let deps: Deps = null;
@@ -240,6 +249,17 @@ export function renderVaultFromHtml(html: string): void {
     renderVault(html);
 }
 
+/** Klappt die Ordnerkette auf und baut den Baum neu (Strg+Umschalt+E deckt
+ *  damit das aktive Dokument auf). Gleicher Backend-Pfad wie der
+ *  Tiefenfilter, inkl. Watcher-Registrierung. */
+function expandPathsAndRender(dirs: string[]): Promise<void> {
+    return invoke('vault_expand_paths', { paths: dirs }).then(function (res: any) {
+        if (res && typeof res.html === 'string') renderVault(res.html);
+    }).catch(function (err) {
+        folioLog.warn('vault', 'vault_expand_paths failed', { error: String(err) });
+    });
+}
+
 export function refreshVault(): Promise<void> {
     // Frueh raus: waehrend eines Inline-Renames spart das den
     // vault_build_tree-Roundtrip, dessen Ergebnis renderVault ohnehin
@@ -264,6 +284,46 @@ function isDirectChildOfSection(node: HTMLElement, sectionKey: string): boolean 
     return false;
 }
 
+/** Was das Kontextmenü über einen Eintrag wissen muss — geteilt von
+ *  Rechtsklick und Tastatur (Umschalt+F10, K2-Kürzel). */
+function menuTargetOf(item: HTMLElement): {
+    path: string; isDir: boolean; inPinned: boolean; inRecent: boolean; isExec: boolean;
+    options: ContextMenuOptions;
+} {
+    return {
+        path: item.getAttribute('data-path') || '',
+        isDir: item.getAttribute('data-kind') === 'dir',
+        inPinned: isDirectChildOfSection(item, 'pinned'),
+        inRecent: isDirectChildOfSection(item, 'recent'),
+        isExec: item.getAttribute('data-exec') === '1',
+        options: {
+            gitModified: item.classList.contains('git-modified'),
+            isText: item.getAttribute('data-text') === '1',
+            wikilinkRoot: item.getAttribute('data-wikilink-root') === '1',
+        },
+    };
+}
+
+/** K2: Aktion nur, wenn das Kontextmenü sie für diesen Eintrag anböte. */
+function runMenuAction(act: string, item: HTMLElement): Promise<{ done: boolean; path?: string }> | null {
+    const m = menuTargetOf(item);
+    if (!m.path) return null;
+    if (!isVaultActionAvailable(act, m.isDir, m.inPinned, m.inRecent, m.isExec, m.options)) return null;
+    return runVaultAction(act, m.path, m.isDir);
+}
+
+/** K3: Kontextmenü unter der Zeile, Fokus in das Menü. */
+function openMenuForItem(item: HTMLElement): void {
+    const m = menuTargetOf(item);
+    if (!m.path) return;
+    const row = item.querySelector(':scope > .row') as HTMLElement | null;
+    const rect = (row || item).getBoundingClientRect();
+    openContextMenu(rect.left + 16, rect.bottom, m.path, m.isDir, m.inPinned, m.inRecent, m.isExec, {
+        ...m.options,
+        returnFocus: item,
+    });
+}
+
 export function initVaultTree(d: Deps): void {
     deps = d;
     ROOT = document.getElementById('vault-tree');
@@ -273,6 +333,18 @@ export function initVaultTree(d: Deps): void {
     // Waehrend eines Inline-Renames aufgeschobene Baum-Updates werden
     // danach als EIN kompletter Rebuild nachgezogen (siehe rename-guard).
     setVaultRenameFlush(function () { void refreshVault(); });
+
+    initVaultTreeKeyboard(ROOT, {
+        toggleDir,
+        toggleSection,
+        openDocument: function (p) { deps.openDocument(p); },
+        openInNewTab: function (p) { safeInvoke('tab_open', { path: p }, 'tab_open'); },
+        getActivePath: function () { return currentActivePath; },
+        openLeftRail: function () { if (deps.openLeftRail) deps.openLeftRail(); },
+        expandPaths: expandPathsAndRender,
+        runAction: runMenuAction,
+        openMenu: openMenuForItem,
+    });
 
     // ----- Klick-Routing auf Tree-Reihen (Haupt-Tree) + Header-Buttons -----
     REGION.addEventListener('click', function (e: MouseEvent) {
@@ -378,19 +450,11 @@ export function initVaultTree(d: Deps): void {
         const item = (e.target as HTMLElement).closest('li.node') as HTMLElement;
         if (!item) return;
         e.preventDefault();
-        const path = item.getAttribute('data-path');
-        const isDir = item.getAttribute('data-kind') === 'dir';
-        const inPinned = isDirectChildOfSection(item, 'pinned');
-        const inRecent = isDirectChildOfSection(item, 'recent');
-        const isExec = item.getAttribute('data-exec') === '1';
-        const gitModified = item.classList.contains('git-modified');
-        const isText = item.getAttribute('data-text') === '1';
-        const wikilinkRoot = item.getAttribute('data-wikilink-root') === '1';
-        openContextMenu(e.clientX, e.clientY, path, isDir, inPinned, inRecent, isExec, {
-            gitModified,
-            isText,
-            wikilinkRoot,
-        });
+        // Die Kontextmenü-Taste löst je nach Engine zusätzlich dieses Event
+        // aus; das per Tastatur geöffnete Menü (Fokus darin) bleibt.
+        if (isKeyboardMenuJustOpened()) return;
+        const m = menuTargetOf(item);
+        openContextMenu(e.clientX, e.clientY, m.path, m.isDir, m.inPinned, m.inRecent, m.isExec, m.options);
     });
 
     // Doppelklick auf eine Datei loest die externe Aktion aus (ausfuehren /

@@ -19,6 +19,7 @@ import { openGitDiff } from '../ui/git-diff';
 import { getTabsSnapshot } from '../state/tabs';
 import { clearClip, clearClipIfUnder, getClip, remapClip, setClip } from './clipboard';
 import { beginVaultRename, endVaultRename } from './rename-guard';
+import { focusVaultItem } from './tree-keyboard';
 
 // Monochrome 16x16-Feather-Icons je data-act. Kein width/height im SVG
 // (CSS steuert die Groesse), stroke=currentColor faerbt mit Hover/Theme mit.
@@ -54,6 +55,8 @@ function appendItem(parent: HTMLElement, act: string, label: string, extraClass?
     const div = document.createElement('div');
     div.className = extraClass ? `ctx-item ${extraClass}` : 'ctx-item';
     div.setAttribute('data-act', act);
+    div.setAttribute('role', 'menuitem');
+    div.tabIndex = -1;
     const icon = document.createElement('span');
     icon.className = 'ctx-icon';
     // Static SVG constants only — never user/t() content.
@@ -69,6 +72,7 @@ function appendItem(parent: HTMLElement, act: string, label: string, extraClass?
 function appendSep(parent: HTMLElement): void {
     const sep = document.createElement('div');
     sep.className = 'ctx-sep';
+    sep.setAttribute('role', 'separator');
     parent.appendChild(sep);
 }
 
@@ -106,6 +110,8 @@ export function runOrOpenFile(path: string, isExec: boolean): void {
 let deps: Deps = null;
 let ctxMenu: HTMLElement | null = null;
 let ctxTarget: { path: string; isDirectory: boolean } | null = null;
+/** Zeile, an die der Fokus zurückgeht; gesetzt = per Tastatur geöffnet. */
+let menuReturnFocus: HTMLElement | null = null;
 
 function invoke(cmd: string, args?: any): Promise<any> {
     return window.__TAURI__.core.invoke(cmd, args);
@@ -117,27 +123,31 @@ export type ContextMenuOptions = {
     /** Pin-Wurzel ist als Wikilink-/Tag-Wurzel freigeschaltet
      *  (`data-wikilink-root="1"` aus dem Backend-Markup, Spec W8). */
     wikilinkRoot?: boolean;
+    /** Per Tastatur geöffnet (K3): Fokus auf den ersten Eintrag, Escape gibt
+     *  ihn an dieses Element (die Baumzeile) zurück. */
+    returnFocus?: HTMLElement;
 };
 
-export function openContextMenu(
-    x: number,
-    y: number,
-    path: string,
+/** Eintrag [data-act, Label] oder Trenner (null). */
+type MenuEntry = [string, string] | null;
+
+/** Welche Aktionen das Kontextmenü für einen Eintrag anbietet — die EINE
+ *  Quelle der Bedingungen für Menü und Tastaturkürzel (Spec vault-keyboard
+ *  K2: kein „Löschen" auf Pin-Wurzeln, „Einfügen" nur auf Ordnern …). */
+function buildMenuEntries(
     isDir: boolean,
     inPinned: boolean,
     inRecent: boolean,
     isExec: boolean,
     options?: ContextMenuOptions,
-): void {
-    if (!ctxMenu) return;
-    ctxTarget = { path, isDirectory: isDir };
-    ctxMenu.replaceChildren();
+): MenuEntry[] {
+    const out: MenuEntry[] = [];
     let headCount = 0;
     if (!isDir) {
-        appendItem(ctxMenu, 'open', t('vault.contextMenu.open'));
-        appendItem(ctxMenu, 'open-newtab', t('vault.contextMenu.openNewTab'));
-        if (isExec) appendItem(ctxMenu, 'run', t('vault.contextMenu.run'));
-        else appendItem(ctxMenu, 'open-default', t('vault.contextMenu.openWithDefault'));
+        out.push(['open', t('vault.contextMenu.open')]);
+        out.push(['open-newtab', t('vault.contextMenu.openNewTab')]);
+        if (isExec) out.push(['run', t('vault.contextMenu.run')]);
+        else out.push(['open-default', t('vault.contextMenu.openWithDefault')]);
         headCount = 3;
     }
     // Verzeichnis: „Neue Datei…" / „Neuer Ordner…" zuerst; Datei: in der
@@ -172,20 +182,54 @@ export function openContextMenu(
         );
     }
     if (inRecent) mid.push(['remove-recent', t('vault.contextMenu.removeRecent')]);
-    if (mid.length && headCount) appendSep(ctxMenu);
-    for (const [act, label] of mid) appendItem(ctxMenu, act, label);
-    if (headCount + mid.length > 0) appendSep(ctxMenu);
-    appendItem(ctxMenu, 'show', t('vault.contextMenu.showInExplorer'));
-    appendItem(ctxMenu, 'terminal', t('vault.contextMenu.openTerminal'));
-    appendItem(ctxMenu, 'copy', t('vault.contextMenu.copyPath'));
+    if (mid.length && headCount) out.push(null);
+    for (const entry of mid) out.push(entry);
+    if (headCount + mid.length > 0) out.push(null);
+    out.push(['show', t('vault.contextMenu.showInExplorer')]);
+    out.push(['terminal', t('vault.contextMenu.openTerminal')]);
+    out.push(['copy', t('vault.contextMenu.copyPath')]);
     // Löschen ganz unten, durch Separator abgesetzt. NICHT auf einer
     // Pin-Wurzel-Verzeichnis-Zeile: dort ist fast immer „Aus Vault
     // entfernen" (unpin) gemeint, und ein Fehlklick schöbe ein ganzes
     // Projektverzeichnis in den Papierkorb. Gepinnte Einzeldateien bleiben
     // löschbar — dort ist der Schaden lokal und das Verhalten alt.
     if (!isPinRootDir) {
-        appendSep(ctxMenu);
-        appendItem(ctxMenu, 'delete', t('vault.contextMenu.delete'), 'ctx-item-danger');
+        out.push(null);
+        out.push(['delete', t('vault.contextMenu.delete')]);
+    }
+    return out;
+}
+
+/** Bietet das Kontextmenü `act` für diesen Eintrag an? */
+export function isVaultActionAvailable(
+    act: string,
+    isDir: boolean,
+    inPinned: boolean,
+    inRecent: boolean,
+    isExec: boolean,
+    options?: ContextMenuOptions,
+): boolean {
+    return buildMenuEntries(isDir, inPinned, inRecent, isExec, options)
+        .some(function (e) { return !!e && e[0] === act; });
+}
+
+export function openContextMenu(
+    x: number,
+    y: number,
+    path: string,
+    isDir: boolean,
+    inPinned: boolean,
+    inRecent: boolean,
+    isExec: boolean,
+    options?: ContextMenuOptions,
+): void {
+    if (!ctxMenu) return;
+    ctxTarget = { path, isDirectory: isDir };
+    menuReturnFocus = options?.returnFocus || null;
+    ctxMenu.replaceChildren();
+    for (const entry of buildMenuEntries(isDir, inPinned, inRecent, isExec, options)) {
+        if (!entry) appendSep(ctxMenu);
+        else appendItem(ctxMenu, entry[0], entry[1], entry[0] === 'delete' ? 'ctx-item-danger' : undefined);
     }
 
     // Punkt 1: provisorisch positionieren, dann gemessene Groesse am
@@ -205,11 +249,68 @@ export function openContextMenu(
     }
     ctxMenu.style.left = left + 'px';
     ctxMenu.style.top = top + 'px';
+    // Per Tastatur geöffnet (K3): Fokus auf den ersten Eintrag. Per Maus
+    // bleibt der Fokus, wo er war (unverändertes Verhalten).
+    if (menuReturnFocus) {
+        const first = menuItems()[0];
+        if (first) first.focus();
+    }
 }
 
 export function closeContextMenu(): void {
     if (ctxMenu) ctxMenu.classList.remove('open');
     ctxTarget = null;
+    menuReturnFocus = null;
+}
+
+function menuItems(): HTMLElement[] {
+    if (!ctxMenu) return [];
+    return Array.from(ctxMenu.querySelectorAll<HTMLElement>('.ctx-item:not(.disabled)'));
+}
+
+/** Tastatur im offenen Menü (K3): ↑/↓/Pos1/Ende wandern (Trenner sind keine
+ *  Einträge), Enter/Leertaste lösen aus, Escape/Tab schließen und geben den
+ *  Fokus an die Zeile zurück. */
+function onMenuKeydown(e: KeyboardEvent): void {
+    if (!ctxMenu || !ctxMenu.classList.contains('open')) return;
+    const items = menuItems();
+    const i = items.indexOf(document.activeElement as HTMLElement);
+    let next: HTMLElement | undefined;
+    switch (e.key) {
+        case 'ArrowDown': next = items[(i + 1) % items.length]; break;
+        case 'ArrowUp': next = items[(i - 1 + items.length) % items.length]; break;
+        case 'Home': next = items[0]; break;
+        case 'End': next = items[items.length - 1]; break;
+        case 'Enter':
+        case ' ': {
+            if (i < 0) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const back = menuReturnFocus;
+            items[i].click();
+            // Hat die Aktion den Fokus nicht selbst genommen (Inline-Rename,
+            // Dialog per setTimeout), zurück an die Zeile.
+            const active = document.activeElement;
+            if (back && (!active || active === document.body || ctxMenu.contains(active))) {
+                focusVaultItem(back);
+            }
+            return;
+        }
+        case 'Escape':
+        case 'Tab': {
+            const back = menuReturnFocus;
+            e.preventDefault();
+            e.stopPropagation();
+            closeContextMenu();
+            if (back) focusVaultItem(back);
+            return;
+        }
+        default:
+            return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    if (next) next.focus();
 }
 
 /* Inline-Rename im Vault-Baum (Explorer-Feeling): ersetzt das .label-Span
@@ -231,6 +332,7 @@ export function startInlineRename(path: string): void {
         }
     }
     if (!nodeEl) return;
+    const treeItem = nodeEl;
     const labelEl = nodeEl.querySelector(':scope > .row > .label') as HTMLElement;
     if (!labelEl || labelEl.dataset.editing === '1') return;
     const originalText = labelEl.textContent || '';
@@ -267,18 +369,19 @@ export function startInlineRename(path: string): void {
         cleanup();
         labelEl.textContent = originalText;
     }
-    function commit(): void {
-        if (finished) return;
+    /** Liefert den neuen Pfad, wenn umbenannt wird, sonst null. */
+    function commit(): string | null {
+        if (finished) return null;
         finished = true;
         const newName = (input.value || '').trim();
         if (!newName || newName === originalText) {
             restore();
-            return;
+            return null;
         }
         if (isInvalidFileName(newName)) {
             restore();
             deps.showStatus(t('errors.file.invalidName'));
-            return;
+            return null;
         }
         cleanup();
         labelEl.textContent = newName; // optimistisch bis vault:refresh kommt
@@ -292,6 +395,7 @@ export function startInlineRename(path: string): void {
             deps.showStatus(typeof err === 'string' ? err : t('errors.vault.renameFailed'));
             deps.refreshVault();
         });
+        return newPath;
     }
     function cancel(): void {
         if (finished) return;
@@ -299,8 +403,18 @@ export function startInlineRename(path: string): void {
         restore();
     }
     function onKey(e: KeyboardEvent): void {
-        if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); commit(); }
-        else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancel(); }
+        // Per Tastatur beendet: Fokus zurück an die Zeile, nach dem Rebuild
+        // auf den umbenannten Eintrag (K2). Blur gibt den Fokus ab, wohin
+        // der Nutzer geklickt hat — dort nicht zurückholen.
+        if (e.key === 'Enter') {
+            e.preventDefault(); e.stopPropagation();
+            const newPath = commit();
+            focusVaultItem(treeItem, newPath || undefined);
+        } else if (e.key === 'Escape') {
+            e.preventDefault(); e.stopPropagation();
+            cancel();
+            focusVaultItem(treeItem);
+        }
         else { e.stopPropagation(); }
     }
     function onBlur(): void { commit(); }
@@ -318,6 +432,144 @@ export function startInlineRename(path: string): void {
     }
 }
 
+/** Ergebnis einer Aktion, soweit der Aufrufer es braucht: `done` = die
+ *  Aktion lief (bei „Löschen" erst nach Bestätigung), `path` = neuer Eintrag
+ *  (Einfügen, Duplizieren) für den Tastaturfokus. */
+export type VaultActionResult = { done: boolean; path?: string };
+
+const NOT_DONE: VaultActionResult = { done: false };
+
+function reportError(err: unknown, fallback: string): void {
+    deps.showStatus(typeof err === 'string' ? err : fallback);
+}
+
+/** Die EINE Ausführung aller Vault-Aktionen — Kontextmenü (Klick und
+ *  Tastatur, K3) und Tastaturkürzel im Baum (K2) rufen sie. Prüft keine
+ *  Verfügbarkeit; das macht der Aufrufer über `isVaultActionAvailable`
+ *  bzw. die gerenderten Menüeinträge. */
+export function runVaultAction(act: string, path: string, isDir: boolean): Promise<VaultActionResult> {
+    if (act === 'open' && !isDir) {
+        deps.openDocument(path);
+    } else if (act === 'open-newtab' && !isDir) {
+        safeInvoke('tab_open', { path }, 'tab_open');
+    } else if (act === 'run' && !isDir) {
+        runOrOpenFile(path, true);
+    } else if (act === 'open-default' && !isDir) {
+        runOrOpenFile(path, false);
+    } else if (act === 'pin') {
+        safeInvoke('workspace_pin', { path, isDirectory: isDir }, 'workspace_pin');
+    } else if (act === 'unpin') {
+        safeInvoke('workspace_unpin', { path }, 'workspace_unpin');
+    } else if (act === 'wikilink-root-on' || act === 'wikilink-root-off') {
+        safeInvoke(
+            'workspace_wikilink_root_set',
+            { path, enabled: act === 'wikilink-root-on' },
+            'workspace_wikilink_root_set',
+        );
+    } else if (act === 'remove-recent') {
+        safeInvoke('workspace_remove_recent', { path }, 'workspace_remove_recent');
+    } else if (act === 'search-folder' && isDir) {
+        searchInFolder(path);
+    } else if (act === 'filter-folder' && isDir) {
+        // Kein Direkt-Import von vault/filter.ts: der zoege den Zyklus
+        // context-menu → filter → tree → context-menu. Der Frontend-Hook
+        // ist ohnehin der von Spec/E2E verlangte Einstieg.
+        const hook = (window as any).__folioVaultFilterInFolder;
+        if (typeof hook === 'function') hook(path);
+    } else if (act === 'show-changes' && !isDir) {
+        void openGitDiff(path, deps.showStatus);
+    } else if (act === 'rename') {
+        startInlineRename(path);
+    } else if (act === 'show') {
+        safeInvoke('show_in_file_manager', { path }, 'show_in_file_manager');
+    } else if (act === 'terminal') {
+        safeInvoke('open_terminal_at', { path }, 'open_terminal_at');
+    } else if (act === 'copy') {
+        if (navigator.clipboard) navigator.clipboard.writeText(path).catch(function () { /* clipboard write may reject silently */ });
+    } else if (act === 'cut') {
+        setClip(path, 'cut');
+    } else if (act === 'clip-copy') {
+        setClip(path, 'copy');
+    } else if (act === 'duplicate') {
+        return invoke('duplicate_entry', { path }).then(function (p: unknown) {
+            return { done: true, path: typeof p === 'string' ? p : undefined };
+        }, function (err) {
+            reportError(err, t('errors.file.copyTreeFailed', { detail: String(err) }));
+            return NOT_DONE;
+        });
+    } else if (act === 'paste' && isDir) {
+        const held = getClip();
+        if (!held) return Promise.resolve(NOT_DONE);
+        const cmd = held.mode === 'cut' ? 'move_entry' : 'copy_entry';
+        return invoke(cmd, { src: held.path, destDir: path }).then(function (p: unknown) {
+            if (held.mode === 'cut') clearClip();
+            return { done: true, path: typeof p === 'string' ? p : undefined };
+        }, function (err) {
+            const message = typeof err === 'string' ? err : t('errors.file.copyTreeFailed', { detail: String(err) });
+            if (typeof err === 'string' && err === t('errors.file.sourceMissing', { detail: held.path })) {
+                clearClip();
+            }
+            deps.showStatus(message);
+            return NOT_DONE;
+        });
+    } else if (act === 'new-file') {
+        const dir = isDir ? path : path.replace(/\\/g, '/').replace(/\/[^/]*$/, '');
+        showRenameDialog('untitled.md', t('vault.contextMenu.newFile.prompt'), { title: t('vault.contextMenu.newFile.title'), okLabel: t('vault.contextMenu.newFile.action') }).then(function (name) {
+            const trimmed = (name || '').trim();
+            if (!trimmed) return; // leer/whitespace → abbrechen
+            if (isInvalidFileName(trimmed)) {
+                deps.showStatus(t('errors.file.invalidName'));
+                return;
+            }
+            const newPath = joinDirFile(dir, trimmed);
+            invoke('create_file', { path: newPath }).then(function (p) {
+                safeInvoke('tab_open', { path: p }, 'tab_open', 'warn');
+            }).catch(function (err) {
+                reportError(err, t('errors.vault.createFailed'));
+            });
+        });
+    } else if (act === 'new-folder') {
+        const dir = isDir ? path : path.replace(/\\/g, '/').replace(/\/[^/]*$/, '');
+        showRenameDialog('untitled', t('vault.contextMenu.newFolder.prompt'), { title: t('vault.contextMenu.newFolder.title'), okLabel: t('vault.contextMenu.newFolder.action') }).then(function (name) {
+            const trimmed = (name || '').trim();
+            if (!trimmed) return;
+            if (isInvalidFileName(trimmed)) {
+                deps.showStatus(t('errors.file.invalidName'));
+                return;
+            }
+            const newPath = joinDirFile(dir, trimmed);
+            invoke('create_directory', { path: newPath }).catch(function (err) {
+                reportError(err, t('errors.vault.createFailed'));
+            });
+        });
+    } else if (act === 'delete') {
+        const name = basename(path);
+        const confirmOpts = isDir
+            ? {
+                title: t('vault.contextMenu.deleteFolder.title'),
+                okLabel: t('vault.contextMenu.delete.action'),
+            }
+            : {
+                title: t('vault.contextMenu.delete.title'),
+                okLabel: t('vault.contextMenu.delete.action'),
+            };
+        const message = isDir
+            ? (hasDirtyTabsUnder(path)
+                ? t('vault.contextMenu.deleteFolderConfirmUnsaved', { name })
+                : t('vault.contextMenu.deleteFolderConfirm', { name }))
+            : t('vault.contextMenu.deleteConfirm', { name });
+        return showConfirmDialog(message, confirmOpts).then(function (ok) {
+            if (!ok) return NOT_DONE;
+            clearClipIfUnder(path);
+            safeInvoke('trash_path', { path }, 'trash_path', 'warn');
+            return { done: true };
+        });
+    } else {
+        return Promise.resolve(NOT_DONE);
+    }
+    return Promise.resolve({ done: true });
+}
+
 export function initContextMenu(d: Deps): void {
     deps = d;
     ctxMenu = document.getElementById('context-menu');
@@ -330,119 +582,12 @@ export function initContextMenu(d: Deps): void {
         const path = ctxTarget.path;
         const isDir = ctxTarget.isDirectory;
         closeContextMenu();
-        if (act === 'open' && !isDir) {
-            deps.openDocument(path);
-        } else if (act === 'open-newtab' && !isDir) {
-            safeInvoke('tab_open', { path }, 'tab_open');
-        } else if (act === 'run' && !isDir) {
-            runOrOpenFile(path, true);
-        } else if (act === 'open-default' && !isDir) {
-            runOrOpenFile(path, false);
-        } else if (act === 'pin') {
-            safeInvoke('workspace_pin', { path, isDirectory: isDir }, 'workspace_pin');
-        } else if (act === 'unpin') {
-            safeInvoke('workspace_unpin', { path }, 'workspace_unpin');
-        } else if (act === 'wikilink-root-on' || act === 'wikilink-root-off') {
-            safeInvoke(
-                'workspace_wikilink_root_set',
-                { path, enabled: act === 'wikilink-root-on' },
-                'workspace_wikilink_root_set',
-            );
-        } else if (act === 'remove-recent') {
-            safeInvoke('workspace_remove_recent', { path }, 'workspace_remove_recent');
-        } else if (act === 'search-folder' && isDir) {
-            searchInFolder(path);
-        } else if (act === 'filter-folder' && isDir) {
-            // Kein Direkt-Import von vault/filter.ts: der zoege den Zyklus
-            // context-menu → filter → tree → context-menu. Der Frontend-Hook
-            // ist ohnehin der von Spec/E2E verlangte Einstieg.
-            const hook = (window as any).__folioVaultFilterInFolder;
-            if (typeof hook === 'function') hook(path);
-        } else if (act === 'show-changes' && !isDir) {
-            void openGitDiff(path, deps.showStatus);
-        } else if (act === 'rename') {
-            startInlineRename(path);
-        } else if (act === 'show') {
-            safeInvoke('show_in_file_manager', { path }, 'show_in_file_manager');
-        } else if (act === 'terminal') {
-            safeInvoke('open_terminal_at', { path }, 'open_terminal_at');
-        } else if (act === 'copy') {
-            if (navigator.clipboard) navigator.clipboard.writeText(path).catch(function () { /* clipboard write may reject silently */ });
-        } else if (act === 'cut') {
-            setClip(path, 'cut');
-        } else if (act === 'clip-copy') {
-            setClip(path, 'copy');
-        } else if (act === 'duplicate') {
-            invoke('duplicate_entry', { path }).catch(function (err) {
-                deps.showStatus(typeof err === 'string' ? err : t('errors.file.copyTreeFailed', { detail: String(err) }));
-            });
-        } else if (act === 'paste' && isDir) {
-            const held = getClip();
-            if (!held) return;
-            const cmd = held.mode === 'cut' ? 'move_entry' : 'copy_entry';
-            invoke(cmd, { src: held.path, destDir: path }).then(function () {
-                if (held.mode === 'cut') clearClip();
-            }).catch(function (err) {
-                const message = typeof err === 'string' ? err : t('errors.file.copyTreeFailed', { detail: String(err) });
-                if (typeof err === 'string' && err === t('errors.file.sourceMissing', { detail: held.path })) {
-                    clearClip();
-                }
-                deps.showStatus(message);
-            });
-        } else if (act === 'new-file') {
-            const dir = isDir ? path : path.replace(/\\/g, '/').replace(/\/[^/]*$/, '');
-            showRenameDialog('untitled.md', t('vault.contextMenu.newFile.prompt'), { title: t('vault.contextMenu.newFile.title'), okLabel: t('vault.contextMenu.newFile.action') }).then(function (name) {
-                const trimmed = (name || '').trim();
-                if (!trimmed) return; // leer/whitespace → abbrechen
-                if (isInvalidFileName(trimmed)) {
-                    deps.showStatus(t('errors.file.invalidName'));
-                    return;
-                }
-                const newPath = joinDirFile(dir, trimmed);
-                invoke('create_file', { path: newPath }).then(function (p) {
-                    safeInvoke('tab_open', { path: p }, 'tab_open', 'warn');
-                }).catch(function (err) {
-                    deps.showStatus(typeof err === 'string' ? err : t('errors.vault.createFailed'));
-                });
-            });
-        } else if (act === 'new-folder') {
-            const dir = isDir ? path : path.replace(/\\/g, '/').replace(/\/[^/]*$/, '');
-            showRenameDialog('untitled', t('vault.contextMenu.newFolder.prompt'), { title: t('vault.contextMenu.newFolder.title'), okLabel: t('vault.contextMenu.newFolder.action') }).then(function (name) {
-                const trimmed = (name || '').trim();
-                if (!trimmed) return;
-                if (isInvalidFileName(trimmed)) {
-                    deps.showStatus(t('errors.file.invalidName'));
-                    return;
-                }
-                const newPath = joinDirFile(dir, trimmed);
-                invoke('create_directory', { path: newPath }).catch(function (err) {
-                    deps.showStatus(typeof err === 'string' ? err : t('errors.vault.createFailed'));
-                });
-            });
-        } else if (act === 'delete') {
-            const name = basename(path);
-            const confirmOpts = isDir
-                ? {
-                    title: t('vault.contextMenu.deleteFolder.title'),
-                    okLabel: t('vault.contextMenu.delete.action'),
-                }
-                : {
-                    title: t('vault.contextMenu.delete.title'),
-                    okLabel: t('vault.contextMenu.delete.action'),
-                };
-            const message = isDir
-                ? (hasDirtyTabsUnder(path)
-                    ? t('vault.contextMenu.deleteFolderConfirmUnsaved', { name })
-                    : t('vault.contextMenu.deleteFolderConfirm', { name }))
-                : t('vault.contextMenu.deleteConfirm', { name });
-            showConfirmDialog(message, confirmOpts).then(function (ok) {
-                if (ok) {
-                    clearClipIfUnder(path);
-                    safeInvoke('trash_path', { path }, 'trash_path', 'warn');
-                }
-            });
-        }
+        void runVaultAction(act || '', path, isDir);
     });
+    // Mausbedienung unverändert: ein Klick auf einen Eintrag soll den Fokus
+    // nicht ins (gleich geschlossene) Menü ziehen.
+    ctxMenu.addEventListener('mousedown', function (e) { e.preventDefault(); });
+    ctxMenu.addEventListener('keydown', onMenuKeydown);
     document.addEventListener('click', function (e) {
         if (!ctxMenu.contains(e.target as Node)) closeContextMenu();
     });

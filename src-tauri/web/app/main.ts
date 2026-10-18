@@ -116,7 +116,7 @@ function runModuleInits(): void {
     initEditorShell({ getCleanText, requestSaveIfDirty });
     initFindBar({ ensureEditorMounted, focusEditor });
     initRails();
-    initVaultTree({ openDocument });
+    initVaultTree({ openDocument, openLeftRail });
     initVaultClipboard();
     initVaultFilter();
     initVaultGitStatus();
