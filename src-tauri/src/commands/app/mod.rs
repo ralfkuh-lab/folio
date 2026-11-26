@@ -466,42 +466,40 @@ pub async fn cli_pending_open(
     state: State<'_, AppState>,
     handle: AppHandle,
 ) -> Result<Option<String>, String> {
-    let cli_path = state
-        .cli_open_path
+    let pending_paths = state
+        .pending_open_paths
         .lock()
-        .map_err(|_| "cli open path lock poisoned".to_string())?
-        .take();
+        .map_err(|_| "pending open paths lock poisoned".to_string())?
+        .take()
+        .unwrap_or_default();
 
     // Dieser Command ist zugleich der Frontend-ready-Hook fuer den
-    // Session-Restore. Ein Boot-CLI-Pfad wird bewusst backendseitig als
-    // zusaetzlicher Tab geoeffnet (oder dedupliziert aktiviert), waehrend
-    // der laufende `cli:open`-Frontend-Handler bis T5 Replace-Semantik hat.
-    let transition = if let Some(path) = cli_path {
+    // Session-Restore. Boot-Pfade (CLI-Argument, macOS-Finder-Open) werden
+    // bewusst backendseitig als zusaetzliche Tabs geoeffnet (oder
+    // dedupliziert aktiviert), waehrend der laufende `cli:open`-Frontend-
+    // Handler bis T5 Replace-Semantik hat.
+    let mut opened = None;
+    for path in pending_paths {
         match crate::commands::tabs::open(&state, &handle, path) {
-            Ok(transition) => transition,
-            Err(error) => {
-                tracing::warn!(
-                    target: "folio::tabs",
-                    %error,
-                    "boot CLI path could not be opened; keeping restored active tab"
-                );
-                let active_id = state
-                    .tabs
-                    .lock()
-                    .map_err(|_| "tabs lock poisoned".to_string())?
-                    .active()
-                    .id;
-                crate::commands::tabs::activate(&state, &handle, active_id).map_err(String::from)?
-            }
+            Ok(transition) => opened = Some(transition),
+            Err(error) => tracing::warn!(
+                target: "folio::tabs",
+                %error,
+                "boot open path could not be opened"
+            ),
         }
-    } else {
-        let active_id = state
-            .tabs
-            .lock()
-            .map_err(|_| "tabs lock poisoned".to_string())?
-            .active()
-            .id;
-        crate::commands::tabs::activate(&state, &handle, active_id).map_err(String::from)?
+    }
+    let transition = match opened {
+        Some(transition) => transition,
+        None => {
+            let active_id = state
+                .tabs
+                .lock()
+                .map_err(|_| "tabs lock poisoned".to_string())?
+                .active()
+                .id;
+            crate::commands::tabs::activate(&state, &handle, active_id).map_err(String::from)?
+        }
     };
     crate::commands::tabs::emit_navigation_changed(&handle, &transition, None)
         .map_err(String::from)?;

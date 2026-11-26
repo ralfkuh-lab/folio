@@ -104,53 +104,93 @@ fn running_under_hyprland() -> bool {
         .unwrap_or(false)
 }
 
+fn open_file_target(app: &tauri::AppHandle) -> crate::settings::OpenFileTarget {
+    app.try_state::<AppState>()
+        .and_then(|state| {
+            state
+                .settings
+                .lock()
+                .ok()
+                .map(|settings| settings.data().open_file_target)
+        })
+        .unwrap_or_default()
+}
+
+/// Opens a file handed over by the OS while Folio is already running
+/// (single-instance reinvoke, macOS Finder open).
+fn open_external_path(
+    app: &tauri::AppHandle,
+    path: String,
+    target: crate::settings::OpenFileTarget,
+) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+    // Setting openFileTarget entscheidet: neuer Tab direkt im
+    // Backend (Default) oder Replace-Semantik ueber den
+    // bestehenden cli:open-Frontend-Pfad (openDocument ersetzt
+    // das Dokument im aktiven Tab).
+    if target == crate::settings::OpenFileTarget::Newtab {
+        if let Some(state) = app.try_state::<AppState>() {
+            match crate::commands::tabs::open(&state, app, path.clone()) {
+                Ok(transition) => {
+                    let _ = crate::commands::tabs::emit_navigation_changed(app, &transition, None);
+                    return;
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        target: "folio::tabs",
+                        %error,
+                        "external open as new tab failed; falling back to cli:open"
+                    );
+                }
+            }
+        }
+    }
+    let _ = app.emit("cli:open", serde_json::json!({ "path": path }));
+}
+
+/// Finder double-click and Dock drops arrive as an Apple Event
+/// (`RunEvent::Opened`), not as argv.
+#[cfg(target_os = "macos")]
+fn open_finder_urls(app: &tauri::AppHandle, urls: Vec<tauri::Url>) {
+    let paths: Vec<String> = urls
+        .iter()
+        .filter_map(|url| url.to_file_path().ok())
+        .filter(|path| path.is_file())
+        .filter_map(|path| path.to_str().map(str::to_owned))
+        .collect();
+    tracing::info!(target: "folio::tabs", count = paths.len(), "finder open request");
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    // On a cold start the event usually beats the frontend boot; queue the
+    // paths for cli_pending_open under the same lock it takes them with.
+    if let Ok(mut pending) = state.pending_open_paths.lock() {
+        if let Some(queue) = pending.as_mut() {
+            queue.extend(paths);
+            return;
+        }
+    }
+    // Several files cannot all replace the active tab.
+    let target = if paths.len() > 1 {
+        crate::settings::OpenFileTarget::Newtab
+    } else {
+        open_file_target(app)
+    };
+    for path in paths {
+        open_external_path(app, path, target);
+    }
+}
+
 pub fn builder(settings: crate::settings::SettingsService) -> tauri::Builder<tauri::Wry> {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-            let Some(path) = first_file_arg(args) else {
-                return;
-            };
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.unminimize();
-                let _ = window.set_focus();
+            if let Some(path) = first_file_arg(args) {
+                open_external_path(app, path, open_file_target(app));
             }
-            // Setting openFileTarget entscheidet: neuer Tab direkt im
-            // Backend (Default) oder Replace-Semantik ueber den
-            // bestehenden cli:open-Frontend-Pfad (openDocument ersetzt
-            // das Dokument im aktiven Tab).
-            let target = app
-                .try_state::<crate::state::AppState>()
-                .and_then(|state| {
-                    state
-                        .settings
-                        .lock()
-                        .ok()
-                        .map(|settings| settings.data().open_file_target)
-                })
-                .unwrap_or_default();
-            if target == crate::settings::OpenFileTarget::Newtab {
-                if let Some(state) = app.try_state::<crate::state::AppState>() {
-                    match crate::commands::tabs::open(&state, app, path.clone()) {
-                        Ok(transition) => {
-                            let _ = crate::commands::tabs::emit_navigation_changed(
-                                app,
-                                &transition,
-                                None,
-                            );
-                            return;
-                        }
-                        Err(error) => {
-                            tracing::warn!(
-                                target: "folio::tabs",
-                                %error,
-                                "external open as new tab failed; falling back to cli:open"
-                            );
-                        }
-                    }
-                }
-            }
-            let _ = app.emit("cli:open", serde_json::json!({ "path": path }));
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
@@ -363,8 +403,8 @@ pub fn builder(settings: crate::settings::SettingsService) -> tauri::Builder<tau
             // Einträge)".
             menu::refresh_recent_from_workspace(app.handle());
             if let Some(path) = first_file_arg(std::env::args()) {
-                if let Ok(mut slot) = state.cli_open_path.lock() {
-                    *slot = Some(path);
+                if let Ok(mut pending) = state.pending_open_paths.lock() {
+                    pending.get_or_insert_with(Vec::new).push(path);
                 }
             }
             if let Some(window) = app.get_webview_window("main") {
@@ -788,6 +828,11 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("failed to build Tauri application")
         .run(|app, event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Opened { urls } = event {
+                open_finder_urls(app, urls);
+                return;
+            }
             if let tauri::RunEvent::Exit = event {
                 // Pending debounced Geometrie-Save flushen — sonst ginge
                 // ein Move/Resize aus den letzten 300 ms vor dem Beenden
