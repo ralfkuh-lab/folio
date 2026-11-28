@@ -2,11 +2,12 @@
    openContextMenu() positioniert und mit Items befuellt; item-Click
    dispatcht die jeweilige Aktion (open / pin / unpin / remove-recent /
    rename / show / terminal / copy). startInlineRename ersetzt das
-   .label-span des Tree-Eintrags temporaer durch ein <input>. */
+   .label-span des Tree-Eintrags temporaer durch ein <input>,
+   startSeparatorEdit analog die Beschriftung eines Pin-Trenners. */
 
 type Deps = {
     openDocument: (path: string) => void;
-    refreshVault: () => void;
+    refreshVault: () => void | Promise<void>;
     showStatus: (msg: string) => void;
 };
 
@@ -19,7 +20,7 @@ import { openGitDiff } from '../ui/git-diff';
 import { getTabsSnapshot } from '../state/tabs';
 import { clearClip, clearClipIfUnder, getClip, remapClip, setClip } from './clipboard';
 import { beginVaultRename, endVaultRename } from './rename-guard';
-import { focusVaultItem, followVaultAction } from './tree-keyboard';
+import { focusVaultItem, followVaultAction, isVaultItemVisible } from './tree-keyboard';
 
 // Monochrome 16x16-Feather-Icons je data-act. Kein width/height im SVG
 // (CSS steuert die Groesse), stroke=currentColor faerbt mit Hover/Theme mit.
@@ -45,6 +46,9 @@ const ICONS: Record<string, string> = {
     'search-folder': '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>',
     'filter-folder': '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3h11l-4.25 5v4.5l-2.5 1.25V8z"/></svg>',
     'show-changes': '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3.5h4.5M3 8h3M3 12.5h4.5"/><path d="M10 3.5h3v9h-3z"/></svg>',
+    'separator-add': '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5.5h12M8 8.5v5M5.5 11h5"/></svg>',
+    'separator-edit': '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5l2 2L6 12l-2.5.5L4 10z"/></svg>',
+    'separator-remove': '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5h10M6.5 4.5V3a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1.5M5 4.5l.5 8a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1l.5-8"/></svg>',
     'wikilink-root-on': '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 9.5l3-3"/><path d="M8.5 4.5l1-1a2.5 2.5 0 0 1 3.5 3.5l-1 1"/><path d="M7.5 11.5l-1 1a2.5 2.5 0 0 1-3.5-3.5l1-1"/></svg>',
     'wikilink-root-off': '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 4.5l1-1a2.5 2.5 0 0 1 3.5 3.5l-1 1"/><path d="M7.5 11.5l-1 1a2.5 2.5 0 0 1-3.5-3.5l1-1"/><path d="M2 2l12 12"/></svg>',
 };
@@ -223,13 +227,58 @@ export function openContextMenu(
     isExec: boolean,
     options?: ContextMenuOptions,
 ): void {
+    showMenu(
+        x,
+        y,
+        buildMenuEntries(isDir, inPinned, inRecent, isExec, options),
+        { path, isDirectory: isDir },
+        options?.returnFocus,
+    );
+}
+
+/** Menü der Überschrift „Angepinnt“. */
+export function openPinHeaderMenu(x: number, y: number, returnFocus?: HTMLElement): void {
+    showMenu(
+        x,
+        y,
+        [['separator-add', t('vault.contextMenu.addSeparator')]],
+        { path: '', isDirectory: false },
+        returnFocus,
+    );
+}
+
+/** Menü eines Pin-Trenners; als Ziel-„Pfad“ dient seine ID. */
+export function openSeparatorMenu(x: number, y: number, id: string, returnFocus?: HTMLElement): void {
+    showMenu(
+        x,
+        y,
+        [
+            ['separator-edit', t('vault.contextMenu.editSeparator')],
+            ['separator-remove', t('vault.contextMenu.removeSeparator')],
+        ],
+        { path: id, isDirectory: false },
+        returnFocus,
+    );
+}
+
+function showMenu(
+    x: number,
+    y: number,
+    entries: MenuEntry[],
+    target: { path: string; isDirectory: boolean },
+    returnFocus?: HTMLElement,
+): void {
     if (!ctxMenu) return;
-    ctxTarget = { path, isDirectory: isDir };
-    menuReturnFocus = options?.returnFocus || null;
+    ctxTarget = target;
+    menuReturnFocus = returnFocus || null;
     ctxMenu.replaceChildren();
-    for (const entry of buildMenuEntries(isDir, inPinned, inRecent, isExec, options)) {
-        if (!entry) appendSep(ctxMenu);
-        else appendItem(ctxMenu, entry[0], entry[1], entry[0] === 'delete' ? 'ctx-item-danger' : undefined);
+    for (const entry of entries) {
+        if (!entry) {
+            appendSep(ctxMenu);
+            continue;
+        }
+        const danger = entry[0] === 'delete' || entry[0] === 'separator-remove';
+        appendItem(ctxMenu, entry[0], entry[1], danger ? 'ctx-item-danger' : undefined);
     }
 
     // Punkt 1: provisorisch positionieren, dann gemessene Groesse am
@@ -318,13 +367,93 @@ function onMenuKeydown(e: KeyboardEvent): void {
     if (next) next.focus();
 }
 
+/* Gemeinsamer Teil der Inline-Eingaben im Vault-Baum: ersetzt den Inhalt
+   von `host` temporär durch ein <input>. Enter/Blur committen, Escape
+   bricht ab. Für die Dauer der Eingabe schiebt der rename-guard alle
+   Baum-Rebuilds auf, damit ein nebenher laufender Watcher-Refresh die
+   angefangene Eingabe nicht wegräumt. Beide Callbacks setzen den Inhalt
+   von `host` selbst wieder. */
+function mountInlineInput(
+    host: HTMLElement,
+    value: string,
+    handlers: {
+        /** Liefert ggf. den Pfad, auf den der Fokus nach dem Rebuild soll. */
+        commit: (value: string) => string | null;
+        cancel: () => void;
+        /** Nur nach Enter/Escape: Fokus zurück an die Zeile. */
+        focusBack: (pendingPath?: string) => void;
+    },
+): HTMLInputElement {
+    // Eine noch offene Eingabe zuerst per Blur beenden (commit + cleanup):
+    // Käme ihr Blur erst durch den Fokuswechsel auf das neue Feld, setzte
+    // ihr Cleanup den gerade begonnenen rename-guard zurück.
+    document.querySelector<HTMLInputElement>('#vault-tree input.vault-rename-input')?.blur();
+    host.dataset.editing = '1';
+    host.classList.add('editing');
+    host.textContent = '';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'vault-rename-input';
+    input.value = value;
+    input.spellcheck = false;
+    input.autocomplete = 'off';
+    input.setAttribute('data-rename-input', '1');
+    host.appendChild(input);
+    beginVaultRename();
+
+    function stop(e: Event): void { e.stopPropagation(); }
+    input.addEventListener('click', stop);
+    input.addEventListener('mousedown', stop);
+    input.addEventListener('dblclick', stop);
+    input.addEventListener('contextmenu', stop);
+
+    let finished = false;
+    function cleanup(): void {
+        input.removeEventListener('keydown', onKey);
+        input.removeEventListener('blur', onBlur);
+        host.classList.remove('editing');
+        delete host.dataset.editing;
+        endVaultRename();
+    }
+    function commit(): string | null {
+        if (finished) return null;
+        finished = true;
+        const current = input.value || '';
+        cleanup();
+        return handlers.commit(current);
+    }
+    function cancel(): void {
+        if (finished) return;
+        finished = true;
+        cleanup();
+        handlers.cancel();
+    }
+    function onKey(e: KeyboardEvent): void {
+        // Per Tastatur beendet: Fokus zurück an die Zeile, nach dem Rebuild
+        // auf den umbenannten Eintrag (K2). Blur gibt den Fokus ab, wohin
+        // der Nutzer geklickt hat — dort nicht zurückholen.
+        if (e.key === 'Enter') {
+            e.preventDefault(); e.stopPropagation();
+            const pendingPath = commit();
+            handlers.focusBack(pendingPath || undefined);
+        } else if (e.key === 'Escape') {
+            e.preventDefault(); e.stopPropagation();
+            cancel();
+            handlers.focusBack();
+        }
+        else { e.stopPropagation(); }
+    }
+    function onBlur(): void { commit(); }
+    input.addEventListener('keydown', onKey);
+    input.addEventListener('blur', onBlur);
+    return input;
+}
+
 /* Inline-Rename im Vault-Baum (Explorer-Feeling): ersetzt das .label-Span
-   temporär durch ein <input>, vorselektiert den Stamm ohne Endung. Enter/
-   Blur committen, Escape bricht ab. Nach erfolgreichem rename_file
-   emittiert das Backend vault:refresh, das den Baum neu baut — das Input
-   verschwindet damit automatisch. Fuer die Dauer der Eingabe schiebt der
-   rename-guard alle Baum-Rebuilds auf, damit ein nebenher laufender
-   Watcher-Refresh die angefangene Eingabe nicht wegraeumt. */
+   temporär durch ein <input>, vorselektiert den Stamm ohne Endung. Nach
+   erfolgreichem rename_file emittiert das Backend vault:refresh, das den
+   Baum neu baut — das Input verschwindet damit automatisch. */
 export function startInlineRename(path: string): void {
     if (!path) return;
     const nodes = document.querySelectorAll('#vault-tree li.node[data-path]');
@@ -342,89 +471,38 @@ export function startInlineRename(path: string): void {
     if (!labelEl || labelEl.dataset.editing === '1') return;
     const originalText = labelEl.textContent || '';
     const basename = originalText;
-    labelEl.dataset.editing = '1';
-    labelEl.classList.add('editing');
-    labelEl.textContent = '';
 
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'vault-rename-input';
-    input.value = basename;
-    input.spellcheck = false;
-    input.autocomplete = 'off';
-    input.setAttribute('data-rename-input', '1');
-    labelEl.appendChild(input);
-    beginVaultRename();
-
-    function stop(e: Event): void { e.stopPropagation(); }
-    input.addEventListener('click', stop);
-    input.addEventListener('mousedown', stop);
-    input.addEventListener('dblclick', stop);
-    input.addEventListener('contextmenu', stop);
-
-    let finished = false;
-    function cleanup(): void {
-        input.removeEventListener('keydown', onKey);
-        input.removeEventListener('blur', onBlur);
-        labelEl.classList.remove('editing');
-        delete labelEl.dataset.editing;
-        endVaultRename();
-    }
     function restore(): void {
-        cleanup();
         labelEl.textContent = originalText;
     }
-    /** Liefert den neuen Pfad, wenn umbenannt wird, sonst null. */
-    function commit(): string | null {
-        if (finished) return null;
-        finished = true;
-        const newName = (input.value || '').trim();
-        if (!newName || newName === originalText) {
-            restore();
-            return null;
-        }
-        if (isInvalidFileName(newName)) {
-            restore();
-            deps.showStatus(t('errors.file.invalidName'));
-            return null;
-        }
-        cleanup();
-        labelEl.textContent = newName; // optimistisch bis vault:refresh kommt
-        const normalized = path.replace(/\\/g, '/');
-        const lastSlash = normalized.lastIndexOf('/');
-        const parent = lastSlash >= 0 ? path.slice(0, lastSlash + 1) : '';
-        const newPath = parent + newName;
-        invoke('rename_file', { oldPath: path, newPath }).then(function () {
-            remapClip(path, newPath);
-        }).catch(function (err) {
-            deps.showStatus(typeof err === 'string' ? err : t('errors.vault.renameFailed'));
-            deps.refreshVault();
-        });
-        return newPath;
-    }
-    function cancel(): void {
-        if (finished) return;
-        finished = true;
-        restore();
-    }
-    function onKey(e: KeyboardEvent): void {
-        // Per Tastatur beendet: Fokus zurück an die Zeile, nach dem Rebuild
-        // auf den umbenannten Eintrag (K2). Blur gibt den Fokus ab, wohin
-        // der Nutzer geklickt hat — dort nicht zurückholen.
-        if (e.key === 'Enter') {
-            e.preventDefault(); e.stopPropagation();
-            const newPath = commit();
-            focusVaultItem(treeItem, newPath || undefined);
-        } else if (e.key === 'Escape') {
-            e.preventDefault(); e.stopPropagation();
-            cancel();
-            focusVaultItem(treeItem);
-        }
-        else { e.stopPropagation(); }
-    }
-    function onBlur(): void { commit(); }
-    input.addEventListener('keydown', onKey);
-    input.addEventListener('blur', onBlur);
+    const input = mountInlineInput(labelEl, basename, {
+        commit: function (value) {
+            const newName = value.trim();
+            if (!newName || newName === originalText) {
+                restore();
+                return null;
+            }
+            if (isInvalidFileName(newName)) {
+                restore();
+                deps.showStatus(t('errors.file.invalidName'));
+                return null;
+            }
+            labelEl.textContent = newName; // optimistisch bis vault:refresh kommt
+            const normalized = path.replace(/\\/g, '/');
+            const lastSlash = normalized.lastIndexOf('/');
+            const parent = lastSlash >= 0 ? path.slice(0, lastSlash + 1) : '';
+            const newPath = parent + newName;
+            invoke('rename_file', { oldPath: path, newPath }).then(function () {
+                remapClip(path, newPath);
+            }).catch(function (err) {
+                deps.showStatus(typeof err === 'string' ? err : t('errors.vault.renameFailed'));
+                deps.refreshVault();
+            });
+            return newPath;
+        },
+        cancel: restore,
+        focusBack: function (pendingPath) { focusVaultItem(treeItem, pendingPath); },
+    });
 
     input.focus();
     const isDir = nodeEl.getAttribute('data-kind') === 'dir';
@@ -435,6 +513,77 @@ export function startInlineRename(path: string): void {
         if (dot > 0) input.setSelectionRange(0, dot);
         else input.select();
     }
+}
+
+function findSeparator(id: string): HTMLElement | null {
+    const items = document.querySelectorAll<HTMLElement>('#vault-tree li.pin-separator');
+    for (let i = 0; i < items.length; i++) {
+        if (items[i].getAttribute('data-separator-id') === id) return items[i];
+    }
+    return null;
+}
+
+/** Inline-Beschriftung eines Pin-Trenners; leer = reine Linie. */
+export function startSeparatorEdit(id: string): void {
+    const item = findSeparator(id);
+    const line = item?.querySelector<HTMLElement>(':scope > .pin-separator-line');
+    // In einer unsichtbaren Zeile (Filter, zugeklappter Abschnitt) bekäme das
+    // Input nie Fokus und damit nie ein Blur — der rename-guard hielte den
+    // Baum dann dauerhaft an.
+    if (!item || !line || line.dataset.editing === '1' || !isVaultItemVisible(item)) return;
+    const original = line.textContent || '';
+
+    function render(label: string): void {
+        line.textContent = '';
+        if (!label) return;
+        const span = document.createElement('span');
+        span.className = 'pin-separator-label';
+        span.textContent = label;
+        line.appendChild(span);
+    }
+    const input = mountInlineInput(line, original, {
+        commit: function (value) {
+            const label = value.trim();
+            render(label); // optimistisch bis vault:refresh kommt
+            if (label !== original) {
+                invoke('workspace_separator_rename', { id, label }).catch(function (err) {
+                    reportError(err, String(err));
+                    deps.refreshVault();
+                });
+            }
+            return null;
+        },
+        cancel: function () { render(original); },
+        focusBack: function () { focusVaultItem(item); },
+    });
+    input.placeholder = t('vault.separator.placeholder');
+    input.setAttribute('aria-label', input.placeholder);
+    input.focus();
+    input.select();
+}
+
+/** Neuen Trenner anlegen und sofort beschriften. */
+function addSeparator(): Promise<VaultActionResult> {
+    // Zugeklappt wäre der neue Trenner unsichtbar: über den normalen
+    // Klickpfad der Überschrift aufklappen (inkl. Persistenz).
+    const header = document.querySelector<HTMLElement>(
+        '#vault-tree li.section[data-section="pinned"] > .row',
+    );
+    if (header && !header.querySelector(':scope > .caret.open')) header.click();
+    return invoke('workspace_separator_add', { label: '' }).then(function (id: string) {
+        // Nicht auf das vault:refresh-Event verlassen: Reihenfolge zur
+        // Command-Antwort ist nicht zugesichert.
+        return Promise.resolve(deps.refreshVault()).then(function () {
+            // Eine inzwischen begonnene Eingabe hat Vorrang.
+            if (!document.querySelector('#vault-tree input.vault-rename-input')) {
+                startSeparatorEdit(id);
+            }
+            return { done: true };
+        });
+    }, function (err) {
+        reportError(err, String(err));
+        return NOT_DONE;
+    });
 }
 
 /** Ergebnis einer Aktion, soweit der Aufrufer es braucht: `done` = die
@@ -453,7 +602,18 @@ function reportError(err: unknown, fallback: string): void {
  *  Verfügbarkeit; das macht der Aufrufer über `isVaultActionAvailable`
  *  bzw. die gerenderten Menüeinträge. */
 export function runVaultAction(act: string, path: string, isDir: boolean): Promise<VaultActionResult> {
-    if (act === 'open' && !isDir) {
+    if (act === 'separator-add') {
+        return addSeparator();
+    } else if (act === 'separator-edit') {
+        startSeparatorEdit(path);
+    } else if (act === 'separator-remove') {
+        return invoke('workspace_separator_remove', { id: path }).then(function () {
+            return { done: true };
+        }, function (err) {
+            reportError(err, String(err));
+            return NOT_DONE;
+        });
+    } else if (act === 'open' && !isDir) {
         deps.openDocument(path);
     } else if (act === 'open-newtab' && !isDir) {
         safeInvoke('tab_open', { path }, 'tab_open');

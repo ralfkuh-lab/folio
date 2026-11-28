@@ -294,6 +294,28 @@ describe('vault/tree — pinned items pointer-drag reordering', () => {
         });
     });
 
+    it('drags a separator between pins and sends its sep: token in DOM order', async () => {
+        buildPinnedVaultDom();
+        const tree = await import('../../app/vault/tree');
+        tree.initVaultTree({ openDocument: vi.fn() });
+        tree.setVaultPinned(`
+            <li class="node" data-kind="file" data-path="/pinned/a.md"><div class="row"></div></li>
+            <li class="node" data-kind="file" data-path="/pinned/b.md"><div class="row"></div></li>
+            <li class="pin-separator" data-separator-id="s3"><div class="pin-separator-line" id="sep-line"></div></li>
+        `);
+        const rootB = document.querySelector('.node[data-path="/pinned/b.md"]') as HTMLElement;
+
+        document.getElementById('sep-line')!.dispatchEvent(pe('pointerdown'));
+        document.dispatchEvent(pe('pointermove', { clientY: 15 }));
+        rootB.getBoundingClientRect = RECT_20;
+        rootB.dispatchEvent(pe('pointermove', { clientY: 2 })); // upper half -> before
+        document.dispatchEvent(pe('pointerup', { clientY: 2 }));
+
+        expect(tauri.invoke).toHaveBeenCalledWith('workspace_reorder_pinned', {
+            paths: ['/pinned/a.md', 'sep:s3', '/pinned/b.md'],
+        });
+    });
+
     it('can move a pinned folder before another root item', async () => {
         buildPinnedVaultDom();
         const tree = await import('../../app/vault/tree');

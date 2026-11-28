@@ -972,6 +972,13 @@ function applyClientFilter(): void {
                 }
             }
         }
+        // Trenner gliedern nur den ungefilterten Baum. md-only zählt nicht
+        // dazu: das filtert das Backend, die Gliederung bleibt.
+        const hideSeparators = q.length > 0 || gitChangedOnly || scope !== null;
+        const separators = treeEl.querySelectorAll('li.pin-separator');
+        for (let i = 0; i < separators.length; i++) {
+            separators[i].classList.toggle('vf-hidden', hideSeparators);
+        }
         if (q) highlightQueryInLabels(treeEl, q);
         reapplyVaultActive();
     } finally {

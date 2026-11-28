@@ -22,8 +22,13 @@
    nie im Editor oder in der View. Ausgeführt wird über dieselbe
    Aktionsfunktion und dieselben Bedingungen wie im Kontextmenü.
 
+   Pin-Trenner (`li.pin-separator`) sind Einträge ohne Pfad; ihr Schlüssel
+   ist `sep:<id>`.
+
    Kein Import aus tree.ts/context-menu.ts: Aktionen kommen als Deps
    (vermeidet den Zyklus tree → tree-keyboard → tree). */
+
+import { t } from '../i18n/translate';
 
 type Deps = {
     toggleDir: (node: HTMLElement) => void;
@@ -40,7 +45,7 @@ type Deps = {
     openMenu: (node: HTMLElement) => void;
 };
 
-const ITEM_SELECTOR = 'li.section, li.node';
+const ITEM_SELECTOR = 'li.section, li.node, li.pin-separator';
 const TYPEAHEAD_MS = 500;
 
 let deps: Deps | null = null;
@@ -74,6 +79,25 @@ function isSection(li: HTMLElement): boolean {
     return li.classList.contains('section');
 }
 
+export function isPinSeparator(li: Element): boolean {
+    return li.classList.contains('pin-separator');
+}
+
+/** Pfad eines Eintrags bzw. `sep:<id>` — Fokus-Schlüssel und zugleich der
+ *  Eintrag für `workspace_reorder_pinned`. Leer für alles andere. */
+export function vaultEntryOf(li: Element): string {
+    if (isPinSeparator(li)) return 'sep:' + (li.getAttribute('data-separator-id') || '');
+    return li.getAttribute('data-path') || '';
+}
+
+function ariaLabelOf(li: HTMLElement): string {
+    if (!isPinSeparator(li)) return labelOf(li);
+    const label = li.querySelector('.pin-separator-label')?.textContent || '';
+    return label
+        ? t('vault.separator.ariaLabel', { label })
+        : t('vault.separator.ariaLabelEmpty');
+}
+
 function isExpandable(li: HTMLElement): boolean {
     return isSection(li) || li.getAttribute('data-kind') === 'dir';
 }
@@ -99,7 +123,7 @@ function sectionKeyOf(li: HTMLElement): string {
 }
 
 function keyOf(li: HTMLElement): string {
-    return sectionKeyOf(li) + '\n' + (isSection(li) ? '' : (li.getAttribute('data-path') || ''));
+    return sectionKeyOf(li) + '\n' + (isSection(li) ? '' : vaultEntryOf(li));
 }
 
 /** Sichtbar = kein eingeklappter Vorfahr, kein `vf-hidden` (Zeile oder Vorfahr). */
@@ -134,9 +158,9 @@ function findSection(key: string): HTMLElement | null {
 }
 
 function findNodeInSection(section: HTMLElement, path: string): HTMLElement | null {
-    const nodes = section.querySelectorAll<HTMLElement>('li.node');
+    const nodes = section.querySelectorAll<HTMLElement>('li.node, li.pin-separator');
     for (let i = 0; i < nodes.length; i++) {
-        if (nodes[i].getAttribute('data-path') === path) return nodes[i];
+        if (vaultEntryOf(nodes[i]) === path) return nodes[i];
     }
     return null;
 }
@@ -204,7 +228,7 @@ export function syncVaultTreeA11y(): void {
         if (expandable) setAttr(li, 'aria-expanded', String(isExpanded(li)));
         else if (li.hasAttribute('aria-expanded')) li.removeAttribute('aria-expanded');
         // Ohne eigenen Namen läse ein Screenreader den ganzen Unterbaum vor.
-        const label = labelOf(li);
+        const label = ariaLabelOf(li);
         if (label) setAttr(li, 'aria-label', label);
         const ul = li.querySelector(':scope > ul.children');
         if (ul) setAttr(ul, 'role', expandable ? 'group' : 'none');
@@ -254,7 +278,9 @@ function focusItem(li: HTMLElement): void {
     } finally {
         ownFocus = false;
     }
-    const row = li.querySelector(':scope > .row') as HTMLElement | null;
+    const row = li.querySelector(
+        isPinSeparator(li) ? ':scope > .pin-separator-line' : ':scope > .row',
+    ) as HTMLElement | null;
     if (row && typeof row.scrollIntoView === 'function') row.scrollIntoView({ block: 'nearest' });
 }
 
@@ -475,7 +501,8 @@ function runOnItem(act: string, li: HTMLElement): Promise<{ done: boolean; path?
 let menuOpenedAt = 0;
 
 function openMenuAt(li: HTMLElement): void {
-    if (!deps || isSection(li)) return;
+    // Von den Abschnitten hat nur „Angepinnt“ ein Menü (Trenner hinzufügen).
+    if (!deps || (isSection(li) && li.getAttribute('data-section') !== 'pinned')) return;
     menuOpenedAt = Date.now();
     deps.openMenu(li);
 }
@@ -494,7 +521,7 @@ function handleClipboardKey(key: string, li: HTMLElement): boolean {
     const act = key === 'c' ? 'clip-copy' : key === 'x' ? 'cut' : key === 'd' ? 'duplicate'
         : key === 'v' ? 'paste' : '';
     if (!act) return false;
-    if (isSection(li)) return true;
+    if (isSection(li) || isPinSeparator(li)) return true;
     let target = li;
     if (act === 'paste' && li.getAttribute('data-kind') !== 'dir') {
         const parent = parentItem(li);

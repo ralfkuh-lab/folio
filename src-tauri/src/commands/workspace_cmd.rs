@@ -39,6 +39,59 @@ pub async fn workspace_unpin(
 }
 
 #[tauri::command]
+pub async fn workspace_separator_add(
+    label: String,
+    state: State<'_, AppState>,
+    handle: AppHandle,
+) -> Result<String, String> {
+    let id = state
+        .workspace
+        .lock()
+        .map_err(|_| "workspace lock poisoned".to_string())?
+        .add_separator(&label)
+        .map_err(|error| error.to_string())?;
+    emit_vault_refresh(state.inner(), &handle)?;
+    Ok(id)
+}
+
+#[tauri::command]
+pub async fn workspace_separator_rename(
+    id: String,
+    label: String,
+    state: State<'_, AppState>,
+    handle: AppHandle,
+) -> Result<(), String> {
+    let found = state
+        .workspace
+        .lock()
+        .map_err(|_| "workspace lock poisoned".to_string())?
+        .rename_separator(&id, &label)
+        .map_err(|error| error.to_string())?;
+    if !found {
+        return Err(crate::i18n::t("errors.vault.separatorNotFound"));
+    }
+    emit_vault_refresh(state.inner(), &handle)
+}
+
+#[tauri::command]
+pub async fn workspace_separator_remove(
+    id: String,
+    state: State<'_, AppState>,
+    handle: AppHandle,
+) -> Result<(), String> {
+    let found = state
+        .workspace
+        .lock()
+        .map_err(|_| "workspace lock poisoned".to_string())?
+        .remove_separator(&id)
+        .map_err(|error| error.to_string())?;
+    if !found {
+        return Err(crate::i18n::t("errors.vault.separatorNotFound"));
+    }
+    emit_vault_refresh(state.inner(), &handle)
+}
+
+#[tauri::command]
 pub async fn workspace_reorder_pinned(
     paths: Vec<String>,
     state: State<'_, AppState>,
