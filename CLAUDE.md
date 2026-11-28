@@ -1037,9 +1037,16 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   aktiven Tab, Ctrl/Cmd-Klick + Mittelklick + Kontextmenue "In neuem
   Tab oeffnen" nutzen `tab_open`; bereits offene Pfade werden aktiviert
   statt dupliziert; ein leerer aktiver Tab wird von `tab_open` recycelt.
-  Extern geoeffnete Dateien (Single-Instance-Reinvoke) folgen dem
-  Setting `openFileTarget` (`newtab` Default | `replace`), entschieden
-  im Backend (`lib.rs`-single-instance-Callback). Quit-Gate (Strg+Q,
+  Extern geoeffnete Dateien (Single-Instance-Reinvoke **und** macOS-
+  Finder-Open) folgen dem Setting `openFileTarget` (`newtab` Default |
+  `replace`), entschieden im Backend ueber den gemeinsamen Pfad
+  `lib.rs::open_external_path` — nicht zweimal implementieren. macOS
+  uebergibt Finder-Doppelklick und Dock-Drop **nicht als argv**, sondern
+  als Apple Event (`RunEvent::Opened`, `lib.rs::open_finder_urls`, nur
+  `cfg(target_os = "macos")` — kompiliert unter Linux/Windows nicht,
+  dort prueft ihn weder build noch clippy). Mehrere Dateien auf einmal
+  oeffnen immer als neue Tabs (Replace ergibt dort keinen Sinn).
+  Quit-Gate (Strg+Q,
   Menue, Fenster-X) prueft `TabManager::any_dirty()`; das Frontend
   fragt jeden dirty Tab einzeln ab (`confirmAllDirtyTabs`).
   Shortcuts: Ctrl+Tab/Ctrl+Shift+Tab (Wechsel), Ctrl+W (schliessen).
@@ -1066,8 +1073,13 @@ Vollständiger Vertrag und Architektur: [`docs/spec-i18n.md`](docs/spec-i18n.md)
   Forward-Slashes normalisiert. Beim Boot wird nur der aktive Tab geladen;
   inaktive Tabs halten `Tab.pending_path` und erzeugen bis zur ersten
   Aktivierung weder Datei-IO noch einen Watcher. Fehlende Restore-Pfade
-  werden verworfen. Ein Boot-CLI-Pfad wird nach dem Restore als
-  zusätzlicher aktiver Tab geöffnet beziehungsweise dedupliziert aktiviert.
+  werden verworfen. Boot-Pfade (CLI-Argument, macOS-Finder-Open vor dem
+  Frontend-Boot) puffert `AppState::pending_open_paths`; `cli_pending_open`
+  (zugleich Frontend-ready-Hook) öffnet sie nach dem Restore als
+  zusätzliche Tabs beziehungsweise aktiviert sie dedupliziert, der letzte
+  wird aktiv. Abgeholt wird unter derselben Sperre, danach steht dort
+  `None` — spätere Finder-Events laufen über den Pfad der laufenden
+  Instanz. Kein Race, kein verlorener Pfad.
 - **UI-Toggle-Persistenz**: alle UI-Schalter mit Memo (Vault-Rail,
   TOC-Rail, Editor-Minimap, Cheatsheet-Position, Window-Geometrie,
   Pinned/Recent-Section-Expansion) sitzen in
