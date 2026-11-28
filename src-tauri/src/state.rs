@@ -123,7 +123,10 @@ pub struct AppState {
     pub git_head_watcher: Mutex<GitHeadWatcher>,
     pub link_interceptor: LinkInterceptor,
     pub automation: Mutex<AutomationUiState>,
-    pub cli_open_path: Mutex<Option<String>>,
+    /// Files to open once the frontend has booted (boot CLI argument,
+    /// macOS Finder open). `None` once `cli_pending_open` has taken them;
+    /// later opens go through the running-instance path instead.
+    pub pending_open_paths: Mutex<Option<Vec<String>>>,
     /// Korrelations-Map fuer die Automation-API-Ack-Semantik: Backend
     /// erzeugt pro ack-faehigem Request eine ID + oneshot-Sender, das
     /// Frontend signalisiert nach Handler-Ende ueber `automation_ack`.
@@ -210,7 +213,7 @@ impl AppState {
                 theme: initial_theme,
                 ..AutomationUiState::default()
             }),
-            cli_open_path: Mutex::new(None),
+            pending_open_paths: Mutex::new(Some(Vec::new())),
             pending_acks: Mutex::new(HashMap::new()),
             next_ack_id: AtomicU64::new(1),
             panel_geometry_save_gen: AtomicU64::new(0),

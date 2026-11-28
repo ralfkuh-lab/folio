@@ -8,44 +8,20 @@
 
 ## Hohe Priorität
 
-### 🔍 macOS: Doppelklick im Finder öffnet die Datei nicht ([#13](https://github.com/ralfkuh-lab/folio/issues/13))
+### ✅ macOS: Doppelklick im Finder öffnet die Datei nicht ([#13](https://github.com/ralfkuh-lab/folio/issues/13)) — behoben 2026-11-26
 
-**⏸ Zurückgestellt (2026-10-09):** Auf dem eigenen Mac-Notebook nicht
-nachstellbar. Beim Melder ist nachgefragt; bis zu einer Rückmeldung ruht der
-Punkt. Die Code-Analyse unten bleibt als Ausgangspunkt stehen.
+Ursache bestätigt (auf einem zweiten Mac nachgestellt; Berechtigungen waren es
+nicht): macOS übergibt Finder-Doppelklick als Apple Event, nicht als argv.
+Folio las nur argv. Fix: `RunEvent::Opened` wird in `lib.rs::open_finder_urls`
+ausgewertet (nur macOS). Kaltstart: Pfade landen in
+`AppState::pending_open_paths` und werden in `cli_pending_open` geöffnet
+(dieselbe Sperre wie beim Abholen, kein Race). Läuft Folio schon, gilt derselbe
+Pfad wie beim Single-Instance-Reinvoke (`open_external_path`, Setting
+`openFileTarget`); mehrere Dateien öffnen immer als neue Tabs.
 
-Gemeldet 2026-07-28, in 0.9.0 noch offen. Folio startet per Doppelklick auf
-eine `.md`-Datei (Folio als Standard-App), zeigt die Datei aber nicht an; nur
-Datei → Öffnen hilft. Die Berechtigungen des Melders (Desktop/Downloads ja,
-Festplattenvollzugriff nein) sind laut Befund nicht die Ursache.
-
-**Vermutete Ursache (Code-Befund, auf dem Mac nicht nachgestellt):** macOS
-übergibt die Datei beim Öffnen aus dem Finder nicht als Kommandozeilen-
-Argument, sondern als Apple Event („open documents"). Tauri liefert das als
-`RunEvent::Opened { urls }`. Folio liest nur die Kommandozeile:
-`first_file_arg(std::env::args())` beim Boot (`src-tauri/src/lib.rs:365`) und
-die `args` im Single-Instance-Callback (`lib.rs:109`). Einen Handler für
-`RunEvent::Opened` gibt es nicht; `.run(|app, event| …)` (`lib.rs:788`)
-behandelt nur `RunEvent::Exit`.
-
-**Fix-Skizze:**
-- `RunEvent::Opened { urls }` im `.run`-Handler auswerten (`file://`-URLs in
-  Pfade umwandeln, nur unter `cfg(target_os = "macos")`).
-- **Kaltstart**: Das Event kann kommen, bevor das Frontend bereit ist. Pfad
-  dann zwischenspeichern und im selben Pfad öffnen, den heute der Boot-CLI-Pfad
-  nimmt (nach dem Tab-Restore als zusätzlicher aktiver Tab bzw. dedupliziert).
-- **Folio läuft schon**: dieselbe Entscheidung wie im Single-Instance-Callback
-  (Setting `openFileTarget`: `newtab` | `replace`). Nicht zweimal
-  implementieren, sondern einen gemeinsamen Pfad nutzen.
-- Mehrere Dateien auf einmal (Mehrfachauswahl im Finder) mitdenken.
-- Ziehen aufs Dock-Symbol läuft vermutlich über dasselbe Event und wird damit
-  gleich mit behoben.
-
-**Auf macOS umsetzen und testen**: Der Zweig kompiliert nur unter macOS, unter
-Windows prüfen weder `cargo build` noch clippy ihn. Vor dem Test einen evtl.
-lokalen Workaround für `.md`-Dateien abschalten, sonst ist der Test
-nicht aussagekräftig. Zu testen: Kaltstart, laufende Instanz, beide Werte von
-`openFileTarget`, Mehrfachauswahl.
+Getestet auf macOS: Kaltstart, laufende Instanz, Mehrfachauswahl, echte
+Doppelklicks auf dem Desktop und in weiteren Ordnern. Nicht gesondert getestet:
+`openFileTarget = replace`, Ziehen aufs Dock-Symbol.
 
 **Danach**: Im Issue antworten, sobald der Fix in einem Release ist.
 
