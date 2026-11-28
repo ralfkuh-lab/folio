@@ -86,6 +86,14 @@ Frontend-Quellen liegen in `src-tauri/web/`, ausgeliefert wird über
 `src-tauri/dist/` — `dist/` darf keine npm-Artefakte mehr enthalten,
 sonst lehnt Tauri den Build ab.
 
+**Tests schlank halten** (Benutzerentscheidung 2026-11-28): nur Tests, die
+wirklich nötig sind — riskante Kernlogik und Sicherheitsaspekte (z. B.
+Escaping), mehrere Fälle in wenigen Testfunktionen gebündelt. Triviales
+(serde-Defaults, ID-Vergabe, Textsäuberung) nicht eigens testen. Kein neues
+E2E-Szenario mit Baselines ohne Not; für eine Sichtprüfung reicht ein
+einmaliger nativer Prüflauf mit Screenshots außerhalb des Repos, die
+bestehenden Szenarien bleiben das Regressions-Gate.
+
 ## Konventionen
 
 ### i18n
