@@ -109,7 +109,7 @@ tests/e2e/
 Der Wrapper `scripts/run-e2e.sh` orchestriert Xvfb + Folio +
 Python-Suite. Auf Windows kann `tests/e2e/run.py --attach` gegen eine
 bereits gestartete Folio-Instanz laufen (nur für Debugging, kein
-voll-headless-Lauf möglich — siehe CLAUDE.md "Headless-Screenshots").
+voll-headless-Lauf möglich — siehe unten „Headless-Screenshots“).
 
 ## Baselines pflegen
 
@@ -149,9 +149,185 @@ Disable mit `bash scripts/run-e2e.sh --no-auto-todo`.
 
 ## Bekannte Einschränkungen
 
-- **Nicht auf Windows headless** — siehe CLAUDE.md. Auf Windows nur
+- **Nicht auf Windows headless** — siehe unten „Headless-Screenshots“. Auf Windows nur
   Attach-Mode mit sichtbarem Fenster sinnvoll.
 - **Visual-Diffs sind plattformabhängig** — die committed Baselines
   sind primär für Linux+Xvfb gedacht. Windows-Attach-Runs sind Debug-
   Werkzeug, kein vollständiger Release-Gate.
 - **Sequentiell, nicht parallel** — Folio-State ist geteilt.
+
+## Ergänzungen (aus der früheren `CLAUDE.md`)
+
+## Headless-Screenshots
+
+- **Monaco in Xvfb via Monitor-Capture**: `tauri-plugin-screenshots`
+  v2.2.0 ist eingebunden (`Cargo.toml`, `lib.rs`, `automation/handlers/
+  screenshot.rs`). `GET /screenshot` macht damit einen Monitor- (nicht
+  Window-)Capture; das ist der einzige in Xvfb funktionierende Weg,
+  Monacos Canvas-Output sichtbar zu erfassen. Window-basierte
+  Screenshot-Libs (xcap o. ä.) lesen nur das Window-Pixmap und sehen
+  den Canvas dort nicht. Test-Belege + Methodik in
+  [`docs/headless-monaco-test-results.md`](headless-monaco-test-results.md)
+  (Option 3, Commit `b6a0996`); Hintergrund/Alternativen für andere
+  Setups in [`docs/headless-monaco-screenshots.md`](headless-monaco-screenshots.md).
+
+- **Hintergrund-Test-Strategie**: "Unsichtbares" Ausführen für
+  Automation-Tests ist **nur unter Linux via Xvfb** vorgesehen — die
+  App läuft auf `DISPLAY=:99`, der interaktive User auf `:0`, kein
+  Fenster auf seinem Schirm, `/screenshot` liefert sichtbares Monaco
+  über Monitor-Capture im Xvfb-Framebuffer. Ein `--headless`-Flag für
+  Windows ist **nicht gebaut** (Stand 2026-05-18): `xcap` filtert in
+  `is_valid_window` Fenster des **eigenen Prozesses** raus
+  (Deadlock-Vermeidung bei `GetWindowText*`) und blockiert damit jeden
+  Window-Capture-Pfad von Folio auf sich selbst — egal ob `visible:
+  false`, `set_skip_taskbar`, off-screen. Echtes Hidden-Headless auf
+  Windows bräuchte einen direkten Win32-`PrintWindow`-Bypass; der
+  Aufwand ist gegenüber dem Linux+Xvfb-Pfad nicht gerechtfertigt.
+
+## Suite-Details
+
+Vollständige UI-Coverage in `tests/e2e/` (70 Szenarien, Python +
+Pillow): Boot, View-/Edit-/Split-Mode, Theme, Vault, Find (inkl.
+Code-View), Workspace, Save-Roundtrip durch alle BOM/EOL-Kombis,
+Undo/Redo, Toolbar-Commands (Bold/Italic/Heading), Menü-Coverage
+(File/Edit/View/Help), DOM-Keybindings, Vault-Tree-Klicks, Pin/Unpin,
+History-Back/Forward, Rechtsklick-Kontextmenüs, echter TOC-DOM-Klick,
+HTML-View, Tabs (API/UI/Restore/Reorder), View-/Custom-Themes,
+Theme-CRUD/-Browser/-Import-Export, Export-Highlighting, Mermaid
+(View + Export), Link-in-neuem-Tab, Vault-Volltextsuche (API + UI + Such-/Filterbereich),
+Vault-Filter (R3 + Tiefenfilter/Ordnerbereich R4), Tab-Kontextmenü,
+Command Palette, Statusleiste,
+Wikilinks/Tags, Task-Checkboxen, Git-Status/-Diff/-Filter,
+versteckte Vault-Einträge, Find-Bar-Regex/-Ersetzen,
+Vault-Dateioperationen (Ordner anlegen/umbenennen/löschen),
+Zen-Modus, Hex-Ansicht, Pfad-Identität (Symlink-Verzeichnis → ein Tab),
+Breiten-Toggle, Callouts (inkl. Kontrast über alle Themes), Smart-List,
+Tabellen (Formatieren; breite Tabellen, Overlay, Sortieren, Filtern),
+Vault-Tastaturbedienung
+sowie
+KI-Settings, KI-Übersetzung, KI-Theme-Autor, Export-KI-Draft und
+KI-Aktionen (Mock-Provider). Der englische Boot ist über
+`scripts/run-e2e.sh --lang-smoke` separat abgedeckt.
+
+**Szenarien mit eigener Git-Fixture** (`56_git_status.py`): Das Repo
+wird im Szenario per `git init` an einem **festen** Temp-Pfad angelegt
+(`/tmp/folio-e2e-gitrepo`) — nicht per `mkdtemp`, weil der Pfad im
+Vault-Baum und in der Statusleiste sichtbar und damit Teil der
+Visual-Baseline ist. Gepinnt wird bewusst nur ein **Unterordner** des
+Repos, und ein geänderter Zweig liegt daneben außerhalb: nur so ist
+prüfbar, dass der Filter-Auto-Expand keine Pfade außerhalb sichtbarer
+Pin-Wurzeln öffnet. Git-Optionen, die das Ergebnis verfälschen könnten
+(`core.excludesFile`, `core.autocrlf`), werden **repo-lokal** gesetzt —
+Umgebungsvariablen der Test-Subprozesse greifen nicht für Folios eigene
+`git`-Aufrufe, die im bereits gestarteten App-Prozess laufen.
+
+**Szenarien mit fester Hidden-Fixture** (`57_vault_hidden.py`): Verzeichnis
+unter `/tmp/folio-e2e-hidden` — gleicher Grund wie bei 56, der Pfad steht
+im Vault und in der Baseline. Enthält eine normale `.md`, `.versteckt/`,
+`.versteckte-datei.md` und ein leeres `.git/`.
+
+**Szenario mit fester Fileops-Fixture** (`59_vault_fileops.py`):
+`/tmp/folio-e2e-fileops` — gleicher Grund. Gepinnt wird `projekt/`, darin
+ein `unterordner/` mit `notiz.md`; das Szenario öffnet einen Tab auf die
+Notiz und prüft nach dem Ordner-Rename, dass der **Tab-Pfad präfixweise
+mitgewandert** ist (der eigentliche V1-Vertrag) und beim Löschen wieder
+verschwindet.
+
+**Szenario mit fester Such-/Filter-Fixture** (`67_search_area.py`):
+`/tmp/folio-e2e-searcharea` — gleicher Grund wie 56/57/59 (Pin-Name im
+Baum = Baseline). Nimmt die sechs Zustände des Such-/Filterbereichs (S9)
+hell und dunkel auf; vor den Treffer-Aufnahmen wird auf „Dateiname“
+sortiert (Ankunftsreihenfolge ist nicht deterministisch) und die
+Laufzeitangabe aus dem Status entfernt.
+
+**Szenario mit Symlink-Fixture** (`62_path_identity.py`):
+`/tmp/folio-e2e-symlink` mit `real/notiz.md` und dem Symlink-Verzeichnis
+`link` → `real` — selbst angelegt statt sich auf plattformabhängige
+Symlinks wie macOS' `/tmp`→`/private/tmp` zu verlassen. Geprüft wird, dass
+beide Schreibweisen **einen** Tab ergeben (beide Reihenfolgen, plus der
+Replace-Open-Pfad `/open`) und dass der Pfad dabei **nicht** aufgelöst
+wird. Ohne Screenshot: das Szenario prüft nur Backend-State.
+
+Wrapper: `bash scripts/run-e2e.sh` (Linux+Xvfb). Visual-Baselines in
+`tests/e2e/baselines/`, Artefakte (gitignored) in
+`tests/e2e/artifacts/<timestamp>/`. Bei fehlender Baseline wird sie beim
+ersten Run automatisch angelegt. Der Wrapper bricht mit klarer Meldung
+ab, wenn bereits eine Folio-Instanz des Users läuft (das
+single-instance-Plugin würde die Test-Instanz sonst sofort still
+beenden — Symptom: „Folio-Prozess ist gestorben", Log endet nach der
+Logging-Init-Zeile).
+
+**Kanonischer Reset pro Szenario**: `run.py` ruft vor jedem Szenario
+`lib/reset.py::reset_canonical_state` auf — Tabs schließen, Settings
+auf den Run-Start-Snapshot zurück, Theme light, Find-Bar zu, Mode view
+(best effort), linke Rail sichtbar, Split 50 %, Recent-Liste leeren
+(`POST /workspace/clear_recents`), danach `/sync/render`. Damit kodiert
+jede Baseline nur noch den Zustand ihres eigenen Szenarios; der Reset
+läuft in Voll- wie Auswahl-Läufen identisch.
+
+**Läufe abseits von Linux 1280×800**: `--no-visual` nimmt Screenshots auf,
+vergleicht sie aber nicht (`bash scripts/run-e2e.sh 61_hex_view --no-visual`,
+bzw. auf macOS/Windows ohne Xvfb: Folio mit `FOLIO_AUTOMATION=1` starten und
+`python3 tests/e2e/run.py --attach --attach-reset --no-visual <szenario>`).
+Die Baselines sind **Monitor**-Captures und damit an Linux 1280×800 gebunden —
+ohne den Schalter bricht ein Szenario am ersten Screenshot mit `size mismatch`
+ab, und die funktionalen Schritte dahinter laufen nie (der Grund, warum der
+Windows-Durchgang 2026-08-18 per Automation-API statt per Suite lief).
+Übersprungene Aufnahmen zählen im Report als *übersprungen*, nie als PASS.
+Bewusst **opt-in**: automatisch im Attach-Mode zu skippen würde auf der
+Baseline-Maschine echte Visual-Regressionen verstecken.
+
+**Einzelszenario-Läufe**: `bash scripts/run-e2e.sh 21_split_mode`
+(Name oder Präfix, mehrere möglich) — vergleicht wie der Voll-Lauf
+gegen die Baselines. Einzelne Baselines lassen sich direkt erneuern:
+`bash scripts/run-e2e.sh 21_split_mode --update-baselines`.
+
+**Screenshot-Sync**: `report.py::screenshot` ruft vor jeder Aufnahme
+`POST /sync/render` (deterministischer rAF-Roundtrip-Ack, siehe
+Automation-API oben) statt eines fixen Sleeps — das WebView-Reflow nach
+Backend-State-Wechsel ist sonst nicht synchron. Bei Visual-Mismatch gibt
+es **einen** Retry (erneut sync + Recapture): der rAF-Ack garantiert
+nicht, dass WebKits Frame schon im Xvfb-Framebuffer angekommen ist
+(Monitor-Capture liest den X-Server, nicht die Page) — ein veralteter
+Frame verschwindet beim Recapture, eine echte Regression failt auch im
+zweiten Versuch.
+
+**Fixture-Isolation**: Schreibende Szenarien (03/08/10/11/15) modifizieren
+Fixtures in place. `run.py` snapshottet `tests/e2e/fixtures/` beim Start
+(als pristine angenommen) und stellt den Zustand **vor jedem Szenario +
+am Ende** wieder her — am Original-Pfad, weil der in der Statusleiste
+sichtbare Dateipfad Teil der Visual-Baseline ist. Ohne das leckte z. B.
+die von 11/15 an `sample.md` angehängte Zeile in spätere Szenarien
+(21_split). Konsequenz für neue Szenarien: Fixtures dürfen frei
+beschrieben werden, aber **jedes Szenario muss seinen benötigten
+View-Mode explizit setzen** (`api.mode(...)`) statt sich auf den
+Vorzustand zu verlassen — `default_mode_{markdown,text}` ist `Current`
+(behält den aktuellen Mode), sodass ein Mode aus dem Vorszenario sonst
+leckt (war der 22_html_view-Folgefehler).
+
+Xvfb-spezifische Eigenheiten (scrollY-Sync, Monaco-Canvas-Capture,
+synthetic-keyboard-Fragilität bei Monaco-Shortcuts, native Tauri-Menüs
+aus WebView unerreichbar, `alert()`-Blockade, `applyReplace`/
+`history`-Historie der Bugfixes etc.) sind in
+[`docs/e2e-headless-caveats.md`](e2e-headless-caveats.md)
+zusammengefasst — Pflichtlektüre vor dem Schreiben neuer Szenarien.
+
+Szenarien können `DESKTOP_ONLY = True` als Modul-Konstante exportieren;
+der Orchestrator skipt sie standardmäßig, `--include-desktop-only`
+schaltet sie ein. Heute hat kein Szenario den Marker — die Infrastruktur
+ist Vorhaltung für zukünftige Dialog-/OS-Eingang-Tests.
+
+## README-Screenshots
+
+`bash scripts/make-readme-screenshots.sh` erzeugt die Bilder unter
+`docs/images/` neu (einzelne Aufnahmen: `... hero search`; Namen siehe
+Skriptkopf). Gleicher Aufbau wie der E2E-Wrapper — Xvfb, isoliertes
+XDG-Home, Release-Binary —, aber auf Display `:98`, mit `FOLIO_LANG=en`
+(die README ist englisch) und dem versionierten Demo-Vault aus
+`scripts/readme-screenshots/demo-vault/`. Das Vault wird nach
+`/tmp/folio-demo` kopiert und von dort gepinnt: der Pfad steht in
+Statusleiste und Vault-Baum und darf nicht das Home-Verzeichnis des
+Bauenden zeigen. Neue Aufnahme ergänzen = Funktion in
+`scripts/readme-screenshots/shots.py` + Eintrag in `SHOTS`; Zustände, die
+andere Aufnahmen sehen (Tag-Browser, Suchmodus, Recent-Liste), immer
+idempotent setzen statt zu togglen.

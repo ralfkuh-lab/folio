@@ -7,7 +7,7 @@ gegen committed Baselines und protokolliert Ergebnisse in Markdown.
 ## Voraussetzungen
 
 - **Linux + Xvfb** — die Suite ist headless-only (Begründung in
-  `CLAUDE.md` Abschnitt "Headless-Screenshots"). Auf Windows läuft
+  `docs/e2e-testing.md` Abschnitt "Headless-Screenshots"). Auf Windows läuft
   nur eine eingeschränkte Variante gegen ein bereits gestartetes
   Folio (sichtbar, kein Lifecycle-Management) — gedacht für lokales
   Debuggen einzelner Szenarien, nicht für komplette Läufe.

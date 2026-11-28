@@ -86,7 +86,7 @@ fn is_under(path: &str, root: &str) -> bool {
 ```
 
 Ein nacktes `starts_with(root)` zieht `/a/notizen-alt` mit, wenn `/a/notizen`
-verschoben wird. Dieselbe Falle steht schon beim Git-Filter in `CLAUDE.md`
+verschoben wird. Dieselbe Falle steht schon beim Git-Filter in [`architektur-vault.md`](architektur-vault.md)
 und ist dort aus einem Kreuz-Review hervorgegangen — sie gilt hier
 genauso.
 
@@ -109,7 +109,7 @@ fn perform_move(old: &str, new: &str, state: &State<AppState>, handle: &AppHandl
 ```
 
 Alle Pfade werden wie überall auf Forward-Slashes normalisiert, bevor
-verglichen wird (`CLAUDE.md` → Pfad-Normalisierung).
+verglichen wird ([`architektur-vault.md`](architektur-vault.md) → Pfad-Normalisierung).
 
 ---
 
@@ -363,3 +363,65 @@ type VaultClip = { path: string; mode: 'cut' | 'copy' } | null;
   offenen Windows-Verifikation (siehe `TODO.md`). Achtung beim Umbau:
   Das Suffix darf nicht über Indizes eines case-gefalteten Strings
   berechnet werden.
+
+## Implementierungsnotizen (aus der früheren `CLAUDE.md`)
+
+- **Vault-Dateioperationen** (Spec
+  [`docs/spec-vault-fileops.md`](spec-vault-fileops.md), V1
+  2026-08-17): Ordner anlegen (`commands/file/dir.rs::create_directory` —
+  bewusst `fs::create_dir`, **nicht** `create_dir_all`: ein Tippfehler im
+  Namen soll keine Zwischenordner anlegen), umbenennen und löschen.
+  Der Kern ist **nicht** die Datei-IO, sondern die präfixweise
+  Pfad-Migration: `path_migration.rs` (`remap`/`is_under`, Tauri-frei)
+  matcht **auf Segmentgrenze** — `/a/notizen` darf `/a/notizen-alt` nicht
+  mitziehen — und trimmt Trailing-Slashes, weil `"/a/notizen/"` sonst nach
+  `"/a/notizen//"` sucht und die Migration **lautlos komplett** ausfällt.
+  Halter sind Tabs (`path` **und** `pending_path`), NavigationController,
+  Workspace (pinned, recent, `image_dirs` Key **und** Value,
+  `last_export_dir`, `wikilink_roots`), Vault (`active_path`,
+  `expanded_dirs` + Watches),
+  Wikilink-Index, Git-Status, `GitHeadWatcher` und `recently_closed`.
+  Zwei Reihenfolge-Pflichten: (1) **Workspace-Remap und
+  Wikilink-Invalidierung laufen VOR dem Tab-Remap** — `rename_to` des
+  aktiven Tabs emittiert `document:loaded` synchron, dessen HTML sonst mit
+  dem alten Index entsteht und nie neu gerendert wird; (2) ab dem Erfolg
+  von `fs::rename`/`trash::delete` läuft die gesamte Choreografie
+  **best-effort** (`apply_move_state`, warnen statt `?`) — sonst ist die
+  Platte umgezogen und der State halb migriert. Der EXDEV-Fallback kopiert
+  rekursiv ohne Symlinks zu folgen und nutzt `OpenOptions::create_new`
+  statt `fs::copy` (ein dangling Ziel-Symlink ließe `fs::copy` sonst
+  außerhalb des erwarteten Pfads schreiben); schlägt danach das Löschen der
+  Quelle teilweise fehl, wandert der State trotzdem ans vollständige Ziel.
+  **V2** ergänzt Duplizieren (`transfer.rs::duplicate_entry`, Namen
+  `a copy.md` → `a copy 2.md`, Endung bleibt hinten) sowie Verschieben und
+  Kopieren über ein Ausschneiden/Einfügen-Modell (`vault/clipboard.ts`,
+  Klasse `vault-cut`; Tastenkürzel nur bei fokussiertem Baum, siehe
+  „Vault-Tastatur“). `move_entry` **muss** sich
+  `perform_move` teilen — ein zweiter Migrationspfad wäre zwangsläufig
+  unvollständig. Drei Fallen aus dem Kreuz-Review: (1) `copy_recursively`
+  liefert einen `CopyReport`; ein nichtleeres `skipped_symlinks` ist eine
+  **unvollständige** Kopie, nach der die Quelle im EXDEV-Move NIEMALS
+  gelöscht werden darf (unter Windows scheitert das Anlegen von Symlinks
+  ohne Developer Mode regelmäßig). (2) Die Nachfahrenprüfung braucht
+  neben dem lexikalischen Segment-Check ein `is_physically_under`
+  (canonicalize) — zeigt der Zielordner über einen Symlink in die Quelle,
+  kopiert sich der Baum sonst rekursiv in sich selbst, bis der
+  Datenträger voll ist. (3) Kopien übertragen die Permissions der Quelle,
+  sonst verliert ein `0755`-Skript sein Execute-Bit und ein `0700`-Ordner
+  wird je nach umask öffentlich. Auf **Pin-Wurzeln** gibt es „Löschen"
+  nicht (destruktiver Fehlklick; „Aus Vault entfernen" ist gemeint),
+  „Ausschneiden" dagegen schon — `perform_move` migriert den Pin sauber
+  mit. E2E `59_vault_fileops.py`.
+  **Inline-Rename und Baum-Rebuilds schließen sich aus**
+  (`vault/rename-guard.ts`): Solange ein `input.vault-rename-input` offen
+  ist, schieben ALLE DOM-ersetzenden Setter in `vault/tree.ts` auf
+  (`renderVault`, `setVaultPinned`, `setVaultRecent`,
+  `insertVaultChildren`, früher Ausstieg in `refreshVault`); nach
+  Commit/Abbruch läuft **ein** kompletter Rebuild als Microtask nach.
+  Ohne das räumt ein nebenher laufender `vault:refresh` — im Alltag
+  genügt eine Logdatei oder ein `git`-Lauf im aufgeklappten Ordner — die
+  angefangene Eingabe kommentarlos weg. Der Guard verifiziert den Zustand
+  am DOM (`isConnected`) statt nur am Flag, sonst friert ein Input, das
+  `cleanup()` umgeht, den Baum bis zum Neustart ein; `tree.ts` meldet
+  seinen Nachzieh-Rebuild per `setVaultRenameFlush` an, weil ein direkter
+  Import den Zyklus `tree → context-menu → tree` schlösse.

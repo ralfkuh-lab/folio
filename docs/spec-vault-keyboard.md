@@ -2,7 +2,7 @@
 
 Stand: 2026-10-18 — **umgesetzt** (K1–K3 inkl. zwei Review-Runden; Abweichungen
 im Abschnitt „Umsetzung“ am Ende). Quelle: `docs/feature-ideen.md` („Tastaturnavigation
-im Vault“) plus der Vermerk in `CLAUDE.md` (Vault-Dateioperationen V2): Kürzel
+im Vault“) plus der Vermerk in `spec-vault-fileops.md` (V2): Kürzel
 für Ausschneiden/Einfügen gibt es nicht, „solange es keinen modellierten
 Vault-Fokus gibt“. Diese Spec liefert genau diesen Fokus.
 
@@ -31,7 +31,7 @@ Bereiche), Umbelegen globaler Kürzel.
 
 ## Ist-Zustand (relevant)
 
-- Markup (`CLAUDE.md`, „Vault-Markup“): `#vault-tree` (`ul.tree`) mit
+- Markup (`architektur-vault.md`, „Vault-Markup“): `#vault-tree` (`ul.tree`) mit
   Abschnitten `.section[data-section]` (Angepinnt, Zuletzt geöffnet) und
   Knoten `li.node[data-path][data-kind=file|dir]`, je mit `.row`, `.caret`,
   `ul.children` (`collapsed`). Ordner laden ihre Kinder lazy
@@ -160,3 +160,39 @@ unverändert.
 - **Doppelklick auf eine Datei** hat keine eigene Funktion mehr (öffnete
   vorher zufallsabhängig extern); extern öffnen/ausführen nur über das
   Kontextmenü (Benutzerentscheidung 2026-10-18).
+
+## Implementierungsnotizen (aus der früheren `CLAUDE.md`)
+
+- **Vault-Tastatur** (Spec [`docs/spec-vault-keyboard.md`](spec-vault-keyboard.md),
+  `vault/tree-keyboard.ts`): ARIA-Tree mit wanderndem `tabindex`; Rollen und
+  Attribute setzt das Frontend nach jedem Rebuild (Backend-HTML unverändert),
+  der Fokus wird danach per Abschnitt + `data-path` wiederhergestellt.
+  Strg+Umschalt+E / `view.focus_vault` springt in den Baum, Escape zurück.
+  Dateikürzel (F2, Entf, Strg+C/X/V/D, Umschalt+F10) hängen am `keydown`
+  von `#vault-tree` und laufen über `runVaultAction` — **dieselbe** Funktion
+  wie das Kontextmenü, Bedingungen aus `buildMenuEntries` /
+  `isVaultActionAvailable`; Key-Repeat löst keine Dateiaktion aus.
+  **Doppelklick** hat keine eigene Funktion (zwei gewöhnliche Klicks).
+  Bis 2026-10-18 startete er zufallsabhängig das Standardprogramm (der erste
+  Klick baut den Baum teils neu auf, der Browser meldet dann kein
+  `dblclick`); ein pfadbasierter „Fokus ins Dokument“ griff nicht
+  verlässlich und wurde wieder entfernt. Extern öffnen/ausführen nur über
+  das Kontextmenü.
+  Drei Regeln, die das Zusammenspiel tragen: (1) **Ein Mausklick in den
+  Baum setzt den Fokus dorthin** wie im Dateimanager (der Browser fokussiert
+  die per `tabindex` fokussierbare Zeile selbst), und der **Fokusring ist
+  sichtbar, solange der Baum den Fokus hat** — bewusst `li:focus`, nicht
+  `:focus-visible`: im Dateibaum zeigt der Ring an, dass Tastatureingaben
+  hier landen (Benutzerentscheidung 2026-10-18; zwei frühere Fassungen —
+  Mausfokus unterdrückt bzw. Ring nur nach Tastatur — widersprachen der
+  Erwartung).
+  (2) `app:set_mode` trägt `cause: "open" | "user"` (Dokumentwechsel vs.
+  ausdrücklicher Wechsel, fehlend = user; Zuordnung aller Emit-Stellen per
+  Rust-Test `set_mode_emit_sites_carry_expected_cause`); `editor/shell.ts`
+  fokussiert bei `open` den Editor **nicht**, wenn der Baum fokussiert ist —
+  so bleiben Enter und Klick im Baum; zum Tippen klickt man ins Dokument,
+  ein ausdrücklicher Moduswechsel (`user`) fokussiert den Editor. Keine
+  Zeitmarken (die erste Fassung damit war fehleranfällig). (3) Wartende
+  Fokusziele (Duplizieren/Einfügen) haben keine Frist; sie enden beim
+  Erreichen, bei einem Nutzer-Fokuswechsel (`focusin` außerhalb) oder einer
+  neuen Eingabe im Baum. E2E `70_vault_keyboard`.

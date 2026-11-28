@@ -81,7 +81,7 @@ beim Zoomen sehen.
 
 Der Modus gilt in **allen drei Anzeigemodi** (view/edit/split). Er ist
 kein vierter Mode, sondern orthogonal dazu — dieselbe Trennung wie beim
-Git-Diff (siehe `CLAUDE.md`: „Aktion mit Enabled-Zustand, kein vierter
+Git-Diff (siehe `architektur-vault.md`: „Aktion mit Enabled-Zustand, kein vierter
 View-Mode").
 
 ## Bedienung
@@ -178,3 +178,27 @@ ein Escape-Handler der Find-Bar auf Dokumentebene, solange sie offen ist.
 - **vitest**: Toggle setzt/entfernt die Body-Klasse; Escape-Kette
   (Find-Bar offen → Zen bleibt); Hinweis erscheint nur beim ersten Mal.
 - **Rust**: `zen_hint_seen`-Persistenz; `zenFullscreen`-Default.
+
+## Implementierungsnotizen (aus der früheren `CLAUDE.md`)
+
+- **Zen-Modus + Vollbild** (Spec
+  [`docs/spec-zen-mode.md`](spec-zen-mode.md), `ui/zen-mode.ts`):
+  Body-Klasse `zen-mode` blendet Toolbar, beide Rails, Tab- und
+  Statusleiste aus (`#zoom-indicator` bleibt). F11 = nur Vollbild,
+  Shift+F11 = Zen; Setting `zenFullscreen` (Default an) koppelt beides.
+  **Zen ist ein Layer, kein Zustandswechsel**: `panel_state.json` wird
+  NICHT angefasst — ein Zen, das die Rail-Toggles umlegt, nimmt dem Nutzer
+  seine offene Rail dauerhaft weg. Analog beim Vollbild: Zen merkt sich
+  über `enteredFullscreenByZen`, ob es das Fenster selbst umgeschaltet
+  hat, und gibt nur das zurück. Drei Fallen aus dem Kreuz-Review: (1) Die
+  Escape-Prioritätsliste (`hasPriorityEscapeTarget`) muss **echte
+  Sichtbarkeit** prüfen, nicht `hidden`-Attribute — im Zen ist z. B. die
+  Vault-Rail per CSS weg, `#vault-filter.hidden` bleibt aber `false` und
+  blockierte damit jeden Escape-Ausstieg. (2) Keyboard-Events aus dem
+  HTML-View-iframe bubbeln nicht ins Parent; ohne Weiterleitung von F11/
+  Shift+F11/Escape in `view/html.ts` gibt es im Zen dort **keinen
+  Ausweg**. (3) `toggleZenMode` serialisiert über eine Promise-Chain und
+  `setZenMode` über ein Generation-Token, der F11-Handler ignoriert
+  `e.repeat` — sonst hinterlassen überlappende Toggles ein Fenster im
+  Vollbild bei ausgeschaltetem Zen. E2E `60_zen_mode.py` (setzt
+  `zenFullscreen=false`: Xvfb liefert kein verlässliches Vollbild).

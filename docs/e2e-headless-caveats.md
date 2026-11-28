@@ -1,7 +1,7 @@
 # E2E-Suite — Headless-Caveats
 
 Die Folio-E2E-Suite läuft standardmäßig unter Linux mit Xvfb (siehe
-`tests/e2e/README.md` und `CLAUDE.md` Abschnitt „Headless-Screenshots"
+`tests/e2e/README.md` und [`e2e-testing.md`](e2e-testing.md) Abschnitt „Headless-Screenshots"
 + „Hintergrund-Test-Strategie"). WebKitGTK in dieser Umgebung verhält
 sich an einigen Stellen unterschiedlich von einer echten Desktop-WebView.
 Dieses Dokument sammelt die bekannten Eigenheiten und Workarounds, damit

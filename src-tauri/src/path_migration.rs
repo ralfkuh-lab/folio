@@ -2,7 +2,7 @@
 //!
 //! Ein nacktes `starts_with(root)` würde `/a/notizen-alt` mitziehen, wenn
 //! `/a/notizen` verschoben wird. Derselbe Fehler steckt beim Git-Filter
-//! (CLAUDE.md) — hier gilt dieselbe Segment-Regel.
+//! (docs/architektur-vault.md) — hier gilt dieselbe Segment-Regel.
 
 /// Gemeinsame lexikalische Normalform: Backslashes → `/`, Trailing-Slashes
 /// entfernt (Root `"/"` bleibt erhalten).

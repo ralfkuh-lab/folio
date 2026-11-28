@@ -201,7 +201,7 @@ pub fn apply_command_utf16(
 /// aktuellen Editor-Text aufgerufen, um die Vorschau ohne Save zu
 /// aktualisieren.
 ///
-/// **Bewusste Abweichung von der CLAUDE.md-Konvention "gerendertes HTML
+/// **Bewusste Abweichung von der AGENTS.md-Konvention "gerendertes HTML
 /// geht ueber Events, nicht ueber Command-Returns"**: fuer den Preview-
 /// Pfad ist Request/Response sauberer als Push, weil das Frontend den
 /// Roundtrip aktiv treibt (Debounce + Generation-Token-Invalidation).

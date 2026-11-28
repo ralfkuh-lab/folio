@@ -820,3 +820,112 @@ durch den Orchestrator: eigener Diff-Review gegen die Spec + Gates
 nachfahren. **S1 zusätzlich test-first** (S1a/S1b oben): Testdatei
 wird vor der Implementierung geschrieben und vom Orchestrator
 abgenommen; der Implementierungs-Lauf darf Tests nicht anpassen.
+
+## Implementierungsnotizen (aus der früheren `CLAUDE.md`)
+
+- **Vault-Volltextsuche** (`search.rs` + `commands/search_cmd.rs` +
+  `automation/handlers/search.rs`; Frontend `vault/search.ts` +
+  Inhaltsfeld `#vault-search-input` im Bereich `#vault-filter`; Spec + Etappen in
+  [`docs/spec-vault-search.md`](spec-vault-search.md)):
+  Backend-Suchkern `run_search`/`run_search_ex` läuft sequenziell über
+  `ignore::WalkBuilder`, Verzeichnis-Scopes (Vault/Folder) seit S6 parallel
+  über `run_search_parallel` (`build_parallel` + `mpsc`-Consumer, nur der
+  Consumer ruft `on_file`, Completion-Order; Dateilisten laufen
+  sequenziell über `run_search_files`) (hidden/gitignore-Filter; **zwei getrennte Opt-ins**
+  `includeHidden` (Dot-Einträge) und `includeIgnored`
+  (ignore/gitignore-Gruppe)). `.git` ist in **jeder** Flag-Kombination
+  draußen (Name exakt per `filter_entry`; Walk-Wurzeln/Scopes mit
+  `.git`-Komponente werden vor dem Walk verworfen — `Folder(R/.git)` →
+  keine Treffer). Bei `includeHidden=false` verwirft der `filter_entry`
+  Dot-Einträge **ausdrücklich** (der Crate-`hidden`-Filter unterliegt
+  Whitelist-Negationen wie `!.hidden.md`); die Walk-Wurzel (depth 0)
+  bleibt ausgenommen, damit ein Pin direkt auf einen Dot-Ordner zeigt.
+  **Jeder Ordner-Pin ist eigene Walk-Wurzel** (Vault-Scope über
+  `resolve_search_scope`, nur exakte Duplikate per lexikalischem `root_key`
+  entfallen; Windows-Pfade case-insensitiv; `resolve_scope` klappt für
+  Palette/Tags/Wikilink weiter präfixweise ein); statt Erreichbarkeit vorherzusagen, betritt kein Walk
+  einen Eintrag, der selbst aktive Wurzel **dieses Aufrufs** ist
+  (`plan_walk_roots` + `is_foreign_root` im `filter_entry`, gilt auch für
+  den Tiefenfilter ohne Bereich) — jede Datei lexikalisch genau ein Walk,
+  kein Doppelzählen im parallelen Näherungszähler (Befund N1). Im
+  Ordner-Scope ist nur der Ordner aktiv, darunterliegende Pins bekommen
+  keinen Bypass;
+  fehlt `includeIgnored` an der Grenze, gilt der Wert von
+  `includeHidden` = alter Vertrag), Filter über `FileFilter`
+  (`markdown` = nur `FileKind::Markdown` | `allText` = Markdown+Text |
+  `custom` = Endungsliste mit bewusstem `classify`-Bypass) + 2-MiB-Cap
+  (`skipped_large`) + NUL-Sniff (8 KiB); Literalsuche escaped `(?i)`/`\b…\b`
+  ODER **Regex-Modus** (kein Whole-Word — Rust-`regex` hat keine Lookarounds;
+  Zero-Width-Matches werden übersprungen, `probe_has_match` auch im
+  Probe-Modus). **Scope-Modell** `SearchScopeEx { Vault, Folder, Files }`
+  (Grenz-Validierung zentral in `build_scope_and_options`/`to_scope_ex`):
+  Vault = Union angepinnter Ordner (rekursiv) + Einzeldateien mit Overlap-Dedup
+  (**explizit gepinnte Einzeldateien umgehen hidden/gitignore bewusst**);
+  Folder = Bereich des Filters (`RootNotFound`/`InvalidScope` bei
+  totem/relativem Ordner, mit `scope:`-Präfix); Files = Dateiliste aus dem
+  Filter (`files` schließt `scope` aus → `ScopeConflict`, absolute Pfade, max.
+  `FILTER_MAX_HITS` = 500, sequenziell von Platte über `run_search_files`).
+  Der frühere Scope „offene Dateien“ (OpenTabs/Puffer) ist seit S9 entfernt.
+  Tote Vault-Pins werden STILL verworfen.
+  **Caps**: 50 Zeilen-Hits/Datei, 500 gesamt (Probe-Modus, `truncated` nur bei
+  realem Wegfall). Spalten/Ranges in **UTF-16-Code-Units**, Snippet ~240.
+  **Frontend (S9) = ein Such-/Filterbereich**: Der Funnel öffnet `#vault-filter`
+  ganz oder gar nicht (`aria-expanded`); oben Namensfilter, darunter das
+  Inhaltsfeld mit den Umschaltern `Aa`/`ab`/`Rx` (`aria-pressed`; Rx
+  deaktiviert ab), darunter die Chips + Zahnrad + Bereichs-Chip; ab ~2×200 px
+  Rail rücken die Felder per `flex-wrap` nebeneinander. **Ein Modell: die
+  Suche durchsucht, was der Filter zeigt, ohne Filter den ganzen Vault** —
+  einzige Quelle `filter.ts::getSearchSpace()`: ohne Namensbegriff (< 2) ein
+  Walk (`Vault` bzw. `Folder(Bereich)`, `.md` → `fileFilter=markdown`, `.*` (=
+  `vaultShowHidden`) → `includeHidden`, kein Deckel); mit
+  Namensbegriff `Files` aus `vault_filter_find` nach
+  `whenFilterOptionsPersisted()` (git-Chip → Schnitt mit `isPathGitChanged`;
+  Filter-Deckel `cap`/`time` wird im Status benannt). `git` ohne Namensbegriff
+  = Walk mit **git-Begrenzung im Suchkern** (`limitToPaths` = alle
+  Snapshot-Pfade exakt, `limitUnderDirs` = untrackte Snapshot-Blätter als
+  Ordnerpräfix, aus `git-status.ts::collectGitChangedSearchLimit`), geprüft vor
+  Lesen und Zählen — der 500er-Deckel zählt nur git-Dateien. Die Trennung ist
+  Pflicht: jeder Eintrag als Präfix ließe unter einem geänderten
+  Gitlink/Submodule (` M sm`, ohne Kinder im Snapshot) alles zu; die Semantik
+  muss exakt `isPathGitChanged` spiegeln (Äquivalenztest in
+  `git-status.test.ts`). Ändert sich die Begrenzung nach einem neuen Snapshot,
+  sucht eine aktive git-Suche über `scheduleRerun()` neu; bei unveränderter
+  Begrenzung (Fokus-Refresh) nicht. Der Status hängt „· gefiltert“ (Funnel-Badge-
+  Bedingung) bzw. „· Vault“ an. **Enter** im Inhaltsfeld validiert
+  (`vault_search_validate`, Fehler am Feld `#vault-search-error` +
+  `aria-invalid`, kein Lauf) und sucht sofort; Optionswechsel (Aa/ab/Rx,
+  Popover) suchen bei aktiver Suche sofort neu. **Filteränderung bei aktiver
+  Suche** (Name, Bereich, Chips, `vaultShowHidden`) meldet `filter.ts` per
+  In-Window-Event `folio-vault-filter-changed` (kein Import-Zyklus); die Suche
+  zieht 300 ms entprellt nach. Funnel zu/Reset-Hook beendet die Suche, Begriff
+  und Optionen bleiben. Escape im Inhaltsfeld: Text → leeren + Suche beenden,
+  leer → Bereich schließen; ↓ springt in die Liste. Weitere Optionen
+  (gitignorierte, Dateityp Alle Textdateien/eigene Endungen) im
+  **Zahnrad-Popover** `#vault-search-options` (natives `popover`,
+  Light-Dismiss; Escape schließt + Fokus zurück ans Zahnrad, Weitergabe
+  gestoppt); „Nur Markdown“ gibt es nur als `.md`-Chip (Popover-Dateityp dann
+  deaktiviert mit Hinweis; ein persistierter Altwert `markdown` wird als
+  `allText` gelesen). Im Suchmodus sind Baum, Tag-Browser und
+  `#vault-tree-notice` ausgeblendet. Einstiege: Strg+Umschalt+F, Menü,
+  Palette → `openVaultSearch()` (Bereich auf, Fokus Inhaltsfeld, Text
+  selektiert); Kontextmenü „In diesem Ordner suchen“ → `filterInFolder` +
+  Fokus Inhaltsfeld; Tag-Browser → `#tag` ins Feld und sofort suchen.
+  `vault_search_start`→`runId`, Events `search:hits`/`search:done`;
+  Stale-Guard per Generation (auch nach den Awaits von Options-Write und
+  `vault_filter_find`) + `maxRunId`. **Spinner** `vs-running` auf
+  `#vault-search-status` (zentrale `setRunning`, alle Endpfade räumen auf).
+  **Auto-Collapse** als Modus `auto|collapsed|expanded`: >10 Treffergruppen →
+  einmalig alles einklappen; Collapse-/Expand-All im
+  `#vault-search-results-head` setzen den Modus. Sprung korreliert über
+  `folio-doc-kind-changed` + `getCurrentPath()`,
+  Edit/Split via `FolioEditor.revealMatch`, View-Mode via Find-Bar nach
+  Finder-Settle (Regex: `Jump.term` = konkret gematchter Text). `tab_open`
+  überspringt `consumeNavRestoreSkip(path)` einmalig. Optionen (Aa/W/Regex/
+  fileFilter/customExtensions roh/`includeIgnored`) persistieren in
+  `panel_state.rs` (`search_file_filter` default `allText`,
+  `search_include_ignored` default aus; `search_include_hidden` wird nicht mehr
+  geschrieben); Query flüchtig.
+  Automation: `POST /search` (synchron, additive Felder `regex`/`fileFilter`/
+  `customExtensions`/`files`/`includeHidden`/`includeIgnored`; alle
+  Client-Fehler → 400; unbekannte Felder wie das Alt-Feld `openTabs` werden
+  ignoriert).

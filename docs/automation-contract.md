@@ -508,3 +508,46 @@ Alle Requests durchlaufen vier Prüfungen (`automation/middleware.rs`):
 `FOLIO_AUTOMATION=1` gesetzt ist (Debug-Builds: immer an).
 `scripts/run-e2e.sh` und `tests/e2e/run.py` setzen sie automatisch; wer das
 Release-Binary manuell für Automation startet, muss sie selbst setzen.
+
+## Implementierungsnotizen (aus der früheren `CLAUDE.md`)
+
+- **Automation-API**: nur Loopback. Keine externen Bind-Adressen.
+  Security-Middleware (`automation/middleware.rs::security_guard`):
+  Host-Header-Allowlist (gegen DNS-Rebinding), Origin-Allowlist (nur
+  Tauri-WebView-Origins, gespiegelt statt `Access-Control-Allow-Origin: *`;
+  Requests ohne Origin wie curl/Python sind erlaubt, bekommen aber keine
+  CORS-Header; fremde Origins/`null` → 403), optionales Token via
+  `FOLIO_AUTOMATION_TOKEN`. Im **Release-Build startet der Server nur mit
+  `FOLIO_AUTOMATION=1`** (Debug: immer) — `run-e2e.sh`/`run.py` setzen das;
+  wer das Release-Binary manuell automatisiert, muss es selbst setzen.
+  WebView-POSTs brauchen CORS/OPTIONS-Preflight; `/click` akzeptiert IDs,
+  `data-name` und CSS-Selektoren.
+  Stabiler Automation-/Frontend-Vertrag: [`docs/automation-contract.md`](automation-contract.md).
+  `POST /eval { js }` führt beliebiges JS im WebView aus und liefert
+  das Ergebnis zurück (sync + async/Promise, Fehler werden gefangen,
+  konfigurierbarer Timeout via `timeoutMs`, Default 5 s). Pattern
+  analog zu `/dom`: Event `automation:eval` → Frontend `new Function`
+  → Tauri-Command `automation_eval_response` → oneshot-Channel.
+  `POST /find/text` öffnet die Find-Bar automatisch (`editor:open_find`
+  vor `editor:set_find_term`), ein separater `/find`-Aufruf ist nicht
+  mehr nötig.
+  `POST /sync/render` ist ein deterministischer Render-Roundtrip für
+  E2E-Screenshots: Handler emittiert `automation:sync_render` und ackt
+  über das `ack.rs`-Muster (`automation_ack`), nachdem das Frontend
+  (`settleRender` in `automation/events.ts`) einen Microtask + zwei
+  `requestAnimationFrame` + laufende CSS-Transitions (`getAnimations()`,
+  300-ms-Cap gegen Endlos-Animationen) abgewartet hat. `report.py`
+  ruft das vor jedem Screenshot statt des früheren `time.sleep(0.20)`. `GET /console/errors` liefert per Frontend-Hook
+  gesammelte Console-Errors (Ringpuffer, max 200); `?clear=true`
+  leert den Puffer. Der `unhandledrejection`-Teil des Hooks
+  (`automation/events.ts::installConsoleHook`) filtert **Monaco-
+  Cancellation-Rejections** (`name`/`message === 'Canceled'`) heraus:
+  beim Model-Wechsel (`mount.ts::doSetText`, Sprachwechsel →
+  `setModel`+`dispose`) bricht Monaco laufende async-Ops über
+  CancellationToken ab; die resultierende Rejection ist erwartet und
+  harmlos, würde aber sonst als False-Positive im Puffer landen
+  (`preventDefault()` unterdrückt zusätzlich die DevTools-Warnung).
+  `GET/POST /settings` lesen bzw. patchen die App-Settings über denselben
+  Service- und Side-Effect-Pfad wie die Tauri-Commands; `POST /split`
+  setzt den persistierten Split-Teiler. Geteilte Backend-Events erhalten
+  nur für Automation ein optionales `requestId` und acken nach Anwendung.

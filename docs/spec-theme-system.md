@@ -6,7 +6,7 @@
 > Beschlossen am 2026-07-06 (Design-Session mit User-Entscheidungen, siehe
 > „Architektur-Entscheidungen“). Dieses Dokument ist selbsttragend — alle
 > Verträge, Pfade und Begründungen stehen hier bzw. in
-> [`CLAUDE.md`](../CLAUDE.md).
+> [`AGENTS.md`](../AGENTS.md).
 
 ## Ziel
 
@@ -270,7 +270,7 @@ interface VirtualTab {
   aus `mount.ts` — Monaco wird NIE erneut geladen.
 - **Model-pro-Part** (content/dark/page → `css`; cover/header/footer →
   `html`): erhält Undo-Stack und Cursor pro Datei beim Umschalten
-  (`editor.setModel`), niemals `setValue` (CLAUDE.md-Konvention —
+  (`editor.setModel`), niemals `setValue` (Konvention in `architektur-editor-view.md` —
   `setValue` cleart den Undo-Stack).
 - API: `mount`, `setParts`, `showPart`, `getPart`, `getAllParts`,
   `isDirty`, `onChange`, `setTheme`, `dispose`, `layout`.
@@ -767,7 +767,7 @@ Export ist immer hell und verwendet eine feste Palette aus
 
 1. **Template-XSS** → Variablenwerte immer escapen; KI-HTML durch
    Allowlist-Sanitizer; User-HTML = Custom-CSS-Trust-Stufe. Achtung:
-   `assetProtocol`-Scope `["**"]` + HTML-View (siehe CLAUDE.md) — die
+   `assetProtocol`-Scope `["**"]` + HTML-View (siehe `architektur-app.md`) — die
    Templates betreffen nur Export-HTML, nicht die sandboxed Live-View;
    Sanitizer für KI-Output trotzdem Pflicht.
 2. **SVG-Logo-Script** → nur via `<img src="data:…">`, nie inline.
@@ -782,7 +782,7 @@ Export ist immer hell und verwendet eine feste Palette aus
    Frontmatter-date.
 9. **E2E-Zustandslecks** → Theme-Dateien im `finally` löschen; Szenarien
    setzen ihren View-Mode explizit (Fixture-Isolations-Regeln in
-   CLAUDE.md).
+   `e2e-testing.md`).
 
 ## Verifikation pro Etappe
 
@@ -801,3 +801,42 @@ Export ist immer hell und verwendet eine feste Palette aus
   zeigen das Theme → Export HTML + PDF mit Deckblatt/Logo/Kopfzeile
   prüfen → KI-Autor mit echtem Provider gegen einen
   Markenfarben-Prompt testen.
+
+## Implementierungsnotizen (aus der früheren `CLAUDE.md`)
+
+- **View-Themes** (`view/theme.ts`, Backend-Commands `view_themes` /
+  `view_theme_css`): Theme-CSS ist immer auf `.markdown-body` gescopt
+  und wird ueber `#view-theme-style` als letztes Element in `head`
+  injiziert. Die Export-Layouts sind in Content-CSS (`<id>.css`, fuer
+  View + Export) und Seitenrahmen (`<id>.page.css`, nur Export)
+  getrennt; der Export verwendet weiterhin ausschliesslich die
+  Light-Variante. Dark-Overrides werden nach dem Light-CSS angehaengt.
+  Fehlt eine Dark-Variante (bewusst bei `classic`), liefert das Backend
+  auch fuer `dark=true` das Light-CSS; unbekannte gespeicherte IDs
+  fallen im Frontend effektiv auf `standard` zurueck. Eigene Themes
+  liegen unter `<config>/folio/themes/`: `<id>.css` ist Pflicht,
+  `<id>.dark.css` und `<id>.page.css` sind optional. Fehlt das Page-CSS,
+  verwendet der Export einen weissen, randlosen Seitenrahmen. In den
+  ersten zehn Zeilen der Hauptdatei koennen `/* name: ... */` und
+  `/* description: ... */` (Schluessel case-insensitive) stehen.
+  `/* code: dark */` waehlt fuer den Export die dunkle syntect-Palette;
+  `light` bzw. ein fehlender/ungueltiger Wert verwenden die helle Palette.
+  Built-in-IDs gewinnen bei Kollisionen; ungueltige/verschwundene IDs
+  folgen dem bestehenden Unknown-ID-/`standard`-Fallback. Die Theme-Liste
+  und CSS-Dateien werden bei jedem Aufruf neu gelesen; es gibt in dieser
+  Etappe keinen Cache oder File-Watcher. Export-Theme-Favoriten werden als
+  geordnete ID-Liste `themeFavorites` in `settings.json` gespeichert und im
+  Export-Dialog vor den weiteren Layouts angezeigt; `standard` ist kein
+  Export-Layout und daher nicht favorisierbar. Verschwundene Custom-Theme-IDs
+  bleiben beim Laden erhalten, werden in der UI aber ausgeblendet.
+  HTML- und PDF-Export rendern Code-Fences backendseitig mit syntect und
+  selbstenthaltenen Inline-Styles (`InspiredGitHub`, bei `code: dark`
+  `base16-ocean.dark`). Die App-View bleibt davon getrennt und nutzt weiter
+  `view/code-highlight.ts`/Monaco; `render_body` bleibt ohne Backend-
+  Highlighting. Der Ausbau E1–E10 ist umgesetzt (In-App-Theme-Editor als
+  virtueller Tab, Verzeichnis-Paketformat mit `theme.json`-Manifest inkl.
+  Font-Feldern `fontBody`/`fontMono`/`fontSize`, Templates/Assets,
+  `.mdtheme`-Import/Export, Settings-Theme-Browser mit Master-Detail und
+  expliziter View-Auswahl, KI-Autor sowie dokumentspezifischer
+  Per-Export-KI-Draft im Export-Dialog): Architektur und Etappen in
+  [`docs/spec-theme-system.md`](spec-theme-system.md).

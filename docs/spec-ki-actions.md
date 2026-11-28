@@ -671,3 +671,49 @@ Zweites Paket (gleicher Tag, User-Feedback zur Auffälligkeit):
    openGeneration-Token, document-level Handler beim Close entfernen.
 8. **Event-Flut**: 150-ms-Throttle (bestehendes Muster); finaler
    Stand ist nur Outcome/Done, nie das letzte Stream-Event.
+
+## Implementierungsnotizen (aus der früheren `CLAUDE.md`)
+
+- **KI-Aktionen (✨)**: Toolbar-Split-Button + Ein-Dialog
+  (Funktionsliste, editierbarer Prompt, Ziel/Scope/Modell) über der
+  Template-Bibliothek `ai/actions.rs` (5 Built-ins eingebettet, eigene
+  Templates als JSON unter `<config>/folio/prompts/`, Built-in-IDs
+  gewinnen, frisch gelesen wie Themes). `ai_action_run` ist atomar an
+  den Quell-Tab gebunden (sourceTabId + sha256-Snapshot + tab-gebundener
+  `editor_text_changed`-Sync mit Lone-CR-Wächter) und läuft über den
+  gemeinsamen atomaren KI-Admission-Guard (`ai_job_active` — Übersetzung/
+  Theme-Autor/Aktionen schließen sich gegenseitig aus). Cancel/Events
+  korrelieren über die runId aus dem `ai:action_started`-Handshake.
+  Ziel „Neue Datei" folgt dem Übersetzungs-Muster (Reservierung → Tab →
+  Stream-Preview → Ownership-geprüfter Write mit Conflict-Fallback-
+  Reservierung; Cleanup discardet nie dirty Tabs); Ziel „Ersetzen"
+  liefert Gate-and-Return und öffnet die **Diff-Review** (virtueller Tab
+  `ai-diff`, Monaco-DiffEditor als vierte Surface `FolioDiffView`,
+  modified editierbar): Die DiffEditor-Instanz ist **persistent** (wie der
+  Haupteditor) — pro Review wird nur der Inhalt gewechselt (`setContents`/
+  `clear`), NIE `dispose`/neu erstellt. Grund (Bug 2026-07-11 „Tasten zählen
+  doppelt"): Monacos `createDiffEditor(...).dispose()` entfernt das Widget
+  nicht aus `getDiffEditors()` und lässt seinen document-level Keybinding-
+  Handler aktiv; pro mount/dispose-Zyklus akkumulierte ein weiterer Handler,
+  sodass ab dem 2. Review jede Taste N-fach wirkte. `dispose` delegiert
+  deshalb auf `clear` (Widget bleibt), `mount` ist idempotent. Übernehmen mit dreistufigem Guard (Quelltab
+  existiert → aktiv → Snapshot; sonst Bestätigung), firstDiff-Cursor,
+  ein Undo-Schritt via `applyReplace`. Revert-Buttons pro Änderungsblock
+  sind permanent sichtbar (CSS-Override auf Monacos hover-only Gutter-Menü,
+  gescopt auf `#ai-diff-region`; `renderMarginRevertIcon` ist bei aktivem
+  `renderGutterMenu` inert und bewusst entfernt), Übernehmen wechselt aus dem
+  View- in den Edit-Mode, `setMode`-Save-Gate gilt nur noch Richtung view
+  (edit/split prompt-frei). Laufende Streams zeigen die Statusleisten
+  (`.ai-translate-status`, Translate + Actions) mit Spinner + Akzent-Puls
+  über die Klasse `ai-status-running` — Fehleranzeigen derselben Leiste
+  animieren nicht; `prefers-reduced-motion`-Block muss die Zwei-Klassen-
+  Spezifität spiegeln. Selektions-Scope nutzt strikte
+  UTF-16→Byte-Konvertierung (`utf16_to_byte_offset_strict`, kein Clamp)
+  und `mask_selection` (Grenzschnitt durch geschützte Ranges = Fehler);
+  Prompt-Injection-Härtung über Nonce-Delimiter + Untrusted-Data-Regel.
+  Favoriten: `aiActionFavorites`/`aiActionFavoriteHashes` in
+  settings.json (Hash-Pinning — verändertes Custom-Template führt in
+  den Dialog statt Direktausführung). Editierte Review zählt in allen
+  Quit-Gates wie ein dirty Tab (`ai_review_state_set`); RunEvent::Exit
+  cancelt aktive Läufe (≤2 s Cleanup-Wartefenster). Spec + Review-
+  Historie: [`docs/spec-ki-actions.md`](spec-ki-actions.md).

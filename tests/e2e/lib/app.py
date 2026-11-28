@@ -7,7 +7,7 @@ Plattform-Verhalten:
   `DISPLAY` gestartet — der Caller (scripts/run-e2e.sh) ist für Xvfb
   zuständig.
 - Windows: `folio.exe` wird sichtbar gestartet (Fenster erscheint).
-  Headless-Tests auf Windows sind nicht supported (siehe CLAUDE.md
+  Headless-Tests auf Windows sind nicht supported (siehe docs/e2e-testing.md
   "Headless-Screenshots").
 """
 

@@ -249,7 +249,7 @@ Origin-header allowlists. The full route list and contract are documented in
 ### More documentation
 
 Architecture notes and feature specs live in [`docs/`](docs/); contributor
-conventions are in [`CLAUDE.md`](CLAUDE.md); open tasks are tracked in
+conventions are in [`AGENTS.md`](AGENTS.md); open tasks are tracked in
 [`TODO.md`](TODO.md).
 
 ## License

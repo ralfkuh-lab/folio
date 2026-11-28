@@ -458,3 +458,101 @@ User-Feedback nach R5.1:
 
 cargo test (voll) · clippy -D warnings · fmt --check · npm run build ·
 npx vitest run · `bash scripts/run-e2e.sh` (Orchestrator).
+
+## Implementierungsnotizen (aus der früheren `CLAUDE.md`)
+
+- **Vault-Tree-Filter (R3, Sicht-Filter)** (Frontend `vault/filter.ts`,
+  Funnel-Button + Such-/Filterbereich `#vault-filter` (seit S9 mit dem
+  Inhaltsfeld der Volltextsuche, siehe dort); Spec
+  [`docs/spec-vault-filter.md`](spec-vault-filter.md) inkl.
+  Revisions-Historie R1→R3): Der Namensfilter ist eine **rein
+  clientseitige Sicht über dem echten Lazy-Baum** — kein Backend-Walk,
+  kein separater Render-Modus (R1/R2-Konzepte entfernt). Datei-Zeilen
+  ohne Match bekommen `vf-hidden`; **Ordner bleiben immer sichtbar**
+  (sie sind der aufklappbare Suchraum); Treffer-Highlight `span.vf-hit`
+  auf Datei- UND Ordner-Labels (Text-Node-sicher); wirkt auf Pinned und
+  Recent. Match: case-insensitive Substring via `toLowerCase`, KEIN
+  Unicode-Case-Folding. Re-Apply nach Baum-Änderungen per
+  MutationObserver auf `#vault-tree` — **`takeRecords()` im finally von
+  `applyClientFilter` ist PFLICHT**: die eigenen Highlight-Umbauten sind
+  childList-Mutationen, der Observer-Callback feuert erst als Microtask
+  nach dem Guard-Reset; ohne Drain entsteht ein Endlos-Loop (Befund
+  Orchestrator-Review 2026-07-21, Churn-Test in
+  `tests/vault/filter.test.ts`). „Schließen = Aufräumen": Funnel / Escape
+  im leeren Feld leeren die Query und schließen den Bereich (das frühere
+  Zeilen-✕ `#vault-filter-close` entfällt seit S9); Text-Lösch-✕ ist ins Input eingebettet; Funnel-Badge bei jedem
+  aktiven Filter (Query, md-only, git, Bereich, `.*` gedrückt).
+  **R4-Tiefenfilter** (Spec-Vertrag; seit R5.2 **ohne** eigenen Chip):
+  aktiv ab Query ≥ 2 Zeichen. Backend
+  `vault_filter_find` läuft parallel (`ignore::WalkBuilder::build_parallel`)
+  über die Pins (`search::resolve_search_scope`) bzw. den Bereich, **ohne
+  Gitignore** (`standard_filters(false)`; der Baum zeigt ignorierte Dateien
+  gedimmt — der Filter darf nichts verschweigen), `.git` immer raus,
+  Symlink-Dirs nicht betreten, `vaultShowHidden`/md-only respektiert.
+  Ohne Bereich ist jeder Ordner-Pin eigene Walk-Wurzel mit derselben
+  Grenzprüfung wie die Suche (`plan_walk_roots`/`is_foreign_root`), auch
+  hinter versteckten/gitignorierten Segmenten oder Symlinks erreichbar.
+  Deckel **500 Treffer** bzw. **3 s** → `truncated` + `reason
+  ("cap"|"time")`; `truncated` erst bei einem WEITEREN Treffer, kein
+  Visit-Deckel (der R2-Fehler). Antwort `{files, dirs, truncated, reason}`;
+  `dirs` = Vorfahren der Treffer inkl. Pin-Wurzel (bzw. Kette
+  Pin-Wurzel → Bereich). Frontend klappt `dirs` über `vault_expand_paths`
+  auf (additives `paths` = neu expandierte Ordner, gemerkt zum Aufräumen),
+  Sicht kommt aus der Trefferliste. **Alle Baum-Operationen des
+  Tiefenfilters laufen in EINER serialisierten Sync-Schleife**
+  (`runDeepSync`, nie doppelt; `deepSyncDirty` koalesziert Aktionen, der
+  Wunschzustand wird erst beim Ausführen gelesen); Schlüssel = Query +
+  Bereich + md-only + `vaultShowHidden`, veraltetes
+  Voll-HTML wird nie angewandt (`refreshVault()` stattdessen), die
+  tatsächlich neu geöffneten `paths` werden IMMER eingesammelt. Aufräumen
+  (Query < 2, Chip aus, Bereich weg, Schließen, Reset) ruft
+  `vault_collapse_paths` mit **genau den vom Filter geöffneten** Ordnern
+  — vorher offene bleiben offen. Der Expand-Soft-Cap zeigt den
+  bestehenden `vault.tree.expandCapped`-Hinweis (Vorrang vor „Keine
+  Treffer"). Bereich als Chip `#vault-filter-scope` in der
+  Chip-Zeile (seit S9; 📁 Name mit Ellipsis ✕, Tooltip = Pfad, flüchtig);
+  Bereich-Fehler (`errors.vault.filterScopeNotFound`/`…Invalid`)
+  entfernen den Bereich und zeigen den Fehler transient; Hinweise „Keine
+  Treffer"/cap/time in `#vault-tree-notice`.
+  **Hidden-Chip** (`#vault-filter-hidden` `.*`, R5.1/R5.2) schaltet
+  `settings.vaultShowHidden` (`settings_update`; Chip/Tiefen-Sync/Suche
+  ziehen über `settings:changed` nach). **Gedrückt = versteckte
+  ausblenden** (`vaultShowHidden=false`), damit „aktiv = es wird
+  gefiltert" für alle Chips gilt; zählt fürs Funnel-Badge, aber nicht für
+  `isVaultFilterActive` (den Baum filtert schon das Backend). Kein eigener
+  Panel-State. Ein Pin direkt auf `.name` zeigt seinen Inhalt weiter.
+  **Trefferzahl** `#vault-filter-status` (ab Namensbegriff ≥ 2 bzw. im
+  Tiefenmodus, im Suchmodus aus): volle Treffermenge aus
+  `vault_filter_find`, nicht der gerenderte Lazy-Baum; im Tiefenmodus aus
+  dem Sync-Schritt (kein zweiter Walk), `git`-Chip schneidet clientseitig.
+  **R4.1**: Bereich + md-only ist auch **ohne (oder mit zu kurzer) Query**
+  aktiv — das Backend liefert dann alle Markdown-Dateien unterhalb des
+  Bereichs (Guard: leere Query nur mit Bereich UND md-only). Ohne Bereich
+  bleibt die 2-Zeichen-Regel. Bereich + `git` ohne Tiefenmodus begrenzt den
+  bestehenden Git-Filter auf den Bereich: Auto-Expand nur für geänderte
+  Pfade darunter plus Kette Pin-Wurzel → Bereich, Knoten außerhalb
+  `vf-hidden` (außer den Vorfahren des Bereichs); ohne Bereich verhält sich
+  `git` wie bisher. **R4.2**: Ein Bereich blendet **sofort** alles außerhalb
+  aus (auch ohne Query/Chip, auch in Recent), ohne zu suchen oder
+  aufzuklappen. Ordner-Sichtbarkeit im Tiefenmodus kommt aus der
+  Backend-**Trefferliste**, nie aus den gerade gerenderten Dateien — der
+  Lazy-Baum rendert nach Zu-/Aufklappen nur eine Ebene, trefferhaltige
+  Unterordner wären sonst unerreichbar. **Baum-Operationen im `vault-header`** (filter-unabhängig):
+  `#vault-expand-roots` (Chevron, Command `vault_expand_roots` —
+  expandiert die zugeklappten Pin-Wurzel-Ordner über den
+  `on_expand`-Pfad inkl. Watcher) und
+  `#vault-collapse-all` (⊟, Command `vault_collapse_all`).
+  **„Nur Markdown"-Toggle** bleibt Backend-Lazy:
+  `build_dir_children_html` filtert pro Expand (inkl. Pin-Wurzeln);
+  `dir_contains_markdown`-Probe (Early-Exit, 2k-Visit-Cap fail-open,
+  kein Abstieg in Link-Dirs, `.git`-Skip) in `vault_filter.rs`. Der
+  Lazy-Typ-Filter lebt als Spiegel-State `Vault::markdown_only`
+  (Quelle: `panel_state.vault_filter_markdown_only`); JEDER
+  `compute_refresh_delta`-Aufruf läuft über
+  `commands::vault_cmd::compute_refresh_delta_synced` (synct + rendert
+  unter einem Lock; Boot-Init in `state.rs`). md-Toggle ohne Query
+  wartet auf `vault_filter_options_set`, BEVOR `refreshVault()` läuft —
+  sonst liest `vault_build_tree` den alten Toggle (Race, E2E-Befund
+  2026-07-20). Persistenz: `vault_filter_markdown_only` +
+  `vault_filter_bar_visible` in `panel_state.rs`; Query flüchtig.
+  E2E-Reset räumt den Filter über den Hook `window.__folioVaultFilterReset()`.

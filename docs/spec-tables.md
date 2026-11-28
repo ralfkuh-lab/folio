@@ -341,3 +341,28 @@ Jede Etappe einzeln lieferbar und per `.deb` testbar.
 - **Farben** der App-UI im Dokument über `--folio-ui-fg`/`--folio-ui-accent`
   (an `:root` aufgelöst), weil Themes `--fg`/`--accent` auf `.markdown-body`
   überschreiben.
+
+## Implementierungsnotizen (aus der früheren `CLAUDE.md`)
+
+- **Tabellen** (Spec [`docs/spec-tables.md`](spec-tables.md)):
+  *Formatieren* über den reinen Formatierer `web/shared/markdown-table.ts`
+  (Prettier-Stil, beide Bundles: Monaco-Formatting-Provider für Markdown =
+  Shift+Alt+F/Menü `edit.format_tables`, und HTML-Paste). `web/shared/` ist
+  das einzige Verzeichnis, aus dem app- **und** editor-Bundle importieren;
+  `isInsideCodeFence` liegt deshalb in `shared/code-fence.ts` (Re-Export aus
+  `editor/wikilink-complete.ts`). Kein Format-on-Save. *View*
+  (`view/tables.ts`, Aufruf `prepareTables` an den drei Post-Render-Stellen,
+  `closeTableOverlay()` **vor** jedem `innerHTML`-Ersetzen und bei
+  `document:closed`): Wrapper `div.folio-table`, breite Tabellen brechen per
+  Container-Query (`#view-content` ist `container-type: inline-size`) aus der
+  Lesebreite aus und scrollen im eigenen Rahmen; Vergrößern-Overlay
+  `<dialog id="table-overlay">`; Sortieren per Kopfzeile, Filter ab 6
+  Datenzeilen. Sortieren/Filtern sind **nur Anzeige** (kein Dirty/Undo),
+  Zustand im Speicher pro Dokumentpfad (Schlüssel Tabellennummer +
+  Kopfzeilen-Text). Drei Kopplungen, die man beim Ändern mitdenken muss:
+  (1) Scroll-Sync ignoriert Zeilen in `table[data-folio-arranged]`;
+  (2) die View-Suche überspringt `tr[hidden]` und die Leiste, und
+  Sortieren/Filtern rufen `ViewFinder.refresh()`; (3) die Link-/Checkbox-
+  Handler aus `initMarkdownView` hängen zusätzlich am Overlay, weil es
+  außerhalb von `#view-content` liegt. Export/Theme-Editor bekommen nichts
+  davon (Backend-HTML unverändert).

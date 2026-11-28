@@ -229,3 +229,60 @@ Wie gehabt: `cargo test` / `clippy -D warnings` / `fmt --check`;
 bei TS-Änderungen `npm run build && npm test` + Bundles einchecken;
 `bash scripts/run-e2e.sh` komplett. Pro grüner Etappe Commit auf
 `main` + Checkboxen hier abhaken.
+
+## Implementierungsnotizen (aus der früheren `CLAUDE.md`)
+
+- Backend-Module liegen unter `src-tauri/src/ai/`: `catalog.rs` lädt den
+  eingebetteten models.dev-Snapshot bzw. den explizit aktualisierten Cache,
+  `config.rs` verwaltet Provider/Whitelists/Defaults, `auth.rs` ausschließlich
+  Schlüssel und `client.rs` den OpenAI-kompatiblen Chat-Call. Jeder Call trägt
+  `User-Agent: folio/<version>` und eine eigene `x-opencode-session`-ID —
+  OpenCode Go lehnt Anfragen ohne Session-Header seit 2026-10 mit HTTP 400
+  (`MissingSessionID`) ab; andere Anbieter ignorieren ihn.
+- Persistenz ist bewusst getrennt und folgt opencode: `ai.json` enthält
+  Provider-/Modell-Konfiguration und Übersetzungshistorie, `auth.json`
+  ausschließlich API-Keys (0600), `ai-catalog.json` den optionalen
+  models.dev-Cache. Keys dürfen nie in Logs, Fehlern, DOM oder Automation
+  erscheinen.
+- Die Settings-Bereiche `KI-Anbieter` und `KI-Modelle` kuratieren aktive
+  Provider und Modell-Whitelists. Nur freigeschaltete Modelle aktivierter
+  Provider erscheinen im Übersetzungsdialog.
+- **KI-Button-Gating** (🌐/✨ + Menü-Items): `documentIsMarkdown` in
+  `translate-dialog.ts`/`ai-actions-dialog.ts` wird über das in-window
+  CustomEvent `folio-doc-kind-changed` synchronisiert, das `applyDocKind`
+  (state/document.ts) NACH dem Setzen der `body.kind-*`-Klasse dispatcht.
+  Bewusst KEINE eigenen `document:loaded/closed`-Listener in den
+  Dialogen: deren Aufruf-Reihenfolge relativ zum state-Handler ist nicht
+  deterministisch (async `listen`-Registrierung) — das war die
+  Stale-Read-Race vom 2026-07-11 (Buttons hinkten dem Dokument-Zustand
+  einen Event-Zyklus hinterher); außerdem erbt der CustomEvent-Weg den
+  seq-Stale-Guard gratis. Config-Seite des Gatings: die Dialog-
+  `configCache`s refreshen über `folio-ai-invoke-complete`, das nur der
+  Settings-UI-Pfad (`invokeUi` in settings-ai.ts) dispatcht — wer
+  KI-Config per Raw-Invoke ändert (Automation/E2E), muss den Dispatch
+  nachbilden (siehe `_configure_provider` in E2E 45).
+- „Bearbeiten → Mit KI übersetzen…“ synchronisiert zuerst den aktuellen
+  Editorinhalt in den aktiven `DocumentStore` und ruft pro Zielsprache seriell
+  `/chat/completions` mit `stream: true` auf. SSE-Deltas bauen die über den
+  regulären Tab-Open-Pfad sofort angelegte Zieldatei live über den bestehenden
+  Preview-/`renderGen`-Pfad auf; Provider mit `application/json` werden als
+  Fallback weiterhin unterstützt. Die Statusleiste zeigt Sprache und
+  Zeichenzahl und kann den Lauf abbrechen. Fertige Sprachen bleiben dabei
+  erhalten, die gerade laufende leere Datei samt Tab wird aufgeräumt. Final
+  schreibt der strikte Demaskierungs-Gate kollisionsfrei
+  `<stem>.<lang>[-N].md` neben die Quelle und lädt den Tab kanonisch neu.
+- **Deterministischer Code-Schutz** (`ai/mask.rs`): vor dem LLM-Call werden
+  Frontmatter, Code-Blöcke (fenced + indented), Inline-Code sowie
+  HTML-Blöcke/-Inlines per comrak-`sourcepos`-Byte-Ranges durch opake Token
+  `⟦F<nonce>:<index>⟧` ersetzt und nach der Antwort wieder eingesetzt —
+  Schutz hängt nicht mehr an der Prompt-Disziplin des Modells. Maskiert wird
+  auf dem Original-String (kein AST-Roundtrip, keine Normalisierung); der
+  Nonce ist deterministisch (Hochzählen bei Kollision, kein `rand`).
+  `unmask` toleriert Whitespace/Backticks am Token; **fehlende Token sind
+  ein Fehler pro Zielsprache** (kein stiller Codeverlust), Duplikate werden
+  ersetzt + gewarnt. `unmask_partial` ersetzt für die Streaming-Anzeige nur
+  bereits vollständig empfangene Token; `unmask` bleibt der finale
+  Schreib-Gate. Lone-`\r`-Dokumente überspringen das Masking bewusst (Fallback
+  auf reines Prompt-Verhalten). E2E-Szenario 34 verifiziert per SSE-Mock, dass
+  geschützte Fragmente als Token ankommen und die Zieldatei die Original-Bytes
+  1:1 enthält.

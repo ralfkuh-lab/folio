@@ -144,3 +144,24 @@ Key-Mengen — Katalog-Gates sind hart):
 --check`, `cd src-tauri/web && npm test && npm run build` (Bundles
 einchecken), i18n-/Referenz-Gates laufen in `cargo test` mit. E2E wie
 oben.
+
+## Implementierungsnotizen (aus der früheren `CLAUDE.md`)
+
+- **Statusleiste** (Spec [`docs/spec-statusbar.md`](spec-statusbar.md)):
+  `#status-cursor` (Ln/Sp, nur Edit/Split via CSS-Body-Klassen),
+  Selektions-Stats in `#status-wordcount` (Rückfall auf gemerkte
+  Dokument-Stats), `#status-eol`-Button (LF↔CRLF-Toggle, kind
+  markdown/text). Quelle ist das RAF-debounced in-window CustomEvent
+  `folio-editor-selection` aus `editor/events.ts` (Model wird vor dem
+  RAF gecaptured — nachlaufender Frame nach Doc-Wechsel wird verworfen).
+  EOL: `DocumentStore` hält `clean_line_ending` + `opaque`-Flag; Dirty =
+  Text- ODER EOL-Abweichung (`is_content_dirty`, gespiegelt im Frontend
+  via `cleanEol` in `refreshDirtyFromEditor` — sonst verwirft ein
+  Dateiwechsel den EOL-Toggle still). Events: `document:loaded.lineEnding`,
+  `document:eol_changed` (tabId-Guard; einziger Emit-Pfad ist der
+  Store-Callback `events.eol_changed`, auch beim Format-only-External-
+  Reload — dort gewinnt bewusst der Disk-Stand über einen In-App-Toggle).
+  `set_line_ending` lehnt Opaque-Docs ab (Flag überlebt Rename Bild→.txt).
+  `.statusbar button[hidden] { display:none }` ist Pflicht (Author-CSS
+  überstimmt sonst das UA-hidden). Automation: `/state.lineEnding`
+  (null ohne Doc/opaque), E2E `52_statusbar.py`.

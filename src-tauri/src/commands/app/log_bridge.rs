@@ -12,7 +12,7 @@
 //! pro Code-Block auch dann gar nicht erst zum IPC wird, wenn das
 //! Setting auf `info` steht. Die Filter-Hoheit bleibt trotzdem beim
 //! Backend — ein RUST_LOG-Override wird vom Frontend-Cache nicht
-//! gesehen, was dokumentierte Konsequenzen hat (siehe CLAUDE.md).
+//! gesehen, was dokumentierte Konsequenzen hat (siehe docs/architektur-app.md, Frontend-Logging).
 //!
 //! `target:` muss in `tracing`-Macros eine `&'static str`-Konstante
 //! sein. Deshalb steckt der Frontend-spezifische Sub-Namespace im

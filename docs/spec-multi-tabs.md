@@ -205,3 +205,64 @@ Aus `src-tauri/`: `cargo test`, `cargo clippy --all-targets --
 run build && npm test` + Bundles einchecken; `bash scripts/run-e2e.sh`
 komplett. Pro grüner Etappe: Commit auf `main` + Checkboxen hier
 abhaken.
+
+## Implementierungsnotizen (aus der früheren `CLAUDE.md`)
+
+- **Multi-Datei-Tabs** (Spec + Etappenhistorie:
+  [`docs/spec-multi-tabs.md`](spec-multi-tabs.md)): Backend ist
+  Source of Truth — `tab_manager.rs::TabManager` haelt `Vec<Tab>` mit je
+  eigenem `DocumentStore` (Datei+Watcher+Dirty) und
+  `NavigationController` (History ist per Tab) plus `view_mode`.
+  `document:*`-Events bleiben "aktiver Tab"-bezogen (mit `tabId`-Feld);
+  `tabs:changed` traegt die Leisten-Sicht und triggert zugleich die
+  Session-Persistenz. Frontend: `state/tabs.ts` rendert `#tab-bar` rein
+  aus `tabs:changed`; `editor/mount.ts` cachet Monaco-Model+ViewState
+  pro `tabId` (Undo-Stack ueberlebt Tab-Wechsel; Save-As/Rename behaelt
+  das Model nur bei unveraendertem Inhalt — Ersetzen-Open im selben Tab
+  setzt neuen Text). Oeffnen-Konventionen: Vault-Klick ersetzt im
+  aktiven Tab, Ctrl/Cmd-Klick + Mittelklick + Kontextmenue "In neuem
+  Tab oeffnen" nutzen `tab_open`; bereits offene Pfade werden aktiviert
+  statt dupliziert; ein leerer aktiver Tab wird von `tab_open` recycelt.
+  Extern geoeffnete Dateien (Single-Instance-Reinvoke **und** macOS-
+  Finder-Open) folgen dem Setting `openFileTarget` (`newtab` Default |
+  `replace`), entschieden im Backend ueber den gemeinsamen Pfad
+  `lib.rs::open_external_path` — nicht zweimal implementieren. macOS
+  uebergibt Finder-Doppelklick und Dock-Drop **nicht als argv**, sondern
+  als Apple Event (`RunEvent::Opened`, `lib.rs::open_finder_urls`, nur
+  `cfg(target_os = "macos")` — kompiliert unter Linux/Windows nicht,
+  dort prueft ihn weder build noch clippy). Mehrere Dateien auf einmal
+  oeffnen immer als neue Tabs (Replace ergibt dort keinen Sinn).
+  Quit-Gate (Strg+Q,
+  Menue, Fenster-X) prueft `TabManager::any_dirty()`; das Frontend
+  fragt jeden dirty Tab einzeln ab (`confirmAllDirtyTabs`).
+  Shortcuts: Ctrl+Tab/Ctrl+Shift+Tab (Wechsel), Ctrl+W (schliessen).
+  Automation: `GET /tabs`, `POST /tabs/open|close|activate|close_all|reorder`
+  (Letzteres fuer E2E-Isolation — Tab-Szenarien raeumen damit im
+  finally auf), `/state.tabs`.
+  Tab-Drag-Reorder: Pointer-basiert exakt wie Pin-Reorder (vault/tree.ts),
+  DRAG_THRESHOLD_PX=8 (quadratisch), Klick-Schlucken NUR bei echtem
+  Reorder (Drop-Ziel), bewusst kein setPointerCapture. Backend:
+  TabManager::reorder + tab_reorder + POST /tabs/reorder (nur
+  Dokument-Tabs; virtuelle Tabs frontend-only ausgenommen). Reorder
+  triggert emit_tabs_changed (inkl. Session-Persistenz).
+  **Settings als virtueller Tab**: `#settings-dialog` ist kein Modal
+  mehr, sondern eine Vollflaechen-Region in der `.content-region`
+  (`body.settings-open` blendet die `.content-panes` aus). Der
+  „⚙ Einstellungen"-Eintrag in der Tab-Leiste ist rein frontend-seitig
+  (`state/tabs.ts::setSettingsTabOpen`, Hooks via
+  `configureSettingsTab` — kein Backend-Tab, keine Persistenz).
+  Klick auf einen Dokument-Tab oder Escape schliesst die Region;
+  Enter schliesst bewusst NICHT mehr (Formular-Semantik).
+- **Tab-Session-Persistenz**: Dokumenttragende Tabs werden in
+  `workspace.json` als `open_tabs` plus `active_tab` (Index in dieser
+  gefilterten Liste) gespeichert. Pfade sind wie alle Workspace-Pfade auf
+  Forward-Slashes normalisiert. Beim Boot wird nur der aktive Tab geladen;
+  inaktive Tabs halten `Tab.pending_path` und erzeugen bis zur ersten
+  Aktivierung weder Datei-IO noch einen Watcher. Fehlende Restore-Pfade
+  werden verworfen. Boot-Pfade (CLI-Argument, macOS-Finder-Open vor dem
+  Frontend-Boot) puffert `AppState::pending_open_paths`; `cli_pending_open`
+  (zugleich Frontend-ready-Hook) öffnet sie nach dem Restore als
+  zusätzliche Tabs beziehungsweise aktiviert sie dedupliziert, der letzte
+  wird aktiv. Abgeholt wird unter derselben Sperre, danach steht dort
+  `None` — spätere Finder-Events laufen über den Pfad der laufenden
+  Instanz. Kein Race, kein verlorener Pfad.

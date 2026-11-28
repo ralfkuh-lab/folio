@@ -156,3 +156,22 @@ Orchestrator-Endabnahme mit zwei E2E-Voll-Läufen.
 
 cargo test (voll) · clippy -D warnings · fmt --check · npm run build ·
 npx vitest run · bash scripts/run-e2e.sh (2× voll).
+
+## Implementierungsnotizen (aus der früheren `CLAUDE.md`)
+
+- **Command Palette** (Strg+P; Spec
+  [`docs/spec-command-palette.md`](spec-command-palette.md)):
+  Overlay `#cmd-palette` (`dist/index.html` + `styles/overlays.css`),
+  Module `ui/command-palette.ts` + `ui/palette-commands.ts` +
+  `util/fuzzy.ts`. Trigger im DOM-Capture-Block von
+  `toolbar-actions.ts` (Toggle; Esc/Backdrop/Fokus-Restore). Drei
+  Modi im selben Input: *(keins)* Dateien (offene Tabs >
+  Recents aus Vault-DOM > `palette_files`-Pin-Walk, Cap 20 000 +
+  `truncated`), `>` Befehle nur via `menu_dispatch` (disabled
+  ausgeblendet), `#` TOC-Überschriften (`toc_click`). Enter:
+  `openDocument`/`activateTab`; Strg+Enter/Strg+Klick: `tab_open`.
+  Max. 50 Zeilen + „weiter tippen…"; Match-Highlight `.cp-hit`.
+  Hooks `window.__folioOpenPalette(prefill?)` /
+  `__folioClosePalette()` (E2E/Reset; synthetisches Strg+P unter
+  Xvfb fragil). E2E `51_command_palette.py`; Reset schließt die
+  Palette über den Close-Hook.
