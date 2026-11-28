@@ -19,11 +19,19 @@
 import {
     isVaultActionAvailable,
     openContextMenu,
+    openPinHeaderMenu,
+    openSeparatorMenu,
     runVaultAction,
+    startSeparatorEdit,
     type ContextMenuOptions,
 } from './context-menu';
 import { deferVaultTreeUpdate, setVaultRenameFlush } from './rename-guard';
-import { initVaultTreeKeyboard, isKeyboardMenuJustOpened } from './tree-keyboard';
+import {
+    initVaultTreeKeyboard,
+    isKeyboardMenuJustOpened,
+    isPinSeparator,
+    vaultEntryOf,
+} from './tree-keyboard';
 import { folioLog, safeInvoke } from '../util/log';
 import { t } from '../i18n/translate';
 
@@ -305,6 +313,13 @@ function menuTargetOf(item: HTMLElement): {
 
 /** K2: Aktion nur, wenn das Kontextmenü sie für diesen Eintrag anböte. */
 function runMenuAction(act: string, item: HTMLElement): Promise<{ done: boolean; path?: string }> | null {
+    if (isPinSeparator(item)) {
+        // F2 und Entf; alle anderen Datei-Aktionen wirken auf Trenner nicht.
+        const separatorAct = act === 'rename' ? 'separator-edit'
+            : act === 'delete' ? 'separator-remove' : '';
+        if (!separatorAct) return null;
+        return runVaultAction(separatorAct, item.getAttribute('data-separator-id') || '', false);
+    }
     const m = menuTargetOf(item);
     if (!m.path) return null;
     if (!isVaultActionAvailable(act, m.isDir, m.inPinned, m.inRecent, m.isExec, m.options)) return null;
@@ -313,10 +328,18 @@ function runMenuAction(act: string, item: HTMLElement): Promise<{ done: boolean;
 
 /** K3: Kontextmenü unter der Zeile, Fokus in das Menü. */
 function openMenuForItem(item: HTMLElement): void {
-    const m = menuTargetOf(item);
-    if (!m.path) return;
     const row = item.querySelector(':scope > .row') as HTMLElement | null;
     const rect = (row || item).getBoundingClientRect();
+    if (isPinSeparator(item)) {
+        openSeparatorMenu(rect.left + 16, rect.bottom, item.getAttribute('data-separator-id') || '', item);
+        return;
+    }
+    if (item.matches('li.section[data-section="pinned"]')) {
+        openPinHeaderMenu(rect.left + 16, rect.bottom, item);
+        return;
+    }
+    const m = menuTargetOf(item);
+    if (!m.path) return;
     openContextMenu(rect.left + 16, rect.bottom, m.path, m.isDir, m.inPinned, m.inRecent, m.isExec, {
         ...m.options,
         returnFocus: item,
@@ -446,14 +469,29 @@ export function initVaultTree(d: Deps): void {
     // vom Backend nirgends mehr erzeugt (Tree besteht aus .node/.row),
     // und der Pfad rief vault_expand_dir ohne VaultWatcher-Sync.
     ROOT.addEventListener('contextmenu', function (e: MouseEvent) {
-        const item = (e.target as HTMLElement).closest('li.node') as HTMLElement;
-        if (!item) return;
+        const target = e.target as HTMLElement;
+        const item = target.closest('li.node, li.pin-separator') as HTMLElement | null;
+        const pinHeader = target.closest('li.section[data-section="pinned"] > .row');
+        if (!item && !pinHeader) return;
         e.preventDefault();
         // Die Kontextmenü-Taste löst je nach Engine zusätzlich dieses Event
         // aus; das per Tastatur geöffnete Menü (Fokus darin) bleibt.
         if (isKeyboardMenuJustOpened()) return;
+        if (!item) {
+            openPinHeaderMenu(e.clientX, e.clientY);
+            return;
+        }
+        if (isPinSeparator(item)) {
+            openSeparatorMenu(e.clientX, e.clientY, item.getAttribute('data-separator-id') || '');
+            return;
+        }
         const m = menuTargetOf(item);
         openContextMenu(e.clientX, e.clientY, m.path, m.isDir, m.inPinned, m.inRecent, m.isExec, m.options);
+    });
+
+    ROOT.addEventListener('dblclick', function (e: MouseEvent) {
+        const separator = (e.target as HTMLElement).closest('li.pin-separator');
+        if (separator) startSeparatorEdit(separator.getAttribute('data-separator-id') || '');
     });
 
     // ----- MutationObserver: File-Icons fuer neu hinzugefuegte Tree-Knoten -----
@@ -488,7 +526,8 @@ export function initVaultTree(d: Deps): void {
     function getDirectPinnedItem(target: HTMLElement | null): HTMLElement | null {
         let el: HTMLElement | null = target;
         while (el && el !== ROOT) {
-            if (el.classList && el.classList.contains('node') && isDirectChildOfSection(el, 'pinned')) {
+            if (el.classList && (el.classList.contains('node') || isPinSeparator(el))
+                && isDirectChildOfSection(el, 'pinned')) {
                 return el;
             }
             el = el.parentElement;
@@ -510,8 +549,8 @@ export function initVaultTree(d: Deps): void {
             ul.insertBefore(draggedEl, targetItem.nextSibling);
         }
         const newPaths = Array.from(ul.children)
-            .map(el => el.getAttribute('data-path'))
-            .filter(Boolean) as string[];
+            .map(vaultEntryOf)
+            .filter(Boolean);
         safeInvoke('workspace_reorder_pinned', { paths: newPaths }, 'workspace_reorder_pinned');
     }
 
@@ -540,12 +579,16 @@ export function initVaultTree(d: Deps): void {
         if (e.button !== 0) return;
         suppressNextClick = false;
         const item = getDirectPinnedItem(e.target as HTMLElement);
-        if (!item || !item.getAttribute('data-path')) return;
+        if (!item || !vaultEntryOf(item)) return;
         // Drag nur ueber die EIGENE Zeile des Root-Items starten — nicht aus
         // verschachtelten Kind-Eintraegen eines aufgeklappten Pin-Ordners
         // (getDirectPinnedItem klettert sonst zum Eltern-Root). Als Drop-ZIEL
         // bleibt der gesamte Subtree gueltig (siehe pointermove/up).
-        const ownRow = item.querySelector(':scope > .row');
+        // Ein Trenner ist als Ganzes seine Zeile; im offenen Eingabefeld
+        // markiert die Maus Text, statt zu ziehen.
+        const separator = isPinSeparator(item);
+        if (separator && (e.target as Element).closest('input')) return;
+        const ownRow = separator ? item : item.querySelector(':scope > .row');
         if (!ownRow || !ownRow.contains(e.target as Node)) return;
         pinDrag = {
             item,

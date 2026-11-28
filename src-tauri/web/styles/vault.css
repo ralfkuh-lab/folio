@@ -186,11 +186,14 @@ body.vault-hidden .vault-region { display: none; }
   top: 2px;
 }
 .vault-region .label.editing { overflow: visible; }
-.vault-region .label > input.vault-rename-input {
-  display: block;
-  width: 100%;
+.vault-region .pin-separator-line > input.vault-rename-input {
+  flex: 0 1 75%;
+  min-width: 0;
+  margin: 0 4px;
+}
+.vault-region .label > input.vault-rename-input,
+.vault-region .pin-separator-line > input.vault-rename-input {
   box-sizing: border-box;
-  margin: 0;
   padding: 0 3px;
   font: inherit;
   color: var(--fg);
@@ -200,12 +203,61 @@ body.vault-hidden .vault-region { display: none; }
   outline: none;
   line-height: 1.3;
 }
+.vault-region .label > input.vault-rename-input {
+  display: block;
+  width: 100%;
+  margin: 0;
+}
 /* Papierblatt-Emoji hat im Light-Mode kaum Kontrast — dezente Drop-Shadow. */
 html:not(.theme-dark) .vault-region .node.file > .row > .icon {
   filter: drop-shadow(0 0 0.4px rgba(0,0,0,0.7));
 }
 .vault-region ul.children { padding-left: 14px; }
 .vault-region ul.children.collapsed { display: none; }
+/* Pin-Trenner: Linie, optional mit mittiger Beschriftung. Die beiden
+   Linienhälften sind Pseudo-Elemente; ohne Beschriftung stoßen sie
+   aneinander und ergeben eine durchgehende Linie. Einrückung und Höhe wie
+   eine Pin-Zeile. */
+.vault-region .pin-separator-line {
+  display: flex;
+  align-items: center;
+  min-height: 22px;
+  margin: 1px 6px 1px 8px;
+  border-radius: 3px;
+}
+.vault-region .pin-separator-line::before,
+.vault-region .pin-separator-line::after {
+  content: "";
+  flex: 1 1 0;
+  min-width: 12px;
+  border-top: 1px solid var(--border);
+}
+.vault-region .pin-separator-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0 6px;
+  color: var(--rail-fg-muted);
+  font-size: 0.85em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vault-region li.section[data-section="pinned"] > ul.children > li.pin-separator {
+  cursor: grab;
+}
+.vault-region li.section[data-section="pinned"] > ul.children > li.pin-separator.dragging {
+  opacity: 0.4;
+}
+.vault-region li.section[data-section="pinned"] > ul.children > li.pin-separator.drop-over-before > .pin-separator-line {
+  box-shadow: inset 0 2px 0 var(--rail-accent);
+}
+.vault-region li.section[data-section="pinned"] > ul.children > li.pin-separator.drop-over-after > .pin-separator-line {
+  box-shadow: inset 0 -2px 0 var(--rail-accent);
+}
+.vault-region #vault-tree li.pin-separator:focus > .pin-separator-line {
+  outline: 2px solid var(--rail-accent);
+  outline-offset: -2px;
+}
 .vault-region li.empty {
   color: var(--rail-fg-muted);
   font-style: italic;
@@ -875,7 +927,8 @@ html.theme-dark .vault-filter-md[aria-pressed="true"] {
 }
 
 /* Client-Filter: ausgeblendete Datei-Zeilen. */
-#vault-tree li.node.vf-hidden {
+#vault-tree li.node.vf-hidden,
+#vault-tree li.pin-separator.vf-hidden {
   display: none;
 }
 

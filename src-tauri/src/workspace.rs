@@ -9,6 +9,7 @@ use std::{
 };
 
 const MAX_RECENT: usize = 20;
+const MAX_SEPARATOR_LABEL_CHARS: usize = 80;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PinnedItem {
@@ -20,6 +21,15 @@ pub struct PinnedItem {
 pub struct RecentItem {
     pub path: String,
     pub last_opened: u64,
+}
+
+/// Trenner im Bereich „Angepinnt“. `position` = Anzahl der Pins **vor** dem
+/// Trenner (`0..=pinned.len()`); er steht also vor `pinned[position]`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PinSeparator {
+    pub id: String,
+    pub label: String,
+    pub position: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -51,6 +61,12 @@ pub struct WorkspaceData {
     /// bestehende workspace.json-Dateien.
     #[serde(default)]
     pub wikilink_roots: Vec<String>,
+    /// Trenner zwischen den Pins, stets stabil nach `position` sortiert
+    /// (gleiche Position = Vec-Reihenfolge). Bewusst neben `pinned` statt
+    /// darin: die Pin-Liste lesen Suche, Filter, Wikilinks und Git, die von
+    /// Trennern nichts sehen sollen.
+    #[serde(default)]
+    pub pinned_separators: Vec<PinSeparator>,
 }
 
 #[derive(Debug, Clone)]
@@ -74,6 +90,15 @@ impl Default for Workspace {
 /// interpretiert wird.
 fn normalize_path(input: &str) -> String {
     input.replace('\\', "/")
+}
+
+fn sanitize_separator_label(label: &str) -> String {
+    label
+        .trim()
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .take(MAX_SEPARATOR_LABEL_CHARS)
+        .collect()
 }
 
 impl Workspace {
@@ -131,6 +156,21 @@ impl Workspace {
                 *root = normalized;
                 dirty = true;
             }
+        }
+        let pin_count = data.pinned.len();
+        for separator in &mut data.pinned_separators {
+            if separator.position > pin_count {
+                separator.position = pin_count;
+                dirty = true;
+            }
+        }
+        if data
+            .pinned_separators
+            .windows(2)
+            .any(|pair| pair[0].position > pair[1].position)
+        {
+            data.pinned_separators.sort_by_key(|s| s.position);
+            dirty = true;
         }
         let workspace = Self { data, path };
         if dirty {
@@ -222,7 +262,7 @@ impl Workspace {
     pub fn unpin(&mut self, path: &str) -> io::Result<()> {
         let path = normalize_path(path);
         let matcher = FileMatcher::new(&path);
-        self.data.pinned.retain(|item| !matcher.matches(&item.path));
+        self.retain_pins(|item| !matcher.matches(&item.path));
         // Ein Pin ohne Pin ist keine Wikilink-Wurzel mehr. Ohne dieses
         // Aufraeumen bliebe ein toter Eintrag stehen, der beim erneuten
         // Pinnen desselben Ordners das Feature stillschweigend wieder
@@ -232,6 +272,68 @@ impl Workspace {
             .wikilink_roots
             .retain(|root| !matcher.matches(root));
         self.save()
+    }
+
+    /// Einziger Weg, Pins zu entfernen: Für jeden entfernten Pin mit Index
+    /// `i` rücken alle Trenner mit `position > i` um eins nach vorn.
+    fn retain_pins(&mut self, mut keep: impl FnMut(&PinnedItem) -> bool) {
+        let mut removed = Vec::new();
+        let mut index = 0;
+        self.data.pinned.retain(|item| {
+            let kept = keep(item);
+            if !kept {
+                removed.push(index);
+            }
+            index += 1;
+            kept
+        });
+        for separator in &mut self.data.pinned_separators {
+            separator.position -= removed.iter().filter(|i| **i < separator.position).count();
+        }
+    }
+
+    pub fn pinned_separators(&self) -> &[PinSeparator] {
+        &self.data.pinned_separators
+    }
+
+    /// Hängt einen Trenner ans Ende der Pin-Liste und liefert seine ID.
+    pub fn add_separator(&mut self, label: &str) -> io::Result<String> {
+        let highest = self
+            .data
+            .pinned_separators
+            .iter()
+            .filter_map(|s| s.id.strip_prefix('s')?.parse::<u64>().ok())
+            .max()
+            .unwrap_or(0);
+        let id = format!("s{}", highest.saturating_add(1));
+        self.data.pinned_separators.push(PinSeparator {
+            id: id.clone(),
+            label: sanitize_separator_label(label),
+            position: self.data.pinned.len(),
+        });
+        self.save()?;
+        Ok(id)
+    }
+
+    /// `Ok(false)` = unbekannte ID, nichts persistiert.
+    pub fn rename_separator(&mut self, id: &str, label: &str) -> io::Result<bool> {
+        let Some(separator) = self.data.pinned_separators.iter_mut().find(|s| s.id == id) else {
+            return Ok(false);
+        };
+        separator.label = sanitize_separator_label(label);
+        self.save()?;
+        Ok(true)
+    }
+
+    /// `Ok(false)` = unbekannte ID, nichts persistiert.
+    pub fn remove_separator(&mut self, id: &str) -> io::Result<bool> {
+        let before = self.data.pinned_separators.len();
+        self.data.pinned_separators.retain(|s| s.id != id);
+        if before == self.data.pinned_separators.len() {
+            return Ok(false);
+        }
+        self.save()?;
+        Ok(true)
     }
 
     /// Opt-in-Wurzeln fuer Wikilinks/Tags (roh, inkl. evtl. toter Eintraege).
@@ -299,11 +401,24 @@ impl Workspace {
             .any(|item| matcher.matches(&item.path))
     }
 
-    pub fn reorder_pinned(&mut self, paths: Vec<String>) -> io::Result<()> {
+    /// `entries` sind Pin-Pfade oder Trenner-Tokens `sep:<id>` (ein
+    /// absoluter Pfad kann nicht so beginnen). Nicht genannte Pins wandern
+    /// ans Ende, nicht genannte Trenner dahinter.
+    pub fn reorder_pinned(&mut self, entries: Vec<String>) -> io::Result<()> {
         let mut new_pinned = Vec::new();
         let mut remaining_pins = self.data.pinned.clone();
+        let mut new_separators = Vec::new();
+        let mut remaining_separators = self.data.pinned_separators.clone();
 
-        for path in paths {
+        for path in entries {
+            if let Some(id) = path.strip_prefix("sep:") {
+                if let Some(pos) = remaining_separators.iter().position(|s| s.id == id) {
+                    let mut separator = remaining_separators.remove(pos);
+                    separator.position = new_pinned.len();
+                    new_separators.push(separator);
+                }
+                continue;
+            }
             let normalized = normalize_path(&path);
             let matcher = FileMatcher::new(&normalized);
             if let Some(pos) = remaining_pins
@@ -316,7 +431,13 @@ impl Workspace {
         }
 
         new_pinned.extend(remaining_pins);
+        let pin_count = new_pinned.len();
+        new_separators.extend(remaining_separators.into_iter().map(|mut separator| {
+            separator.position = pin_count;
+            separator
+        }));
         self.data.pinned = new_pinned;
+        self.data.pinned_separators = new_separators;
         self.save()
     }
 
@@ -426,9 +547,7 @@ impl Workspace {
         let root = crate::path_migration::normalize(root);
         let pinned_before = self.data.pinned.len();
         let recent_before = self.data.recent.len();
-        self.data
-            .pinned
-            .retain(|item| !crate::path_migration::is_under(&item.path, &root));
+        self.retain_pins(|item| !crate::path_migration::is_under(&item.path, &root));
         self.data
             .recent
             .retain(|item| !crate::path_migration::is_under(&item.path, &root));
@@ -820,5 +939,107 @@ mod tests {
         assert_eq!(workspace.image_dir("/a/notizen/doc.md"), None);
         assert_eq!(workspace.image_dir("/a/other.md"), None);
         assert_eq!(workspace.last_export_dir(), None);
+    }
+
+    fn with_pins(pins: &[&str]) -> (TempDir, Workspace) {
+        let temp = TempDir::new().unwrap();
+        let mut workspace = Workspace::load_from(temp.path().join("workspace.json"));
+        for pin in pins {
+            workspace.pin((*pin).into(), false).unwrap();
+        }
+        (temp, workspace)
+    }
+
+    fn pin_paths(workspace: &Workspace) -> Vec<&str> {
+        workspace.pinned().iter().map(|p| p.path.as_str()).collect()
+    }
+
+    fn separator_positions(workspace: &Workspace) -> Vec<(&str, usize)> {
+        workspace
+            .pinned_separators()
+            .iter()
+            .map(|s| (s.id.as_str(), s.position))
+            .collect()
+    }
+
+    fn entries(values: &[&str]) -> Vec<String> {
+        values.iter().map(|v| (*v).to_string()).collect()
+    }
+
+    /// Pins `[/a,/b,/c,/d]` mit s1@1 und s2@3 (Ausgangslage R3).
+    fn four_pins_two_separators(pins: [&str; 4]) -> (TempDir, Workspace) {
+        let (temp, mut workspace) = with_pins(&pins);
+        workspace.add_separator("eins").unwrap();
+        workspace.add_separator("zwei").unwrap();
+        workspace
+            .reorder_pinned(entries(&[
+                pins[0], "sep:s1", pins[1], pins[2], "sep:s2", pins[3],
+            ]))
+            .unwrap();
+        assert_eq!(separator_positions(&workspace), [("s1", 1), ("s2", 3)]);
+        (temp, workspace)
+    }
+
+    #[test]
+    fn r2_r6_reorder_places_separators_and_ignores_unknown_entries() {
+        let (_temp, mut workspace) = with_pins(&["/a", "/b", "/c"]);
+        workspace.add_separator("eins").unwrap();
+        workspace
+            .reorder_pinned(entries(&["/a", "sep:s1", "/b", "/c"]))
+            .unwrap();
+        assert_eq!(pin_paths(&workspace), ["/a", "/b", "/c"]);
+        assert_eq!(separator_positions(&workspace), [("s1", 1)]);
+
+        workspace.add_separator("zwei").unwrap();
+        workspace
+            .reorder_pinned(entries(&["sep:s1", "/a", "/b", "/c", "sep:s2"]))
+            .unwrap();
+        assert_eq!(separator_positions(&workspace), [("s1", 0), ("s2", 3)]);
+
+        // s1 nicht genannt → ans Ende; Unbekanntes wird ignoriert.
+        workspace
+            .reorder_pinned(entries(&["/b", "sep:s2", "/a", "sep:unknown", "/zzz"]))
+            .unwrap();
+        assert_eq!(pin_paths(&workspace), ["/b", "/a", "/c"]);
+        assert_eq!(separator_positions(&workspace), [("s2", 1), ("s1", 3)]);
+    }
+
+    #[test]
+    fn r3_unpin_shifts_following_separators() {
+        let (_temp, mut workspace) = four_pins_two_separators(["/a", "/b", "/c", "/d"]);
+        workspace.unpin("/b").unwrap();
+        assert_eq!(pin_paths(&workspace), ["/a", "/c", "/d"]);
+        assert_eq!(separator_positions(&workspace), [("s1", 1), ("s2", 2)]);
+
+        let (_temp, mut workspace) = four_pins_two_separators(["/a", "/b", "/c", "/d"]);
+        workspace.unpin("/a").unwrap();
+        assert_eq!(separator_positions(&workspace), [("s1", 0), ("s2", 2)]);
+    }
+
+    #[test]
+    fn r4_remove_under_shifts_separators_and_keeps_their_order() {
+        let (temp, mut workspace) = four_pins_two_separators(["/a", "/x/b", "/x/c", "/d"]);
+        workspace.remove_under("/x").unwrap();
+        assert_eq!(pin_paths(&workspace), ["/a", "/d"]);
+        assert_eq!(separator_positions(&workspace), [("s1", 1), ("s2", 1)]);
+        let reloaded = Workspace::load_from(temp.path().join("workspace.json"));
+        assert_eq!(workspace.data(), reloaded.data());
+    }
+
+    #[test]
+    fn r7_load_clamps_separator_positions() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("workspace.json");
+        std::fs::write(
+            &path,
+            r#"{"pinned":[{"path":"/a","is_directory":false},{"path":"/b","is_directory":false}],
+                "recent":[],
+                "pinned_separators":[{"id":"s1","label":"","position":9}]}"#,
+        )
+        .unwrap();
+        let workspace = Workspace::load_from(path.clone());
+        assert_eq!(separator_positions(&workspace), [("s1", 2)]);
+        let stored: WorkspaceData = persist::load_json(&path);
+        assert_eq!(2, stored.pinned_separators[0].position);
     }
 }

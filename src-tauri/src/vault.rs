@@ -1,4 +1,4 @@
-use crate::workspace::Workspace;
+use crate::workspace::{PinSeparator, Workspace};
 use serde::Serialize;
 use std::{
     collections::BTreeSet,
@@ -850,23 +850,27 @@ impl Vault {
     }
 
     fn pinned_children_html(&self, workspace: &Workspace) -> String {
-        let html = workspace
-            .pinned()
-            .iter()
-            .filter(|item| {
-                // FX1: Lazy-Typ-Filter gilt auch für Pin-Wurzeln (wie
-                // build_dir_children_html). Recent bleibt unberührt.
-                if !self.markdown_only {
-                    return true;
-                }
+        let mut separators = workspace.pinned_separators().iter().peekable();
+        let mut html = String::new();
+        for (index, item) in workspace.pinned().iter().enumerate() {
+            // Vor dem Markdown-Filter: `position` zählt über die volle Liste.
+            while let Some(separator) = separators.next_if(|s| s.position <= index) {
+                html.push_str(&separator_html(separator));
+            }
+            // FX1: Lazy-Typ-Filter gilt auch für Pin-Wurzeln (wie
+            // build_dir_children_html). Recent bleibt unberührt.
+            if self.markdown_only {
                 let path = Path::new(&item.path);
-                if item.is_directory {
+                let visible = if item.is_directory {
                     path.is_dir() && crate::vault_filter::dir_contains_markdown(path)
                 } else {
                     crate::file_kind::classify(&item.path) == crate::file_kind::FileKind::Markdown
+                };
+                if !visible {
+                    continue;
                 }
-            })
-            .map(|item| {
+            }
+            html.push_str(&{
                 let path = Path::new(&item.path);
                 // Re-klassifizieren: ein gepinntes .lnk soll als Link
                 // erscheinen, eine gepinnte Junction soll das Badge
@@ -898,8 +902,9 @@ impl Vault {
                     None,
                     workspace.is_wikilink_root(&item.path),
                 )
-            })
-            .collect::<String>();
+            });
+        }
+        html.extend(separators.map(separator_html));
         empty_placeholder(html)
     }
 
@@ -930,6 +935,23 @@ fn empty_placeholder(html: String) -> String {
     } else {
         html
     }
+}
+
+/// Bewusst ohne `.node` und `.row`: an beiden Klassen hängen pfadbasierte
+/// Handler, Klick-Routing und der Section-Toggle.
+fn separator_html(separator: &PinSeparator) -> String {
+    let label = if separator.label.is_empty() {
+        String::new()
+    } else {
+        format!(
+            r#"<span class="pin-separator-label">{}</span>"#,
+            escape_html(&separator.label)
+        )
+    };
+    format!(
+        r#"<li class="pin-separator" data-separator-id="{id}"><div class="pin-separator-line">{label}</div></li>"#,
+        id = escape_attr(&separator.id),
+    )
 }
 
 fn display_name(path: &Path) -> String {
@@ -995,6 +1017,45 @@ mod tests {
             .unwrap();
         assert!(vault.is_expanded(temp.path().to_str().unwrap()));
         assert!(html.find("dir").unwrap() < html.find("file.md").unwrap());
+    }
+
+    #[test]
+    fn r11_separators_render_between_pins_with_escaped_label() {
+        let temp = TempDir::new().unwrap();
+        let mut workspace = Workspace::load_from(temp.path().join("workspace.json"));
+        workspace.pin("/a".into(), false).unwrap();
+        workspace.pin("/b".into(), false).unwrap();
+        workspace.add_separator("<b>&").unwrap();
+        workspace.add_separator("").unwrap();
+        workspace
+            .reorder_pinned(vec![
+                "sep:s1".into(),
+                "/a".into(),
+                "/b".into(),
+                "sep:s2".into(),
+            ])
+            .unwrap();
+
+        let html = Vault::new().pinned_children_html(&workspace);
+
+        let order: Vec<usize> = [
+            r#"data-separator-id="s1""#,
+            r#"data-path="/a""#,
+            r#"data-path="/b""#,
+            r#"data-separator-id="s2""#,
+        ]
+        .iter()
+        .map(|needle| html.find(needle).unwrap())
+        .collect();
+        assert!(order.windows(2).all(|pair| pair[0] < pair[1]), "{html}");
+        assert!(html.starts_with(concat!(
+            r#"<li class="pin-separator" data-separator-id="s1"><div class="pin-separator-line">"#,
+            r#"<span class="pin-separator-label">&lt;b&gt;&amp;</span></div></li>"#
+        )));
+        assert!(html.ends_with(concat!(
+            r#"<li class="pin-separator" data-separator-id="s2">"#,
+            r#"<div class="pin-separator-line"></div></li>"#
+        )));
     }
 
     #[test]
