@@ -101,3 +101,21 @@ Markup, Pfadregeln, Watcher, Pins und Git-Anzeige im Vault. Suche, Filter, Datei
   **Zugänge zum Status** (Etappe 2026-08-14): Der `title` eines Knotens nennt den Status im Klartext (analog zum „gitignored"-Zusatz, idempotent gesetzt und rückstandsfrei entfernt). Der Tab trägt links einen 4-px-Balken (`.tab-git`, amber) — bewusst NICHT den dirty-Punkt eingefärbt, der rechts bleibt und Ungespeichertes meint; ein Marker mit zwei Bedeutungen wäre nicht unterscheidbar. Klick auf den Balken öffnet den Git-Diff (`preventDefault`+`stopPropagation`, aus dem Drag-Handler ausgenommen, Mittelklick abgefangen, `tabindex="-1"`). Toolbar-Button + Menüeintrag sind eine **Aktion mit Enabled-Zustand, kein vierter View-Mode** — Modes sind pro Tab, die DiffView-Surface ist ein Singleton, das passt strukturell nicht zusammen.
   **Git-Filter „nur geänderte"** (`vault/filter.ts`, kombinierbar mit Namensfilter und md-only): Zwei Fallen, beide aus dem Kreuz-Review 2026-08-14. (1) `--untracked-files=normal` meldet einen komplett neuen Ordner als EINEN Eintrag `?? neu/` — die Kinddateien stehen NICHT im Snapshot. Der Filter muss sie über Verzeichnis-Präfix (auf Segmentgrenze!) mitzählen, sonst bleibt ein aufgeklappter, scheinbar leerer Ordner zurück. (2) `git status` liefert das ganze Repo; der Auto-Expand darf nur Pfade unterhalb **sichtbarer Pin-Wurzeln** öffnen, sonst werden repo-fremde Ordner expandiert und gewatcht und der 1000er-Soft-Cap ist erschöpft, bevor der relevante Zweig drankommt.
 - **main-Badge-Farbe**: `git-branch--main` (und dark) jetzt `var(--rail-accent)` statt `--rail-fg-muted` (Detached bleibt rot, Feature-Branches bernstein) — Unterscheidbarkeit zum Dimming.
+- **Pin-Trenner** (`workspace.rs::PinSeparator`, `vault.rs::separator_html`):
+  Linien mit optionaler, mittig zentrierter Beschriftung im Abschnitt
+  „Angepinnt“. Modell `pinned_separators` (`id`, `label`, `position`)
+  **neben** `pinned`, nicht darin: die Pin-Liste lesen Suche, Filter,
+  Wikilinks, Git usw., die von Trennern nichts sehen sollen. `position` =
+  Anzahl der Pins davor (`0..=len`), gleiche Position in Vec-Reihenfolge,
+  Vec stets sortiert; Pins werden **nur** über `retain_pins` entfernt (zieht
+  die Positionen nach). `workspace_reorder_pinned` nimmt Pin-Pfade und
+  `sep:<id>`-Tokens (Frontend: `tree-keyboard.ts::vaultEntryOf`). Das Markup
+  `li.pin-separator` hat bewusst **weder `.node` noch `.row`** — daran hängen
+  pfadbasierte Handler, Klick-Routing und Section-Toggle. Hinzufügen nur
+  über das Menü der Überschrift „Angepinnt“ (Benutzerwunsch: Datei-/
+  Ordnermenüs bleiben ohne Trenner-Eintrag). Die Inline-Beschriftung nutzt
+  den Rename-Guard und darf deshalb nie in einer unsichtbaren Zeile öffnen
+  (ohne Blur bliebe der Baum angehalten); eine offene Eingabe hat Vorrang
+  vor der automatisch geöffneten nach „Hinzufügen“. Namensfilter, git-Chip
+  und Bereich blenden Trenner aus, md-only nicht — deshalb nicht an
+  `isVaultFilterActive()` hängen (das schließt md-only ein).

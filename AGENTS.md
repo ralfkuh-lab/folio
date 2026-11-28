@@ -152,7 +152,7 @@ Vor Arbeit an einem Bereich das zugehörige Dokument lesen.
 | Bereich | Dokument |
 | --- | --- |
 | Dokumente, Encoding, IPC- und Lifecycle-Events, assetProtocol, Dateityp, Fenster-Geometrie, UI-Persistenz, Logging | [`docs/architektur-app.md`](docs/architektur-app.md) |
-| Vault-Markup, Pfad-Normalisierung und -Identität, Vault-Watcher, versteckte Einträge, Pin-Reordering, Git-Status/-Diff/-Dimming | [`docs/architektur-vault.md`](docs/architektur-vault.md) |
+| Vault-Markup, Pfad-Normalisierung und -Identität, Vault-Watcher, versteckte Einträge, Pin-Reordering, Pin-Trenner, Git-Status/-Diff/-Dimming | [`docs/architektur-vault.md`](docs/architektur-vault.md) |
 | Editor und Ansicht: Split-Mode, Live-Preview, Mermaid, Callouts, Smart-List, Task-Checkboxen, Image-View, Code-View, HTML-View-Suche, Find-Bar, Einfügen (Bild, HTML), Breiten-Toggle, History | [`docs/architektur-editor-view.md`](docs/architektur-editor-view.md) |
 | Automation-API, DOM- und Event-Vertrag | [`docs/automation-contract.md`](docs/automation-contract.md) |
 | Vault-Volltextsuche | [`docs/spec-vault-search.md`](docs/spec-vault-search.md) |
