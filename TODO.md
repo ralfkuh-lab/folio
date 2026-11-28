@@ -8,22 +8,7 @@
 
 ## Hohe Priorität
 
-### ✅ macOS: Doppelklick im Finder öffnet die Datei nicht ([#13](https://github.com/ralfkuh-lab/folio/issues/13)) — behoben 2026-11-26
-
-Ursache bestätigt (auf einem zweiten Mac nachgestellt; Berechtigungen waren es
-nicht): macOS übergibt Finder-Doppelklick als Apple Event, nicht als argv.
-Folio las nur argv. Fix: `RunEvent::Opened` wird in `lib.rs::open_finder_urls`
-ausgewertet (nur macOS). Kaltstart: Pfade landen in
-`AppState::pending_open_paths` und werden in `cli_pending_open` geöffnet
-(dieselbe Sperre wie beim Abholen, kein Race). Läuft Folio schon, gilt derselbe
-Pfad wie beim Single-Instance-Reinvoke (`open_external_path`, Setting
-`openFileTarget`); mehrere Dateien öffnen immer als neue Tabs.
-
-Getestet auf macOS: Kaltstart, laufende Instanz, Mehrfachauswahl, echte
-Doppelklicks auf dem Desktop und in weiteren Ordnern. Nicht gesondert getestet:
-`openFileTarget = replace`, Ziehen aufs Dock-Symbol.
-
-**Danach**: Im Issue antworten, sobald der Fix in einem Release ist.
+Derzeit nichts.
 
 ## Mittlere Priorität
 
@@ -444,6 +429,8 @@ Doppelklicks auf dem Desktop und in weiteren Ordnern. Nicht gesondert getestet:
   LRU erwägen).
 
 ## Niedrige Priorität
+
+- **macOS-Gegenprobe zum Finder-Open (v0.10.0).** Ungetestet sind noch `openFileTarget = replace` und Ziehen einer Datei aufs Dock-Symbol (läuft über dasselbe `RunEvent::Opened`). Phil ist im PR [#14](https://github.com/ralfkuh-lab/folio/pull/14) um eine kurze Prüfung gebeten.
 
 - **Panel-State aufräumen: `search_include_hidden`** wird seit S9 nicht mehr geschrieben (der `.*`-Chip ist die Quelle). Bei der nächsten Panel-State-Bereinigung entfernen.
 
