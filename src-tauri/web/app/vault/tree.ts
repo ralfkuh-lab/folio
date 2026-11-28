@@ -584,11 +584,10 @@ export function initVaultTree(d: Deps): void {
         // verschachtelten Kind-Eintraegen eines aufgeklappten Pin-Ordners
         // (getDirectPinnedItem klettert sonst zum Eltern-Root). Als Drop-ZIEL
         // bleibt der gesamte Subtree gueltig (siehe pointermove/up).
-        // Ein Trenner ist als Ganzes seine Zeile; im offenen Eingabefeld
-        // markiert die Maus Text, statt zu ziehen.
-        const separator = isPinSeparator(item);
-        if (separator && (e.target as Element).closest('input')) return;
-        const ownRow = separator ? item : item.querySelector(':scope > .row');
+        // Im offenen Eingabefeld markiert die Maus Text, statt zu ziehen.
+        if ((e.target as Element).closest('input.vault-rename-input')) return;
+        // Ein Trenner ist als Ganzes seine Zeile.
+        const ownRow = isPinSeparator(item) ? item : item.querySelector(':scope > .row');
         if (!ownRow || !ownRow.contains(e.target as Node)) return;
         pinDrag = {
             item,

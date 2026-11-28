@@ -278,7 +278,9 @@ function focusItem(li: HTMLElement): void {
     } finally {
         ownFocus = false;
     }
-    const row = li.querySelector(':scope > .row') as HTMLElement | null;
+    const row = li.querySelector(
+        isPinSeparator(li) ? ':scope > .pin-separator-line' : ':scope > .row',
+    ) as HTMLElement | null;
     if (row && typeof row.scrollIntoView === 'function') row.scrollIntoView({ block: 'nearest' });
 }
 

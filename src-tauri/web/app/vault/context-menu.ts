@@ -384,6 +384,10 @@ function mountInlineInput(
         focusBack: (pendingPath?: string) => void;
     },
 ): HTMLInputElement {
+    // Eine noch offene Eingabe zuerst per Blur beenden (commit + cleanup):
+    // Käme ihr Blur erst durch den Fokuswechsel auf das neue Feld, setzte
+    // ihr Cleanup den gerade begonnenen rename-guard zurück.
+    document.querySelector<HTMLInputElement>('#vault-tree input.vault-rename-input')?.blur();
     host.dataset.editing = '1';
     host.classList.add('editing');
     host.textContent = '';
@@ -570,7 +574,10 @@ function addSeparator(): Promise<VaultActionResult> {
         // Nicht auf das vault:refresh-Event verlassen: Reihenfolge zur
         // Command-Antwort ist nicht zugesichert.
         return Promise.resolve(deps.refreshVault()).then(function () {
-            startSeparatorEdit(id);
+            // Eine inzwischen begonnene Eingabe hat Vorrang.
+            if (!document.querySelector('#vault-tree input.vault-rename-input')) {
+                startSeparatorEdit(id);
+            }
             return { done: true };
         });
     }, function (err) {
